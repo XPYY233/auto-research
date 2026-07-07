@@ -1,101 +1,49 @@
-const state = { summary: {}, papers: [], queue: [], selected: null };
-const labels = {
-  measured: "直接测量", derived: "推导量", calculated: "计算量", qualitative: "定性结论",
-  exact_table: "表格精确值", exact_text: "正文精确值", trend: "趋势", figure_only: "仅图中可见",
-  figure_digitization: "待读曲线", ocr: "等待OCR", missing_supplement: "缺少补充材料", ambiguous_condition: "条件待确认"
-};
+const state={paper:null,rows:[],selected:null,filter:"",search:""};
+const fields=["value_text","meaning","unit","article_title","doi","context_explanation"];
+const fieldLabels={value_text:"具体数值",meaning:"具体意义",unit:"单位",article_title:"文章题目",doi:"DOI",context_explanation:"数据在文中的解释"};
 
-async function api(url, options={}) {
-  const response = await fetch(url, options);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `请求失败 ${response.status}`);
-  return payload;
+async function api(url,options={}){const r=await fetch(url,options);const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||`请求失败 ${r.status}`);return body}
+function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function toast(message,error=false){const el=document.querySelector('#toast');el.textContent=message;el.className=error?'show error':'show';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.className='',3200)}
+
+async function load(){[state.paper,state.rows]=await Promise.all([api('/api/target-paper'),api('/api/six-data')]);renderPaper();renderTable();renderHistory();fillManualDefaults()}
+
+function renderPaper(){const p=state.paper;setText('paper-key',p.local_article_key||p.zotero_key||p.pilot_code);setText('paper-title',p.title);setText('paper-doi',p.doi);setText('mini-title',p.title);setText('mini-doi',p.doi);setText('nav-count',state.rows.length);document.querySelector('#open-paper').href=`/api/papers/${p.id}/pdf`}
+function setText(id,v){document.getElementById(id).textContent=v??''}
+
+function filteredRows(){const q=state.filter.trim().toLowerCase();if(!q)return state.rows;return state.rows.filter(row=>fields.some(f=>String(row[f]||'').toLowerCase().includes(q)))}
+function renderTable(){const rows=filteredRows();setText('row-count',`${rows.length} 条`);const body=document.querySelector('#edit-rows');body.innerHTML=rows.map(row=>{
+  const cls=[state.selected===row.item_id?'selected':'',row.version_no>0?'revised':'',row.origin_type==='manual'?'manual':''].filter(Boolean).join(' ');
+  const cells=fields.map(field=>`<td><textarea class="cell ${field==='context_explanation'?'context':''}" data-field="${field}" aria-label="${fieldLabels[field]}">${esc(row[field])}</textarea></td>`).join('');
+  const badge=row.origin_type==='manual'?'人工':row.version_no>0?`已修正 v${row.version_no}`:'未修正';
+  return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action"><button class="confirm" data-confirm="${row.item_id}">确认修正</button><button data-original="${row.item_id}">查看原始</button><small>${badge}</small></div></td></tr>`
+}).join('');
+  body.querySelectorAll('tr[data-item]').forEach(tr=>tr.addEventListener('click',e=>{if(e.target.closest('button[data-confirm]'))return;selectRow(Number(tr.dataset.item))}));
+  body.querySelectorAll('[data-original]').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();selectRow(Number(btn.dataset.original))}));
+  body.querySelectorAll('[data-confirm]').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();confirmRow(Number(btn.dataset.confirm))}));
 }
 
-function esc(value) { return String(value ?? "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
-function toast(message, error=false) { const el=document.querySelector('#toast'); el.textContent=message; el.className=error?'show error':'show'; clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.className='',2800); }
+function selectRow(id){state.selected=id;const row=state.rows.find(r=>r.item_id===id);renderOriginal(row);document.querySelectorAll('#edit-rows tr').forEach(tr=>tr.classList.toggle('selected',Number(tr.dataset.item)===id))}
+function originalValue(row,field){return row.origin_type==='automatic'?row[`original_${field}`]:null}
+function renderOriginal(row){const pane=document.querySelector('#original-pane');if(row.origin_type==='manual'){pane.innerHTML=`<div class="blank"><span>＋</span><h3>人工补录数据</h3><p>这条记录不是自动提取结果，因此没有不可变的原始版本。</p></div>`;return}
+  const sourcePage=row.original_source_page;const sourceLink=`/api/papers/${row.paper_id}/pdf${sourcePage?'#page='+sourcePage:''}`;
+  pane.innerHTML=`<header class="original-head"><span>IMMUTABLE ORIGINAL · #${row.item_id}</span><h3>${esc(row.original_meaning)}</h3></header><div class="original-grid">${fields.map(f=>`<div class="original-field ${f==='context_explanation'?'context':''}"><small>${fieldLabels[f]}</small><p>${esc(originalValue(row,f))}</p></div>`).join('')}</div><div class="provenance"><strong>论文定位</strong><p>PDF第 ${esc(sourcePage||'?')} 页 · ${esc(row.original_source_locator||'未标注')}<br>${esc(row.original_source_excerpt||'')}</p><a href="${sourceLink}" target="_blank" rel="noopener">打开原文定位 →</a></div>`}
 
-async function loadAll() {
-  [state.summary, state.papers, state.queue] = await Promise.all([
-    api('/api/summary'), api('/api/papers'), api('/api/measurements?status=draft&include_drafts=1')
-  ]);
-  renderSummary(); renderQueue(); renderPapers(); await renderTasks();
-}
+function collectRowFields(id){const tr=document.querySelector(`tr[data-item="${id}"]`);if(!tr)throw new Error('当前表格中找不到这条数据');const values={};tr.querySelectorAll('[data-field]').forEach(input=>values[input.dataset.field]=input.value);return values}
+async function confirmRow(id){try{const values=collectRowFields(id);const current=state.rows.find(r=>r.item_id===id);const changed=fields.filter(f=>String(values[f]??'')!==String(current[f]??''));if(!changed.length){toast('没有检测到修改；原始数据保持不变。');return}const result=await api(`/api/six-data/${id}/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:values,editor:'本地研究者',note:`修改字段：${changed.map(f=>fieldLabels[f]).join('、')}`})});state.rows=state.rows.map(r=>r.item_id===id?result:r);state.selected=id;renderTable();renderOriginal(result);renderHistory();toast(`已确认修正并创建版本 v${result.version_no}；自动提取原始版本未改变。`)}catch(e){toast(e.message,true)}}
 
-function renderSummary() {
-  const s=state.summary, review=s.review||{};
-  setText('paper-count',s.pilot_papers); setText('queue-count',review.draft||0); setText('verified-count',review.verified||0); setText('task-count',s.open_tasks);
-  setText('stat-papers',s.pilot_papers); setText('stat-measurements',s.measurements); setText('stat-verified',review.verified||0);
-  setText('stat-context',`${s.materials||0} / ${s.experiments||0}`);
-  const complete=(review.verified||0)+(review.rejected||0)+(review.ambiguous||0), inBatch=complete%5;
-  setText('batch-label',`第 ${Math.floor(complete/5)+1} 组 · ${inBatch}/5`);
-  document.querySelector('#batch-bar').style.width=`${inBatch*20}%`;
-}
+function fillManualDefaults(){const form=document.querySelector('#manual-form');form.elements.article_title.value=state.paper.title;form.elements.doi.value=state.paper.doi}
+async function saveManual(event){event.preventDefault();const form=event.currentTarget;const values={};fields.forEach(f=>values[f]=form.elements[f].value);try{const result=await api('/api/six-data/manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paper_id:state.paper.id,fields:values,editor:'本地研究者'})});state.rows.push(result);form.reset();fillManualDefaults();renderTable();renderHistory();setText('nav-count',state.rows.length);toast('人工数据已保存；该记录没有自动提取原始版本。')}catch(e){toast(e.message,true)}}
 
-function setText(id,value){ document.getElementById(id).textContent=value ?? 0; }
+async function runSearch(event){event?.preventDefault();const q=document.querySelector('#search-query').value.trim();state.search=q;try{const rows=await api('/api/six-search?q='+encodeURIComponent(q));setText('search-summary',q?`“${q}” 找到 ${rows.length} 条相关数据`:`显示全部 ${rows.length} 条数据`);document.querySelector('#search-export').href='/api/six-export.csv?q='+encodeURIComponent(q);renderResults(rows)}catch(e){toast(e.message,true)}}
+function renderResults(rows){const el=document.querySelector('#search-results');if(!rows.length){el.innerHTML='<div class="blank"><h3>没有找到相关数据</h3><p>尝试材料名称、环境条件、物理量或它们的组合。</p></div>';return}el.innerHTML=rows.map(r=>`<article class="result"><div class="value">${esc(r.value_text)}<small> ${esc(r.unit)}</small></div><strong>${esc(r.meaning)}</strong><em>${r.search_score!=null?'相关度 '+esc(r.search_score):''}</em><p>${esc(r.context_explanation)}</p><button class="row-link" data-jump="${r.item_id}">去校对</button></article>`).join('');el.querySelectorAll('[data-jump]').forEach(btn=>btn.addEventListener('click',()=>jumpToRow(Number(btn.dataset.jump))))}
+function jumpToRow(id){state.filter='';document.querySelector('#table-filter').value='';switchView('review');renderTable();selectRow(id);const tr=document.querySelector(`tr[data-item="${id}"]`);tr?.scrollIntoView({block:'center',behavior:'smooth'})}
 
-function renderQueue() {
-  const el=document.querySelector('#queue-list');
-  if (!state.queue.length) { el.innerHTML='<div class="empty-state"><h3>待核验队列为空</h3><p>导入新的AI抽取结果后会出现在这里。</p></div>'; return; }
-  el.innerHTML=state.queue.map((row,index)=>`<button class="queue-item ${state.selected?.id===row.id?'active':''}" data-index="${index}"><span class="qid">${esc(row.pilot_code||'P?')} · ${row.id}</span><span><strong>${esc(row.parameter)}</strong><span>${esc(row.value_raw)} ${esc(row.unit_raw||'')} · ${esc(row.condition_text||'条件待确认')}</span></span></button>`).join('');
-  el.querySelectorAll('.queue-item').forEach(btn=>btn.addEventListener('click',()=>selectQueue(Number(btn.dataset.index))));
-}
+function renderHistory(){const changed=state.rows.filter(r=>r.version_no>0||r.origin_type==='manual').sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));const el=document.querySelector('#history-list');if(!changed.length){el.innerHTML='<div class="blank"><h3>还没有已确认修正</h3><p>左侧表格里的临时输入不会出现在这里。</p></div>';return}el.innerHTML=changed.map(r=>`<article class="history-card"><span>${r.origin_type==='manual'?'人工补录':`版本 v${r.version_no}`}</span><div><strong>${esc(r.meaning)} · ${esc(r.value_text)} ${esc(r.unit)}</strong><p>${esc(r.context_explanation)}</p></div><div><strong>${esc(r.editor)}</strong><p>${esc(r.edit_note||'')}<br>${esc(r.created_at)}</p></div></article>`).join('')}
 
-function selectQueue(index) { state.selected=state.queue[index]; renderQueue(); renderReviewCard(state.selected); }
-
-function renderReviewCard(row) {
-  const card=document.querySelector('#review-card'); card.classList.remove('empty');
-  card.innerHTML=`
-    <header class="card-paper"><div class="meta"><span>${esc(row.pilot_code||'—')}</span><span>${esc(row.year||'年份未知')}</span><span>DOI ${esc(row.doi||'—')}</span></div><h3>${esc(row.paper_title)}</h3></header>
-    <div class="review-body">
-      <div class="chain"><div><small>样品</small><strong>${esc(row.material_label||row.composition||'待确认')}</strong></div><span>→</span><div><small>辐照</small><strong>${esc(row.particle||row.irradiation_type||'待确认')}</strong></div><span>→</span><div><small>测量</small><strong>${esc(row.parameter)}</strong></div></div>
-      <div class="form-grid">
-        <label>物理量<input id="f-parameter" value="${esc(row.parameter)}"></label>
-        <label>报告值<input id="f-value" value="${esc(row.value_raw)}"></label>
-        <label>单位<input id="f-unit" value="${esc(row.unit_raw||'')}"></label>
-        <label>证据类型<select id="f-type">${options(['measured','derived','calculated','qualitative'],row.evidence_type)}</select></label>
-        <label>来源精度<select id="f-precision">${options(['exact_table','exact_text','trend','figure_only'],row.source_precision)}</select></label>
-        <label>条件<input id="f-condition" value="${esc(row.condition_text||'')}"></label>
-      </div>
-      <div class="evidence-box">
-        <div class="source-actions"><strong>原文证据</strong><button class="text-link" id="open-pdf">打开PDF${row.page_number?'第 '+row.page_number+'页':''}</button></div>
-        <div class="form-grid"><label>页码<input id="f-page" type="number" min="1" value="${esc(row.page_number||'')}"></label><label>表/图/章节<input id="f-locator" value="${esc(row.locator||'')}"></label><label class="wide">必要原文片段<textarea id="f-excerpt">${esc(row.excerpt||'')}</textarea></label></div>
-      </div>
-      <div class="review-actions"><button class="button verify" data-decision="verified">确认并发布</button><button class="button warn" data-decision="ambiguous">条件有歧义</button><button class="button reject" data-decision="rejected">驳回</button></div>
-    </div>`;
-  card.querySelector('#open-pdf').addEventListener('click',()=>window.open(`/api/papers/${row.paper_id}/pdf${row.page_number?'#page='+row.page_number:''}`,'_blank'));
-  card.querySelectorAll('[data-decision]').forEach(btn=>btn.addEventListener('click',()=>review(row,btn.dataset.decision)));
-}
-
-function options(values,current){return values.map(v=>`<option value="${v}" ${v===current?'selected':''}>${labels[v]}</option>`).join('');}
-
-async function review(row,decision) {
-  const page=document.querySelector('#f-page').value, locator=document.querySelector('#f-locator').value.trim(), excerpt=document.querySelector('#f-excerpt').value.trim();
-  if (decision==='verified' && !page && !locator) return toast('确认前必须填写页码或表/图编号。',true);
-  const changes={parameter:document.querySelector('#f-parameter').value.trim(),value_raw:document.querySelector('#f-value').value.trim(),unit_raw:document.querySelector('#f-unit').value.trim()||null,evidence_type:document.querySelector('#f-type').value,source_precision:document.querySelector('#f-precision').value,condition_text:document.querySelector('#f-condition').value.trim()||null};
-  try {
-    await api(`/api/measurements/${row.id}/review`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision,reviewer:'本地研究者',changes,evidence:{page_number:page?Number(page):null,locator:locator||null,excerpt:excerpt||null}})});
-    toast(decision==='verified'?'已确认并进入默认检索。':decision==='rejected'?'已驳回。':'已标记为条件有歧义。'); state.selected=null; await loadAll(); document.querySelector('#review-card').className='review-card empty'; document.querySelector('#review-card').innerHTML='<div class="empty-state"><span>✓</span><h3>记录已处理</h3><p>选择下一条继续核验。</p></div>';
-  } catch(error){toast(error.message,true);}
-}
-
-async function search(event) {
-  event?.preventDefault(); const form=new FormData(document.querySelector('#filters')); const query=new URLSearchParams();
-  for(const [key,value] of form.entries()) if(value) query.set(key,value);
-  document.querySelector('#export-link').href='/api/export.csv?'+query.toString();
-  try { const rows=await api('/api/measurements?'+query.toString()); renderSearch(rows); } catch(error){toast(error.message,true);}
-}
-
-function renderSearch(rows) {
-  const body=document.querySelector('#search-results');
-  if(!rows.length){body.innerHTML='<tr><td colspan="5">没有符合条件的已确认记录。可先去核验队列发布数据。</td></tr>';return;}
-  body.innerHTML=rows.map(r=>`<tr><td><strong>${esc(r.material_label||r.composition||r.material_focus||'—')}</strong><small>${esc(r.temperature_raw||'')} ${esc(r.dose_raw||'')}</small></td><td><strong>${esc(r.parameter)}</strong><small>${esc(r.measurement_method||r.category)}</small></td><td><strong>${esc(r.value_raw)} ${esc(r.unit_raw||'')}</strong><small>${r.normalized_value!=null?'标准化 '+esc(r.normalized_value)+' '+esc(r.normalized_unit):'保留原始单位'}</small></td><td><span class="type-pill ${r.evidence_type}">${labels[r.evidence_type]}</span></td><td><strong>${esc(r.pilot_code||'')} ${esc(r.locator||('p.'+(r.page_number||'?')))}</strong><small>${esc(r.paper_title)}</small></td></tr>`).join('');
-}
-
-function renderPapers(){const el=document.querySelector('#paper-grid');const papers=state.papers.filter(p=>String(p.pilot_code||'').startsWith('P'));el.innerHTML=papers.map(p=>`<article class="paper-card"><header><span>${esc(p.pilot_code||'候选')}${p.pilot_code==='P01'?' · 首篇教学':''}</span><span>${esc(p.material_focus||'未分类')}</span></header><h3>${esc(p.title)}</h3><footer><span>${esc(p.year||'—')} · ${p.measurement_count||0}条 · ${esc(p.parse_status)}</span><button class="text-link" data-prompt="${p.id}">生成抽取包</button></footer></article>`).join('');el.querySelectorAll('[data-prompt]').forEach(btn=>btn.addEventListener('click',async()=>{try{const result=await api(`/api/papers/${btn.dataset.prompt}/prompt`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{"max_pages":8}'});toast('抽取包已生成：'+result.path);await loadAll();}catch(e){toast(e.message,true)}}));}
-
-async function renderTasks(){const tasks=await api('/api/tasks');const el=document.querySelector('#task-list');if(!tasks.length){el.innerHTML='<div class="empty-state"><h3>没有开放任务</h3></div>';return;}el.innerHTML=tasks.map(t=>`<article class="task-item"><code>${labels[t.task_type]||t.task_type}</code><div><strong>${esc(t.paper_title)}</strong><p>${esc(t.description)} ${t.locator?'· '+esc(t.locator):''}</p></div><button class="button secondary" data-task="${t.id}">标记已处理</button></article>`).join('');el.querySelectorAll('[data-task]').forEach(btn=>btn.addEventListener('click',async()=>{try{await api('/api/tasks/'+btn.dataset.task,{method:'POST',headers:{'Content-Type':'application/json'},body:'{"status":"resolved"}'});toast('待办已处理。');await loadAll();}catch(e){toast(e.message,true)}}));}
-
-document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.nav-item,.view').forEach(x=>x.classList.remove('active'));btn.classList.add('active');document.querySelector('#view-'+btn.dataset.view).classList.add('active');if(btn.dataset.view==='search')search();}));
-document.querySelector('#filters').addEventListener('submit',search);
-loadAll().catch(error=>toast(error.message,true));
+function switchView(name){document.querySelectorAll('.nav,.view').forEach(el=>el.classList.remove('active'));document.querySelector(`.nav[data-view="${name}"]`).classList.add('active');document.querySelector(`#view-${name}`).classList.add('active');if(name==='search'&&!document.querySelector('#search-results').children.length)runSearch()}
+document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>switchView(btn.dataset.view)));
+document.querySelector('#table-filter').addEventListener('input',event=>{state.filter=event.target.value;renderTable()});
+document.querySelector('#search-form').addEventListener('submit',runSearch);
+document.querySelector('#manual-form').addEventListener('submit',saveManual);
+load().catch(e=>toast(e.message,true));

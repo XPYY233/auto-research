@@ -158,3 +158,35 @@ Artifacts:
 - verified CSV export: `data/matrix/irradiation_evidence_verified.csv`
 
 See `docs/irradiation_evidence_database.md` for the physics-oriented field guide.
+
+### Six-column correction-learning demo
+
+The current single-paper demo is intentionally simpler than the normalized
+pilot schema. Each extracted datum has exactly six editable fields: value,
+physical meaning, unit, article title, DOI, and contextual explanation. The
+contextual explanation is the primary search field and records the material,
+specimen, irradiation environment, and other conditions needed to interpret
+the value.
+
+The canonical source is the final published PDF whose local article number is
+`XJZQ42XP`:
+
+`/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf`
+
+The similarly titled 18-page file is an accepted manuscript of the same paper.
+It is useful for cross-checking scientific content, but its page numbers are
+not used as evidence locators.
+
+```bash
+# Rebuild the immutable original extraction for XJZQ42XP
+auto-research evidence-seed-target
+
+# Open the local correction/search page
+auto-research evidence-serve
+```
+
+Open `http://127.0.0.1:8765`. Edits in the left table remain temporary until
+`确认修正` is pressed; the immutable original remains visible on the right.
+Confirmed corrections create a new version during the demo, and manual entries
+have no synthetic original version. The original six-column export is written
+to `data/extractions/XJZQ42XP_six_column_original.csv`.

@@ -3,83 +3,89 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>辐照实验数据证据库</title>
+  <title>实验数据校对台</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
   <a class="skip-link" href="#main">跳到主要内容</a>
-  <div class="app-shell">
+  <div class="shell">
     <aside class="sidebar">
-      <div class="brand">
-        <div class="beam-mark" aria-hidden="true"><i></i><i></i><i></i></div>
-        <div><strong>证据束</strong><span>Irradiation Evidence</span></div>
-      </div>
-      <nav aria-label="主导航">
-        <button class="nav-item active" data-view="queue"><span>核验队列</span><b id="queue-count">0</b></button>
-        <button class="nav-item" data-view="search"><span>证据检索</span><b id="verified-count">0</b></button>
-        <button class="nav-item" data-view="papers"><span>30篇语料</span><b id="paper-count">0</b></button>
-        <button class="nav-item" data-view="tasks"><span>待处理</span><b id="task-count">0</b></button>
+      <div class="brand"><span class="beam">→</span><div><strong>实验数据校对台</strong><small>ARTICLE → DATA → REVIEW</small></div></div>
+      <nav aria-label="工作区">
+        <button class="nav active" data-view="review">校对数据 <b id="nav-count">0</b></button>
+        <button class="nav" data-view="search">搜索数据</button>
+        <button class="nav" data-view="manual">人工补录</button>
+        <button class="nav" data-view="history">修正历史</button>
       </nav>
-      <div class="principle">
-        <span>发布门槛</span>
-        <p>数值、条件与原页必须形成闭合证据链。</p>
+      <div class="article-mini">
+        <span>当前文章</span>
+        <p id="mini-title">载入中…</p>
+        <code id="mini-doi"></code>
       </div>
+      <div class="save-rule"><i></i><p>输入不会自动保存。只有点击“确认修正”才会产生新版本。</p></div>
     </aside>
 
     <main id="main">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">LOCAL · AUDITABLE · ZOTERO-LINKED</p>
-          <h1>把论文里的数值，变成可以复查的实验记录。</h1>
-        </div>
-        <div class="status-chip"><i></i>仅本机运行</div>
+        <div><p class="eyebrow">SINGLE-ARTICLE LEARNING DEMO</p><h1>先保留原样，再从你的修正中学习。</h1></div>
+        <div class="git-status"><i></i>Git 已建立</div>
       </header>
 
-      <section class="evidence-rail" aria-label="证据链">
-        <div><small>论文</small><strong id="stat-papers">0</strong></div><span>→</span>
-        <div><small>样品与辐照</small><strong id="stat-context">—</strong></div><span>→</span>
-        <div><small>候选记录</small><strong id="stat-measurements">0</strong></div><span>→</span>
-        <div class="rail-focus"><small>人工确认</small><strong id="stat-verified">0</strong></div>
+      <section class="article-strip">
+        <div><small>文章号</small><strong id="paper-key">—</strong></div>
+        <div class="wide"><small>题目</small><strong id="paper-title">—</strong></div>
+        <div><small>DOI</small><strong id="paper-doi">—</strong></div>
+        <a id="open-paper" target="_blank" rel="noopener">打开原文 PDF</a>
       </section>
 
-      <section class="view active" id="view-queue">
-        <div class="section-head">
-          <div><p class="eyebrow">REVIEW QUEUE</p><h2>逐条判断，不整篇盲信</h2></div>
-          <div class="batch-progress"><span id="batch-label">第 1 组 · 0/5</span><div><i id="batch-bar"></i></div></div>
+      <section class="view active" id="view-review">
+        <div class="view-head">
+          <div><p class="eyebrow">REVIEW WORKBENCH</p><h2>左侧修改，右侧始终保留自动提取原文</h2></div>
+          <div class="view-actions"><label class="compact-search">筛选当前表<input id="table-filter" placeholder="材料、硬度、300°C…"></label><span id="row-count">0 条</span></div>
         </div>
-        <div class="review-layout">
-          <div class="queue-list" id="queue-list"></div>
-          <article class="review-card empty" id="review-card">
-            <div class="empty-state"><span>∅</span><h3>选择一条候选记录</h3><p>先看原文位置，再决定它是测量、推导、计算还是定性证据。</p></div>
-          </article>
+        <div class="review-split">
+          <section class="edit-pane" aria-label="可编辑数据表">
+            <div class="table-scroll">
+              <table class="edit-table">
+                <thead><tr><th>具体数值</th><th>具体意义</th><th>单位</th><th>文章题目</th><th>DOI</th><th class="context-col">数据在文中的解释（搜索核心）</th><th>操作</th></tr></thead>
+                <tbody id="edit-rows"></tbody>
+              </table>
+            </div>
+          </section>
+          <aside class="original-pane" id="original-pane">
+            <div class="blank"><span>↖</span><h3>点击左侧任意一行</h3><p>这里会显示不可修改的自动提取原始版本，以及它在论文中的页码与出处。</p></div>
+          </aside>
         </div>
       </section>
 
       <section class="view" id="view-search">
-        <div class="section-head">
-          <div><p class="eyebrow">EVIDENCE SEARCH</p><h2>只在已确认记录中检索</h2></div>
-          <a class="button secondary" id="export-link" href="/api/export.csv">导出当前CSV</a>
+        <div class="search-hero">
+          <p class="eyebrow">FUZZY DATA SEARCH</p>
+          <h2>不用选择标签，直接写你想到的词。</h2>
+          <form id="search-form"><input id="search-query" placeholder="例如：CoCrFeMnNi 300°C 辐照后 硬度" autocomplete="off"><button>搜索</button></form>
+          <p>系统优先匹配“数据在文中的解释”，也会模糊匹配数值、意义、单位、题目和 DOI。</p>
         </div>
-        <form class="filter-grid" id="filters">
-          <label>材料或成分<input name="material" placeholder="例如 W-Ta-Cr-V"></label>
-          <label>粒子<input name="particle" placeholder="He / Kr / neutron"></label>
-          <label>物理量<input name="parameter" placeholder="hardness / void size"></label>
-          <label>证据类型<select name="evidence_type"><option value="">全部</option><option value="measured">直接测量</option><option value="derived">推导量</option><option value="calculated">计算量</option><option value="qualitative">定性结论</option></select></label>
-          <label>最低温度<input name="temperature_min" type="number" step="any" placeholder="原文数值"></label>
-          <label>最高温度<input name="temperature_max" type="number" step="any" placeholder="原文数值"></label>
-          <button class="button primary" type="submit">检索证据</button>
+        <div class="search-toolbar"><span id="search-summary">等待搜索</span><a id="search-export" href="/api/six-export.csv">导出结果 CSV</a></div>
+        <div class="result-list" id="search-results"></div>
+      </section>
+
+      <section class="view" id="view-manual">
+        <div class="view-head"><div><p class="eyebrow">MANUAL ENTRY</p><h2>补上自动抽取遗漏的数据</h2></div></div>
+        <form class="manual-card" id="manual-form">
+          <label>具体数值<input name="value_text" required placeholder="例如 4.63±0.03"></label>
+          <label>具体意义<input name="meaning" required placeholder="例如 辐照后纳米硬度 Hirr"></label>
+          <label>单位<input name="unit" placeholder="例如 GPa；无单位可留空"></label>
+          <label class="span-2">文章题目<input name="article_title" required></label>
+          <label class="span-2">DOI<input name="doi" required></label>
+          <label class="span-2 context-manual">数据在文中的解释<textarea name="context_explanation" required placeholder="尽量写清材料、环境、样品状态、辐照条件、测量方法等，便于以后搜索。"></textarea></label>
+          <div class="manual-note"><i>i</i><span>人工补录没有“自动提取原始版本”，保存后会标记为人工数据。</span></div>
+          <button class="primary" type="submit">保存人工数据</button>
         </form>
-        <div class="table-wrap"><table><thead><tr><th>材料 / 条件</th><th>物理量</th><th>报告值</th><th>类型</th><th>出处</th></tr></thead><tbody id="search-results"></tbody></table></div>
       </section>
 
-      <section class="view" id="view-papers">
-        <div class="section-head"><div><p class="eyebrow">PILOT CORPUS</p><h2>首批30篇实验语料</h2></div></div>
-        <div class="paper-grid" id="paper-grid"></div>
-      </section>
-
-      <section class="view" id="view-tasks">
-        <div class="section-head"><div><p class="eyebrow">HONESTY QUEUE</p><h2>系统明确承认的未知项</h2></div></div>
-        <div class="task-list" id="task-list"></div>
+      <section class="view" id="view-history">
+        <div class="view-head"><div><p class="eyebrow">LEARNING TRAIL</p><h2>你确认过的修正</h2></div></div>
+        <div class="history-list" id="history-list"></div>
       </section>
     </main>
   </div>

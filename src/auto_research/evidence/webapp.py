@@ -13,6 +13,17 @@ from urllib.parse import parse_qs, urlparse
 from .db import EvidenceDB
 from .exporter import EXPORT_COLUMNS
 from .prompts import build_prompt_packet
+from .six_column import (
+    SIX_FIELDS,
+    TARGET_DOI,
+    add_manual_item,
+    confirm_correction,
+    find_target_paper,
+    get_data_item,
+    list_current_data,
+    search_current_data,
+    seed_target_article,
+)
 
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -29,6 +40,23 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/summary":
                 return self.json_response(self.db.summary())
+            if parsed.path == "/api/target-paper":
+                paper = self.db.get_paper(find_target_paper(self.db))
+                return self.json_response(paper)
+            if parsed.path == "/api/six-data":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else find_target_paper(self.db)
+                return self.json_response(list_current_data(self.db, paper_id))
+            match = re.fullmatch(r"/api/six-data/(\d+)", parsed.path)
+            if match:
+                return self.json_response(get_data_item(self.db, int(match.group(1))))
+            if parsed.path == "/api/six-search":
+                query = parse_qs(parsed.query).get("q", [""])[0]
+                return self.json_response(search_current_data(self.db, query))
+            if parsed.path == "/api/six-export.csv":
+                query = parse_qs(parsed.query).get("q", [""])[0]
+                rows = search_current_data(self.db, query, limit=100000) if query else list_current_data(self.db, find_target_paper(self.db))
+                return self.six_csv_response(rows)
             if parsed.path == "/api/papers":
                 return self.json_response(self.db.list_papers())
             match = re.fullmatch(r"/api/papers/(\d+)", parsed.path)
@@ -59,6 +87,19 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         try:
             body = self.read_json()
+            match = re.fullmatch(r"/api/six-data/(\d+)/confirm", parsed.path)
+            if match:
+                result = confirm_correction(
+                    self.db, int(match.group(1)), body.get("fields") or {},
+                    body.get("editor") or "本地研究者", body.get("note") or "",
+                )
+                return self.json_response(result)
+            if parsed.path == "/api/six-data/manual":
+                paper_id = int(body.get("paper_id") or find_target_paper(self.db))
+                result = add_manual_item(
+                    self.db, paper_id, body.get("fields") or {}, body.get("editor") or "本地研究者"
+                )
+                return self.json_response(result, HTTPStatus.CREATED)
             match = re.fullmatch(r"/api/measurements/(\d+)/review", parsed.path)
             if match:
                 measurement_id = int(match.group(1))
@@ -127,6 +168,20 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def six_csv_response(self, rows: list[dict]) -> None:
+        output = io.StringIO()
+        fieldnames = [*SIX_FIELDS, "origin_type", "version_no", "source_page", "source_locator"]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+        data = ("\ufeff" + output.getvalue()).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", 'attachment; filename="JIKJJZ33-current-data.csv"')
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def serve_static(self, name: str) -> None:
         safe_name = Path(name).name
         path = WEB_DIR / safe_name
@@ -159,6 +214,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
 def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 8765) -> None:
     evidence_db = db or EvidenceDB()
     evidence_db.init()
+    seed_target_article(evidence_db)
     handler = type("BoundEvidenceHandler", (EvidenceHandler,), {"db": evidence_db})
     server = ThreadingHTTPServer((host, port), handler)
     print(f"辐照实验数据证据库: http://{host}:{port}")
@@ -169,4 +225,3 @@ def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 876
         pass
     finally:
         server.server_close()
-

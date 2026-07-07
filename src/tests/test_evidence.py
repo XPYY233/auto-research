@@ -10,6 +10,16 @@ from auto_research.evidence.importers import import_ai_result, import_legacy_sam
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
+from auto_research.evidence.six_column import (
+    TARGET_DOI,
+    TARGET_TITLE,
+    add_manual_item,
+    confirm_correction,
+    get_data_item,
+    list_current_data,
+    search_current_data,
+    seed_target_article,
+)
 
 
 class ValueTests(unittest.TestCase):
@@ -121,6 +131,56 @@ class CorpusIntegrationTests(unittest.TestCase):
         report = validate_database(self.db)
         self.assertTrue(report["ok"], report["errors"])
         self.assertEqual(report["summary"]["review"], {"draft": 108})
+
+
+class SixColumnWorkflowTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = EvidenceDB(Path(self.tmp.name) / "six.sqlite")
+        self.paper_id = self.db.upsert_paper(
+            title=TARGET_TITLE, doi=TARGET_DOI, zotero_key="TESTKEY", pdf_path=__file__
+        )
+        self.seed = seed_target_article(self.db, Path(self.tmp.name) / "original.csv")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_target_extraction_has_six_editable_fields_and_provenance(self):
+        self.assertEqual(self.seed["total"], 114)
+        rows = list_current_data(self.db, self.paper_id)
+        self.assertEqual(len(rows), 114)
+        hardness = next(r for r in rows if r["stable_key"] == "table3_al0_3cocrfeni_h0")
+        self.assertEqual(hardness["value_text"], "3.56±0.05")
+        self.assertEqual(hardness["unit"], "GPa")
+        # The evidence locator is tied to the 10-page final published PDF in
+        # Zotero storage/XJZQ42XP, not the 18-page accepted manuscript.
+        self.assertEqual(hardness["source_page"], 5)
+        self.assertIn("Al0.3CoCrFeNi", hardness["context_explanation"])
+
+    def test_confirmed_correction_does_not_mutate_original(self):
+        row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")
+        changed = {field: row[field] for field in ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")}
+        changed["context_explanation"] += "；人工确认"
+        revised = confirm_correction(self.db, row["item_id"], changed, "tester", "context correction")
+        self.assertEqual(revised["version_no"], 1)
+        self.assertTrue(revised["context_explanation"].endswith("人工确认"))
+        self.assertFalse(revised["original_context_explanation"].endswith("人工确认"))
+        self.assertEqual(revised["original_value_text"], "300")
+
+    def test_manual_entry_has_no_automatic_original(self):
+        manual = add_manual_item(self.db, self.paper_id, {
+            "value_text": "42", "meaning": "人工测试量", "unit": "a.u.",
+            "article_title": TARGET_TITLE, "doi": TARGET_DOI,
+            "context_explanation": "人工补录；搜索测试；CoCrFeMnNi",
+        })
+        self.assertEqual(manual["origin_type"], "manual")
+        self.assertIsNone(manual["original_value_text"])
+
+    def test_fuzzy_search_prioritizes_context(self):
+        results = search_current_data(self.db, "CoCrFeMnN 辐照后 硬度")
+        self.assertTrue(results)
+        self.assertIn("CoCrFeMnNi", results[0]["context_explanation"])
+        self.assertIn("硬度", results[0]["meaning"])
 
 
 if __name__ == "__main__":

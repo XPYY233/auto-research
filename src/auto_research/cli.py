@@ -89,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port", type=int, default=8765)
     sub.add_parser("evidence-summary", help="Show evidence database counts")
     sub.add_parser("evidence-validate", help="Validate pilot balance and evidence publication gates")
+    sub.add_parser("evidence-seed-target", help="Seed the six-column demo for the single target irradiation article")
 
     args = parser.parse_args(argv)
     db = ResearchDB()
@@ -272,6 +273,10 @@ def cmd_evidence(args) -> int:
         report = validate_database(evidence_db)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if report["ok"] else 2
+    if args.cmd == "evidence-seed-target":
+        from .evidence.six_column import seed_target_article
+        print(json.dumps(seed_target_article(evidence_db), ensure_ascii=False, indent=2))
+        return 0
     return 1
 
 

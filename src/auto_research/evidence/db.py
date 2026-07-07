@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS papers (
   parse_status TEXT NOT NULL DEFAULT 'queued',
   material_focus TEXT,
   pilot_order INTEGER,
+  local_article_key TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -150,6 +151,37 @@ CREATE INDEX IF NOT EXISTS idx_measurements_parameter ON measurements(parameter)
 CREATE INDEX IF NOT EXISTS idx_measurements_type ON measurements(evidence_type);
 CREATE INDEX IF NOT EXISTS idx_papers_focus ON papers(material_focus);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON pending_tasks(status);
+
+CREATE TABLE IF NOT EXISTS data_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  stable_key TEXT NOT NULL,
+  origin_type TEXT NOT NULL CHECK(origin_type IN ('automatic','manual')),
+  created_at TEXT NOT NULL,
+  UNIQUE(paper_id, stable_key)
+);
+
+CREATE TABLE IF NOT EXISTS data_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL REFERENCES data_items(id) ON DELETE CASCADE,
+  version_no INTEGER NOT NULL,
+  value_text TEXT NOT NULL,
+  meaning TEXT NOT NULL,
+  unit TEXT NOT NULL DEFAULT '',
+  article_title TEXT NOT NULL,
+  doi TEXT NOT NULL,
+  context_explanation TEXT NOT NULL,
+  source_page INTEGER,
+  source_locator TEXT,
+  source_excerpt TEXT,
+  editor TEXT NOT NULL,
+  edit_note TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(item_id, version_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_items_paper ON data_items(paper_id);
+CREATE INDEX IF NOT EXISTS idx_data_versions_item ON data_versions(item_id,version_no DESC);
 """
 
 
@@ -177,6 +209,9 @@ class EvidenceDB:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            paper_columns = {row["name"] for row in conn.execute("PRAGMA table_info(papers)")}
+            if "local_article_key" not in paper_columns:
+                conn.execute("ALTER TABLE papers ADD COLUMN local_article_key TEXT")
             conn.execute(
                 "INSERT INTO schema_meta(key,value) VALUES('schema_version','1') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
@@ -209,6 +244,7 @@ class EvidenceDB:
                 "parse_status": paper.get("parse_status") or "queued",
                 "material_focus": paper.get("material_focus"),
                 "pilot_order": paper.get("pilot_order"),
+                "local_article_key": paper.get("local_article_key"),
                 "updated_at": stamp,
             }
             if row:
