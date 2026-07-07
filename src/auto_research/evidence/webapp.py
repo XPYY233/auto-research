@@ -22,13 +22,14 @@ from .six_column import (
     get_current_paper_id,
     get_data_item,
     get_six_extraction_status,
+    import_ai_result_to_six_column,
     list_current_data,
     prepare_current_paper_packet,
     search_current_data,
     seed_target_article,
     set_current_paper,
 )
-from .source_highlight import get_source_view, render_source_highlight_png
+from .source_highlight import get_source_view, render_source_highlight_png, render_source_snippet_png
 
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -66,6 +67,9 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             match = re.fullmatch(r"/api/six-data/(\d+)/source-highlight\.png", parsed.path)
             if match:
                 return self.png_response(render_source_highlight_png(self.db, int(match.group(1))))
+            match = re.fullmatch(r"/api/six-data/(\d+)/source-snippet\.png", parsed.path)
+            if match:
+                return self.png_response(render_source_snippet_png(self.db, int(match.group(1))))
             if parsed.path == "/api/six-search":
                 query = parse_qs(parsed.query).get("q", [""])[0]
                 return self.json_response(search_current_data(self.db, query))
@@ -138,6 +142,13 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
                     max_pages=int(body.get("max_pages", 8)),
                 )
+                return self.json_response(result)
+            if parsed.path == "/api/current-paper/import-json":
+                paper_id = int(body["paper_id"]) if body.get("paper_id") not in (None, "") else get_current_paper_id(self.db)
+                json_text = body.get("json_text")
+                if not isinstance(json_text, str) or not json_text.strip():
+                    raise ValueError("json_text cannot be empty")
+                result = import_ai_result_to_six_column(self.db, paper_id, json_text)
                 return self.json_response(result)
             match = re.fullmatch(r"/api/measurements/(\d+)/review", parsed.path)
             if match:

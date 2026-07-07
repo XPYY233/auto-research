@@ -140,8 +140,7 @@ def extract_particle(title: str) -> str | None:
 
 def import_ai_result(db: EvidenceDB, paper_id: int, result_path: Path) -> dict[str, int]:
     """Import schema-constrained AI output as draft evidence only."""
-    payload = json.loads(result_path.read_text(encoding="utf-8"))
-    _validate_ai_payload(db, paper_id, payload)
+    payload = load_ai_result_payload(db, paper_id, result_path)
     materials: dict[str, int] = {}
     experiments: dict[str, int] = {}
     for item in payload.get("materials", []):
@@ -188,6 +187,19 @@ def import_ai_result(db: EvidenceDB, paper_id: int, result_path: Path) -> dict[s
         db.add_task(paper_id, _required_string(item, "task_type"), _required_string(item, "description"), locator=item.get("locator"))
         task_count += 1
     return {"materials": len(materials), "experiments": len(experiments), "measurements": measurement_count, "tasks": task_count}
+
+
+def load_ai_result_payload(db: EvidenceDB, paper_id: int, source: Path | str | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(source, Path):
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    elif isinstance(source, str):
+        payload = json.loads(source)
+    elif isinstance(source, dict):
+        payload = source
+    else:
+        raise ValueError("Unsupported AI result source")
+    _validate_ai_payload(db, paper_id, payload)
+    return payload
 
 
 def _required_string(item: dict[str, Any], key: str) -> str:

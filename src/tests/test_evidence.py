@@ -28,7 +28,11 @@ from auto_research.evidence.six_column import (
     seed_target_article,
     set_current_paper,
 )
-from auto_research.evidence.source_highlight import get_source_view, render_source_highlight_png
+from auto_research.evidence.source_highlight import (
+    get_source_view,
+    render_source_highlight_png,
+    render_source_snippet_png,
+)
 
 
 class ValueTests(unittest.TestCase):
@@ -229,12 +233,18 @@ class SixColumnWorkflowTests(unittest.TestCase):
         row = next(r for r in list_current_data(self.db) if r["stable_key"] == "table3_al0_3cocrfeni_h0")
         source = get_source_view(self.db, row["item_id"])
         self.assertEqual(source["page_number"], 5)
-        self.assertIn(source["match_type"], {"locator_and_value", "context_and_value", "value_only"})
+        self.assertIn(source["match_type"], {"locator_and_value", "context_and_value", "value_only", "excerpt_window", "fuzzy_window"})
         self.assertTrue(source["image_url"].endswith("/source-highlight.png"))
+        self.assertTrue(source["snippet_url"].endswith("/source-snippet.png"))
 
     def test_source_highlight_png_renders_page_image(self):
         row = next(r for r in list_current_data(self.db) if r["stable_key"] == "dose_steps")
         image = render_source_highlight_png(self.db, row["item_id"])
+        self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
+
+    def test_source_snippet_png_renders_zoomed_image(self):
+        row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")
+        image = render_source_snippet_png(self.db, row["item_id"])
         self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
 
 

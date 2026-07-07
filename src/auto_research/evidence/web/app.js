@@ -167,11 +167,14 @@ function renderOriginal(row) {
 }
 
 function sourceMetaLoading(row) {
-  return `<article class="source-meta-card"><strong>正在定位</strong><p>${esc(row.original_meaning || row.meaning)}<br>PDF第 ${esc(row.original_source_page || row.source_page || "?")} 页 · ${esc(row.original_source_locator || row.source_locator || "未标注")}</p></article>`;
+  return `<article class="source-meta-card"><strong>正在定位</strong><p>${esc(row.original_meaning || row.meaning)}<br>PDF第 ${esc(row.original_source_page || row.source_page || "?")} 页 · ${esc(row.original_source_locator || row.source_locator || "未标注")}</p></article><article class="source-meta-card"><strong>准备内容</strong><p>将优先展示高亮句子的放大图，再保留整页位置供你核对上下文。</p></article>`;
 }
 
 function sourceMetaHtml(data) {
-  return `<article class="source-meta-card"><strong>${esc(data.match_label)}</strong><p>PDF第 ${esc(data.page_number)} 页 · ${esc(data.locator || "未标注")}<br>${esc(data.match_note)}</p></article><article class="source-meta-card"><strong>证据片段</strong><p>${esc(data.excerpt || "未保留原始证据片段")}</p></article>`;
+  const matched = data.matched_text
+    ? `<article class="source-meta-card emphasis"><strong>高亮句子</strong><p>${esc(data.matched_text)}</p></article>`
+    : "";
+  return `<article class="source-meta-card"><strong>${esc(data.match_label)}</strong><p>PDF第 ${esc(data.page_number)} 页 · ${esc(data.locator || "未标注")}<br>${esc(data.match_note)}</p></article>${matched}<article class="source-meta-card"><strong>证据片段</strong><p>${esc(data.excerpt || "未保留原始证据片段")}</p></article>`;
 }
 
 async function openSourceViewer(id) {
@@ -179,9 +182,12 @@ async function openSourceViewer(id) {
   if (!row) return;
   const dialog = document.querySelector("#source-dialog");
   const meta = document.querySelector("#source-meta");
+  const focusImage = document.querySelector("#source-focus-image");
   const image = document.querySelector("#source-image");
   const pdfLink = document.querySelector("#source-open-pdf");
   meta.innerHTML = sourceMetaLoading(row);
+  focusImage.removeAttribute("src");
+  focusImage.alt = "正在加载高亮句子放大图";
   image.removeAttribute("src");
   image.alt = "正在加载高亮原文页";
   pdfLink.removeAttribute("href");
@@ -193,7 +199,12 @@ async function openSourceViewer(id) {
   try {
     const data = await api(`/api/six-data/${id}/source-view`);
     meta.innerHTML = sourceMetaHtml(data);
-    image.src = `${data.image_url}?ts=${Date.now()}`;
+    const ts = Date.now();
+    focusImage.src = `${data.snippet_url}?ts=${ts}`;
+    focusImage.alt = data.has_highlight
+      ? `${data.match_label}：对应句子放大图`
+      : "当前暂无精确高亮，显示整页区域";
+    image.src = `${data.image_url}?ts=${ts}`;
     image.alt = `${data.match_label}：PDF 第 ${data.page_number} 页`;
     pdfLink.href = data.pdf_url;
   } catch (error) {
@@ -268,6 +279,29 @@ async function saveManual(event) {
     renderHistory();
     setText("nav-count", state.rows.length);
     toast("人工数据已保存；该记录没有自动提取原始版本。");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function importJsonResult(event) {
+  event.preventDefault();
+  const textarea = document.querySelector("#import-json-text");
+  const jsonText = textarea.value.trim();
+  if (!jsonText) {
+    toast("请先粘贴抽取结果 JSON。", true);
+    return;
+  }
+  try {
+    const result = await api("/api/current-paper/import-json", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_id: state.paper.id, json_text: jsonText }),
+    });
+    textarea.value = "";
+    await loadCurrentPaper();
+    toast(`JSON 导入完成：新增 ${result.inserted} 条，已存在 ${result.existing} 条。`);
+    switchView("review");
   } catch (error) {
     toast(error.message, true);
   }
@@ -403,6 +437,7 @@ document.querySelector("#table-filter").addEventListener("input", event => {
 });
 document.querySelector("#search-form").addEventListener("submit", runSearch);
 document.querySelector("#manual-form").addEventListener("submit", saveManual);
+document.querySelector("#import-json-form").addEventListener("submit", importJsonResult);
 document.querySelector("#paper-switch-form").addEventListener("submit", submitPaperSwitch);
 document.querySelector("#run-current-extraction").addEventListener("click", runCurrentExtraction);
 document.querySelector("[data-close-source]")?.addEventListener("click", () => document.querySelector("#source-dialog")?.close());

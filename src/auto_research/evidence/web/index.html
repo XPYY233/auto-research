@@ -96,6 +96,11 @@
           <div class="manual-note"><i>i</i><span>人工补录没有“自动提取原始版本”，保存后会标记为人工数据。</span></div>
           <button class="primary" type="submit">保存人工数据</button>
         </form>
+        <form class="manual-card import-card" id="import-json-form">
+          <label class="span-2">导入抽取结果 JSON<textarea id="import-json-text" name="json_text" placeholder='把受约束的 JSON 结果粘贴到这里；导入后会自动回填为六列表格待校对。'></textarea></label>
+          <div class="manual-note"><i>i</i><span>适合“准备当前文章抽取包”之后的下一步：将结构化抽取结果直接回填为可编辑六列表格，同时保留原始证据页码、定位和片段。</span></div>
+          <button class="primary" type="submit">导入为待校对六列表格</button>
+        </form>
       </section>
 
       <section class="view" id="view-history">
@@ -115,8 +120,15 @@
         <button class="dialog-close" type="button" data-close-source>关闭</button>
       </header>
       <div class="source-dialog-meta" id="source-meta"></div>
-      <div class="source-dialog-image">
-        <img id="source-image" alt="高亮后的原文页">
+      <div class="source-dialog-visuals">
+        <figure class="source-dialog-image focus">
+          <figcaption>定位放大图</figcaption>
+          <img id="source-focus-image" alt="高亮后的原文句子放大图">
+        </figure>
+        <figure class="source-dialog-image">
+          <figcaption>整页位置</figcaption>
+          <img id="source-image" alt="高亮后的原文页">
+        </figure>
       </div>
       <div class="source-dialog-actions">
         <a id="source-open-pdf" target="_blank" rel="noopener">打开原始 PDF</a>

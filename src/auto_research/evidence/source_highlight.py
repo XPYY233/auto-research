@@ -21,6 +21,7 @@ class SourceHighlightResult:
     match_type: str
     match_label: str
     match_note: str
+    matched_text: str
     rects: list[fitz.Rect]
 
 
@@ -130,6 +131,11 @@ def _context_terms(context: str) -> list[str]:
     return terms
 
 
+def _is_structured_locator(locator: str) -> bool:
+    value = (locator or "").strip().lower()
+    return value.startswith("table") or value.startswith("fig") or value.startswith("figure")
+
+
 def _page_line_windows(page: fitz.Page) -> list[tuple[str, fitz.Rect]]:
     words = page.get_text("words")
     if not words:
@@ -158,13 +164,15 @@ def _page_line_windows(page: fitz.Page) -> list[tuple[str, fitz.Rect]]:
     return windows
 
 
-def _fuzzy_window_match(page: fitz.Page, excerpt: str, locator: str, value_text: str) -> list[fitz.Rect]:
+def _best_window_match(page: fitz.Page, excerpt: str, locator: str,
+                       value_text: str) -> tuple[str, fitz.Rect, float] | None:
     target_text = excerpt or f"{locator} {value_text}"
     target_norm = _normalize_text(target_text)
     if not target_norm:
-        return []
+        return None
     target_tokens = set(_tokenize(target_text))
     best_score = 0.0
+    best_text = ""
     best_rect: fitz.Rect | None = None
     value_signals = [_normalize_text(value) for value in _value_variants(value_text) if _normalize_text(value)]
     locator_signals = [_normalize_text(value) for value in _locator_variants(locator) if _normalize_text(value)]
@@ -182,10 +190,41 @@ def _fuzzy_window_match(page: fitz.Page, excerpt: str, locator: str, value_text:
             score += 0.10
         if score > best_score:
             best_score = score
+            best_text = text
             best_rect = rect
-    if best_rect and best_score >= 0.43:
-        return [best_rect]
-    return []
+    if best_rect:
+        return best_text, best_rect, best_score
+    return None
+
+
+def _fuzzy_window_match(page: fitz.Page, excerpt: str, locator: str, value_text: str,
+                        minimum_score: float = 0.43) -> tuple[str, list[fitz.Rect]] | None:
+    best = _best_window_match(page, excerpt, locator, value_text)
+    if not best:
+        return None
+    text, rect, score = best
+    if score >= minimum_score:
+        return text, [rect]
+    return None
+
+
+def _clip_rect(page: fitz.Page, rects: list[fitz.Rect], *, margin_x: float = 84,
+               margin_y: float = 54) -> fitz.Rect:
+    union = _rect_union(rects)
+    return fitz.Rect(
+        max(page.rect.x0, union.x0 - margin_x),
+        max(page.rect.y0, union.y0 - margin_y),
+        min(page.rect.x1, union.x1 + margin_x),
+        min(page.rect.y1, union.y1 + margin_y),
+    )
+
+
+def _apply_highlights(page: fitz.Page, rects: list[fitz.Rect]) -> None:
+    for rect in rects:
+        annot = page.add_highlight_annot(rect)
+        annot.set_colors(stroke=(0.98, 0.70, 0.08))
+        annot.set_opacity(0.42)
+        annot.update()
 
 
 def locate_highlight(page: fitz.Page, *, locator: str, excerpt: str, value_text: str,
@@ -199,7 +238,24 @@ def locate_highlight(page: fitz.Page, *, locator: str, excerpt: str, value_text:
             match_type="exact_excerpt",
             match_label="已高亮原文句子",
             match_note="直接在 PDF 文本层中找到这条证据的原始句子或短语。",
+            matched_text=excerpt,
             rects=exact_excerpt,
+        )
+
+    excerpt_window = None
+    if len(_tokenize(excerpt)) >= 4:
+        excerpt_window = _fuzzy_window_match(page, excerpt, locator, value_text, minimum_score=0.46)
+    if excerpt_window:
+        matched_text, rects = excerpt_window
+        return SourceHighlightResult(
+            page_number=page.number + 1,
+            locator=locator,
+            excerpt=excerpt,
+            match_type="excerpt_window",
+            match_label="已高亮对应原文句子",
+            match_note="PDF 文本层和抽取片段的格式略有差异，但已经定位到最接近的原文句子并整句高亮。",
+            matched_text=matched_text,
+            rects=rects,
         )
 
     excerpt_fragments = _search_terms(page, _excerpt_chunks(excerpt))
@@ -211,6 +267,7 @@ def locate_highlight(page: fitz.Page, *, locator: str, excerpt: str, value_text:
             match_type="excerpt_fragments",
             match_label="已高亮原文片段",
             match_note="原句跨行或被省略号截断，因此改为高亮能直接匹配到的原文片段。",
+            matched_text=excerpt,
             rects=excerpt_fragments,
         )
 
@@ -218,7 +275,7 @@ def locate_highlight(page: fitz.Page, *, locator: str, excerpt: str, value_text:
     value_hits = _search_terms(page, _value_variants(value_text))
     context_hits = _search_terms(page, _context_terms(context_explanation))
 
-    if locator_hits and value_hits:
+    if locator_hits and value_hits and _is_structured_locator(locator):
         rects = locator_hits + value_hits[:3]
         return SourceHighlightResult(
             page_number=page.number + 1,
@@ -227,6 +284,7 @@ def locate_highlight(page: fitz.Page, *, locator: str, excerpt: str, value_text:
             match_type="locator_and_value",
             match_label="已高亮表格/图注锚点",
             match_note="这条证据更像表格或图中的值，因此高亮了图表编号和对应数值，便于快速定位。",
+            matched_text="",
             rects=_dedupe_rects(rects),
         )
 
@@ -239,6 +297,7 @@ def locate_highlight(page: fitz.Page, *, locator: str, excerpt: str, value_text:
             match_type="context_and_value",
             match_label="已高亮材料与数值",
             match_note="原句无法直接匹配，因此高亮了材料/条件锚点和该数据值本身。",
+            matched_text="",
             rects=_dedupe_rects(rects),
         )
 
@@ -250,7 +309,22 @@ def locate_highlight(page: fitz.Page, *, locator: str, excerpt: str, value_text:
             match_type="locator_only",
             match_label="已高亮图表编号",
             match_note="这页上更容易通过图表编号定位，因此先高亮对应的 Table/Fig. 标题。",
+            matched_text="",
             rects=locator_hits,
+        )
+
+    fuzzy = _fuzzy_window_match(page, excerpt, locator, value_text)
+    if fuzzy:
+        matched_text, rects = fuzzy
+        return SourceHighlightResult(
+            page_number=page.number + 1,
+            locator=locator,
+            excerpt=excerpt,
+            match_type="fuzzy_window",
+            match_label="已高亮最接近的原文行",
+            match_note="原文文本层和结构化片段不完全一致，因此按相似度高亮了最接近的原文区域。",
+            matched_text=matched_text,
+            rects=rects,
         )
 
     if value_hits:
@@ -261,19 +335,8 @@ def locate_highlight(page: fitz.Page, *, locator: str, excerpt: str, value_text:
             match_type="value_only",
             match_label="已高亮数值位置",
             match_note="未找到整句，但已在这一页上定位到同一数值。",
+            matched_text="",
             rects=value_hits[:3],
-        )
-
-    fuzzy = _fuzzy_window_match(page, excerpt, locator, value_text)
-    if fuzzy:
-        return SourceHighlightResult(
-            page_number=page.number + 1,
-            locator=locator,
-            excerpt=excerpt,
-            match_type="fuzzy_window",
-            match_label="已高亮最接近的原文行",
-            match_note="原文文本层和结构化片段不完全一致，因此按相似度高亮了最接近的原文区域。",
-            rects=fuzzy,
         )
 
     return SourceHighlightResult(
@@ -283,6 +346,7 @@ def locate_highlight(page: fitz.Page, *, locator: str, excerpt: str, value_text:
         match_type="page_only",
         match_label="仅定位到页码",
         match_note="这一条证据暂时没法在文本层中精确高亮，当前保留页码定位供人工核验。",
+        matched_text="",
         rects=[],
     )
 
@@ -332,6 +396,9 @@ def get_source_view(db: EvidenceDB, item_id: int) -> dict[str, Any]:
         "match_type": match.match_type,
         "match_label": match.match_label,
         "match_note": match.match_note,
+        "matched_text": match.matched_text,
+        "has_highlight": bool(match.rects),
+        "snippet_url": f"/api/six-data/{item_id}/source-snippet.png",
         "image_url": f"/api/six-data/{item_id}/source-highlight.png",
         "pdf_url": f"/api/papers/{source['paper_id']}/pdf#page={match.page_number}",
     }
@@ -351,10 +418,26 @@ def render_source_highlight_png(db: EvidenceDB, item_id: int, zoom: float = 2.4)
             value_text=source["value_text"],
             context_explanation=source["context_explanation"],
         )
-        for rect in match.rects:
-            annot = page.add_highlight_annot(rect)
-            annot.set_colors(stroke=(0.98, 0.70, 0.08))
-            annot.set_opacity(0.42)
-            annot.update()
+        _apply_highlights(page, match.rects)
         pixmap = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), annots=True, alpha=False)
+        return pixmap.tobytes("png")
+
+
+def render_source_snippet_png(db: EvidenceDB, item_id: int, zoom: float = 3.2) -> bytes:
+    item = get_data_item(db, item_id)
+    source = _resolve_source_fields(item)
+    pdf_path = _load_pdf_path(db, source["paper_id"])
+    with fitz.open(pdf_path) as doc:
+        page_index = max(0, min(source["page_number"] - 1, len(doc) - 1))
+        page = doc[page_index]
+        match = locate_highlight(
+            page,
+            locator=source["locator"],
+            excerpt=source["excerpt"],
+            value_text=source["value_text"],
+            context_explanation=source["context_explanation"],
+        )
+        _apply_highlights(page, match.rects)
+        clip = _clip_rect(page, match.rects) if match.rects else page.rect
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=clip, annots=True, alpha=False)
         return pixmap.tobytes("png")

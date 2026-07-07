@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import difflib
 import hashlib
+import json
 import math
 import re
 import uuid
@@ -13,6 +14,7 @@ from typing import Any
 from auto_research.paths import DATA_DIR
 
 from .db import EvidenceDB, now
+from .importers import load_ai_result_payload
 from .prompts import prompt_packet_path
 
 
@@ -344,6 +346,104 @@ def prepare_current_paper_packet(db: EvidenceDB, paper_id: int | None = None, ma
         "message": "已为当前文章准备抽取包。",
         "packet_path": str(packet),
         "packet_url": f"/api/papers/{resolved_id}/prompt-packet",
+    }
+
+
+def _normalize_fragment(value: str | None) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+def _ai_stable_key(item: dict[str, Any]) -> str:
+    fingerprint = " | ".join([
+        _normalize_fragment(item.get("material_label")),
+        _normalize_fragment(item.get("experiment_label")),
+        _normalize_fragment(item.get("parameter")),
+        _normalize_fragment(item.get("value_raw")),
+        _normalize_fragment(item.get("locator")),
+        _normalize_fragment(item.get("excerpt")),
+        str(item.get("page_number") or ""),
+    ])
+    return "ai_" + hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:16]
+
+
+def _evidence_label(value: str) -> str:
+    return {
+        "measured": "直接测量",
+        "derived": "推导量",
+        "calculated": "计算量",
+        "qualitative": "定性结论",
+    }.get(value, value)
+
+
+def _precision_label(value: str) -> str:
+    return {
+        "exact_table": "表格精确值",
+        "exact_text": "正文精确值",
+        "trend": "趋势信息",
+        "figure_only": "图中信息",
+    }.get(value, value)
+
+
+def _context_from_ai_measurement(item: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in ("material_label", "experiment_label", "condition_text", "measurement_method"):
+        value = _normalize_fragment(item.get(key))
+        if value:
+            parts.append(value)
+    parts.append(f"证据类型={_evidence_label(str(item.get('evidence_type') or ''))}")
+    parts.append(f"来源精度={_precision_label(str(item.get('source_precision') or ''))}")
+    return "；".join(parts)
+
+
+def import_ai_result_to_six_column(db: EvidenceDB, paper_id: int, source: Path | str | dict[str, Any]) -> dict[str, Any]:
+    payload = load_ai_result_payload(db, paper_id, source)
+    paper = db.get_paper(paper_id)
+    if not paper:
+        raise KeyError(f"Paper {paper_id} not found")
+    inserted = existing = 0
+    with db.connect() as conn:
+        for item in payload.get("measurements", []):
+            stable_key = _ai_stable_key(item)
+            row = conn.execute(
+                "SELECT id FROM data_items WHERE paper_id=? AND stable_key=?",
+                (paper_id, stable_key),
+            ).fetchone()
+            if row:
+                existing += 1
+                continue
+            cur = conn.execute(
+                "INSERT INTO data_items(paper_id,stable_key,origin_type,created_at) VALUES(?,?,?,?)",
+                (paper_id, stable_key, "automatic", now()),
+            )
+            conn.execute(
+                """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
+                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    int(cur.lastrowid),
+                    0,
+                    str(item["value_raw"]),
+                    str(item["parameter"]),
+                    str(item.get("unit_raw") or ""),
+                    str(paper["title"]),
+                    str(paper.get("doi") or ""),
+                    _context_from_ai_measurement(item),
+                    int(item["page_number"]),
+                    item.get("locator"),
+                    str(item["excerpt"]),
+                    "AI packet import",
+                    "Immutable automatic extraction imported from constrained JSON packet",
+                    now(),
+                ),
+            )
+            inserted += 1
+    return {
+        "paper_id": paper_id,
+        "inserted": inserted,
+        "existing": existing,
+        "total": inserted + existing,
+        "packet_measurements": len(payload.get("measurements", [])),
+        "packet_tasks": len(payload.get("pending_tasks", [])),
     }
 
 
