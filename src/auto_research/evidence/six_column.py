@@ -21,6 +21,7 @@ TARGET_ZOTERO_KEY = "JIKJJZ33"
 TARGET_LOCAL_ARTICLE_KEY = "XJZQ42XP"
 TARGET_PDF_PATH = Path("/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf")
 TARGET_EXPORT = DATA_DIR / "extractions" / "XJZQ42XP_six_column_original.csv"
+CURRENT_PAPER_META_KEY = "six_column_current_paper_id"
 
 SIX_FIELDS = ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")
 
@@ -206,6 +207,59 @@ def find_target_paper(db: EvidenceDB) -> int:
     return int(row["id"])
 
 
+def resolve_paper_selector(db: EvidenceDB, paper_id: int | None = None, article_key: str | None = None) -> int:
+    if paper_id is not None:
+        if not db.get_paper(int(paper_id)):
+            raise KeyError(f"Paper {paper_id} not found")
+        return int(paper_id)
+    selector = (article_key or "").strip()
+    if not selector:
+        raise ValueError("paper_id or article_key is required")
+    numeric_id = int(selector) if selector.isdigit() else None
+    with db.connect() as conn:
+        row = None
+        if numeric_id is not None:
+            row = conn.execute("SELECT id FROM papers WHERE id=?", (numeric_id,)).fetchone()
+        if not row:
+            row = conn.execute(
+                """SELECT id FROM papers
+                WHERE LOWER(COALESCE(local_article_key,''))=LOWER(?)
+                   OR LOWER(COALESCE(zotero_key,''))=LOWER(?)
+                   OR LOWER(COALESCE(pilot_code,''))=LOWER(?)
+                   OR LOWER(COALESCE(doi,''))=LOWER(?)
+                LIMIT 1""",
+                (selector, selector, selector, selector),
+            ).fetchone()
+    if not row:
+        raise KeyError(f"Article key not found: {selector}")
+    return int(row["id"])
+
+
+def get_current_paper_id(db: EvidenceDB) -> int:
+    stored = db.get_meta(CURRENT_PAPER_META_KEY)
+    if stored and stored.isdigit() and db.get_paper(int(stored)):
+        return int(stored)
+    paper_id = find_target_paper(db)
+    db.set_meta(CURRENT_PAPER_META_KEY, str(paper_id))
+    return paper_id
+
+
+def get_current_paper(db: EvidenceDB) -> dict[str, Any]:
+    paper = db.get_paper(get_current_paper_id(db))
+    if not paper:
+        raise ValueError("Current paper is not available")
+    return paper
+
+
+def set_current_paper(db: EvidenceDB, paper_id: int | None = None, article_key: str | None = None) -> dict[str, Any]:
+    resolved_id = resolve_paper_selector(db, paper_id=paper_id, article_key=article_key)
+    db.set_meta(CURRENT_PAPER_META_KEY, str(resolved_id))
+    paper = db.get_paper(resolved_id)
+    if not paper:
+        raise KeyError(f"Paper {resolved_id} not found")
+    return paper
+
+
 def seed_target_article(db: EvidenceDB, export_path: Path | None = TARGET_EXPORT) -> dict[str, int]:
     paper_id = find_target_paper(db)
     if not TARGET_PDF_PATH.is_file():
@@ -242,6 +296,8 @@ def seed_target_article(db: EvidenceDB, export_path: Path | None = TARGET_EXPORT
                 ),
             )
             inserted += 1
+    if not db.get_meta(CURRENT_PAPER_META_KEY):
+        db.set_meta(CURRENT_PAPER_META_KEY, str(paper_id))
     if export_path is not None:
         export_original_csv(db, export_path)
     return {"inserted": inserted, "existing": existing, "total": inserted + existing}
@@ -308,12 +364,14 @@ def add_manual_item(db: EvidenceDB, paper_id: int, fields: dict[str, Any],
 def _base_current_sql() -> str:
     return """
         SELECT i.id item_id,i.paper_id,i.stable_key,i.origin_type,
+               p.local_article_key,p.zotero_key,p.pilot_code,
                cur.id version_id,cur.version_no,cur.value_text,cur.meaning,cur.unit,cur.article_title,cur.doi,
                cur.context_explanation,cur.source_page,cur.source_locator,cur.source_excerpt,cur.editor,cur.edit_note,cur.created_at,
                orig.value_text original_value_text,orig.meaning original_meaning,orig.unit original_unit,
                orig.article_title original_article_title,orig.doi original_doi,orig.context_explanation original_context_explanation,
                orig.source_page original_source_page,orig.source_locator original_source_locator,orig.source_excerpt original_source_excerpt
         FROM data_items i
+        JOIN papers p ON p.id=i.paper_id
         JOIN data_versions cur ON cur.item_id=i.id AND cur.version_no=(SELECT MAX(v.version_no) FROM data_versions v WHERE v.item_id=i.id)
         LEFT JOIN data_versions orig ON orig.item_id=i.id AND orig.version_no=0 AND i.origin_type='automatic'
     """

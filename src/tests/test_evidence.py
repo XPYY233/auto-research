@@ -11,14 +11,18 @@ from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
 from auto_research.evidence.six_column import (
+    CURRENT_PAPER_META_KEY,
     TARGET_DOI,
     TARGET_TITLE,
     add_manual_item,
     confirm_correction,
+    get_current_paper_id,
     get_data_item,
     list_current_data,
+    resolve_paper_selector,
     search_current_data,
     seed_target_article,
+    set_current_paper,
 )
 from auto_research.evidence.source_highlight import get_source_view, render_source_highlight_png
 
@@ -182,6 +186,13 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(results)
         self.assertIn("CoCrFeMnNi", results[0]["context_explanation"])
         self.assertIn("硬度", results[0]["meaning"])
+
+    def test_current_paper_can_be_resolved_by_article_key(self):
+        other = self.db.upsert_paper(title="Another paper", doi="10.1/other", local_article_key="ALT0001")
+        set_current_paper(self.db, article_key="ALT0001")
+        self.assertEqual(get_current_paper_id(self.db), other)
+        self.assertEqual(resolve_paper_selector(self.db, article_key="ALT0001"), other)
+        self.assertEqual(self.db.get_meta(CURRENT_PAPER_META_KEY), str(other))
 
     def test_source_view_returns_highlight_metadata(self):
         row = next(r for r in list_current_data(self.db) if r["stable_key"] == "table3_al0_3cocrfeni_h0")

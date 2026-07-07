@@ -15,14 +15,15 @@ from .exporter import EXPORT_COLUMNS
 from .prompts import build_prompt_packet
 from .six_column import (
     SIX_FIELDS,
-    TARGET_DOI,
     add_manual_item,
     confirm_correction,
-    find_target_paper,
+    get_current_paper,
+    get_current_paper_id,
     get_data_item,
     list_current_data,
     search_current_data,
     seed_target_article,
+    set_current_paper,
 )
 from .source_highlight import get_source_view, render_source_highlight_png
 
@@ -42,11 +43,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/summary":
                 return self.json_response(self.db.summary())
             if parsed.path == "/api/target-paper":
-                paper = self.db.get_paper(find_target_paper(self.db))
+                paper = get_current_paper(self.db)
+                return self.json_response(paper)
+            if parsed.path == "/api/current-paper":
+                paper = get_current_paper(self.db)
                 return self.json_response(paper)
             if parsed.path == "/api/six-data":
                 params = parse_qs(parsed.query)
-                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else find_target_paper(self.db)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
                 return self.json_response(list_current_data(self.db, paper_id))
             match = re.fullmatch(r"/api/six-data/(\d+)", parsed.path)
             if match:
@@ -62,7 +66,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.json_response(search_current_data(self.db, query))
             if parsed.path == "/api/six-export.csv":
                 query = parse_qs(parsed.query).get("q", [""])[0]
-                rows = search_current_data(self.db, query, limit=100000) if query else list_current_data(self.db, find_target_paper(self.db))
+                rows = search_current_data(self.db, query, limit=100000) if query else list_current_data(self.db, get_current_paper_id(self.db))
                 return self.six_csv_response(rows)
             if parsed.path == "/api/papers":
                 return self.json_response(self.db.list_papers())
@@ -102,11 +106,18 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 )
                 return self.json_response(result)
             if parsed.path == "/api/six-data/manual":
-                paper_id = int(body.get("paper_id") or find_target_paper(self.db))
+                paper_id = int(body.get("paper_id") or get_current_paper_id(self.db))
                 result = add_manual_item(
                     self.db, paper_id, body.get("fields") or {}, body.get("editor") or "本地研究者"
                 )
                 return self.json_response(result, HTTPStatus.CREATED)
+            if parsed.path == "/api/current-paper":
+                result = set_current_paper(
+                    self.db,
+                    paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
+                    article_key=body.get("article_key"),
+                )
+                return self.json_response(result)
             match = re.fullmatch(r"/api/measurements/(\d+)/review", parsed.path)
             if match:
                 measurement_id = int(match.group(1))

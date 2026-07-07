@@ -217,6 +217,21 @@ class EvidenceDB:
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
             )
 
+    def get_meta(self, key: str, default: str | None = None) -> str | None:
+        self.init()
+        with self.connect() as conn:
+            row = conn.execute("SELECT value FROM schema_meta WHERE key=?", (key,)).fetchone()
+            return str(row["value"]) if row else default
+
+    def set_meta(self, key: str, value: str) -> None:
+        self.init()
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO schema_meta(key,value) VALUES(?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+
     def upsert_paper(self, **paper: Any) -> int:
         self.init()
         stamp = now()

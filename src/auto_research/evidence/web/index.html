@@ -27,9 +27,21 @@
 
     <main id="main">
       <header class="topbar">
-        <div><p class="eyebrow">SINGLE-ARTICLE LEARNING DEMO</p><h1>先保留原样，再从你的修正中学习。</h1></div>
+        <div><p class="eyebrow">ARTICLE-KEY LEARNING DEMO</p><h1>先定文章号，再保留原样，再从你的修正中学习。</h1></div>
         <div class="git-status"><i></i>Git 已建立</div>
       </header>
+
+      <section class="article-picker">
+        <div>
+          <small>切换当前文章</small>
+          <strong>输入文章号、Zotero key、pilot code 或数据库编号</strong>
+        </div>
+        <form id="paper-switch-form">
+          <input id="paper-switch-input" list="paper-options" placeholder="例如：XJZQ42XP">
+          <datalist id="paper-options"></datalist>
+          <button type="submit">切换当前文章</button>
+        </form>
+      </section>
 
       <section class="article-strip">
         <div><small>文章号</small><strong id="paper-key">—</strong></div>
