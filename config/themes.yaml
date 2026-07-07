@@ -1,0 +1,69 @@
+themes:
+  fusion_materials:
+    label: Fusion materials
+    terms:
+      - fusion materials
+      - plasma-facing materials
+      - plasma facing materials
+      - first wall materials
+      - divertor materials
+      - structural materials for fusion
+      - nuclear fusion materials
+  radiation_damage:
+    label: Radiation damage
+    terms:
+      - radiation damage
+      - irradiation damage
+      - irradiation defect
+      - defect evolution
+      - primary radiation damage
+      - defect production
+      - radiation tolerance
+  cascade:
+    label: Cascade
+    terms:
+      - collision cascade
+      - displacement cascade
+      - cascade simulation
+      - primary knock-on atom
+      - PKA
+      - subcascade
+  mlip:
+    label: Machine learning interatomic potential
+    terms:
+      - machine learning interatomic potential
+      - machine-learned interatomic potential
+      - MLIP
+      - MLIAP
+      - GAP
+      - gaussian approximation potential
+      - MTP
+      - moment tensor potential
+      - SNAP
+      - spectral neighbor analysis potential
+      - deep potential
+      - DP
+      - NEP
+      - neuroevolution potential
+      - MACE
+  hea:
+    label: High-entropy alloys
+    terms:
+      - high entropy alloy
+      - high-entropy alloy
+      - HEA
+      - refractory high entropy alloy
+      - refractory high-entropy alloy
+      - RHEA
+      - complex concentrated alloy
+      - CCA
+materials:
+  priority:
+    - W
+    - tungsten
+    - tungsten alloy
+    - W-Ta-V-Cr
+    - W-Mo-Ta-V-Nb
+    - refractory high entropy alloy
+    - FeCrAl
+    - ODS steel

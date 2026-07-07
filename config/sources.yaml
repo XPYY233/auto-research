@@ -1,0 +1,25 @@
+sources:
+  openalex:
+    enabled: true
+    base_url: https://api.openalex.org/works
+  crossref:
+    enabled: true
+    base_url: https://api.crossref.org/works
+  unpaywall:
+    enabled: true
+    base_url: https://api.unpaywall.org/v2
+    email: auto-research@example.com
+  arxiv:
+    enabled: true
+    base_url: https://export.arxiv.org/api/query
+  osti:
+    enabled: true
+    base_url: https://www.osti.gov/api/v1/records
+  browser:
+    enabled: false
+    profile_dir: data/browser-profile
+    download_dir: data/downloads
+zotero:
+  enabled: false
+  local_api: http://127.0.0.1:23119
+  collection: Auto Research - Fusion HEA MLIP

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>辐照实验数据证据库</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="beam-mark" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div><strong>证据束</strong><span>Irradiation Evidence</span></div>
+      </div>
+      <nav aria-label="主导航">
+        <button class="nav-item active" data-view="queue"><span>核验队列</span><b id="queue-count">0</b></button>
+        <button class="nav-item" data-view="search"><span>证据检索</span><b id="verified-count">0</b></button>
+        <button class="nav-item" data-view="papers"><span>30篇语料</span><b id="paper-count">0</b></button>
+        <button class="nav-item" data-view="tasks"><span>待处理</span><b id="task-count">0</b></button>
+      </nav>
+      <div class="principle">
+        <span>发布门槛</span>
+        <p>数值、条件与原页必须形成闭合证据链。</p>
+      </div>
+    </aside>
+
+    <main id="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">LOCAL · AUDITABLE · ZOTERO-LINKED</p>
+          <h1>把论文里的数值，变成可以复查的实验记录。</h1>
+        </div>
+        <div class="status-chip"><i></i>仅本机运行</div>
+      </header>
+
+      <section class="evidence-rail" aria-label="证据链">
+        <div><small>论文</small><strong id="stat-papers">0</strong></div><span>→</span>
+        <div><small>样品与辐照</small><strong id="stat-context">—</strong></div><span>→</span>
+        <div><small>候选记录</small><strong id="stat-measurements">0</strong></div><span>→</span>
+        <div class="rail-focus"><small>人工确认</small><strong id="stat-verified">0</strong></div>
+      </section>
+
+      <section class="view active" id="view-queue">
+        <div class="section-head">
+          <div><p class="eyebrow">REVIEW QUEUE</p><h2>逐条判断，不整篇盲信</h2></div>
+          <div class="batch-progress"><span id="batch-label">第 1 组 · 0/5</span><div><i id="batch-bar"></i></div></div>
+        </div>
+        <div class="review-layout">
+          <div class="queue-list" id="queue-list"></div>
+          <article class="review-card empty" id="review-card">
+            <div class="empty-state"><span>∅</span><h3>选择一条候选记录</h3><p>先看原文位置，再决定它是测量、推导、计算还是定性证据。</p></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="view-search">
+        <div class="section-head">
+          <div><p class="eyebrow">EVIDENCE SEARCH</p><h2>只在已确认记录中检索</h2></div>
+          <a class="button secondary" id="export-link" href="/api/export.csv">导出当前CSV</a>
+        </div>
+        <form class="filter-grid" id="filters">
+          <label>材料或成分<input name="material" placeholder="例如 W-Ta-Cr-V"></label>
+          <label>粒子<input name="particle" placeholder="He / Kr / neutron"></label>
+          <label>物理量<input name="parameter" placeholder="hardness / void size"></label>
+          <label>证据类型<select name="evidence_type"><option value="">全部</option><option value="measured">直接测量</option><option value="derived">推导量</option><option value="calculated">计算量</option><option value="qualitative">定性结论</option></select></label>
+          <label>最低温度<input name="temperature_min" type="number" step="any" placeholder="原文数值"></label>
+          <label>最高温度<input name="temperature_max" type="number" step="any" placeholder="原文数值"></label>
+          <button class="button primary" type="submit">检索证据</button>
+        </form>
+        <div class="table-wrap"><table><thead><tr><th>材料 / 条件</th><th>物理量</th><th>报告值</th><th>类型</th><th>出处</th></tr></thead><tbody id="search-results"></tbody></table></div>
+      </section>
+
+      <section class="view" id="view-papers">
+        <div class="section-head"><div><p class="eyebrow">PILOT CORPUS</p><h2>首批30篇实验语料</h2></div></div>
+        <div class="paper-grid" id="paper-grid"></div>
+      </section>
+
+      <section class="view" id="view-tasks">
+        <div class="section-head"><div><p class="eyebrow">HONESTY QUEUE</p><h2>系统明确承认的未知项</h2></div></div>
+        <div class="task-list" id="task-list"></div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
