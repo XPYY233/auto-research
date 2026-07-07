@@ -17,9 +17,11 @@ from .six_column import (
     SIX_FIELDS,
     add_manual_item,
     confirm_correction,
+    extract_current_paper_data,
     get_current_paper,
     get_current_paper_id,
     get_data_item,
+    get_six_extraction_status,
     list_current_data,
     search_current_data,
     seed_target_article,
@@ -48,6 +50,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/current-paper":
                 paper = get_current_paper(self.db)
                 return self.json_response(paper)
+            if parsed.path == "/api/current-paper/extraction":
+                return self.json_response(get_six_extraction_status(self.db))
             if parsed.path == "/api/six-data":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
@@ -116,6 +120,12 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     self.db,
                     paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
                     article_key=body.get("article_key"),
+                )
+                return self.json_response(result)
+            if parsed.path == "/api/current-paper/extract":
+                result = extract_current_paper_data(
+                    self.db,
+                    paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
                 )
                 return self.json_response(result)
             match = re.fullmatch(r"/api/measurements/(\d+)/review", parsed.path)

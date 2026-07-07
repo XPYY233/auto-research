@@ -207,6 +207,19 @@ def find_target_paper(db: EvidenceDB) -> int:
     return int(row["id"])
 
 
+def _paper_matches_target(paper: dict[str, Any] | None) -> bool:
+    if not paper:
+        return False
+    return any(
+        str(paper.get(field) or "").strip().lower() == target
+        for field, target in (
+            ("doi", TARGET_DOI.lower()),
+            ("zotero_key", TARGET_ZOTERO_KEY.lower()),
+            ("local_article_key", TARGET_LOCAL_ARTICLE_KEY.lower()),
+        )
+    )
+
+
 def resolve_paper_selector(db: EvidenceDB, paper_id: int | None = None, article_key: str | None = None) -> int:
     if paper_id is not None:
         if not db.get_paper(int(paper_id)):
@@ -258,6 +271,39 @@ def set_current_paper(db: EvidenceDB, paper_id: int | None = None, article_key: 
     if not paper:
         raise KeyError(f"Paper {resolved_id} not found")
     return paper
+
+
+def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
+    resolved_id = paper_id if paper_id is not None else get_current_paper_id(db)
+    paper = db.get_paper(resolved_id)
+    if not paper:
+        raise KeyError(f"Paper {resolved_id} not found")
+    row_count = len(list_current_data(db, resolved_id))
+    supported = _paper_matches_target(paper)
+    return {
+        "paper_id": resolved_id,
+        "article_key": paper.get("local_article_key") or paper.get("zotero_key") or paper.get("pilot_code") or str(resolved_id),
+        "supported": supported,
+        "row_count": row_count,
+        "extractor_name": "xjzq42xp_curated_real_data" if supported else None,
+        "message": (
+            "这篇文章已接入自动六列抽取，可直接生成或补齐当前校对表。"
+            if supported else
+            "这篇文章还没有接入自动六列抽取规则；当前仍可切换查看并人工补录。"
+        ),
+    }
+
+
+def extract_current_paper_data(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
+    status = get_six_extraction_status(db, paper_id)
+    if not status["supported"]:
+        raise ValueError(status["message"])
+    extraction = seed_target_article(db)
+    return {
+        **status,
+        "message": "已为当前文章执行自动六列抽取。",
+        "extraction": extraction,
+    }
 
 
 def seed_target_article(db: EvidenceDB, export_path: Path | None = TARGET_EXPORT) -> dict[str, int]:

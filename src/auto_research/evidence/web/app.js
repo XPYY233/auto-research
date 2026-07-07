@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "" };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "", extraction: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -55,10 +55,11 @@ async function load() {
 }
 
 async function loadCurrentPaper() {
-  [state.paper, state.rows] = await Promise.all([api("/api/current-paper"), api("/api/six-data")]);
+  [state.paper, state.rows, state.extraction] = await Promise.all([api("/api/current-paper"), api("/api/six-data"), api("/api/current-paper/extraction")]);
   state.selected = null;
   renderPaperOptions();
   renderPaper();
+  renderExtractionStatus();
   renderTable();
   renderOriginalPlaceholder();
   renderHistory();
@@ -83,6 +84,17 @@ function renderPaper() {
   setText("mini-doi", paper.doi || "—");
   setText("nav-count", state.rows.length);
   document.querySelector("#open-paper").href = `/api/papers/${paper.id}/pdf`;
+}
+
+function renderExtractionStatus() {
+  const status = state.extraction;
+  const el = document.querySelector("#paper-extraction-status");
+  const button = document.querySelector("#run-current-extraction");
+  if (!status || !el || !button) return;
+  el.textContent = `${status.supported ? "已接入自动抽取" : "暂未接入自动抽取"} · 当前六列表格 ${status.row_count} 条 · ${status.message}`;
+  el.className = status.supported ? "supported" : "unsupported";
+  button.disabled = !status.supported;
+  button.textContent = status.row_count ? "补齐/确认当前文章自动提取" : "执行当前文章自动提取";
 }
 
 function filteredRows() {
@@ -327,6 +339,33 @@ async function switchCurrentPaper({ articleKey = null, paperId = null, silent = 
   if (!silent) toast(`已切换到 ${paperRef(state.paper)}。`);
 }
 
+async function runCurrentExtraction() {
+  const button = document.querySelector("#run-current-extraction");
+  if (!state.extraction?.supported) {
+    toast(state.extraction?.message || "这篇文章还没有接入自动抽取。", true);
+    return;
+  }
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在执行自动提取…";
+  try {
+    const result = await api("/api/current-paper/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_id: state.paper.id }),
+    });
+    await loadCurrentPaper();
+    const extraction = result.extraction || {};
+    toast(`自动提取完成：新增 ${extraction.inserted ?? 0} 条，已存在 ${extraction.existing ?? 0} 条。`);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+    renderExtractionStatus();
+  }
+}
+
 async function submitPaperSwitch(event) {
   event.preventDefault();
   const input = document.querySelector("#paper-switch-input");
@@ -350,6 +389,7 @@ document.querySelector("#table-filter").addEventListener("input", event => {
 document.querySelector("#search-form").addEventListener("submit", runSearch);
 document.querySelector("#manual-form").addEventListener("submit", saveManual);
 document.querySelector("#paper-switch-form").addEventListener("submit", submitPaperSwitch);
+document.querySelector("#run-current-extraction").addEventListener("click", runCurrentExtraction);
 document.querySelector("[data-close-source]")?.addEventListener("click", () => document.querySelector("#source-dialog")?.close());
 document.querySelector("#source-dialog")?.addEventListener("click", event => {
   const dialog = event.currentTarget;

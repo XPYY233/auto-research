@@ -16,8 +16,10 @@ from auto_research.evidence.six_column import (
     TARGET_TITLE,
     add_manual_item,
     confirm_correction,
+    extract_current_paper_data,
     get_current_paper_id,
     get_data_item,
+    get_six_extraction_status,
     list_current_data,
     resolve_paper_selector,
     search_current_data,
@@ -193,6 +195,15 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(get_current_paper_id(self.db), other)
         self.assertEqual(resolve_paper_selector(self.db, article_key="ALT0001"), other)
         self.assertEqual(self.db.get_meta(CURRENT_PAPER_META_KEY), str(other))
+
+    def test_six_extraction_status_and_trigger_follow_current_paper(self):
+        other = self.db.upsert_paper(title="Another paper", doi="10.1/other", local_article_key="ALT0001")
+        unsupported = get_six_extraction_status(self.db, other)
+        self.assertFalse(unsupported["supported"])
+        supported = get_six_extraction_status(self.db, self.paper_id)
+        self.assertTrue(supported["supported"])
+        result = extract_current_paper_data(self.db, self.paper_id)
+        self.assertEqual(result["extraction"]["total"], 114)
 
     def test_source_view_returns_highlight_metadata(self):
         row = next(r for r in list_current_data(self.db) if r["stable_key"] == "table3_al0_3cocrfeni_h0")
