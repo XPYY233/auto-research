@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "", extraction: null };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "", extraction: null, learning: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -55,7 +55,12 @@ async function load() {
 }
 
 async function loadCurrentPaper() {
-  [state.paper, state.rows, state.extraction] = await Promise.all([api("/api/current-paper"), api("/api/six-data"), api("/api/current-paper/extraction")]);
+  [state.paper, state.rows, state.extraction, state.learning] = await Promise.all([
+    api("/api/current-paper"),
+    api("/api/six-data"),
+    api("/api/current-paper/extraction"),
+    api("/api/current-paper/learning-samples"),
+  ]);
   state.selected = null;
   renderPaperOptions();
   renderPaper();
@@ -242,6 +247,7 @@ async function confirmRow(id) {
       }),
     });
     state.rows = state.rows.map(row => row.item_id === id ? result : row);
+    state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
     state.selected = id;
     renderTable();
     renderOriginal(result);
@@ -273,6 +279,7 @@ async function saveManual(event) {
       body: JSON.stringify({ paper_id: state.paper.id, fields: values, editor: "本地研究者" }),
     });
     state.rows.push(result);
+    state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
     form.reset();
     fillManualDefaults();
     renderTable();
@@ -355,6 +362,17 @@ async function jumpToRow(id) {
 function renderHistory() {
   const changed = state.rows.filter(row => row.version_no > 0 || row.origin_type === "manual").sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   const el = document.querySelector("#history-list");
+  const summary = document.querySelector("#learning-summary");
+  const exportLink = document.querySelector("#learning-export");
+  if (summary && exportLink) {
+    const learning = state.learning || { sample_count: 0, correction_count: 0, manual_count: 0 };
+    summary.textContent = learning.sample_count
+      ? `当前文章已有 ${learning.sample_count} 条学习样本：修正 ${learning.correction_count} 条，人工补录 ${learning.manual_count} 条。`
+      : "还没有可导出的学习样本；确认修正或人工补录后，这里会自动累积。";
+    exportLink.href = `/api/current-paper/learning-samples.jsonl?paper_id=${encodeURIComponent(state.paper?.id || "")}`;
+    exportLink.classList.toggle("disabled", !learning.sample_count);
+    exportLink.setAttribute("aria-disabled", learning.sample_count ? "false" : "true");
+  }
   if (!changed.length) {
     el.innerHTML = '<div class="blank"><h3>还没有已确认修正</h3><p>左侧表格里的临时输入不会出现在这里。</p></div>';
     return;

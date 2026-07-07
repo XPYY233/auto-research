@@ -16,6 +16,7 @@ from auto_research.evidence.six_column import (
     TARGET_DOI,
     TARGET_TITLE,
     add_manual_item,
+    collect_learning_samples,
     confirm_correction,
     extract_current_paper_data,
     get_current_paper_id,
@@ -246,6 +247,30 @@ class SixColumnWorkflowTests(unittest.TestCase):
         row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")
         image = render_source_snippet_png(self.db, row["item_id"])
         self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
+
+    def test_learning_samples_include_corrections_and_manual_additions(self):
+        automatic = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")
+        revised_fields = {field: automatic[field] for field in ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")}
+        revised_fields["context_explanation"] += "；人工补充说明"
+        confirm_correction(self.db, automatic["item_id"], revised_fields, "tester", "补充上下文")
+        add_manual_item(self.db, self.paper_id, {
+            "value_text": "2.5",
+            "meaning": "人工新增验证量",
+            "unit": "a.u.",
+            "article_title": TARGET_TITLE,
+            "doi": TARGET_DOI,
+            "context_explanation": "人工补录；用于后续学习样本验证",
+        }, editor="tester")
+        learning = collect_learning_samples(self.db, self.paper_id)
+        self.assertEqual(learning["sample_count"], 2)
+        self.assertEqual(learning["correction_count"], 1)
+        self.assertEqual(learning["manual_count"], 1)
+        correction = next(sample for sample in learning["samples"] if sample["sample_type"] == "correction")
+        self.assertIn("context_explanation", correction["changed_fields"])
+        self.assertEqual(correction["original"]["value_text"], "300")
+        manual = next(sample for sample in learning["samples"] if sample["sample_type"] == "manual_addition")
+        self.assertIsNone(manual["original"])
+        self.assertEqual(manual["corrected"]["meaning"], "人工新增验证量")
 
 
 if __name__ == "__main__":

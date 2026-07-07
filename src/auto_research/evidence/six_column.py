@@ -548,6 +548,76 @@ def add_manual_item(db: EvidenceDB, paper_id: int, fields: dict[str, Any],
     return get_data_item(db, item_id)
 
 
+def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
+    rows = list_current_data(db, paper_id)
+    samples: list[dict[str, Any]] = []
+    correction_count = manual_count = 0
+    for row in rows:
+        paper_info = {
+            "paper_id": row["paper_id"],
+            "article_key": row.get("local_article_key") or row.get("zotero_key") or row.get("pilot_code") or str(row["paper_id"]),
+            "article_title": row["article_title"],
+            "doi": row["doi"],
+        }
+        if row["origin_type"] == "automatic" and int(row["version_no"]) > 0:
+            original_fields = {field: row[f"original_{field}"] for field in SIX_FIELDS}
+            corrected_fields = {field: row[field] for field in SIX_FIELDS}
+            changed_fields = [
+                field for field in SIX_FIELDS
+                if str(original_fields.get(field) or "") != str(corrected_fields.get(field) or "")
+            ]
+            samples.append({
+                "sample_type": "correction",
+                "item_id": row["item_id"],
+                "stable_key": row["stable_key"],
+                "version_no": row["version_no"],
+                "changed_fields": changed_fields,
+                "source": {
+                    "page": row.get("original_source_page"),
+                    "locator": row.get("original_source_locator"),
+                    "excerpt": row.get("original_source_excerpt"),
+                },
+                "original": original_fields,
+                "corrected": corrected_fields,
+                "editor": row.get("editor"),
+                "edit_note": row.get("edit_note"),
+                "created_at": row.get("created_at"),
+                **paper_info,
+            })
+            correction_count += 1
+        elif row["origin_type"] == "manual":
+            manual_fields = {field: row[field] for field in SIX_FIELDS}
+            samples.append({
+                "sample_type": "manual_addition",
+                "item_id": row["item_id"],
+                "stable_key": row["stable_key"],
+                "version_no": row["version_no"],
+                "changed_fields": list(SIX_FIELDS),
+                "source": {"page": None, "locator": None, "excerpt": None},
+                "original": None,
+                "corrected": manual_fields,
+                "editor": row.get("editor"),
+                "edit_note": row.get("edit_note"),
+                "created_at": row.get("created_at"),
+                **paper_info,
+            })
+            manual_count += 1
+    paper_meta = db.get_paper(paper_id) if paper_id is not None else None
+    return {
+        "paper_id": paper_id,
+        "paper_title": paper_meta["title"] if paper_meta else None,
+        "sample_count": len(samples),
+        "correction_count": correction_count,
+        "manual_count": manual_count,
+        "samples": samples,
+    }
+
+
+def learning_samples_jsonl(db: EvidenceDB, paper_id: int | None = None) -> str:
+    payload = collect_learning_samples(db, paper_id)
+    return "\n".join(json.dumps(sample, ensure_ascii=False) for sample in payload["samples"])
+
+
 def _base_current_sql() -> str:
     return """
         SELECT i.id item_id,i.paper_id,i.stable_key,i.origin_type,

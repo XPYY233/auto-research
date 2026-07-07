@@ -16,6 +16,7 @@ from .prompts import build_prompt_packet
 from .six_column import (
     SIX_FIELDS,
     add_manual_item,
+    collect_learning_samples,
     confirm_correction,
     extract_current_paper_data,
     get_current_paper,
@@ -23,6 +24,7 @@ from .six_column import (
     get_data_item,
     get_six_extraction_status,
     import_ai_result_to_six_column,
+    learning_samples_jsonl,
     list_current_data,
     prepare_current_paper_packet,
     search_current_data,
@@ -54,6 +56,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.json_response(paper)
             if parsed.path == "/api/current-paper/extraction":
                 return self.json_response(get_six_extraction_status(self.db))
+            if parsed.path == "/api/current-paper/learning-samples":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.json_response(collect_learning_samples(self.db, paper_id))
+            if parsed.path == "/api/current-paper/learning-samples.jsonl":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.text_response(learning_samples_jsonl(self.db, paper_id), "application/x-ndjson; charset=utf-8")
             if parsed.path == "/api/six-data":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
@@ -235,6 +245,15 @@ class EvidenceHandler(BaseHTTPRequestHandler):
     def png_response(self, data: bytes, status: HTTPStatus = HTTPStatus.OK) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def text_response(self, text: str, content_type: str = "text/plain; charset=utf-8") -> None:
+        data = text.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()

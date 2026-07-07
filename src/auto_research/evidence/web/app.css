@@ -45,3 +45,7 @@
 #import-json-text{min-height:220px;font:12px/1.55 "IBM Plex Mono",monospace}
 .result-paper{grid-column:2/5;color:var(--muted);font-size:11px;line-height:1.4}
 @media(max-width:700px){.article-picker{display:block}.article-picker form{display:block;margin-top:12px}.article-picker input{width:100%}.article-picker button{margin-top:10px;width:100%}.result-paper{grid-column:auto}}
+.history-tools{display:grid;justify-items:end;gap:8px}
+.history-tools p{margin:0;color:var(--muted);font-size:11px;line-height:1.6;text-align:right;max-width:360px}
+.history-tools a{color:var(--blue);font-size:12px}
+.history-tools a.disabled{pointer-events:none;opacity:.45;text-decoration:none}

@@ -104,7 +104,13 @@
       </section>
 
       <section class="view" id="view-history">
-        <div class="view-head"><div><p class="eyebrow">LEARNING TRAIL</p><h2>你确认过的修正</h2></div></div>
+        <div class="view-head">
+          <div><p class="eyebrow">LEARNING TRAIL</p><h2>你确认过的修正</h2></div>
+          <div class="history-tools">
+            <p id="learning-summary">还没有可导出的学习样本</p>
+            <a id="learning-export" href="/api/current-paper/learning-samples.jsonl">导出当前文章学习样本 JSONL</a>
+          </div>
+        </div>
         <div class="history-list" id="history-list"></div>
       </section>
     </main>
