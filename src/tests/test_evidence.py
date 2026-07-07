@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import auto_research.evidence.prompts as prompt_module
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
 from auto_research.evidence.pilot import select_pilot
@@ -21,6 +22,7 @@ from auto_research.evidence.six_column import (
     get_data_item,
     get_six_extraction_status,
     list_current_data,
+    prepare_current_paper_packet,
     resolve_paper_selector,
     search_current_data,
     seed_target_article,
@@ -199,11 +201,29 @@ class SixColumnWorkflowTests(unittest.TestCase):
     def test_six_extraction_status_and_trigger_follow_current_paper(self):
         other = self.db.upsert_paper(title="Another paper", doi="10.1/other", local_article_key="ALT0001")
         unsupported = get_six_extraction_status(self.db, other)
-        self.assertFalse(unsupported["supported"])
+        self.assertEqual(unsupported["action"], "manual_only")
         supported = get_six_extraction_status(self.db, self.paper_id)
         self.assertTrue(supported["supported"])
         result = extract_current_paper_data(self.db, self.paper_id)
         self.assertEqual(result["extraction"]["total"], 114)
+
+    def test_unsupported_paper_can_prepare_prompt_packet(self):
+        other = self.db.upsert_paper(
+            title="Another paper", doi="10.1/other", local_article_key="ALT0001",
+            pdf_path=self.db.get_paper(self.paper_id)["pdf_path"],
+        )
+        old_prompt_dir = prompt_module.PROMPT_DIR
+        prompt_module.PROMPT_DIR = Path(self.tmp.name) / "prompt_packets"
+        try:
+            status = get_six_extraction_status(self.db, other)
+            self.assertEqual(status["action"], "prepare_packet")
+            packet = prepare_current_paper_packet(self.db, other, max_pages=2)
+            self.assertTrue(packet["packet_path"])
+            self.assertTrue(Path(packet["packet_path"]).is_file())
+            refreshed = get_six_extraction_status(self.db, other)
+            self.assertTrue(refreshed["packet_ready"])
+        finally:
+            prompt_module.PROMPT_DIR = old_prompt_dir
 
     def test_source_view_returns_highlight_metadata(self):
         row = next(r for r in list_current_data(self.db) if r["stable_key"] == "table3_al0_3cocrfeni_h0")

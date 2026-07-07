@@ -90,11 +90,20 @@ function renderExtractionStatus() {
   const status = state.extraction;
   const el = document.querySelector("#paper-extraction-status");
   const button = document.querySelector("#run-current-extraction");
-  if (!status || !el || !button) return;
-  el.textContent = `${status.supported ? "已接入自动抽取" : "暂未接入自动抽取"} · 当前六列表格 ${status.row_count} 条 · ${status.message}`;
-  el.className = status.supported ? "supported" : "unsupported";
-  button.disabled = !status.supported;
-  button.textContent = status.row_count ? "补齐/确认当前文章自动提取" : "执行当前文章自动提取";
+  const packetLink = document.querySelector("#open-current-packet");
+  if (!status || !el || !button || !packetLink) return;
+  const lead = status.supported ? "已接入自动抽取" : status.packet_ready ? "已准备抽取包" : status.action === "prepare_packet" ? "可准备抽取包" : "暂未接入自动抽取";
+  const packetNote = status.packet_ready ? ` · 已生成抽取包` : "";
+  el.textContent = `${lead} · 当前六列表格 ${status.row_count} 条${packetNote} · ${status.message}`;
+  el.className = status.supported ? "supported" : status.packet_ready ? "ready" : "unsupported";
+  button.disabled = status.action === "manual_only";
+  button.textContent = status.action_label || "执行当前文章自动提取";
+  packetLink.hidden = !status.packet_ready;
+  if (status.packet_ready) {
+    packetLink.href = status.packet_url;
+  } else {
+    packetLink.removeAttribute("href");
+  }
 }
 
 function filteredRows() {
@@ -341,22 +350,28 @@ async function switchCurrentPaper({ articleKey = null, paperId = null, silent = 
 
 async function runCurrentExtraction() {
   const button = document.querySelector("#run-current-extraction");
-  if (!state.extraction?.supported) {
-    toast(state.extraction?.message || "这篇文章还没有接入自动抽取。", true);
+  const status = state.extraction;
+  if (!status || status.action === "manual_only") {
+    toast(status?.message || "这篇文章当前还不能自动处理。", true);
     return;
   }
   const previous = button.textContent;
   button.disabled = true;
-  button.textContent = "正在执行自动提取…";
+  button.textContent = status.action === "prepare_packet" ? "正在准备抽取包…" : "正在执行自动提取…";
   try {
-    const result = await api("/api/current-paper/extract", {
+    const endpoint = status.action === "prepare_packet" ? "/api/current-paper/prepare-packet" : "/api/current-paper/extract";
+    const result = await api(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ paper_id: state.paper.id }),
     });
     await loadCurrentPaper();
-    const extraction = result.extraction || {};
-    toast(`自动提取完成：新增 ${extraction.inserted ?? 0} 条，已存在 ${extraction.existing ?? 0} 条。`);
+    if (status.action === "prepare_packet") {
+      toast(`抽取包已生成，可直接查看：${result.packet_path || "已写入默认目录"}。`);
+    } else {
+      const extraction = result.extraction || {};
+      toast(`自动提取完成：新增 ${extraction.inserted ?? 0} 条，已存在 ${extraction.existing ?? 0} 条。`);
+    }
   } catch (error) {
     toast(error.message, true);
   } finally {

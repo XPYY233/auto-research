@@ -19,6 +19,10 @@ KEYWORDS = {
 }
 
 
+def prompt_packet_path(paper_id: int) -> Path:
+    return PROMPT_DIR / f"paper_{paper_id:03d}_packet.json"
+
+
 def relevant_pages(pdf_path: Path, max_pages: int = 8) -> list[dict[str, Any]]:
     doc = fitz.open(pdf_path)
     scored: list[tuple[int, int, str]] = []
@@ -77,7 +81,7 @@ def build_prompt_packet(db: EvidenceDB, paper_id: int, max_pages: int = 8) -> Pa
         "source_pages": pages,
     }
     PROMPT_DIR.mkdir(parents=True, exist_ok=True)
-    out = PROMPT_DIR / f"paper_{paper_id:03d}_packet.json"
+    out = prompt_packet_path(paper_id)
     out.write_text(json.dumps(packet, ensure_ascii=False, indent=2), encoding="utf-8")
     with db.connect() as conn:
         conn.execute("UPDATE papers SET parse_status='prompt_ready' WHERE id=?", (paper_id,))

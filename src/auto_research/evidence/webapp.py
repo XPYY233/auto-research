@@ -23,6 +23,7 @@ from .six_column import (
     get_data_item,
     get_six_extraction_status,
     list_current_data,
+    prepare_current_paper_packet,
     search_current_data,
     seed_target_article,
     set_current_paper,
@@ -81,6 +82,9 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             match = re.fullmatch(r"/api/papers/(\d+)/pdf", parsed.path)
             if match:
                 return self.serve_pdf(int(match.group(1)))
+            match = re.fullmatch(r"/api/papers/(\d+)/prompt-packet", parsed.path)
+            if match:
+                return self.serve_prompt_packet(int(match.group(1)))
             if parsed.path == "/api/measurements":
                 return self.json_response(self.measurement_query(parsed.query))
             if parsed.path == "/api/tasks":
@@ -126,6 +130,13 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 result = extract_current_paper_data(
                     self.db,
                     paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
+                )
+                return self.json_response(result)
+            if parsed.path == "/api/current-paper/prepare-packet":
+                result = prepare_current_paper_packet(
+                    self.db,
+                    paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
+                    max_pages=int(body.get("max_pages", 8)),
                 )
                 return self.json_response(result)
             match = re.fullmatch(r"/api/measurements/(\d+)/review", parsed.path)
@@ -242,6 +253,20 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/pdf")
         self.send_header("Content-Disposition", f'inline; filename="paper-{paper_id}.pdf"')
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def serve_prompt_packet(self, paper_id: int) -> None:
+        from .prompts import prompt_packet_path
+
+        path = prompt_packet_path(paper_id)
+        if not path.is_file():
+            return self.send_error(HTTPStatus.NOT_FOUND)
+        data = path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Disposition", f'inline; filename="paper-{paper_id}-prompt-packet.json"')
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)

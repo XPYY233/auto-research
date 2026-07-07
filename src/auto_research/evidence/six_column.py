@@ -13,6 +13,7 @@ from typing import Any
 from auto_research.paths import DATA_DIR
 
 from .db import EvidenceDB, now
+from .prompts import prompt_packet_path
 
 
 TARGET_TITLE = "Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C"
@@ -280,17 +281,35 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
         raise KeyError(f"Paper {resolved_id} not found")
     row_count = len(list_current_data(db, resolved_id))
     supported = _paper_matches_target(paper)
+    pdf_ok = bool(paper.get("pdf_path") and Path(paper["pdf_path"]).is_file())
+    packet_file = prompt_packet_path(resolved_id)
+    packet_ready = packet_file.is_file()
+    if supported:
+        action = "extract_now"
+        action_label = "执行当前文章自动提取" if row_count == 0 else "补齐/确认当前文章自动提取"
+        message = "这篇文章已接入自动六列抽取，可直接生成或补齐当前校对表。"
+    elif pdf_ok:
+        action = "prepare_packet"
+        action_label = "准备当前文章抽取包"
+        message = "这篇文章还没有接入自动六列抽取规则，但可以先自动整理抽取包，供后续抽取与回填。"
+    else:
+        action = "manual_only"
+        action_label = "当前只能人工补录"
+        message = "这篇文章既没有接入自动六列抽取，也缺少可用本地 PDF，因此当前只能人工补录。"
     return {
         "paper_id": resolved_id,
         "article_key": paper.get("local_article_key") or paper.get("zotero_key") or paper.get("pilot_code") or str(resolved_id),
         "supported": supported,
         "row_count": row_count,
         "extractor_name": "xjzq42xp_curated_real_data" if supported else None,
-        "message": (
-            "这篇文章已接入自动六列抽取，可直接生成或补齐当前校对表。"
-            if supported else
-            "这篇文章还没有接入自动六列抽取规则；当前仍可切换查看并人工补录。"
-        ),
+        "parse_status": paper.get("parse_status"),
+        "pdf_ready": pdf_ok,
+        "packet_ready": packet_ready,
+        "packet_path": str(packet_file) if packet_ready else None,
+        "packet_url": f"/api/papers/{resolved_id}/prompt-packet" if packet_ready else None,
+        "action": action,
+        "action_label": action_label,
+        "message": message,
     }
 
 
@@ -303,6 +322,28 @@ def extract_current_paper_data(db: EvidenceDB, paper_id: int | None = None) -> d
         **status,
         "message": "已为当前文章执行自动六列抽取。",
         "extraction": extraction,
+    }
+
+
+def prepare_current_paper_packet(db: EvidenceDB, paper_id: int | None = None, max_pages: int = 8) -> dict[str, Any]:
+    resolved_id = paper_id if paper_id is not None else get_current_paper_id(db)
+    paper = db.get_paper(resolved_id)
+    if not paper:
+        raise KeyError(f"Paper {resolved_id} not found")
+    if _paper_matches_target(paper):
+        return {
+            **get_six_extraction_status(db, resolved_id),
+            "message": "这篇文章已接入直接自动抽取，一般不需要额外准备抽取包。",
+        }
+    if not paper.get("pdf_path") or not Path(paper["pdf_path"]).is_file():
+        raise FileNotFoundError("当前文章没有可读取的本地 PDF，无法准备抽取包")
+    from .prompts import build_prompt_packet
+    packet = build_prompt_packet(db, resolved_id, max_pages=max_pages)
+    return {
+        **get_six_extraction_status(db, resolved_id),
+        "message": "已为当前文章准备抽取包。",
+        "packet_path": str(packet),
+        "packet_url": f"/api/papers/{resolved_id}/prompt-packet",
     }
 
 
