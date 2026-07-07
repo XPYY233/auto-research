@@ -90,6 +90,24 @@
     </main>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
+  <dialog class="source-dialog" id="source-dialog">
+    <div class="source-dialog-card">
+      <header class="source-dialog-head">
+        <div>
+          <p class="eyebrow">SOURCE VIEWER</p>
+          <h3>高亮后的原文证据</h3>
+        </div>
+        <button class="dialog-close" type="button" data-close-source>关闭</button>
+      </header>
+      <div class="source-dialog-meta" id="source-meta"></div>
+      <div class="source-dialog-image">
+        <img id="source-image" alt="高亮后的原文页">
+      </div>
+      <div class="source-dialog-actions">
+        <a id="source-open-pdf" target="_blank" rel="noopener">打开原始 PDF</a>
+      </div>
+    </div>
+  </dialog>
   <script src="/static/app.js"></script>
 </body>
 </html>

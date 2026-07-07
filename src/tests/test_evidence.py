@@ -20,6 +20,7 @@ from auto_research.evidence.six_column import (
     search_current_data,
     seed_target_article,
 )
+from auto_research.evidence.source_highlight import get_source_view, render_source_highlight_png
 
 
 class ValueTests(unittest.TestCase):
@@ -181,6 +182,18 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(results)
         self.assertIn("CoCrFeMnNi", results[0]["context_explanation"])
         self.assertIn("硬度", results[0]["meaning"])
+
+    def test_source_view_returns_highlight_metadata(self):
+        row = next(r for r in list_current_data(self.db) if r["stable_key"] == "table3_al0_3cocrfeni_h0")
+        source = get_source_view(self.db, row["item_id"])
+        self.assertEqual(source["page_number"], 5)
+        self.assertIn(source["match_type"], {"locator_and_value", "context_and_value", "value_only"})
+        self.assertTrue(source["image_url"].endswith("/source-highlight.png"))
+
+    def test_source_highlight_png_renders_page_image(self):
+        row = next(r for r in list_current_data(self.db) if r["stable_key"] == "dose_steps")
+        image = render_source_highlight_png(self.db, row["item_id"])
+        self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
 
 
 if __name__ == "__main__":

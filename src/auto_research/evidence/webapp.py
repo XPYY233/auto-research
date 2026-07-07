@@ -24,6 +24,7 @@ from .six_column import (
     search_current_data,
     seed_target_article,
 )
+from .source_highlight import get_source_view, render_source_highlight_png
 
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -50,6 +51,12 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             match = re.fullmatch(r"/api/six-data/(\d+)", parsed.path)
             if match:
                 return self.json_response(get_data_item(self.db, int(match.group(1))))
+            match = re.fullmatch(r"/api/six-data/(\d+)/source-view", parsed.path)
+            if match:
+                return self.json_response(get_source_view(self.db, int(match.group(1))))
+            match = re.fullmatch(r"/api/six-data/(\d+)/source-highlight\.png", parsed.path)
+            if match:
+                return self.png_response(render_source_highlight_png(self.db, int(match.group(1))))
             if parsed.path == "/api/six-search":
                 query = parse_qs(parsed.query).get("q", [""])[0]
                 return self.json_response(search_current_data(self.db, query))
@@ -179,6 +186,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/csv; charset=utf-8")
         self.send_header("Content-Disposition", 'attachment; filename="JIKJJZ33-current-data.csv"')
         self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def png_response(self, data: bytes, status: HTTPStatus = HTTPStatus.OK) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
