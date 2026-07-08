@@ -24,6 +24,15 @@ TARGET_ZOTERO_KEY = "JIKJJZ33"
 TARGET_LOCAL_ARTICLE_KEY = "XJZQ42XP"
 TARGET_PDF_PATH = Path("/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf")
 TARGET_EXPORT = DATA_DIR / "extractions" / "XJZQ42XP_six_column_original.csv"
+SEARCH_FIELD_WEIGHTS = {
+    "meaning": 6.0,
+    "context_explanation": 5.0,
+    "value_text": 1.5,
+    "unit": 1.5,
+    "article_title": 1.0,
+    "doi": 1.0,
+    "source_excerpt": 0.8,
+}
 CURRENT_PAPER_META_KEY = "six_column_current_paper_id"
 
 SIX_FIELDS = ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")
@@ -699,13 +708,13 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100) -> list[di
         matched_terms = 0
         for term in terms:
             score = max(
-                _field_score(term, row["context_explanation"], 5.0),
-                _field_score(term, row["meaning"], 3.0),
-                _field_score(term, row["value_text"], 1.5),
-                _field_score(term, row["unit"], 1.5),
-                _field_score(term, row["article_title"], 1.0),
-                _field_score(term, row["doi"], 1.0),
-                _field_score(term, row["source_excerpt"], 0.8),
+                _field_score(term, row["meaning"], SEARCH_FIELD_WEIGHTS["meaning"]),
+                _field_score(term, row["context_explanation"], SEARCH_FIELD_WEIGHTS["context_explanation"]),
+                _field_score(term, row["value_text"], SEARCH_FIELD_WEIGHTS["value_text"]),
+                _field_score(term, row["unit"], SEARCH_FIELD_WEIGHTS["unit"]),
+                _field_score(term, row["article_title"], SEARCH_FIELD_WEIGHTS["article_title"]),
+                _field_score(term, row["doi"], SEARCH_FIELD_WEIGHTS["doi"]),
+                _field_score(term, row["source_excerpt"], SEARCH_FIELD_WEIGHTS["source_excerpt"]),
             )
             if score:
                 matched_terms += 1

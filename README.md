@@ -163,10 +163,10 @@ See `docs/irradiation_evidence_database.md` for the physics-oriented field guide
 
 The current single-paper demo is intentionally simpler than the normalized
 pilot schema. Each extracted datum has exactly six editable fields: value,
-physical meaning, unit, article title, DOI, and contextual explanation. The
-contextual explanation is the primary search field and records the material,
-specimen, irradiation environment, and other conditions needed to interpret
-the value.
+physical meaning, unit, article title, DOI, and contextual explanation. Search
+ranks the specific physical meaning first and the contextual explanation one
+level below it. The contextual explanation records the material, specimen,
+irradiation environment, and other conditions needed to interpret the value.
 
 The canonical source is the final published PDF whose local article number is
 `XJZQ42XP`:

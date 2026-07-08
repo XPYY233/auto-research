@@ -242,7 +242,7 @@ For an unsupported article with a readable PDF, prepare a constrained prompt pac
 ### Search rules
 
 - Search is free text, not tag selection.
-- Rank `context_explanation` highest, followed by `meaning`, value, unit, title, DOI, and source excerpt.
+- Rank `meaning` highest (weight 6), followed one level lower by `context_explanation` (weight 5), then value, unit, title, DOI, and source excerpt.
 - Support partial and fuzzy scientific terms, including alloy names, temperatures, doses, particles, and measurement names.
 - CSV export must reproduce the current search result set.
 

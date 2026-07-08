@@ -221,6 +221,26 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("CoCrFeMnNi", results[0]["context_explanation"])
         self.assertIn("硬度", results[0]["meaning"])
 
+    def test_search_prioritizes_specific_meaning_above_article_context(self):
+        meaning_match = add_manual_item(self.db, self.paper_id, {
+            "value_text": "300", "meaning": "温度", "unit": "°C",
+            "article_title": TARGET_TITLE, "doi": TARGET_DOI,
+            "context_explanation": "测试样品；一般实验条件",
+        })
+        context_match = add_manual_item(self.db, self.paper_id, {
+            "value_text": "3.5", "meaning": "硬度", "unit": "GPa",
+            "article_title": TARGET_TITLE, "doi": TARGET_DOI,
+            "context_explanation": "测试样品；温度",
+        })
+        results = search_current_data(self.db, "温度")
+        ids = [row["item_id"] for row in results]
+        self.assertLess(ids.index(meaning_match["item_id"]), ids.index(context_match["item_id"]))
+        by_id = {row["item_id"]: row for row in results}
+        self.assertGreater(
+            by_id[meaning_match["item_id"]]["search_score"],
+            by_id[context_match["item_id"]]["search_score"],
+        )
+
     def test_current_paper_can_be_resolved_by_article_key(self):
         other = self.db.upsert_paper(title="Another paper", doi="10.1/other", local_article_key="ALT0001")
         set_current_paper(self.db, article_key="ALT0001")
