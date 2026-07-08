@@ -187,3 +187,87 @@ PYTHONPATH=src python3 -m auto_research.cli open <paper_id>
 PYTHONPATH=src python3 -m auto_research.cli attach-pdf <paper_id> /absolute/path/to/downloaded.pdf
 PYTHONPATH=src python3 -m auto_research.cli verify --limit 120 --include-all
 ```
+
+## Irradiation experimental evidence workflow
+
+This section is the authoritative handoff for the local six-column evidence demo. Keep it updated whenever the extraction, review, search, database schema, or checkpoint workflow changes.
+
+### Current target article
+
+- Local article key: `XJZQ42XP`
+- Title: `Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C`
+- DOI: `10.1016/j.jnucmat.2018.08.031`
+- Authoritative PDF: `/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf`
+- Evidence database: `db/experimental_evidence.sqlite`
+- Local review UI: `http://127.0.0.1:8765`
+
+Do not substitute the accepted manuscript, a handbook, or a metadata record for this final published PDF. Do not modify the Zotero database for the evidence demo.
+
+### Six-column record contract
+
+Every extracted or manually entered datum must expose these editable fields:
+
+1. `value_text`: the value exactly as reported, including uncertainty, range, inequality, or qualitative wording when applicable.
+2. `meaning`: the physical meaning of the value, such as irradiation temperature, loop diameter, hardness, or alloy composition.
+3. `unit`: the reported unit; preserve an empty unit when the paper reports none.
+4. `article_title`: the paper title.
+5. `doi`: the DOI.
+6. `context_explanation`: the main search field. Include material, specimen state, irradiation environment, temperature, dose, measurement method, and other conditions needed to distinguish the datum.
+
+Do not force heterogeneous values into a normalized scientific template. Preserve the reported value and unit. The source page, locator, and excerpt remain provenance metadata outside the six editable columns.
+
+### Article-key workflow
+
+The primary local command is:
+
+```bash
+PYTHONPATH=src python3 -m auto_research.cli evidence-run-article XJZQ42XP
+```
+
+It must resolve the article key, set the current paper, run or prepare extraction, audit every automatic row against the local PDF, and report learning-sample counts. The web form labelled `切换并自动处理` must call the same workflow through `/api/current-paper/run-workflow`.
+
+For an unsupported article with a readable PDF, prepare a constrained prompt packet instead of inventing measurements. For an article without a readable PDF, stop and report the missing local source.
+
+### Review and learning rules
+
+- Version `0` is the immutable automatic extraction for an automatic row.
+- `confirmation` means the researcher reviewed the current content without changing it.
+- `correction` means one or more of the six fields changed before confirmation.
+- `manual` means the researcher added a missed datum; it has no automatic original.
+- Typing in a cell is temporary. Only `确认当前内容` may create a new version.
+- The right pane must always retain the immutable automatic original for automatic rows.
+- Learning export must include confirmations, corrections, and manual additions as distinct sample types.
+- Every automatic row must retain a source page, locator, excerpt, and highlighted source-view path.
+
+### Search rules
+
+- Search is free text, not tag selection.
+- Rank `context_explanation` highest, followed by `meaning`, value, unit, title, DOI, and source excerpt.
+- Support partial and fuzzy scientific terms, including alloy names, temperatures, doses, particles, and measurement names.
+- CSV export must reproduce the current search result set.
+
+### Current verified baseline
+
+As of 2026-07-08:
+
+- Target article rows: 114
+- Rows with PDF highlight localization: 114/114
+- Sentence or fragment-level strong localization: 109/114
+- Test command: `PYTHONPATH=src python3 -m unittest src/tests/test_evidence.py`
+- The current extractor is still article-specific. Do not claim general automatic extraction for arbitrary PDFs yet.
+
+### Git checkpoint protocol
+
+After each meaningful implementation or verified data-review milestone:
+
+1. Run the evidence tests and relevant live workflow checks.
+2. Commit the whole project state, including `db/experimental_evidence.sqlite` and tracked extraction outputs.
+3. Create a descriptive local milestone tag using the `evidence-demo-YYYY-MM-DD-<slug>` pattern.
+4. Create and verify a complete Git bundle outside the repository:
+
+```bash
+git bundle create /Users/USER/Zotero/auto-research-git-backups/auto-research-YYYYMMDD-<commit>.bundle --all
+git bundle verify /Users/USER/Zotero/auto-research-git-backups/auto-research-YYYYMMDD-<commit>.bundle
+```
+
+5. Confirm `git status --short` is empty after the final checkpoint. Do not copy Zotero PDF storage into Git; the evidence database stores the authoritative absolute PDF path and fingerprint.

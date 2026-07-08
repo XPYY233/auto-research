@@ -46,6 +46,7 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
         "learning": {
             "sample_count": learning["sample_count"],
             "correction_count": learning["correction_count"],
+            "confirmation_count": learning["confirmation_count"],
             "manual_count": learning["manual_count"],
         },
     }

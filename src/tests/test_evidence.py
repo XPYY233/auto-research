@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ from auto_research.evidence.six_column import (
     collect_learning_samples,
     confirm_correction,
     extract_current_paper_data,
+    export_original_csv,
     get_current_paper_id,
     get_data_item,
     get_six_extraction_status,
@@ -182,6 +184,26 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(revised["context_explanation"].endswith("人工确认"))
         self.assertFalse(revised["original_context_explanation"].endswith("人工确认"))
         self.assertEqual(revised["original_value_text"], "300")
+        self.assertEqual(revised["review_action"], "correction")
+        export_path = export_original_csv(self.db, Path(self.tmp.name) / "after-correction.csv")
+        with export_path.open(encoding="utf-8-sig", newline="") as handle:
+            exported = next(row for row in csv.DictReader(handle) if row["stable_key"] == "irradiation_temperature")
+        self.assertEqual(exported["context_explanation"], row["original_context_explanation"])
+        self.assertNotIn("人工确认", exported["context_explanation"])
+
+    def test_unchanged_row_can_be_confirmed_as_positive_learning_sample(self):
+        row = next(r for r in list_current_data(self.db) if r["stable_key"] == "tem_voltage")
+        fields = {field: row[field] for field in ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")}
+        confirmed = confirm_correction(self.db, row["item_id"], fields, "tester", "人工确认：内容无修改")
+        self.assertEqual(confirmed["version_no"], 1)
+        self.assertEqual(confirmed["review_action"], "confirmation")
+        self.assertEqual(confirmed["original_value_text"], confirmed["value_text"])
+        learning = collect_learning_samples(self.db, self.paper_id)
+        self.assertEqual(learning["confirmation_count"], 1)
+        self.assertEqual(learning["correction_count"], 0)
+        sample = learning["samples"][0]
+        self.assertEqual(sample["sample_type"], "confirmation")
+        self.assertEqual(sample["changed_fields"], [])
 
     def test_manual_entry_has_no_automatic_original(self):
         manual = add_manual_item(self.db, self.paper_id, {
@@ -190,6 +212,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
             "context_explanation": "人工补录；搜索测试；CoCrFeMnNi",
         })
         self.assertEqual(manual["origin_type"], "manual")
+        self.assertEqual(manual["review_action"], "manual")
         self.assertIsNone(manual["original_value_text"])
 
     def test_fuzzy_search_prioritizes_context(self):
@@ -266,6 +289,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         learning = collect_learning_samples(self.db, self.paper_id)
         self.assertEqual(learning["sample_count"], 2)
         self.assertEqual(learning["correction_count"], 1)
+        self.assertEqual(learning["confirmation_count"], 0)
         self.assertEqual(learning["manual_count"], 1)
         correction = next(sample for sample in learning["samples"] if sample["sample_type"] == "correction")
         self.assertIn("context_explanation", correction["changed_fields"])

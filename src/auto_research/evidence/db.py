@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS data_versions (
   source_excerpt TEXT,
   editor TEXT NOT NULL,
   edit_note TEXT,
+  review_action TEXT NOT NULL DEFAULT 'automatic' CHECK(review_action IN ('automatic','confirmation','correction','manual')),
   created_at TEXT NOT NULL,
   UNIQUE(item_id, version_no)
 );
@@ -212,8 +213,19 @@ class EvidenceDB:
             paper_columns = {row["name"] for row in conn.execute("PRAGMA table_info(papers)")}
             if "local_article_key" not in paper_columns:
                 conn.execute("ALTER TABLE papers ADD COLUMN local_article_key TEXT")
+            version_columns = {row["name"] for row in conn.execute("PRAGMA table_info(data_versions)")}
+            if "review_action" not in version_columns:
+                conn.execute("ALTER TABLE data_versions ADD COLUMN review_action TEXT NOT NULL DEFAULT 'automatic'")
+                conn.execute(
+                    "UPDATE data_versions SET review_action='manual' WHERE item_id IN "
+                    "(SELECT id FROM data_items WHERE origin_type='manual')"
+                )
+                conn.execute(
+                    "UPDATE data_versions SET review_action='correction' "
+                    "WHERE version_no>0 AND review_action='automatic'"
+                )
             conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('schema_version','1') "
+                "INSERT INTO schema_meta(key,value) VALUES('schema_version','2') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
             )
 

@@ -143,10 +143,10 @@ function renderTable() {
     return;
   }
   body.innerHTML = rows.map(row => {
-    const cls = [state.selected === row.item_id ? "selected" : "", row.version_no > 0 ? "revised" : "", row.origin_type === "manual" ? "manual" : ""].filter(Boolean).join(" ");
+    const cls = [state.selected === row.item_id ? "selected" : "", row.review_action === "confirmation" ? "confirmed" : "", row.version_no > 0 && row.review_action !== "confirmation" ? "revised" : "", row.origin_type === "manual" ? "manual" : ""].filter(Boolean).join(" ");
     const cells = fields.map(field => `<td><textarea class="cell ${field === "context_explanation" ? "context" : ""}" data-field="${field}" aria-label="${fieldLabels[field]}">${esc(row[field])}</textarea></td>`).join("");
-    const badge = row.origin_type === "manual" ? "人工" : row.version_no > 0 ? `已修正 v${row.version_no}` : "未修正";
-    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action"><button class="confirm" data-confirm="${row.item_id}">确认修正</button><button data-original="${row.item_id}">查看原始</button><small>${badge}</small></div></td></tr>`;
+    const badge = row.origin_type === "manual" ? "人工" : row.review_action === "confirmation" ? `已确认 v${row.version_no}` : row.version_no > 0 ? `已修正 v${row.version_no}` : "未审核";
+    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action"><button class="confirm" data-confirm="${row.item_id}">确认当前内容</button><button data-original="${row.item_id}">查看原始</button><small>${badge}</small></div></td></tr>`;
   }).join("");
   body.querySelectorAll("tr[data-item]").forEach(tr => tr.addEventListener("click", event => {
     if (event.target.closest("button[data-confirm]")) return;
@@ -250,17 +250,13 @@ async function confirmRow(id) {
     const values = collectRowFields(id);
     const current = state.rows.find(row => row.item_id === id);
     const changed = fields.filter(field => String(values[field] ?? "") !== String(current[field] ?? ""));
-    if (!changed.length) {
-      toast("没有检测到修改；原始数据保持不变。");
-      return;
-    }
     const result = await api(`/api/six-data/${id}/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         fields: values,
         editor: "本地研究者",
-        note: `修改字段：${changed.map(field => fieldLabels[field]).join("、")}`,
+        note: changed.length ? `修改字段：${changed.map(field => fieldLabels[field]).join("、")}` : "人工确认：内容无修改",
       }),
     });
     state.rows = state.rows.map(row => row.item_id === id ? result : row);
@@ -271,7 +267,9 @@ async function confirmRow(id) {
     renderOriginal(result);
     renderEvidenceAudit();
     renderHistory();
-    toast(`已确认修正并创建版本 v${result.version_no}；自动提取原始版本未改变。`);
+    toast(result.review_action === "confirmation"
+      ? `已确认内容无误并记录为 v${result.version_no}；自动提取原始版本未改变。`
+      : `已保存修正并创建版本 v${result.version_no}；自动提取原始版本未改变。`);
   } catch (error) {
     toast(error.message, true);
   }
@@ -386,9 +384,9 @@ function renderHistory() {
   const summary = document.querySelector("#learning-summary");
   const exportLink = document.querySelector("#learning-export");
   if (summary && exportLink) {
-    const learning = state.learning || { sample_count: 0, correction_count: 0, manual_count: 0 };
+    const learning = state.learning || { sample_count: 0, correction_count: 0, confirmation_count: 0, manual_count: 0 };
     summary.textContent = learning.sample_count
-      ? `当前文章已有 ${learning.sample_count} 条学习样本：修正 ${learning.correction_count} 条，人工补录 ${learning.manual_count} 条。`
+      ? `当前文章已有 ${learning.sample_count} 条学习样本：确认无误 ${learning.confirmation_count} 条，修正 ${learning.correction_count} 条，人工补录 ${learning.manual_count} 条。`
       : "还没有可导出的学习样本；确认修正或人工补录后，这里会自动累积。";
     exportLink.href = `/api/current-paper/learning-samples.jsonl?paper_id=${encodeURIComponent(state.paper?.id || "")}`;
     exportLink.classList.toggle("disabled", !learning.sample_count);
@@ -398,7 +396,7 @@ function renderHistory() {
     el.innerHTML = '<div class="blank"><h3>还没有已确认修正</h3><p>左侧表格里的临时输入不会出现在这里。</p></div>';
     return;
   }
-  el.innerHTML = changed.map(row => `<article class="history-card"><span>${row.origin_type === "manual" ? "人工补录" : `版本 v${row.version_no}`}</span><div><strong>${esc(row.meaning)} · ${esc(row.value_text)} ${esc(row.unit)}</strong><p>${esc(row.context_explanation)}</p></div><div><strong>${esc(row.editor)}</strong><p>${esc(row.edit_note || "")}<br>${esc(row.created_at)}</p></div></article>`).join("");
+  el.innerHTML = changed.map(row => `<article class="history-card"><span>${row.origin_type === "manual" ? "人工补录" : row.review_action === "confirmation" ? `确认无误 v${row.version_no}` : `已修正 v${row.version_no}`}</span><div><strong>${esc(row.meaning)} · ${esc(row.value_text)} ${esc(row.unit)}</strong><p>${esc(row.context_explanation)}</p></div><div><strong>${esc(row.editor)}</strong><p>${esc(row.edit_note || "")}<br>${esc(row.created_at)}</p></div></article>`).join("");
 }
 
 function switchView(name) {

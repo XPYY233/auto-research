@@ -417,8 +417,8 @@ def import_ai_result_to_six_column(db: EvidenceDB, paper_id: int, source: Path |
             )
             conn.execute(
                 """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
-                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     int(cur.lastrowid),
                     0,
@@ -433,6 +433,7 @@ def import_ai_result_to_six_column(db: EvidenceDB, paper_id: int, source: Path |
                     str(item["excerpt"]),
                     "AI packet import",
                     "Immutable automatic extraction imported from constrained JSON packet",
+                    "automatic",
                     now(),
                 ),
             )
@@ -473,13 +474,13 @@ def seed_target_article(db: EvidenceDB, export_path: Path | None = TARGET_EXPORT
             version = datum.as_version()
             conn.execute(
                 """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
-                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     int(cur.lastrowid), 0, version["value_text"], version["meaning"], version["unit"],
                     version["article_title"], version["doi"], version["context_explanation"], version["source_page"],
                     version["source_locator"], version["source_excerpt"], "Codex initial extraction",
-                    "Immutable automatic extraction", now(),
+                    "Immutable automatic extraction", "automatic", now(),
                 ),
             )
             inserted += 1
@@ -513,15 +514,20 @@ def confirm_correction(db: EvidenceDB, item_id: int, fields: dict[str, Any],
         latest = conn.execute(
             "SELECT * FROM data_versions WHERE item_id=? ORDER BY version_no DESC LIMIT 1", (item_id,)
         ).fetchone()
+        changed_fields = [field for field in SIX_FIELDS if str(clean[field]) != str(latest[field] or "")]
+        review_action = "correction" if changed_fields else "confirmation"
+        edit_note = note or (
+            f"修改字段：{'、'.join(changed_fields)}" if changed_fields else "人工确认：内容无修改"
+        )
         next_version = int(latest["version_no"]) + 1
         conn.execute(
             """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
-            context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item_id, next_version, clean["value_text"], clean["meaning"], clean["unit"], clean["article_title"],
                 clean["doi"], clean["context_explanation"], latest["source_page"], latest["source_locator"],
-                latest["source_excerpt"], editor, note, now(),
+                latest["source_excerpt"], editor, edit_note, review_action, now(),
             ),
         )
     return get_data_item(db, item_id)
@@ -539,10 +545,11 @@ def add_manual_item(db: EvidenceDB, paper_id: int, fields: dict[str, Any],
         item_id = int(cur.lastrowid)
         conn.execute(
             """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
-            context_explanation,editor,edit_note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            context_explanation,editor,edit_note,review_action,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item_id, 0, clean["value_text"], clean["meaning"], clean["unit"], clean["article_title"],
-                clean["doi"], clean["context_explanation"], editor, "Manual data entry; no automatic original", now(),
+                clean["doi"], clean["context_explanation"], editor, "Manual data entry; no automatic original",
+                "manual", now(),
             ),
         )
     return get_data_item(db, item_id)
@@ -551,7 +558,7 @@ def add_manual_item(db: EvidenceDB, paper_id: int, fields: dict[str, Any],
 def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
     rows = list_current_data(db, paper_id)
     samples: list[dict[str, Any]] = []
-    correction_count = manual_count = 0
+    correction_count = confirmation_count = manual_count = 0
     for row in rows:
         paper_info = {
             "paper_id": row["paper_id"],
@@ -566,8 +573,9 @@ def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dic
                 field for field in SIX_FIELDS
                 if str(original_fields.get(field) or "") != str(corrected_fields.get(field) or "")
             ]
+            sample_type = "confirmation" if row.get("review_action") == "confirmation" else "correction"
             samples.append({
-                "sample_type": "correction",
+                "sample_type": sample_type,
                 "item_id": row["item_id"],
                 "stable_key": row["stable_key"],
                 "version_no": row["version_no"],
@@ -581,10 +589,14 @@ def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dic
                 "corrected": corrected_fields,
                 "editor": row.get("editor"),
                 "edit_note": row.get("edit_note"),
+                "review_action": row.get("review_action"),
                 "created_at": row.get("created_at"),
                 **paper_info,
             })
-            correction_count += 1
+            if sample_type == "confirmation":
+                confirmation_count += 1
+            else:
+                correction_count += 1
         elif row["origin_type"] == "manual":
             manual_fields = {field: row[field] for field in SIX_FIELDS}
             samples.append({
@@ -598,6 +610,7 @@ def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dic
                 "corrected": manual_fields,
                 "editor": row.get("editor"),
                 "edit_note": row.get("edit_note"),
+                "review_action": row.get("review_action"),
                 "created_at": row.get("created_at"),
                 **paper_info,
             })
@@ -608,6 +621,7 @@ def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dic
         "paper_title": paper_meta["title"] if paper_meta else None,
         "sample_count": len(samples),
         "correction_count": correction_count,
+        "confirmation_count": confirmation_count,
         "manual_count": manual_count,
         "samples": samples,
     }
@@ -623,7 +637,8 @@ def _base_current_sql() -> str:
         SELECT i.id item_id,i.paper_id,i.stable_key,i.origin_type,
                p.local_article_key,p.zotero_key,p.pilot_code,
                cur.id version_id,cur.version_no,cur.value_text,cur.meaning,cur.unit,cur.article_title,cur.doi,
-               cur.context_explanation,cur.source_page,cur.source_locator,cur.source_excerpt,cur.editor,cur.edit_note,cur.created_at,
+               cur.context_explanation,cur.source_page,cur.source_locator,cur.source_excerpt,cur.editor,cur.edit_note,
+               cur.review_action,cur.created_at,
                orig.value_text original_value_text,orig.meaning original_meaning,orig.unit original_unit,
                orig.article_title original_article_title,orig.doi original_doi,orig.context_explanation original_context_explanation,
                orig.source_page original_source_page,orig.source_locator original_source_locator,orig.source_excerpt original_source_excerpt
@@ -710,11 +725,18 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100) -> list[di
 
 def export_original_csv(db: EvidenceDB, path: Path = TARGET_EXPORT) -> Path:
     paper_id = find_target_paper(db)
-    rows = [row for row in list_current_data(db, paper_id) if row["origin_type"] == "automatic"]
+    rows = []
+    for current in list_current_data(db, paper_id):
+        if current["origin_type"] != "automatic":
+            continue
+        original = dict(current)
+        for field in SIX_FIELDS:
+            original[field] = current[f"original_{field}"]
+        rows.append(original)
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = [*SIX_FIELDS, "source_page", "source_locator", "source_excerpt", "stable_key"]
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     return path
