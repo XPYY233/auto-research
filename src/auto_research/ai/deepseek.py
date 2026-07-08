@@ -88,7 +88,7 @@ class DeepSeekClient:
         self.session = session or requests
 
     def request_json(self, messages: list[dict[str, str]], *, task: str = "extraction",
-                     max_tokens: int = 16_000) -> dict[str, Any]:
+                     max_tokens: int = 16_000, thinking: bool | None = None) -> dict[str, Any]:
         if not self.settings.api_key:
             raise DeepSeekNotConfigured(
                 "DeepSeek 尚未配置；请在本机环境变量 DEEPSEEK_API_KEY 中设置密钥"
@@ -104,24 +104,37 @@ class DeepSeekClient:
             "max_tokens": max_tokens,
             "stream": False,
         }
-        response = self.session.post(
-            f"{self.settings.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.settings.api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=self.settings.timeout_seconds,
-        )
-        if not response.ok:
-            raise DeepSeekResponseError(f"DeepSeek API 请求失败：HTTP {response.status_code}")
-        try:
-            content = response.json()["choices"][0]["message"]["content"]
-            if not content or not str(content).strip():
-                raise DeepSeekResponseError("DeepSeek 返回了空内容")
-            return json.loads(content)
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            raise DeepSeekResponseError("DeepSeek 返回内容不是可用的 JSON") from exc
+        if thinking is not None:
+            payload["thinking"] = {"type": "enabled" if thinking else "disabled"}
+        last_error: Exception | None = None
+        for attempt in range(2):
+            response = self.session.post(
+                f"{self.settings.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.settings.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=self.settings.timeout_seconds,
+            )
+            if not response.ok:
+                raise DeepSeekResponseError(f"DeepSeek API 请求失败：HTTP {response.status_code}")
+            try:
+                content = response.json()["choices"][0]["message"]["content"]
+                if not content or not str(content).strip():
+                    raise DeepSeekResponseError("DeepSeek 返回了空内容")
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError:
+                    # JSON mode has occasionally returned literal newlines/control
+                    # characters inside strings. Python's non-strict decoder can
+                    # recover those without inventing or changing any fields.
+                    return json.loads(content, strict=False)
+            except (KeyError, IndexError, TypeError, json.JSONDecodeError, DeepSeekResponseError) as exc:
+                last_error = exc
+                if attempt == 0:
+                    continue
+        raise DeepSeekResponseError("DeepSeek 连续两次返回不可用的 JSON") from last_error
 
     def smoke_test(self) -> dict[str, Any]:
         result = self.request_json(

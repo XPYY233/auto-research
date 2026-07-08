@@ -4,6 +4,7 @@ from typing import Any
 
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
+from .deepseek_extraction import DeepSeekEvidenceExtractor
 from .six_column import (
     collect_learning_samples,
     extract_current_paper_data,
@@ -22,6 +23,12 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
     if before["supported"]:
         action_result = extract_current_paper_data(db, resolved_id)
         action = "extract"
+    elif before["pdf_ready"] and before.get("deepseek_ready"):
+        commit = before["row_count"] == 0
+        action_result = DeepSeekEvidenceExtractor(db).run(
+            resolved_id, commit=commit, max_pages=max_pages, chunk_pages=2
+        )
+        action = "deepseek_extract" if commit else "deepseek_preview"
     elif before["pdf_ready"]:
         action_result = prepare_current_paper_packet(db, resolved_id, max_pages=max_pages)
         action = "prepare_packet"

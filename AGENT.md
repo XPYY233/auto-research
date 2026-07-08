@@ -226,7 +226,7 @@ PYTHONPATH=src python3 -m auto_research.cli evidence-run-article XJZQ42XP
 
 It must resolve the article key, set the current paper, run or prepare extraction, audit every automatic row against the local PDF, and report learning-sample counts. The web form labelled `切换并自动处理` must call the same workflow through `/api/current-paper/run-workflow`.
 
-For an unsupported article with a readable PDF, prepare a constrained prompt packet instead of inventing measurements. For an article without a readable PDF, stop and report the missing local source.
+For a non-target article with a readable PDF and configured DeepSeek runtime, run the evidence-grounded DeepSeek extractor. Commit verified candidates only when that paper has no six-column rows; otherwise create a preview. If DeepSeek is unavailable, prepare a constrained prompt packet. For an article without a readable PDF, stop and report the missing local source.
 
 ### Review and learning rules
 
@@ -254,7 +254,7 @@ As of 2026-07-08:
 - Rows with PDF highlight localization: 114/114
 - Sentence or fragment-level strong localization: 109/114
 - Test command: `PYTHONPATH=src python3 -m unittest src/tests/test_evidence.py`
-- The current extractor is still article-specific. Do not claim general automatic extraction for arbitrary PDFs yet.
+- The 114-row target baseline remains article-specific and human review is still incomplete. B2 can now process other readable PDFs through DeepSeek, but do not claim general scientific accuracy until the benchmark and human-review metrics support it.
 
 ### Git checkpoint protocol
 
@@ -288,3 +288,22 @@ An exact file is not saved twice. A non-identical PDF that matches an existing p
 Runtime AI in the released project is DeepSeek-only. Codex is for project development, not an application dependency. Configuration comes only from environment variables documented in `.env.example`; never store or display a real API key. Until `DEEPSEEK_API_KEY` is configured, B1 upload, validation, deduplication, queueing, review, and search must continue to work, while DeepSeek jobs remain queued.
 
 On this Mac, the project-specific credential may instead be stored in macOS Keychain under service `auto-research-deepseek` and the current macOS account. `DeepSeekSettings` checks `DEEPSEEK_API_KEY` first and this project Keychain entry second. Never print the credential, return it through `/api/ai/status`, reuse it in another project, or place it in a Git-tracked file.
+
+### B2 DeepSeek evidence extraction
+
+`DeepSeekEvidenceExtractor` is the only runtime path for new AI extraction. It processes the real local PDF in two-page blocks and uses two complementary extraction passes per block: methods/materials/conditions/tables, then results/calculations/observations. Candidates must then pass all gates:
+
+1. constrained field and enum validation;
+2. source page belongs to the supplied block;
+3. numeric anchors and verbatim/table evidence can be found on that PDF page;
+4. candidates admitting `assumed`, `implied`, `possibly`, or background-literature provenance are rejected;
+5. an independent DeepSeek verification pass supports value, meaning, context relation, page, and excerpt;
+6. repeated semantic candidates are deduplicated before preview/import.
+
+Every run is audited in `ai_extraction_runs` and writes a short-evidence JSON artifact under `data/evidence/deepseek_runs/`. A failed or interrupted run must remain `failed`; partial counts are progress only, never publishable data. Existing rows force preview mode. `commit` is permitted only for a paper with no six-column rows, and imported results remain unreviewed version-0 candidates.
+
+Primary command:
+
+```bash
+auto-research evidence-deepseek-extract <article-key>
+```

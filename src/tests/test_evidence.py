@@ -5,8 +5,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import auto_research.evidence.prompts as prompt_module
+from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
@@ -265,13 +267,17 @@ class SixColumnWorkflowTests(unittest.TestCase):
         old_prompt_dir = prompt_module.PROMPT_DIR
         prompt_module.PROMPT_DIR = Path(self.tmp.name) / "prompt_packets"
         try:
-            status = get_six_extraction_status(self.db, other)
-            self.assertEqual(status["action"], "prepare_packet")
-            packet = prepare_current_paper_packet(self.db, other, max_pages=2)
-            self.assertTrue(packet["packet_path"])
-            self.assertTrue(Path(packet["packet_path"]).is_file())
-            refreshed = get_six_extraction_status(self.db, other)
-            self.assertTrue(refreshed["packet_ready"])
+            with patch(
+                "auto_research.evidence.six_column.DeepSeekSettings.from_env",
+                return_value=DeepSeekSettings(api_key=None),
+            ):
+                status = get_six_extraction_status(self.db, other)
+                self.assertEqual(status["action"], "prepare_packet")
+                packet = prepare_current_paper_packet(self.db, other, max_pages=2)
+                self.assertTrue(packet["packet_path"])
+                self.assertTrue(Path(packet["packet_path"]).is_file())
+                refreshed = get_six_extraction_status(self.db, other)
+                self.assertTrue(refreshed["packet_ready"])
         finally:
             prompt_module.PROMPT_DIR = old_prompt_dir
 
@@ -342,14 +348,39 @@ class SixColumnWorkflowTests(unittest.TestCase):
         old_prompt_dir = prompt_module.PROMPT_DIR
         prompt_module.PROMPT_DIR = Path(self.tmp.name) / "workflow_packets"
         try:
-            result = run_article_workflow(self.db, article_key="ALT0001", max_pages=2)
-            self.assertEqual(result["action"], "prepare_packet")
-            self.assertEqual(result["paper"]["id"], other)
-            self.assertEqual(result["status_after"]["row_count"], 0)
-            self.assertIsNone(result["evidence_audit"])
-            self.assertTrue(Path(result["action_result"]["packet_path"]).is_file())
+            with patch(
+                "auto_research.evidence.six_column.DeepSeekSettings.from_env",
+                return_value=DeepSeekSettings(api_key=None),
+            ):
+                result = run_article_workflow(self.db, article_key="ALT0001", max_pages=2)
+                self.assertEqual(result["action"], "prepare_packet")
+                self.assertEqual(result["paper"]["id"], other)
+                self.assertEqual(result["status_after"]["row_count"], 0)
+                self.assertIsNone(result["evidence_audit"])
+                self.assertTrue(Path(result["action_result"]["packet_path"]).is_file())
         finally:
             prompt_module.PROMPT_DIR = old_prompt_dir
+
+    def test_run_article_workflow_uses_deepseek_for_new_pdf_article(self):
+        other = self.db.upsert_paper(
+            title="Another paper", doi="10.1/deepseek", local_article_key="ALT0002",
+            pdf_path=self.db.get_paper(self.paper_id)["pdf_path"],
+        )
+        fake_result = {
+            "run_id": 99, "candidate_count": 3, "verified_count": 2,
+            "rejected_count": 1, "duplicate_count": 0, "imported": {"inserted": 2},
+        }
+        with patch(
+            "auto_research.evidence.six_column.DeepSeekSettings.from_env",
+            return_value=DeepSeekSettings(api_key="fake"),
+        ), patch("auto_research.evidence.workflow.DeepSeekEvidenceExtractor") as extractor:
+            extractor.return_value.run.return_value = fake_result
+            result = run_article_workflow(self.db, article_key="ALT0002", max_pages=2)
+        self.assertEqual(result["action"], "deepseek_extract")
+        self.assertEqual(result["paper"]["id"], other)
+        extractor.return_value.run.assert_called_once_with(
+            other, commit=True, max_pages=2, chunk_pages=2
+        )
 
 
 if __name__ == "__main__":

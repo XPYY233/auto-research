@@ -95,6 +95,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("evidence-seed-target", help="Seed the six-column demo for the single target irradiation article")
     sub.add_parser("evidence-deepseek-status", help="Show redacted DeepSeek runtime configuration")
     sub.add_parser("evidence-deepseek-smoke-test", help="Send a minimal synthetic JSON connection check to DeepSeek")
+    p = sub.add_parser("evidence-deepseek-extract", help="Run evidence-grounded DeepSeek extraction for one article key")
+    p.add_argument("article_key")
+    p.add_argument("--commit", action="store_true", help="Import verified candidates only when the paper has no six-column rows")
+    p.add_argument("--max-pages", type=int)
+    p.add_argument("--chunk-pages", type=int, default=2)
 
     args = parser.parse_args(argv)
     db = ResearchDB()
@@ -239,6 +244,21 @@ def cmd_evidence(args) -> int:
         return 0
     if args.cmd == "evidence-deepseek-smoke-test":
         print(json.dumps(DeepSeekClient().smoke_test(), ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-deepseek-extract":
+        from .evidence.deepseek_extraction import DeepSeekEvidenceExtractor
+        from .evidence.six_column import resolve_paper_selector
+
+        paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key)
+        result = DeepSeekEvidenceExtractor(evidence_db).run(
+            paper_id, commit=args.commit, max_pages=args.max_pages, chunk_pages=args.chunk_pages
+        )
+        summary = {key: result[key] for key in (
+            "run_id", "paper", "provider", "model", "mode", "chunk_count",
+            "candidate_count", "verified_count", "rejected_count", "duplicate_count",
+            "comparison", "imported", "output_path",
+        )}
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
     if args.cmd == "evidence-init":
         evidence_db.init()

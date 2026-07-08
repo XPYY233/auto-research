@@ -230,6 +230,28 @@ CREATE INDEX IF NOT EXISTS idx_documents_paper ON documents(paper_id);
 CREATE INDEX IF NOT EXISTS idx_documents_text_sha ON documents(text_sha256);
 CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_upload_events_created ON upload_events(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_extraction_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL DEFAULT 'deepseek',
+  model TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK(mode IN ('preview','commit')),
+  status TEXT NOT NULL CHECK(status IN ('running','completed','failed')),
+  pdf_sha256 TEXT NOT NULL,
+  output_path TEXT,
+  chunk_count INTEGER NOT NULL DEFAULT 0,
+  candidate_count INTEGER NOT NULL DEFAULT 0,
+  verified_count INTEGER NOT NULL DEFAULT 0,
+  rejected_count INTEGER NOT NULL DEFAULT 0,
+  duplicate_count INTEGER NOT NULL DEFAULT 0,
+  imported_count INTEGER NOT NULL DEFAULT 0,
+  error_message TEXT,
+  created_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_extraction_runs_paper ON ai_extraction_runs(paper_id,created_at DESC);
 """
 
 
@@ -273,8 +295,11 @@ class EvidenceDB:
                     "UPDATE data_versions SET review_action='correction' "
                     "WHERE version_no>0 AND review_action='automatic'"
                 )
+            run_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ai_extraction_runs)")}
+            if "duplicate_count" not in run_columns:
+                conn.execute("ALTER TABLE ai_extraction_runs ADD COLUMN duplicate_count INTEGER NOT NULL DEFAULT 0")
             conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('schema_version','3') "
+                "INSERT INTO schema_meta(key,value) VALUES('schema_version','5') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
             )
 
@@ -614,6 +639,17 @@ class EvidenceDB:
                 item["details"] = {}
             output.append(item)
         return output
+
+    def list_ai_extraction_runs(self, paper_id: int | None = None, limit: int = 20) -> list[dict[str, Any]]:
+        self.init()
+        clause = "WHERE r.paper_id=?" if paper_id is not None else ""
+        params: tuple[Any, ...] = (paper_id, limit) if paper_id is not None else (limit,)
+        with self.connect() as conn:
+            return [dict(row) for row in conn.execute(
+                f"""SELECT r.*,p.title paper_title,p.doi FROM ai_extraction_runs r
+                JOIN papers p ON p.id=r.paper_id {clause}
+                ORDER BY r.created_at DESC,r.id DESC LIMIT ?""", params
+            )]
 
     def query_measurements(self, *, include_drafts: bool = False, status: str | None = None,
                            evidence_type: str | None = None, material: str | None = None,

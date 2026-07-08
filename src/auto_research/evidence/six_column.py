@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from auto_research.paths import DATA_DIR
+from auto_research.ai.deepseek import DeepSeekSettings
 
 from .db import EvidenceDB, now
 from .importers import load_ai_result_payload
@@ -295,10 +296,19 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
     pdf_ok = bool(paper.get("pdf_path") and Path(paper["pdf_path"]).is_file())
     packet_file = prompt_packet_path(resolved_id)
     packet_ready = packet_file.is_file()
+    deepseek_ready = DeepSeekSettings.from_env().public_status()["configured"]
     if supported:
         action = "extract_now"
         action_label = "执行当前文章自动提取" if row_count == 0 else "补齐/确认当前文章自动提取"
         message = "这篇文章已接入自动六列抽取，可直接生成或补齐当前校对表。"
+    elif pdf_ok and deepseek_ready:
+        action = "deepseek_extract"
+        action_label = "DeepSeek 自动提取" if row_count == 0 else "DeepSeek 补充抽取预览"
+        message = (
+            "本地 PDF 和 DeepSeek 均已就绪；无现有数据时，双重验证通过的候选会进入待校对表。"
+            if row_count == 0
+            else "当前文章已有数据；DeepSeek 只生成补充预览，不自动重复导入。"
+        )
     elif pdf_ok:
         action = "prepare_packet"
         action_label = "准备当前文章抽取包"
@@ -315,6 +325,7 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
         "extractor_name": "xjzq42xp_curated_real_data" if supported else None,
         "parse_status": paper.get("parse_status"),
         "pdf_ready": pdf_ok,
+        "deepseek_ready": deepseek_ready,
         "packet_ready": packet_ready,
         "packet_path": str(packet_file) if packet_ready else None,
         "packet_url": f"/api/papers/{resolved_id}/prompt-packet" if packet_ready else None,

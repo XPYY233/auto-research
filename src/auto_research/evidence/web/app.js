@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "", extraction: null, learning: null, audit: null, uploads: [], jobs: [], ai: null };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "", extraction: null, learning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -61,18 +61,20 @@ async function load() {
 }
 
 async function loadCurrentPaper() {
-  [state.paper, state.rows, state.extraction, state.learning, state.audit] = await Promise.all([
+  [state.paper, state.rows, state.extraction, state.learning, state.audit, state.deepseekRun] = await Promise.all([
     api("/api/current-paper"),
     api("/api/six-data"),
     api("/api/current-paper/extraction"),
     api("/api/current-paper/learning-samples"),
     api("/api/current-paper/evidence-audit"),
+    api("/api/current-paper/deepseek-run"),
   ]);
   state.selected = null;
   renderPaperOptions();
   renderPaper();
   renderExtractionStatus();
   renderEvidenceAudit();
+  renderDeepSeekRun();
   renderTable();
   renderOriginalPlaceholder();
   renderHistory();
@@ -132,6 +134,58 @@ function renderEvidenceAudit() {
   const strong = Math.round((audit.strong_ratio || 0) * 100);
   el.textContent = `证据覆盖：${coverage}% 可高亮定位，${strong}% 为句子/片段级强定位。${audit.message}`;
   el.className = audit.failed_rows ? "audit-warning" : "audit-ok";
+}
+
+function renderDeepSeekRun() {
+  const el = document.querySelector("#paper-deepseek-status");
+  const button = document.querySelector("#run-deepseek-preview");
+  if (!el || !button) return;
+  button.disabled = !state.ai?.configured || !state.paper?.pdf_path;
+  if (!state.ai?.configured) {
+    el.textContent = "DeepSeek 尚未配置，不能执行证据抽取。";
+    el.className = "unsupported";
+    return;
+  }
+  if (!state.deepseekRun) {
+    el.textContent = state.rows.length
+      ? "尚无 DeepSeek 独立抽取运行；当前已有数据，运行时只生成安全预览，不覆盖校对表。"
+      : "尚无 DeepSeek 抽取运行；通过双重证据验证的数据可进入待校对表。";
+    el.className = "ready";
+    return;
+  }
+  const run = state.deepseekRun;
+  const link = run.output_url ? ` · <a href="${esc(run.output_url)}" target="_blank" rel="noopener">查看运行 JSON</a>` : "";
+  el.innerHTML = `DeepSeek ${esc(run.status)} · 候选 ${esc(run.candidate_count)} 条 · 双重验证通过 ${esc(run.verified_count)} 条 · 重复 ${esc(run.duplicate_count || 0)} 条 · 拒绝/歧义 ${esc(run.rejected_count)} 条${link}`;
+  el.className = run.status === "completed" ? "supported" : run.status === "failed" ? "unsupported" : "ready";
+}
+
+async function runDeepSeekPreview() {
+  const button = document.querySelector("#run-deepseek-preview");
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "DeepSeek 正在逐页抽取并复核…";
+  try {
+    const result = await api("/api/current-paper/deepseek-preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_id: state.paper.id, commit: state.rows.length === 0, chunk_pages: 2 }),
+    });
+    state.deepseekRun = {
+      ...result,
+      status: "completed",
+      output_url: `/api/deepseek-runs/${result.run_id}.json`,
+    };
+    if (result.imported?.inserted) await loadCurrentPaper();
+    renderDeepSeekRun();
+    toast(`DeepSeek 抽取完成：候选 ${result.candidate_count} 条，双重验证通过 ${result.verified_count} 条。`);
+  } catch (error) {
+    toast(error.message, true);
+    await loadCurrentPaper();
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+    renderDeepSeekRun();
+  }
 }
 
 function filteredRows() {
@@ -532,6 +586,8 @@ async function runCurrentExtraction() {
     await loadCurrentPaper();
     if (result.action === "prepare_packet") {
       toast(`当前文章已切换，抽取包已生成：${result.action_result?.packet_path || "默认目录"}。`);
+    } else if (result.action === "deepseek_extract" || result.action === "deepseek_preview") {
+      toast(`DeepSeek 处理完成：候选 ${result.action_result?.candidate_count ?? 0} 条，双重验证通过 ${result.action_result?.verified_count ?? 0} 条。`);
     } else {
       const extraction = result.action_result?.extraction || {};
       toast(`自动提取完成：新增 ${extraction.inserted ?? 0} 条，已存在 ${extraction.existing ?? 0} 条。`);
@@ -566,6 +622,8 @@ async function submitPaperSwitch(event) {
     await loadCurrentPaper();
     if (result.action === "prepare_packet") {
       toast(`已切换到 ${paperRef(state.paper)}，并准备好抽取包。`);
+    } else if (result.action === "deepseek_extract" || result.action === "deepseek_preview") {
+      toast(`已处理 ${paperRef(state.paper)}：DeepSeek 双重验证通过 ${result.action_result?.verified_count ?? 0} 条。`);
     } else {
       const extraction = result.action_result?.extraction || {};
       toast(`已处理 ${paperRef(state.paper)}：新增 ${extraction.inserted ?? 0} 条，已有 ${extraction.existing ?? 0} 条。`);
@@ -594,6 +652,7 @@ document.querySelector("#pdf-upload-file").addEventListener("change", event => {
 document.querySelector("#refresh-upload-queue").addEventListener("click", refreshUploadWorkspace);
 document.querySelector("#paper-switch-form").addEventListener("submit", submitPaperSwitch);
 document.querySelector("#run-current-extraction").addEventListener("click", runCurrentExtraction);
+document.querySelector("#run-deepseek-preview").addEventListener("click", runDeepSeekPreview);
 document.querySelector("[data-close-source]")?.addEventListener("click", () => document.querySelector("#source-dialog")?.close());
 document.querySelector("#source-dialog")?.addEventListener("click", event => {
   const dialog = event.currentTarget;

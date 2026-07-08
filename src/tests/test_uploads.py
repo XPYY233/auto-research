@@ -130,6 +130,47 @@ class DeepSeekFrameworkTests(unittest.TestCase):
                 {"role": "user", "content": "{}"},
             ])
 
+    def test_json_control_character_is_recovered_without_changing_content(self):
+        class Response:
+            ok = True
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"choices": [{"message": {"content": '{"text":"line 1\nline 2"}'}}]}
+
+        class Session:
+            @staticmethod
+            def post(*args, **kwargs):
+                return Response()
+
+        client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=Session())
+        result = client.request_json([{"role": "user", "content": "Return json"}])
+        self.assertEqual(result, {"text": "line 1\nline 2"})
+
+    def test_invalid_json_is_retried_once(self):
+        class Response:
+            ok = True
+            status_code = 200
+
+            def __init__(self, content):
+                self.content = content
+
+            def json(self):
+                return {"choices": [{"message": {"content": self.content}}]}
+
+        class Session:
+            calls = 0
+
+            @classmethod
+            def post(cls, *args, **kwargs):
+                cls.calls += 1
+                return Response("not-json" if cls.calls == 1 else '{"status":"ok"}')
+
+        client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=Session())
+        self.assertEqual(client.request_json([{"role": "user", "content": "Return json"}]), {"status": "ok"})
+        self.assertEqual(Session.calls, 2)
+
     def test_project_keychain_is_used_without_exposing_secret(self):
         with patch.dict(os.environ, {}, clear=True), patch(
             "auto_research.ai.deepseek._read_project_keychain", return_value="fake-project-secret"

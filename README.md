@@ -220,3 +220,24 @@ auto-research evidence-deepseek-status
 # Minimal synthetic JSON request; does not send any paper content
 auto-research evidence-deepseek-smoke-test
 ```
+
+### B2 evidence-grounded DeepSeek extraction
+
+For a real local PDF, the runtime now performs two complementary extraction
+passes over each two-page block, checks every candidate against the stated PDF
+page, asks DeepSeek to independently verify the evidence relation, and then
+deduplicates the supported candidates. Existing six-column data forces preview
+mode; an empty paper can import supported candidates as unreviewed version 0.
+
+```bash
+# Safe preview; writes an audited JSON run without changing existing rows
+auto-research evidence-deepseek-extract XJZQ42XP --max-pages 10
+
+# Only valid for a paper whose six-column table is still empty
+auto-research evidence-deepseek-extract <article-key> --commit
+```
+
+Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts
+are written to `data/evidence/deepseek_runs/`. Model output alone is never a
+publication gate: schema, page, numeric/table anchors, background/inference
+guards, independent verification, and human confirmation all remain required.

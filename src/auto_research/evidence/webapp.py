@@ -14,6 +14,7 @@ from auto_research.ai.deepseek import DeepSeekSettings
 
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
+from .deepseek_extraction import DeepSeekEvidenceExtractor, latest_deepseek_run
 from .exporter import EXPORT_COLUMNS
 from .prompts import build_prompt_packet
 from .six_column import (
@@ -71,6 +72,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.json_response(paper)
             if parsed.path == "/api/current-paper/extraction":
                 return self.json_response(get_six_extraction_status(self.db))
+            if parsed.path == "/api/current-paper/deepseek-run":
+                return self.json_response(latest_deepseek_run(self.db, get_current_paper_id(self.db)))
             if parsed.path == "/api/current-paper/evidence-audit":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
@@ -118,6 +121,9 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             match = re.fullmatch(r"/api/papers/(\d+)/prompt-packet", parsed.path)
             if match:
                 return self.serve_prompt_packet(int(match.group(1)))
+            match = re.fullmatch(r"/api/deepseek-runs/(\d+)\.json", parsed.path)
+            if match:
+                return self.serve_deepseek_run(int(match.group(1)))
             if parsed.path == "/api/measurements":
                 return self.json_response(self.measurement_query(parsed.query))
             if parsed.path == "/api/tasks":
@@ -179,6 +185,16 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     article_key=body.get("article_key"),
                     paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
                     max_pages=int(body.get("max_pages", 8)),
+                )
+                return self.json_response(result)
+            if parsed.path == "/api/current-paper/deepseek-preview":
+                paper_id = int(body.get("paper_id") or get_current_paper_id(self.db))
+                max_pages = int(body["max_pages"]) if body.get("max_pages") not in (None, "") else None
+                result = DeepSeekEvidenceExtractor(self.db).run(
+                    paper_id,
+                    commit=bool(body.get("commit", False)),
+                    max_pages=max_pages,
+                    chunk_pages=int(body.get("chunk_pages", 2)),
                 )
                 return self.json_response(result)
             if parsed.path == "/api/current-paper/extract":
@@ -347,6 +363,23 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Disposition", f'inline; filename="paper-{paper_id}-prompt-packet.json"')
         self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def serve_deepseek_run(self, run_id: int) -> None:
+        with self.db.connect() as conn:
+            row = conn.execute("SELECT output_path FROM ai_extraction_runs WHERE id=?", (run_id,)).fetchone()
+        if not row or not row["output_path"]:
+            return self.send_error(HTTPStatus.NOT_FOUND)
+        path = Path(row["output_path"])
+        if not path.is_file():
+            return self.send_error(HTTPStatus.NOT_FOUND)
+        data = path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Disposition", f'inline; filename="deepseek-run-{run_id}.json"')
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
