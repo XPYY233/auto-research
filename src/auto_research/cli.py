@@ -93,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("evidence-summary", help="Show evidence database counts")
     sub.add_parser("evidence-validate", help="Validate pilot balance and evidence publication gates")
     sub.add_parser("evidence-seed-target", help="Seed the six-column demo for the single target irradiation article")
+    sub.add_parser("evidence-deepseek-status", help="Show redacted DeepSeek runtime configuration")
+    sub.add_parser("evidence-deepseek-smoke-test", help="Send a minimal synthetic JSON connection check to DeepSeek")
 
     args = parser.parse_args(argv)
     db = ResearchDB()
@@ -224,6 +226,7 @@ def cmd_discover(query: str, limit: int, use_unpaywall: bool, db: ResearchDB, so
 
 
 def cmd_evidence(args) -> int:
+    from .ai.deepseek import DeepSeekClient, DeepSeekSettings
     from .evidence.db import EvidenceDB, EVIDENCE_DB_PATH
     from .evidence.exporter import export_measurements
     from .evidence.importers import import_ai_result, import_legacy_sample
@@ -231,6 +234,12 @@ def cmd_evidence(args) -> int:
     from .evidence.prompts import build_prompt_packet, prepare_pilot_packets
 
     evidence_db = EvidenceDB()
+    if args.cmd == "evidence-deepseek-status":
+        print(json.dumps(DeepSeekSettings.from_env().public_status(), ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-deepseek-smoke-test":
+        print(json.dumps(DeepSeekClient().smoke_test(), ensure_ascii=False, indent=2))
+        return 0
     if args.cmd == "evidence-init":
         evidence_db.init()
         print(f"Initialized irradiation evidence DB: {EVIDENCE_DB_PATH}")

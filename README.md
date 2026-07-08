@@ -207,3 +207,16 @@ Runtime AI is reserved for DeepSeek. Copy `.env.example` values into the local
 shell environment when a key is available; never put a real key in a file that
 will be committed. With no key configured, upload, validation, deduplication,
 queueing, search, and human review still work normally.
+
+On macOS this project can use a dedicated Keychain credential named
+`auto-research-deepseek`. The project checks `DEEPSEEK_API_KEY` first, then that
+project-only Keychain service. `/api/ai/status` reports only whether a credential
+is available and never returns the credential itself.
+
+```bash
+# Redacted local configuration check (does not call the API)
+auto-research evidence-deepseek-status
+
+# Minimal synthetic JSON request; does not send any paper content
+auto-research evidence-deepseek-smoke-test
+```

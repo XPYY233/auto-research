@@ -2,10 +2,35 @@ from __future__ import annotations
 
 import json
 import os
+import getpass
+import subprocess
 from dataclasses import dataclass
 from typing import Any
 
 import requests
+
+
+DEFAULT_KEYCHAIN_SERVICE = "auto-research-deepseek"
+
+
+def _read_project_keychain(service: str) -> str | None:
+    if not service or os.name != "posix":
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "security", "find-generic-password", "-a", getpass.getuser(),
+                "-s", service, "-w",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    key = result.stdout.strip() if result.returncode == 0 else ""
+    return key or None
 
 
 class DeepSeekNotConfigured(RuntimeError):
@@ -23,15 +48,25 @@ class DeepSeekSettings:
     extraction_model: str = "deepseek-v4-pro"
     analysis_model: str = "deepseek-v4-flash"
     timeout_seconds: int = 180
+    credential_source: str | None = None
 
     @classmethod
     def from_env(cls) -> "DeepSeekSettings":
+        environment_key = os.environ.get("DEEPSEEK_API_KEY") or None
+        keychain_service = os.environ.get("DEEPSEEK_KEYCHAIN_SERVICE", DEFAULT_KEYCHAIN_SERVICE)
+        keychain_key = None if environment_key else _read_project_keychain(keychain_service)
+        api_key = environment_key or keychain_key
         return cls(
-            api_key=os.environ.get("DEEPSEEK_API_KEY") or None,
+            api_key=api_key,
             base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/"),
             extraction_model=os.environ.get("DEEPSEEK_EXTRACTION_MODEL", "deepseek-v4-pro"),
             analysis_model=os.environ.get("DEEPSEEK_ANALYSIS_MODEL", "deepseek-v4-flash"),
             timeout_seconds=int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "180")),
+            credential_source=(
+                "DEEPSEEK_API_KEY" if environment_key
+                else f"macOS Keychain:{keychain_service}" if keychain_key
+                else None
+            ),
         )
 
     def public_status(self) -> dict[str, Any]:
@@ -41,7 +76,7 @@ class DeepSeekSettings:
             "base_url": self.base_url,
             "extraction_model": self.extraction_model,
             "analysis_model": self.analysis_model,
-            "credential_source": "DEEPSEEK_API_KEY" if self.api_key else None,
+            "credential_source": self.credential_source,
         }
 
 
@@ -87,3 +122,19 @@ class DeepSeekClient:
             return json.loads(content)
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             raise DeepSeekResponseError("DeepSeek 返回内容不是可用的 JSON") from exc
+
+    def smoke_test(self) -> dict[str, Any]:
+        result = self.request_json(
+            [
+                {
+                    "role": "system",
+                    "content": 'Return json only: {"status":"ok","provider":"deepseek"}.',
+                },
+                {"role": "user", "content": "Return the requested json connection check."},
+            ],
+            task="analysis",
+            max_tokens=64,
+        )
+        if result.get("status") != "ok":
+            raise DeepSeekResponseError("DeepSeek 连通测试返回了非预期状态")
+        return {"ok": True, "provider": "deepseek", "model": self.settings.analysis_model}

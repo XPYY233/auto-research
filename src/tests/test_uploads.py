@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import os
 from pathlib import Path
+from unittest.mock import patch
 
 import fitz
 
@@ -127,6 +129,17 @@ class DeepSeekFrameworkTests(unittest.TestCase):
                 {"role": "system", "content": "Return json."},
                 {"role": "user", "content": "{}"},
             ])
+
+    def test_project_keychain_is_used_without_exposing_secret(self):
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "auto_research.ai.deepseek._read_project_keychain", return_value="fake-project-secret"
+        ):
+            settings = DeepSeekSettings.from_env()
+        self.assertEqual(settings.api_key, "fake-project-secret")
+        status = settings.public_status()
+        self.assertTrue(status["configured"])
+        self.assertEqual(status["credential_source"], "macOS Keychain:auto-research-deepseek")
+        self.assertNotIn("api_key", status)
 
 
 if __name__ == "__main__":
