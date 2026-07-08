@@ -186,7 +186,24 @@ auto-research evidence-serve
 ```
 
 Open `http://127.0.0.1:8765`. Edits in the left table remain temporary until
-`确认修正` is pressed; the immutable original remains visible on the right.
+`确认当前内容` is pressed; the immutable original remains visible on the right.
 Confirmed corrections create a new version during the demo, and manual entries
 have no synthetic original version. The original six-column export is written
 to `data/extractions/XJZQ42XP_six_column_original.csv`.
+
+### B1 local PDF intake
+
+The `上传文献` view validates a local PDF before accepting it, checks exact file,
+DOI, fuzzy title/year/author, and normalized-text fingerprints, then creates a
+processing job only for a genuinely new paper. Exact duplicates are not stored
+again. Different PDF versions of the same paper are retained as alternate
+documents and blocked for version review instead of being extracted twice.
+
+Uploaded PDF binaries are stored under ignored `data/papers/evidence-uploads/`;
+the SQLite audit records and processing queue are tracked. Existing Zotero PDFs
+are indexed in place and Zotero itself is not modified.
+
+Runtime AI is reserved for DeepSeek. Copy `.env.example` values into the local
+shell environment when a key is available; never put a real key in a file that
+will be committed. With no key configured, upload, validation, deduplication,
+queueing, search, and human review still work normally.

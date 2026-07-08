@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "", extraction: null, learning: null, audit: null };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "", extraction: null, learning: null, audit: null, uploads: [], jobs: [], ai: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -49,9 +49,15 @@ function renderOriginalPlaceholder() {
 }
 
 async function load() {
-  state.papers = await api("/api/papers");
+  [state.papers, state.uploads, state.jobs, state.ai] = await Promise.all([
+    api("/api/papers"),
+    api("/api/uploads"),
+    api("/api/processing-jobs"),
+    api("/api/ai/status"),
+  ]);
   await loadCurrentPaper();
   renderPaperOptions();
+  renderUploadWorkspace();
 }
 
 async function loadCurrentPaper() {
@@ -404,6 +410,94 @@ function switchView(name) {
   document.querySelector(`.nav[data-view="${name}"]`).classList.add("active");
   document.querySelector(`#view-${name}`).classList.add("active");
   if (name === "search" && !document.querySelector("#search-results").children.length) runSearch();
+  if (name === "upload") refreshUploadWorkspace();
+}
+
+async function refreshUploadWorkspace() {
+  try {
+    [state.uploads, state.jobs, state.ai] = await Promise.all([
+      api("/api/uploads"), api("/api/processing-jobs"), api("/api/ai/status"),
+    ]);
+    renderUploadWorkspace();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function renderUploadWorkspace() {
+  const ai = document.querySelector("#deepseek-status");
+  if (ai && state.ai) {
+    ai.textContent = state.ai.configured
+      ? `DeepSeek 已配置 · ${state.ai.extraction_model}`
+      : "DeepSeek 待配置 · 上传与去重可正常使用";
+    ai.className = `ai-state ${state.ai.configured ? "configured" : "pending"}`;
+  }
+  const queue = document.querySelector("#processing-queue");
+  if (queue) {
+    queue.innerHTML = state.jobs.length ? state.jobs.map(job => {
+      const labels = { extract: "等待抽取", ocr: "等待 OCR", duplicate_review: "重复版本核对" };
+      const statuses = { queued: "排队中", running: "处理中", blocked: "等待人工", completed: "已完成", failed: "失败", cancelled: "已取消" };
+      return `<article class="queue-card"><span class="queue-kind ${esc(job.status)}">${esc(labels[job.job_type] || job.job_type)}</span><div><strong>${esc(job.paper_title)}</strong><p>${esc(job.original_filename || "")}</p></div><div><strong>${esc(statuses[job.status] || job.status)}</strong><p>${esc(job.message || "")} · ${esc(job.provider)}</p></div></article>`;
+    }).join("") : '<div class="empty-queue">暂无处理任务。</div>';
+  }
+  const events = document.querySelector("#upload-events");
+  if (events) {
+    events.innerHTML = state.uploads.length ? state.uploads.map(item => {
+      const outcome = item.outcome === "accepted" ? "新文献" : item.outcome === "duplicate" ? "重复" : "已拒绝";
+      return `<article class="queue-card"><span class="queue-kind ${esc(item.outcome)}">${outcome}</span><div><strong>${esc(item.original_filename)}</strong><p>${esc(item.matched_paper_title || item.details?.reason || "")}</p></div><div><strong>${esc(item.match_type || "validation")}</strong><p>${esc(item.created_at)}</p></div></article>`;
+    }).join("") : '<div class="empty-queue">还没有上传记录。</div>';
+  }
+}
+
+function renderUploadResult(result) {
+  const box = document.querySelector("#upload-result");
+  const duplicate = result.outcome === "duplicate";
+  const details = duplicate
+    ? `匹配类型：${esc(result.match_type)}${result.similarity != null ? ` · 相似度 ${esc(Math.round(result.similarity * 100))}%` : ""}`
+    : `${esc(result.page_count)} 页 · 提取文字 ${esc(result.text_char_count)} 字符${result.needs_ocr ? " · 需要 OCR" : ""}`;
+  box.innerHTML = `<div class="upload-result-card ${duplicate ? "duplicate" : "accepted"}"><span>${duplicate ? "DUPLICATE" : "ACCEPTED"}</span><h3>${esc(result.matched_title || result.title || "上传结果")}</h3><p>${esc(result.message)}</p><small>${details}</small><button type="button" data-open-upload-paper="${esc(result.paper_id)}">切换到这篇文章</button></div>`;
+  box.querySelector("[data-open-upload-paper]")?.addEventListener("click", async () => {
+    await switchCurrentPaper({ paperId: result.paper_id });
+    switchView("review");
+  });
+}
+
+async function uploadPdf(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const file = form.elements.pdf.files[0];
+  if (!file) {
+    toast("请先选择 PDF 文件。", true);
+    return;
+  }
+  const button = document.querySelector("#pdf-upload-submit");
+  const previous = button.textContent;
+  const params = new URLSearchParams({ filename: file.name });
+  ["title", "doi", "year", "first_author"].forEach(name => {
+    const value = form.elements[name].value.trim();
+    if (value) params.set(name, value);
+  });
+  button.disabled = true;
+  button.textContent = "正在验证与去重…";
+  try {
+    const result = await api(`/api/uploads/pdf?${params}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/pdf" },
+      body: file,
+    });
+    renderUploadResult(result);
+    state.papers = await api("/api/papers");
+    renderPaperOptions();
+    await refreshUploadWorkspace();
+    toast(result.message, result.outcome === "rejected");
+  } catch (error) {
+    document.querySelector("#upload-result").innerHTML = `<div class="upload-result-card rejected"><span>REJECTED</span><h3>上传未通过</h3><p>${esc(error.message)}</p></div>`;
+    await refreshUploadWorkspace();
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+  }
 }
 
 async function switchCurrentPaper({ articleKey = null, paperId = null, silent = false } = {}) {
@@ -492,6 +586,12 @@ document.querySelector("#table-filter").addEventListener("input", event => {
 document.querySelector("#search-form").addEventListener("submit", runSearch);
 document.querySelector("#manual-form").addEventListener("submit", saveManual);
 document.querySelector("#import-json-form").addEventListener("submit", importJsonResult);
+document.querySelector("#pdf-upload-form").addEventListener("submit", uploadPdf);
+document.querySelector("#pdf-upload-file").addEventListener("change", event => {
+  const file = event.target.files[0];
+  setText("upload-file-label", file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB` : "点击选择本地 PDF");
+});
+document.querySelector("#refresh-upload-queue").addEventListener("click", refreshUploadWorkspace);
 document.querySelector("#paper-switch-form").addEventListener("submit", submitPaperSwitch);
 document.querySelector("#run-current-extraction").addEventListener("click", runCurrentExtraction);
 document.querySelector("[data-close-source]")?.addEventListener("click", () => document.querySelector("#source-dialog")?.close());

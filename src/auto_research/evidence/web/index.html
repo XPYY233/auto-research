@@ -14,6 +14,7 @@
       <nav aria-label="工作区">
         <button class="nav active" data-view="review">校对数据 <b id="nav-count">0</b></button>
         <button class="nav" data-view="search">搜索数据</button>
+        <button class="nav" data-view="upload">上传文献</button>
         <button class="nav" data-view="manual">人工补录</button>
         <button class="nav" data-view="history">修正历史</button>
       </nav>
@@ -22,7 +23,7 @@
         <p id="mini-title">载入中…</p>
         <code id="mini-doi"></code>
       </div>
-      <div class="save-rule"><i></i><p>输入不会自动保存。只有点击“确认修正”才会产生新版本。</p></div>
+      <div class="save-rule"><i></i><p>输入不会自动保存。只有点击“确认当前内容”才会产生新版本。</p></div>
     </aside>
 
     <main id="main">
@@ -83,6 +84,31 @@
         </div>
         <div class="search-toolbar"><span id="search-summary">等待搜索</span><a id="search-export" href="/api/six-export.csv">导出结果 CSV</a></div>
         <div class="result-list" id="search-results"></div>
+      </section>
+
+      <section class="view" id="view-upload">
+        <div class="view-head">
+          <div><p class="eyebrow">PDF INTAKE · DEDUPLICATION</p><h2>上传真实 PDF，先验证和去重，再进入抽取队列</h2></div>
+          <span class="ai-state" id="deepseek-status">DeepSeek 状态载入中…</span>
+        </div>
+        <div class="upload-layout">
+          <form class="upload-card" id="pdf-upload-form">
+            <label class="upload-drop span-2">选择 PDF 文件<input id="pdf-upload-file" name="pdf" type="file" accept="application/pdf,.pdf" required><strong id="upload-file-label">点击选择本地 PDF</strong><small>最大 80 MB；文件必须能够正常打开</small></label>
+            <label class="span-2">文章题目（可留空自动读取）<input name="title" placeholder="建议填写正式出版题目"></label>
+            <label>DOI（可选）<input name="doi" placeholder="10.xxxx/xxxxx"></label>
+            <label>年份（可选）<input name="year" inputmode="numeric" placeholder="2024"></label>
+            <label class="span-2">第一作者（可选）<input name="first_author" placeholder="用于辅助判断标题相近的论文"></label>
+            <div class="manual-note"><i>i</i><span>系统依次检查文件指纹、DOI、题目/年份/作者和正文指纹。重复论文不会再次进入抽取。</span></div>
+            <button class="primary" id="pdf-upload-submit" type="submit">验证并上传</button>
+          </form>
+          <aside class="upload-result" id="upload-result">
+            <div class="blank"><span>↑</span><h3>等待上传</h3><p>验证结果、重复原因以及下一步处理状态会显示在这里。</p></div>
+          </aside>
+        </div>
+        <div class="queue-head"><div><p class="eyebrow">PROCESSING QUEUE</p><h2>处理队列</h2></div><button type="button" id="refresh-upload-queue">刷新</button></div>
+        <div class="queue-list" id="processing-queue"></div>
+        <div class="queue-head uploads-head"><div><p class="eyebrow">UPLOAD TRAIL</p><h2>最近上传记录</h2></div></div>
+        <div class="queue-list" id="upload-events"></div>
       </section>
 
       <section class="view" id="view-manual">

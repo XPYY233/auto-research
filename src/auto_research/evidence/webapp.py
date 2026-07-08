@@ -10,6 +10,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from auto_research.ai.deepseek import DeepSeekSettings
+
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
 from .exporter import EXPORT_COLUMNS
@@ -34,6 +36,7 @@ from .six_column import (
 )
 from .source_highlight import get_source_view, render_source_highlight_png, render_source_snippet_png
 from .workflow import run_article_workflow
+from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -41,6 +44,7 @@ WEB_DIR = Path(__file__).parent / "web"
 
 class EvidenceHandler(BaseHTTPRequestHandler):
     db: EvidenceDB
+    upload_service: UploadService
 
     def log_message(self, fmt: str, *args) -> None:
         print(f"[evidence-web] {self.address_string()} {fmt % args}")
@@ -50,6 +54,15 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/summary":
                 return self.json_response(self.db.summary())
+            if parsed.path == "/api/ai/status":
+                return self.json_response(DeepSeekSettings.from_env().public_status())
+            if parsed.path == "/api/uploads":
+                limit = int(parse_qs(parsed.query).get("limit", ["30"])[0])
+                return self.json_response(self.db.list_upload_events(min(max(limit, 1), 100)))
+            if parsed.path == "/api/processing-jobs":
+                params = parse_qs(parsed.query)
+                status = params.get("status", [None])[0]
+                return self.json_response(self.db.list_processing_jobs(status=status))
             if parsed.path == "/api/target-paper":
                 paper = get_current_paper(self.db)
                 return self.json_response(paper)
@@ -125,6 +138,20 @@ class EvidenceHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         try:
+            if parsed.path == "/api/uploads/pdf":
+                params = parse_qs(parsed.query)
+                one = lambda name, default=None: params.get(name, [default])[0]
+                year_text = one("year")
+                result = self.upload_service.upload(
+                    self.read_binary(MAX_UPLOAD_BYTES),
+                    one("filename", "uploaded.pdf"),
+                    title=one("title"),
+                    doi=one("doi"),
+                    year=int(year_text) if year_text else None,
+                    first_author=one("first_author"),
+                )
+                status = HTTPStatus.CREATED if result["outcome"] == "accepted" else HTTPStatus.OK
+                return self.json_response(result, status)
             body = self.read_json()
             match = re.fullmatch(r"/api/six-data/(\d+)/confirm", parsed.path)
             if match:
@@ -219,6 +246,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         if length > 1_000_000:
             raise ValueError("Request too large")
         return json.loads(self.rfile.read(length) or b"{}")
+
+    def read_binary(self, max_bytes: int) -> bytes:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            raise ValueError("上传文件为空")
+        if length > max_bytes:
+            raise ValueError(f"上传文件超过 {max_bytes // (1024 * 1024)} MB")
+        return self.rfile.read(length)
 
     def json_response(self, payload, status: HTTPStatus = HTTPStatus.OK) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -320,9 +355,15 @@ def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 876
     evidence_db = db or EvidenceDB()
     evidence_db.init()
     seed_target_article(evidence_db)
-    handler = type("BoundEvidenceHandler", (EvidenceHandler,), {"db": evidence_db})
+    upload_service = UploadService(evidence_db)
+    index_result = upload_service.index_existing_pdfs()
+    handler = type(
+        "BoundEvidenceHandler", (EvidenceHandler,),
+        {"db": evidence_db, "upload_service": upload_service},
+    )
     server = ThreadingHTTPServer((host, port), handler)
     print(f"辐照实验数据证据库: http://{host}:{port}")
+    print(f"PDF 文档索引: 新增 {index_result['indexed']}，跳过 {index_result['skipped']}")
     print("按 Ctrl+C 停止。数据库仅绑定本机地址。")
     try:
         server.serve_forever()

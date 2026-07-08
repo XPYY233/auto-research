@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS papers (
   material_focus TEXT,
   pilot_order INTEGER,
   local_article_key TEXT,
+  first_author TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -183,6 +184,52 @@ CREATE TABLE IF NOT EXISTS data_versions (
 
 CREATE INDEX IF NOT EXISTS idx_data_items_paper ON data_items(paper_id);
 CREATE INDEX IF NOT EXISTS idx_data_versions_item ON data_versions(item_id,version_no DESC);
+
+CREATE TABLE IF NOT EXISTS documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  source_type TEXT NOT NULL CHECK(source_type IN ('upload','zotero','existing')),
+  original_filename TEXT NOT NULL,
+  stored_path TEXT NOT NULL UNIQUE,
+  pdf_sha256 TEXT NOT NULL UNIQUE,
+  text_sha256 TEXT,
+  text_sketch_json TEXT NOT NULL DEFAULT '[]',
+  page_count INTEGER NOT NULL,
+  text_char_count INTEGER NOT NULL,
+  needs_ocr INTEGER NOT NULL DEFAULT 0 CHECK(needs_ocr IN (0,1)),
+  version_label TEXT NOT NULL DEFAULT 'primary' CHECK(version_label IN ('primary','alternate')),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS processing_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+  job_type TEXT NOT NULL CHECK(job_type IN ('extract','ocr','duplicate_review')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','blocked','completed','failed','cancelled')),
+  provider TEXT NOT NULL DEFAULT 'local',
+  message TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS upload_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  original_filename TEXT NOT NULL,
+  pdf_sha256 TEXT,
+  outcome TEXT NOT NULL CHECK(outcome IN ('accepted','duplicate','rejected')),
+  match_type TEXT,
+  matched_paper_id INTEGER REFERENCES papers(id) ON DELETE SET NULL,
+  document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_documents_paper ON documents(paper_id);
+CREATE INDEX IF NOT EXISTS idx_documents_text_sha ON documents(text_sha256);
+CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_upload_events_created ON upload_events(created_at DESC);
 """
 
 
@@ -213,6 +260,8 @@ class EvidenceDB:
             paper_columns = {row["name"] for row in conn.execute("PRAGMA table_info(papers)")}
             if "local_article_key" not in paper_columns:
                 conn.execute("ALTER TABLE papers ADD COLUMN local_article_key TEXT")
+            if "first_author" not in paper_columns:
+                conn.execute("ALTER TABLE papers ADD COLUMN first_author TEXT")
             version_columns = {row["name"] for row in conn.execute("PRAGMA table_info(data_versions)")}
             if "review_action" not in version_columns:
                 conn.execute("ALTER TABLE data_versions ADD COLUMN review_action TEXT NOT NULL DEFAULT 'automatic'")
@@ -225,7 +274,7 @@ class EvidenceDB:
                     "WHERE version_no>0 AND review_action='automatic'"
                 )
             conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('schema_version','2') "
+                "INSERT INTO schema_meta(key,value) VALUES('schema_version','3') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
             )
 
@@ -272,6 +321,7 @@ class EvidenceDB:
                 "material_focus": paper.get("material_focus"),
                 "pilot_order": paper.get("pilot_order"),
                 "local_article_key": paper.get("local_article_key"),
+                "first_author": paper.get("first_author"),
                 "updated_at": stamp,
             }
             if row:
@@ -491,6 +541,10 @@ class EvidenceDB:
                 "experiments": conn.execute("SELECT COUNT(*) FROM experiments").fetchone()[0],
                 "measurements": conn.execute("SELECT COUNT(*) FROM measurements").fetchone()[0],
                 "open_tasks": conn.execute("SELECT COUNT(*) FROM pending_tasks WHERE status='open'").fetchone()[0],
+                "documents": conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0],
+                "queued_jobs": conn.execute(
+                    "SELECT COUNT(*) FROM processing_jobs WHERE status IN ('queued','running','blocked')"
+                ).fetchone()[0],
             }
             result["review"] = {
                 row["review_status"]: row["n"]
@@ -528,7 +582,38 @@ class EvidenceDB:
             result = dict(paper)
             result["materials"] = [dict(r) for r in conn.execute("SELECT * FROM materials WHERE paper_id=? ORDER BY id", (paper_id,))]
             result["experiments"] = [dict(r) for r in conn.execute("SELECT * FROM experiments WHERE paper_id=? ORDER BY id", (paper_id,))]
+            result["documents"] = [dict(r) for r in conn.execute("SELECT * FROM documents WHERE paper_id=? ORDER BY id", (paper_id,))]
             return result
+
+    def list_processing_jobs(self, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        self.init()
+        clause = "WHERE j.status=?" if status else ""
+        params: tuple[Any, ...] = (status, limit) if status else (limit,)
+        with self.connect() as conn:
+            return [dict(row) for row in conn.execute(
+                f"""SELECT j.*,p.title paper_title,p.doi,d.original_filename,d.needs_ocr
+                FROM processing_jobs j JOIN papers p ON p.id=j.paper_id
+                LEFT JOIN documents d ON d.id=j.document_id
+                {clause} ORDER BY j.created_at DESC,j.id DESC LIMIT ?""", params
+            )]
+
+    def list_upload_events(self, limit: int = 30) -> list[dict[str, Any]]:
+        self.init()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """SELECT u.*,p.title matched_paper_title FROM upload_events u
+                LEFT JOIN papers p ON p.id=u.matched_paper_id
+                ORDER BY u.created_at DESC,u.id DESC LIMIT ?""", (limit,)
+            ).fetchall()
+        output = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["details"] = json.loads(item.pop("details_json") or "{}")
+            except json.JSONDecodeError:
+                item["details"] = {}
+            output.append(item)
+        return output
 
     def query_measurements(self, *, include_drafts: bool = False, status: str | None = None,
                            evidence_type: str | None = None, material: str | None = None,

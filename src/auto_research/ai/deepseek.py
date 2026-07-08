@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass
+from typing import Any
+
+import requests
+
+
+class DeepSeekNotConfigured(RuntimeError):
+    pass
+
+
+class DeepSeekResponseError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class DeepSeekSettings:
+    api_key: str | None
+    base_url: str = "https://api.deepseek.com"
+    extraction_model: str = "deepseek-v4-pro"
+    analysis_model: str = "deepseek-v4-flash"
+    timeout_seconds: int = 180
+
+    @classmethod
+    def from_env(cls) -> "DeepSeekSettings":
+        return cls(
+            api_key=os.environ.get("DEEPSEEK_API_KEY") or None,
+            base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/"),
+            extraction_model=os.environ.get("DEEPSEEK_EXTRACTION_MODEL", "deepseek-v4-pro"),
+            analysis_model=os.environ.get("DEEPSEEK_ANALYSIS_MODEL", "deepseek-v4-flash"),
+            timeout_seconds=int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "180")),
+        )
+
+    def public_status(self) -> dict[str, Any]:
+        return {
+            "provider": "deepseek",
+            "configured": bool(self.api_key),
+            "base_url": self.base_url,
+            "extraction_model": self.extraction_model,
+            "analysis_model": self.analysis_model,
+            "credential_source": "DEEPSEEK_API_KEY" if self.api_key else None,
+        }
+
+
+class DeepSeekClient:
+    """Small runtime adapter; Codex is never called by the released application."""
+
+    def __init__(self, settings: DeepSeekSettings | None = None, session=None):
+        self.settings = settings or DeepSeekSettings.from_env()
+        self.session = session or requests
+
+    def request_json(self, messages: list[dict[str, str]], *, task: str = "extraction",
+                     max_tokens: int = 16_000) -> dict[str, Any]:
+        if not self.settings.api_key:
+            raise DeepSeekNotConfigured(
+                "DeepSeek 尚未配置；请在本机环境变量 DEEPSEEK_API_KEY 中设置密钥"
+            )
+        model = (
+            self.settings.extraction_model if task in {"extraction", "verification"}
+            else self.settings.analysis_model
+        )
+        payload = {
+            "model": model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        response = self.session.post(
+            f"{self.settings.base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.settings.api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=self.settings.timeout_seconds,
+        )
+        if not response.ok:
+            raise DeepSeekResponseError(f"DeepSeek API 请求失败：HTTP {response.status_code}")
+        try:
+            content = response.json()["choices"][0]["message"]["content"]
+            if not content or not str(content).strip():
+                raise DeepSeekResponseError("DeepSeek 返回了空内容")
+            return json.loads(content)
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            raise DeepSeekResponseError("DeepSeek 返回内容不是可用的 JSON") from exc

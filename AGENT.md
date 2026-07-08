@@ -271,3 +271,18 @@ git bundle verify /Users/USER/Zotero/auto-research-git-backups/auto-research-YYY
 ```
 
 5. Confirm `git status --short` is empty after the final checkpoint. Do not copy Zotero PDF storage into Git; the evidence database stores the authoritative absolute PDF path and fingerprint.
+
+### B1 PDF intake and duplicate control
+
+The local review UI now owns a PDF intake boundary at `POST /api/uploads/pdf`. Uploaded files must open as real PDFs before they are accepted. Project-managed uploaded PDFs live under the ignored `data/papers/evidence-uploads/` directory; Zotero PDFs remain in Zotero storage and are indexed in place without copying or modifying Zotero.
+
+Deduplication runs in this order:
+
+1. exact PDF SHA-256;
+2. normalized DOI;
+3. fuzzy normalized title with compatible year/first author;
+4. normalized full-text hash, then bottom-k text-sketch similarity.
+
+An exact file is not saved twice. A non-identical PDF that matches an existing paper is stored as an `alternate` document and creates a blocked `duplicate_review` job; it must not create another extraction job. A genuinely new readable PDF creates one `extract` job. A text-poor but readable PDF creates an `ocr` job. Upload attempts are audited in `upload_events`.
+
+Runtime AI in the released project is DeepSeek-only. Codex is for project development, not an application dependency. Configuration comes only from environment variables documented in `.env.example`; never store or display a real API key. Until `DEEPSEEK_API_KEY` is configured, B1 upload, validation, deduplication, queueing, review, and search must continue to work, while DeepSeek jobs remain queued.
