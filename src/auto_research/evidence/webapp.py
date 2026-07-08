@@ -33,6 +33,7 @@ from .six_column import (
     set_current_paper,
 )
 from .source_highlight import get_source_view, render_source_highlight_png, render_source_snippet_png
+from .workflow import run_article_workflow
 
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -143,6 +144,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     self.db,
                     paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
                     article_key=body.get("article_key"),
+                )
+                return self.json_response(result)
+            if parsed.path == "/api/current-paper/run-workflow":
+                result = run_article_workflow(
+                    self.db,
+                    article_key=body.get("article_key"),
+                    paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
+                    max_pages=int(body.get("max_pages", 8)),
                 )
                 return self.json_response(result)
             if parsed.path == "/api/current-paper/extract":

@@ -430,19 +430,18 @@ async function runCurrentExtraction() {
   }
   const previous = button.textContent;
   button.disabled = true;
-  button.textContent = status.action === "prepare_packet" ? "正在准备抽取包…" : "正在执行自动提取…";
+  button.textContent = "正在自动处理…";
   try {
-    const endpoint = status.action === "prepare_packet" ? "/api/current-paper/prepare-packet" : "/api/current-paper/extract";
-    const result = await api(endpoint, {
+    const result = await api("/api/current-paper/run-workflow", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ paper_id: state.paper.id }),
     });
     await loadCurrentPaper();
-    if (status.action === "prepare_packet") {
-      toast(`抽取包已生成，可直接查看：${result.packet_path || "已写入默认目录"}。`);
+    if (result.action === "prepare_packet") {
+      toast(`当前文章已切换，抽取包已生成：${result.action_result?.packet_path || "默认目录"}。`);
     } else {
-      const extraction = result.extraction || {};
+      const extraction = result.action_result?.extraction || {};
       toast(`自动提取完成：新增 ${extraction.inserted ?? 0} 条，已存在 ${extraction.existing ?? 0} 条。`);
     }
   } catch (error) {
@@ -457,15 +456,33 @@ async function runCurrentExtraction() {
 async function submitPaperSwitch(event) {
   event.preventDefault();
   const input = document.querySelector("#paper-switch-input");
+  const button = document.querySelector("#paper-workflow-submit");
   const key = input.value.trim();
   if (!key) {
     toast("请先输入文章号。", true);
     return;
   }
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在读取并处理…";
   try {
-    await switchCurrentPaper({ articleKey: key });
+    const result = await api("/api/current-paper/run-workflow", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ article_key: key }),
+    });
+    await loadCurrentPaper();
+    if (result.action === "prepare_packet") {
+      toast(`已切换到 ${paperRef(state.paper)}，并准备好抽取包。`);
+    } else {
+      const extraction = result.action_result?.extraction || {};
+      toast(`已处理 ${paperRef(state.paper)}：新增 ${extraction.inserted ?? 0} 条，已有 ${extraction.existing ?? 0} 条。`);
+    }
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
   }
 }
 
