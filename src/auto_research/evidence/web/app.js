@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "", extraction: null, learning: null };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "", extraction: null, learning: null, audit: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -55,16 +55,18 @@ async function load() {
 }
 
 async function loadCurrentPaper() {
-  [state.paper, state.rows, state.extraction, state.learning] = await Promise.all([
+  [state.paper, state.rows, state.extraction, state.learning, state.audit] = await Promise.all([
     api("/api/current-paper"),
     api("/api/six-data"),
     api("/api/current-paper/extraction"),
     api("/api/current-paper/learning-samples"),
+    api("/api/current-paper/evidence-audit"),
   ]);
   state.selected = null;
   renderPaperOptions();
   renderPaper();
   renderExtractionStatus();
+  renderEvidenceAudit();
   renderTable();
   renderOriginalPlaceholder();
   renderHistory();
@@ -109,6 +111,21 @@ function renderExtractionStatus() {
   } else {
     packetLink.removeAttribute("href");
   }
+}
+
+function renderEvidenceAudit() {
+  const audit = state.audit;
+  const el = document.querySelector("#paper-evidence-audit");
+  if (!el) return;
+  if (!audit) {
+    el.textContent = "";
+    el.className = "";
+    return;
+  }
+  const coverage = Math.round((audit.coverage_ratio || 0) * 100);
+  const strong = Math.round((audit.strong_ratio || 0) * 100);
+  el.textContent = `证据覆盖：${coverage}% 可高亮定位，${strong}% 为句子/片段级强定位。${audit.message}`;
+  el.className = audit.failed_rows ? "audit-warning" : "audit-ok";
 }
 
 function filteredRows() {
@@ -248,9 +265,11 @@ async function confirmRow(id) {
     });
     state.rows = state.rows.map(row => row.item_id === id ? result : row);
     state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
+    state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
     state.selected = id;
     renderTable();
     renderOriginal(result);
+    renderEvidenceAudit();
     renderHistory();
     toast(`已确认修正并创建版本 v${result.version_no}；自动提取原始版本未改变。`);
   } catch (error) {
@@ -280,9 +299,11 @@ async function saveManual(event) {
     });
     state.rows.push(result);
     state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
+    state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
     form.reset();
     fillManualDefaults();
     renderTable();
+    renderEvidenceAudit();
     renderHistory();
     setText("nav-count", state.rows.length);
     toast("人工数据已保存；该记录没有自动提取原始版本。");

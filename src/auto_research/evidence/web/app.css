@@ -40,6 +40,8 @@
 .article-picker p.supported{color:var(--green)}
 .article-picker p.ready{color:var(--blue)}
 .article-picker p.unsupported{color:var(--orange)}
+.article-picker p.audit-ok{color:var(--green)}
+.article-picker p.audit-warning{color:var(--orange)}
 .empty-table{padding:28px 16px;color:var(--muted);font-size:12px;line-height:1.7;text-align:center}
 .import-card{margin-top:18px}
 #import-json-text{min-height:220px;font:12px/1.55 "IBM Plex Mono",monospace}

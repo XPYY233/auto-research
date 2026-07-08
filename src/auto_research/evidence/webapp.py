@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .db import EvidenceDB
+from .evidence_audit import audit_six_column_evidence
 from .exporter import EXPORT_COLUMNS
 from .prompts import build_prompt_packet
 from .six_column import (
@@ -56,6 +57,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.json_response(paper)
             if parsed.path == "/api/current-paper/extraction":
                 return self.json_response(get_six_extraction_status(self.db))
+            if parsed.path == "/api/current-paper/evidence-audit":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.json_response(audit_six_column_evidence(self.db, paper_id))
             if parsed.path == "/api/current-paper/learning-samples":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)

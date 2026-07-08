@@ -7,6 +7,7 @@ from pathlib import Path
 
 import auto_research.evidence.prompts as prompt_module
 from auto_research.evidence.db import EvidenceDB
+from auto_research.evidence.evidence_audit import audit_six_column_evidence
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.validation import validate_database
@@ -271,6 +272,14 @@ class SixColumnWorkflowTests(unittest.TestCase):
         manual = next(sample for sample in learning["samples"] if sample["sample_type"] == "manual_addition")
         self.assertIsNone(manual["original"])
         self.assertEqual(manual["corrected"]["meaning"], "人工新增验证量")
+
+    def test_evidence_audit_checks_pdf_highlight_coverage(self):
+        audit = audit_six_column_evidence(self.db, self.paper_id)
+        self.assertEqual(audit["automatic_rows"], 114)
+        self.assertEqual(audit["checked_rows"], 114)
+        self.assertGreater(audit["highlighted_rows"], 80)
+        self.assertGreater(audit["strong_rows"], 40)
+        self.assertIn("PDF", audit["message"])
 
 
 if __name__ == "__main__":
