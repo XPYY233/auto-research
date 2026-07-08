@@ -80,6 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-pages", type=int, default=8)
     p = sub.add_parser("evidence-prepare-pilot", help="Create excerpt-only extraction packets for all 30 pilot papers")
     p.add_argument("--max-pages", type=int, default=8)
+    p = sub.add_parser("evidence-run-article", help="Run the local six-column extraction workflow for one article key")
+    p.add_argument("article_key", help="Local article key, Zotero key, pilot code, or paper id")
+    p.add_argument("--max-pages", type=int, default=8)
     p = sub.add_parser("evidence-export", help="Export evidence records to CSV")
     p.add_argument("--out")
     p.add_argument("--include-drafts", action="store_true")
@@ -254,6 +257,11 @@ def cmd_evidence(args) -> int:
         result = prepare_pilot_packets(evidence_db, args.max_pages)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if not result["failed"] else 2
+    if args.cmd == "evidence-run-article":
+        from .evidence.workflow import run_article_workflow
+        result = run_article_workflow(evidence_db, article_key=args.article_key, max_pages=args.max_pages)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
     if args.cmd == "evidence-export":
         path = Path(args.out).expanduser().resolve() if args.out else None
         evidence_type = "measured" if args.measured_only else None

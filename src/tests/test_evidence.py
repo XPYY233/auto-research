@@ -12,6 +12,7 @@ from auto_research.evidence.importers import import_ai_result, import_legacy_sam
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
+from auto_research.evidence.workflow import run_article_workflow
 from auto_research.evidence.six_column import (
     CURRENT_PAPER_META_KEY,
     TARGET_DOI,
@@ -280,6 +281,31 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertGreater(audit["highlighted_rows"], 80)
         self.assertGreater(audit["strong_rows"], 40)
         self.assertIn("PDF", audit["message"])
+
+    def test_run_article_workflow_extracts_target_by_article_key(self):
+        result = run_article_workflow(self.db, article_key="TESTKEY")
+        self.assertEqual(result["action"], "extract")
+        self.assertEqual(result["paper"]["id"], self.paper_id)
+        self.assertEqual(result["status_after"]["row_count"], 114)
+        self.assertEqual(result["evidence_audit"]["checked_rows"], 114)
+        self.assertEqual(result["learning"]["sample_count"], 0)
+
+    def test_run_article_workflow_prepares_packet_for_unknown_pdf_article(self):
+        other = self.db.upsert_paper(
+            title="Another paper", doi="10.1/other", local_article_key="ALT0001",
+            pdf_path=self.db.get_paper(self.paper_id)["pdf_path"],
+        )
+        old_prompt_dir = prompt_module.PROMPT_DIR
+        prompt_module.PROMPT_DIR = Path(self.tmp.name) / "workflow_packets"
+        try:
+            result = run_article_workflow(self.db, article_key="ALT0001", max_pages=2)
+            self.assertEqual(result["action"], "prepare_packet")
+            self.assertEqual(result["paper"]["id"], other)
+            self.assertEqual(result["status_after"]["row_count"], 0)
+            self.assertIsNone(result["evidence_audit"])
+            self.assertTrue(Path(result["action_result"]["packet_path"]).is_file())
+        finally:
+            prompt_module.PROMPT_DIR = old_prompt_dir
 
 
 if __name__ == "__main__":
