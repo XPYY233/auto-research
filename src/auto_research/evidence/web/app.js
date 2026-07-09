@@ -404,6 +404,27 @@ function selectNextUnreviewed() {
   document.querySelector(`#edit-rows tr[data-item="${next.item_id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
+function confirmSelectedRow(options = {}) {
+  if (!state.selected) {
+    toast("请先选择一条数据。", true);
+    return;
+  }
+  confirmRow(Number(state.selected), options);
+}
+
+function handleReviewKeyboard(event) {
+  if (document.body.dataset.view !== "review") return;
+  const key = event.key.toLowerCase();
+  const commandOrCtrl = event.metaKey || event.ctrlKey;
+  if (event.key === "Enter" && commandOrCtrl) {
+    event.preventDefault();
+    confirmSelectedRow({ goNext: event.shiftKey });
+  } else if (key === "n" && event.altKey && !event.metaKey && !event.ctrlKey) {
+    event.preventDefault();
+    selectNextUnreviewed();
+  }
+}
+
 function originalValue(row, field) {
   return row.origin_type === "automatic" ? row[`original_${field}`] : null;
 }
@@ -900,6 +921,7 @@ document.querySelector("#review-filter").addEventListener("change", event => {
   renderOriginalPlaceholder();
 });
 document.querySelector("#next-unreviewed").addEventListener("click", selectNextUnreviewed);
+document.addEventListener("keydown", handleReviewKeyboard);
 document.querySelector("#search-form").addEventListener("submit", runSearch);
 document.querySelector("#manual-form").addEventListener("submit", saveManual);
 document.querySelector("#manual-paper-select").addEventListener("change", fillManualDefaults);
