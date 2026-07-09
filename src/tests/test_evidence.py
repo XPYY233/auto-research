@@ -446,6 +446,14 @@ class SixColumnWorkflowTests(unittest.TestCase):
         by_name = {check["name"]: check for check in report["checks"]}
         self.assertTrue(by_name["web_ui_contract"]["ok"])
         self.assertIn("manual_entry", by_name["web_ui_contract"]["web_ui"]["checked"])
+        requirements = {item["id"]: item for item in report["requirements"]}
+        self.assertTrue(all(item["ok"] for item in requirements.values()))
+        self.assertTrue(requirements["article_selector_to_extracted_rows"]["ok"])
+        self.assertTrue(requirements["six_required_columns"]["ok"])
+        self.assertTrue(requirements["editable_review_preserves_original"]["ok"])
+        self.assertTrue(requirements["manual_entry_without_original"]["ok"])
+        self.assertTrue(requirements["free_text_fuzzy_search_and_export"]["ok"])
+        self.assertTrue(requirements["review_learning_loop"]["ok"])
 
     def test_self_check_fails_when_article_has_no_extracted_rows(self):
         other = self.db.upsert_paper(
@@ -457,6 +465,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         by_name = {check["name"]: check for check in report["checks"]}
         self.assertFalse(by_name["six_column_rows"]["ok"])
         self.assertFalse(by_name["source_highlight"]["ok"])
+        requirements = {item["id"]: item for item in report["requirements"]}
+        self.assertFalse(requirements["article_selector_to_extracted_rows"]["ok"])
 
     def test_run_article_workflow_prepares_packet_for_unknown_pdf_article(self):
         other = self.db.upsert_paper(

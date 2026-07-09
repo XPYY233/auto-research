@@ -61,6 +61,65 @@ def _web_ui_contract() -> dict[str, Any]:
     }
 
 
+def _checks_by_name(checks: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {str(check["name"]): check for check in checks}
+
+
+def _requirement_summary(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_name = _checks_by_name(checks)
+
+    def ok(*names: str) -> bool:
+        return all(bool(by_name.get(name, {}).get("ok")) for name in names)
+
+    def details(*names: str) -> list[str]:
+        return [str(by_name[name]["detail"]) for name in names if name in by_name]
+
+    ui = by_name.get("web_ui_contract", {}).get("web_ui", {})
+    ui_failed = set(ui.get("failed") or [])
+
+    def ui_ok(*parts: str) -> bool:
+        return bool(by_name.get("web_ui_contract", {}).get("ok")) or not any(part in ui_failed for part in parts)
+
+    return [
+        {
+            "id": "article_selector_to_extracted_rows",
+            "ok": ok("resolve_selector", "local_pdf", "six_column_rows", "source_highlight"),
+            "requirement": "指定本地文章标识后，系统能解析到真实本地 PDF，并产出可追溯的六列数据。",
+            "evidence": details("resolve_selector", "local_pdf", "six_column_rows", "source_highlight"),
+        },
+        {
+            "id": "six_required_columns",
+            "ok": ok("six_editable_fields"),
+            "requirement": "每条数据至少包含具体数值、具体意义、单位、文章题目、DOI 和数据在文中的解释。",
+            "evidence": details("six_editable_fields"),
+        },
+        {
+            "id": "editable_review_preserves_original",
+            "ok": ok("web_ui_contract") and ui_ok("editable_table", "original_right_pane", "confirm_before_save", "unsaved_dirty_guard"),
+            "requirement": "网页左侧可自由编辑六列表，右侧保留原始抽取版本，只有确认后才写入修正。",
+            "evidence": details("web_ui_contract"),
+        },
+        {
+            "id": "manual_entry_without_original",
+            "ok": ok("web_ui_contract") and ui_ok("manual_entry", "manual_no_original"),
+            "requirement": "支持人工补录漏识别数据；人工补录记录没有伪造的自动原始版本。",
+            "evidence": details("web_ui_contract"),
+        },
+        {
+            "id": "free_text_fuzzy_search_and_export",
+            "ok": ok("fuzzy_search", "csv_export", "excel_export"),
+            "requirement": "用户可用自由关键词进行全库模糊搜索，并导出当前结果。",
+            "evidence": details("fuzzy_search", "csv_export", "excel_export"),
+        },
+        {
+            "id": "review_learning_loop",
+            "ok": ok("learning_channel"),
+            "requirement": "人工确认、修正和补录可进入学习样本通道，用于后续优化抽取。",
+            "evidence": details("learning_channel"),
+        },
+    ]
+
+
 def check_evidence_workflow(db: EvidenceDB, selector: str,
                             queries: list[str] | tuple[str, ...] | None = None,
                             min_rows: int = 1,
@@ -215,7 +274,8 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
         web_ui=ui_contract,
     )
 
-    ok = all(item["ok"] for item in checks)
+    requirements = _requirement_summary(checks)
+    ok = all(item["ok"] for item in checks) and all(item["ok"] for item in requirements)
     return {
         "ok": ok,
         "selector": selector,
@@ -241,5 +301,6 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
             "strong_rows": audit.get("strong_rows") if audit else None,
             "learning_sample_count": learning.get("sample_count", 0),
         },
+        "requirements": requirements,
         "checks": checks,
     }

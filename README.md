@@ -244,6 +244,11 @@ auto-research evidence-self-check "Irradiation effects in high entropy alloys an
   --query 温度 --query 硬度 --query "Wei-Ying Chen" \
   --min-rows 100 --min-highlight-ratio 0.8
 
+# The JSON output includes low-level checks and a user-facing requirements
+# section: article selector -> extracted rows, six required columns, editable
+# review with original preserved, manual entry, fuzzy search/export, and the
+# human-review learning loop.
+
 # Only valid for a paper whose six-column table is still empty
 auto-research evidence-deepseek-extract <paper-selector> --commit
 
