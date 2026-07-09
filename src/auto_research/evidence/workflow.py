@@ -16,7 +16,8 @@ from .six_column import (
 
 
 def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
-                         paper_id: int | None = None, max_pages: int = 8) -> dict[str, Any]:
+                         paper_id: int | None = None, max_pages: int = 8,
+                         force_rescan: bool = False) -> dict[str, Any]:
     resolved_id = resolve_paper_selector(db, paper_id=paper_id, article_key=article_key)
     paper = set_current_paper(db, paper_id=resolved_id)
     before = get_six_extraction_status(db, resolved_id)
@@ -24,6 +25,11 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
         action_result = extract_current_paper_data(db, resolved_id)
         action = "extract"
     elif before["pdf_ready"] and before.get("deepseek_ready"):
+        if before.get("scanned") and not force_rescan:
+            raise ValueError(
+                "当前文章已经扫描过；如确需再次调用 DeepSeek，请在命令行加 --force-rescan，"
+                "或在网页确认重复扫描。"
+            )
         commit = before["row_count"] == 0
         action_result = DeepSeekEvidenceExtractor(db).run(
             resolved_id, commit=commit, max_pages=max_pages, chunk_pages=2

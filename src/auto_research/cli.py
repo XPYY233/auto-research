@@ -83,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("evidence-run-article", help="Run the local six-column extraction workflow for one article key")
     p.add_argument("article_key", help="Local article key, Zotero key, pilot code, or paper id")
     p.add_argument("--max-pages", type=int, default=8)
+    p.add_argument("--force-rescan", action="store_true", help="Allow DeepSeek to run again for an already scanned paper")
     p = sub.add_parser("evidence-export", help="Export evidence records to CSV")
     p.add_argument("--out")
     p.add_argument("--include-drafts", action="store_true")
@@ -100,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--commit", action="store_true", help="Import verified candidates only when the paper has no six-column rows")
     p.add_argument("--max-pages", type=int)
     p.add_argument("--chunk-pages", type=int, default=2)
+    p.add_argument("--force-rescan", action="store_true", help="Allow DeepSeek to run again for an already scanned paper")
     p = sub.add_parser("evidence-deepseek-localize", help="Localize unreviewed automatic meaning/context fields into Chinese")
     p.add_argument("article_key")
 
@@ -249,9 +251,14 @@ def cmd_evidence(args) -> int:
         return 0
     if args.cmd == "evidence-deepseek-extract":
         from .evidence.deepseek_extraction import DeepSeekEvidenceExtractor
-        from .evidence.six_column import resolve_paper_selector
+        from .evidence.six_column import get_six_extraction_status, resolve_paper_selector
 
         paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key)
+        status = get_six_extraction_status(evidence_db, paper_id)
+        if status.get("scanned") and not args.force_rescan:
+            raise SystemExit(
+                "当前文章已经扫描过；如确需再次调用 DeepSeek，请加 --force-rescan。"
+            )
         result = DeepSeekEvidenceExtractor(evidence_db).run(
             paper_id, commit=args.commit, max_pages=args.max_pages, chunk_pages=args.chunk_pages
         )
@@ -297,7 +304,10 @@ def cmd_evidence(args) -> int:
         return 0 if not result["failed"] else 2
     if args.cmd == "evidence-run-article":
         from .evidence.workflow import run_article_workflow
-        result = run_article_workflow(evidence_db, article_key=args.article_key, max_pages=args.max_pages)
+        result = run_article_workflow(
+            evidence_db, article_key=args.article_key, max_pages=args.max_pages,
+            force_rescan=args.force_rescan,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.cmd == "evidence-export":

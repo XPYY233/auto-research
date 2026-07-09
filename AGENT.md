@@ -230,7 +230,7 @@ It must resolve the article key, set the current paper, run or prepare extractio
 
 The web paper-switch form is intentionally read-only with respect to AI extraction: submitting an article key must call `/api/current-paper` only, load saved local rows, and never trigger DeepSeek or `/api/current-paper/run-workflow`. AI extraction in the web UI must require an explicit click on the separate current-article extraction button.
 
-The web UI must clearly show whether the current article has already been scanned. A paper is considered scanned when it already has six-column rows or at least one completed DeepSeek extraction run. Re-scanning a scanned paper must require an explicit browser confirmation and the backend request must include `force_rescan`; otherwise the API must reject the run with `already_scanned`.
+The web UI must clearly show whether the current article has already been scanned. A paper is considered scanned when it already has six-column rows or at least one completed DeepSeek extraction run. Re-scanning a scanned paper must require an explicit browser confirmation and the backend request must include `force_rescan`; otherwise the API must reject the run with `already_scanned`. The command-line DeepSeek paths must follow the same policy: `evidence-run-article` and `evidence-deepseek-extract` must not call DeepSeek again for scanned papers unless `--force-rescan` is present.
 
 Scanned article data must be visibly saveable from the web UI. The save action writes the current six-column rows to a timestamped CSV snapshot under `data/evidence/saved_scans/` and records the latest snapshot path in the evidence database. Saving a snapshot must not call DeepSeek and must not mutate individual row values.
 

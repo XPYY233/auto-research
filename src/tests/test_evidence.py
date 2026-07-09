@@ -505,6 +505,37 @@ class SixColumnWorkflowTests(unittest.TestCase):
             other, commit=True, max_pages=2, chunk_pages=2
         )
 
+    def test_run_article_workflow_requires_force_for_scanned_deepseek_paper(self):
+        other = self.db.upsert_paper(
+            title="Scanned DeepSeek paper", doi="10.1/deepseek-scanned", local_article_key="ALT0003",
+            pdf_path=self.db.get_paper(self.paper_id)["pdf_path"],
+        )
+        add_manual_item(self.db, other, {
+            "value_text": "1", "meaning": "已保存测试数据", "unit": "dpa",
+            "article_title": "Scanned DeepSeek paper", "doi": "10.1/deepseek-scanned",
+            "context_explanation": "已有六列数据；用于验证重复扫描保护",
+        })
+        fake_result = {
+            "run_id": 100, "candidate_count": 1, "verified_count": 1,
+            "rejected_count": 0, "duplicate_count": 0, "imported": {"inserted": 0},
+        }
+        with patch(
+            "auto_research.evidence.six_column.DeepSeekSettings.from_env",
+            return_value=DeepSeekSettings(api_key="fake"),
+        ), patch("auto_research.evidence.workflow.DeepSeekEvidenceExtractor") as extractor:
+            with self.assertRaisesRegex(ValueError, "已经扫描过"):
+                run_article_workflow(self.db, article_key="ALT0003", max_pages=2)
+            extractor.return_value.run.assert_not_called()
+
+            extractor.return_value.run.return_value = fake_result
+            result = run_article_workflow(
+                self.db, article_key="ALT0003", max_pages=2, force_rescan=True
+            )
+        self.assertEqual(result["action"], "deepseek_preview")
+        extractor.return_value.run.assert_called_once_with(
+            other, commit=False, max_pages=2, chunk_pages=2
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

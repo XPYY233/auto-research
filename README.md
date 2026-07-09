@@ -226,8 +226,10 @@ auto-research evidence-deepseek-smoke-test
 For a real local PDF, the runtime now performs two complementary extraction
 passes over each two-page block, checks every candidate against the stated PDF
 page, asks DeepSeek to independently verify the evidence relation, and then
-deduplicates the supported candidates. Existing six-column data forces preview
-mode; an empty paper can import supported candidates as unreviewed version 0.
+deduplicates the supported candidates. An empty paper can import supported
+candidates as unreviewed version 0. A paper that already has six-column rows or
+a completed AI run is treated as scanned: command-line extraction refuses to
+call DeepSeek again unless `--force-rescan` is passed.
 
 ```bash
 # Safe preview; writes an audited JSON run without changing existing rows
@@ -235,6 +237,10 @@ auto-research evidence-deepseek-extract XJZQ42XP --max-pages 10
 
 # Only valid for a paper whose six-column table is still empty
 auto-research evidence-deepseek-extract <article-key> --commit
+
+# Explicitly allow a repeat DeepSeek run for an already scanned paper
+auto-research evidence-deepseek-extract <article-key> --force-rescan
+auto-research evidence-run-article <article-key> --force-rescan
 ```
 
 Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts

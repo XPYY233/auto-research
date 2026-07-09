@@ -26,6 +26,7 @@
 - 新增 `papers.corresponding_author` 字段；旧数据库通过迁移自动补列。
 - 不修改 Zotero 原始数据库或 Zotero PDF 文件。
 - DeepSeek API key 仍只允许来自环境变量或项目专用 macOS Keychain，不写入 Git 文件。
+- 网页、工作流和命令行统一重复扫描保护：已有六列数据或已完成 DeepSeek 运行的文章，默认不会再次调用 DeepSeek；确需重扫时必须在网页确认或在命令行显式加 `--force-rescan`。
 
 ### 验证要求
 
