@@ -168,8 +168,7 @@ ranks the specific physical meaning first and the contextual explanation one
 level below it. The contextual explanation records the material, specimen,
 irradiation environment, and other conditions needed to interpret the value.
 
-The canonical source is the final published PDF whose local article number is
-`XJZQ42XP`:
+The canonical source is the final published PDF stored locally at:
 
 `/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf`
 
@@ -178,7 +177,7 @@ It is useful for cross-checking scientific content, but its page numbers are
 not used as evidence locators.
 
 ```bash
-# Rebuild the immutable original extraction for XJZQ42XP
+# Rebuild the immutable original extraction for the current target article
 auto-research evidence-seed-target
 
 # Open the local correction/search page
@@ -233,14 +232,18 @@ call DeepSeek again unless `--force-rescan` is passed.
 
 ```bash
 # Safe preview; writes an audited JSON run without changing existing rows
-auto-research evidence-deepseek-extract XJZQ42XP --max-pages 10
+auto-research evidence-deepseek-extract "10.1016/j.jnucmat.2018.08.031" --max-pages 10
+
+# The paper selector may be a DOI, exact title, unique title fragment, paper id,
+# or a legacy local/Zotero key.
+auto-research evidence-run-article "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C"
 
 # Only valid for a paper whose six-column table is still empty
-auto-research evidence-deepseek-extract <article-key> --commit
+auto-research evidence-deepseek-extract <paper-selector> --commit
 
 # Explicitly allow a repeat DeepSeek run for an already scanned paper
-auto-research evidence-deepseek-extract <article-key> --force-rescan
-auto-research evidence-run-article <article-key> --force-rescan
+auto-research evidence-deepseek-extract <paper-selector> --force-rescan
+auto-research evidence-run-article <paper-selector> --force-rescan
 ```
 
 Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts
@@ -285,7 +288,7 @@ direct current-paper CSV and Excel downloads.
 Chinese localization for already imported, still-unreviewed automatic rows:
 
 ```bash
-auto-research evidence-deepseek-localize <article-key>
+auto-research evidence-deepseek-localize <paper-selector>
 ```
 
 The command changes only `meaning` and `context_explanation`. It keeps values,

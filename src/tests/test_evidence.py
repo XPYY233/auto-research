@@ -305,6 +305,24 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(resolve_paper_selector(self.db, article_key="ALT0001"), other)
         self.assertEqual(self.db.get_meta(CURRENT_PAPER_META_KEY), str(other))
 
+    def test_paper_selector_accepts_doi_title_and_unique_title_fragment(self):
+        self.assertEqual(resolve_paper_selector(self.db, article_key=TARGET_DOI), self.paper_id)
+        self.assertEqual(resolve_paper_selector(self.db, article_key=TARGET_TITLE), self.paper_id)
+        self.assertEqual(
+            resolve_paper_selector(
+                self.db,
+                article_key="Irradiation effects in high entropy alloys and 316H stainless steel at 300 C",
+            ),
+            self.paper_id,
+        )
+        self.assertEqual(resolve_paper_selector(self.db, article_key="316H stainless steel at 300 C"), self.paper_id)
+
+    def test_paper_selector_rejects_ambiguous_title_fragment(self):
+        self.db.upsert_paper(title="Shared tungsten irradiation result A", doi="10.1/shared-a")
+        self.db.upsert_paper(title="Shared tungsten irradiation result B", doi="10.1/shared-b")
+        with self.assertRaisesRegex(ValueError, "匹配到多篇"):
+            resolve_paper_selector(self.db, article_key="shared tungsten irradiation")
+
     def test_six_extraction_status_and_trigger_follow_current_paper(self):
         other = self.db.upsert_paper(title="Another paper", doi="10.1/other", local_article_key="ALT0001")
         unsupported = get_six_extraction_status(self.db, other)

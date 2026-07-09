@@ -41,3 +41,10 @@
 - 目标文章 `Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C` 已补入第一作者和通讯作者：Wei-Ying Chen。
 - 保存新增 DeepSeek 运行记录 `paper_001_run_0018.json` 与 `paper_001_run_0019.json`，以及当前文章 CSV 备份 `HRXA6ESH_2026-07-09T041113.636590Z0000.csv`。
 - 本 checkpoint 前已扫描运行产物，未发现真实 API key。
+
+### 文章选择器优化
+
+- 命令行和内部工作流的文章选择器支持 DOI、完整题目、唯一题目片段、paper id，以及旧的本地/Zotero key。
+- 题目匹配会进行简单标准化；例如用户输入 `300 C` 可匹配数据库题目中的 `300 °C`。
+- 若题目片段匹配多篇文章，系统会拒绝自动选择并提示改用 DOI 或完整题目。
+- README/AGENT 文档中的推荐操作方式改为 DOI/题目优先，逐步降低对设备相关 Zotero key 的依赖。

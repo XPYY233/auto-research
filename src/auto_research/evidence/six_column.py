@@ -287,6 +287,10 @@ def _paper_matches_target(paper: dict[str, Any] | None) -> bool:
     )
 
 
+def _selector_title_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (value or "").casefold())
+
+
 def resolve_paper_selector(db: EvidenceDB, paper_id: int | None = None, article_key: str | None = None) -> int:
     if paper_id is not None:
         if not db.get_paper(int(paper_id)):
@@ -310,8 +314,34 @@ def resolve_paper_selector(db: EvidenceDB, paper_id: int | None = None, article_
                 LIMIT 1""",
                 (selector, selector, selector, selector),
             ).fetchone()
+        if not row:
+            row = conn.execute(
+                "SELECT id FROM papers WHERE LOWER(COALESCE(title,''))=LOWER(?) LIMIT 1",
+                (selector,),
+            ).fetchone()
+        if not row:
+            selector_title_key = _selector_title_key(selector)
+            title_rows = [dict(current) for current in conn.execute(
+                "SELECT id,title,doi,year FROM papers WHERE COALESCE(title,'')!=''"
+            )]
+            matches = [
+                current for current in title_rows
+                if selector_title_key
+                and (
+                    _selector_title_key(current["title"]) == selector_title_key
+                    or selector_title_key in _selector_title_key(current["title"])
+                )
+            ]
+            if len(matches) == 1:
+                row = {"id": matches[0]["id"]}
+            elif len(matches) > 1:
+                preview = "; ".join(
+                    f"{item['id']}: {item['title']} ({item.get('doi') or item.get('year') or 'no DOI'})"
+                    for item in matches[:5]
+                )
+                raise ValueError(f"文章选择器匹配到多篇文章，请改用 DOI 或完整题目：{preview}")
     if not row:
-        raise KeyError(f"Article key not found: {selector}")
+        raise KeyError(f"Paper selector not found: {selector}")
     return int(row["id"])
 
 

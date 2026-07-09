@@ -196,7 +196,6 @@ Maintain `PROJECT_LOG.md` as the user-facing project change log. `AGENT.md` reco
 
 ### Current target article
 
-- Local article key: `XJZQ42XP`
 - Title: `Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C`
 - DOI: `10.1016/j.jnucmat.2018.08.031`
 - Authoritative PDF: `/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf`
@@ -218,17 +217,17 @@ Every extracted or manually entered datum must expose these editable fields:
 
 Do not force heterogeneous values into a normalized scientific template. Preserve the reported value and unit. The source page, locator, and excerpt remain provenance metadata outside the six editable columns.
 
-### Article-key workflow
+### Paper-selector workflow
 
 The primary local command is:
 
 ```bash
-PYTHONPATH=src python3 -m auto_research.cli evidence-run-article XJZQ42XP
+PYTHONPATH=src python3 -m auto_research.cli evidence-run-article "10.1016/j.jnucmat.2018.08.031"
 ```
 
-It must resolve the article key, set the current paper, run or prepare extraction, audit every automatic row against the local PDF, and report learning-sample counts.
+It must resolve the paper selector, set the current paper, run or prepare extraction, audit every automatic row against the local PDF, and report learning-sample counts. A paper selector may be a DOI, exact title, unique title fragment, paper id, or a legacy local/Zotero key. Prefer DOI or title in user-facing docs because Zotero storage keys differ across devices.
 
-The web paper-switch form is intentionally read-only with respect to AI extraction: submitting an article key must call `/api/current-paper` only, load saved local rows, and never trigger DeepSeek or `/api/current-paper/run-workflow`. AI extraction in the web UI must require an explicit click on the separate current-article extraction button.
+The web paper-switch form is intentionally read-only with respect to AI extraction: submitting a paper selector must call `/api/current-paper` only, load saved local rows, and never trigger DeepSeek or `/api/current-paper/run-workflow`. AI extraction in the web UI must require an explicit click on the separate current-article extraction button.
 
 The web UI must clearly show whether the current article has already been scanned. A paper is considered scanned when it already has six-column rows or at least one completed DeepSeek extraction run. Re-scanning a scanned paper must require an explicit browser confirmation and the backend request must include `force_rescan`; otherwise the API must reject the run with `already_scanned`. The command-line DeepSeek paths must follow the same policy: `evidence-run-article` and `evidence-deepseek-extract` must not call DeepSeek again for scanned papers unless `--force-rescan` is present.
 
@@ -313,12 +312,12 @@ On this Mac, the project-specific credential may instead be stored in macOS Keyc
 5. an independent DeepSeek verification pass supports value, meaning, context relation, page, and excerpt;
 6. repeated semantic candidates are deduplicated before preview/import.
 
-Every run is audited in `ai_extraction_runs` and writes a short-evidence JSON artifact under `data/evidence/deepseek_runs/`. A failed or interrupted run must remain `failed`; partial counts are progress only, never publishable data. Existing rows force preview mode. `commit` is permitted only for a paper with no six-column rows, and imported results remain unreviewed version-0 candidates.
+Every run is audited in `ai_extraction_runs` and writes a short-evidence JSON artifact under `data/evidence/deepseek_runs/`. A failed or interrupted run must remain `failed`; partial counts are progress only, never publishable data. Existing rows require explicit `force_rescan` before a new DeepSeek call and then produce non-overwriting preview/candidate output. `commit` is permitted only for a paper with no six-column rows, and imported results remain unreviewed version-0 candidates.
 
 Primary command:
 
 ```bash
-auto-research evidence-deepseek-extract <article-key>
+auto-research evidence-deepseek-extract <paper-selector>
 ```
 
 ### Five-paper blind validation (2026-07-08)
