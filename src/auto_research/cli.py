@@ -102,6 +102,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--query", action="append", help="Keyword that should return search results; can be repeated")
     p.add_argument("--min-rows", type=int, default=1)
     p.add_argument("--min-highlight-ratio", type=float, default=0.75)
+    p = sub.add_parser("evidence-review-handoff", help="Write a Markdown handoff for reviewing one six-column evidence article")
+    p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
+    p.add_argument("--out", help="Markdown output path")
+    p.add_argument("--query", action="append", help="Keyword that should return search results; can be repeated")
+    p.add_argument("--min-rows", type=int, default=100)
+    p.add_argument("--min-highlight-ratio", type=float, default=0.8)
     sub.add_parser("evidence-deepseek-status", help="Show redacted DeepSeek runtime configuration")
     sub.add_parser("evidence-deepseek-smoke-test", help="Send a minimal synthetic JSON connection check to DeepSeek")
     p = sub.add_parser("evidence-deepseek-extract", help="Run evidence-grounded DeepSeek extraction for one paper selector")
@@ -363,6 +369,18 @@ def cmd_evidence(args) -> int:
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if report["ok"] else 2
+    if args.cmd == "evidence-review-handoff":
+        from .evidence.review_handoff import generate_review_handoff
+        result = generate_review_handoff(
+            evidence_db,
+            args.article_key,
+            out=Path(args.out) if args.out else None,
+            queries=args.query,
+            min_rows=args.min_rows,
+            min_highlight_ratio=args.min_highlight_ratio,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 2
     return 1
 
 

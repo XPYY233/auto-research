@@ -40,6 +40,12 @@
 - 快捷键只在“校对数据”页面生效，便于连续审核目标文章数据而不影响搜索、上传或人工补录页面。
 - 自检网页契约新增 `review_keyboard_shortcuts` 检查。
 
+### 目标文章核验交接摘要
+
+- 新增命令 `evidence-review-handoff <文章 DOI/题目>`，基于只读自检结果生成 Markdown 核验交接摘要，不调用 DeepSeek、不修改数据库。
+- 交接摘要包含目标文章、PDF 路径、六列数据数量、原文定位覆盖、审核进度、推荐核验流程、快捷键、学习样本导出位置和复查命令。
+- 已为目标文章生成交接文档：`data/evidence/review_handoffs/2_irradiation-effects-in-high-entropy-alloys-and-316h-stainless-st.md`。
+
 ### 用户界面与检索优化
 
 - 将文章选择、当前文章信息和自动抽取操作限定在“校对数据”页面显示，避免在搜索、上传、人工补录和历史页面误触。

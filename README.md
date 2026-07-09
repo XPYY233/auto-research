@@ -258,6 +258,10 @@ auto-research evidence-self-check "Irradiation effects in high entropy alloys an
   --query 温度 --query 硬度 --query "Wei-Ying Chen" \
   --min-rows 100 --min-highlight-ratio 0.8
 
+# Write a Markdown handoff for manual review: article status, review progress,
+# shortcuts, local URLs, and the next verification steps.
+auto-research evidence-review-handoff "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C"
+
 # The JSON output includes low-level checks and a user-facing requirements
 # section: article selector -> extracted rows, six required columns, editable
 # review with original preserved, manual entry, fuzzy search/export, and the
