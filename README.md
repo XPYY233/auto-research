@@ -260,18 +260,21 @@ The visible option text does not require or foreground Zotero/storage codes; the
 web app switches by the internal paper id.
 
 The search page is database-wide by default. You do not need to choose a paper
-before searching; CSV export from that page follows the same whole-database
-search result set.
+before searching; CSV and Excel exports from that page follow the same
+whole-database search result set. Search also expands common element names and
+symbols, such as `钨` ↔ `W` ↔ `tungsten`, and indexes first/corresponding
+authors when available.
 
 The web page also marks whether an article has already been scanned. If a paper
 already has six-column rows or a completed DeepSeek run, pressing an extraction
 button opens a confirmation dialog; the backend rejects repeat scans unless that
 confirmation sends `force_rescan`.
 
-For scanned articles, click `保存当前文章数据快照` to write the current six-column
+For scanned articles, click `生成当前文章 CSV 备份` to write the current six-column
 rows to a timestamped CSV under `data/evidence/saved_scans/`. This is a local
-file backup/export action only: it does not re-run DeepSeek and does not change
-row values.
+backup/export action only: it does not re-run DeepSeek, does not change row
+values, and is not required for normal row saving. The review page also provides
+direct current-paper CSV and Excel downloads.
 
 Chinese localization for already imported, still-unreviewed automatic rows:
 

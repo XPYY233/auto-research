@@ -6,7 +6,7 @@
   <title>实验数据校对台</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
+<body data-view="review">
   <a class="skip-link" href="#main">跳到主要内容</a>
   <div class="shell">
     <aside class="sidebar">
@@ -23,12 +23,12 @@
         <p id="mini-title">载入中…</p>
         <code id="mini-doi"></code>
       </div>
-      <div class="save-rule"><i></i><p>输入不会自动保存。只有点击“确认当前内容”才会产生新版本。</p></div>
+      <div class="save-rule"><i></i><p>表格修改需逐行确认后写入数据库；原始抽取记录保留用于追溯。</p></div>
     </aside>
 
     <main id="main">
       <header class="topbar">
-        <div><p class="eyebrow">ARTICLE-KEY LEARNING DEMO</p><h1>先定文章号，再保留原样，再从你的修正中学习。</h1></div>
+        <div><p class="eyebrow">EVIDENCE DATA WORKBENCH</p><h1>辐照实验数据抽取、校对与检索</h1></div>
         <div class="git-status"><i></i>Git 已建立</div>
       </header>
 
@@ -39,19 +39,25 @@
         </div>
         <form id="paper-switch-form">
           <select id="paper-switch-input"></select>
-          <button type="submit" id="paper-switch-submit">只切换并读取已保存数据</button>
-          <button type="button" id="run-current-extraction">执行当前文章自动提取</button>
-          <button type="button" id="run-deepseek-preview">DeepSeek 证据抽取预览</button>
-          <button type="button" id="save-current-snapshot">保存当前文章数据快照</button>
+          <button type="submit" id="paper-switch-submit">切换文章</button>
+          <button type="button" id="run-current-extraction">自动提取/核验</button>
+          <button type="button" id="run-deepseek-preview">DeepSeek 补充抽取</button>
+          <button type="button" id="save-current-snapshot">生成当前文章 CSV 备份</button>
+          <a id="current-export-csv" href="/api/current-paper/export.csv">下载当前文章 CSV</a>
+          <a id="current-export-xlsx" href="/api/current-paper/export.xlsx">下载当前文章 Excel</a>
           <a id="open-current-packet" target="_blank" rel="noopener">查看当前抽取包</a>
         </form>
         <p id="paper-extraction-status"></p>
         <p id="paper-evidence-audit"></p>
         <p id="paper-deepseek-status"></p>
+        <div class="progress-panel" id="deepseek-progress" hidden>
+          <div class="progress-track"><span id="deepseek-progress-bar"></span></div>
+          <p id="deepseek-progress-text">等待任务开始</p>
+        </div>
       </section>
 
       <section class="article-strip">
-        <div><small>文章号</small><strong id="paper-key">—</strong></div>
+        <div><small>作者/年份</small><strong id="paper-key">—</strong></div>
         <div class="wide"><small>题目</small><strong id="paper-title">—</strong></div>
         <div><small>DOI</small><strong id="paper-doi">—</strong></div>
         <a id="open-paper" target="_blank" rel="noopener">打开原文 PDF</a>
@@ -59,7 +65,7 @@
 
       <section class="view active" id="view-review">
         <div class="view-head">
-          <div><p class="eyebrow">REVIEW WORKBENCH</p><h2>左侧修改，右侧始终保留自动提取原文</h2></div>
+          <div><p class="eyebrow">REVIEW WORKBENCH</p><h2>结构化数据校对</h2></div>
           <div class="view-actions">
             <label class="compact-search">筛选当前表<input id="table-filter" placeholder="材料、硬度、300°C…"></label>
             <label class="compact-search">审核状态
@@ -84,7 +90,7 @@
             </div>
           </section>
           <aside class="original-pane" id="original-pane">
-            <div class="blank"><span>↖</span><h3>点击左侧任意一行</h3><p>这里会显示不可修改的自动提取原始版本，以及它在论文中的页码与出处。</p></div>
+            <div class="blank"><span>↖</span><h3>选择一条数据</h3><p>右侧显示原始抽取值、证据页码和原文定位。</p></div>
           </aside>
         </div>
       </section>
@@ -92,11 +98,11 @@
       <section class="view" id="view-search">
         <div class="search-hero">
           <p class="eyebrow">FUZZY DATA SEARCH</p>
-          <h2>不用选择标签，直接写你想到的词。</h2>
+          <h2>全库关键词检索</h2>
           <form id="search-form"><input id="search-query" placeholder="例如：CoCrFeMnNi 300°C 辐照后 硬度" autocomplete="off"><button>搜索</button></form>
-          <p>搜索默认覆盖整个数据库，不需要先选择文章；系统首先匹配“具体意义”，其次匹配“数据在文中的解释”，也会模糊匹配数值、单位、题目和 DOI。</p>
+          <p>默认检索整个数据库；优先匹配“具体意义”，其次匹配“数据在文中的解释”，并支持元素中文名/符号、题目、DOI 和作者。</p>
         </div>
-        <div class="search-toolbar"><span id="search-summary">等待搜索</span><a id="search-export" href="/api/six-export.csv">导出结果 CSV</a></div>
+        <div class="search-toolbar"><span id="search-summary">等待搜索</span><span><a id="search-export" href="/api/six-export.csv">导出 CSV</a><a id="search-export-xlsx" href="/api/six-export.xlsx">导出 Excel</a></span></div>
         <div class="result-list" id="search-results"></div>
       </section>
 
@@ -112,7 +118,8 @@
             <label>DOI（可选）<input name="doi" placeholder="10.xxxx/xxxxx"></label>
             <label>年份（可选）<input name="year" inputmode="numeric" placeholder="2024"></label>
             <label class="span-2">第一作者（可选）<input name="first_author" placeholder="用于辅助判断标题相近的论文"></label>
-            <div class="manual-note"><i>i</i><span>系统依次检查文件指纹、DOI、题目/年份/作者和正文指纹。重复论文不会再次进入抽取。</span></div>
+            <label class="span-2">通讯作者（可选）<input name="corresponding_author" placeholder="用于检索和重复文献辅助判断"></label>
+            <div class="manual-note"><i>i</i><span>上传后会检查文件指纹、DOI、题目/年份/作者和正文指纹；重复论文不会重复入库。</span></div>
             <button class="primary" id="pdf-upload-submit" type="submit">验证并上传</button>
           </form>
           <aside class="upload-result" id="upload-result">

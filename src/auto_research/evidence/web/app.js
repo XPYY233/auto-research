@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, learning: null, allLearning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, dirtyRows: new Set() };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, learning: null, allLearning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -46,9 +46,9 @@ function clearDirtyRows(itemId = null) {
 function confirmDiscardUnsaved(actionLabel) {
   if (!hasUnsavedEdits()) return true;
   return window.confirm(
-    `当前表格中还有 ${state.dirtyRows.size} 行临时修改尚未点击“确认当前内容”。\n\n` +
-    `如果继续“${actionLabel}”，这些临时输入不会写入数据库，也不会进入学习样本。\n\n` +
-    "是否放弃这些临时修改并继续？"
+    `当前有 ${state.dirtyRows.size} 行修改尚未确认。\n\n` +
+    `继续“${actionLabel}”将放弃这些未写入数据库的临时修改。\n\n` +
+    "是否继续？"
   );
 }
 
@@ -60,7 +60,7 @@ function markRowDirty(itemId, dirty) {
 }
 
 function paperRef(paper) {
-  return paper?.local_article_key || paper?.zotero_key || paper?.pilot_code || String(paper?.id || paper?.paper_id || "");
+  return paper?.doi || paper?.article_title || paper?.title || `paper-${paper?.id || paper?.paper_id || ""}`;
 }
 
 function paperLabel(paper) {
@@ -73,7 +73,7 @@ function paperLabel(paper) {
 }
 
 function renderOriginalPlaceholder() {
-  document.querySelector("#original-pane").innerHTML = '<div class="blank"><span>↖</span><h3>点击左侧任意一行</h3><p>这里会显示不可修改的自动提取原始版本，以及它在论文中的页码与出处。</p></div>';
+  document.querySelector("#original-pane").innerHTML = '<div class="blank"><span>↖</span><h3>选择一条数据</h3><p>右侧显示原始抽取值、证据页码和原文定位。</p></div>';
 }
 
 async function load() {
@@ -125,13 +125,16 @@ function renderPaperOptions() {
 function renderPaper() {
   const paper = state.paper;
   if (!paper) return;
-  setText("paper-key", paperRef(paper));
+  const authorYear = [paper.first_author || "作者待补", paper.year || "年份待补"].filter(Boolean).join(" · ");
+  setText("paper-key", authorYear);
   setText("paper-title", paper.title);
   setText("paper-doi", paper.doi || "—");
   setText("mini-title", paper.title);
   setText("mini-doi", paper.doi || "—");
   setText("nav-count", state.rows.length);
   document.querySelector("#open-paper").href = `/api/papers/${paper.id}/pdf`;
+  document.querySelector("#current-export-csv").href = `/api/current-paper/export.csv?paper_id=${encodeURIComponent(paper.id)}`;
+  document.querySelector("#current-export-xlsx").href = `/api/current-paper/export.xlsx?paper_id=${encodeURIComponent(paper.id)}`;
 }
 
 function renderExtractionStatus() {
@@ -141,16 +144,16 @@ function renderExtractionStatus() {
   const saveButton = document.querySelector("#save-current-snapshot");
   const packetLink = document.querySelector("#open-current-packet");
   if (!status || !el || !button || !packetLink || !saveButton) return;
-  const lead = status.supported ? "已接入自动抽取" : status.packet_ready ? "已准备抽取包" : status.action === "prepare_packet" ? "可准备抽取包" : "暂未接入自动抽取";
-  const packetNote = status.packet_ready ? ` · 已生成抽取包` : "";
-  const savedNote = status.saved_snapshot_path ? ` · 最近保存：${status.saved_snapshot_path}` : "";
+  const lead = status.supported ? "自动抽取规则已可用" : status.packet_ready ? "抽取包已生成" : status.action === "prepare_packet" ? "可生成抽取包" : "当前需人工处理";
+  const packetNote = status.packet_ready ? ` · 抽取包可查看` : "";
+  const savedNote = status.saved_snapshot_path ? ` · 最近 CSV 备份：${status.saved_snapshot_path}` : "";
   const scanNote = status.scanned
-    ? `已扫描：本地已有 ${status.row_count} 条数据${status.completed_ai_run_count ? `，DeepSeek 完成运行 ${status.completed_ai_run_count} 次` : ""}；再次扫描会先弹出确认`
-    : "未扫描：当前没有已保存的自动抽取结果";
+    ? `已入库 ${status.row_count} 条数据${status.completed_ai_run_count ? `；DeepSeek 已完成 ${status.completed_ai_run_count} 次` : ""}`
+    : "尚无已入库抽取结果";
   el.textContent = `${lead} · ${scanNote}${packetNote}${savedNote} · ${status.message}`;
   el.className = status.supported ? "supported" : status.packet_ready ? "ready" : "unsupported";
   button.disabled = status.action === "manual_only";
-  button.textContent = status.action_label || "执行当前文章自动提取";
+  button.textContent = status.action === "prepare_packet" ? "生成抽取包" : "自动提取/核验";
   saveButton.disabled = !state.rows.length;
   packetLink.hidden = !status.packet_ready;
   if (status.packet_ready) {
@@ -179,16 +182,17 @@ function renderDeepSeekRun() {
   const el = document.querySelector("#paper-deepseek-status");
   const button = document.querySelector("#run-deepseek-preview");
   if (!el || !button) return;
+  button.textContent = state.rows.length ? "DeepSeek 补充抽取（不覆盖）" : "DeepSeek 自动抽取";
   button.disabled = !state.ai?.configured || !state.paper?.pdf_path;
   if (!state.ai?.configured) {
-    el.textContent = "DeepSeek 尚未配置，不能执行证据抽取。";
+    el.textContent = "DeepSeek 未配置：上传、去重、检索和人工校对仍可使用。";
     el.className = "unsupported";
     return;
   }
   if (!state.deepseekRun) {
     el.textContent = state.rows.length
-      ? "尚无 DeepSeek 独立抽取运行；当前已有数据，运行时只生成安全预览，不覆盖校对表。"
-      : "尚无 DeepSeek 抽取运行；通过双重证据验证的数据可进入待校对表。";
+      ? "当前文章已有入库数据；补充抽取只生成候选结果，不覆盖已校对内容。"
+      : "尚无 DeepSeek 抽取记录；自动抽取结果需经证据核验后进入校对表。";
     el.className = "ready";
     return;
   }
@@ -196,6 +200,41 @@ function renderDeepSeekRun() {
   const link = run.output_url ? ` · <a href="${esc(run.output_url)}" target="_blank" rel="noopener">查看运行 JSON</a>` : "";
   el.innerHTML = `DeepSeek ${esc(run.status)} · 候选 ${esc(run.candidate_count)} 条 · 双重验证通过 ${esc(run.verified_count)} 条 · 重复 ${esc(run.duplicate_count || 0)} 条 · 拒绝/歧义 ${esc(run.rejected_count)} 条${link}`;
   el.className = run.status === "completed" ? "supported" : run.status === "failed" ? "unsupported" : "ready";
+}
+
+function updateProgress(value, text, running = true) {
+  const panel = document.querySelector("#deepseek-progress");
+  const bar = document.querySelector("#deepseek-progress-bar");
+  const label = document.querySelector("#deepseek-progress-text");
+  if (!panel || !bar || !label) return;
+  panel.hidden = false;
+  panel.classList.toggle("running", running);
+  state.progressValue = Math.max(0, Math.min(100, value));
+  bar.style.width = `${state.progressValue}%`;
+  label.textContent = text;
+}
+
+function startProgress(kind) {
+  clearInterval(state.progressTimer);
+  const stages = [
+    "准备任务与读取 PDF",
+    "按页分块提取候选数据",
+    "核对证据页码与原文片段",
+    "合并重复项并生成可校对结果",
+  ];
+  let index = 0;
+  updateProgress(12, `${kind}：${stages[index]}`);
+  state.progressTimer = setInterval(() => {
+    index = Math.min(index + 1, stages.length - 1);
+    const next = Math.min(88, state.progressValue + 18);
+    updateProgress(next, `${kind}：${stages[index]}`);
+  }, 3500);
+}
+
+function finishProgress(text, ok = true) {
+  clearInterval(state.progressTimer);
+  state.progressTimer = null;
+  updateProgress(ok ? 100 : Math.max(state.progressValue, 92), text, false);
 }
 
 function confirmRescanIfNeeded(actionLabel) {
@@ -210,22 +249,23 @@ function confirmRescanIfNeeded(actionLabel) {
   ].filter(Boolean).join("；");
   return window.confirm(
     `这篇文章已经扫描过${detail ? `（${detail}）` : ""}。\n\n` +
-    `再次执行“${actionLabel}”会重新调用 DeepSeek/自动抽取，可能产生新的费用和新的预览结果。\n\n` +
+    `再次执行“${actionLabel}”会重新调用 DeepSeek/自动抽取，可能产生新的费用和新的候选结果。\n\n` +
     "只有确认仍然需要再次扫描，才会继续。是否继续？"
   );
 }
 
 async function runDeepSeekPreview() {
-  if (!confirmDiscardUnsaved("DeepSeek 证据抽取预览")) return;
+  if (!confirmDiscardUnsaved("DeepSeek 补充抽取")) return;
   const button = document.querySelector("#run-deepseek-preview");
-  const forceRescan = confirmRescanIfNeeded("DeepSeek 证据抽取预览");
+  const forceRescan = confirmRescanIfNeeded("DeepSeek 补充抽取");
   if ((state.extraction?.scanned || state.rows.length || state.deepseekRun?.status === "completed") && !forceRescan) {
     toast("已取消再次扫描；当前仍显示本地已保存数据。");
     return;
   }
   const previous = button.textContent;
   button.disabled = true;
-  button.textContent = "DeepSeek 正在逐页抽取并复核…";
+  button.textContent = "DeepSeek 处理中…";
+  startProgress("DeepSeek 抽取");
   try {
     const result = await api("/api/current-paper/deepseek-preview", {
       method: "POST",
@@ -239,8 +279,10 @@ async function runDeepSeekPreview() {
     };
     if (result.imported?.inserted) await loadCurrentPaper();
     renderDeepSeekRun();
+    finishProgress(`完成：候选 ${result.candidate_count} 条，证据核验通过 ${result.verified_count} 条。`);
     toast(`DeepSeek 抽取完成：候选 ${result.candidate_count} 条，双重验证通过 ${result.verified_count} 条。`);
   } catch (error) {
+    finishProgress(`处理失败：${error.message}`, false);
     toast(error.message, true);
     await loadCurrentPaper();
   } finally {
@@ -497,6 +539,7 @@ async function runSearch(event) {
     const rows = await api(`/api/six-search?q=${encodeURIComponent(q)}`);
     setText("search-summary", q ? `“${q}” 找到 ${rows.length} 条相关数据` : `显示全部 ${rows.length} 条数据`);
     document.querySelector("#search-export").href = `/api/six-export.csv?q=${encodeURIComponent(q)}`;
+    document.querySelector("#search-export-xlsx").href = `/api/six-export.xlsx?q=${encodeURIComponent(q)}`;
     renderResults(rows);
   } catch (error) {
     toast(error.message, true);
@@ -509,7 +552,11 @@ function renderResults(rows) {
     el.innerHTML = '<div class="blank"><h3>没有找到相关数据</h3><p>尝试材料名称、环境条件、物理量或它们的组合。</p></div>';
     return;
   }
-  el.innerHTML = rows.map(row => `<article class="result"><div class="value">${esc(row.value_text)}<small> ${esc(row.unit)}</small></div><strong>${esc(row.meaning)}</strong><em>${row.search_score != null ? `相关度 ${esc(row.search_score)}` : ""}</em><p>${esc(row.context_explanation)}</p><div class="result-paper">${esc(paperRef(row))} · ${esc(row.article_title)}</div><button class="row-link" data-jump="${row.item_id}">去校对</button></article>`).join("");
+  el.innerHTML = rows.map(row => {
+    const authors = [row.first_author ? `一作：${row.first_author}` : "", row.corresponding_author ? `通讯：${row.corresponding_author}` : ""].filter(Boolean).join(" · ");
+    const paperLine = [row.article_title, row.doi, authors].filter(Boolean).join(" · ");
+    return `<article class="result"><div class="value">${esc(row.value_text)}<small> ${esc(row.unit)}</small></div><strong>${esc(row.meaning)}</strong><em>${row.search_score != null ? `相关度 ${esc(row.search_score)}` : ""}</em><p>${esc(row.context_explanation)}</p><div class="result-paper">${esc(paperLine)}</div><button class="row-link" data-jump="${row.item_id}">去校对</button></article>`;
+  }).join("");
   el.querySelectorAll("[data-jump]").forEach(btn => btn.addEventListener("click", () => jumpToRow(Number(btn.dataset.jump))));
 }
 
@@ -565,6 +612,7 @@ function switchView(name) {
   document.querySelectorAll(".nav,.view").forEach(el => el.classList.remove("active"));
   document.querySelector(`.nav[data-view="${name}"]`).classList.add("active");
   document.querySelector(`#view-${name}`).classList.add("active");
+  document.body.dataset.view = name;
   if (name === "search" && !document.querySelector("#search-results").children.length) runSearch();
   if (name === "upload") refreshUploadWorkspace();
 }
@@ -630,7 +678,7 @@ async function uploadPdf(event) {
   const button = document.querySelector("#pdf-upload-submit");
   const previous = button.textContent;
   const params = new URLSearchParams({ filename: file.name });
-  ["title", "doi", "year", "first_author"].forEach(name => {
+  ["title", "doi", "year", "first_author", "corresponding_author"].forEach(name => {
     const value = form.elements[name].value.trim();
     if (value) params.set(name, value);
   });
@@ -668,12 +716,12 @@ async function switchCurrentPaper({ articleKey = null, paperId = null, silent = 
     body: JSON.stringify(payload),
   });
   await loadCurrentPaper();
-  if (!silent) toast(`已切换到 ${paperRef(state.paper)}。`);
+  if (!silent) toast(`已切换到《${state.paper.title || "未命名文章"}》。`);
   return true;
 }
 
 async function runCurrentExtraction() {
-  if (!confirmDiscardUnsaved("执行当前文章自动提取")) return;
+  if (!confirmDiscardUnsaved("自动提取/核验")) return;
   const button = document.querySelector("#run-current-extraction");
   const status = state.extraction;
   if (!status || status.action === "manual_only") {
@@ -687,7 +735,8 @@ async function runCurrentExtraction() {
   }
   const previous = button.textContent;
   button.disabled = true;
-  button.textContent = "正在自动处理…";
+  button.textContent = "处理中…";
+  startProgress("自动提取/核验");
   try {
     const result = await api("/api/current-paper/run-workflow", {
       method: "POST",
@@ -696,14 +745,18 @@ async function runCurrentExtraction() {
     });
     await loadCurrentPaper();
     if (result.action === "prepare_packet") {
+      finishProgress("抽取包已生成，等待导入结构化结果。");
       toast(`当前文章已切换，抽取包已生成：${result.action_result?.packet_path || "默认目录"}。`);
     } else if (result.action === "deepseek_extract" || result.action === "deepseek_preview") {
+      finishProgress(`完成：候选 ${result.action_result?.candidate_count ?? 0} 条，证据核验通过 ${result.action_result?.verified_count ?? 0} 条。`);
       toast(`DeepSeek 处理完成：候选 ${result.action_result?.candidate_count ?? 0} 条，双重验证通过 ${result.action_result?.verified_count ?? 0} 条。`);
     } else {
       const extraction = result.action_result?.extraction || {};
+      finishProgress(`完成：新增 ${extraction.inserted ?? 0} 条，已存在 ${extraction.existing ?? 0} 条。`);
       toast(`自动提取完成：新增 ${extraction.inserted ?? 0} 条，已存在 ${extraction.existing ?? 0} 条。`);
     }
   } catch (error) {
+    finishProgress(`处理失败：${error.message}`, false);
     toast(error.message, true);
   } finally {
     button.disabled = false;
@@ -715,11 +768,11 @@ async function runCurrentExtraction() {
 async function saveCurrentSnapshot() {
   if (!state.paper) return;
   if (hasUnsavedEdits()) {
-    toast("还有临时修改未确认；快照只保存已确认写入数据库的数据。请先点击对应行的“确认当前内容”。", true);
+    toast("仍有未确认修改；CSV 备份只包含已写入数据库的数据。请先逐行确认。", true);
     return;
   }
   if (!state.rows.length) {
-    toast("当前文章还没有可保存的数据。", true);
+    toast("当前文章没有可备份的数据。", true);
     return;
   }
   const button = document.querySelector("#save-current-snapshot");
@@ -734,7 +787,7 @@ async function saveCurrentSnapshot() {
     });
     state.extraction = await api(`/api/current-paper/extraction?paper_id=${encodeURIComponent(state.paper.id)}`);
     renderExtractionStatus();
-    toast(`已保存 ${result.row_count} 条数据快照：${result.path}`);
+    toast(`已生成 ${result.row_count} 条当前文章 CSV 备份：${result.path}`);
   } catch (error) {
     toast(error.message, true);
   } finally {
@@ -755,11 +808,11 @@ async function submitPaperSwitch(event) {
   }
   const previous = button.textContent;
   button.disabled = true;
-  button.textContent = "正在读取已保存数据…";
+  button.textContent = "正在切换…";
   try {
     const switched = await switchCurrentPaper({ paperId, silent: true });
     if (!switched) return;
-    toast(`已切换到《${state.paper.title || "未命名文章"}》，本次只读取本地已保存数据，未调用 DeepSeek。`);
+    toast(`已切换到《${state.paper.title || "未命名文章"}》。`);
   } catch (error) {
     toast(error.message, true);
   } finally {

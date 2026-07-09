@@ -192,6 +192,8 @@ PYTHONPATH=src python3 -m auto_research.cli verify --limit 120 --include-all
 
 This section is the authoritative handoff for the local six-column evidence demo. Keep it updated whenever the extraction, review, search, database schema, or checkpoint workflow changes.
 
+Maintain `PROJECT_LOG.md` as the user-facing project change log. `AGENT.md` records operating rules for future agents; `PROJECT_LOG.md` records what changed, why it changed, and how it was verified.
+
 ### Current target article
 
 - Local article key: `XJZQ42XP`
@@ -251,10 +253,10 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 ### Search rules
 
 - Search is free text, not tag selection.
-- Rank `meaning` highest (weight 6), followed one level lower by `context_explanation` (weight 5), then value, unit, title, DOI, and source excerpt.
-- Support partial and fuzzy scientific terms, including alloy names, temperatures, doses, particles, and measurement names.
-- CSV export must reproduce the current search result set.
-- The review page paper switcher must be a selectable list of registered papers. The visible option text should be paper title plus helpful bibliographic context such as year/DOI and saved-row count; do not make Zotero/storage codes the displayed selector. Use the internal paper id for switching.
+- Rank `meaning` highest (weight 6), followed one level lower by `context_explanation` (weight 5), then value, unit, title, DOI, first/corresponding author, and source excerpt.
+- Support partial and fuzzy scientific terms, including alloy names, temperatures, doses, particles, measurement names, and common element Chinese-name/symbol/English aliases such as `钨` / `W` / `tungsten`.
+- CSV and Excel export must reproduce the current search result set.
+- The review page paper switcher must be a selectable list of registered papers and should appear only on the review page. The visible option text should be paper title plus helpful bibliographic context such as year/DOI and saved-row count; do not make Zotero/storage codes the displayed selector. Use the internal paper id for switching.
 - The search page must search the whole six-column database by default, independent of the currently selected paper. Empty search/export from the search page must also use the whole database.
 
 ### Current verified baseline

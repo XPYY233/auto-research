@@ -16,7 +16,7 @@ from auto_research.evidence.importers import import_ai_result, import_legacy_sam
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
-from auto_research.evidence.webapp import requires_rescan_confirmation
+from auto_research.evidence.webapp import make_xlsx, requires_rescan_confirmation
 from auto_research.evidence.workflow import run_article_workflow
 from auto_research.evidence.six_column import (
     CURRENT_PAPER_META_KEY,
@@ -165,7 +165,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.db = EvidenceDB(Path(self.tmp.name) / "six.sqlite")
         self.paper_id = self.db.upsert_paper(
-            title=TARGET_TITLE, doi=TARGET_DOI, zotero_key="TESTKEY", pdf_path=__file__
+            title=TARGET_TITLE, doi=TARGET_DOI, zotero_key="TESTKEY", pdf_path=__file__,
+            first_author="Wei-Ying Chen", corresponding_author="Wei-Ying Chen",
         )
         self.seed = seed_target_article(self.db, Path(self.tmp.name) / "original.csv")
 
@@ -262,6 +263,27 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn(self.paper_id, paper_ids)
         self.assertIn(other, paper_ids)
         self.assertIn(other_row["item_id"], {row["item_id"] for row in results})
+
+    def test_search_expands_element_names_to_symbols(self):
+        other = self.db.upsert_paper(title="Tungsten alloy paper", doi="10.1/search-w")
+        other_row = add_manual_item(self.db, other, {
+            "value_text": "500", "meaning": "辐照温度", "unit": "°C",
+            "article_title": "Tungsten alloy paper", "doi": "10.1/search-w",
+            "context_explanation": "W-Ta-Cr-V refractory high entropy alloy；He离子辐照",
+        })
+        results = search_current_data(self.db, "钨", limit=1000)
+        self.assertIn(other_row["item_id"], {row["item_id"] for row in results})
+
+    def test_search_includes_first_and_corresponding_author(self):
+        results = search_current_data(self.db, "Wei-Ying Chen", limit=1000)
+        self.assertTrue(results)
+        self.assertIn(self.paper_id, {row["paper_id"] for row in results})
+
+    def test_xlsx_export_package_contains_sheet_data(self):
+        rows = search_current_data(self.db, "温度", limit=5)
+        data = make_xlsx(rows, ["value_text", "meaning", "unit", "article_title", "doi"])
+        self.assertTrue(data.startswith(b"PK"))
+        self.assertIn(b"xl/worksheets/sheet1.xml", data)
 
     def test_blank_search_and_paper_picker_counts_cover_all_papers(self):
         other = self.db.upsert_paper(title="Other irradiation paper", doi="10.1/search-all")

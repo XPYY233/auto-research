@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS papers (
   pilot_order INTEGER,
   local_article_key TEXT,
   first_author TEXT,
+  corresponding_author TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -284,6 +285,8 @@ class EvidenceDB:
                 conn.execute("ALTER TABLE papers ADD COLUMN local_article_key TEXT")
             if "first_author" not in paper_columns:
                 conn.execute("ALTER TABLE papers ADD COLUMN first_author TEXT")
+            if "corresponding_author" not in paper_columns:
+                conn.execute("ALTER TABLE papers ADD COLUMN corresponding_author TEXT")
             version_columns = {row["name"] for row in conn.execute("PRAGMA table_info(data_versions)")}
             if "review_action" not in version_columns:
                 conn.execute("ALTER TABLE data_versions ADD COLUMN review_action TEXT NOT NULL DEFAULT 'automatic'")
@@ -347,6 +350,7 @@ class EvidenceDB:
                 "pilot_order": paper.get("pilot_order"),
                 "local_article_key": paper.get("local_article_key"),
                 "first_author": paper.get("first_author"),
+                "corresponding_author": paper.get("corresponding_author"),
                 "updated_at": stamp,
             }
             if row:

@@ -23,6 +23,8 @@ TARGET_TITLE = "Irradiation effects in high entropy alloys and 316H stainless st
 TARGET_DOI = "10.1016/j.jnucmat.2018.08.031"
 TARGET_ZOTERO_KEY = "JIKJJZ33"
 TARGET_LOCAL_ARTICLE_KEY = "XJZQ42XP"
+TARGET_FIRST_AUTHOR = "Wei-Ying Chen"
+TARGET_CORRESPONDING_AUTHOR = "Wei-Ying Chen"
 TARGET_PDF_PATH = Path("/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf")
 TARGET_EXPORT = DATA_DIR / "extractions" / "XJZQ42XP_six_column_original.csv"
 SEARCH_FIELD_WEIGHTS = {
@@ -32,6 +34,8 @@ SEARCH_FIELD_WEIGHTS = {
     "unit": 1.5,
     "article_title": 1.0,
     "doi": 1.0,
+    "first_author": 1.0,
+    "corresponding_author": 1.0,
     "source_excerpt": 0.8,
 }
 CURRENT_PAPER_META_KEY = "six_column_current_paper_id"
@@ -43,8 +47,50 @@ SNAPSHOT_FIELDS = (
     "item_id", "paper_id", "stable_key", "value_text", "meaning", "unit",
     "article_title", "doi", "context_explanation", "source_page",
     "source_locator", "source_excerpt", "origin_type", "version_no",
-    "review_action", "local_article_key",
+    "review_action", "first_author", "corresponding_author",
 )
+
+ELEMENT_SEARCH_ALIASES = {
+    "钨": ("钨", "W", "tungsten"),
+    "tungsten": ("钨", "W", "tungsten"),
+    "w": ("钨", "W", "tungsten"),
+    "铝": ("铝", "Al", "aluminum", "aluminium"),
+    "al": ("铝", "Al", "aluminum", "aluminium"),
+    "铬": ("铬", "Cr", "chromium"),
+    "cr": ("铬", "Cr", "chromium"),
+    "钴": ("钴", "Co", "cobalt"),
+    "co": ("钴", "Co", "cobalt"),
+    "铁": ("铁", "Fe", "iron"),
+    "fe": ("铁", "Fe", "iron"),
+    "锰": ("锰", "Mn", "manganese"),
+    "mn": ("锰", "Mn", "manganese"),
+    "镍": ("镍", "Ni", "nickel"),
+    "ni": ("镍", "Ni", "nickel"),
+    "钽": ("钽", "Ta", "tantalum"),
+    "ta": ("钽", "Ta", "tantalum"),
+    "钒": ("钒", "V", "vanadium"),
+    "v": ("钒", "V", "vanadium"),
+    "铪": ("铪", "Hf", "hafnium"),
+    "hf": ("铪", "Hf", "hafnium"),
+    "钛": ("钛", "Ti", "titanium"),
+    "ti": ("钛", "Ti", "titanium"),
+    "锆": ("锆", "Zr", "zirconium"),
+    "zr": ("锆", "Zr", "zirconium"),
+    "钼": ("钼", "Mo", "molybdenum"),
+    "mo": ("钼", "Mo", "molybdenum"),
+    "铼": ("铼", "Re", "rhenium"),
+    "re": ("铼", "Re", "rhenium"),
+    "硅": ("硅", "Si", "silicon"),
+    "si": ("硅", "Si", "silicon"),
+    "碳": ("碳", "C", "carbon"),
+    "c": ("碳", "C", "carbon"),
+    "氦": ("氦", "He", "helium"),
+    "he": ("氦", "He", "helium"),
+}
+
+ELEMENT_SYMBOLS = {
+    "al", "cr", "co", "fe", "mn", "ni", "ta", "w", "v", "hf", "ti", "zr", "mo", "re", "si", "c", "he",
+}
 
 
 @dataclass(frozen=True)
@@ -552,8 +598,16 @@ def seed_target_article(db: EvidenceDB, export_path: Path | None = TARGET_EXPORT
     db.init()
     with db.connect() as conn:
         conn.execute(
-            "UPDATE papers SET pdf_path=?,pdf_sha256=?,local_article_key=?,updated_at=? WHERE id=?",
-            (str(TARGET_PDF_PATH), digest, TARGET_LOCAL_ARTICLE_KEY, now(), paper_id),
+            """UPDATE papers
+               SET pdf_path=?,pdf_sha256=?,local_article_key=?,
+                   first_author=COALESCE(first_author,?),
+                   corresponding_author=COALESCE(corresponding_author,?),
+                   updated_at=?
+               WHERE id=?""",
+            (
+                str(TARGET_PDF_PATH), digest, TARGET_LOCAL_ARTICLE_KEY,
+                TARGET_FIRST_AUTHOR, TARGET_CORRESPONDING_AUTHOR, now(), paper_id,
+            ),
         )
         for datum in target_article_data():
             row = conn.execute(
@@ -730,7 +784,7 @@ def learning_samples_jsonl(db: EvidenceDB, paper_id: int | None = None) -> str:
 def _base_current_sql() -> str:
     return """
         SELECT i.id item_id,i.paper_id,i.stable_key,i.origin_type,
-               p.local_article_key,p.zotero_key,p.pilot_code,
+               p.local_article_key,p.zotero_key,p.pilot_code,p.first_author,p.corresponding_author,
                cur.id version_id,cur.version_no,cur.value_text,cur.meaning,cur.unit,cur.article_title,cur.doi,
                cur.context_explanation,cur.source_page,cur.source_locator,cur.source_excerpt,cur.editor,cur.edit_note,
                cur.review_action,cur.created_at,
@@ -767,14 +821,45 @@ def get_data_item(db: EvidenceDB, item_id: int) -> dict[str, Any]:
         return result
 
 
-def _query_terms(query: str) -> list[str]:
-    terms = [term.lower() for term in re.findall(r"[\w.+×<≥±°µΩΔ]+", query, flags=re.UNICODE) if term.strip()]
-    return terms or ([query.strip().lower()] if query.strip() else [])
+def _query_terms(query: str) -> list[list[str]]:
+    raw_terms = [term for term in re.findall(r"[\w.+×<≥±°µΩΔ]+", query, flags=re.UNICODE) if term.strip()]
+    if not raw_terms:
+        stripped = query.strip()
+        raw_terms = [stripped] if stripped else []
+    groups: list[list[str]] = []
+    for raw in raw_terms:
+        key = raw.lower()
+        aliases = ELEMENT_SEARCH_ALIASES.get(key, (raw,))
+        normalized = []
+        for alias in aliases:
+            alias_key = str(alias).lower()
+            if alias_key not in normalized:
+                normalized.append(alias_key)
+        groups.append(normalized)
+    return groups
+
+
+def _chemical_symbol_score(term: str, text: str, weight: float) -> float:
+    if term not in ELEMENT_SYMBOLS or not text:
+        return 0.0
+    symbol = next((alias for alias in ELEMENT_SEARCH_ALIASES.get(term, ()) if str(alias).isalpha() and str(alias)[0].isupper()), term)
+    pattern = re.compile(rf"(?<![a-z]){re.escape(str(symbol))}(?=$|[^a-z]|[A-Z0-9])")
+    if pattern.search(text):
+        return weight * 2.2
+    if re.search(rf"\b{re.escape(term)}\b", text.lower()):
+        return weight * 2.0
+    return 0.0
 
 
 def _field_score(term: str, text: str, weight: float) -> float:
-    candidate = (text or "").lower()
+    raw_text = text or ""
+    candidate = raw_text.lower()
     if not candidate:
+        return 0.0
+    symbol_score = _chemical_symbol_score(term, raw_text, weight)
+    if symbol_score:
+        return symbol_score
+    if term in ELEMENT_SYMBOLS and len(term) <= 2:
         return 0.0
     if term in candidate:
         return weight * (3.0 if candidate == term else 2.0)
@@ -785,29 +870,31 @@ def _field_score(term: str, text: str, weight: float) -> float:
 
 def search_current_data(db: EvidenceDB, query: str, limit: int = 100) -> list[dict[str, Any]]:
     rows = list_current_data(db)
-    terms = _query_terms(query)
-    if not terms:
+    term_groups = _query_terms(query)
+    if not term_groups:
         return rows[:limit]
     ranked: list[tuple[float, dict[str, Any]]] = []
     for row in rows:
         total = 0.0
         matched_terms = 0
-        for term in terms:
+        for term_group in term_groups:
             score = max(
-                _field_score(term, row["meaning"], SEARCH_FIELD_WEIGHTS["meaning"]),
-                _field_score(term, row["context_explanation"], SEARCH_FIELD_WEIGHTS["context_explanation"]),
-                _field_score(term, row["value_text"], SEARCH_FIELD_WEIGHTS["value_text"]),
-                _field_score(term, row["unit"], SEARCH_FIELD_WEIGHTS["unit"]),
-                _field_score(term, row["article_title"], SEARCH_FIELD_WEIGHTS["article_title"]),
-                _field_score(term, row["doi"], SEARCH_FIELD_WEIGHTS["doi"]),
-                _field_score(term, row["source_excerpt"], SEARCH_FIELD_WEIGHTS["source_excerpt"]),
+                max(_field_score(term, row["meaning"], SEARCH_FIELD_WEIGHTS["meaning"]) for term in term_group),
+                max(_field_score(term, row["context_explanation"], SEARCH_FIELD_WEIGHTS["context_explanation"]) for term in term_group),
+                max(_field_score(term, row["value_text"], SEARCH_FIELD_WEIGHTS["value_text"]) for term in term_group),
+                max(_field_score(term, row["unit"], SEARCH_FIELD_WEIGHTS["unit"]) for term in term_group),
+                max(_field_score(term, row["article_title"], SEARCH_FIELD_WEIGHTS["article_title"]) for term in term_group),
+                max(_field_score(term, row["doi"], SEARCH_FIELD_WEIGHTS["doi"]) for term in term_group),
+                max(_field_score(term, row.get("first_author"), SEARCH_FIELD_WEIGHTS["first_author"]) for term in term_group),
+                max(_field_score(term, row.get("corresponding_author"), SEARCH_FIELD_WEIGHTS["corresponding_author"]) for term in term_group),
+                max(_field_score(term, row["source_excerpt"], SEARCH_FIELD_WEIGHTS["source_excerpt"]) for term in term_group),
             )
             if score:
                 matched_terms += 1
                 total += score
-        minimum_matches = 1 if len(terms) == 1 else math.ceil(len(terms) * 0.5)
+        minimum_matches = 1 if len(term_groups) == 1 else math.ceil(len(term_groups) * 0.5)
         if total and matched_terms >= minimum_matches:
-            coverage = matched_terms / len(terms)
+            coverage = matched_terms / len(term_groups)
             ranked.append((total * (0.65 + 0.35 * coverage), row))
     ranked.sort(key=lambda pair: (-pair[0], pair[1]["item_id"]))
     output = []

@@ -172,7 +172,8 @@ class UploadService:
 
     def upload(self, pdf_bytes: bytes, filename: str, *, title: str | None = None,
                doi: str | None = None, year: int | None = None,
-               first_author: str | None = None) -> dict[str, Any]:
+               first_author: str | None = None,
+               corresponding_author: str | None = None) -> dict[str, Any]:
         filename = Path(filename or "uploaded.pdf").name
         try:
             inspection = inspect_pdf(pdf_bytes)
@@ -183,6 +184,7 @@ class UploadService:
         resolved_doi = normalize_doi(doi) or inspection.detected_doi
         resolved_year = year or inspection.detected_year
         resolved_author = (first_author or inspection.metadata_author or "").strip() or None
+        resolved_corresponding = (corresponding_author or "").strip() or None
         duplicate = self._find_duplicate(
             inspection, resolved_title, resolved_doi, resolved_year, resolved_author
         )
@@ -195,6 +197,7 @@ class UploadService:
             doi=resolved_doi,
             year=resolved_year,
             first_author=resolved_author,
+            corresponding_author=resolved_corresponding,
             pdf_sha256=inspection.pdf_sha256,
             authenticity_status="verified_pdf",
             parse_status="needs_ocr" if inspection.needs_ocr else "uploaded",
