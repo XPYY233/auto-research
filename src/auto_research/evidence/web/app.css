@@ -52,6 +52,8 @@
 .history-tools a{color:var(--blue);font-size:12px}
 .history-tools a.disabled{pointer-events:none;opacity:.45;text-decoration:none}
 .edit-table tr.confirmed td:first-child{box-shadow:inset 3px 0 var(--blue)}
+.edit-table tr.dirty td:first-child{box-shadow:inset 3px 0 var(--orange)}
+.edit-table tr.dirty td{background:#fffaf2}
 .ai-state{padding:8px 12px;border-radius:999px;font-size:11px;white-space:nowrap}
 .ai-state.configured{color:var(--green);background:#e8f4ef;border:1px solid #bdd9cd}
 .ai-state.pending{color:#8a5a22;background:#fff4df;border:1px solid #ead3a9}

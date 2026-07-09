@@ -241,6 +241,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - `correction` means one or more of the six fields changed before confirmation.
 - `manual` means the researcher added a missed datum; it has no automatic original.
 - Typing in a cell is temporary. Only `确认当前内容` may create a new version.
+- Temporary cell edits must be visibly marked and must trigger a discard warning before switching papers, importing, re-running extraction, or leaving the page.
 - The right pane must always retain the immutable automatic original for automatic rows.
 - Learning export must include confirmations, corrections, and manual additions as distinct sample types.
 - Every automatic row must retain a source page, locator, excerpt, and highlighted source-view path.

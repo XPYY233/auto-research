@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, learning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, learning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, dirtyRows: new Set() };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -32,6 +32,31 @@ function toast(message, error = false) {
 
 function setText(id, value) {
   document.getElementById(id).textContent = value ?? "";
+}
+
+function hasUnsavedEdits() {
+  return state.dirtyRows.size > 0;
+}
+
+function clearDirtyRows(itemId = null) {
+  if (itemId == null) state.dirtyRows.clear();
+  else state.dirtyRows.delete(Number(itemId));
+}
+
+function confirmDiscardUnsaved(actionLabel) {
+  if (!hasUnsavedEdits()) return true;
+  return window.confirm(
+    `当前表格中还有 ${state.dirtyRows.size} 行临时修改尚未点击“确认当前内容”。\n\n` +
+    `如果继续“${actionLabel}”，这些临时输入不会写入数据库，也不会进入学习样本。\n\n` +
+    "是否放弃这些临时修改并继续？"
+  );
+}
+
+function markRowDirty(itemId, dirty) {
+  const id = Number(itemId);
+  if (dirty) state.dirtyRows.add(id);
+  else state.dirtyRows.delete(id);
+  document.querySelector(`tr[data-item="${id}"]`)?.classList.toggle("dirty", dirty);
 }
 
 function paperRef(paper) {
@@ -69,6 +94,7 @@ async function loadCurrentPaper() {
     api("/api/current-paper/evidence-audit"),
     api("/api/current-paper/deepseek-run"),
   ]);
+  clearDirtyRows();
   state.selected = null;
   renderPaperOptions();
   renderPaper();
@@ -187,6 +213,7 @@ function confirmRescanIfNeeded(actionLabel) {
 }
 
 async function runDeepSeekPreview() {
+  if (!confirmDiscardUnsaved("DeepSeek 证据抽取预览")) return;
   const button = document.querySelector("#run-deepseek-preview");
   const forceRescan = confirmRescanIfNeeded("DeepSeek 证据抽取预览");
   if ((state.extraction?.scanned || state.rows.length || state.deepseekRun?.status === "completed") && !forceRescan) {
@@ -249,14 +276,15 @@ function renderTable() {
   const rows = filteredRows();
   const progress = reviewProgress();
   const filterNote = state.reviewFilter === "all" ? "" : ` · 当前筛出 ${rows.length} 条`;
-  setText("row-count", `${progress.reviewed}/${progress.total} 已审核，${progress.unreviewed} 待审核${filterNote}`);
+  const dirtyNote = hasUnsavedEdits() ? `，${state.dirtyRows.size} 行未确认` : "";
+  setText("row-count", `${progress.reviewed}/${progress.total} 已审核，${progress.unreviewed} 待审核${dirtyNote}${filterNote}`);
   const body = document.querySelector("#edit-rows");
   if (!rows.length) {
     body.innerHTML = '<tr><td colspan="7"><div class="empty-table">当前筛选条件下没有数据。你可以切回“全部”或“只看未审核”。</div></td></tr>';
     return;
   }
   body.innerHTML = rows.map(row => {
-    const cls = [state.selected === row.item_id ? "selected" : "", row.review_action === "confirmation" ? "confirmed" : "", row.version_no > 0 && row.review_action !== "confirmation" ? "revised" : "", row.origin_type === "manual" ? "manual" : ""].filter(Boolean).join(" ");
+    const cls = [state.selected === row.item_id ? "selected" : "", state.dirtyRows.has(Number(row.item_id)) ? "dirty" : "", row.review_action === "confirmation" ? "confirmed" : "", row.version_no > 0 && row.review_action !== "confirmation" ? "revised" : "", row.origin_type === "manual" ? "manual" : ""].filter(Boolean).join(" ");
     const cells = fields.map(field => `<td><textarea class="cell ${field === "context_explanation" ? "context" : ""}" data-field="${field}" aria-label="${fieldLabels[field]}">${esc(row[field])}</textarea></td>`).join("");
     const badge = row.origin_type === "manual" ? "人工" : row.review_action === "confirmation" ? `已确认 v${row.version_no}` : row.version_no > 0 ? `已修正 v${row.version_no}` : "未审核";
     return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action"><button class="confirm" data-confirm="${row.item_id}">确认当前内容</button><button data-original="${row.item_id}">查看原始</button><small>${badge}</small></div></td></tr>`;
@@ -272,6 +300,14 @@ function renderTable() {
   body.querySelectorAll("[data-confirm]").forEach(btn => btn.addEventListener("click", event => {
     event.stopPropagation();
     confirmRow(Number(btn.dataset.confirm));
+  }));
+  body.querySelectorAll("[data-field]").forEach(input => input.addEventListener("input", event => {
+    const tr = event.target.closest("tr[data-item]");
+    const id = Number(tr?.dataset.item);
+    const row = state.rows.find(item => item.item_id === id);
+    if (!row) return;
+    const dirty = fields.some(field => String(collectRowFields(id)[field] ?? "") !== String(row[field] ?? ""));
+    markRowDirty(id, dirty);
   }));
 }
 
@@ -373,6 +409,7 @@ async function confirmRow(id) {
       }),
     });
     state.rows = state.rows.map(row => row.item_id === id ? result : row);
+    clearDirtyRows(id);
     state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
     state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
     state.selected = id;
@@ -425,6 +462,7 @@ async function saveManual(event) {
 
 async function importJsonResult(event) {
   event.preventDefault();
+  if (!confirmDiscardUnsaved("导入 JSON 并刷新当前表格")) return;
   const textarea = document.querySelector("#import-json-text");
   const jsonText = textarea.value.trim();
   if (!jsonText) {
@@ -476,7 +514,8 @@ async function jumpToRow(id) {
     if (!row) {
       const item = await api(`/api/six-data/${id}`);
       if (item.paper_id !== state.paper.id) {
-        await switchCurrentPaper({ paperId: item.paper_id, silent: true });
+        const switched = await switchCurrentPaper({ paperId: item.paper_id, silent: true });
+        if (!switched) return;
       }
       row = state.rows.find(itemRow => itemRow.item_id === id);
     }
@@ -564,7 +603,8 @@ function renderUploadResult(result) {
     : `${esc(result.page_count)} 页 · 提取文字 ${esc(result.text_char_count)} 字符${result.needs_ocr ? " · 需要 OCR" : ""}`;
   box.innerHTML = `<div class="upload-result-card ${duplicate ? "duplicate" : "accepted"}"><span>${duplicate ? "DUPLICATE" : "ACCEPTED"}</span><h3>${esc(result.matched_title || result.title || "上传结果")}</h3><p>${esc(result.message)}</p><small>${details}</small><button type="button" data-open-upload-paper="${esc(result.paper_id)}">切换到这篇文章</button></div>`;
   box.querySelector("[data-open-upload-paper]")?.addEventListener("click", async () => {
-    await switchCurrentPaper({ paperId: result.paper_id });
+    const switched = await switchCurrentPaper({ paperId: result.paper_id });
+    if (!switched) return;
     switchView("review");
   });
 }
@@ -608,6 +648,7 @@ async function uploadPdf(event) {
 }
 
 async function switchCurrentPaper({ articleKey = null, paperId = null, silent = false } = {}) {
+  if (!confirmDiscardUnsaved("切换文章")) return false;
   const payload = {};
   if (paperId != null) payload.paper_id = paperId;
   if (articleKey != null) payload.article_key = articleKey;
@@ -618,9 +659,11 @@ async function switchCurrentPaper({ articleKey = null, paperId = null, silent = 
   });
   await loadCurrentPaper();
   if (!silent) toast(`已切换到 ${paperRef(state.paper)}。`);
+  return true;
 }
 
 async function runCurrentExtraction() {
+  if (!confirmDiscardUnsaved("执行当前文章自动提取")) return;
   const button = document.querySelector("#run-current-extraction");
   const status = state.extraction;
   if (!status || status.action === "manual_only") {
@@ -661,6 +704,10 @@ async function runCurrentExtraction() {
 
 async function saveCurrentSnapshot() {
   if (!state.paper) return;
+  if (hasUnsavedEdits()) {
+    toast("还有临时修改未确认；快照只保存已确认写入数据库的数据。请先点击对应行的“确认当前内容”。", true);
+    return;
+  }
   if (!state.rows.length) {
     toast("当前文章还没有可保存的数据。", true);
     return;
@@ -700,7 +747,8 @@ async function submitPaperSwitch(event) {
   button.disabled = true;
   button.textContent = "正在读取已保存数据…";
   try {
-    await switchCurrentPaper({ articleKey: key, silent: true });
+    const switched = await switchCurrentPaper({ articleKey: key, silent: true });
+    if (!switched) return;
     toast(`已切换到 ${paperRef(state.paper)}，本次只读取本地已保存数据，未调用 DeepSeek。`);
   } catch (error) {
     toast(error.message, true);
@@ -738,5 +786,10 @@ document.querySelector("[data-close-source]")?.addEventListener("click", () => d
 document.querySelector("#source-dialog")?.addEventListener("click", event => {
   const dialog = event.currentTarget;
   if (event.target === dialog) dialog.close();
+});
+window.addEventListener("beforeunload", event => {
+  if (!hasUnsavedEdits()) return;
+  event.preventDefault();
+  event.returnValue = "";
 });
 load().catch(error => toast(error.message, true));
