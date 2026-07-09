@@ -135,13 +135,16 @@
       <section class="view" id="view-manual">
         <div class="view-head"><div><p class="eyebrow">MANUAL ENTRY</p><h2>补上自动抽取遗漏的数据</h2></div></div>
         <form class="manual-card" id="manual-form">
+          <label class="span-2">所属文章
+            <select id="manual-paper-select" name="paper_id" aria-label="选择人工补录数据所属文章"></select>
+          </label>
           <label>具体数值<input name="value_text" required placeholder="例如 4.63±0.03"></label>
           <label>具体意义<input name="meaning" required placeholder="例如 辐照后纳米硬度 Hirr"></label>
           <label>单位<input name="unit" placeholder="例如 GPa；无单位可留空"></label>
           <label class="span-2">文章题目<input name="article_title" required></label>
           <label class="span-2">DOI<input name="doi" required></label>
           <label class="span-2 context-manual">数据在文中的解释<textarea name="context_explanation" required placeholder="尽量写清材料、环境、样品状态、辐照条件、测量方法等，便于以后搜索。"></textarea></label>
-          <div class="manual-note"><i>i</i><span>人工补录没有“自动提取原始版本”，保存后会标记为人工数据。</span></div>
+          <div class="manual-note"><i>i</i><span>人工补录直接写入所选文章的六列数据库，不切换当前校对文章，也不会调用 DeepSeek。</span></div>
           <button class="primary" type="submit">保存人工数据</button>
         </form>
         <form class="manual-card import-card" id="import-json-form">

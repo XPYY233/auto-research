@@ -409,11 +409,11 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
         message = "这篇文章已接入自动六列抽取，可直接生成或补齐当前校对表。"
     elif pdf_ok and deepseek_ready:
         action = "deepseek_extract"
-        action_label = "DeepSeek 自动提取" if row_count == 0 else "DeepSeek 补充抽取预览"
+        action_label = "DeepSeek 自动提取" if row_count == 0 else "DeepSeek 补充抽取（不覆盖）"
         message = (
             "本地 PDF 和 DeepSeek 均已就绪；无现有数据时，双重验证通过的候选会进入待校对表。"
             if row_count == 0
-            else "当前文章已有数据；DeepSeek 只生成补充预览，不自动重复导入。"
+            else "当前文章已有数据；DeepSeek 会生成补充候选，不覆盖已校对表。"
         )
     elif pdf_ok:
         action = "prepare_packet"

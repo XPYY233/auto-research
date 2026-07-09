@@ -112,14 +112,26 @@ async function loadCurrentPaper() {
 }
 
 function renderPaperOptions() {
-  const select = document.querySelector("#paper-switch-input");
-  if (!select) return;
-  select.innerHTML = state.papers.map(paper => {
+  const optionHtml = state.papers.map(paper => {
     const rows = Number(paper.six_row_count || paper.row_count || 0);
     const scan = rows ? ` · ${rows}条数据` : "";
     return `<option value="${esc(paper.id)}">${esc(paperLabel(paper))}${esc(scan)}</option>`;
   }).join("");
-  if (state.paper) select.value = String(state.paper.id);
+  const switchSelect = document.querySelector("#paper-switch-input");
+  if (switchSelect) {
+    switchSelect.innerHTML = optionHtml;
+    if (state.paper) switchSelect.value = String(state.paper.id);
+  }
+  const manualSelect = document.querySelector("#manual-paper-select");
+  if (manualSelect) {
+    const previous = manualSelect.value;
+    manualSelect.innerHTML = optionHtml;
+    if (previous && state.papers.some(paper => String(paper.id) === previous)) {
+      manualSelect.value = previous;
+    } else if (state.paper) {
+      manualSelect.value = String(state.paper.id);
+    }
+  }
 }
 
 function renderPaper() {
@@ -473,14 +485,27 @@ async function confirmRow(id) {
 
 function fillManualDefaults() {
   const form = document.querySelector("#manual-form");
-  if (!form || !state.paper) return;
-  form.elements.article_title.value = state.paper.title || "";
-  form.elements.doi.value = state.paper.doi || "";
+  const paper = selectedManualPaper();
+  if (!form || !paper) return;
+  form.elements.article_title.value = paper.title || "";
+  form.elements.doi.value = paper.doi || "";
+}
+
+function selectedManualPaper() {
+  const select = document.querySelector("#manual-paper-select");
+  const selectedId = Number(select?.value || state.paper?.id || 0);
+  return state.papers.find(paper => Number(paper.id) === selectedId) || state.paper;
 }
 
 async function saveManual(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  const paper = selectedManualPaper();
+  if (!paper?.id) {
+    toast("请先选择人工数据所属文章。", true);
+    return;
+  }
+  const targetPaperId = Number(paper.id);
   const values = {};
   fields.forEach(field => {
     values[field] = form.elements[field].value;
@@ -489,19 +514,28 @@ async function saveManual(event) {
     const result = await api("/api/six-data/manual", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paper_id: state.paper.id, fields: values, editor: "本地研究者" }),
+      body: JSON.stringify({ paper_id: targetPaperId, fields: values, editor: "本地研究者" }),
     });
-    state.rows.push(result);
-    state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
-    state.allLearning = await api("/api/learning-samples");
-    state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
+    if (state.paper && targetPaperId === Number(state.paper.id)) {
+      state.rows.push(result);
+      state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
+      state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
+      setText("nav-count", state.rows.length);
+    }
+    [state.papers, state.allLearning] = await Promise.all([
+      api("/api/papers"),
+      api("/api/learning-samples"),
+    ]);
     form.reset();
+    renderPaperOptions();
+    document.querySelector("#manual-paper-select").value = String(targetPaperId);
     fillManualDefaults();
-    renderTable();
-    renderEvidenceAudit();
+    if (state.paper && targetPaperId === Number(state.paper.id)) {
+      renderTable();
+      renderEvidenceAudit();
+    }
     renderHistory();
-    setText("nav-count", state.rows.length);
-    toast("人工数据已保存；该记录没有自动提取原始版本。");
+    toast(`人工数据已保存到《${paper.title || "所选文章"}》；未调用 DeepSeek。`);
   } catch (error) {
     toast(error.message, true);
   }
@@ -615,6 +649,7 @@ function switchView(name) {
   document.body.dataset.view = name;
   if (name === "search" && !document.querySelector("#search-results").children.length) runSearch();
   if (name === "upload") refreshUploadWorkspace();
+  if (name === "manual") fillManualDefaults();
 }
 
 async function refreshUploadWorkspace() {
@@ -834,6 +869,7 @@ document.querySelector("#review-filter").addEventListener("change", event => {
 });
 document.querySelector("#search-form").addEventListener("submit", runSearch);
 document.querySelector("#manual-form").addEventListener("submit", saveManual);
+document.querySelector("#manual-paper-select").addEventListener("change", fillManualDefaults);
 document.querySelector("#import-json-form").addEventListener("submit", importJsonResult);
 document.querySelector("#pdf-upload-form").addEventListener("submit", uploadPdf);
 document.querySelector("#pdf-upload-file").addEventListener("change", event => {

@@ -268,6 +268,10 @@ The switcher displays registered papers by title, year/DOI, and saved-row count.
 The visible option text does not require or foreground Zotero/storage codes; the
 web app switches by the internal paper id.
 
+The manual-entry page has a separate registered-paper selector. Manual rows are
+saved directly to the selected paper and become searchable in the whole database;
+this does not change the current review article and does not call DeepSeek.
+
 The search page is database-wide by default. You do not need to choose a paper
 before searching; CSV and Excel exports from that page follow the same
 whole-database search result set. Search also expands common element names and
