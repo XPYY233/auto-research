@@ -8,9 +8,11 @@ from auto_research.paths import DATA_DIR
 
 from .db import EvidenceDB
 from .self_check import check_evidence_workflow
+from .six_column import list_current_data, resolve_paper_selector, review_progress
 
 
 REVIEW_HANDOFF_DIR = DATA_DIR / "evidence" / "review_handoffs"
+REVIEW_BATCH_DIR = DATA_DIR / "evidence" / "review_batches"
 
 
 def _slug(text: str, limit: int = 64) -> str:
@@ -145,4 +147,77 @@ def generate_review_handoff(db: EvidenceDB, selector: str, *,
         "summary": report["summary"],
         "failed_checks": [check["name"] for check in report["checks"] if not check["ok"]],
         "failed_requirements": [item["id"] for item in report["requirements"] if not item["ok"]],
+    }
+
+
+def _review_batch_markdown(paper: dict[str, Any], progress: dict[str, Any],
+                           rows: list[dict[str, Any]], limit: int) -> str:
+    lines = [
+        "# 下一批待审核数据清单",
+        "",
+        f"- 文章：{paper.get('title') or '未命名文章'}",
+        f"- DOI：{paper.get('doi') or '未登记 DOI'}",
+        f"- 本批数量：{len(rows)} 条（请求上限 {limit} 条）",
+        f"- 总待审核：{progress['unreviewed']} 条",
+        f"- 已审核：{progress['reviewed']}/{progress['total']} 条",
+        "",
+        "## 使用方式",
+        "",
+        "1. 启动 `evidence-serve` 并打开校对页。",
+        "2. 按下方 `item_id` 在页面中定位，或点击“下一条未审核”逐条前进。",
+        "3. 用 `Alt+S` 打开原文证据；确认无误后用 `Shift+Ctrl/⌘+Enter` 保存并进入下一条。",
+        "",
+        "## 本批待审核数据",
+        "",
+    ]
+    if not rows:
+        lines.append("- 当前没有未审核自动抽取数据。")
+    for index, row in enumerate(rows, start=1):
+        lines.extend([
+            f"### {index}. item_id={row['item_id']} · {row.get('meaning') or '未命名数据'}",
+            "",
+            f"- 具体数值：`{row.get('value_text') or ''}`",
+            f"- 具体意义：{row.get('meaning') or ''}",
+            f"- 单位：{row.get('unit') or ''}",
+            f"- 文章题目：{row.get('article_title') or ''}",
+            f"- DOI：{row.get('doi') or ''}",
+            f"- 数据在文中的解释：{row.get('context_explanation') or ''}",
+            f"- 证据位置：PDF 第 {row.get('original_source_page') or row.get('source_page') or '?'} 页；{row.get('original_source_locator') or row.get('source_locator') or '未标注'}",
+            f"- 原文片段：{row.get('original_source_excerpt') or row.get('source_excerpt') or ''}",
+            f"- 本地证据接口：`/api/six-data/{row['item_id']}/source-view`",
+            "",
+            "核验记录：- [ ] 确认无误  - [ ] 已修正  - [ ] 需要人工补录/备注",
+            "",
+        ])
+    return "\n".join(lines)
+
+
+def generate_review_batch(db: EvidenceDB, selector: str, *,
+                          limit: int = 20,
+                          out: Path | None = None) -> dict[str, Any]:
+    paper_id = resolve_paper_selector(db, article_key=selector)
+    paper = db.get_paper(paper_id) or {}
+    rows = [
+        row for row in list_current_data(db, paper_id)
+        if row.get("origin_type") != "manual" and int(row.get("version_no") or 0) == 0
+    ]
+    rows.sort(key=lambda row: int(row["item_id"]))
+    selected = rows[:max(0, limit)]
+    progress = review_progress(db, paper_id)
+    target = out
+    if target is None:
+        REVIEW_BATCH_DIR.mkdir(parents=True, exist_ok=True)
+        target = REVIEW_BATCH_DIR / f"{paper_id}_{_slug(paper.get('title') or selector)}_next{limit}.md"
+    else:
+        target = target.expanduser().resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(_review_batch_markdown(paper, progress, selected, limit), encoding="utf-8")
+    return {
+        "ok": True,
+        "path": str(target),
+        "paper": {"id": paper_id, "title": paper.get("title"), "doi": paper.get("doi")},
+        "batch_count": len(selected),
+        "remaining_unreviewed": progress["unreviewed"],
+        "first_item_id": selected[0]["item_id"] if selected else None,
+        "last_item_id": selected[-1]["item_id"] if selected else None,
     }

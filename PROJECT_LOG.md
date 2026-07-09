@@ -46,6 +46,12 @@
 - 交接摘要包含目标文章、PDF 路径、六列数据数量、原文定位覆盖、审核进度、推荐核验流程、快捷键、学习样本导出位置和复查命令。
 - 已为目标文章生成交接文档：`data/evidence/review_handoffs/2_irradiation-effects-in-high-entropy-alloys-and-316h-stainless-st.md`。
 
+### 待审核批次清单
+
+- 新增命令 `evidence-review-batch <文章 DOI/题目> --limit N`，导出下一批未审核自动抽取数据的 Markdown 核验清单。
+- 清单包含每条数据的 `item_id`、六列内容、证据页码/定位、原文片段和本地证据接口，便于按 20 条一组推进人工核验。
+- 已为目标文章生成首批 20 条清单：`data/evidence/review_batches/2_irradiation-effects-in-high-entropy-alloys-and-316h-stainless-st_next20.md`。
+
 ### 用户界面与检索优化
 
 - 将文章选择、当前文章信息和自动抽取操作限定在“校对数据”页面显示，避免在搜索、上传、人工补录和历史页面误触。

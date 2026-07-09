@@ -17,7 +17,7 @@ from auto_research.evidence.experiment_types import classify_experiment_types
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.self_check import check_evidence_workflow
-from auto_research.evidence.review_handoff import generate_review_handoff
+from auto_research.evidence.review_handoff import generate_review_batch, generate_review_handoff
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
 from auto_research.evidence.webapp import make_xlsx, requires_rescan_confirmation, search_export_rows
@@ -538,6 +538,23 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("Alt+S", text)
         self.assertIn("确认并下一条", text)
         self.assertIn("人工核验剩余数据", text)
+
+    def test_review_batch_markdown_lists_next_unreviewed_rows(self):
+        out = Path(self.tmp.name) / "batch.md"
+        result = generate_review_batch(
+            self.db,
+            "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C",
+            limit=5,
+            out=out,
+        )
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["batch_count"], 5)
+        self.assertTrue(out.is_file())
+        text = out.read_text(encoding="utf-8")
+        self.assertIn("下一批待审核数据清单", text)
+        self.assertIn("item_id=", text)
+        self.assertIn("/api/six-data/", text)
+        self.assertIn("核验记录", text)
 
     def test_self_check_fails_when_article_has_no_extracted_rows(self):
         other = self.db.upsert_paper(

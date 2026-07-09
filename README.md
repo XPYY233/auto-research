@@ -262,6 +262,9 @@ auto-research evidence-self-check "Irradiation effects in high entropy alloys an
 # shortcuts, local URLs, and the next verification steps.
 auto-research evidence-review-handoff "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C"
 
+# Write a smaller checklist for the next N unreviewed rows.
+auto-research evidence-review-batch "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C" --limit 20
+
 # The JSON output includes low-level checks and a user-facing requirements
 # section: article selector -> extracted rows, six required columns, editable
 # review with original preserved, manual entry, fuzzy search/export, and the
