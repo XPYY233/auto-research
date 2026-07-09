@@ -93,6 +93,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
                 return self.text_response(learning_samples_jsonl(self.db, paper_id), "application/x-ndjson; charset=utf-8")
+            if parsed.path == "/api/learning-samples":
+                return self.json_response(collect_learning_samples(self.db))
+            if parsed.path == "/api/learning-samples.jsonl":
+                return self.text_response(learning_samples_jsonl(self.db), "application/x-ndjson; charset=utf-8")
             if parsed.path == "/api/six-data":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)

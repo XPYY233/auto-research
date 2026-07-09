@@ -244,6 +244,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - Temporary cell edits must be visibly marked and must trigger a discard warning before switching papers, importing, re-running extraction, or leaving the page.
 - The right pane must always retain the immutable automatic original for automatic rows.
 - Learning export must include confirmations, corrections, and manual additions as distinct sample types.
+- The web learning trail must offer both current-paper and whole-database JSONL exports, because later DeepSeek extraction uses the whole reviewed sample pool as guidance.
 - Every automatic row must retain a source page, locator, excerpt, and highlighted source-view path.
 - DeepSeek extraction may include human review samples as prompt guidance for field boundaries and Chinese wording style. These samples are never evidence: every accepted row must still be supported by the current PDF page text, local numeric/page checks, and independent verification.
 

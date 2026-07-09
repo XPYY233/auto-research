@@ -357,6 +357,22 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsNone(manual["original"])
         self.assertEqual(manual["corrected"]["meaning"], "人工新增验证量")
 
+    def test_global_learning_samples_span_multiple_papers(self):
+        other = self.db.upsert_paper(title="Other paper", doi="10.1/learning-other")
+        add_manual_item(self.db, other, {
+            "value_text": "9",
+            "meaning": "跨文章人工学习样本",
+            "unit": "a.u.",
+            "article_title": "Other paper",
+            "doi": "10.1/learning-other",
+            "context_explanation": "另一篇文章；人工补录；用于全库学习样本导出",
+        }, editor="tester")
+        current_learning = collect_learning_samples(self.db, self.paper_id)
+        all_learning = collect_learning_samples(self.db)
+        self.assertEqual(current_learning["sample_count"], 0)
+        self.assertEqual(all_learning["sample_count"], 1)
+        self.assertEqual(all_learning["samples"][0]["paper_id"], other)
+
     def test_evidence_audit_checks_pdf_highlight_coverage(self):
         audit = audit_six_column_evidence(self.db, self.paper_id)
         self.assertEqual(audit["automatic_rows"], 114)

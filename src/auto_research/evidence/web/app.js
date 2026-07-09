@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, learning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, dirtyRows: new Set() };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, learning: null, allLearning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, dirtyRows: new Set() };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -86,11 +86,12 @@ async function load() {
 }
 
 async function loadCurrentPaper() {
-  [state.paper, state.rows, state.extraction, state.learning, state.audit, state.deepseekRun] = await Promise.all([
+  [state.paper, state.rows, state.extraction, state.learning, state.allLearning, state.audit, state.deepseekRun] = await Promise.all([
     api("/api/current-paper"),
     api("/api/six-data"),
     api("/api/current-paper/extraction"),
     api("/api/current-paper/learning-samples"),
+    api("/api/learning-samples"),
     api("/api/current-paper/evidence-audit"),
     api("/api/current-paper/deepseek-run"),
   ]);
@@ -411,6 +412,7 @@ async function confirmRow(id) {
     state.rows = state.rows.map(row => row.item_id === id ? result : row);
     clearDirtyRows(id);
     state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
+    state.allLearning = await api("/api/learning-samples");
     state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
     state.selected = id;
     renderTable();
@@ -447,6 +449,7 @@ async function saveManual(event) {
     });
     state.rows.push(result);
     state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
+    state.allLearning = await api("/api/learning-samples");
     state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
     form.reset();
     fillManualDefaults();
@@ -535,14 +538,19 @@ function renderHistory() {
   const el = document.querySelector("#history-list");
   const summary = document.querySelector("#learning-summary");
   const exportLink = document.querySelector("#learning-export");
-  if (summary && exportLink) {
+  const exportAllLink = document.querySelector("#learning-export-all");
+  if (summary && exportLink && exportAllLink) {
     const learning = state.learning || { sample_count: 0, correction_count: 0, confirmation_count: 0, manual_count: 0 };
+    const allLearning = state.allLearning || { sample_count: 0 };
     summary.textContent = learning.sample_count
-      ? `当前文章已有 ${learning.sample_count} 条学习样本：确认无误 ${learning.confirmation_count} 条，修正 ${learning.correction_count} 条，人工补录 ${learning.manual_count} 条。`
-      : "还没有可导出的学习样本；确认修正或人工补录后，这里会自动累积。";
+      ? `当前文章已有 ${learning.sample_count} 条学习样本：确认无误 ${learning.confirmation_count} 条，修正 ${learning.correction_count} 条，人工补录 ${learning.manual_count} 条。全库共 ${allLearning.sample_count || 0} 条。`
+      : `当前文章还没有学习样本；全库共 ${allLearning.sample_count || 0} 条。确认修正或人工补录后，这里会自动累积。`;
     exportLink.href = `/api/current-paper/learning-samples.jsonl?paper_id=${encodeURIComponent(state.paper?.id || "")}`;
     exportLink.classList.toggle("disabled", !learning.sample_count);
     exportLink.setAttribute("aria-disabled", learning.sample_count ? "false" : "true");
+    exportAllLink.href = "/api/learning-samples.jsonl";
+    exportAllLink.classList.toggle("disabled", !allLearning.sample_count);
+    exportAllLink.setAttribute("aria-disabled", allLearning.sample_count ? "false" : "true");
   }
   if (!changed.length) {
     el.innerHTML = '<div class="blank"><h3>还没有已确认修正</h3><p>左侧表格里的临时输入不会出现在这里。</p></div>';

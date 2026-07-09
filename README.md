@@ -246,6 +246,8 @@ extraction includes a short learning-guidance block so later runs learn the
 preferred six-column field boundaries and Chinese wording style. Those examples
 are only prompt guidance, not evidence; accepted rows must still be grounded in
 the current PDF page text.
+The learning trail page can export JSONL for either the current paper or the
+whole database, so multiple reviewed papers can feed the next extraction pass.
 
 In the local web page, switching the current article only reads saved database
 rows. It does not call DeepSeek or re-run extraction; automatic extraction must
