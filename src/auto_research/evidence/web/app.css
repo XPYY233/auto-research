@@ -43,6 +43,14 @@
 .article-picker p.unsupported{color:var(--orange)}
 .article-picker p.audit-ok{color:var(--green)}
 .article-picker p.audit-warning{color:var(--orange)}
+.experiment-profile-card{grid-column:1/-1;padding:12px 14px;border:1px solid #cad8df;border-radius:8px;background:#fff}
+.experiment-profile-card strong{display:block;color:var(--blue);font-size:12px}
+.experiment-profile-card p{margin:6px 0 9px;color:#405665;font-size:11px;line-height:1.6}
+.experiment-profile-card.warn{border-color:#ebc9a8;background:#fff8ef}
+.experiment-profile-card.warn p{color:#8a5a22}
+.experiment-profile-card div{display:flex;flex-wrap:wrap;gap:6px}
+.experiment-profile-card span{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:999px;background:#edf4f7;color:#405665;font-size:10px}
+.experiment-profile-card span.primary{color:#fff;background:var(--blue)}
 .progress-panel{grid-column:1/-1;padding:12px 14px;border:1px solid #cbd9e1;border-radius:8px;background:#f7fafb}
 .progress-track{height:8px;overflow:hidden;border-radius:999px;background:#dbe6eb}
 .progress-track span{display:block;width:8%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--blue),var(--green));transition:width .35s ease}

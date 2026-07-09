@@ -48,6 +48,11 @@
           <a id="open-current-packet" target="_blank" rel="noopener">查看当前抽取包</a>
         </form>
         <p id="paper-extraction-status"></p>
+        <div class="experiment-profile-card" id="experiment-profile-card">
+          <strong>实验类型识别</strong>
+          <p id="experiment-profile-summary">正在识别当前文章的实验类型…</p>
+          <div id="experiment-profile-tags"></div>
+        </div>
         <p id="paper-evidence-audit"></p>
         <p id="paper-deepseek-status"></p>
         <div class="progress-panel" id="deepseek-progress" hidden>
@@ -67,7 +72,7 @@
         <div class="view-head">
           <div><p class="eyebrow">REVIEW WORKBENCH</p><h2>结构化数据校对</h2></div>
           <div class="view-actions">
-            <label class="compact-search">筛选当前表<input id="table-filter" placeholder="材料、硬度、300°C…"></label>
+            <label class="compact-search">筛选当前表<input id="table-filter" placeholder="item_id、材料、硬度、300°C…"></label>
             <label class="compact-search">审核状态
               <select id="review-filter">
                 <option value="all">全部</option>

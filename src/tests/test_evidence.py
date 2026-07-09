@@ -20,7 +20,12 @@ from auto_research.evidence.self_check import check_evidence_workflow
 from auto_research.evidence.review_handoff import generate_review_batch, generate_review_handoff
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
-from auto_research.evidence.webapp import make_xlsx, requires_rescan_confirmation, search_export_rows
+from auto_research.evidence.webapp import (
+    current_experiment_profile,
+    make_xlsx,
+    requires_rescan_confirmation,
+    search_export_rows,
+)
 from auto_research.evidence.workflow import run_article_workflow
 from auto_research.evidence.six_column import (
     CURRENT_PAPER_META_KEY,
@@ -382,7 +387,16 @@ class SixColumnWorkflowTests(unittest.TestCase):
                 self.assertEqual(status["action"], "prepare_packet")
                 packet = prepare_current_paper_packet(self.db, other, max_pages=2)
                 self.assertTrue(packet["packet_path"])
-                self.assertTrue(Path(packet["packet_path"]).is_file())
+                packet_path = Path(packet["packet_path"])
+                self.assertTrue(packet_path.is_file())
+                packet_payload = json.loads(packet_path.read_text(encoding="utf-8"))
+                self.assertEqual(packet_payload["experiment_profile"]["primary_type"], "irradiation_experiment")
+                self.assertIn("extraction_foci", packet_payload)
+                self.assertFalse(any(
+                    instruction == "Extract only explicitly reported irradiation experiments and observations."
+                    for instruction in packet_payload["instructions"]
+                ))
+                self.assertTrue(any("scientific experimental data" in instruction for instruction in packet_payload["instructions"]))
                 refreshed = get_six_extraction_status(self.db, other)
                 self.assertTrue(refreshed["packet_ready"])
         finally:
@@ -490,6 +504,13 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(thermal_profile["primary_type"], "thermal_measurement")
         self.assertTrue(thermal_profile["is_experimental"])
 
+    def test_web_experiment_profile_summarizes_current_paper_type(self):
+        profile = current_experiment_profile(self.db, self.paper_id)
+        self.assertEqual(profile["paper_id"], self.paper_id)
+        self.assertEqual(profile["primary_type"], "irradiation_experiment")
+        self.assertTrue(profile["is_experimental"])
+        self.assertIn("types", profile)
+
     def test_self_check_verifies_target_article_workflow_readiness(self):
         report = check_evidence_workflow(
             self.db,
@@ -514,6 +535,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("review_keyboard_shortcuts", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("source_highlight", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("next_unreviewed_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("item_id_review_filter", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("experiment_profile_card", by_name["web_ui_contract"]["web_ui"]["checked"])
         requirements = {item["id"]: item for item in report["requirements"]}
         self.assertTrue(all(item["ok"] for item in requirements.values()))
         self.assertTrue(requirements["article_selector_to_extracted_rows"]["ok"])

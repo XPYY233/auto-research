@@ -199,6 +199,11 @@ to choose extraction foci. Irradiation is the first mature pilot type, but the
 six-column database is intended to store experimental evidence across physics,
 materials, chemistry, and engineering papers.
 
+The web review page must expose that classification to the user as an
+experiment-profile card. Fallback prompt packets must also include
+`experiment_profile` and `extraction_foci`; do not reintroduce a prompt that
+assumes every paper is an irradiation experiment.
+
 Maintain `PROJECT_LOG.md` as the user-facing project change log. `AGENT.md` records operating rules for future agents; `PROJECT_LOG.md` records what changed, why it changed, and how it was verified.
 
 ### Current target article

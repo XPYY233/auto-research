@@ -17,6 +17,7 @@ from auto_research.ai.deepseek import DeepSeekSettings
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
 from .deepseek_extraction import DeepSeekEvidenceExtractor, latest_deepseek_run
+from .experiment_types import classify_experiment_types
 from .exporter import EXPORT_COLUMNS
 from .prompts import build_prompt_packet
 from .six_column import (
@@ -126,6 +127,22 @@ def search_export_rows(db: EvidenceDB, query: str, limit: int = 100000) -> list[
     return search_current_data(db, query, limit=limit)
 
 
+def current_experiment_profile(db: EvidenceDB, paper_id: int | None = None) -> dict:
+    resolved_id = paper_id or get_current_paper_id(db)
+    paper = db.get_paper(resolved_id)
+    if not paper:
+        raise KeyError(f"paper not found: {resolved_id}")
+    pdf_path = Path(paper["pdf_path"]) if paper.get("pdf_path") else None
+    return {
+        "paper_id": resolved_id,
+        "paper": {"title": paper.get("title"), "doi": paper.get("doi")},
+        **classify_experiment_types(
+            paper,
+            pdf_path=pdf_path if pdf_path and pdf_path.is_file() else None,
+        ),
+    }
+
+
 class EvidenceHandler(BaseHTTPRequestHandler):
     db: EvidenceDB
     upload_service: UploadService
@@ -153,6 +170,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/current-paper":
                 paper = get_current_paper(self.db)
                 return self.json_response(paper)
+            if parsed.path == "/api/current-paper/experiment-profile":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.json_response(current_experiment_profile(self.db, paper_id))
             if parsed.path == "/api/current-paper/extraction":
                 return self.json_response(get_six_extraction_status(self.db))
             if parsed.path == "/api/current-paper/deepseek-run":

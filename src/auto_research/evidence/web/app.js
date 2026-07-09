@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, learning: null, allLearning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -89,10 +89,11 @@ async function load() {
 }
 
 async function loadCurrentPaper() {
-  [state.paper, state.rows, state.extraction, state.learning, state.allLearning, state.audit, state.deepseekRun] = await Promise.all([
+  [state.paper, state.rows, state.extraction, state.experimentProfile, state.learning, state.allLearning, state.audit, state.deepseekRun] = await Promise.all([
     api("/api/current-paper"),
     api("/api/six-data"),
     api("/api/current-paper/extraction"),
+    api("/api/current-paper/experiment-profile"),
     api("/api/current-paper/learning-samples"),
     api("/api/learning-samples"),
     api("/api/current-paper/evidence-audit"),
@@ -103,6 +104,7 @@ async function loadCurrentPaper() {
   renderPaperOptions();
   renderPaper();
   renderExtractionStatus();
+  renderExperimentProfile();
   renderEvidenceAudit();
   renderDeepSeekRun();
   renderTable();
@@ -173,6 +175,31 @@ function renderExtractionStatus() {
   } else {
     packetLink.removeAttribute("href");
   }
+}
+
+function renderExperimentProfile() {
+  const card = document.querySelector("#experiment-profile-card");
+  const summary = document.querySelector("#experiment-profile-summary");
+  const tags = document.querySelector("#experiment-profile-tags");
+  if (!card || !summary || !tags) return;
+  const profile = state.experimentProfile;
+  if (!profile) {
+    summary.textContent = "尚未获得实验类型识别结果。";
+    tags.innerHTML = "";
+    card.classList.add("warn");
+    return;
+  }
+  const confidence = Math.round((profile.confidence || 0) * 100);
+  card.classList.toggle("warn", !profile.is_experimental);
+  summary.textContent = profile.is_experimental
+    ? `主类型：${profile.primary_label}；置信度 ${confidence}%。系统会按该类型选择抽取重点，再生成六列数据。`
+    : `暂未稳定识别为实验论文；建议先人工检查 PDF 文本或扩大识别页数。`;
+  const typeTags = (profile.types || []).slice(0, 5).map((item, index) => (
+    `<span class="${index === 0 ? "primary" : ""}">${esc(item.label)} · ${esc(item.score)}</span>`
+  ));
+  tags.innerHTML = typeTags.length
+    ? typeTags.join("")
+    : `<span>未识别到稳定实验类型</span>`;
 }
 
 function renderEvidenceAudit() {
@@ -317,7 +344,22 @@ function filteredRows() {
     rows = rows.filter(row => row.origin_type === "manual");
   }
   if (!q) return rows;
-  return rows.filter(row => fields.some(field => String(row[field] || "").toLowerCase().includes(q)));
+  return rows.filter(row => rowFilterText(row).includes(q));
+}
+
+function rowFilterText(row) {
+  const parts = [
+    row.item_id,
+    `#${row.item_id}`,
+    `item_id=${row.item_id}`,
+    row.stable_key,
+    row.source_page,
+    row.original_source_page,
+    row.source_locator,
+    row.original_source_locator,
+    ...fields.map(field => row[field]),
+  ];
+  return parts.map(value => String(value ?? "").toLowerCase()).join(" ");
 }
 
 function reviewProgress() {
@@ -349,7 +391,7 @@ function renderTable() {
     const cls = [state.selected === row.item_id ? "selected" : "", state.dirtyRows.has(Number(row.item_id)) ? "dirty" : "", row.review_action === "confirmation" ? "confirmed" : "", row.version_no > 0 && row.review_action !== "confirmation" ? "revised" : "", row.origin_type === "manual" ? "manual" : ""].filter(Boolean).join(" ");
     const cells = fields.map(field => `<td><textarea class="cell ${field === "context_explanation" ? "context" : ""}" data-field="${field}" aria-label="${fieldLabels[field]}">${esc(row[field])}</textarea></td>`).join("");
     const badge = row.origin_type === "manual" ? "人工" : row.review_action === "confirmation" ? `已确认 v${row.version_no}` : row.version_no > 0 ? `已修正 v${row.version_no}` : "未审核";
-    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action"><button class="confirm" data-confirm="${row.item_id}">确认当前内容</button><button class="confirm-next" data-confirm-next="${row.item_id}">确认并下一条</button><button data-original="${row.item_id}">查看原始</button><small>${badge}</small></div></td></tr>`;
+    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action"><button class="confirm" data-confirm="${row.item_id}">确认当前内容</button><button class="confirm-next" data-confirm-next="${row.item_id}">确认并下一条</button><button data-original="${row.item_id}">查看原始</button><small>#${row.item_id} · ${badge}</small></div></td></tr>`;
   }).join("");
   body.querySelectorAll("tr[data-item]").forEach(tr => tr.addEventListener("click", event => {
     if (event.target.closest("button[data-confirm],button[data-confirm-next]")) return;

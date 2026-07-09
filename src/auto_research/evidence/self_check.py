@@ -50,12 +50,14 @@ def _web_ui_contract() -> dict[str, Any]:
         ("confirm_before_save", "确认当前内容" in js and "/confirm" in js and "confirmRow" in js),
         ("confirm_and_next", "确认并下一条" in js and "data-confirm-next" in js and "goNext" in js),
         ("review_keyboard_shortcuts", "快捷键" in html and "handleReviewKeyboard" in js and "confirmSelectedRow" in js and "openSelectedSource" in js),
+        ("item_id_review_filter", "item_id" in html and "rowFilterText" in js and "stable_key" in js),
         ("unsaved_dirty_guard", "hasUnsavedEdits" in js and "beforeunload" in js and "confirmDiscardUnsaved" in js),
         ("manual_entry", "id=\"manual-form\"" in html and "id=\"manual-paper-select\"" in html and "/api/six-data/manual" in js),
         ("manual_no_original", "人工补录数据" in js and "没有不可变的原始版本" in js),
         ("search_engine", "id=\"search-form\"" in html and "/api/six-search" in js and "全库关键词检索" in html),
         ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
         ("next_unreviewed_queue", "id=\"next-unreviewed\"" in html and "selectNextUnreviewed" in js and "scrollIntoView" in js),
+        ("experiment_profile_card", "experiment-profile-card" in html and "renderExperimentProfile" in js and "/api/current-paper/experiment-profile" in js),
         ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
     ]
     failed = [name for name, ok in expectations if not ok]

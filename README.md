@@ -126,6 +126,11 @@ microscopy/characterization, thermal measurement, electrical transport,
 spectroscopy, electrochemical/corrosion testing, processing experiments, and
 magnetic measurements.
 
+The review page shows this classification before extraction/review. Prompt
+packets generated without a configured DeepSeek runtime also include the
+detected `experiment_profile` and `extraction_foci`, so the fallback path follows
+the same “identify experiment type first” contract.
+
 ```bash
 # Create the balanced 30-paper HEA/RHEA + tungsten pilot and import the
 # six-paper/108-record benchmark as drafts
