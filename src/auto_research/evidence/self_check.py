@@ -53,6 +53,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("manual_no_original", "人工补录数据" in js and "没有不可变的原始版本" in js),
         ("search_engine", "id=\"search-form\"" in html and "/api/six-search" in js and "全库关键词检索" in html),
         ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
+        ("next_unreviewed_queue", "id=\"next-unreviewed\"" in html and "selectNextUnreviewed" in js and "scrollIntoView" in js),
         ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
     ]
     failed = [name for name, ok in expectations if not ok]

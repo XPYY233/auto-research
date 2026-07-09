@@ -329,6 +329,10 @@ function reviewProgress() {
   return { total, reviewed, unreviewed: Math.max(total - reviewed, 0), confirmed, corrected, manual };
 }
 
+function isUnreviewedRow(row) {
+  return row.origin_type !== "manual" && Number(row.version_no) === 0;
+}
+
 function renderTable() {
   const rows = filteredRows();
   const progress = reviewProgress();
@@ -374,6 +378,26 @@ function selectRow(id) {
   const row = state.rows.find(item => item.item_id === id);
   renderOriginal(row);
   document.querySelectorAll("#edit-rows tr[data-item]").forEach(tr => tr.classList.toggle("selected", Number(tr.dataset.item) === id));
+}
+
+function selectNextUnreviewed() {
+  let candidates = filteredRows().filter(isUnreviewedRow);
+  if (!candidates.length && state.reviewFilter !== "unreviewed") {
+    if (hasUnsavedEdits() && !confirmDiscardUnsaved("切换到只看未审核")) return;
+    state.reviewFilter = "unreviewed";
+    const filter = document.querySelector("#review-filter");
+    if (filter) filter.value = "unreviewed";
+    renderTable();
+    candidates = filteredRows().filter(isUnreviewedRow);
+  }
+  if (!candidates.length) {
+    toast("当前筛选条件下没有未审核数据。");
+    return;
+  }
+  const currentIndex = candidates.findIndex(row => Number(row.item_id) === Number(state.selected));
+  const next = candidates[currentIndex >= 0 ? (currentIndex + 1) % candidates.length : 0];
+  selectRow(Number(next.item_id));
+  document.querySelector(`#edit-rows tr[data-item="${next.item_id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
 function originalValue(row, field) {
@@ -868,6 +892,7 @@ document.querySelector("#review-filter").addEventListener("change", event => {
   renderTable();
   renderOriginalPlaceholder();
 });
+document.querySelector("#next-unreviewed").addEventListener("click", selectNextUnreviewed);
 document.querySelector("#search-form").addEventListener("submit", runSearch);
 document.querySelector("#manual-form").addEventListener("submit", saveManual);
 document.querySelector("#manual-paper-select").addEventListener("change", fillManualDefaults);

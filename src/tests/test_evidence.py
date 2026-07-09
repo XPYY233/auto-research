@@ -509,6 +509,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(by_name["experiment_type_detection"]["ok"])
         self.assertTrue(by_name["web_ui_contract"]["ok"])
         self.assertIn("manual_entry", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("next_unreviewed_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
         requirements = {item["id"]: item for item in report["requirements"]}
         self.assertTrue(all(item["ok"] for item in requirements.values()))
         self.assertTrue(requirements["article_selector_to_extracted_rows"]["ok"])
