@@ -109,7 +109,10 @@ function renderExtractionStatus() {
   if (!status || !el || !button || !packetLink) return;
   const lead = status.supported ? "已接入自动抽取" : status.packet_ready ? "已准备抽取包" : status.action === "prepare_packet" ? "可准备抽取包" : "暂未接入自动抽取";
   const packetNote = status.packet_ready ? ` · 已生成抽取包` : "";
-  el.textContent = `${lead} · 当前六列表格 ${status.row_count} 条${packetNote} · ${status.message}`;
+  const scanNote = status.scanned
+    ? `已扫描：本地已有 ${status.row_count} 条数据${status.completed_ai_run_count ? `，DeepSeek 完成运行 ${status.completed_ai_run_count} 次` : ""}；再次扫描会先弹出确认`
+    : "未扫描：当前没有已保存的自动抽取结果";
+  el.textContent = `${lead} · ${scanNote}${packetNote} · ${status.message}`;
   el.className = status.supported ? "supported" : status.packet_ready ? "ready" : "unsupported";
   button.disabled = status.action === "manual_only";
   button.textContent = status.action_label || "执行当前文章自动提取";
@@ -159,8 +162,30 @@ function renderDeepSeekRun() {
   el.className = run.status === "completed" ? "supported" : run.status === "failed" ? "unsupported" : "ready";
 }
 
+function confirmRescanIfNeeded(actionLabel) {
+  const status = state.extraction || {};
+  const alreadyScanned = Boolean(status.scanned || state.rows.length || state.deepseekRun?.status === "completed");
+  if (!alreadyScanned) return false;
+  const rows = status.row_count ?? state.rows.length;
+  const completedRuns = status.completed_ai_run_count ?? (state.deepseekRun?.status === "completed" ? 1 : 0);
+  const detail = [
+    rows ? `本地已有 ${rows} 条六列数据` : "",
+    completedRuns ? `DeepSeek 已完成运行 ${completedRuns} 次` : "",
+  ].filter(Boolean).join("；");
+  return window.confirm(
+    `这篇文章已经扫描过${detail ? `（${detail}）` : ""}。\n\n` +
+    `再次执行“${actionLabel}”会重新调用 DeepSeek/自动抽取，可能产生新的费用和新的预览结果。\n\n` +
+    "只有确认仍然需要再次扫描，才会继续。是否继续？"
+  );
+}
+
 async function runDeepSeekPreview() {
   const button = document.querySelector("#run-deepseek-preview");
+  const forceRescan = confirmRescanIfNeeded("DeepSeek 证据抽取预览");
+  if ((state.extraction?.scanned || state.rows.length || state.deepseekRun?.status === "completed") && !forceRescan) {
+    toast("已取消再次扫描；当前仍显示本地已保存数据。");
+    return;
+  }
   const previous = button.textContent;
   button.disabled = true;
   button.textContent = "DeepSeek 正在逐页抽取并复核…";
@@ -168,7 +193,7 @@ async function runDeepSeekPreview() {
     const result = await api("/api/current-paper/deepseek-preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paper_id: state.paper.id, commit: state.rows.length === 0, chunk_pages: 2 }),
+      body: JSON.stringify({ paper_id: state.paper.id, commit: state.rows.length === 0, chunk_pages: 2, force_rescan: forceRescan }),
     });
     state.deepseekRun = {
       ...result,
@@ -574,6 +599,11 @@ async function runCurrentExtraction() {
     toast(status?.message || "这篇文章当前还不能自动处理。", true);
     return;
   }
+  const forceRescan = confirmRescanIfNeeded(status.action_label || "当前文章自动提取");
+  if (status.scanned && !forceRescan) {
+    toast("已取消再次扫描；当前仍显示本地已保存数据。");
+    return;
+  }
   const previous = button.textContent;
   button.disabled = true;
   button.textContent = "正在自动处理…";
@@ -581,7 +611,7 @@ async function runCurrentExtraction() {
     const result = await api("/api/current-paper/run-workflow", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paper_id: state.paper.id }),
+      body: JSON.stringify({ paper_id: state.paper.id, force_rescan: forceRescan }),
     });
     await loadCurrentPaper();
     if (result.action === "prepare_packet") {
@@ -604,7 +634,7 @@ async function runCurrentExtraction() {
 async function submitPaperSwitch(event) {
   event.preventDefault();
   const input = document.querySelector("#paper-switch-input");
-  const button = document.querySelector("#paper-workflow-submit");
+  const button = document.querySelector("#paper-switch-submit");
   const key = input.value.trim();
   if (!key) {
     toast("请先输入文章号。", true);
@@ -612,22 +642,10 @@ async function submitPaperSwitch(event) {
   }
   const previous = button.textContent;
   button.disabled = true;
-  button.textContent = "正在读取并处理…";
+  button.textContent = "正在读取已保存数据…";
   try {
-    const result = await api("/api/current-paper/run-workflow", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ article_key: key }),
-    });
-    await loadCurrentPaper();
-    if (result.action === "prepare_packet") {
-      toast(`已切换到 ${paperRef(state.paper)}，并准备好抽取包。`);
-    } else if (result.action === "deepseek_extract" || result.action === "deepseek_preview") {
-      toast(`已处理 ${paperRef(state.paper)}：DeepSeek 双重验证通过 ${result.action_result?.verified_count ?? 0} 条。`);
-    } else {
-      const extraction = result.action_result?.extraction || {};
-      toast(`已处理 ${paperRef(state.paper)}：新增 ${extraction.inserted ?? 0} 条，已有 ${extraction.existing ?? 0} 条。`);
-    }
+    await switchCurrentPaper({ articleKey: key, silent: true });
+    toast(`已切换到 ${paperRef(state.paper)}，本次只读取本地已保存数据，未调用 DeepSeek。`);
   } catch (error) {
     toast(error.message, true);
   } finally {

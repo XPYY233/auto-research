@@ -292,6 +292,27 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
     if not paper:
         raise KeyError(f"Paper {resolved_id} not found")
     row_count = len(list_current_data(db, resolved_id))
+    with db.connect() as conn:
+        run_summary = conn.execute(
+            """SELECT
+                   COUNT(*) AS run_count,
+                   SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed_count,
+                   MAX(id) AS latest_run_id
+               FROM ai_extraction_runs
+               WHERE paper_id=?""",
+            (resolved_id,),
+        ).fetchone()
+        latest_run = conn.execute(
+            """SELECT status,mode,created_at,finished_at
+               FROM ai_extraction_runs
+               WHERE paper_id=?
+               ORDER BY id DESC
+               LIMIT 1""",
+            (resolved_id,),
+        ).fetchone()
+    ai_run_count = int(run_summary["run_count"] or 0) if run_summary else 0
+    completed_ai_run_count = int(run_summary["completed_count"] or 0) if run_summary else 0
+    scanned = row_count > 0 or completed_ai_run_count > 0
     supported = _paper_matches_target(paper)
     pdf_ok = bool(paper.get("pdf_path") and Path(paper["pdf_path"]).is_file())
     packet_file = prompt_packet_path(resolved_id)
@@ -321,7 +342,14 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
         "paper_id": resolved_id,
         "article_key": paper.get("local_article_key") or paper.get("zotero_key") or paper.get("pilot_code") or str(resolved_id),
         "supported": supported,
+        "scanned": scanned,
+        "scan_state": "scanned" if scanned else "not_scanned",
         "row_count": row_count,
+        "ai_run_count": ai_run_count,
+        "completed_ai_run_count": completed_ai_run_count,
+        "latest_ai_run_status": latest_run["status"] if latest_run else None,
+        "latest_ai_run_mode": latest_run["mode"] if latest_run else None,
+        "latest_ai_run_at": latest_run["finished_at"] or latest_run["created_at"] if latest_run else None,
         "extractor_name": "xjzq42xp_curated_real_data" if supported else None,
         "parse_status": paper.get("parse_status"),
         "pdf_ready": pdf_ok,

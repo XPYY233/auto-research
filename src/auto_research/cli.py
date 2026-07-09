@@ -100,6 +100,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--commit", action="store_true", help="Import verified candidates only when the paper has no six-column rows")
     p.add_argument("--max-pages", type=int)
     p.add_argument("--chunk-pages", type=int, default=2)
+    p = sub.add_parser("evidence-deepseek-localize", help="Localize unreviewed automatic meaning/context fields into Chinese")
+    p.add_argument("article_key")
 
     args = parser.parse_args(argv)
     db = ResearchDB()
@@ -259,6 +261,13 @@ def cmd_evidence(args) -> int:
             "comparison", "imported", "output_path",
         )}
         print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-deepseek-localize":
+        from .evidence.deepseek_extraction import localize_unreviewed_rows
+        from .evidence.six_column import resolve_paper_selector
+
+        paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key)
+        print(json.dumps(localize_unreviewed_rows(evidence_db, paper_id), ensure_ascii=False, indent=2))
         return 0
     if args.cmd == "evidence-init":
         evidence_db.init()

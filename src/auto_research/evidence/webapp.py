@@ -31,6 +31,7 @@ from .six_column import (
     learning_samples_jsonl,
     list_current_data,
     prepare_current_paper_packet,
+    resolve_paper_selector,
     search_current_data,
     seed_target_article,
     set_current_paper,
@@ -41,6 +42,11 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 
 WEB_DIR = Path(__file__).parent / "web"
+
+
+def requires_rescan_confirmation(db: EvidenceDB, paper_id: int) -> bool:
+    status = get_six_extraction_status(db, paper_id)
+    return bool(status.get("scanned"))
 
 
 class EvidenceHandler(BaseHTTPRequestHandler):
@@ -180,15 +186,37 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 )
                 return self.json_response(result)
             if parsed.path == "/api/current-paper/run-workflow":
+                resolved_id = resolve_paper_selector(
+                    self.db,
+                    paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
+                    article_key=body.get("article_key"),
+                )
+                if requires_rescan_confirmation(self.db, resolved_id) and not body.get("force_rescan"):
+                    return self.json_response(
+                        {
+                            "error": "这篇文章已经扫描过。若仍需再次扫描，请先在确认提示中选择继续。",
+                            "code": "already_scanned",
+                            "paper_id": resolved_id,
+                        },
+                        HTTPStatus.CONFLICT,
+                    )
                 result = run_article_workflow(
                     self.db,
-                    article_key=body.get("article_key"),
-                    paper_id=int(body["paper_id"]) if body.get("paper_id") not in (None, "") else None,
+                    paper_id=resolved_id,
                     max_pages=int(body.get("max_pages", 8)),
                 )
                 return self.json_response(result)
             if parsed.path == "/api/current-paper/deepseek-preview":
                 paper_id = int(body.get("paper_id") or get_current_paper_id(self.db))
+                if requires_rescan_confirmation(self.db, paper_id) and not body.get("force_rescan"):
+                    return self.json_response(
+                        {
+                            "error": "这篇文章已经扫描过。若仍需再次扫描，请先在确认提示中选择继续。",
+                            "code": "already_scanned",
+                            "paper_id": paper_id,
+                        },
+                        HTTPStatus.CONFLICT,
+                    )
                 max_pages = int(body["max_pages"]) if body.get("max_pages") not in (None, "") else None
                 result = DeepSeekEvidenceExtractor(self.db).run(
                     paper_id,

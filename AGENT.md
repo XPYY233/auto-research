@@ -224,7 +224,11 @@ The primary local command is:
 PYTHONPATH=src python3 -m auto_research.cli evidence-run-article XJZQ42XP
 ```
 
-It must resolve the article key, set the current paper, run or prepare extraction, audit every automatic row against the local PDF, and report learning-sample counts. The web form labelled `切换并自动处理` must call the same workflow through `/api/current-paper/run-workflow`.
+It must resolve the article key, set the current paper, run or prepare extraction, audit every automatic row against the local PDF, and report learning-sample counts.
+
+The web paper-switch form is intentionally read-only with respect to AI extraction: submitting an article key must call `/api/current-paper` only, load saved local rows, and never trigger DeepSeek or `/api/current-paper/run-workflow`. AI extraction in the web UI must require an explicit click on the separate current-article extraction button.
+
+The web UI must clearly show whether the current article has already been scanned. A paper is considered scanned when it already has six-column rows or at least one completed DeepSeek extraction run. Re-scanning a scanned paper must require an explicit browser confirmation and the backend request must include `force_rescan`; otherwise the API must reject the run with `already_scanned`.
 
 For a non-target article with a readable PDF and configured DeepSeek runtime, run the evidence-grounded DeepSeek extractor. Commit verified candidates only when that paper has no six-column rows; otherwise create a preview. If DeepSeek is unavailable, prepare a constrained prompt packet. For an article without a readable PDF, stop and report the missing local source.
 
@@ -307,3 +311,25 @@ Primary command:
 ```bash
 auto-research evidence-deepseek-extract <article-key>
 ```
+
+### Five-paper blind validation (2026-07-08)
+
+The first cross-paper blind validation is recorded in
+`data/evidence/random5_20260708_manifest.csv` and
+`data/evidence/random5_20260708_audit.md`. The fixed random seed was `20260708`.
+The five user-facing local article keys are `MZNUIZ2E`, `FDEA83QY`, `L6R9RV5J`,
+`7ZZTR5LB`, and `4RNGZVIX`. They currently expose 688 unreviewed automatic rows;
+all 688 can be highlighted in their authoritative local Zotero PDFs.
+
+Blind-test reliability rules are mandatory for later papers:
+
+- verify candidates in batches of no more than 20 so verifier JSON is not truncated;
+- retry a failed two-page extraction one page at a time;
+- if a single dense page still fails, split it into narrow condition/result/calculation/trend slices;
+- skip only bibliography-dominant pages, never正文、tables、figure captions, or supplements;
+- reject values explicitly attributed to another `Ref`, `reference`, or `literature` source, but do not confuse crystallographic directions such as `[001]` with citations;
+- write `meaning` and `context_explanation` in Chinese while preserving source-language excerpts and every numeric condition;
+- localization is a retrieval aid, not an evidence gate: a localization failure keeps the evidence-grounded English fields instead of failing the extraction.
+
+The five-paper results remain version-0 candidates. Do not describe their
+physical interpretation as human-confirmed until the researcher reviews them.

@@ -241,3 +241,26 @@ Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts
 are written to `data/evidence/deepseek_runs/`. Model output alone is never a
 publication gate: schema, page, numeric/table anchors, background/inference
 guards, independent verification, and human confirmation all remain required.
+
+In the local web page, switching the current article only reads saved database
+rows. It does not call DeepSeek or re-run extraction; automatic extraction must
+be started with the separate current-article extraction button.
+
+The web page also marks whether an article has already been scanned. If a paper
+already has six-column rows or a completed DeepSeek run, pressing an extraction
+button opens a confirmation dialog; the backend rejects repeat scans unless that
+confirmation sends `force_rescan`.
+
+Chinese localization for already imported, still-unreviewed automatic rows:
+
+```bash
+auto-research evidence-deepseek-localize <article-key>
+```
+
+The command changes only `meaning` and `context_explanation`. It keeps values,
+units, formulas, source excerpts, and evidence locations unchanged, and refuses
+a translation when a numeric condition disappears.
+
+The reproducible five-paper blind validation is documented in
+`data/evidence/random5_20260708_audit.md`; its machine-readable manifest is
+`data/evidence/random5_20260708_manifest.csv`.

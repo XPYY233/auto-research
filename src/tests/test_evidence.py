@@ -15,6 +15,7 @@ from auto_research.evidence.importers import import_ai_result, import_legacy_sam
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
+from auto_research.evidence.webapp import requires_rescan_confirmation
 from auto_research.evidence.workflow import run_article_workflow
 from auto_research.evidence.six_column import (
     CURRENT_PAPER_META_KEY,
@@ -36,6 +37,7 @@ from auto_research.evidence.six_column import (
     set_current_paper,
 )
 from auto_research.evidence.source_highlight import (
+    _normalize_text,
     get_source_view,
     render_source_highlight_png,
     render_source_snippet_png,
@@ -43,6 +45,9 @@ from auto_research.evidence.source_highlight import (
 
 
 class ValueTests(unittest.TestCase):
+    def test_pdf_flattened_scientific_exponent_matches_source_value(self):
+        self.assertEqual(_normalize_text("8×10^16"), _normalize_text("8×1016"))
+
     def test_value_with_uncertainty(self):
         parsed = parse_value("3.56±0.05")
         self.assertEqual(parsed.value_kind, "number")
@@ -243,6 +248,19 @@ class SixColumnWorkflowTests(unittest.TestCase):
             by_id[context_match["item_id"]]["search_score"],
         )
 
+    def test_search_spans_multiple_papers(self):
+        other = self.db.upsert_paper(title="Other irradiation paper", doi="10.1/search-other")
+        other_row = add_manual_item(self.db, other, {
+            "value_text": "500", "meaning": "辐照温度", "unit": "°C",
+            "article_title": "Other irradiation paper", "doi": "10.1/search-other",
+            "context_explanation": "W合金；He辐照；跨文章搜索测试",
+        })
+        results = search_current_data(self.db, "辐照温度", limit=1000)
+        paper_ids = {row["paper_id"] for row in results}
+        self.assertIn(self.paper_id, paper_ids)
+        self.assertIn(other, paper_ids)
+        self.assertIn(other_row["item_id"], {row["item_id"] for row in results})
+
     def test_current_paper_can_be_resolved_by_article_key(self):
         other = self.db.upsert_paper(title="Another paper", doi="10.1/other", local_article_key="ALT0001")
         set_current_paper(self.db, article_key="ALT0001")
@@ -360,6 +378,33 @@ class SixColumnWorkflowTests(unittest.TestCase):
                 self.assertTrue(Path(result["action_result"]["packet_path"]).is_file())
         finally:
             prompt_module.PROMPT_DIR = old_prompt_dir
+
+    def test_extraction_status_marks_scanned_papers_for_rescan_confirmation(self):
+        status = get_six_extraction_status(self.db, self.paper_id)
+        self.assertTrue(status["scanned"])
+        self.assertEqual(status["scan_state"], "scanned")
+        self.assertEqual(status["row_count"], 114)
+        self.assertTrue(requires_rescan_confirmation(self.db, self.paper_id))
+
+        empty = self.db.upsert_paper(
+            title="Empty paper", doi="10.1/empty", local_article_key="EMPTY",
+            pdf_path=self.db.get_paper(self.paper_id)["pdf_path"],
+        )
+        empty_status = get_six_extraction_status(self.db, empty)
+        self.assertFalse(empty_status["scanned"])
+        self.assertFalse(requires_rescan_confirmation(self.db, empty))
+
+        with self.db.connect() as conn:
+            conn.execute(
+                """INSERT INTO ai_extraction_runs
+                   (paper_id,provider,model,mode,status,pdf_sha256,chunk_count,created_at,finished_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                (empty, "deepseek", "fake", "preview", "completed", "sha", 1, "2026-07-09T00:00:00Z", "2026-07-09T00:01:00Z"),
+            )
+        completed_status = get_six_extraction_status(self.db, empty)
+        self.assertTrue(completed_status["scanned"])
+        self.assertEqual(completed_status["completed_ai_run_count"], 1)
+        self.assertTrue(requires_rescan_confirmation(self.db, empty))
 
     def test_run_article_workflow_uses_deepseek_for_new_pdf_article(self):
         other = self.db.upsert_paper(

@@ -9,7 +9,7 @@ from typing import Any
 
 import fitz
 
-from auto_research.ai.deepseek import DeepSeekClient
+from auto_research.ai.deepseek import DeepSeekClient, DeepSeekResponseError
 from auto_research.paths import DATA_DIR
 
 from .db import EVIDENCE_TYPES, SOURCE_PRECISIONS, EvidenceDB, now
@@ -18,6 +18,14 @@ from .six_column import import_ai_result_to_six_column, list_current_data
 
 RUN_DIR = DATA_DIR / "evidence" / "deepseek_runs"
 VERDICTS = {"supported", "unsupported", "ambiguous"}
+VERIFICATION_BATCH_SIZE = 20
+LOCALIZATION_BATCH_SIZE = 8
+BACKGROUND_PROVENANCE_PATTERNS = (
+    r"\bliterature\s+(?:ref(?:erence)?\.?\s*)?\[?\d+",
+    r"\b(?:from|derived from|taken from)\s+(?:the\s+)?(?:literature|ref(?:erence)?\.?\s*\[?\d+)",
+    r"\breference value\b",
+    r"\bcalculations?\s+from\s+(?:table\s+\d+\s*)?\[\d+\]",
+)
 
 
 def _compact(value: str | None) -> str:
@@ -28,7 +36,7 @@ def _numbers(value: str | None) -> list[str]:
     text = re.sub(r"(?:[×x]\s*)?10\s*\^\s*[+-]?\d+", "", str(value or ""), flags=re.IGNORECASE)
     return [
         number.lstrip("+-")
-        for number in re.findall(r"(?<![\w.])[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?", text)
+        for number in re.findall(r"(?<![A-Za-z0-9_.])[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?", text)
     ]
 
 
@@ -51,6 +59,16 @@ def _evidence_check(item: dict[str, Any], page_text: str) -> dict[str, Any]:
         return {
             "passed": False, "score": 0.0, "missing_numbers": [],
             "reason": f"候选依赖背景文献或推测：{', '.join(forbidden)}",
+        }
+    explicit_background = [
+        pattern for pattern in BACKGROUND_PROVENANCE_PATTERNS
+        if re.search(pattern, semantic_text, re.IGNORECASE)
+    ]
+    locator_text = str(item.get("source_locator") or "").strip().casefold()
+    if explicit_background or locator_text.startswith(("reference", "bibliography")):
+        return {
+            "passed": False, "score": 0.0, "missing_numbers": [],
+            "reason": "候选明确来自背景文献或参考文献，不是本研究数据",
         }
     excerpt = _compact(item.get("source_excerpt"))
     page = _compact(page_text)
@@ -91,12 +109,35 @@ def _page_chunks(pages: list[dict[str, Any]], chunk_pages: int) -> list[list[dic
     return [pages[index:index + chunk_pages] for index in range(0, len(pages), chunk_pages)]
 
 
+def _is_reference_dominant(text: str) -> bool:
+    """Identify bibliography-only pages without suppressing cited experimental prose."""
+    body = re.sub(r"^\s*\d+\s*\n", "", str(text or ""), count=1)
+    compact = " ".join(body.split())
+    if not compact:
+        return False
+    numbered_entries = len(re.findall(r"(?:^|\n)\s*\[\d+\]", body))
+    begins_with_entry = bool(re.match(r"\s*(?:references\s*)?\[\d+\]", body, re.I))
+    journal_markers = len(re.findall(
+        r"\b(?:doi|vol\.|pp\.|et al\.|materials?|journal|phys\.|acta|scripta)\b",
+        compact, re.I,
+    ))
+    has_data_anchor = bool(re.search(r"\b(?:table|figure|fig\.|experimental|methods?)\b", compact, re.I))
+    return (
+        numbered_entries >= 5
+        or (begins_with_entry and numbered_entries >= 2 and not has_data_anchor)
+        or (compact.casefold().startswith("references ") and numbered_entries >= 2)
+    )
+
+
 def _read_pages(pdf_path: Path, max_pages: int | None = None) -> list[dict[str, Any]]:
     pages: list[dict[str, Any]] = []
     with fitz.open(pdf_path) as document:
         limit = min(len(document), max_pages) if max_pages else len(document)
         for index in range(limit):
-            pages.append({"page": index + 1, "text": document[index].get_text("text").strip()})
+            text = document[index].get_text("text").strip()
+            if _is_reference_dominant(text):
+                continue
+            pages.append({"page": index + 1, "text": text})
     return pages
 
 
@@ -132,6 +173,7 @@ Rules:
 8. If the relation between value, sample, and condition is unclear, omit it from data and create an ambiguous_condition task.
 9. Put the unit only in unit. value_text contains the reported numeric/qualitative value without repeating the unit.
 10. Include json keys even when a list is empty.
+11. Write meaning and context_explanation in concise Chinese so the local Chinese search UI can retrieve them. Preserve material formulas, phase symbols, particle names, and instrument abbreviations exactly. source_excerpt must remain verbatim in the paper's original language.
 This pass has a specific recall focus: {focus}
 """
     user = (
@@ -158,6 +200,154 @@ Mark supported only when the stated value, physical meaning, sample/context rela
         f"Source pages:\n{source}"
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def _verification_batches(candidates: list[dict[str, Any]],
+                          batch_size: int = VERIFICATION_BATCH_SIZE) -> list[list[dict[str, Any]]]:
+    """Keep verifier output comfortably below the JSON response token limit."""
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    return [candidates[index:index + batch_size] for index in range(0, len(candidates), batch_size)]
+
+
+def _localization_messages(records: list[dict[str, Any]]) -> list[dict[str, str]]:
+    payload = [{
+        "candidate_id": item["candidate_id"],
+        "meaning": item["meaning"],
+        "context_explanation": item["context_explanation"],
+    } for item in records]
+    system = """Translate scientific database fields into concise Chinese.
+Return json only as {"translations":[{"candidate_id":"...","meaning_zh":"...","context_explanation_zh":"..."}]}.
+Do not add, remove, infer, or reinterpret facts. Preserve every number, uncertainty, inequality, material formula, phase symbol, particle name, instrument abbreviation, and condition exactly. Keep candidate_id unchanged. Translate prose only.
+"""
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+    ]
+
+
+def _localize_candidates(client: DeepSeekClient, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output = [dict(item) for item in candidates]
+    needs_translation = [
+        item for item in output
+        if not (
+            re.search(r"[\u4e00-\u9fff]", str(item.get("meaning") or ""))
+            and re.search(r"[\u4e00-\u9fff]", str(item.get("context_explanation") or ""))
+        )
+    ]
+    for batch in _verification_batches(needs_translation, LOCALIZATION_BATCH_SIZE):
+        try:
+            payload = client.request_json(
+                _localization_messages(batch), task="localization", max_tokens=8_000, thinking=False
+            )
+        except DeepSeekResponseError:
+            # Localization improves Chinese retrieval but must never invalidate
+            # an otherwise evidence-grounded extraction run.
+            continue
+        translations = {
+            item.get("candidate_id"): item for item in payload.get("translations", [])
+            if isinstance(item, dict)
+        }
+        for item in batch:
+            translated = translations.get(item["candidate_id"])
+            if not translated:
+                continue
+            meaning = str(translated.get("meaning_zh") or "").strip()
+            context = str(translated.get("context_explanation_zh") or "").strip()
+            original_numbers = set(_numbers(
+                f"{item.get('meaning') or ''} {item.get('context_explanation') or ''}"
+            ))
+            translated_numbers = set(_numbers(f"{meaning} {context}"))
+            if not meaning or not context or not original_numbers.issubset(translated_numbers):
+                continue
+            item["model_meaning"] = item["meaning"]
+            item["model_context_explanation"] = item["context_explanation"]
+            item["meaning"] = meaning
+            item["context_explanation"] = context
+    return output
+
+
+def localize_unreviewed_rows(db: EvidenceDB, paper_id: int,
+                             client: DeepSeekClient | None = None) -> dict[str, Any]:
+    runtime = client or DeepSeekClient()
+    rows = [
+        row for row in list_current_data(db, paper_id)
+        if row["origin_type"] == "automatic"
+        and int(row["version_no"]) == 0
+        and row["review_action"] == "automatic"
+    ]
+    candidates = [{
+        "candidate_id": f"item-{row['item_id']}",
+        "meaning": row["meaning"],
+        "context_explanation": row["context_explanation"],
+    } for row in rows]
+    localized = _localize_candidates(runtime, candidates)
+    by_id = {int(item["candidate_id"].split("-", 1)[1]): item for item in localized}
+    updated = skipped = 0
+    with db.connect() as conn:
+        for row in rows:
+            item = by_id[row["item_id"]]
+            if item["meaning"] == row["meaning"] and item["context_explanation"] == row["context_explanation"]:
+                skipped += 1
+                continue
+            cur = conn.execute(
+                """UPDATE data_versions SET meaning=?,context_explanation=?,editor=?,edit_note=?
+                WHERE item_id=? AND version_no=0 AND review_action='automatic'
+                  AND meaning=? AND context_explanation=?""",
+                (
+                    item["meaning"], item["context_explanation"], "DeepSeek localization",
+                    "Automatic Chinese localization; numeric value, unit, and source evidence unchanged",
+                    row["item_id"], row["meaning"], row["context_explanation"],
+                ),
+            )
+            if cur.rowcount:
+                updated += 1
+            else:
+                skipped += 1
+    return {"paper_id": paper_id, "eligible": len(rows), "updated": updated, "skipped": skipped}
+
+
+def _focus_recovery_slices(focus: str) -> tuple[str, ...]:
+    if focus.casefold().startswith("focus on methods"):
+        return (
+            "Recovery slice: extract only material identity, composition, specimen geometry, and preparation.",
+            "Recovery slice: extract only irradiation particles, energies, doses, fluences, fluxes, temperatures, facilities, and atmospheres.",
+            "Recovery slice: extract only measurement methods, instrument settings, and explicit method/table values not covered by the other slices.",
+        )
+    return (
+        "Recovery slice: extract only directly measured numeric results for this study.",
+        "Recovery slice: extract only final derived or calculated physical quantities for this study; exclude intermediate algebra and cited literature values.",
+        "Recovery slice: extract only explicit qualitative observations and trends for this study; do not duplicate numeric results.",
+    )
+
+
+def _extract_focus_payload(client: DeepSeekClient, paper: dict[str, Any],
+                           chunk: list[dict[str, Any]], focus: str,
+                           *, allow_focus_split: bool = True) -> dict[str, Any]:
+    """Retry a malformed dense two-page extraction as independent one-page requests."""
+    try:
+        return client.request_json(
+            _extraction_messages(paper, chunk, focus), task="extraction",
+            max_tokens=16_000, thinking=False,
+        )
+    except DeepSeekResponseError:
+        merged: dict[str, list[Any]] = {"data": [], "pending_tasks": []}
+        if len(chunk) > 1:
+            recovery_requests = [(page, focus, True) for page in chunk]
+        elif allow_focus_split:
+            recovery_requests = [(chunk[0], recovery, False) for recovery in _focus_recovery_slices(focus)]
+        else:
+            raise
+        for page, recovery_focus, can_split in recovery_requests:
+            payload = _extract_focus_payload(
+                client, paper, [page], recovery_focus, allow_focus_split=can_split
+            )
+            if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+                raise DeepSeekResponseError("DeepSeek 逐页降级抽取仍未返回 data 列表")
+            merged["data"].extend(payload["data"])
+            if isinstance(payload.get("pending_tasks"), list):
+                merged["pending_tasks"].extend(payload["pending_tasks"])
+        return merged
 
 
 def _separate_unit(value_text: str, unit: str) -> tuple[str, str | None]:
@@ -337,10 +527,7 @@ class DeepSeekEvidenceExtractor:
             for chunk_index, chunk in enumerate(chunks, start=1):
                 candidates: list[dict[str, Any]] = []
                 for pass_index, focus in enumerate(EXTRACTION_FOCUSES, start=1):
-                    payload = self.client.request_json(
-                        _extraction_messages(paper, chunk, focus), task="extraction",
-                        max_tokens=10_000, thinking=False,
-                    )
+                    payload = _extract_focus_payload(self.client, paper, chunk, focus)
                     pass_candidates, rejected = _validated_candidates(
                         payload, {int(page["page"]) for page in chunk}, chunk_index, pass_index
                     )
@@ -355,14 +542,16 @@ class DeepSeekEvidenceExtractor:
                     if item["local_evidence"]["passed"]:
                         local_passed.append(item)
                 if local_passed:
-                    verification = self.client.request_json(
-                        _verification_messages(chunk, local_passed), task="verification",
-                        max_tokens=4_000, thinking=False,
-                    )
-                    verdicts = {
-                        item.get("candidate_id"): item for item in verification.get("verdicts", [])
-                        if isinstance(item, dict) and item.get("verdict") in VERDICTS
-                    }
+                    verdicts: dict[str, dict[str, Any]] = {}
+                    for verification_batch in _verification_batches(local_passed):
+                        verification = self.client.request_json(
+                            _verification_messages(chunk, verification_batch), task="verification",
+                            max_tokens=4_000, thinking=False,
+                        )
+                        verdicts.update({
+                            item.get("candidate_id"): item for item in verification.get("verdicts", [])
+                            if isinstance(item, dict) and item.get("verdict") in VERDICTS
+                        })
                     for item in local_passed:
                         item["ai_verification"] = verdicts.get(item["candidate_id"], {
                             "candidate_id": item["candidate_id"], "verdict": "ambiguous",
@@ -399,6 +588,7 @@ class DeepSeekEvidenceExtractor:
                 and item["ai_verification"].get("verdict") == "supported"
             ]
             verified = _deduplicate(verified_raw)
+            verified = _localize_candidates(self.client, verified)
             duplicate_count = len(verified_raw) - len(verified)
             rejected_count = len(schema_rejected) + len(all_candidates) - len(verified_raw)
             comparison = _compare_baseline(self.db, paper_id, verified)

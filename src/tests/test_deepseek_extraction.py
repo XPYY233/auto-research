@@ -7,9 +7,12 @@ from pathlib import Path
 
 import fitz
 
-from auto_research.ai.deepseek import DeepSeekSettings
+from auto_research.ai.deepseek import DeepSeekResponseError, DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
-from auto_research.evidence.deepseek_extraction import DeepSeekEvidenceExtractor, _deduplicate, _evidence_check
+from auto_research.evidence.deepseek_extraction import (
+    DeepSeekEvidenceExtractor, _deduplicate, _evidence_check, _extract_focus_payload, _localize_candidates, _numbers,
+    _is_reference_dominant, _verification_batches,
+)
 from auto_research.evidence.six_column import list_current_data
 
 
@@ -148,6 +151,28 @@ class DeepSeekExtractionTests(unittest.TestCase):
         self.assertFalse(background["passed"])
         self.assertFalse(assumed["passed"])
 
+    def test_explicit_reference_value_is_rejected_but_current_result_comparison_is_kept(self):
+        reference = _evidence_check({
+            "value_text": "8.4×10^13", "source_excerpt": "a loop density of 8.4×10^13 m-2",
+            "source_locator": "Discussion", "source_precision": "exact_text",
+            "context_explanation": "loop density from reference [9]; reference value for comparison",
+        }, "At 0.2 dpa a loop density of 8.4×10^13 m-2 was observed in [9].")
+        current = _evidence_check({
+            "value_text": "enriched", "source_excerpt": "Ni and Co are enriched around all voids",
+            "source_locator": "Results", "source_precision": "exact_text",
+            "context_explanation": "NiCoFeCr; current STEM-EDS observation; consistent with previous reports",
+        }, "Ni and Co are enriched around all voids, consistent with previous reports.")
+        self.assertFalse(reference["passed"])
+        self.assertIn("参考文献", reference["reason"])
+        self.assertTrue(current["passed"])
+
+        zone_axis = _evidence_check({
+            "value_text": "25", "source_excerpt": "25 dpa at 350 C from [001] zone axis",
+            "source_locator": "Fig. 3", "source_precision": "exact_text",
+            "context_explanation": "TEM BF image from [001] zone axis; g=200",
+        }, "TEM image at 25 dpa and 350 C from [001] zone axis with g=200.")
+        self.assertTrue(zone_axis["passed"])
+
     def test_repeated_condition_across_pages_is_semantically_deduplicated(self):
         base = {
             "value_text": "300", "meaning": "Irradiation temperature", "unit": "°C",
@@ -180,6 +205,91 @@ class DeepSeekExtractionTests(unittest.TestCase):
         }, "Table 1 Fe 23.3 23.7 Cr 23.3 23.0 Ni 23.3 22.7")
         self.assertFalse(result["passed"])
         self.assertIn("一值一行", result["reason"])
+
+    def test_verification_candidates_are_split_to_prevent_truncated_json(self):
+        candidates = [{"candidate_id": f"c{index}"} for index in range(45)]
+        batches = _verification_batches(candidates)
+        self.assertEqual([len(batch) for batch in batches], [20, 20, 5])
+        self.assertEqual(
+            [item["candidate_id"] for batch in batches for item in batch],
+            [item["candidate_id"] for item in candidates],
+        )
+
+    def test_dense_two_page_extraction_falls_back_to_individual_pages(self):
+        class DenseClient:
+            def __init__(self):
+                self.page_counts = []
+
+            def request_json(self, messages, **kwargs):
+                page_count = messages[1]["content"].count("=== PDF PAGE")
+                self.page_counts.append(page_count)
+                if page_count > 1:
+                    raise DeepSeekResponseError("truncated")
+                return {"data": [], "pending_tasks": [{"page_count": page_count}]}
+
+        client = DenseClient()
+        payload = _extract_focus_payload(
+            client,
+            {"title": "Dense table paper", "doi": "10.1/dense"},
+            [{"page": 1, "text": "Table 1"}, {"page": 2, "text": "Table 2"}],
+            "tables",
+        )
+        self.assertEqual(client.page_counts, [2, 1, 1])
+        self.assertEqual(len(payload["pending_tasks"]), 2)
+
+    def test_dense_single_page_extraction_falls_back_to_focus_slices(self):
+        class DensePageClient:
+            def __init__(self):
+                self.calls = 0
+
+            def request_json(self, messages, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    raise DeepSeekResponseError("truncated")
+                self.assert_max_tokens = kwargs["max_tokens"]
+                return {"data": [], "pending_tasks": [{"call": self.calls}]}
+
+        client = DensePageClient()
+        payload = _extract_focus_payload(
+            client,
+            {"title": "Dense result page", "doi": "10.1/dense-page"},
+            [{"page": 8, "text": "Many values"}],
+            "Focus on experimental results, measured and calculated properties, defect observations, comparisons, trends, and results tables.",
+        )
+        self.assertEqual(client.calls, 4)
+        self.assertEqual(client.assert_max_tokens, 16_000)
+        self.assertEqual(len(payload["pending_tasks"]), 3)
+
+    def test_bibliography_only_page_is_skipped_but_cited_methods_are_kept(self):
+        references = """References
+[1] A. Author et al., Acta Materialia 1 (2020) 1-5. doi:10.1/a
+[2] B. Author et al., Journal of Nuclear Materials 2 (2021) 6-9.
+[3] C. Author et al., Physical Review 3 (2022) 10-12.
+[4] D. Author et al., Materials Today 4 (2023) 13-15.
+[5] E. Author et al., Scripta Materialia 5 (2024) 16-20.
+"""
+        methods = "Samples were irradiated as described in Ref. [5]. Figure 2 shows measured hardness."
+        self.assertTrue(_is_reference_dominant(references))
+        self.assertFalse(_is_reference_dominant(methods))
+
+    def test_localization_preserves_numbers_and_keeps_model_fields_for_audit(self):
+        class LocalizationClient:
+            def request_json(self, messages, **kwargs):
+                return {"translations": [{
+                    "candidate_id": "c1", "meaning_zh": "辐照温度",
+                    "context_explanation_zh": "WTaCrVHf；300 K；1 dpa；TEM",
+                }]}
+
+        rows = _localize_candidates(LocalizationClient(), [{
+            "candidate_id": "c1", "meaning": "irradiation temperature",
+            "context_explanation": "WTaCrVHf; 300 K; 1 dpa; TEM",
+        }])
+        self.assertEqual(rows[0]["meaning"], "辐照温度")
+        self.assertEqual(rows[0]["model_meaning"], "irradiation temperature")
+        self.assertIn("300 K", rows[0]["context_explanation"])
+
+    def test_number_guard_recognizes_values_adjacent_to_chinese_text(self):
+        self.assertEqual(_numbers("在290 K下辐照至0.2 dpa"), ["290", "0.2"])
 
 
 if __name__ == "__main__":

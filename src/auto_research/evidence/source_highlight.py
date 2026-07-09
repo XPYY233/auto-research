@@ -38,6 +38,9 @@ def _normalize_text(text: str) -> str:
     ):
         normalized = normalized.replace(src, dst)
     normalized = re.sub(r"[\[\]{}()_,;:]+", " ", normalized)
+    # PDF text layers commonly flatten 10^16 into 1016. Treat the caret as a
+    # presentation difference only when it is the exponent marker after 10.
+    normalized = re.sub(r"(?<=10)\^(?=[+-]?\d)", "", normalized)
     normalized = re.sub(r"\s+", " ", normalized)
     return normalized.strip()
 
