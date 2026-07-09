@@ -412,6 +412,19 @@ function confirmSelectedRow(options = {}) {
   confirmRow(Number(state.selected), options);
 }
 
+function openSelectedSource() {
+  if (!state.selected) {
+    toast("请先选择一条数据。", true);
+    return;
+  }
+  const row = state.rows.find(item => Number(item.item_id) === Number(state.selected));
+  if (!row || row.origin_type === "manual") {
+    toast("人工补录数据没有自动抽取的原文定位。", true);
+    return;
+  }
+  openSourceViewer(Number(state.selected));
+}
+
 function handleReviewKeyboard(event) {
   if (document.body.dataset.view !== "review") return;
   const key = event.key.toLowerCase();
@@ -422,6 +435,9 @@ function handleReviewKeyboard(event) {
   } else if (key === "n" && event.altKey && !event.metaKey && !event.ctrlKey) {
     event.preventDefault();
     selectNextUnreviewed();
+  } else if (key === "s" && event.altKey && !event.metaKey && !event.ctrlKey) {
+    event.preventDefault();
+    openSelectedSource();
   }
 }
 
