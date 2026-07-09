@@ -33,6 +33,7 @@
 .article-picker strong{display:block;margin-top:4px;font:600 15px/1.4 Georgia,"Songti SC",serif}
 .article-picker form{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;align-items:center}
 .article-picker input{width:290px;padding:11px 12px;border:1px solid #c7d4db;border-radius:6px}
+.article-picker select{width:min(100%,520px);padding:11px 12px;border:1px solid #c7d4db;border-radius:6px;background:#fff;color:var(--ink)}
 .article-picker button{border:0;border-radius:999px;padding:11px 16px;background:var(--blue);color:#fff;cursor:pointer}
 .article-picker button:disabled{background:#b7c4cb;color:#f5f7f8;cursor:not-allowed}
 .article-picker a{display:inline-grid;place-items:center;padding:11px 16px;border-radius:999px;border:1px solid #c7d4db;background:#fff;color:var(--blue);text-decoration:none;font-size:12px}
@@ -46,7 +47,7 @@
 .import-card{margin-top:18px}
 #import-json-text{min-height:220px;font:12px/1.55 "IBM Plex Mono",monospace}
 .result-paper{grid-column:2/5;color:var(--muted);font-size:11px;line-height:1.4}
-@media(max-width:700px){.article-picker{display:block}.article-picker form{display:block;margin-top:12px}.article-picker input{width:100%}.article-picker button{margin-top:10px;width:100%}.article-picker p{margin-top:10px}.result-paper{grid-column:auto}}
+@media(max-width:700px){.article-picker{display:block}.article-picker form{display:block;margin-top:12px}.article-picker input,.article-picker select{width:100%}.article-picker button{margin-top:10px;width:100%}.article-picker p{margin-top:10px}.result-paper{grid-column:auto}}
 .history-tools{display:grid;justify-items:end;gap:8px}
 .history-tools p{margin:0;color:var(--muted);font-size:11px;line-height:1.6;text-align:right;max-width:360px}
 .history-tools a{color:var(--blue);font-size:12px}

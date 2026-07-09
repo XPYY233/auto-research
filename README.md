@@ -255,8 +255,9 @@ be started with the separate current-article extraction button.
 Temporary edits in the review table are highlighted but not saved until you
 click `确认当前内容`; switching papers, importing results, re-running extraction,
 or leaving the page warns before those unsaved edits are discarded.
-The switcher displays registered papers by title, with the local article key in
-parentheses, so you do not need to memorize Zotero/storage codes.
+The switcher displays registered papers by title, year/DOI, and saved-row count.
+The visible option text does not require or foreground Zotero/storage codes; the
+web app switches by the internal paper id.
 
 The search page is database-wide by default. You do not need to choose a paper
 before searching; CSV export from that page follows the same whole-database

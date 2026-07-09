@@ -64,9 +64,12 @@ function paperRef(paper) {
 }
 
 function paperLabel(paper) {
-  const ref = paperRef(paper);
   const title = paper?.title || "未命名文章";
-  return ref ? `${title}（${ref}）` : title;
+  const details = [
+    paper?.year ? `${paper.year}` : "",
+    paper?.doi ? paper.doi : "",
+  ].filter(Boolean);
+  return details.length ? `${title} · ${details.join(" · ")}` : title;
 }
 
 function renderOriginalPlaceholder() {
@@ -112,12 +115,11 @@ function renderPaperOptions() {
   const select = document.querySelector("#paper-switch-input");
   if (!select) return;
   select.innerHTML = state.papers.map(paper => {
-    const ref = paperRef(paper);
     const rows = Number(paper.six_row_count || paper.row_count || 0);
     const scan = rows ? ` · ${rows}条数据` : "";
-    return `<option value="${esc(ref)}">${esc(paperLabel(paper))}${esc(scan)}</option>`;
+    return `<option value="${esc(paper.id)}">${esc(paperLabel(paper))}${esc(scan)}</option>`;
   }).join("");
-  if (state.paper) select.value = paperRef(state.paper);
+  if (state.paper) select.value = String(state.paper.id);
 }
 
 function renderPaper() {
@@ -746,18 +748,18 @@ async function submitPaperSwitch(event) {
   event.preventDefault();
   const input = document.querySelector("#paper-switch-input");
   const button = document.querySelector("#paper-switch-submit");
-  const key = input.value.trim();
-  if (!key) {
-    toast("请先输入文章号。", true);
+  const paperId = Number(input.value);
+  if (!paperId) {
+    toast("请先选择一篇文章。", true);
     return;
   }
   const previous = button.textContent;
   button.disabled = true;
   button.textContent = "正在读取已保存数据…";
   try {
-    const switched = await switchCurrentPaper({ articleKey: key, silent: true });
+    const switched = await switchCurrentPaper({ paperId, silent: true });
     if (!switched) return;
-    toast(`已切换到 ${paperRef(state.paper)}，本次只读取本地已保存数据，未调用 DeepSeek。`);
+    toast(`已切换到《${state.paper.title || "未命名文章"}》，本次只读取本地已保存数据，未调用 DeepSeek。`);
   } catch (error) {
     toast(error.message, true);
   } finally {
