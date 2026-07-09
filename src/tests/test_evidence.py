@@ -14,6 +14,7 @@ from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
 from auto_research.evidence.pilot import select_pilot
+from auto_research.evidence.self_check import check_evidence_workflow
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
 from auto_research.evidence.webapp import make_xlsx, requires_rescan_confirmation
@@ -428,6 +429,31 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(result["status_after"]["row_count"], 114)
         self.assertEqual(result["evidence_audit"]["checked_rows"], 114)
         self.assertEqual(result["learning"]["sample_count"], 0)
+
+    def test_self_check_verifies_target_article_workflow_readiness(self):
+        report = check_evidence_workflow(
+            self.db,
+            "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C",
+            queries=["温度", "硬度", "Wei-Ying Chen"],
+            min_rows=100,
+            min_highlight_ratio=0.8,
+        )
+        self.assertTrue(report["ok"], report["checks"])
+        self.assertEqual(report["paper"]["id"], self.paper_id)
+        self.assertEqual(report["summary"]["row_count"], 114)
+        self.assertGreaterEqual(report["summary"]["highlighted_rows"], 100)
+        self.assertTrue(all(check["ok"] for check in report["checks"]))
+
+    def test_self_check_fails_when_article_has_no_extracted_rows(self):
+        other = self.db.upsert_paper(
+            title="Empty but real PDF article", doi="10.1/empty-self-check",
+            pdf_path=self.db.get_paper(self.paper_id)["pdf_path"],
+        )
+        report = check_evidence_workflow(self.db, "10.1/empty-self-check", queries=["温度"])
+        self.assertFalse(report["ok"])
+        by_name = {check["name"]: check for check in report["checks"]}
+        self.assertFalse(by_name["six_column_rows"]["ok"])
+        self.assertFalse(by_name["source_highlight"]["ok"])
 
     def test_run_article_workflow_prepares_packet_for_unknown_pdf_article(self):
         other = self.db.upsert_paper(

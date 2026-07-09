@@ -94,6 +94,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("evidence-summary", help="Show evidence database counts")
     sub.add_parser("evidence-validate", help="Validate pilot balance and evidence publication gates")
     sub.add_parser("evidence-seed-target", help="Seed the six-column demo for the single target irradiation article")
+    p = sub.add_parser("evidence-self-check", help="Read-only acceptance check for one six-column evidence article")
+    p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
+    p.add_argument("--query", action="append", help="Keyword that should return search results; can be repeated")
+    p.add_argument("--min-rows", type=int, default=1)
+    p.add_argument("--min-highlight-ratio", type=float, default=0.75)
     sub.add_parser("evidence-deepseek-status", help="Show redacted DeepSeek runtime configuration")
     sub.add_parser("evidence-deepseek-smoke-test", help="Send a minimal synthetic JSON connection check to DeepSeek")
     p = sub.add_parser("evidence-deepseek-extract", help="Run evidence-grounded DeepSeek extraction for one paper selector")
@@ -333,6 +338,17 @@ def cmd_evidence(args) -> int:
         from .evidence.six_column import seed_target_article
         print(json.dumps(seed_target_article(evidence_db), ensure_ascii=False, indent=2))
         return 0
+    if args.cmd == "evidence-self-check":
+        from .evidence.self_check import check_evidence_workflow
+        report = check_evidence_workflow(
+            evidence_db,
+            args.article_key,
+            queries=args.query,
+            min_rows=args.min_rows,
+            min_highlight_ratio=args.min_highlight_ratio,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["ok"] else 2
     return 1
 
 

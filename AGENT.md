@@ -227,6 +227,14 @@ PYTHONPATH=src python3 -m auto_research.cli evidence-run-article "10.1016/j.jnuc
 
 It must resolve the paper selector, set the current paper, run or prepare extraction, audit every automatic row against the local PDF, and report learning-sample counts. A paper selector may be a DOI, exact title, unique title fragment, paper id, or a legacy local/Zotero key. Prefer DOI or title in user-facing docs because Zotero storage keys differ across devices.
 
+Use the read-only self-check before claiming the six-column workflow is ready for a paper:
+
+```bash
+PYTHONPATH=src python3 -m auto_research.cli evidence-self-check "10.1016/j.jnucmat.2018.08.031" --query 温度 --query 硬度 --min-rows 100 --min-highlight-ratio 0.8
+```
+
+The self-check must not call DeepSeek, switch the current paper, save snapshots, or modify rows. It verifies selector resolution, local PDF presence, six editable fields, PDF highlight coverage, fuzzy search, CSV/Excel export generation, and learning-sample channel availability.
+
 The web paper-switch form is intentionally read-only with respect to AI extraction: submitting a paper selector must call `/api/current-paper` only, load saved local rows, and never trigger DeepSeek or `/api/current-paper/run-workflow`. AI extraction in the web UI must require an explicit click on the separate current-article extraction button.
 
 The web UI must clearly show whether the current article has already been scanned. A paper is considered scanned when it already has six-column rows or at least one completed DeepSeek extraction run. Re-scanning a scanned paper must require an explicit browser confirmation and the backend request must include `force_rescan`; otherwise the API must reject the run with `already_scanned`. The command-line DeepSeek paths must follow the same policy: `evidence-run-article` and `evidence-deepseek-extract` must not call DeepSeek again for scanned papers unless `--force-rescan` is present.

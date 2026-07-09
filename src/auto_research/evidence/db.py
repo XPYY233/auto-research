@@ -303,7 +303,8 @@ class EvidenceDB:
                 conn.execute("ALTER TABLE ai_extraction_runs ADD COLUMN duplicate_count INTEGER NOT NULL DEFAULT 0")
             conn.execute(
                 "INSERT INTO schema_meta(key,value) VALUES('schema_version','5') "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value "
+                "WHERE schema_meta.value IS NOT excluded.value"
             )
 
     def get_meta(self, key: str, default: str | None = None) -> str | None:
