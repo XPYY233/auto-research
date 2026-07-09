@@ -13,7 +13,7 @@ from auto_research.ai.deepseek import DeepSeekClient, DeepSeekResponseError
 from auto_research.paths import DATA_DIR
 
 from .db import EVIDENCE_TYPES, SOURCE_PRECISIONS, EvidenceDB, now
-from .six_column import import_ai_result_to_six_column, list_current_data
+from .six_column import collect_learning_samples, import_ai_result_to_six_column, list_current_data
 
 
 RUN_DIR = DATA_DIR / "evidence" / "deepseek_runs"
@@ -147,7 +147,47 @@ EXTRACTION_FOCUSES = (
 )
 
 
-def _extraction_messages(paper: dict[str, Any], chunk: list[dict[str, Any]], focus: str) -> list[dict[str, str]]:
+def _shorten(value: Any, limit: int = 260) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def _learning_guidance(samples_payload: dict[str, Any], limit: int = 6) -> str:
+    """Convert human review samples into prompt hints, never into evidence."""
+    samples = [
+        item for item in samples_payload.get("samples", [])
+        if isinstance(item, dict) and item.get("sample_type") in {"correction", "confirmation", "manual_addition"}
+    ]
+    if not samples:
+        return ""
+    priority = {"correction": 0, "manual_addition": 1, "confirmation": 2}
+    samples.sort(key=lambda item: (priority.get(item.get("sample_type"), 9), str(item.get("created_at") or "")))
+    lines = [
+        "HUMAN REVIEW LEARNING HINTS",
+        "Use these only to learn the researcher's preferred field boundaries and wording style.",
+        "Never copy values, materials, conditions, page numbers, or conclusions from these hints unless they also appear in the current PDF page block.",
+    ]
+    for index, sample in enumerate(samples[:limit], start=1):
+        corrected = sample.get("corrected") or {}
+        original = sample.get("original") or {}
+        changed = ", ".join(sample.get("changed_fields") or [])
+        lines.append(
+            f"{index}. {sample.get('sample_type')} changed=[{changed}] "
+            f"meaning={_shorten(corrected.get('meaning'))}; "
+            f"context={_shorten(corrected.get('context_explanation'))}; "
+            f"value={_shorten(corrected.get('value_text'), 80)}; "
+            f"unit={_shorten(corrected.get('unit'), 80)}"
+        )
+        if original and sample.get("sample_type") == "correction":
+            lines.append(
+                f"   corrected_from meaning={_shorten(original.get('meaning'))}; "
+                f"context={_shorten(original.get('context_explanation'))}"
+            )
+    return "\n".join(lines)
+
+
+def _extraction_messages(paper: dict[str, Any], chunk: list[dict[str, Any]], focus: str,
+                         learning_guidance: str = "") -> list[dict[str, str]]:
     schema_example = {
         "data": [{
             "value_text": "300", "meaning": "辐照温度", "unit": "°C",
@@ -176,6 +216,8 @@ Rules:
 11. Write meaning and context_explanation in concise Chinese so the local Chinese search UI can retrieve them. Preserve material formulas, phase symbols, particle names, and instrument abbreviations exactly. source_excerpt must remain verbatim in the paper's original language.
 This pass has a specific recall focus: {focus}
 """
+    if learning_guidance:
+        system = f"{system}\n{learning_guidance}\n"
     user = (
         f"Paper title: {paper['title']}\nDOI: {paper.get('doi') or ''}\n"
         f"Extract all supported data from the following page block as json.\n\n{source}"
@@ -323,11 +365,12 @@ def _focus_recovery_slices(focus: str) -> tuple[str, ...]:
 
 def _extract_focus_payload(client: DeepSeekClient, paper: dict[str, Any],
                            chunk: list[dict[str, Any]], focus: str,
-                           *, allow_focus_split: bool = True) -> dict[str, Any]:
+                           *, allow_focus_split: bool = True,
+                           learning_guidance: str = "") -> dict[str, Any]:
     """Retry a malformed dense two-page extraction as independent one-page requests."""
     try:
         return client.request_json(
-            _extraction_messages(paper, chunk, focus), task="extraction",
+            _extraction_messages(paper, chunk, focus, learning_guidance), task="extraction",
             max_tokens=16_000, thinking=False,
         )
     except DeepSeekResponseError:
@@ -340,7 +383,8 @@ def _extract_focus_payload(client: DeepSeekClient, paper: dict[str, Any],
             raise
         for page, recovery_focus, can_split in recovery_requests:
             payload = _extract_focus_payload(
-                client, paper, [page], recovery_focus, allow_focus_split=can_split
+                client, paper, [page], recovery_focus, allow_focus_split=can_split,
+                learning_guidance=learning_guidance,
             )
             if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
                 raise DeepSeekResponseError("DeepSeek 逐页降级抽取仍未返回 data 列表")
@@ -521,13 +565,17 @@ class DeepSeekEvidenceExtractor:
         try:
             pages = _read_pages(pdf_path, max_pages=max_pages)
             chunks = _page_chunks(pages, chunk_pages)
+            learning_payload = collect_learning_samples(self.db)
+            learning_guidance = _learning_guidance(learning_payload)
             all_candidates: list[dict[str, Any]] = []
             schema_rejected: list[dict[str, Any]] = []
             pending_tasks: list[dict[str, Any]] = []
             for chunk_index, chunk in enumerate(chunks, start=1):
                 candidates: list[dict[str, Any]] = []
                 for pass_index, focus in enumerate(EXTRACTION_FOCUSES, start=1):
-                    payload = _extract_focus_payload(self.client, paper, chunk, focus)
+                    payload = _extract_focus_payload(
+                        self.client, paper, chunk, focus, learning_guidance=learning_guidance
+                    )
                     pass_candidates, rejected = _validated_candidates(
                         payload, {int(page["page"]) for page in chunk}, chunk_index, pass_index
                     )
@@ -629,6 +677,13 @@ class DeepSeekEvidenceExtractor:
                 "all_candidates": all_candidates,
                 "schema_rejected": schema_rejected,
                 "pending_tasks": pending_tasks,
+                "learning_guidance": {
+                    "sample_count": learning_payload.get("sample_count", 0),
+                    "correction_count": learning_payload.get("correction_count", 0),
+                    "confirmation_count": learning_payload.get("confirmation_count", 0),
+                    "manual_count": learning_payload.get("manual_count", 0),
+                    "included_in_prompt": bool(learning_guidance),
+                },
                 "created_at": now(),
             }
             self.run_dir.mkdir(parents=True, exist_ok=True)

@@ -241,6 +241,11 @@ Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts
 are written to `data/evidence/deepseek_runs/`. Model output alone is never a
 publication gate: schema, page, numeric/table anchors, background/inference
 guards, independent verification, and human confirmation all remain required.
+When human confirmations, corrections, or manual additions exist, DeepSeek
+extraction includes a short learning-guidance block so later runs learn the
+preferred six-column field boundaries and Chinese wording style. Those examples
+are only prompt guidance, not evidence; accepted rows must still be grounded in
+the current PDF page text.
 
 In the local web page, switching the current article only reads saved database
 rows. It does not call DeepSeek or re-run extraction; automatic extraction must

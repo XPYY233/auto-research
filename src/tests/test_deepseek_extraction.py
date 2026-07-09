@@ -11,9 +11,9 @@ from auto_research.ai.deepseek import DeepSeekResponseError, DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.deepseek_extraction import (
     DeepSeekEvidenceExtractor, _deduplicate, _evidence_check, _extract_focus_payload, _localize_candidates, _numbers,
-    _is_reference_dominant, _verification_batches,
+    _is_reference_dominant, _learning_guidance, _verification_batches,
 )
-from auto_research.evidence.six_column import list_current_data
+from auto_research.evidence.six_column import add_manual_item, list_current_data
 
 
 def evidence_pdf() -> bytes:
@@ -34,9 +34,11 @@ class FakeDeepSeekClient:
         self.settings = DeepSeekSettings(api_key="fake", extraction_model="fake-extractor")
         self.value_text = value_text
         self.calls: list[str] = []
+        self.messages: list[tuple[str, list[dict[str, str]]]] = []
 
     def request_json(self, messages, *, task="extraction", max_tokens=0, thinking=None):
         self.calls.append(task)
+        self.messages.append((task, messages))
         if task == "verification":
             ids = re.findall(r'"candidate_id":\s*"([^"]+)"', messages[1]["content"])
             return {
@@ -80,6 +82,8 @@ class DeepSeekExtractionTests(unittest.TestCase):
         client = FakeDeepSeekClient()
         result = DeepSeekEvidenceExtractor(self.db, client, self.run_dir).run(self.paper_id)
         self.assertEqual(client.calls, ["extraction", "extraction", "verification"])
+        extraction_system = next(messages[0]["content"] for task, messages in client.messages if task == "extraction")
+        self.assertNotIn("HUMAN REVIEW LEARNING HINTS", extraction_system)
         self.assertEqual(result["candidate_count"], 2)
         self.assertEqual(result["verified_count"], 1)
         self.assertEqual(result["duplicate_count"], 1)
@@ -90,6 +94,25 @@ class DeepSeekExtractionTests(unittest.TestCase):
         run = self.db.list_ai_extraction_runs(self.paper_id)[0]
         self.assertEqual(run["status"], "completed")
         self.assertEqual(run["verified_count"], 1)
+        self.assertFalse(result["learning_guidance"]["included_in_prompt"])
+
+    def test_human_review_samples_are_used_as_prompt_guidance_not_evidence(self):
+        add_manual_item(self.db, self.paper_id, {
+            "value_text": "42", "meaning": "人工新增验证量", "unit": "a.u.",
+            "article_title": "Prior reviewed paper", "doi": "10.1/prior",
+            "context_explanation": "人工补录；样品A；用于告诉模型如何写上下文，不是当前PDF证据",
+        })
+        client = FakeDeepSeekClient()
+        result = DeepSeekEvidenceExtractor(self.db, client, self.run_dir).run(self.paper_id)
+        extraction_system = next(messages[0]["content"] for task, messages in client.messages if task == "extraction")
+        self.assertIn("HUMAN REVIEW LEARNING HINTS", extraction_system)
+        self.assertIn("Never copy values", extraction_system)
+        self.assertIn("人工新增验证量", extraction_system)
+        self.assertTrue(result["learning_guidance"]["included_in_prompt"])
+        self.assertEqual(result["learning_guidance"]["manual_count"], 1)
+
+    def test_learning_guidance_is_empty_without_samples(self):
+        self.assertEqual(_learning_guidance({"samples": []}), "")
 
     def test_commit_imports_verified_candidate_only_for_empty_paper(self):
         result = DeepSeekEvidenceExtractor(
