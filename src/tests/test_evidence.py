@@ -443,6 +443,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(report["summary"]["row_count"], 114)
         self.assertGreaterEqual(report["summary"]["highlighted_rows"], 100)
         self.assertTrue(all(check["ok"] for check in report["checks"]))
+        by_name = {check["name"]: check for check in report["checks"]}
+        self.assertTrue(by_name["web_ui_contract"]["ok"])
+        self.assertIn("manual_entry", by_name["web_ui_contract"]["web_ui"]["checked"])
 
     def test_self_check_fails_when_article_has_no_extracted_rows(self):
         other = self.db.upsert_paper(

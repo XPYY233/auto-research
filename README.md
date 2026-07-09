@@ -238,8 +238,8 @@ auto-research evidence-deepseek-extract "10.1016/j.jnucmat.2018.08.031" --max-pa
 # or a legacy local/Zotero key.
 auto-research evidence-run-article "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C"
 
-# Read-only acceptance check for a processed article. This does not call
-# DeepSeek, switch the current paper, or modify saved rows.
+# Read-only acceptance check for a processed article and the review UI contract.
+# This does not call DeepSeek, switch the current paper, or modify saved rows.
 auto-research evidence-self-check "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C" \
   --query 温度 --query 硬度 --query "Wei-Ying Chen" \
   --min-rows 100 --min-highlight-ratio 0.8

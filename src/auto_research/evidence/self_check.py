@@ -20,6 +20,7 @@ from .webapp import make_xlsx
 
 
 DEFAULT_CHECK_QUERIES = ("温度", "硬度", "CoCrFeMnNi")
+WEB_DIR = Path(__file__).parent / "web"
 
 
 def _check(checks: list[dict[str, Any]], name: str, ok: bool, detail: str,
@@ -34,6 +35,30 @@ def _csv_bytes(rows: list[dict[str, Any]]) -> bytes:
     writer.writeheader()
     writer.writerows(rows)
     return ("\ufeff" + output.getvalue()).encode("utf-8")
+
+
+def _web_ui_contract() -> dict[str, Any]:
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
+    expectations = [
+        ("editable_table", "class=\"edit-table\"" in html and "id=\"edit-rows\"" in html),
+        ("six_columns_visible", all(label in html for label in ("具体数值", "具体意义", "单位", "文章题目", "DOI", "数据在文中的解释"))),
+        ("original_right_pane", "id=\"original-pane\"" in html and "IMMUTABLE ORIGINAL" in js and "original_" in js),
+        ("confirm_before_save", "确认当前内容" in js and "/confirm" in js and "confirmRow" in js),
+        ("unsaved_dirty_guard", "hasUnsavedEdits" in js and "beforeunload" in js and "confirmDiscardUnsaved" in js),
+        ("manual_entry", "id=\"manual-form\"" in html and "id=\"manual-paper-select\"" in html and "/api/six-data/manual" in js),
+        ("manual_no_original", "人工补录数据" in js and "没有不可变的原始版本" in js),
+        ("search_engine", "id=\"search-form\"" in html and "/api/six-search" in js and "全库关键词检索" in html),
+        ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
+        ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
+    ]
+    failed = [name for name, ok in expectations if not ok]
+    return {
+        "ok": not failed,
+        "failed": failed,
+        "checked": [name for name, _ in expectations],
+    }
 
 
 def check_evidence_workflow(db: EvidenceDB, selector: str,
@@ -175,6 +200,19 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
         learning_summary={key: learning.get(key, 0) for key in (
             "sample_count", "correction_count", "confirmation_count", "manual_count"
         )},
+    )
+
+    ui_contract = _web_ui_contract()
+    _check(
+        checks,
+        "web_ui_contract",
+        ui_contract["ok"],
+        (
+            "网页校对契约存在：左侧六列表编辑、右侧原始版本、确认后保存、人工补录、全库搜索和原文高亮入口均可定位。"
+            if ui_contract["ok"]
+            else f"网页校对契约缺失：{', '.join(ui_contract['failed'])}"
+        ),
+        web_ui=ui_contract,
     )
 
     ok = all(item["ok"] for item in checks)
