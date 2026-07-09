@@ -34,3 +34,10 @@
 - Python 模块需通过语法检查。
 - 单元测试需覆盖全库搜索、作者搜索、元素名/符号搜索和导出能力。
 - 提交后继续创建 Git tag 和 bundle 备份。
+
+### 数据状态 checkpoint
+
+- 保存当前本地 evidence 数据库状态：34 篇文章、905 条六列数据、19 次 AI 抽取运行。
+- 目标文章 `Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C` 已补入第一作者和通讯作者：Wei-Ying Chen。
+- 保存新增 DeepSeek 运行记录 `paper_001_run_0018.json` 与 `paper_001_run_0019.json`，以及当前文章 CSV 备份 `HRXA6ESH_2026-07-09T041113.636590Z0000.csv`。
+- 本 checkpoint 前已扫描运行产物，未发现真实 API key。
