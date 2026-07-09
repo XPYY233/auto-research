@@ -334,7 +334,8 @@ function renderTable() {
   const progress = reviewProgress();
   const filterNote = state.reviewFilter === "all" ? "" : ` · 当前筛出 ${rows.length} 条`;
   const dirtyNote = hasUnsavedEdits() ? `，${state.dirtyRows.size} 行未确认` : "";
-  setText("row-count", `${progress.reviewed}/${progress.total} 已审核，${progress.unreviewed} 待审核${dirtyNote}${filterNote}`);
+  const breakdown = `确认 ${progress.confirmed}、修正 ${progress.corrected}、人工 ${progress.manual}`;
+  setText("row-count", `${progress.reviewed}/${progress.total} 已审核（${breakdown}），${progress.unreviewed} 待审核${dirtyNote}${filterNote}`);
   const body = document.querySelector("#edit-rows");
   if (!rows.length) {
     body.innerHTML = '<tr><td colspan="7"><div class="empty-table">当前筛选条件下没有数据。你可以切回“全部”或“只看未审核”。</div></td></tr>';

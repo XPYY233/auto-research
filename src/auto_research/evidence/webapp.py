@@ -33,6 +33,7 @@ from .six_column import (
     learning_samples_jsonl,
     list_current_data,
     prepare_current_paper_packet,
+    review_progress,
     resolve_paper_selector,
     save_current_paper_snapshot,
     search_current_data,
@@ -164,6 +165,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
                 return self.json_response(collect_learning_samples(self.db, paper_id))
+            if parsed.path == "/api/current-paper/review-progress":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.json_response(review_progress(self.db, paper_id))
             if parsed.path == "/api/current-paper/learning-samples.jsonl":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)

@@ -12,6 +12,7 @@ from .six_column import (
     extract_current_paper_data,
     get_six_extraction_status,
     prepare_current_paper_packet,
+    review_progress,
     resolve_paper_selector,
     set_current_paper,
 )
@@ -48,6 +49,7 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
     after = get_six_extraction_status(db, resolved_id)
     audit = audit_six_column_evidence(db, resolved_id) if after["row_count"] else None
     learning = collect_learning_samples(db, resolved_id)
+    review = review_progress(db, resolved_id)
     return {
         "paper": {
             "id": resolved_id,
@@ -69,4 +71,5 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
             "confirmation_count": learning["confirmation_count"],
             "manual_count": learning["manual_count"],
         },
+        "review_progress": review,
     }

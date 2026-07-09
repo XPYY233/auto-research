@@ -839,6 +839,28 @@ def list_current_data(db: EvidenceDB, paper_id: int | None = None) -> list[dict[
         return [dict(row) for row in conn.execute(sql, params)]
 
 
+def review_progress(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
+    """Summarize human-review progress for the current six-column rows."""
+
+    rows = list_current_data(db, paper_id)
+    total = len(rows)
+    manual = sum(1 for row in rows if row.get("origin_type") == "manual")
+    confirmed = sum(1 for row in rows if row.get("review_action") == "confirmation")
+    corrected = sum(1 for row in rows if row.get("review_action") == "correction")
+    reviewed = manual + confirmed + corrected
+    return {
+        "paper_id": paper_id,
+        "total": total,
+        "reviewed": reviewed,
+        "unreviewed": max(total - reviewed, 0),
+        "confirmed": confirmed,
+        "corrected": corrected,
+        "manual": manual,
+        "automatic": total - manual,
+        "reviewed_ratio": round(reviewed / total, 4) if total else 0.0,
+    }
+
+
 def get_data_item(db: EvidenceDB, item_id: int) -> dict[str, Any]:
     with db.connect() as conn:
         row = conn.execute(_base_current_sql() + " WHERE i.id=?", (item_id,)).fetchone()

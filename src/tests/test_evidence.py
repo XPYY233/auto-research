@@ -36,6 +36,7 @@ from auto_research.evidence.six_column import (
     list_current_data,
     prepare_current_paper_packet,
     resolve_paper_selector,
+    review_progress,
     save_current_paper_snapshot,
     search_current_data,
     seed_target_article,
@@ -217,6 +218,33 @@ class SixColumnWorkflowTests(unittest.TestCase):
         sample = learning["samples"][0]
         self.assertEqual(sample["sample_type"], "confirmation")
         self.assertEqual(sample["changed_fields"], [])
+
+    def test_review_progress_counts_unreviewed_confirmed_corrected_and_manual_rows(self):
+        automatic_confirmed = next(r for r in list_current_data(self.db) if r["stable_key"] == "tem_voltage")
+        confirm_correction(
+            self.db,
+            automatic_confirmed["item_id"],
+            {field: automatic_confirmed[field] for field in ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")},
+            "tester",
+            "确认无修改",
+        )
+        automatic_corrected = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")
+        changed = {field: automatic_corrected[field] for field in ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")}
+        changed["context_explanation"] += "；补充审核备注"
+        confirm_correction(self.db, automatic_corrected["item_id"], changed, "tester", "补充上下文")
+        add_manual_item(self.db, self.paper_id, {
+            "value_text": "42", "meaning": "人工新增验证量", "unit": "a.u.",
+            "article_title": TARGET_TITLE, "doi": TARGET_DOI,
+            "context_explanation": "人工补录；用于核验进度统计",
+        })
+        progress = review_progress(self.db, self.paper_id)
+        self.assertEqual(progress["total"], 115)
+        self.assertEqual(progress["confirmed"], 1)
+        self.assertEqual(progress["corrected"], 1)
+        self.assertEqual(progress["manual"], 1)
+        self.assertEqual(progress["reviewed"], 3)
+        self.assertEqual(progress["unreviewed"], 112)
+        self.assertAlmostEqual(progress["reviewed_ratio"], round(3 / 115, 4))
 
     def test_manual_entry_has_no_automatic_original(self):
         manual = add_manual_item(self.db, self.paper_id, {
@@ -473,6 +501,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(report["paper"]["id"], self.paper_id)
         self.assertEqual(report["summary"]["primary_experiment_type"], "irradiation_experiment")
         self.assertEqual(report["summary"]["row_count"], 114)
+        self.assertEqual(report["summary"]["review_progress"]["total"], 114)
+        self.assertGreaterEqual(report["summary"]["review_progress"]["unreviewed"], 100)
         self.assertGreaterEqual(report["summary"]["highlighted_rows"], 100)
         self.assertTrue(all(check["ok"] for check in report["checks"]))
         by_name = {check["name"]: check for check in report["checks"]}

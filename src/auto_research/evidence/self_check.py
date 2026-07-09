@@ -14,6 +14,7 @@ from .six_column import (
     collect_learning_samples,
     get_six_extraction_status,
     list_current_data,
+    review_progress,
     resolve_paper_selector,
     search_current_data,
 )
@@ -168,6 +169,7 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
 
     status = get_six_extraction_status(db, paper_id)
     rows = list_current_data(db, paper_id)
+    review = review_progress(db, paper_id)
     _check(
         checks,
         "six_column_rows",
@@ -316,6 +318,7 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
             "highlighted_rows": audit.get("highlighted_rows") if audit else None,
             "strong_rows": audit.get("strong_rows") if audit else None,
             "learning_sample_count": learning.get("sample_count", 0),
+            "review_progress": review,
         },
         "requirements": requirements,
         "checks": checks,
