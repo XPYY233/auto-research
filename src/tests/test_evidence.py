@@ -263,6 +263,19 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn(other, paper_ids)
         self.assertIn(other_row["item_id"], {row["item_id"] for row in results})
 
+    def test_blank_search_and_paper_picker_counts_cover_all_papers(self):
+        other = self.db.upsert_paper(title="Other irradiation paper", doi="10.1/search-all")
+        other_row = add_manual_item(self.db, other, {
+            "value_text": "888", "meaning": "跨库搜索测试温度", "unit": "°C",
+            "article_title": "Other irradiation paper", "doi": "10.1/search-all",
+            "context_explanation": "空搜索应该覆盖整个数据库，而不是只看当前文章",
+        })
+        all_rows = search_current_data(self.db, "", limit=1000)
+        self.assertIn(other_row["item_id"], {row["item_id"] for row in all_rows})
+        paper_counts = {row["id"]: row["six_row_count"] for row in self.db.list_papers()}
+        self.assertEqual(paper_counts[self.paper_id], 114)
+        self.assertEqual(paper_counts[other], 1)
+
     def test_current_paper_can_be_resolved_by_article_key(self):
         other = self.db.upsert_paper(title="Another paper", doi="10.1/other", local_article_key="ALT0001")
         set_current_paper(self.db, article_key="ALT0001")

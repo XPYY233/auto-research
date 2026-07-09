@@ -593,6 +593,7 @@ class EvidenceDB:
                 (SELECT COUNT(*) FROM measurements m WHERE m.paper_id=p.id) measurement_count,
                 (SELECT COUNT(*) FROM measurements m WHERE m.paper_id=p.id AND m.review_status='verified') verified_count,
                 (SELECT COUNT(*) FROM measurements m WHERE m.paper_id=p.id AND m.review_status='draft') draft_count,
+                (SELECT COUNT(*) FROM data_items i WHERE i.paper_id=p.id) six_row_count,
                 (SELECT COUNT(*) FROM pending_tasks t WHERE t.paper_id=p.id AND t.status='open') open_task_count
                 FROM papers p ORDER BY COALESCE(p.pilot_order,99999),p.year DESC,p.title"""
             ).fetchall()

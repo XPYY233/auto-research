@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", search: "", extraction: null, learning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, learning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -41,7 +41,7 @@ function paperRef(paper) {
 function paperLabel(paper) {
   const ref = paperRef(paper);
   const title = paper?.title || "未命名文章";
-  return ref ? `${ref} · ${title}` : title;
+  return ref ? `${title}（${ref}）` : title;
 }
 
 function renderOriginalPlaceholder() {
@@ -82,11 +82,15 @@ async function loadCurrentPaper() {
 }
 
 function renderPaperOptions() {
-  const datalist = document.querySelector("#paper-options");
-  if (!datalist) return;
-  datalist.innerHTML = state.papers.map(paper => `<option value="${esc(paperRef(paper))}" label="${esc(paper.title || "")}"></option>`).join("");
-  const input = document.querySelector("#paper-switch-input");
-  if (input && state.paper) input.value = paperRef(state.paper);
+  const select = document.querySelector("#paper-switch-input");
+  if (!select) return;
+  select.innerHTML = state.papers.map(paper => {
+    const ref = paperRef(paper);
+    const rows = Number(paper.six_row_count || paper.row_count || 0);
+    const scan = rows ? ` · ${rows}条数据` : "";
+    return `<option value="${esc(ref)}">${esc(paperLabel(paper))}${esc(scan)}</option>`;
+  }).join("");
+  if (state.paper) select.value = paperRef(state.paper);
 }
 
 function renderPaper() {
@@ -218,16 +222,37 @@ async function runDeepSeekPreview() {
 
 function filteredRows() {
   const q = state.filter.trim().toLowerCase();
-  if (!q) return state.rows;
-  return state.rows.filter(row => fields.some(field => String(row[field] || "").toLowerCase().includes(q)));
+  let rows = state.rows;
+  if (state.reviewFilter === "unreviewed") {
+    rows = rows.filter(row => row.origin_type !== "manual" && row.version_no === 0);
+  } else if (state.reviewFilter === "confirmed") {
+    rows = rows.filter(row => row.review_action === "confirmation");
+  } else if (state.reviewFilter === "corrected") {
+    rows = rows.filter(row => row.review_action === "correction");
+  } else if (state.reviewFilter === "manual") {
+    rows = rows.filter(row => row.origin_type === "manual");
+  }
+  if (!q) return rows;
+  return rows.filter(row => fields.some(field => String(row[field] || "").toLowerCase().includes(q)));
+}
+
+function reviewProgress() {
+  const total = state.rows.length;
+  const manual = state.rows.filter(row => row.origin_type === "manual").length;
+  const confirmed = state.rows.filter(row => row.review_action === "confirmation").length;
+  const corrected = state.rows.filter(row => row.review_action === "correction").length;
+  const reviewed = manual + confirmed + corrected;
+  return { total, reviewed, unreviewed: Math.max(total - reviewed, 0), confirmed, corrected, manual };
 }
 
 function renderTable() {
   const rows = filteredRows();
-  setText("row-count", `${rows.length} 条`);
+  const progress = reviewProgress();
+  const filterNote = state.reviewFilter === "all" ? "" : ` · 当前筛出 ${rows.length} 条`;
+  setText("row-count", `${progress.reviewed}/${progress.total} 已审核，${progress.unreviewed} 待审核${filterNote}`);
   const body = document.querySelector("#edit-rows");
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="7"><div class="empty-table">这篇文章目前还没有六列抽取结果。你可以先人工补录，或继续扩展自动抽取。</div></td></tr>';
+    body.innerHTML = '<tr><td colspan="7"><div class="empty-table">当前筛选条件下没有数据。你可以切回“全部”或“只看未审核”。</div></td></tr>';
     return;
   }
   body.innerHTML = rows.map(row => {
@@ -689,6 +714,12 @@ document.querySelectorAll(".nav").forEach(btn => btn.addEventListener("click", (
 document.querySelector("#table-filter").addEventListener("input", event => {
   state.filter = event.target.value;
   renderTable();
+});
+document.querySelector("#review-filter").addEventListener("change", event => {
+  state.reviewFilter = event.target.value;
+  state.selected = null;
+  renderTable();
+  renderOriginalPlaceholder();
 });
 document.querySelector("#search-form").addEventListener("submit", runSearch);
 document.querySelector("#manual-form").addEventListener("submit", saveManual);

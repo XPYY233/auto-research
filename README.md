@@ -245,6 +245,12 @@ guards, independent verification, and human confirmation all remain required.
 In the local web page, switching the current article only reads saved database
 rows. It does not call DeepSeek or re-run extraction; automatic extraction must
 be started with the separate current-article extraction button.
+The switcher displays registered papers by title, with the local article key in
+parentheses, so you do not need to memorize Zotero/storage codes.
+
+The search page is database-wide by default. You do not need to choose a paper
+before searching; CSV export from that page follows the same whole-database
+search result set.
 
 The web page also marks whether an article has already been scanned. If a paper
 already has six-column rows or a completed DeepSeek run, pressing an extraction

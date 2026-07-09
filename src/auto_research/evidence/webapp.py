@@ -114,7 +114,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.json_response(search_current_data(self.db, query))
             if parsed.path == "/api/six-export.csv":
                 query = parse_qs(parsed.query).get("q", [""])[0]
-                rows = search_current_data(self.db, query, limit=100000) if query else list_current_data(self.db, get_current_paper_id(self.db))
+                rows = search_current_data(self.db, query, limit=100000) if query else list_current_data(self.db)
                 return self.six_csv_response(rows)
             if parsed.path == "/api/papers":
                 return self.json_response(self.db.list_papers())

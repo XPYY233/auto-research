@@ -35,11 +35,10 @@
       <section class="article-picker">
         <div>
           <small>切换当前文章</small>
-          <strong>输入文章号、Zotero key、pilot code 或数据库编号</strong>
+          <strong>从已登记文章中选择；显示题目，内部仍按文章号定位</strong>
         </div>
         <form id="paper-switch-form">
-          <input id="paper-switch-input" list="paper-options" placeholder="例如：XJZQ42XP">
-          <datalist id="paper-options"></datalist>
+          <select id="paper-switch-input"></select>
           <button type="submit" id="paper-switch-submit">只切换并读取已保存数据</button>
           <button type="button" id="run-current-extraction">执行当前文章自动提取</button>
           <button type="button" id="run-deepseek-preview">DeepSeek 证据抽取预览</button>
@@ -61,7 +60,19 @@
       <section class="view active" id="view-review">
         <div class="view-head">
           <div><p class="eyebrow">REVIEW WORKBENCH</p><h2>左侧修改，右侧始终保留自动提取原文</h2></div>
-          <div class="view-actions"><label class="compact-search">筛选当前表<input id="table-filter" placeholder="材料、硬度、300°C…"></label><span id="row-count">0 条</span></div>
+          <div class="view-actions">
+            <label class="compact-search">筛选当前表<input id="table-filter" placeholder="材料、硬度、300°C…"></label>
+            <label class="compact-search">审核状态
+              <select id="review-filter">
+                <option value="all">全部</option>
+                <option value="unreviewed">只看未审核</option>
+                <option value="confirmed">只看已确认</option>
+                <option value="corrected">只看已修正</option>
+                <option value="manual">只看人工补录</option>
+              </select>
+            </label>
+            <span id="row-count">0 条</span>
+          </div>
         </div>
         <div class="review-split">
           <section class="edit-pane" aria-label="可编辑数据表">
@@ -83,7 +94,7 @@
           <p class="eyebrow">FUZZY DATA SEARCH</p>
           <h2>不用选择标签，直接写你想到的词。</h2>
           <form id="search-form"><input id="search-query" placeholder="例如：CoCrFeMnNi 300°C 辐照后 硬度" autocomplete="off"><button>搜索</button></form>
-          <p>系统首先匹配“具体意义”，其次匹配“数据在文中的解释”，也会模糊匹配数值、单位、题目和 DOI。</p>
+          <p>搜索默认覆盖整个数据库，不需要先选择文章；系统首先匹配“具体意义”，其次匹配“数据在文中的解释”，也会模糊匹配数值、单位、题目和 DOI。</p>
         </div>
         <div class="search-toolbar"><span id="search-summary">等待搜索</span><a id="search-export" href="/api/six-export.csv">导出结果 CSV</a></div>
         <div class="result-list" id="search-results"></div>

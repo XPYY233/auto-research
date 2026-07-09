@@ -251,6 +251,8 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - Rank `meaning` highest (weight 6), followed one level lower by `context_explanation` (weight 5), then value, unit, title, DOI, and source excerpt.
 - Support partial and fuzzy scientific terms, including alloy names, temperatures, doses, particles, and measurement names.
 - CSV export must reproduce the current search result set.
+- The review page paper switcher must be a selectable list of registered papers displayed primarily by paper title, not a Zotero/storage code the user has to memorize.
+- The search page must search the whole six-column database by default, independent of the currently selected paper. Empty search/export from the search page must also use the whole database.
 
 ### Current verified baseline
 
