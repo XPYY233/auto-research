@@ -35,8 +35,16 @@ SEARCH_FIELD_WEIGHTS = {
     "source_excerpt": 0.8,
 }
 CURRENT_PAPER_META_KEY = "six_column_current_paper_id"
+SAVED_SCAN_META_PREFIX = "six_column_saved_snapshot_"
+SAVED_SCANS_DIR = DATA_DIR / "evidence" / "saved_scans"
 
 SIX_FIELDS = ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")
+SNAPSHOT_FIELDS = (
+    "item_id", "paper_id", "stable_key", "value_text", "meaning", "unit",
+    "article_title", "doi", "context_explanation", "source_page",
+    "source_locator", "source_excerpt", "origin_type", "version_no",
+    "review_action", "local_article_key",
+)
 
 
 @dataclass(frozen=True)
@@ -317,6 +325,7 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
     pdf_ok = bool(paper.get("pdf_path") and Path(paper["pdf_path"]).is_file())
     packet_file = prompt_packet_path(resolved_id)
     packet_ready = packet_file.is_file()
+    saved_snapshot = db.get_meta(f"{SAVED_SCAN_META_PREFIX}{resolved_id}")
     deepseek_ready = DeepSeekSettings.from_env().public_status()["configured"]
     if supported:
         action = "extract_now"
@@ -350,6 +359,7 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
         "latest_ai_run_status": latest_run["status"] if latest_run else None,
         "latest_ai_run_mode": latest_run["mode"] if latest_run else None,
         "latest_ai_run_at": latest_run["finished_at"] or latest_run["created_at"] if latest_run else None,
+        "saved_snapshot_path": saved_snapshot,
         "extractor_name": "xjzq42xp_curated_real_data" if supported else None,
         "parse_status": paper.get("parse_status"),
         "pdf_ready": pdf_ok,
@@ -360,6 +370,43 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
         "action": action,
         "action_label": action_label,
         "message": message,
+    }
+
+
+def _safe_snapshot_stem(text: str) -> str:
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", text.strip()).strip("._-")
+    return stem or "paper"
+
+
+def save_current_paper_snapshot(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
+    resolved_id = paper_id if paper_id is not None else get_current_paper_id(db)
+    paper = db.get_paper(resolved_id)
+    if not paper:
+        raise KeyError(f"Paper {resolved_id} not found")
+    rows = list_current_data(db, resolved_id)
+    if not rows:
+        raise ValueError("当前文章还没有可保存的六列表格数据。请先完成扫描或人工录入。")
+    article_key = paper.get("local_article_key") or paper.get("zotero_key") or paper.get("pilot_code") or str(resolved_id)
+    stamp = now().replace(":", "").replace("+", "Z")
+    output = SAVED_SCANS_DIR / f"{_safe_snapshot_stem(str(article_key))}_{stamp}.csv"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    enriched = []
+    for row in rows:
+        item = {field: row.get(field) for field in SNAPSHOT_FIELDS}
+        item["paper_id"] = resolved_id
+        item["local_article_key"] = article_key
+        enriched.append(item)
+    with output.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(SNAPSHOT_FIELDS), extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(enriched)
+    db.set_meta(f"{SAVED_SCAN_META_PREFIX}{resolved_id}", str(output))
+    return {
+        "ok": True,
+        "paper_id": resolved_id,
+        "article_key": article_key,
+        "row_count": len(rows),
+        "path": str(output),
     }
 
 

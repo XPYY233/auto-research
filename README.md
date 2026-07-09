@@ -251,6 +251,11 @@ already has six-column rows or a completed DeepSeek run, pressing an extraction
 button opens a confirmation dialog; the backend rejects repeat scans unless that
 confirmation sends `force_rescan`.
 
+For scanned articles, click `保存当前文章数据快照` to write the current six-column
+rows to a timestamped CSV under `data/evidence/saved_scans/`. This is a local
+file backup/export action only: it does not re-run DeepSeek and does not change
+row values.
+
 Chinese localization for already imported, still-unreviewed automatic rows:
 
 ```bash

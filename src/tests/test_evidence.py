@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import auto_research.evidence.prompts as prompt_module
+import auto_research.evidence.six_column as six_column_module
 from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
@@ -32,6 +33,7 @@ from auto_research.evidence.six_column import (
     list_current_data,
     prepare_current_paper_packet,
     resolve_paper_selector,
+    save_current_paper_snapshot,
     search_current_data,
     seed_target_article,
     set_current_paper,
@@ -405,6 +407,31 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(completed_status["scanned"])
         self.assertEqual(completed_status["completed_ai_run_count"], 1)
         self.assertTrue(requires_rescan_confirmation(self.db, empty))
+
+    def test_scanned_paper_can_be_saved_as_timestamped_snapshot(self):
+        old_dir = six_column_module.SAVED_SCANS_DIR
+        six_column_module.SAVED_SCANS_DIR = Path(self.tmp.name) / "saved_scans"
+        try:
+            result = save_current_paper_snapshot(self.db, self.paper_id)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["row_count"], 114)
+            path = Path(result["path"])
+            self.assertTrue(path.is_file())
+            with path.open(encoding="utf-8-sig", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(len(rows), 114)
+            self.assertIn("value_text", rows[0])
+            status = get_six_extraction_status(self.db, self.paper_id)
+            self.assertEqual(status["saved_snapshot_path"], str(path))
+
+            empty = self.db.upsert_paper(
+                title="Empty paper", doi="10.1/snapshot-empty", local_article_key="SNAPEMPTY",
+                pdf_path=self.db.get_paper(self.paper_id)["pdf_path"],
+            )
+            with self.assertRaisesRegex(ValueError, "还没有可保存"):
+                save_current_paper_snapshot(self.db, empty)
+        finally:
+            six_column_module.SAVED_SCANS_DIR = old_dir
 
     def test_run_article_workflow_uses_deepseek_for_new_pdf_article(self):
         other = self.db.upsert_paper(

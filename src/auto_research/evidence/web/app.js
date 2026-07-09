@@ -105,17 +105,20 @@ function renderExtractionStatus() {
   const status = state.extraction;
   const el = document.querySelector("#paper-extraction-status");
   const button = document.querySelector("#run-current-extraction");
+  const saveButton = document.querySelector("#save-current-snapshot");
   const packetLink = document.querySelector("#open-current-packet");
-  if (!status || !el || !button || !packetLink) return;
+  if (!status || !el || !button || !packetLink || !saveButton) return;
   const lead = status.supported ? "已接入自动抽取" : status.packet_ready ? "已准备抽取包" : status.action === "prepare_packet" ? "可准备抽取包" : "暂未接入自动抽取";
   const packetNote = status.packet_ready ? ` · 已生成抽取包` : "";
+  const savedNote = status.saved_snapshot_path ? ` · 最近保存：${status.saved_snapshot_path}` : "";
   const scanNote = status.scanned
     ? `已扫描：本地已有 ${status.row_count} 条数据${status.completed_ai_run_count ? `，DeepSeek 完成运行 ${status.completed_ai_run_count} 次` : ""}；再次扫描会先弹出确认`
     : "未扫描：当前没有已保存的自动抽取结果";
-  el.textContent = `${lead} · ${scanNote}${packetNote} · ${status.message}`;
+  el.textContent = `${lead} · ${scanNote}${packetNote}${savedNote} · ${status.message}`;
   el.className = status.supported ? "supported" : status.packet_ready ? "ready" : "unsupported";
   button.disabled = status.action === "manual_only";
   button.textContent = status.action_label || "执行当前文章自动提取";
+  saveButton.disabled = !state.rows.length;
   packetLink.hidden = !status.packet_ready;
   if (status.packet_ready) {
     packetLink.href = status.packet_url;
@@ -631,6 +634,34 @@ async function runCurrentExtraction() {
   }
 }
 
+async function saveCurrentSnapshot() {
+  if (!state.paper) return;
+  if (!state.rows.length) {
+    toast("当前文章还没有可保存的数据。", true);
+    return;
+  }
+  const button = document.querySelector("#save-current-snapshot");
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在保存…";
+  try {
+    const result = await api("/api/current-paper/save-snapshot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_id: state.paper.id }),
+    });
+    state.extraction = await api(`/api/current-paper/extraction?paper_id=${encodeURIComponent(state.paper.id)}`);
+    renderExtractionStatus();
+    toast(`已保存 ${result.row_count} 条数据快照：${result.path}`);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+    renderExtractionStatus();
+  }
+}
+
 async function submitPaperSwitch(event) {
   event.preventDefault();
   const input = document.querySelector("#paper-switch-input");
@@ -671,6 +702,7 @@ document.querySelector("#refresh-upload-queue").addEventListener("click", refres
 document.querySelector("#paper-switch-form").addEventListener("submit", submitPaperSwitch);
 document.querySelector("#run-current-extraction").addEventListener("click", runCurrentExtraction);
 document.querySelector("#run-deepseek-preview").addEventListener("click", runDeepSeekPreview);
+document.querySelector("#save-current-snapshot").addEventListener("click", saveCurrentSnapshot);
 document.querySelector("[data-close-source]")?.addEventListener("click", () => document.querySelector("#source-dialog")?.close());
 document.querySelector("#source-dialog")?.addEventListener("click", event => {
   const dialog = event.currentTarget;

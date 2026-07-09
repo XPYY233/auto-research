@@ -230,6 +230,8 @@ The web paper-switch form is intentionally read-only with respect to AI extracti
 
 The web UI must clearly show whether the current article has already been scanned. A paper is considered scanned when it already has six-column rows or at least one completed DeepSeek extraction run. Re-scanning a scanned paper must require an explicit browser confirmation and the backend request must include `force_rescan`; otherwise the API must reject the run with `already_scanned`.
 
+Scanned article data must be visibly saveable from the web UI. The save action writes the current six-column rows to a timestamped CSV snapshot under `data/evidence/saved_scans/` and records the latest snapshot path in the evidence database. Saving a snapshot must not call DeepSeek and must not mutate individual row values.
+
 For a non-target article with a readable PDF and configured DeepSeek runtime, run the evidence-grounded DeepSeek extractor. Commit verified candidates only when that paper has no six-column rows; otherwise create a preview. If DeepSeek is unavailable, prepare a constrained prompt packet. For an article without a readable PDF, stop and report the missing local source.
 
 ### Review and learning rules

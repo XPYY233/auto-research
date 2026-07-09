@@ -32,6 +32,7 @@ from .six_column import (
     list_current_data,
     prepare_current_paper_packet,
     resolve_paper_selector,
+    save_current_paper_snapshot,
     search_current_data,
     seed_target_article,
     set_current_paper,
@@ -244,6 +245,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 if not isinstance(json_text, str) or not json_text.strip():
                     raise ValueError("json_text cannot be empty")
                 result = import_ai_result_to_six_column(self.db, paper_id, json_text)
+                return self.json_response(result)
+            if parsed.path == "/api/current-paper/save-snapshot":
+                paper_id = int(body["paper_id"]) if body.get("paper_id") not in (None, "") else get_current_paper_id(self.db)
+                result = save_current_paper_snapshot(self.db, paper_id)
                 return self.json_response(result)
             match = re.fullmatch(r"/api/measurements/(\d+)/review", parsed.path)
             if match:
