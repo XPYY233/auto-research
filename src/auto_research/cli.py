@@ -84,6 +84,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p.add_argument("--max-pages", type=int, default=8)
     p.add_argument("--force-rescan", action="store_true", help="Allow DeepSeek to run again for an already scanned paper")
+    p = sub.add_parser("evidence-classify-experiment", help="Classify experimental types for one local evidence paper")
+    p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
+    p.add_argument("--max-pages", type=int, default=5)
     p = sub.add_parser("evidence-export", help="Export evidence records to CSV")
     p.add_argument("--out")
     p.add_argument("--include-drafts", action="store_true")
@@ -270,7 +273,7 @@ def cmd_evidence(args) -> int:
         summary = {key: result[key] for key in (
             "run_id", "paper", "provider", "model", "mode", "chunk_count",
             "candidate_count", "verified_count", "rejected_count", "duplicate_count",
-            "comparison", "imported", "output_path",
+            "experiment_profile", "comparison", "imported", "output_path",
         )}
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
@@ -314,6 +317,17 @@ def cmd_evidence(args) -> int:
             force_rescan=args.force_rescan,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-classify-experiment":
+        from .evidence.experiment_types import classify_experiment_types
+        from .evidence.six_column import resolve_paper_selector
+        paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key)
+        paper = evidence_db.get_paper(paper_id)
+        if not paper:
+            raise SystemExit(f"paper not found: {args.article_key}")
+        pdf_path = Path(paper["pdf_path"]) if paper.get("pdf_path") else None
+        report = classify_experiment_types(paper, pdf_path=pdf_path, max_pages=args.max_pages)
+        print(json.dumps({"paper": {"id": paper_id, "title": paper["title"], "doi": paper.get("doi")}, **report}, ensure_ascii=False, indent=2))
         return 0
     if args.cmd == "evidence-export":
         path = Path(args.out).expanduser().resolve() if args.out else None

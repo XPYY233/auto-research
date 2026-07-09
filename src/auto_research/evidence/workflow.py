@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
 from .deepseek_extraction import DeepSeekEvidenceExtractor
+from .experiment_types import classify_experiment_types
 from .six_column import (
     collect_learning_samples,
     extract_current_paper_data,
@@ -20,6 +22,9 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
                          force_rescan: bool = False) -> dict[str, Any]:
     resolved_id = resolve_paper_selector(db, paper_id=paper_id, article_key=article_key)
     paper = set_current_paper(db, paper_id=resolved_id)
+    experiment_profile = classify_experiment_types(
+        paper, pdf_path=Path(paper["pdf_path"]) if paper.get("pdf_path") else None
+    )
     before = get_six_extraction_status(db, resolved_id)
     if before["supported"]:
         action_result = extract_current_paper_data(db, resolved_id)
@@ -55,6 +60,8 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
         "status_before": before,
         "status_after": after,
         "action_result": action_result,
+        "experiment_profile": action_result.get("experiment_profile", experiment_profile)
+        if isinstance(action_result, dict) else experiment_profile,
         "evidence_audit": audit,
         "learning": {
             "sample_count": learning["sample_count"],

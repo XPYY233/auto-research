@@ -8,6 +8,7 @@ from typing import Any
 
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
+from .experiment_types import classify_experiment_types
 from .six_column import (
     SIX_FIELDS,
     collect_learning_samples,
@@ -83,9 +84,9 @@ def _requirement_summary(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "id": "article_selector_to_extracted_rows",
-            "ok": ok("resolve_selector", "local_pdf", "six_column_rows", "source_highlight"),
-            "requirement": "指定本地文章标识后，系统能解析到真实本地 PDF，并产出可追溯的六列数据。",
-            "evidence": details("resolve_selector", "local_pdf", "six_column_rows", "source_highlight"),
+            "ok": ok("resolve_selector", "local_pdf", "experiment_type_detection", "six_column_rows", "source_highlight"),
+            "requirement": "指定本地文章标识后，系统能解析到真实本地 PDF，识别实验类型，并产出可追溯的六列数据。",
+            "evidence": details("resolve_selector", "local_pdf", "experiment_type_detection", "six_column_rows", "source_highlight"),
         },
         {
             "id": "six_required_columns",
@@ -150,6 +151,19 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
         "local_pdf",
         bool(paper.get("pdf_path")) and pdf_path.is_file(),
         str(pdf_path) if paper.get("pdf_path") else "该文章没有登记本地 PDF 路径",
+    )
+    experiment_profile = classify_experiment_types(
+        paper, pdf_path=pdf_path if paper.get("pdf_path") and pdf_path.is_file() else None
+    )
+    _check(
+        checks,
+        "experiment_type_detection",
+        bool(experiment_profile["is_experimental"]) and experiment_profile["primary_type"] != "non_experimental_or_unknown",
+        (
+            f"识别到实验类型：{experiment_profile['primary_label']}；"
+            f"置信度 {experiment_profile['confidence']:.2f}。"
+        ),
+        experiment_profile=experiment_profile,
     )
 
     status = get_six_extraction_status(db, paper_id)
@@ -295,6 +309,8 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
         },
         "summary": {
             "row_count": len(rows),
+            "primary_experiment_type": experiment_profile["primary_type"],
+            "primary_experiment_label": experiment_profile["primary_label"],
             "automatic_rows": audit.get("automatic_rows") if audit else None,
             "manual_rows": audit.get("manual_rows") if audit else None,
             "highlighted_rows": audit.get("highlighted_rows") if audit else None,

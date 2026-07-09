@@ -7,11 +7,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import fitz
 import auto_research.evidence.prompts as prompt_module
 import auto_research.evidence.six_column as six_column_module
 from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
+from auto_research.evidence.experiment_types import classify_experiment_types
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.self_check import check_evidence_workflow
@@ -429,6 +431,33 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(result["status_after"]["row_count"], 114)
         self.assertEqual(result["evidence_audit"]["checked_rows"], 114)
         self.assertEqual(result["learning"]["sample_count"], 0)
+        self.assertEqual(result["experiment_profile"]["primary_type"], "irradiation_experiment")
+
+    def test_experiment_type_classifier_handles_target_and_non_irradiation_experiments(self):
+        target_profile = classify_experiment_types(
+            self.db.get_paper(self.paper_id),
+            pdf_path=Path(self.db.get_paper(self.paper_id)["pdf_path"]),
+        )
+        self.assertEqual(target_profile["primary_type"], "irradiation_experiment")
+        self.assertIn("mechanical_testing", {item["type_id"] for item in target_profile["types"]})
+
+        thermal_pdf = Path(self.tmp.name) / "thermal.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text(
+            (54, 72),
+            "Experimental methods. Thermal conductivity was measured by laser flash analysis. "
+            "Differential scanning calorimetry (DSC) was performed from 300 K to 900 K.",
+            fontsize=10,
+        )
+        thermal_pdf.write_bytes(doc.tobytes())
+        doc.close()
+        thermal_profile = classify_experiment_types(
+            {"title": "Thermal conductivity and DSC measurements of alloy samples"},
+            pdf_path=thermal_pdf,
+        )
+        self.assertEqual(thermal_profile["primary_type"], "thermal_measurement")
+        self.assertTrue(thermal_profile["is_experimental"])
 
     def test_self_check_verifies_target_article_workflow_readiness(self):
         report = check_evidence_workflow(
@@ -440,10 +469,12 @@ class SixColumnWorkflowTests(unittest.TestCase):
         )
         self.assertTrue(report["ok"], report["checks"])
         self.assertEqual(report["paper"]["id"], self.paper_id)
+        self.assertEqual(report["summary"]["primary_experiment_type"], "irradiation_experiment")
         self.assertEqual(report["summary"]["row_count"], 114)
         self.assertGreaterEqual(report["summary"]["highlighted_rows"], 100)
         self.assertTrue(all(check["ok"] for check in report["checks"]))
         by_name = {check["name"]: check for check in report["checks"]}
+        self.assertTrue(by_name["experiment_type_detection"]["ok"])
         self.assertTrue(by_name["web_ui_contract"]["ok"])
         self.assertIn("manual_entry", by_name["web_ui_contract"]["web_ui"]["checked"])
         requirements = {item["id"]: item for item in report["requirements"]}

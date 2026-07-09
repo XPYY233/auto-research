@@ -1,4 +1,4 @@
-"""Auditable experimental-evidence database for irradiation literature."""
+"""Auditable experimental-evidence database for local scientific papers."""
 
 from .db import EvidenceDB
 

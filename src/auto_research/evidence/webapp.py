@@ -530,7 +530,7 @@ def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 876
         {"db": evidence_db, "upload_service": upload_service},
     )
     server = ThreadingHTTPServer((host, port), handler)
-    print(f"辐照实验数据证据库: http://{host}:{port}")
+    print(f"实验数据证据库: http://{host}:{port}")
     print(f"PDF 文档索引: 新增 {index_result['indexed']}，跳过 {index_result['skipped']}")
     print("按 Ctrl+C 停止。数据库仅绑定本机地址。")
     try:

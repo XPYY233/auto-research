@@ -81,12 +81,13 @@ class DeepSeekExtractionTests(unittest.TestCase):
     def test_preview_requires_local_and_independent_ai_verification(self):
         client = FakeDeepSeekClient()
         result = DeepSeekEvidenceExtractor(self.db, client, self.run_dir).run(self.paper_id)
-        self.assertEqual(client.calls, ["extraction", "extraction", "verification"])
+        self.assertEqual(client.calls, ["extraction", "extraction", "extraction", "verification"])
         extraction_system = next(messages[0]["content"] for task, messages in client.messages if task == "extraction")
         self.assertNotIn("HUMAN REVIEW LEARNING HINTS", extraction_system)
-        self.assertEqual(result["candidate_count"], 2)
+        self.assertEqual(result["experiment_profile"]["primary_type"], "irradiation_experiment")
+        self.assertEqual(result["candidate_count"], 3)
         self.assertEqual(result["verified_count"], 1)
-        self.assertEqual(result["duplicate_count"], 1)
+        self.assertEqual(result["duplicate_count"], 2)
         self.assertEqual(result["rejected_count"], 0)
         self.assertEqual(result["imported"]["inserted"], 0)
         self.assertTrue(Path(result["output_path"]).is_file())
@@ -131,9 +132,9 @@ class DeepSeekExtractionTests(unittest.TestCase):
     def test_hallucinated_value_is_rejected_before_ai_verifier(self):
         client = FakeDeepSeekClient(value_text="999")
         result = DeepSeekEvidenceExtractor(self.db, client, self.run_dir).run(self.paper_id)
-        self.assertEqual(client.calls, ["extraction", "extraction"])
+        self.assertEqual(client.calls, ["extraction", "extraction", "extraction"])
         self.assertEqual(result["verified_count"], 0)
-        self.assertEqual(result["rejected_count"], 2)
+        self.assertEqual(result["rejected_count"], 3)
         candidate = result["all_candidates"][0]
         self.assertFalse(candidate["local_evidence"]["passed"])
         self.assertIn("999", candidate["local_evidence"]["missing_numbers"])

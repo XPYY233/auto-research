@@ -28,7 +28,7 @@
 
     <main id="main">
       <header class="topbar">
-        <div><p class="eyebrow">EVIDENCE DATA WORKBENCH</p><h1>辐照实验数据抽取、校对与检索</h1></div>
+        <div><p class="eyebrow">EVIDENCE DATA WORKBENCH</p><h1>实验数据抽取、校对与检索</h1></div>
         <div class="git-status"><i></i>Git 已建立</div>
       </header>
 
@@ -143,7 +143,7 @@
           <label>单位<input name="unit" placeholder="例如 GPa；无单位可留空"></label>
           <label class="span-2">文章题目<input name="article_title" required></label>
           <label class="span-2">DOI<input name="doi" required></label>
-          <label class="span-2 context-manual">数据在文中的解释<textarea name="context_explanation" required placeholder="尽量写清材料、环境、样品状态、辐照条件、测量方法等，便于以后搜索。"></textarea></label>
+          <label class="span-2 context-manual">数据在文中的解释<textarea name="context_explanation" required placeholder="尽量写清材料、实验类型、控制变量、环境条件、样品状态和测量方法等，便于以后搜索。"></textarea></label>
           <div class="manual-note"><i>i</i><span>人工补录直接写入所选文章的六列数据库，不切换当前校对文章，也不会调用 DeepSeek。</span></div>
           <button class="primary" type="submit">保存人工数据</button>
         </form>

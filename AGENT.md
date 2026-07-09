@@ -188,9 +188,16 @@ PYTHONPATH=src python3 -m auto_research.cli attach-pdf <paper_id> /absolute/path
 PYTHONPATH=src python3 -m auto_research.cli verify --limit 120 --include-all
 ```
 
-## Irradiation experimental evidence workflow
+## Experimental evidence workflow
 
 This section is the authoritative handoff for the local six-column evidence demo. Keep it updated whenever the extraction, review, search, database schema, or checkpoint workflow changes.
+
+The evidence project must not assume every paper is an irradiation experiment.
+Before DeepSeek extraction or readiness claims, classify the local paper's
+experiment type from the title and readable PDF text. Use the detected profile
+to choose extraction foci. Irradiation is the first mature pilot type, but the
+six-column database is intended to store experimental evidence across physics,
+materials, chemistry, and engineering papers.
 
 Maintain `PROJECT_LOG.md` as the user-facing project change log. `AGENT.md` records operating rules for future agents; `PROJECT_LOG.md` records what changed, why it changed, and how it was verified.
 
@@ -209,11 +216,11 @@ Do not substitute the accepted manuscript, a handbook, or a metadata record for 
 Every extracted or manually entered datum must expose these editable fields:
 
 1. `value_text`: the value exactly as reported, including uncertainty, range, inequality, or qualitative wording when applicable.
-2. `meaning`: the physical meaning of the value, such as irradiation temperature, loop diameter, hardness, or alloy composition.
+2. `meaning`: the physical meaning of the value, such as experimental temperature, loop diameter, hardness, thermal conductivity, resistivity, corrosion current, or alloy composition.
 3. `unit`: the reported unit; preserve an empty unit when the paper reports none.
 4. `article_title`: the paper title.
 5. `doi`: the DOI.
-6. `context_explanation`: the main search field. Include material, specimen state, irradiation environment, temperature, dose, measurement method, and other conditions needed to distinguish the datum.
+6. `context_explanation`: the main search field. Include material, specimen state, experiment type, environment, control variables, temperature/time/field/pressure/dose when applicable, measurement method, and other conditions needed to distinguish the datum.
 
 Do not force heterogeneous values into a normalized scientific template. Preserve the reported value and unit. The source page, locator, and excerpt remain provenance metadata outside the six editable columns.
 
@@ -233,9 +240,9 @@ Use the read-only self-check before claiming the six-column workflow is ready fo
 PYTHONPATH=src python3 -m auto_research.cli evidence-self-check "10.1016/j.jnucmat.2018.08.031" --query 温度 --query 硬度 --min-rows 100 --min-highlight-ratio 0.8
 ```
 
-The self-check must not call DeepSeek, switch the current paper, save snapshots, or modify rows. It verifies selector resolution, local PDF presence, six editable fields, PDF highlight coverage, fuzzy search, CSV/Excel export generation, learning-sample channel availability, and the core web review UI contract: editable left table, immutable original pane, confirm-before-save behavior, manual entry, whole-database search, and source-highlight entry points.
+The self-check must not call DeepSeek, switch the current paper, save snapshots, or modify rows. It verifies selector resolution, local PDF presence, experiment-type detection, six editable fields, PDF highlight coverage, fuzzy search, CSV/Excel export generation, learning-sample channel availability, and the core web review UI contract: editable left table, immutable original pane, confirm-before-save behavior, manual entry, whole-database search, and source-highlight entry points.
 
-The self-check JSON must include a `requirements` array that restates the user-facing acceptance criteria in plain language: article selector to extracted rows, six required columns, editable review preserving the original, manual entry without a fabricated original, free-text fuzzy search/export, and the review-learning loop. Do not claim the goal is ready unless both low-level `checks` and user-facing `requirements` are all `ok`.
+The self-check JSON must include a `requirements` array that restates the user-facing acceptance criteria in plain language: article selector to experiment type and extracted rows, six required columns, editable review preserving the original, manual entry without a fabricated original, free-text fuzzy search/export, and the review-learning loop. Do not claim the goal is ready unless both low-level `checks` and user-facing `requirements` are all `ok`.
 
 The web paper-switch form is intentionally read-only with respect to AI extraction: submitting a paper selector must call `/api/current-paper` only, load saved local rows, and never trigger DeepSeek or `/api/current-paper/run-workflow`. AI extraction in the web UI must require an explicit click on the separate current-article extraction button.
 

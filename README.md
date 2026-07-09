@@ -112,11 +112,19 @@ Statuses:
 
 The review matrices include authenticity columns, and the gap summary only promotes verified/likely-real papers as promising papers.
 
-## Irradiation experimental-evidence database
+## Experimental-evidence database
 
 The evidence database is deliberately separate from Zotero and from `db/research.sqlite`.
 Zotero remains the source of papers/PDFs; every publishable value must retain a
 page or table/figure locator and pass human review.
+
+The current evidence workflow first classifies what kind of experiment the paper
+contains, then chooses the extraction focus accordingly. Irradiation remains the
+first mature pilot type, but it is no longer the hard-coded project boundary.
+The classifier currently recognizes irradiation, mechanical testing,
+microscopy/characterization, thermal measurement, electrical transport,
+spectroscopy, electrochemical/corrosion testing, processing experiments, and
+magnetic measurements.
 
 ```bash
 # Create the balanced 30-paper HEA/RHEA + tungsten pilot and import the
@@ -141,6 +149,9 @@ Additional commands:
 # Generate an excerpt-only, schema-constrained packet for interactive AI extraction
 auto-research evidence-prompt <paper-db-id>
 
+# Classify the experiment type of a local evidence paper without calling DeepSeek
+auto-research evidence-classify-experiment "10.1016/j.jnucmat.2018.08.031"
+
 # Import returned JSON; all records remain drafts until human confirmation
 auto-research evidence-import-ai <paper-db-id> result.json
 
@@ -157,7 +168,9 @@ Artifacts:
 - prompt packets: `data/evidence/prompt_packets/`
 - verified CSV export: `data/matrix/irradiation_evidence_verified.csv`
 
-See `docs/irradiation_evidence_database.md` for the physics-oriented field guide.
+See `docs/irradiation_evidence_database.md` for the original irradiation-pilot
+field guide; the current code now treats that guide as one mature experiment
+type rather than the only supported scope.
 
 ### Six-column correction-learning demo
 
@@ -166,7 +179,8 @@ pilot schema. Each extracted datum has exactly six editable fields: value,
 physical meaning, unit, article title, DOI, and contextual explanation. Search
 ranks the specific physical meaning first and the contextual explanation one
 level below it. The contextual explanation records the material, specimen,
-irradiation environment, and other conditions needed to interpret the value.
+experiment type, control variables, environment, and other conditions needed to
+interpret the value.
 
 The canonical source is the final published PDF stored locally at:
 
