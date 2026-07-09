@@ -19,7 +19,7 @@ from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.self_check import check_evidence_workflow
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
-from auto_research.evidence.webapp import make_xlsx, requires_rescan_confirmation
+from auto_research.evidence.webapp import make_xlsx, requires_rescan_confirmation, search_export_rows
 from auto_research.evidence.workflow import run_article_workflow
 from auto_research.evidence.six_column import (
     CURRENT_PAPER_META_KEY,
@@ -297,6 +297,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         })
         all_rows = search_current_data(self.db, "", limit=1000)
         self.assertIn(other_row["item_id"], {row["item_id"] for row in all_rows})
+        exported_rows = search_export_rows(self.db, "")
+        self.assertIn(other_row["item_id"], {row["item_id"] for row in exported_rows})
         paper_counts = {row["id"]: row["six_row_count"] for row in self.db.list_papers()}
         self.assertEqual(paper_counts[self.paper_id], 114)
         self.assertEqual(paper_counts[other], 1)

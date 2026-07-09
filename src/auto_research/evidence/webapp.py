@@ -119,6 +119,12 @@ def requires_rescan_confirmation(db: EvidenceDB, paper_id: int) -> bool:
     return bool(status.get("scanned"))
 
 
+def search_export_rows(db: EvidenceDB, query: str, limit: int = 100000) -> list[dict]:
+    """Return the whole-database result set used by search-page exports."""
+
+    return search_current_data(db, query, limit=limit)
+
+
 class EvidenceHandler(BaseHTTPRequestHandler):
     db: EvidenceDB
     upload_service: UploadService
@@ -187,11 +193,11 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.json_response(search_current_data(self.db, query))
             if parsed.path == "/api/six-export.csv":
                 query = parse_qs(parsed.query).get("q", [""])[0]
-                rows = search_current_data(self.db, query, limit=100000) if query else list_current_data(self.db)
+                rows = search_export_rows(self.db, query)
                 return self.six_csv_response(rows)
             if parsed.path == "/api/six-export.xlsx":
                 query = parse_qs(parsed.query).get("q", [""])[0]
-                rows = search_current_data(self.db, query, limit=100000) if query else list_current_data(self.db)
+                rows = search_export_rows(self.db, query)
                 return self.six_xlsx_response(rows, "six-column-search-results.xlsx")
             if parsed.path == "/api/current-paper/export.csv":
                 params = parse_qs(parsed.query)
