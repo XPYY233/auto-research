@@ -349,10 +349,10 @@ function renderTable() {
     const cls = [state.selected === row.item_id ? "selected" : "", state.dirtyRows.has(Number(row.item_id)) ? "dirty" : "", row.review_action === "confirmation" ? "confirmed" : "", row.version_no > 0 && row.review_action !== "confirmation" ? "revised" : "", row.origin_type === "manual" ? "manual" : ""].filter(Boolean).join(" ");
     const cells = fields.map(field => `<td><textarea class="cell ${field === "context_explanation" ? "context" : ""}" data-field="${field}" aria-label="${fieldLabels[field]}">${esc(row[field])}</textarea></td>`).join("");
     const badge = row.origin_type === "manual" ? "人工" : row.review_action === "confirmation" ? `已确认 v${row.version_no}` : row.version_no > 0 ? `已修正 v${row.version_no}` : "未审核";
-    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action"><button class="confirm" data-confirm="${row.item_id}">确认当前内容</button><button data-original="${row.item_id}">查看原始</button><small>${badge}</small></div></td></tr>`;
+    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action"><button class="confirm" data-confirm="${row.item_id}">确认当前内容</button><button class="confirm-next" data-confirm-next="${row.item_id}">确认并下一条</button><button data-original="${row.item_id}">查看原始</button><small>${badge}</small></div></td></tr>`;
   }).join("");
   body.querySelectorAll("tr[data-item]").forEach(tr => tr.addEventListener("click", event => {
-    if (event.target.closest("button[data-confirm]")) return;
+    if (event.target.closest("button[data-confirm],button[data-confirm-next]")) return;
     selectRow(Number(tr.dataset.item));
   }));
   body.querySelectorAll("[data-original]").forEach(btn => btn.addEventListener("click", event => {
@@ -362,6 +362,10 @@ function renderTable() {
   body.querySelectorAll("[data-confirm]").forEach(btn => btn.addEventListener("click", event => {
     event.stopPropagation();
     confirmRow(Number(btn.dataset.confirm));
+  }));
+  body.querySelectorAll("[data-confirm-next]").forEach(btn => btn.addEventListener("click", event => {
+    event.stopPropagation();
+    confirmRow(Number(btn.dataset.confirmNext), { goNext: true });
   }));
   body.querySelectorAll("[data-field]").forEach(input => input.addEventListener("input", event => {
     const tr = event.target.closest("tr[data-item]");
@@ -476,7 +480,7 @@ function collectRowFields(id) {
   return values;
 }
 
-async function confirmRow(id) {
+async function confirmRow(id, options = {}) {
   try {
     const values = collectRowFields(id);
     const current = state.rows.find(row => row.item_id === id);
@@ -500,6 +504,9 @@ async function confirmRow(id) {
     renderOriginal(result);
     renderEvidenceAudit();
     renderHistory();
+    if (options.goNext) {
+      window.requestAnimationFrame(() => selectNextUnreviewed());
+    }
     toast(result.review_action === "confirmation"
       ? `已确认内容无误并记录为 v${result.version_no}；自动提取原始版本未改变。`
       : `已保存修正并创建版本 v${result.version_no}；自动提取原始版本未改变。`);
