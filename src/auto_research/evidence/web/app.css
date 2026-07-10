@@ -108,6 +108,7 @@
 #review-sort{width:175px}
 
 .topbar-status{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.readonly-badge[hidden]{display:none!important}
 .readonly-badge{display:flex;gap:8px;align-items:center;padding:8px 11px;border:1px solid #efc7ad;border-radius:20px;background:#fff7f1;color:var(--orange);font-size:11px;white-space:nowrap}
 .readonly-badge i{width:7px;height:7px;background:var(--orange);border-radius:50%;box-shadow:0 0 0 4px rgba(226,109,47,.12)}
 .result-actions{display:grid;gap:7px}
@@ -126,4 +127,9 @@ body[data-readonly="true"] #current-review-batch,
 body[data-readonly="true"] #current-review-all{display:none}
 .article-strip{grid-template-columns:130px minmax(240px,1fr) minmax(160px,.42fr) minmax(145px,.36fr) auto}
 #paper-status-summary{border-left:3px solid var(--blue);padding-left:10px}
+.review-priority{display:block;padding:4px 6px;border-radius:4px;text-align:center;font-size:10px;font-weight:700}
+.review-priority.high{color:#8d2e21;background:#fff0ec;border:1px solid #efb8ab}
+.review-priority.medium{color:#8a5a16;background:#fff8e8;border:1px solid #ead39f}
+.edit-table tr.priority-high td:first-child{box-shadow:inset 3px 0 #c94f3d}
+.edit-table tr.priority-medium td:first-child{box-shadow:inset 3px 0 #d99a36}
 @media(max-width:1050px){.article-strip{grid-template-columns:90px 1fr}.article-strip div:nth-child(4){border-top:1px solid #ccd8df}}

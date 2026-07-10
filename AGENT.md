@@ -374,6 +374,23 @@ Blind-test reliability rules are mandatory for later papers:
 The five-paper results remain version-0 candidates. Do not describe their
 physical interpretation as human-confirmed until the researcher reviews them.
 
+### Human-review priority queue
+
+The six-column review UI may rank unreviewed rows by deterministic provenance
+signals: page-only or weak highlighting, figure/trend locators, approximate or
+qualitative value wording, and calculated/derived wording. The ranking is a
+triage aid only. It must never mutate the six editable fields, suppress rows,
+or label a scientific datum as incorrect. The UI must explain that high
+priority means "review first", not "known error".
+
+`audit_six_column_evidence()` is the authoritative source for
+`review_priority_rows` and `review_priority_counts`. The web table, the
+"只看重点项" filter, and Markdown review-batch downloads must use the same
+priority output. Keep ordinary item order available as a selectable fallback.
+Local editable mode must hide the read-only badge; preserve the explicit
+`.readonly-badge[hidden]` CSS rule because the badge's flex styling otherwise
+overrides the HTML `hidden` attribute.
+
 ### Read-only public sharing
 
 The project now supports a share-safe read-only UI mode via:

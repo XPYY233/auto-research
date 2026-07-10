@@ -504,6 +504,16 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(audit["checked_rows"], 114)
         self.assertGreater(audit["highlighted_rows"], 80)
         self.assertGreater(audit["strong_rows"], 40)
+        self.assertEqual(len(audit["review_priority_rows"]), 114)
+        self.assertGreater(audit["review_priority_counts"]["unreviewed_attention"], 0)
+        self.assertEqual(
+            sum(audit["review_priority_counts"][level] for level in ("high", "medium", "normal")),
+            114,
+        )
+        self.assertGreaterEqual(
+            audit["review_priority_rows"][0]["score"],
+            audit["review_priority_rows"][-1]["score"],
+        )
         self.assertIn("PDF", audit["message"])
 
     def test_run_article_workflow_extracts_target_by_article_key(self):
@@ -574,6 +584,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("review_progress_card", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_feedback_refresh", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_source_sort", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("review_priority_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("row_source_button", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("source_highlight", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("next_unreviewed_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
@@ -655,6 +666,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(out.is_file())
         text = out.read_text(encoding="utf-8")
         self.assertIn("下一批待审核数据清单", text)
+        self.assertIn("核验优先级", text)
         self.assertIn("item_id=", text)
         self.assertIn("/api/six-data/", text)
         self.assertIn("核验记录", text)

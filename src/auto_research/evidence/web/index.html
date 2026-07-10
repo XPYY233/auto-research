@@ -81,6 +81,7 @@
             <label class="compact-search">审核状态
               <select id="review-filter">
                 <option value="all">全部</option>
+                <option value="priority">只看重点项</option>
                 <option value="unreviewed">只看未审核</option>
                 <option value="confirmed">只看已确认</option>
                 <option value="corrected">只看已修正</option>
@@ -90,6 +91,7 @@
             <label class="compact-search">显示顺序
               <select id="review-sort">
                 <option value="original">抽取顺序</option>
+                <option value="review_priority" selected>核验优先级（高到低）</option>
                 <option value="source_asc">原文页码升序</option>
                 <option value="source_desc">原文页码降序</option>
                 <option value="unreviewed_source">未审核优先，按页码</option>

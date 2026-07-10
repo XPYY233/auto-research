@@ -7,6 +7,7 @@ from typing import Any
 from auto_research.paths import DATA_DIR
 
 from .db import EvidenceDB
+from .evidence_audit import audit_six_column_evidence
 from .six_column import list_current_data, resolve_paper_selector, review_progress
 
 
@@ -174,9 +175,11 @@ def _review_batch_markdown(paper: dict[str, Any], progress: dict[str, Any],
     if not rows:
         lines.append("- 当前没有未审核自动抽取数据。")
     for index, row in enumerate(rows, start=1):
+        priority_reasons = "；".join(row.get("review_priority_reasons") or []) or "常规证据核验"
         lines.extend([
             f"### {index}. item_id={row['item_id']} · {row.get('meaning') or '未命名数据'}",
             "",
+            f"- 核验优先级：{row.get('review_priority_label') or '常规核验'}（{priority_reasons}）",
             f"- 具体数值：`{row.get('value_text') or ''}`",
             f"- 具体意义：{row.get('meaning') or ''}",
             f"- 单位：{row.get('unit') or ''}",
@@ -200,7 +203,17 @@ def review_batch_payload(db: EvidenceDB, paper_id: int, *,
         row for row in list_current_data(db, paper_id)
         if row.get("origin_type") != "manual" and int(row.get("version_no") or 0) == 0
     ]
-    rows.sort(key=lambda row: int(row["item_id"]))
+    try:
+        audit = audit_six_column_evidence(db, paper_id)
+        priorities = {int(item["item_id"]): item for item in audit.get("review_priority_rows", [])}
+    except Exception:
+        priorities = {}
+    for row in rows:
+        priority = priorities.get(int(row["item_id"]), {})
+        row["review_priority_score"] = int(priority.get("score") or 0)
+        row["review_priority_label"] = priority.get("label") or "常规核验"
+        row["review_priority_reasons"] = priority.get("reasons") or []
+    rows.sort(key=lambda row: (-int(row["review_priority_score"]), int(row["item_id"])))
     selected = rows[:max(0, limit)]
     progress = review_progress(db, paper_id)
     return {

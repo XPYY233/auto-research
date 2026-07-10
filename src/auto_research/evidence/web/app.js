@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "original", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -142,6 +142,7 @@ async function loadCurrentPaper() {
     api("/api/current-paper/evidence-audit"),
     api("/api/current-paper/deepseek-run"),
   ]);
+  applyReviewPriorities();
   clearDirtyRows();
   state.selected = null;
   renderPaperOptions();
@@ -154,6 +155,17 @@ async function loadCurrentPaper() {
   renderOriginalPlaceholder();
   renderHistory();
   fillManualDefaults();
+}
+
+function applyReviewPriorities() {
+  const priorities = new Map((state.audit?.review_priority_rows || []).map(item => [Number(item.item_id), item]));
+  state.rows.forEach(row => {
+    const priority = priorities.get(Number(row.item_id)) || {};
+    row.review_priority_level = priority.level || "normal";
+    row.review_priority_label = priority.label || "常规核验";
+    row.review_priority_score = Number(priority.score || 0);
+    row.review_priority_reasons = priority.reasons || [];
+  });
 }
 
 function renderPaperOptions() {
@@ -233,6 +245,7 @@ async function refreshReviewFeedback() {
     state.learningReport = learningReport;
     state.audit = audit;
     state.extraction = extraction;
+    applyReviewPriorities();
   }
   renderPaperOptions();
   renderPaper();
@@ -427,6 +440,8 @@ function filteredRows() {
   let rows = state.rows;
   if (state.reviewFilter === "unreviewed") {
     rows = rows.filter(row => row.origin_type !== "manual" && row.version_no === 0);
+  } else if (state.reviewFilter === "priority") {
+    rows = rows.filter(row => isUnreviewedRow(row) && ["high", "medium"].includes(row.review_priority_level));
   } else if (state.reviewFilter === "confirmed") {
     rows = rows.filter(row => row.review_action === "confirmation");
   } else if (state.reviewFilter === "corrected") {
@@ -453,6 +468,13 @@ function sortReviewRows(rows) {
     withIndex.sort((a, b) => (
       sourcePageNumber(a.row) - sourcePageNumber(b.row)
       || sourceLocatorText(a.row).localeCompare(sourceLocatorText(b.row))
+      || a.index - b.index
+    ));
+  } else if (state.reviewSort === "review_priority") {
+    withIndex.sort((a, b) => (
+      Number(b.row.review_priority_score || 0) - Number(a.row.review_priority_score || 0)
+      || Number(!isUnreviewedRow(a.row)) - Number(!isUnreviewedRow(b.row))
+      || sourcePageNumber(a.row) - sourcePageNumber(b.row)
       || a.index - b.index
     ));
   } else if (state.reviewSort === "source_desc") {
@@ -533,7 +555,8 @@ function renderTable() {
     return;
   }
   body.innerHTML = rows.map(row => {
-    const cls = [state.selected === row.item_id ? "selected" : "", state.dirtyRows.has(Number(row.item_id)) ? "dirty" : "", row.review_action === "confirmation" ? "confirmed" : "", row.version_no > 0 && row.review_action !== "confirmation" ? "revised" : "", row.origin_type === "manual" ? "manual" : ""].filter(Boolean).join(" ");
+    const priorityClass = isUnreviewedRow(row) && row.review_priority_level !== "normal" ? `priority-${row.review_priority_level}` : "";
+    const cls = [state.selected === row.item_id ? "selected" : "", state.dirtyRows.has(Number(row.item_id)) ? "dirty" : "", row.review_action === "confirmation" ? "confirmed" : "", row.version_no > 0 && row.review_action !== "confirmation" ? "revised" : "", row.origin_type === "manual" ? "manual" : "", priorityClass].filter(Boolean).join(" ");
     const readonly = isReadOnly() ? " readonly" : "";
     const cells = fields.map(field => `<td><textarea class="cell ${field === "context_explanation" ? "context" : ""}" data-field="${field}" aria-label="${fieldLabels[field]}"${readonly}>${esc(row[field])}</textarea></td>`).join("");
     const badge = row.origin_type === "manual" ? "人工" : row.review_action === "confirmation" ? `已确认 v${row.version_no}` : row.version_no > 0 ? `已修正 v${row.version_no}` : "未审核";
@@ -541,7 +564,10 @@ function renderTable() {
     const reviewButtons = isReadOnly()
       ? ""
       : `<button class="confirm" data-confirm="${row.item_id}">确认当前内容</button><button class="confirm-next" data-confirm-next="${row.item_id}">确认并下一条</button>`;
-    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action">${reviewButtons}<button data-original="${row.item_id}">查看原始</button><button class="source-action" data-source-row="${row.item_id}"${sourceDisabled}>原文证据</button><small>#${row.item_id} · ${badge}</small></div></td></tr>`;
+    const priorityBadge = isUnreviewedRow(row) && row.review_priority_level !== "normal"
+      ? `<span class="review-priority ${esc(row.review_priority_level)}" title="${esc((row.review_priority_reasons || []).join("；"))}">${esc(row.review_priority_label)}</span>`
+      : "";
+    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action">${priorityBadge}${reviewButtons}<button data-original="${row.item_id}">查看原始</button><button class="source-action" data-source-row="${row.item_id}"${sourceDisabled}>原文证据</button><small>#${row.item_id} · ${badge}</small></div></td></tr>`;
   }).join("");
   body.querySelectorAll("tr[data-item]").forEach(tr => tr.addEventListener("click", event => {
     if (event.target.closest("button[data-confirm],button[data-confirm-next],button[data-source-row]")) return;
@@ -1018,8 +1044,11 @@ function renderReviewProgressCard(progress) {
   setText("review-progress-manual", progress.manual);
   const bar = document.querySelector("#review-progress-bar");
   if (bar) bar.style.width = `${ratio}%`;
+  const attention = Number(state.audit?.review_priority_counts?.unreviewed_attention || 0);
   const note = progress.unreviewed
-    ? `下一步：点击“下一条未审核”逐条核验，或下载待审核清单分批处理。`
+    ? attention
+      ? `建议先核验 ${attention} 条重点项；系统只按证据定位强弱排序，不代表这些数据一定有误。`
+      : `下一步：点击“下一条未审核”逐条核验，或下载待审核清单分批处理。`
     : `当前文章已无未审核自动抽取数据，可进入搜索与学习样本复查。`;
   setText("review-progress-note", note);
 }

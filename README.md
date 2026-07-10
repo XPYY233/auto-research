@@ -340,6 +340,11 @@ auto-research evidence-review-batch "Irradiation effects in high entropy alloys 
 # DeepSeek. The all-unreviewed link follows the current remaining count.
 # The progress card above the table shows reviewed, unreviewed, confirmed,
 # corrected, and manually added counts for the current article.
+# The default review order places rows with weak source localization, figure or
+# trend provenance, and approximate/qualitative wording first. This is a review
+# priority only; it never changes the six fields or claims that a row is wrong.
+# Use "只看重点项" to focus that queue, then open the highlighted source before
+# confirming or correcting each row.
 # Each automatic row also has an "原文证据" button that opens the highlighted PDF
 # evidence directly.
 
