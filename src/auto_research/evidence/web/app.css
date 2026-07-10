@@ -113,6 +113,13 @@
 .result-actions{display:grid;gap:7px}
 .result-actions .source-link{color:#fff;border-color:var(--orange);background:var(--orange)}
 body[data-readonly="true"] .cell{background:#f8fbfc;color:#405665;resize:none}
+body[data-readonly="true"] .sidebar{background:#e6eef2}
+body[data-readonly="true"] .sidebar nav{margin-top:18px}
+body[data-readonly="true"] .nav:not([data-view="search"]),
+body[data-readonly="true"] .article-mini,
+body[data-readonly="true"] .save-rule,
+body[data-readonly="true"] .article-picker,
+body[data-readonly="true"] .article-strip{display:none!important}
 body[data-readonly="true"] .shortcut-hint,
 body[data-readonly="true"] #next-unreviewed,
 body[data-readonly="true"] #current-review-batch,

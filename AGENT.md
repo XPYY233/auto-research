@@ -383,9 +383,12 @@ PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --po
 This is not a second app or a copied database. It is the same web UI and the same
 `db/experimental_evidence.sqlite`, started with server-side write protection.
 When `read_only` is enabled, every POST request is rejected before route-specific
-logic runs. The frontend also hides upload/manual/write controls, defaults to the
-whole-database search view, and exposes row-level source evidence buttons in
-search results.
+logic runs. The shared read-only server is search-only: GET routes are limited to
+the static app, `/api/ui-mode`, whole-database search/export, row-level source
+evidence images/metadata, and source PDF opening. Do not expose current-paper,
+paper-list, upload queue, learning samples, review, or extraction endpoints in
+public read-only mode. The frontend should hide every non-search navigation item
+and default to the whole-database search view.
 
 Use this mode for any public tunnel or external preview URL. Do not expose the
 editable `8765` workbench through a public tunnel. The current recommended

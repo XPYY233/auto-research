@@ -6,6 +6,7 @@
 
 - 新增 `scripts/start_readonly_ngrok.command`：双击或终端运行后，会启动 `8766` 只读网页服务并通过 ngrok 输出可发给导师的 HTTPS 链接。
 - 新增便捷入口 `/Users/USER/Zotero/创建导师公网链接.command`，以后可直接双击创建公网只读链接。
+- 只读分享版收敛为“搜索专用应用”：前端隐藏校对、上传、人工补录、修正历史和文章切换；后端只开放搜索、导出、原文证据和静态资源接口。
 - 脚本只读取 `NGROK_AUTHTOKEN` 环境变量或本机 `.env.ngrok` 文件；当前支持 `/Users/USER/Zotero/.env.ngrok` 作为默认便捷配置位置，避免把 ngrok token 写入版本库。
 - 若已有 ngrok 正在服务同一个只读端口，脚本会直接显示现有公网链接，避免重复启动隧道。
 - 脚本在启动 ngrok 前会检查 `/api/ui-mode` 必须返回 `read_only: true`，防止误把可编辑工作台暴露到公网。

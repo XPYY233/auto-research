@@ -42,6 +42,20 @@ function applyUiMode() {
   document.querySelectorAll('[data-view="upload"],[data-view="manual"],[data-write-action]').forEach(el => {
     el.hidden = readonly;
   });
+  document.querySelectorAll(".nav").forEach(btn => {
+    btn.hidden = readonly && btn.dataset.view !== "search";
+  });
+  document.querySelectorAll(".article-mini,.save-rule,.article-picker,.article-strip").forEach(el => {
+    el.hidden = readonly;
+  });
+}
+
+function renderPublicSearchOnlyMode() {
+  document.querySelector(".brand strong").textContent = "实验数据检索库";
+  document.querySelector(".brand small").textContent = "READ-ONLY SEARCH";
+  document.querySelector("h1").textContent = "实验数据只读检索";
+  const searchSummary = document.querySelector("#search-summary");
+  if (searchSummary) searchSummary.textContent = "导师分享版：仅支持搜索、原文证据查看和导出";
 }
 
 function rejectReadOnlyAction(action = "修改数据") {
@@ -97,18 +111,22 @@ function renderOriginalPlaceholder() {
 }
 
 async function load() {
-  [state.uiMode, state.papers, state.uploads, state.jobs, state.ai] = await Promise.all([
-    api("/api/ui-mode"),
+  state.uiMode = await api("/api/ui-mode");
+  applyUiMode();
+  if (isReadOnly()) {
+    renderPublicSearchOnlyMode();
+    switchView("search");
+    return;
+  }
+  [state.papers, state.uploads, state.jobs, state.ai] = await Promise.all([
     api("/api/papers"),
     api("/api/uploads"),
     api("/api/processing-jobs"),
     api("/api/ai/status"),
   ]);
-  applyUiMode();
   await loadCurrentPaper();
   renderPaperOptions();
   renderUploadWorkspace();
-  if (isReadOnly()) switchView("search");
 }
 
 async function loadCurrentPaper() {
@@ -895,7 +913,7 @@ function renderLearningGuidanceCard() {
 }
 
 function switchView(name) {
-  if (isReadOnly() && ["upload", "manual"].includes(name)) name = "search";
+  if (isReadOnly() && name !== "search") name = "search";
   document.querySelectorAll(".nav,.view").forEach(el => el.classList.remove("active"));
   document.querySelector(`.nav[data-view="${name}"]`)?.classList.add("active");
   document.querySelector(`#view-${name}`).classList.add("active");

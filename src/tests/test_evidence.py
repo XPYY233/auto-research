@@ -24,6 +24,7 @@ from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
 from auto_research.evidence.webapp import (
     current_experiment_profile,
+    is_read_only_public_get,
     is_read_only_mutation,
     make_xlsx,
     requires_rescan_confirmation,
@@ -561,6 +562,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("item_id_review_filter", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("experiment_profile_card", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("readonly_mentor_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("readonly_search_only_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("search_source_evidence_button", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertTrue(by_name["public_readonly_ngrok_share"]["ok"])
         self.assertIn("ngrok_public_url", by_name["public_readonly_ngrok_share"]["public_share"]["checked"])
@@ -579,6 +581,18 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertFalse(is_read_only_mutation("HEAD", "/"))
         self.assertTrue(is_read_only_mutation("POST", "/api/current-paper/deepseek-preview"))
         self.assertTrue(is_read_only_mutation("POST", "/api/uploads/pdf"))
+
+    def test_read_only_public_get_allowlist_is_search_only(self):
+        self.assertTrue(is_read_only_public_get("/"))
+        self.assertTrue(is_read_only_public_get("/api/six-search"))
+        self.assertTrue(is_read_only_public_get("/api/six-export.xlsx"))
+        self.assertTrue(is_read_only_public_get("/api/six-data/335/source-view"))
+        self.assertTrue(is_read_only_public_get("/api/six-data/335/source-highlight.png"))
+        self.assertTrue(is_read_only_public_get("/api/papers/2/pdf"))
+        self.assertFalse(is_read_only_public_get("/api/current-paper"))
+        self.assertFalse(is_read_only_public_get("/api/papers"))
+        self.assertFalse(is_read_only_public_get("/api/uploads"))
+        self.assertFalse(is_read_only_public_get("/api/current-paper/learning-samples"))
 
     def test_review_handoff_markdown_summarizes_human_review_next_step(self):
         out = Path(self.tmp.name) / "handoff.md"

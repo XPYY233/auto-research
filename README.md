@@ -188,11 +188,12 @@ committed.
 The launcher starts the same interface in read-only mode on local port `8766`,
 checks `/api/ui-mode` before opening the tunnel, and then prints an
 `https://...ngrok...` URL that can be sent to the mentor. Read-only mode uses
-the same database and web UI, but rejects all POST/write actions on the server
-side. The shared page supports browsing, whole-database search, evidence
-highlighting, PDF opening, and CSV/Excel export; it does not allow uploading
-PDFs, confirming edits, manual entry, snapshots, article switching, or DeepSeek
-extraction.
+the same database, but is intentionally search-only: the shared page exposes
+whole-database search, evidence highlighting, PDF evidence opening, and CSV/Excel
+export. The server rejects upload, review, manual entry, article switching,
+learning-sample, queue, current-paper, snapshot, and DeepSeek routes even if a
+visitor guesses the URL. The editable local workbench remains the separate
+`http://127.0.0.1:8765` service.
 
 GitHub Pages is a good later option for a persistent read-only snapshot site:
 the project can export static HTML/JSON/CSV for the mentor, but Pages cannot run

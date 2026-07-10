@@ -57,6 +57,32 @@ def is_read_only_mutation(method: str, path: str) -> bool:
     return method.upper() not in {"GET", "HEAD", "OPTIONS"}
 
 
+def is_read_only_public_get(path: str) -> bool:
+    """Return whether a GET route is exposed in mentor-facing search-only mode."""
+
+    if path in {
+        "/",
+        "/index.html",
+        "/readonly",
+        "/api/ui-mode",
+        "/api/six-search",
+        "/api/six-export.csv",
+        "/api/six-export.xlsx",
+    }:
+        return True
+    if path.startswith("/static/"):
+        return True
+    if re.fullmatch(r"/api/six-data/\d+/source-view", path):
+        return True
+    if re.fullmatch(r"/api/six-data/\d+/source-highlight\.png", path):
+        return True
+    if re.fullmatch(r"/api/six-data/\d+/source-snippet\.png", path):
+        return True
+    if re.fullmatch(r"/api/papers/\d+/pdf", path):
+        return True
+    return False
+
+
 def _xlsx_col(index: int) -> str:
     label = ""
     while index:
@@ -162,6 +188,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         try:
+            if self.read_only and not is_read_only_public_get(parsed.path):
+                return self.json_response(
+                    {
+                        "error": "当前为导师只读搜索模式，仅开放数据搜索、导出和原文证据查看。",
+                        "code": "read_only_search_only",
+                    },
+                    HTTPStatus.FORBIDDEN,
+                )
             if parsed.path == "/api/summary":
                 return self.json_response(self.db.summary())
             if parsed.path == "/api/ui-mode":
