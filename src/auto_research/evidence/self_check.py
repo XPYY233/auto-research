@@ -51,6 +51,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("confirm_and_next", "确认并下一条" in js and "data-confirm-next" in js and "goNext" in js),
         ("review_keyboard_shortcuts", "快捷键" in html and "handleReviewKeyboard" in js and "confirmSelectedRow" in js and "openSelectedSource" in js),
         ("review_progress_card", "id=\"review-progress-card\"" in html and "renderReviewProgressCard" in js and "review-progress-bar" in js),
+        ("row_source_button", "data-source-row" in js and "source-action" in js and "openSourceViewer(Number(btn.dataset.sourceRow))" in js),
         ("item_id_review_filter", "item_id" in html and "rowFilterText" in js and "stable_key" in js),
         ("unsaved_dirty_guard", "hasUnsavedEdits" in js and "beforeunload" in js and "confirmDiscardUnsaved" in js),
         ("manual_entry", "id=\"manual-form\"" in html and "id=\"manual-paper-select\"" in html and "/api/six-data/manual" in js),
