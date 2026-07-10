@@ -101,3 +101,13 @@
 .row-action button.confirm-next{color:#fff;border-color:var(--blue);background:var(--blue)}
 .row-action button.source-action{color:var(--orange);border-color:#efc7ad;background:#fff7f1}.row-action button:disabled{opacity:.45;cursor:not-allowed}
 .shortcut-hint{max-width:330px;color:#667783;font-size:10px;line-height:1.45}
+
+.topbar-status{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.readonly-badge{display:flex;gap:8px;align-items:center;padding:8px 11px;border:1px solid #efc7ad;border-radius:20px;background:#fff7f1;color:var(--orange);font-size:11px;white-space:nowrap}
+.readonly-badge i{width:7px;height:7px;background:var(--orange);border-radius:50%;box-shadow:0 0 0 4px rgba(226,109,47,.12)}
+.result-actions{display:grid;gap:7px}
+.result-actions .source-link{color:#fff;border-color:var(--orange);background:var(--orange)}
+body[data-readonly="true"] .cell{background:#f8fbfc;color:#405665;resize:none}
+body[data-readonly="true"] .shortcut-hint,
+body[data-readonly="true"] #next-unreviewed,
+body[data-readonly="true"] #current-review-batch{display:none}

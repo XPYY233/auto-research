@@ -50,6 +50,12 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 WEB_DIR = Path(__file__).parent / "web"
 
 
+def is_read_only_mutation(method: str, path: str) -> bool:
+    """Return whether a request would mutate the evidence database or local files."""
+
+    return method.upper() not in {"GET", "HEAD", "OPTIONS"}
+
+
 def _xlsx_col(index: int) -> str:
     label = ""
     while index:
@@ -147,6 +153,7 @@ def current_experiment_profile(db: EvidenceDB, paper_id: int | None = None) -> d
 class EvidenceHandler(BaseHTTPRequestHandler):
     db: EvidenceDB
     upload_service: UploadService
+    read_only: bool = False
 
     def log_message(self, fmt: str, *args) -> None:
         print(f"[evidence-web] {self.address_string()} {fmt % args}")
@@ -156,6 +163,12 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/summary":
                 return self.json_response(self.db.summary())
+            if parsed.path == "/api/ui-mode":
+                return self.json_response({
+                    "read_only": bool(self.read_only),
+                    "mode": "readonly" if self.read_only else "editable",
+                    "label": "导师只读浏览模式" if self.read_only else "本地编辑模式",
+                })
             if parsed.path == "/api/ai/status":
                 return self.json_response(DeepSeekSettings.from_env().public_status())
             if parsed.path == "/api/uploads":
@@ -264,7 +277,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.json_response(self.db.list_tasks(status))
             if parsed.path == "/api/export.csv":
                 return self.csv_response(self.measurement_query(parsed.query, limit=100000))
-            if parsed.path == "/" or parsed.path == "/index.html":
+            if parsed.path in {"/", "/index.html", "/readonly"}:
                 return self.serve_static("index.html")
             if parsed.path.startswith("/static/"):
                 return self.serve_static(parsed.path.removeprefix("/static/"))
@@ -276,6 +289,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if self.read_only and is_read_only_mutation("POST", parsed.path):
+            return self.json_response(
+                {
+                    "error": "当前为导师只读浏览模式，不允许修改数据、上传文献或重新调用模型。",
+                    "code": "read_only",
+                },
+                HTTPStatus.FORBIDDEN,
+            )
         try:
             if parsed.path == "/api/uploads/pdf":
                 params = parse_qs(parsed.query)
@@ -571,7 +592,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 8765) -> None:
+def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 8765,
+          read_only: bool = False) -> None:
     evidence_db = db or EvidenceDB()
     evidence_db.init()
     seed_target_article(evidence_db)
@@ -579,12 +601,15 @@ def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 876
     index_result = upload_service.index_existing_pdfs()
     handler = type(
         "BoundEvidenceHandler", (EvidenceHandler,),
-        {"db": evidence_db, "upload_service": upload_service},
+        {"db": evidence_db, "upload_service": upload_service, "read_only": read_only},
     )
     server = ThreadingHTTPServer((host, port), handler)
-    print(f"实验数据证据库: http://{host}:{port}")
+    mode = "导师只读浏览模式" if read_only else "本地编辑模式"
+    print(f"实验数据证据库（{mode}）: http://{host}:{port}")
     print(f"PDF 文档索引: 新增 {index_result['indexed']}，跳过 {index_result['skipped']}")
-    print("按 Ctrl+C 停止。数据库仅绑定本机地址。")
+    if read_only:
+        print("只读模式会拒绝上传、校对确认、重新抽取和快照保存等写入操作。")
+    print("按 Ctrl+C 停止。数据库仅绑定指定地址。")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

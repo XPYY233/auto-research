@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -28,6 +28,26 @@ function toast(message, error = false) {
   toast.timer = setTimeout(() => {
     el.className = "";
   }, 3200);
+}
+
+function isReadOnly() {
+  return Boolean(state.uiMode?.read_only);
+}
+
+function applyUiMode() {
+  const readonly = isReadOnly();
+  document.body.dataset.readonly = readonly ? "true" : "false";
+  const badge = document.querySelector("#readonly-badge");
+  if (badge) badge.hidden = !readonly;
+  document.querySelectorAll('[data-view="upload"],[data-view="manual"],[data-write-action]').forEach(el => {
+    el.hidden = readonly;
+  });
+}
+
+function rejectReadOnlyAction(action = "修改数据") {
+  if (!isReadOnly()) return false;
+  toast(`导师只读模式仅支持浏览、搜索、查看原文证据和导出；不能${action}。`, true);
+  return true;
 }
 
 function setText(id, value) {
@@ -77,15 +97,18 @@ function renderOriginalPlaceholder() {
 }
 
 async function load() {
-  [state.papers, state.uploads, state.jobs, state.ai] = await Promise.all([
+  [state.uiMode, state.papers, state.uploads, state.jobs, state.ai] = await Promise.all([
+    api("/api/ui-mode"),
     api("/api/papers"),
     api("/api/uploads"),
     api("/api/processing-jobs"),
     api("/api/ai/status"),
   ]);
+  applyUiMode();
   await loadCurrentPaper();
   renderPaperOptions();
   renderUploadWorkspace();
+  if (isReadOnly()) switchView("search");
 }
 
 async function loadCurrentPaper() {
@@ -295,6 +318,7 @@ function confirmRescanIfNeeded(actionLabel) {
 }
 
 async function runDeepSeekPreview() {
+  if (rejectReadOnlyAction("调用 DeepSeek 抽取")) return;
   if (!confirmDiscardUnsaved("DeepSeek 补充抽取")) return;
   const button = document.querySelector("#run-deepseek-preview");
   const forceRescan = confirmRescanIfNeeded("DeepSeek 补充抽取");
@@ -391,10 +415,14 @@ function renderTable() {
   }
   body.innerHTML = rows.map(row => {
     const cls = [state.selected === row.item_id ? "selected" : "", state.dirtyRows.has(Number(row.item_id)) ? "dirty" : "", row.review_action === "confirmation" ? "confirmed" : "", row.version_no > 0 && row.review_action !== "confirmation" ? "revised" : "", row.origin_type === "manual" ? "manual" : ""].filter(Boolean).join(" ");
-    const cells = fields.map(field => `<td><textarea class="cell ${field === "context_explanation" ? "context" : ""}" data-field="${field}" aria-label="${fieldLabels[field]}">${esc(row[field])}</textarea></td>`).join("");
+    const readonly = isReadOnly() ? " readonly" : "";
+    const cells = fields.map(field => `<td><textarea class="cell ${field === "context_explanation" ? "context" : ""}" data-field="${field}" aria-label="${fieldLabels[field]}"${readonly}>${esc(row[field])}</textarea></td>`).join("");
     const badge = row.origin_type === "manual" ? "人工" : row.review_action === "confirmation" ? `已确认 v${row.version_no}` : row.version_no > 0 ? `已修正 v${row.version_no}` : "未审核";
     const sourceDisabled = row.origin_type === "manual" ? " disabled" : "";
-    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action"><button class="confirm" data-confirm="${row.item_id}">确认当前内容</button><button class="confirm-next" data-confirm-next="${row.item_id}">确认并下一条</button><button data-original="${row.item_id}">查看原始</button><button class="source-action" data-source-row="${row.item_id}"${sourceDisabled}>原文证据</button><small>#${row.item_id} · ${badge}</small></div></td></tr>`;
+    const reviewButtons = isReadOnly()
+      ? ""
+      : `<button class="confirm" data-confirm="${row.item_id}">确认当前内容</button><button class="confirm-next" data-confirm-next="${row.item_id}">确认并下一条</button>`;
+    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action">${reviewButtons}<button data-original="${row.item_id}">查看原始</button><button class="source-action" data-source-row="${row.item_id}"${sourceDisabled}>原文证据</button><small>#${row.item_id} · ${badge}</small></div></td></tr>`;
   }).join("");
   body.querySelectorAll("tr[data-item]").forEach(tr => tr.addEventListener("click", event => {
     if (event.target.closest("button[data-confirm],button[data-confirm-next],button[data-source-row]")) return;
@@ -418,6 +446,7 @@ function renderTable() {
     openSourceViewer(Number(btn.dataset.sourceRow));
   }));
   body.querySelectorAll("[data-field]").forEach(input => input.addEventListener("input", event => {
+    if (isReadOnly()) return;
     const tr = event.target.closest("tr[data-item]");
     const id = Number(tr?.dataset.item);
     const row = state.rows.find(item => item.item_id === id);
@@ -455,6 +484,7 @@ function selectNextUnreviewed() {
 }
 
 function confirmSelectedRow(options = {}) {
+  if (rejectReadOnlyAction("确认或修正数据")) return;
   if (!state.selected) {
     toast("请先选择一条数据。", true);
     return;
@@ -522,7 +552,15 @@ function sourceMetaHtml(data) {
 }
 
 async function openSourceViewer(id) {
-  const row = state.rows.find(item => item.item_id === id);
+  let row = state.rows.find(item => item.item_id === id);
+  if (!row) {
+    try {
+      row = await api(`/api/six-data/${id}`);
+    } catch (error) {
+      toast(error.message, true);
+      return;
+    }
+  }
   if (!row) return;
   const dialog = document.querySelector("#source-dialog");
   const meta = document.querySelector("#source-meta");
@@ -568,6 +606,7 @@ function collectRowFields(id) {
 }
 
 async function confirmRow(id, options = {}) {
+  if (rejectReadOnlyAction("确认或修正数据")) return;
   try {
     const values = collectRowFields(id);
     const current = state.rows.find(row => row.item_id === id);
@@ -618,6 +657,7 @@ function selectedManualPaper() {
 
 async function saveManual(event) {
   event.preventDefault();
+  if (rejectReadOnlyAction("人工补录")) return;
   const form = event.currentTarget;
   const paper = selectedManualPaper();
   if (!paper?.id) {
@@ -662,6 +702,7 @@ async function saveManual(event) {
 
 async function importJsonResult(event) {
   event.preventDefault();
+  if (rejectReadOnlyAction("导入 JSON")) return;
   if (!confirmDiscardUnsaved("导入 JSON 并刷新当前表格")) return;
   const textarea = document.querySelector("#import-json-text");
   const jsonText = textarea.value.trim();
@@ -708,12 +749,19 @@ function renderResults(rows) {
   el.innerHTML = rows.map(row => {
     const authors = [row.first_author ? `一作：${row.first_author}` : "", row.corresponding_author ? `通讯：${row.corresponding_author}` : ""].filter(Boolean).join(" · ");
     const paperLine = [row.article_title, row.doi, authors].filter(Boolean).join(" · ");
-    return `<article class="result"><div class="value">${esc(row.value_text)}<small> ${esc(row.unit)}</small></div><strong>${esc(row.meaning)}</strong><em>${row.search_score != null ? `相关度 ${esc(row.search_score)}` : ""}</em><p>${esc(row.context_explanation)}</p><div class="result-paper">${esc(paperLine)}</div><button class="row-link" data-jump="${row.item_id}">去校对</button></article>`;
+    const reviewButton = isReadOnly() ? "" : `<button class="row-link" data-jump="${row.item_id}">去校对</button>`;
+    const sourceButton = `<button class="row-link source-link" data-source-search="${row.item_id}">原文证据</button>`;
+    return `<article class="result"><div class="value">${esc(row.value_text)}<small> ${esc(row.unit)}</small></div><strong>${esc(row.meaning)}</strong><em>${row.search_score != null ? `相关度 ${esc(row.search_score)}` : ""}</em><p>${esc(row.context_explanation)}</p><div class="result-paper">${esc(paperLine)}</div><div class="result-actions">${sourceButton}${reviewButton}</div></article>`;
   }).join("");
   el.querySelectorAll("[data-jump]").forEach(btn => btn.addEventListener("click", () => jumpToRow(Number(btn.dataset.jump))));
+  el.querySelectorAll("[data-source-search]").forEach(btn => btn.addEventListener("click", () => openSourceViewer(Number(btn.dataset.sourceSearch))));
 }
 
 async function jumpToRow(id) {
+  if (isReadOnly()) {
+    openSourceViewer(id);
+    return;
+  }
   try {
     let row = state.rows.find(item => item.item_id === id);
     if (!row) {
@@ -762,8 +810,9 @@ function renderHistory() {
 }
 
 function switchView(name) {
+  if (isReadOnly() && ["upload", "manual"].includes(name)) name = "search";
   document.querySelectorAll(".nav,.view").forEach(el => el.classList.remove("active"));
-  document.querySelector(`.nav[data-view="${name}"]`).classList.add("active");
+  document.querySelector(`.nav[data-view="${name}"]`)?.classList.add("active");
   document.querySelector(`#view-${name}`).classList.add("active");
   document.body.dataset.view = name;
   if (name === "search" && !document.querySelector("#search-results").children.length) runSearch();
@@ -839,6 +888,7 @@ function renderReviewProgressCard(progress) {
 
 async function uploadPdf(event) {
   event.preventDefault();
+  if (rejectReadOnlyAction("上传文献")) return;
   const form = event.currentTarget;
   const file = form.elements.pdf.files[0];
   if (!file) {
@@ -876,6 +926,7 @@ async function uploadPdf(event) {
 }
 
 async function switchCurrentPaper({ articleKey = null, paperId = null, silent = false } = {}) {
+  if (rejectReadOnlyAction("切换当前校对文章")) return false;
   if (!confirmDiscardUnsaved("切换文章")) return false;
   const payload = {};
   if (paperId != null) payload.paper_id = paperId;
@@ -891,6 +942,7 @@ async function switchCurrentPaper({ articleKey = null, paperId = null, silent = 
 }
 
 async function runCurrentExtraction() {
+  if (rejectReadOnlyAction("自动提取或核验")) return;
   if (!confirmDiscardUnsaved("自动提取/核验")) return;
   const button = document.querySelector("#run-current-extraction");
   const status = state.extraction;
@@ -936,6 +988,7 @@ async function runCurrentExtraction() {
 }
 
 async function saveCurrentSnapshot() {
+  if (rejectReadOnlyAction("生成数据快照")) return;
   if (!state.paper) return;
   if (hasUnsavedEdits()) {
     toast("仍有未确认修改；CSV 备份只包含已写入数据库的数据。请先逐行确认。", true);
@@ -969,6 +1022,7 @@ async function saveCurrentSnapshot() {
 
 async function submitPaperSwitch(event) {
   event.preventDefault();
+  if (rejectReadOnlyAction("切换当前校对文章")) return;
   const input = document.querySelector("#paper-switch-input");
   const button = document.querySelector("#paper-switch-submit");
   const paperId = Number(input.value);

@@ -94,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("evidence-serve", help="Start the local Chinese review/search interface")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--read-only", action="store_true", help="Start a mentor-safe read-only browser interface")
     sub.add_parser("evidence-summary", help="Show evidence database counts")
     sub.add_parser("evidence-validate", help="Validate pilot balance and evidence publication gates")
     sub.add_parser("evidence-seed-target", help="Seed the six-column demo for the single target irradiation article")
@@ -354,7 +355,7 @@ def cmd_evidence(args) -> int:
         if args.host not in {"127.0.0.1", "localhost", "::1"}:
             raise SystemExit("Evidence UI is local-only; bind to 127.0.0.1, localhost, or ::1")
         from .evidence.webapp import serve
-        serve(evidence_db, args.host, args.port)
+        serve(evidence_db, args.host, args.port, read_only=args.read_only)
         return 0
     if args.cmd == "evidence-summary":
         print(json.dumps(evidence_db.summary(), ensure_ascii=False, indent=2))

@@ -62,6 +62,8 @@ def _web_ui_contract() -> dict[str, Any]:
         ("review_batch_download", "id=\"current-review-batch\"" in html and "/api/current-paper/review-batch.md" in js),
         ("experiment_profile_card", "experiment-profile-card" in html and "renderExperimentProfile" in js and "/api/current-paper/experiment-profile" in js),
         ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
+        ("readonly_mentor_mode", "id=\"readonly-badge\"" in html and "/api/ui-mode" in js and "isReadOnly" in js and "rejectReadOnlyAction" in js),
+        ("search_source_evidence_button", "data-source-search" in js and "原文证据" in js and "openSourceViewer(Number(btn.dataset.sourceSearch))" in js),
     ]
     failed = [name for name, ok in expectations if not ok]
     return {

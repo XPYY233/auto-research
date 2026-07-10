@@ -23,6 +23,7 @@ from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
 from auto_research.evidence.webapp import (
     current_experiment_profile,
+    is_read_only_mutation,
     make_xlsx,
     requires_rescan_confirmation,
     search_export_rows,
@@ -541,6 +542,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("review_batch_download", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("item_id_review_filter", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("experiment_profile_card", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("readonly_mentor_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("search_source_evidence_button", by_name["web_ui_contract"]["web_ui"]["checked"])
         requirements = {item["id"]: item for item in report["requirements"]}
         self.assertTrue(all(item["ok"] for item in requirements.values()))
         self.assertTrue(requirements["article_selector_to_extracted_rows"]["ok"])
@@ -549,6 +552,12 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(requirements["manual_entry_without_original"]["ok"])
         self.assertTrue(requirements["free_text_fuzzy_search_and_export"]["ok"])
         self.assertTrue(requirements["review_learning_loop"]["ok"])
+
+    def test_read_only_mode_classifies_post_requests_as_mutating(self):
+        self.assertFalse(is_read_only_mutation("GET", "/api/six-search"))
+        self.assertFalse(is_read_only_mutation("HEAD", "/"))
+        self.assertTrue(is_read_only_mutation("POST", "/api/current-paper/deepseek-preview"))
+        self.assertTrue(is_read_only_mutation("POST", "/api/uploads/pdf"))
 
     def test_review_handoff_markdown_summarizes_human_review_next_step(self):
         out = Path(self.tmp.name) / "handoff.md"

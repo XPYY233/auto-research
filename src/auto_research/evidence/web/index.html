@@ -29,7 +29,10 @@
     <main id="main">
       <header class="topbar">
         <div><p class="eyebrow">EVIDENCE DATA WORKBENCH</p><h1>实验数据抽取、校对与检索</h1></div>
-        <div class="git-status"><i></i>Git 已建立</div>
+        <div class="topbar-status">
+          <div class="readonly-badge" id="readonly-badge" hidden><i></i>导师只读模式</div>
+          <div class="git-status"><i></i>Git 已建立</div>
+        </div>
       </header>
 
       <section class="article-picker">
@@ -39,10 +42,10 @@
         </div>
         <form id="paper-switch-form">
           <select id="paper-switch-input"></select>
-          <button type="submit" id="paper-switch-submit">切换文章</button>
-          <button type="button" id="run-current-extraction">自动提取/核验</button>
-          <button type="button" id="run-deepseek-preview">DeepSeek 补充抽取</button>
-          <button type="button" id="save-current-snapshot">生成当前文章 CSV 备份</button>
+          <button type="submit" id="paper-switch-submit" data-write-action>切换文章</button>
+          <button type="button" id="run-current-extraction" data-write-action>自动提取/核验</button>
+          <button type="button" id="run-deepseek-preview" data-write-action>DeepSeek 补充抽取</button>
+          <button type="button" id="save-current-snapshot" data-write-action>生成当前文章 CSV 备份</button>
           <a id="current-export-csv" href="/api/current-paper/export.csv">下载当前文章 CSV</a>
           <a id="current-export-xlsx" href="/api/current-paper/export.xlsx">下载当前文章 Excel</a>
           <a id="open-current-packet" target="_blank" rel="noopener">查看当前抽取包</a>

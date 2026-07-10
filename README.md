@@ -154,6 +154,20 @@ not running, it starts the service and then opens `http://127.0.0.1:8765`. Keep
 the Terminal window open while reviewing data; close it or press `Ctrl+C` to
 stop the local web page.
 
+For mentor sharing, start the same interface in read-only mode on a separate
+local port, then expose that local port through a temporary tunnel:
+
+```bash
+PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --port 8766 --read-only
+cloudflared tunnel --url http://127.0.0.1:8766
+```
+
+Read-only mode uses the same database and web UI, but rejects all POST/write
+actions on the server side. The shared page supports browsing, whole-database
+search, evidence highlighting, PDF opening, and CSV/Excel export; it does not
+allow uploading PDFs, confirming edits, manual entry, snapshots, article
+switching, or DeepSeek extraction.
+
 Additional commands:
 
 ```bash

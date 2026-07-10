@@ -370,3 +370,31 @@ Blind-test reliability rules are mandatory for later papers:
 
 The five-paper results remain version-0 candidates. Do not describe their
 physical interpretation as human-confirmed until the researcher reviews them.
+
+### Mentor read-only public sharing
+
+The project now supports a mentor-safe read-only UI mode via:
+
+```bash
+PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --port 8766 --read-only
+```
+
+This is not a second app or a copied database. It is the same web UI and the same
+`db/experimental_evidence.sqlite`, started with server-side write protection.
+When `read_only` is enabled, every POST request is rejected before route-specific
+logic runs. The frontend also hides upload/manual/write controls, defaults to the
+whole-database search view, and exposes row-level source evidence buttons in
+search results.
+
+Use this mode for any public tunnel or external preview URL. Do not expose the
+editable `8765` workbench through a public tunnel. Temporary no-account/no-domain
+sharing should use:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8766
+```
+
+The tunnel URL is suitable for a short mentor review session while the local Mac
+and both terminal processes remain running. For persistent group deployment,
+prefer a named Cloudflare Tunnel or a proper hosted read-only deployment after
+the user explicitly approves that next step.
