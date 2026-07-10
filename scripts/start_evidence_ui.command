@@ -16,7 +16,7 @@ echo "Auto Research 本地编辑工作台"
 echo "项目目录: ${PROJECT_ROOT}"
 echo "网页地址: ${URL}"
 echo "模式: 本地可编辑；可校对数据、切换文章、上传文献、人工补录和调用 DeepSeek。"
-echo "注意: 给导师分享请使用“创建导师公网链接.command”，不要分享这个本地编辑地址。"
+echo "注意: 公网分享请使用只读链接入口，不要分享这个本地编辑地址。"
 echo
 
 if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then

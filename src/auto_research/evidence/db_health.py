@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+from typing import Any
+
+from .db import EvidenceDB
+from .six_column import SIX_FIELDS, list_current_data, review_progress
+
+
+EXPECTED_INDEXES = {
+    "idx_data_items_paper",
+    "idx_data_items_paper_origin",
+    "idx_data_versions_item",
+    "idx_data_versions_review",
+    "idx_data_versions_source",
+}
+
+
+def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
+    """Return a lightweight, read-only health report for the evidence database."""
+
+    db.init()
+    rows = list_current_data(db, paper_id)
+    missing_fields: list[dict[str, Any]] = []
+    for row in rows:
+        for field in SIX_FIELDS:
+            value = row.get(field)
+            if field == "unit":
+                if value is None:
+                    missing_fields.append({"item_id": row.get("item_id"), "field": field})
+            elif not str(value or "").strip():
+                missing_fields.append({"item_id": row.get("item_id"), "field": field})
+
+    with db.connect() as conn:
+        schema_version_row = conn.execute(
+            "SELECT value FROM schema_meta WHERE key='schema_version'"
+        ).fetchone()
+        view_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='view' AND name='v_current_six_column_data'"
+        ).fetchone() is not None
+        view_count = conn.execute(
+            "SELECT COUNT(*) count FROM v_current_six_column_data"
+            + (" WHERE paper_id=?" if paper_id is not None else ""),
+            (() if paper_id is None else (paper_id,)),
+        ).fetchone()["count"] if view_exists else None
+        indexes = {
+            row["name"]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
+        }
+        duplicate_current = conn.execute(
+            """
+            SELECT COUNT(*) count FROM (
+              SELECT paper_id,stable_key,COUNT(*) n
+              FROM v_current_six_column_data
+              GROUP BY paper_id,stable_key
+              HAVING n>1
+            )
+            """
+        ).fetchone()["count"] if view_exists else None
+
+    schema_version_text = schema_version_row["value"] if schema_version_row else ""
+    try:
+        schema_version = int(schema_version_text)
+    except ValueError:
+        schema_version = 0
+    missing_indexes = sorted(EXPECTED_INDEXES - indexes)
+    progress = review_progress(db, paper_id)
+    checks = [
+        {
+            "name": "schema_version",
+            "ok": schema_version >= 6,
+            "detail": f"schema_version={schema_version_text or 'missing'}",
+        },
+        {
+            "name": "current_view",
+            "ok": view_exists and view_count == len(rows),
+            "detail": f"view_exists={view_exists}; view_count={view_count}; python_count={len(rows)}",
+        },
+        {
+            "name": "required_indexes",
+            "ok": not missing_indexes,
+            "detail": "all expected six-column indexes exist" if not missing_indexes else f"missing: {', '.join(missing_indexes)}",
+        },
+        {
+            "name": "six_required_fields",
+            "ok": not missing_fields,
+            "detail": "all current rows have the six required fields" if not missing_fields else f"{len(missing_fields)} required field values are missing",
+            "examples": missing_fields[:20],
+        },
+        {
+            "name": "stable_key_uniqueness",
+            "ok": duplicate_current == 0,
+            "detail": f"duplicate current paper_id/stable_key groups={duplicate_current}",
+        },
+    ]
+    return {
+        "ok": all(check["ok"] for check in checks),
+        "paper_id": paper_id,
+        "row_count": len(rows),
+        "review_progress": progress,
+        "checks": checks,
+    }

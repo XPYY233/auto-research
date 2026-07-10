@@ -5,7 +5,7 @@
 ### 本地编辑工作台快捷入口
 
 - 新增 `/Users/USER/Zotero/打开本地编辑工作台.command`，双击后启动或打开 `http://127.0.0.1:8765` 本地可编辑工作台。
-- 更新 `scripts/start_evidence_ui.command` 输出文案，明确该入口是本地可编辑模式；导师分享应使用“创建导师公网链接.command”。
+- 更新 `scripts/start_evidence_ui.command` 输出文案，明确该入口是本地可编辑模式；公网分享应使用只读链接入口。
 
 ### ngrok 免费账号公网分享路径
 
@@ -19,6 +19,13 @@
 - GitHub Pages 已记录为后续“静态只读快照”方案：适合长期展示和下载，但不能运行 DeepSeek、PDF 上传或 SQLite 写入。
 - 自检新增 `public_readonly_ngrok_share`，后续若脚本误指向编辑端口或移除只读检查，会在验收中失败。
 
+### 只读标识与数据库健康检查
+
+- 页面顶部只读徽标统一显示为“只读模式”，不再出现“导师只读模式”等角色化命名。
+- 本地编辑模式接口返回 `read_only=false`，前端会隐藏只读徽标；只读分享模式接口返回 `read_only=true`，前端才显示该徽标。
+- 六列当前数据查询改为通过 `v_current_six_column_data` 视图读取，并新增面向文章和版本表的索引，降低后续全库检索和校对页读取的耦合。
+- 新增 `evidence-db-health` 命令，用于检查当前视图、索引、六列必填字段、稳定键重复和人工核验进度。
+
 ### 人工校对学习提示预览
 
 - 新增学习报告模块，将人工确认、修正和人工补录样本汇总为 DeepSeek 后续抽取可使用的学习提示。
@@ -27,15 +34,15 @@
 - 新增 `/api/current-paper/learning-report`、`/api/learning-report` 及 Markdown 下载接口；这些接口只读，不调用 DeepSeek，也不修改数据库。
 - 学习提示明确声明：样本只用于字段边界和中文表述偏好，不能作为当前论文数据证据。
 
-### 导师只读公网分享模式
+### 只读公网分享模式
 
 - 新增 `evidence-serve --read-only` 启动模式：使用同一套网页和同一个 evidence 数据库，但后端会拒绝所有 POST 写入请求。
 - 只读模式默认进入“搜索数据”页面，隐藏上传文献、人工补录、切换文章、自动提取/核验、DeepSeek 抽取和生成快照等写入入口。
-- 顶部新增“导师只读模式”标识，避免误以为这是可编辑工作台。
+- 顶部新增“只读模式”标识，避免误以为这是可编辑工作台；本地编辑模式不显示该标识。
 - README 和 AGENT 文档补充推荐公网化路径：本机只读端口 `8766` + Cloudflare Quick Tunnel 临时链接。
 - 当前网络下 Cloudflare Tunnel 边缘连接被阻断，已记录 `localtunnel` 作为零配置备用路径：`npx --yes localtunnel --port 8766 --local-host 127.0.0.1`。
 - 搜索页每条结果新增“原文证据”按钮，可直接打开高亮后的 PDF 证据；可编辑模式下仍保留“去校对”按钮。
-- 自检网页契约新增 `readonly_mentor_mode` 和 `search_source_evidence_button`，确保后续 UI 修改不会破坏导师浏览动线。
+- 自检网页契约新增 `readonly_mode` 和 `search_source_evidence_button`，确保后续 UI 修改不会破坏只读浏览动线。
 
 ### 人工核验按原文页码排序
 

@@ -12,7 +12,7 @@ SERVER_LOG="${LOG_DIR}/readonly-evidence-server.log"
 cd "${PROJECT_ROOT}"
 mkdir -p "${LOG_DIR}"
 
-echo "Auto Research 导师只读公网分享"
+echo "Auto Research 只读公网分享"
 echo "项目目录: ${PROJECT_ROOT}"
 echo "本地只读地址: ${URL}"
 echo

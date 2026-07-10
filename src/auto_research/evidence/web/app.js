@@ -55,12 +55,12 @@ function renderPublicSearchOnlyMode() {
   document.querySelector(".brand small").textContent = "READ-ONLY SEARCH";
   document.querySelector("h1").textContent = "实验数据只读检索";
   const searchSummary = document.querySelector("#search-summary");
-  if (searchSummary) searchSummary.textContent = "导师分享版：仅支持搜索、原文证据查看和导出";
+  if (searchSummary) searchSummary.textContent = "只读模式：仅支持搜索、原文证据查看和导出";
 }
 
 function rejectReadOnlyAction(action = "修改数据") {
   if (!isReadOnly()) return false;
-  toast(`导师只读模式仅支持浏览、搜索、查看原文证据和导出；不能${action}。`, true);
+  toast(`只读模式仅支持浏览、搜索、查看原文证据和导出；不能${action}。`, true);
   return true;
 }
 

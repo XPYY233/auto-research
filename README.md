@@ -159,10 +159,10 @@ On this Mac, a convenience launcher is available at:
 `/Users/USER/Zotero/打开本地编辑工作台.command`
 
 Use this launcher for the editable local workbench. Use
-`/Users/USER/Zotero/创建导师公网链接.command` only for the mentor-facing
-search-only public link.
+`/Users/USER/Zotero/创建导师公网链接.command` only for the search-only public
+link.
 
-For mentor sharing, use the read-only ngrok launcher. This is the recommended
+For external sharing, use the read-only ngrok launcher. This is the recommended
 free-account path for a live preview because it gives a temporary HTTPS link
 while keeping the editable workbench private:
 
@@ -175,8 +175,8 @@ On this Mac, a convenience launcher is also available at:
 `/Users/USER/Zotero/创建导师公网链接.command`
 
 Double-clicking it starts the read-only local web server if needed, checks that
-the page is in read-only mode, and then prints the ngrok HTTPS URL to send to
-the mentor. If another ngrok window is already serving the same read-only port,
+the page is in read-only mode, and then prints the ngrok HTTPS URL to share. If
+another ngrok window is already serving the same read-only port,
 the launcher prints the existing public URL instead of starting a duplicate
 tunnel.
 
@@ -195,7 +195,7 @@ committed.
 
 The launcher starts the same interface in read-only mode on local port `8766`,
 checks `/api/ui-mode` before opening the tunnel, and then prints an
-`https://...ngrok...` URL that can be sent to the mentor. Read-only mode uses
+`https://...ngrok...` URL that can be shared externally. Read-only mode uses
 the same database, but is intentionally search-only: the shared page exposes
 whole-database search, evidence highlighting, PDF evidence opening, and CSV/Excel
 export. The server rejects upload, review, manual entry, article switching,
@@ -204,7 +204,7 @@ visitor guesses the URL. The editable local workbench remains the separate
 `http://127.0.0.1:8765` service.
 
 GitHub Pages is a good later option for a persistent read-only snapshot site:
-the project can export static HTML/JSON/CSV for the mentor, but Pages cannot run
+the project can export static HTML/JSON/CSV for external review, but Pages cannot run
 the local Python backend, DeepSeek extraction, PDF upload, or SQLite writes.
 Use ngrok for a live local preview; use GitHub Pages only after explicitly
 building a static snapshot package.

@@ -58,7 +58,7 @@ def is_read_only_mutation(method: str, path: str) -> bool:
 
 
 def is_read_only_public_get(path: str) -> bool:
-    """Return whether a GET route is exposed in mentor-facing search-only mode."""
+    """Return whether a GET route is exposed in public search-only mode."""
 
     if path in {
         "/",
@@ -191,7 +191,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             if self.read_only and not is_read_only_public_get(parsed.path):
                 return self.json_response(
                     {
-                        "error": "当前为导师只读搜索模式，仅开放数据搜索、导出和原文证据查看。",
+                        "error": "当前为只读搜索模式，仅开放数据搜索、导出和原文证据查看。",
                         "code": "read_only_search_only",
                     },
                     HTTPStatus.FORBIDDEN,
@@ -202,7 +202,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.json_response({
                     "read_only": bool(self.read_only),
                     "mode": "readonly" if self.read_only else "editable",
-                    "label": "导师只读浏览模式" if self.read_only else "本地编辑模式",
+                    "label": "只读模式" if self.read_only else "本地编辑模式",
                 })
             if parsed.path == "/api/ai/status":
                 return self.json_response(DeepSeekSettings.from_env().public_status())
@@ -342,7 +342,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         if self.read_only and is_read_only_mutation("POST", parsed.path):
             return self.json_response(
                 {
-                    "error": "当前为导师只读浏览模式，不允许修改数据、上传文献或重新调用模型。",
+                    "error": "当前为只读模式，不允许修改数据、上传文献或重新调用模型。",
                     "code": "read_only",
                 },
                 HTTPStatus.FORBIDDEN,
@@ -654,7 +654,7 @@ def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 876
         {"db": evidence_db, "upload_service": upload_service, "read_only": read_only},
     )
     server = ThreadingHTTPServer((host, port), handler)
-    mode = "导师只读浏览模式" if read_only else "本地编辑模式"
+    mode = "只读模式" if read_only else "本地编辑模式"
     print(f"实验数据证据库（{mode}）: http://{host}:{port}")
     print(f"PDF 文档索引: 新增 {index_result['indexed']}，跳过 {index_result['skipped']}")
     if read_only:

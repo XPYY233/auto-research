@@ -94,8 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("evidence-serve", help="Start the local Chinese review/search interface")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)
-    p.add_argument("--read-only", action="store_true", help="Start a mentor-safe read-only browser interface")
+    p.add_argument("--read-only", action="store_true", help="Start a share-safe read-only browser interface")
     sub.add_parser("evidence-summary", help="Show evidence database counts")
+    p = sub.add_parser("evidence-db-health", help="Check six-column evidence DB views, indexes, and required fields")
+    p.add_argument("--paper-id", type=int, help="Optionally limit row checks to one paper id")
     sub.add_parser("evidence-validate", help="Validate pilot balance and evidence publication gates")
     sub.add_parser("evidence-seed-target", help="Seed the six-column demo for the single target irradiation article")
     p = sub.add_parser("evidence-self-check", help="Read-only acceptance check for one six-column evidence article")
@@ -360,6 +362,11 @@ def cmd_evidence(args) -> int:
     if args.cmd == "evidence-summary":
         print(json.dumps(evidence_db.summary(), ensure_ascii=False, indent=2))
         return 0
+    if args.cmd == "evidence-db-health":
+        from .evidence.db_health import evidence_db_health
+        report = evidence_db_health(evidence_db, paper_id=args.paper_id)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["ok"] else 2
     if args.cmd == "evidence-validate":
         from .evidence.validation import validate_database
         report = validate_database(evidence_db)

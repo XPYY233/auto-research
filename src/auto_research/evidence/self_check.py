@@ -66,7 +66,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("review_all_download", "id=\"current-review-all\"" in html and "下载全部待审核" in js and "updateReviewBatchLinks" in js),
         ("experiment_profile_card", "experiment-profile-card" in html and "renderExperimentProfile" in js and "/api/current-paper/experiment-profile" in js),
         ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
-        ("readonly_mentor_mode", "id=\"readonly-badge\"" in html and "/api/ui-mode" in js and "isReadOnly" in js and "rejectReadOnlyAction" in js),
+        ("readonly_mode", "id=\"readonly-badge\"" in html and "/api/ui-mode" in js and "isReadOnly" in js and "rejectReadOnlyAction" in js),
         ("readonly_search_only_mode", "renderPublicSearchOnlyMode" in js and 'name !== "search"' in js and 'body[data-readonly="true"] .nav:not([data-view="search"])' in css),
         ("search_source_evidence_button", "data-source-search" in js and "原文证据" in js and "openSourceViewer(Number(btn.dataset.sourceSearch))" in js),
     ]

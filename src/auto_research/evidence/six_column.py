@@ -813,18 +813,15 @@ def learning_samples_jsonl(db: EvidenceDB, paper_id: int | None = None) -> str:
 
 def _base_current_sql() -> str:
     return """
-        SELECT i.id item_id,i.paper_id,i.stable_key,i.origin_type,
-               p.local_article_key,p.zotero_key,p.pilot_code,p.first_author,p.corresponding_author,
-               cur.id version_id,cur.version_no,cur.value_text,cur.meaning,cur.unit,cur.article_title,cur.doi,
-               cur.context_explanation,cur.source_page,cur.source_locator,cur.source_excerpt,cur.editor,cur.edit_note,
-               cur.review_action,cur.created_at,
-               orig.value_text original_value_text,orig.meaning original_meaning,orig.unit original_unit,
-               orig.article_title original_article_title,orig.doi original_doi,orig.context_explanation original_context_explanation,
-               orig.source_page original_source_page,orig.source_locator original_source_locator,orig.source_excerpt original_source_excerpt
-        FROM data_items i
-        JOIN papers p ON p.id=i.paper_id
-        JOIN data_versions cur ON cur.item_id=i.id AND cur.version_no=(SELECT MAX(v.version_no) FROM data_versions v WHERE v.item_id=i.id)
-        LEFT JOIN data_versions orig ON orig.item_id=i.id AND orig.version_no=0 AND i.origin_type='automatic'
+        SELECT item_id,paper_id,stable_key,origin_type,
+               local_article_key,zotero_key,pilot_code,first_author,corresponding_author,
+               version_id,version_no,value_text,meaning,unit,article_title,doi,
+               context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,
+               review_action,created_at,
+               original_value_text,original_meaning,original_unit,
+               original_article_title,original_doi,original_context_explanation,
+               original_source_page,original_source_locator,original_source_excerpt
+        FROM v_current_six_column_data i
     """
 
 
@@ -834,7 +831,7 @@ def list_current_data(db: EvidenceDB, paper_id: int | None = None) -> list[dict[
     if paper_id is not None:
         sql += " WHERE i.paper_id=?"
         params = (paper_id,)
-    sql += " ORDER BY i.id"
+    sql += " ORDER BY i.item_id"
     with db.connect() as conn:
         return [dict(row) for row in conn.execute(sql, params)]
 
@@ -863,7 +860,7 @@ def review_progress(db: EvidenceDB, paper_id: int | None = None) -> dict[str, An
 
 def get_data_item(db: EvidenceDB, item_id: int) -> dict[str, Any]:
     with db.connect() as conn:
-        row = conn.execute(_base_current_sql() + " WHERE i.id=?", (item_id,)).fetchone()
+        row = conn.execute(_base_current_sql() + " WHERE i.item_id=?", (item_id,)).fetchone()
         if not row:
             raise KeyError(f"Data item {item_id} not found")
         result = dict(row)

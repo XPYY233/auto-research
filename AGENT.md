@@ -372,9 +372,9 @@ Blind-test reliability rules are mandatory for later papers:
 The five-paper results remain version-0 candidates. Do not describe their
 physical interpretation as human-confirmed until the researcher reviews them.
 
-### Mentor read-only public sharing
+### Read-only public sharing
 
-The project now supports a mentor-safe read-only UI mode via:
+The project now supports a share-safe read-only UI mode via:
 
 ```bash
 PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --port 8766 --read-only
@@ -414,7 +414,7 @@ npx --yes localtunnel --port 8766 --local-host 127.0.0.1
 cloudflared tunnel --url http://127.0.0.1:8766
 ```
 
-The tunnel URL is suitable for a short mentor review session while the local Mac
+The tunnel URL is suitable for a short external review session while the local Mac
 and both terminal processes remain running. For persistent group deployment,
 prefer a GitHub Pages static read-only snapshot, a named Cloudflare Tunnel, or a
 proper hosted read-only deployment after the user explicitly approves that next

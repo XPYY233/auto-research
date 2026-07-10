@@ -12,6 +12,7 @@ import auto_research.evidence.prompts as prompt_module
 import auto_research.evidence.six_column as six_column_module
 from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
+from auto_research.evidence.db_health import evidence_db_health
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
 from auto_research.evidence.experiment_types import classify_experiment_types
 from auto_research.evidence.goal_audit import generate_goal_audit
@@ -561,7 +562,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("review_all_download", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("item_id_review_filter", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("experiment_profile_card", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("readonly_mentor_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("readonly_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("readonly_search_only_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("search_source_evidence_button", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertTrue(by_name["public_readonly_ngrok_share"]["ok"])
@@ -575,6 +576,17 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(requirements["manual_entry_without_original"]["ok"])
         self.assertTrue(requirements["free_text_fuzzy_search_and_export"]["ok"])
         self.assertTrue(requirements["review_learning_loop"]["ok"])
+
+    def test_db_health_checks_current_view_indexes_and_required_fields(self):
+        report = evidence_db_health(self.db, paper_id=self.paper_id)
+        self.assertTrue(report["ok"], report["checks"])
+        self.assertEqual(report["row_count"], 114)
+        self.assertEqual(report["review_progress"]["total"], 114)
+        checks = {check["name"]: check for check in report["checks"]}
+        self.assertTrue(checks["schema_version"]["ok"])
+        self.assertTrue(checks["current_view"]["ok"])
+        self.assertTrue(checks["required_indexes"]["ok"])
+        self.assertTrue(checks["six_required_fields"]["ok"])
 
     def test_read_only_mode_classifies_post_requests_as_mutating(self):
         self.assertFalse(is_read_only_mutation("GET", "/api/six-search"))
