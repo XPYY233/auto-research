@@ -8,6 +8,12 @@
 - 报告区分 `ready_for_human_review` 和 `goal_complete`：当前目标文章已可开始人工核验，但由于仍有未审核自动抽取数据，最终自动化目标不能标记完成。
 - 已生成目标文章审计报告：`data/evidence/goal_audits/2_irradiation-effects-in-high-entropy-alloys-and-316h-stainless-steel-at-3_goal_audit.md`。
 
+### 网页端待审核清单下载
+
+- 校对页新增“下载待审核清单”入口，直接下载当前文章下一批未审核数据的 Markdown 清单。
+- 新增只读接口 `/api/current-paper/review-batch.md?paper_id=<id>&limit=20`；该接口不调用 DeepSeek、不修改数据库、不生成额外行。
+- 批次清单生成逻辑拆分为 `review_batch_payload`，命令行留档和网页下载共用同一份内容。
+
 ## 2026-07-09
 
 ### 本地网页一键启动

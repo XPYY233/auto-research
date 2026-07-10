@@ -149,6 +149,7 @@ function renderPaper() {
   document.querySelector("#open-paper").href = `/api/papers/${paper.id}/pdf`;
   document.querySelector("#current-export-csv").href = `/api/current-paper/export.csv?paper_id=${encodeURIComponent(paper.id)}`;
   document.querySelector("#current-export-xlsx").href = `/api/current-paper/export.xlsx?paper_id=${encodeURIComponent(paper.id)}`;
+  document.querySelector("#current-review-batch").href = `/api/current-paper/review-batch.md?paper_id=${encodeURIComponent(paper.id)}&limit=20`;
 }
 
 function renderExtractionStatus() {

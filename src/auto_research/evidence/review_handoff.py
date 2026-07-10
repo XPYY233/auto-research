@@ -7,7 +7,6 @@ from typing import Any
 from auto_research.paths import DATA_DIR
 
 from .db import EvidenceDB
-from .self_check import check_evidence_workflow
 from .six_column import list_current_data, resolve_paper_selector, review_progress
 
 
@@ -124,6 +123,8 @@ def generate_review_handoff(db: EvidenceDB, selector: str, *,
                             queries: list[str] | None = None,
                             min_rows: int = 100,
                             min_highlight_ratio: float = 0.8) -> dict[str, Any]:
+    from .self_check import check_evidence_workflow
+
     report = check_evidence_workflow(
         db,
         selector,
@@ -192,10 +193,8 @@ def _review_batch_markdown(paper: dict[str, Any], progress: dict[str, Any],
     return "\n".join(lines)
 
 
-def generate_review_batch(db: EvidenceDB, selector: str, *,
-                          limit: int = 20,
-                          out: Path | None = None) -> dict[str, Any]:
-    paper_id = resolve_paper_selector(db, article_key=selector)
+def review_batch_payload(db: EvidenceDB, paper_id: int, *,
+                         limit: int = 20) -> dict[str, Any]:
     paper = db.get_paper(paper_id) or {}
     rows = [
         row for row in list_current_data(db, paper_id)
@@ -204,6 +203,23 @@ def generate_review_batch(db: EvidenceDB, selector: str, *,
     rows.sort(key=lambda row: int(row["item_id"]))
     selected = rows[:max(0, limit)]
     progress = review_progress(db, paper_id)
+    return {
+        "ok": True,
+        "paper": {"id": paper_id, "title": paper.get("title"), "doi": paper.get("doi")},
+        "batch_count": len(selected),
+        "remaining_unreviewed": progress["unreviewed"],
+        "first_item_id": selected[0]["item_id"] if selected else None,
+        "last_item_id": selected[-1]["item_id"] if selected else None,
+        "markdown": _review_batch_markdown(paper, progress, selected, limit),
+    }
+
+
+def generate_review_batch(db: EvidenceDB, selector: str, *,
+                          limit: int = 20,
+                          out: Path | None = None) -> dict[str, Any]:
+    paper_id = resolve_paper_selector(db, article_key=selector)
+    payload = review_batch_payload(db, paper_id, limit=limit)
+    paper = payload["paper"]
     target = out
     if target is None:
         REVIEW_BATCH_DIR.mkdir(parents=True, exist_ok=True)
@@ -211,13 +227,13 @@ def generate_review_batch(db: EvidenceDB, selector: str, *,
     else:
         target = target.expanduser().resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(_review_batch_markdown(paper, progress, selected, limit), encoding="utf-8")
+    target.write_text(payload["markdown"], encoding="utf-8")
     return {
         "ok": True,
         "path": str(target),
-        "paper": {"id": paper_id, "title": paper.get("title"), "doi": paper.get("doi")},
-        "batch_count": len(selected),
-        "remaining_unreviewed": progress["unreviewed"],
-        "first_item_id": selected[0]["item_id"] if selected else None,
-        "last_item_id": selected[-1]["item_id"] if selected else None,
+        "paper": paper,
+        "batch_count": payload["batch_count"],
+        "remaining_unreviewed": payload["remaining_unreviewed"],
+        "first_item_id": payload["first_item_id"],
+        "last_item_id": payload["last_item_id"],
     }

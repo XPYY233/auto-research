@@ -93,6 +93,6 @@
 .empty-queue{padding:20px;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:7px;font-size:12px;text-align:center}
 @media(max-width:900px){.upload-layout{grid-template-columns:1fr}.upload-result{min-height:250px}.queue-card{grid-template-columns:90px 1fr}.queue-card>div:last-child{grid-column:2}}
 @media(max-width:700px){.upload-card{grid-template-columns:1fr}.upload-card .span-2{grid-column:auto}.ai-state{display:inline-block;margin-top:12px}.queue-card{grid-template-columns:1fr}.queue-card>div:last-child{grid-column:auto}}
-.secondary-action{padding:9px 12px;border:1px solid #bdced7;border-radius:5px;background:#fff;color:var(--blue);cursor:pointer;font-size:11px;white-space:nowrap}.secondary-action:hover,.secondary-action:focus-visible{outline:0;border-color:var(--blue);box-shadow:0 0 0 3px rgba(35,76,100,.12)}
+.secondary-action{padding:9px 12px;border:1px solid #bdced7;border-radius:5px;background:#fff;color:var(--blue);cursor:pointer;font-size:11px;white-space:nowrap;text-decoration:none}.secondary-action:hover,.secondary-action:focus-visible{outline:0;border-color:var(--blue);box-shadow:0 0 0 3px rgba(35,76,100,.12)}
 .row-action button.confirm-next{color:#fff;border-color:var(--blue);background:var(--blue)}
 .shortcut-hint{max-width:330px;color:#667783;font-size:10px;line-height:1.45}

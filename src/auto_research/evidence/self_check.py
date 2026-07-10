@@ -57,6 +57,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("search_engine", "id=\"search-form\"" in html and "/api/six-search" in js and "全库关键词检索" in html),
         ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
         ("next_unreviewed_queue", "id=\"next-unreviewed\"" in html and "selectNextUnreviewed" in js and "scrollIntoView" in js),
+        ("review_batch_download", "id=\"current-review-batch\"" in html and "/api/current-paper/review-batch.md" in js),
         ("experiment_profile_card", "experiment-profile-card" in html and "renderExperimentProfile" in js and "/api/current-paper/experiment-profile" in js),
         ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
     ]

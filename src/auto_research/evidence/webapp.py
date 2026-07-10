@@ -20,6 +20,7 @@ from .deepseek_extraction import DeepSeekEvidenceExtractor, latest_deepseek_run
 from .experiment_types import classify_experiment_types
 from .exporter import EXPORT_COLUMNS
 from .prompts import build_prompt_packet
+from .review_handoff import review_batch_payload
 from .six_column import (
     SIX_FIELDS,
     add_manual_item,
@@ -190,6 +191,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
                 return self.json_response(review_progress(self.db, paper_id))
+            if parsed.path == "/api/current-paper/review-batch.md":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                limit = int(params.get("limit", ["20"])[0])
+                limit = min(max(limit, 1), 100)
+                payload = review_batch_payload(self.db, paper_id, limit=limit)
+                filename = f"paper-{paper_id}-next{limit}-review-batch.md"
+                return self.markdown_download_response(payload["markdown"], filename)
             if parsed.path == "/api/current-paper/learning-samples.jsonl":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
@@ -486,6 +495,17 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         data = text.encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def markdown_download_response(self, text: str, filename: str) -> None:
+        data = text.encode("utf-8")
+        safe_filename = re.sub(r"[^0-9A-Za-z_.-]+", "-", filename).strip("-") or "review-batch.md"
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/markdown; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{safe_filename}"')
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()

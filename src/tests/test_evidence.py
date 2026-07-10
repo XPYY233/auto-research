@@ -18,7 +18,7 @@ from auto_research.evidence.goal_audit import generate_goal_audit
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.self_check import check_evidence_workflow
-from auto_research.evidence.review_handoff import generate_review_batch, generate_review_handoff
+from auto_research.evidence.review_handoff import generate_review_batch, generate_review_handoff, review_batch_payload
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
 from auto_research.evidence.webapp import (
@@ -536,6 +536,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("review_keyboard_shortcuts", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("source_highlight", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("next_unreviewed_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("review_batch_download", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("item_id_review_filter", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("experiment_profile_card", by_name["web_ui_contract"]["web_ui"]["checked"])
         requirements = {item["id"]: item for item in report["requirements"]}
@@ -579,6 +580,14 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("item_id=", text)
         self.assertIn("/api/six-data/", text)
         self.assertIn("核验记录", text)
+
+    def test_review_batch_payload_can_be_downloaded_without_writing_a_file(self):
+        payload = review_batch_payload(self.db, self.paper_id, limit=3)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["batch_count"], 3)
+        self.assertIn("下一批待审核数据清单", payload["markdown"])
+        self.assertIn("item_id=", payload["markdown"])
+        self.assertNotIn("path", payload)
 
     def test_goal_audit_distinguishes_review_ready_from_goal_complete(self):
         out = Path(self.tmp.name) / "goal_audit.md"
