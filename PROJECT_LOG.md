@@ -1,5 +1,13 @@
 # Auto Research Evidence 项目日志
 
+## 2026-07-10
+
+### 原始目标审计报告
+
+- 新增命令 `evidence-goal-audit <文章 DOI/题目>`，把用户原始目标拆成逐条可验证要求。
+- 报告区分 `ready_for_human_review` 和 `goal_complete`：当前目标文章已可开始人工核验，但由于仍有未审核自动抽取数据，最终自动化目标不能标记完成。
+- 已生成目标文章审计报告：`data/evidence/goal_audits/2_irradiation-effects-in-high-entropy-alloys-and-316h-stainless-steel-at-3_goal_audit.md`。
+
 ## 2026-07-09
 
 ### 本地网页一键启动

@@ -112,6 +112,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p.add_argument("--limit", type=int, default=20)
     p.add_argument("--out", help="Markdown output path")
+    p = sub.add_parser("evidence-goal-audit", help="Write a Markdown audit against the user's end-to-end evidence extraction goal")
+    p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
+    p.add_argument("--out", help="Markdown output path")
+    p.add_argument("--query", action="append", help="Keyword that should return search results; can be repeated")
+    p.add_argument("--min-rows", type=int, default=100)
+    p.add_argument("--min-highlight-ratio", type=float, default=0.8)
     sub.add_parser("evidence-deepseek-status", help="Show redacted DeepSeek runtime configuration")
     sub.add_parser("evidence-deepseek-smoke-test", help="Send a minimal synthetic JSON connection check to DeepSeek")
     p = sub.add_parser("evidence-deepseek-extract", help="Run evidence-grounded DeepSeek extraction for one paper selector")
@@ -395,6 +401,18 @@ def cmd_evidence(args) -> int:
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["ok"] else 2
+    if args.cmd == "evidence-goal-audit":
+        from .evidence.goal_audit import generate_goal_audit
+        result = generate_goal_audit(
+            evidence_db,
+            args.article_key,
+            out=Path(args.out) if args.out else None,
+            queries=args.query,
+            min_rows=args.min_rows,
+            min_highlight_ratio=args.min_highlight_ratio,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ready_for_human_review"] else 2
     return 1
 
 

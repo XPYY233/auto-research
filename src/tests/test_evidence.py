@@ -14,6 +14,7 @@ from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
 from auto_research.evidence.experiment_types import classify_experiment_types
+from auto_research.evidence.goal_audit import generate_goal_audit
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.self_check import check_evidence_workflow
@@ -578,6 +579,26 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("item_id=", text)
         self.assertIn("/api/six-data/", text)
         self.assertIn("核验记录", text)
+
+    def test_goal_audit_distinguishes_review_ready_from_goal_complete(self):
+        out = Path(self.tmp.name) / "goal_audit.md"
+        bundle_dir = Path(self.tmp.name) / "bundles"
+        bundle_dir.mkdir()
+        (bundle_dir / "auto-research-test.bundle").write_text("fake bundle marker", encoding="utf-8")
+        result = generate_goal_audit(
+            self.db,
+            "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C",
+            out=out,
+            bundle_dir=bundle_dir,
+        )
+        self.assertTrue(result["ready_for_human_review"], result)
+        self.assertFalse(result["goal_complete"], result)
+        self.assertGreater(result["review_progress"]["unreviewed"], 0)
+        self.assertTrue(out.is_file())
+        text = out.read_text(encoding="utf-8")
+        self.assertIn("自动化实验数据提取目标审计", text)
+        self.assertIn("最终目标完成：否", text)
+        self.assertIn("继续人工核验", text)
 
     def test_self_check_fails_when_article_has_no_extracted_rows(self):
         other = self.db.upsert_paper(

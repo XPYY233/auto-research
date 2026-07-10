@@ -280,6 +280,10 @@ auto-research evidence-review-handoff "Irradiation effects in high entropy alloy
 # Write a smaller checklist for the next N unreviewed rows.
 auto-research evidence-review-batch "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C" --limit 20
 
+# Write a Markdown audit against the original user goal. This distinguishes
+# "ready for human review" from "automation goal complete".
+auto-research evidence-goal-audit "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C"
+
 # The JSON output includes low-level checks and a user-facing requirements
 # section: article selector -> extracted rows, six required columns, editable
 # review with original preserved, manual entry, fuzzy search/export, and the
