@@ -16,6 +16,7 @@ from auto_research.evidence.evidence_audit import audit_six_column_evidence
 from auto_research.evidence.experiment_types import classify_experiment_types
 from auto_research.evidence.goal_audit import generate_goal_audit
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
+from auto_research.evidence.learning import build_learning_report
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.self_check import check_evidence_workflow
 from auto_research.evidence.review_handoff import generate_review_batch, generate_review_handoff, review_batch_payload
@@ -447,6 +448,20 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsNone(manual["original"])
         self.assertEqual(manual["corrected"]["meaning"], "人工新增验证量")
 
+    def test_learning_report_previews_prompt_guidance_without_claiming_evidence(self):
+        automatic = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")
+        revised_fields = {field: automatic[field] for field in ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")}
+        revised_fields["context_explanation"] += "；人工补充字段边界"
+        confirm_correction(self.db, automatic["item_id"], revised_fields, "tester", "补充上下文")
+        report = build_learning_report(self.db, self.paper_id)
+        self.assertEqual(report["sample_count"], 1)
+        self.assertEqual(report["correction_count"], 1)
+        self.assertTrue(report["included_in_prompt"])
+        self.assertIn("HUMAN REVIEW LEARNING HINTS", report["guidance_preview"])
+        self.assertIn("Never copy values", report["guidance_preview"])
+        self.assertIn("字段边界", report["message"])
+        self.assertEqual(report["included_samples"][0]["changed_labels"], ["数据在文中的解释"])
+
     def test_global_learning_samples_span_multiple_papers(self):
         other = self.db.upsert_paper(title="Other paper", doi="10.1/learning-other")
         add_manual_item(self.db, other, {
@@ -533,6 +548,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(by_name["experiment_type_detection"]["ok"])
         self.assertTrue(by_name["web_ui_contract"]["ok"])
         self.assertIn("manual_entry", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("learning_guidance_preview", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("confirm_and_next", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_keyboard_shortcuts", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_progress_card", by_name["web_ui_contract"]["web_ui"]["checked"])
@@ -545,6 +561,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("experiment_profile_card", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("readonly_mentor_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("search_source_evidence_button", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertTrue(by_name["public_readonly_ngrok_share"]["ok"])
+        self.assertIn("ngrok_public_url", by_name["public_readonly_ngrok_share"]["public_share"]["checked"])
         requirements = {item["id"]: item for item in report["requirements"]}
         self.assertTrue(all(item["ok"] for item in requirements.values()))
         self.assertTrue(requirements["article_selector_to_extracted_rows"]["ok"])

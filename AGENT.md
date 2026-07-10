@@ -271,6 +271,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - The right pane must always retain the immutable automatic original for automatic rows.
 - Learning export must include confirmations, corrections, and manual additions as distinct sample types.
 - The web learning trail must offer both current-paper and whole-database JSONL exports, because later DeepSeek extraction uses the whole reviewed sample pool as guidance.
+- The web learning trail must show a human-readable learning report and prompt-guidance preview. The preview must match the guidance generator used by DeepSeek extraction.
 - Every automatic row must retain a source page, locator, excerpt, and highlighted source-view path.
 - DeepSeek extraction may include human review samples as prompt guidance for field boundaries and Chinese wording style. These samples are never evidence: every accepted row must still be supported by the current PDF page text, local numeric/page checks, and independent verification.
 - The manual-entry page must provide its own registered-paper selector. Saving a manual row writes to that selected paper, does not switch the review page's current article, and must never call DeepSeek.
@@ -387,21 +388,29 @@ whole-database search view, and exposes row-level source evidence buttons in
 search results.
 
 Use this mode for any public tunnel or external preview URL. Do not expose the
-editable `8765` workbench through a public tunnel. Temporary no-account/no-domain
-sharing should use:
+editable `8765` workbench through a public tunnel. The current recommended
+free-account sharing path is:
 
 ```bash
-cloudflared tunnel --url http://127.0.0.1:8766
+./scripts/start_readonly_ngrok.command
 ```
 
-If the active network blocks Cloudflare Tunnel edge connectivity on port 7844,
-fallback to:
+The script reads `NGROK_AUTHTOKEN` from the environment or from the local
+`.env.ngrok` file. `.env.ngrok` is ignored by Git and must never be committed.
+The script must verify `/api/ui-mode` before starting ngrok so a public URL is
+never pointed at the editable workbench by accident.
+
+Temporary no-account/no-domain fallbacks may be tried if ngrok is unavailable,
+but they have already proven unreliable on the current network:
 
 ```bash
 npx --yes localtunnel --port 8766 --local-host 127.0.0.1
+cloudflared tunnel --url http://127.0.0.1:8766
 ```
 
 The tunnel URL is suitable for a short mentor review session while the local Mac
 and both terminal processes remain running. For persistent group deployment,
-prefer a named Cloudflare Tunnel or a proper hosted read-only deployment after
-the user explicitly approves that next step.
+prefer a GitHub Pages static read-only snapshot, a named Cloudflare Tunnel, or a
+proper hosted read-only deployment after the user explicitly approves that next
+step. GitHub Pages must be treated as a static export target only: do not expect
+it to run DeepSeek extraction, upload PDFs, or mutate SQLite.

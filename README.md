@@ -154,26 +154,41 @@ not running, it starts the service and then opens `http://127.0.0.1:8765`. Keep
 the Terminal window open while reviewing data; close it or press `Ctrl+C` to
 stop the local web page.
 
-For mentor sharing, start the same interface in read-only mode on a separate
-local port, then expose that local port through a temporary tunnel:
+For mentor sharing, use the read-only ngrok launcher. This is the recommended
+free-account path for a live preview because it gives a temporary HTTPS link
+while keeping the editable workbench private:
 
 ```bash
-PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --port 8766 --read-only
-cloudflared tunnel --url http://127.0.0.1:8766
+./scripts/start_readonly_ngrok.command
 ```
 
-If the current network blocks Cloudflare Tunnel edge connections, use a temporary
-localtunnel link instead:
+One-time ngrok setup:
+
+1. Open `https://dashboard.ngrok.com/get-started/your-authtoken`.
+2. Copy the free-account authtoken.
+3. Create `.env.ngrok` in the project root:
 
 ```bash
-npx --yes localtunnel --port 8766 --local-host 127.0.0.1
+NGROK_AUTHTOKEN=your-ngrok-token
 ```
 
-Read-only mode uses the same database and web UI, but rejects all POST/write
-actions on the server side. The shared page supports browsing, whole-database
-search, evidence highlighting, PDF opening, and CSV/Excel export; it does not
-allow uploading PDFs, confirming edits, manual entry, snapshots, article
-switching, or DeepSeek extraction.
+`.env.ngrok` is ignored by Git. Do not paste the token into README, AGENT.md, or
+any file that will be committed.
+
+The launcher starts the same interface in read-only mode on local port `8766`,
+checks `/api/ui-mode` before opening the tunnel, and then prints an
+`https://...ngrok...` URL that can be sent to the mentor. Read-only mode uses
+the same database and web UI, but rejects all POST/write actions on the server
+side. The shared page supports browsing, whole-database search, evidence
+highlighting, PDF opening, and CSV/Excel export; it does not allow uploading
+PDFs, confirming edits, manual entry, snapshots, article switching, or DeepSeek
+extraction.
+
+GitHub Pages is a good later option for a persistent read-only snapshot site:
+the project can export static HTML/JSON/CSV for the mentor, but Pages cannot run
+the local Python backend, DeepSeek extraction, PDF upload, or SQLite writes.
+Use ngrok for a live local preview; use GitHub Pages only after explicitly
+building a static snapshot package.
 
 Additional commands:
 
@@ -336,6 +351,8 @@ are only prompt guidance, not evidence; accepted rows must still be grounded in
 the current PDF page text.
 The learning trail page can export JSONL for either the current paper or the
 whole database, so multiple reviewed papers can feed the next extraction pass.
+It also shows a learning report card with the exact prompt-guidance preview that
+will be used for later extraction, plus a Markdown export for audit.
 
 In the local web page, switching the current article only reads saved database
 rows. It does not call DeepSeek or re-run extraction; automatic extraction must

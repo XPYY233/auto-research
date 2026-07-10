@@ -2,6 +2,23 @@
 
 ## 2026-07-10
 
+### ngrok 免费账号公网分享路径
+
+- 新增 `scripts/start_readonly_ngrok.command`：双击或终端运行后，会启动 `8766` 只读网页服务并通过 ngrok 输出可发给导师的 HTTPS 链接。
+- 脚本只读取 `NGROK_AUTHTOKEN` 环境变量或本机 `.env.ngrok` 文件；`.env.ngrok` 已被 Git 忽略，避免把 ngrok token 写入版本库。
+- 脚本在启动 ngrok 前会检查 `/api/ui-mode` 必须返回 `read_only: true`，防止误把可编辑工作台暴露到公网。
+- README 与 AGENT 文档改为推荐 ngrok 免费账号路线；Cloudflare/localtunnel 保留为备用但不再作为首选。
+- GitHub Pages 已记录为后续“静态只读快照”方案：适合长期展示和下载，但不能运行 DeepSeek、PDF 上传或 SQLite 写入。
+- 自检新增 `public_readonly_ngrok_share`，后续若脚本误指向编辑端口或移除只读检查，会在验收中失败。
+
+### 人工校对学习提示预览
+
+- 新增学习报告模块，将人工确认、修正和人工补录样本汇总为 DeepSeek 后续抽取可使用的学习提示。
+- DeepSeek 抽取器与网页预览共用同一份提示生成逻辑，避免“页面看到的学习内容”和“模型实际收到的提示”不一致。
+- 修正历史页新增学习报告卡片，显示当前文章/全库样本数、进入提示的样本数、安全边界，以及将加入下一次抽取的提示片段。
+- 新增 `/api/current-paper/learning-report`、`/api/learning-report` 及 Markdown 下载接口；这些接口只读，不调用 DeepSeek，也不修改数据库。
+- 学习提示明确声明：样本只用于字段边界和中文表述偏好，不能作为当前论文数据证据。
+
 ### 导师只读公网分享模式
 
 - 新增 `evidence-serve --read-only` 启动模式：使用同一套网页和同一个 evidence 数据库，但后端会拒绝所有 POST 写入请求。

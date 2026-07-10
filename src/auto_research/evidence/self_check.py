@@ -23,6 +23,7 @@ from .webapp import make_xlsx
 
 DEFAULT_CHECK_QUERIES = ("温度", "硬度", "CoCrFeMnNi")
 WEB_DIR = Path(__file__).parent / "web"
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _check(checks: list[dict[str, Any]], name: str, ok: bool, detail: str,
@@ -57,6 +58,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("unsaved_dirty_guard", "hasUnsavedEdits" in js and "beforeunload" in js and "confirmDiscardUnsaved" in js),
         ("manual_entry", "id=\"manual-form\"" in html and "id=\"manual-paper-select\"" in html and "/api/six-data/manual" in js),
         ("manual_no_original", "人工补录数据" in js and "没有不可变的原始版本" in js),
+        ("learning_guidance_preview", "id=\"learning-guidance-card\"" in html and "renderLearningGuidanceCard" in js and "/api/current-paper/learning-report" in js),
         ("search_engine", "id=\"search-form\"" in html and "/api/six-search" in js and "全库关键词检索" in html),
         ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
         ("next_unreviewed_queue", "id=\"next-unreviewed\"" in html and "selectNextUnreviewed" in js and "scrollIntoView" in js),
@@ -65,6 +67,25 @@ def _web_ui_contract() -> dict[str, Any]:
         ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
         ("readonly_mentor_mode", "id=\"readonly-badge\"" in html and "/api/ui-mode" in js and "isReadOnly" in js and "rejectReadOnlyAction" in js),
         ("search_source_evidence_button", "data-source-search" in js and "原文证据" in js and "openSourceViewer(Number(btn.dataset.sourceSearch))" in js),
+    ]
+    failed = [name for name, ok in expectations if not ok]
+    return {
+        "ok": not failed,
+        "failed": failed,
+        "checked": [name for name, _ in expectations],
+    }
+
+
+def _public_share_contract() -> dict[str, Any]:
+    script = PROJECT_ROOT / "scripts" / "start_readonly_ngrok.command"
+    text = script.read_text(encoding="utf-8") if script.is_file() else ""
+    expectations = [
+        ("ngrok_script_exists", script.is_file()),
+        ("read_only_port", "--read-only" in text and "8766" in text),
+        ("no_editable_port", "8765" not in text),
+        ("token_not_committed", ".env.ngrok" in text and "NGROK_AUTHTOKEN" in text),
+        ("server_side_readonly_check", "/api/ui-mode" in text and '"read_only": true' in text),
+        ("ngrok_public_url", "ngrok http" in text and "--authtoken" in text),
     ]
     failed = [name for name, ok in expectations if not ok]
     return {
@@ -126,8 +147,8 @@ def _requirement_summary(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         },
         {
             "id": "review_learning_loop",
-            "ok": ok("learning_channel"),
-            "requirement": "人工确认、修正和补录可进入学习样本通道，用于后续优化抽取。",
+            "ok": ok("learning_channel", "web_ui_contract") and ui_ok("learning_guidance_preview"),
+            "requirement": "人工确认、修正和补录可进入学习样本通道，并能预览它们如何作为后续抽取提示。",
             "evidence": details("learning_channel"),
         },
     ]
@@ -299,6 +320,19 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
             else f"网页校对契约缺失：{', '.join(ui_contract['failed'])}"
         ),
         web_ui=ui_contract,
+    )
+
+    share_contract = _public_share_contract()
+    _check(
+        checks,
+        "public_readonly_ngrok_share",
+        share_contract["ok"],
+        (
+            "ngrok 只读公网分享脚本存在：只开放 8766 只读服务，token 从本机环境文件读取。"
+            if share_contract["ok"]
+            else f"ngrok 只读公网分享脚本缺失：{', '.join(share_contract['failed'])}"
+        ),
+        public_share=share_contract,
     )
 
     requirements = _requirement_summary(checks)

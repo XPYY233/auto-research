@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "original", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "original", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -112,13 +112,15 @@ async function load() {
 }
 
 async function loadCurrentPaper() {
-  [state.paper, state.rows, state.extraction, state.experimentProfile, state.learning, state.allLearning, state.audit, state.deepseekRun] = await Promise.all([
+  [state.paper, state.rows, state.extraction, state.experimentProfile, state.learning, state.allLearning, state.learningReport, state.allLearningReport, state.audit, state.deepseekRun] = await Promise.all([
     api("/api/current-paper"),
     api("/api/six-data"),
     api("/api/current-paper/extraction"),
     api("/api/current-paper/experiment-profile"),
     api("/api/current-paper/learning-samples"),
     api("/api/learning-samples"),
+    api("/api/current-paper/learning-report"),
+    api("/api/learning-report"),
     api("/api/current-paper/evidence-audit"),
     api("/api/current-paper/deepseek-run"),
   ]);
@@ -659,6 +661,8 @@ async function confirmRow(id, options = {}) {
     clearDirtyRows(id);
     state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
     state.allLearning = await api("/api/learning-samples");
+    state.learningReport = await api(`/api/current-paper/learning-report?paper_id=${encodeURIComponent(state.paper.id)}`);
+    state.allLearningReport = await api("/api/learning-report");
     state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
     state.selected = id;
     renderTable();
@@ -713,12 +717,14 @@ async function saveManual(event) {
     if (state.paper && targetPaperId === Number(state.paper.id)) {
       state.rows.push(result);
       state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
+      state.learningReport = await api(`/api/current-paper/learning-report?paper_id=${encodeURIComponent(state.paper.id)}`);
       state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
       setText("nav-count", state.rows.length);
     }
-    [state.papers, state.allLearning] = await Promise.all([
+    [state.papers, state.allLearning, state.allLearningReport] = await Promise.all([
       api("/api/papers"),
       api("/api/learning-samples"),
+      api("/api/learning-report"),
     ]);
     form.reset();
     renderPaperOptions();
@@ -824,11 +830,14 @@ function renderHistory() {
   const summary = document.querySelector("#learning-summary");
   const exportLink = document.querySelector("#learning-export");
   const exportAllLink = document.querySelector("#learning-export-all");
-  if (summary && exportLink && exportAllLink) {
+  const reportLink = document.querySelector("#learning-report-export");
+  renderLearningGuidanceCard();
+  if (summary && exportLink && exportAllLink && reportLink) {
     const learning = state.learning || { sample_count: 0, correction_count: 0, confirmation_count: 0, manual_count: 0 };
     const allLearning = state.allLearning || { sample_count: 0 };
+    const report = state.learningReport || { included_in_prompt: false };
     summary.textContent = learning.sample_count
-      ? `当前文章已有 ${learning.sample_count} 条学习样本：确认无误 ${learning.confirmation_count} 条，修正 ${learning.correction_count} 条，人工补录 ${learning.manual_count} 条。全库共 ${allLearning.sample_count || 0} 条。`
+      ? `当前文章已有 ${learning.sample_count} 条学习样本：确认无误 ${learning.confirmation_count} 条，修正 ${learning.correction_count} 条，人工补录 ${learning.manual_count} 条。${report.included_in_prompt ? "下一次抽取会加入学习提示。" : "下一次抽取暂无学习提示。"}全库共 ${allLearning.sample_count || 0} 条。`
       : `当前文章还没有学习样本；全库共 ${allLearning.sample_count || 0} 条。确认修正或人工补录后，这里会自动累积。`;
     exportLink.href = `/api/current-paper/learning-samples.jsonl?paper_id=${encodeURIComponent(state.paper?.id || "")}`;
     exportLink.classList.toggle("disabled", !learning.sample_count);
@@ -836,12 +845,35 @@ function renderHistory() {
     exportAllLink.href = "/api/learning-samples.jsonl";
     exportAllLink.classList.toggle("disabled", !allLearning.sample_count);
     exportAllLink.setAttribute("aria-disabled", allLearning.sample_count ? "false" : "true");
+    reportLink.href = `/api/current-paper/learning-report.md?paper_id=${encodeURIComponent(state.paper?.id || "")}`;
+    reportLink.classList.toggle("disabled", !learning.sample_count);
+    reportLink.setAttribute("aria-disabled", learning.sample_count ? "false" : "true");
   }
   if (!changed.length) {
     el.innerHTML = '<div class="blank"><h3>还没有已确认修正</h3><p>左侧表格里的临时输入不会出现在这里。</p></div>';
     return;
   }
   el.innerHTML = changed.map(row => `<article class="history-card"><span>${row.origin_type === "manual" ? "人工补录" : row.review_action === "confirmation" ? `确认无误 v${row.version_no}` : `已修正 v${row.version_no}`}</span><div><strong>${esc(row.meaning)} · ${esc(row.value_text)} ${esc(row.unit)}</strong><p>${esc(row.context_explanation)}</p></div><div><strong>${esc(row.editor)}</strong><p>${esc(row.edit_note || "")}<br>${esc(row.created_at)}</p></div></article>`).join("");
+}
+
+function renderLearningGuidanceCard() {
+  const el = document.querySelector("#learning-guidance-card");
+  if (!el) return;
+  const report = state.learningReport || { sample_count: 0, included_samples: [] };
+  const allReport = state.allLearningReport || { sample_count: 0 };
+  const readinessLabels = {
+    empty: "暂无学习提示",
+    confirmations_only: "已有正例",
+    useful: "可用于优化抽取",
+  };
+  const included = (report.included_samples || []).slice(0, 3).map(sample => {
+    const changed = (sample.changed_labels || []).join("、") || "确认无误";
+    return `<li><strong>${esc(sample.sample_type)} · #${esc(sample.item_id)}</strong><span>${esc(changed)}</span><p>${esc(sample.corrected_meaning || "")}；${esc(sample.corrected_context || "")}</p></li>`;
+  }).join("");
+  const preview = report.guidance_preview
+    ? `<details><summary>查看将加入 DeepSeek 提示的学习片段</summary><pre>${esc(report.guidance_preview)}</pre></details>`
+    : `<p class="learning-empty">还没有可加入提示的人工学习样本。</p>`;
+  el.innerHTML = `<div><span>${esc(readinessLabels[report.readiness] || "学习状态")}</span><h3>${esc(report.message || "等待人工校对样本")}</h3><p>${esc(report.safety_rule || "学习样本只用于字段边界和措辞偏好；不能作为新论文数据证据。")}</p></div><dl><div><dt>当前文章样本</dt><dd>${esc(report.sample_count || 0)}</dd></div><div><dt>全库样本</dt><dd>${esc(allReport.sample_count || 0)}</dd></div><div><dt>进入提示</dt><dd>${esc(report.included_sample_count || 0)}</dd></div></dl><ul>${included || "<li><strong>尚无样本</strong><span>确认或修正后自动出现</span></li>"}</ul>${preview}`;
 }
 
 function switchView(name) {

@@ -14,6 +14,7 @@ from auto_research.paths import DATA_DIR
 
 from .db import EVIDENCE_TYPES, SOURCE_PRECISIONS, EvidenceDB, now
 from .experiment_types import classify_experiment_types, extraction_focuses_for_profile
+from .learning import build_learning_guidance
 from .six_column import collect_learning_samples, import_ai_result_to_six_column, list_current_data
 
 
@@ -148,43 +149,10 @@ BASE_EXTRACTION_FOCUSES = (
 )
 
 
-def _shorten(value: Any, limit: int = 260) -> str:
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
-    return text if len(text) <= limit else text[:limit - 1] + "…"
-
-
 def _learning_guidance(samples_payload: dict[str, Any], limit: int = 6) -> str:
-    """Convert human review samples into prompt hints, never into evidence."""
-    samples = [
-        item for item in samples_payload.get("samples", [])
-        if isinstance(item, dict) and item.get("sample_type") in {"correction", "confirmation", "manual_addition"}
-    ]
-    if not samples:
-        return ""
-    priority = {"correction": 0, "manual_addition": 1, "confirmation": 2}
-    samples.sort(key=lambda item: (priority.get(item.get("sample_type"), 9), str(item.get("created_at") or "")))
-    lines = [
-        "HUMAN REVIEW LEARNING HINTS",
-        "Use these only to learn the researcher's preferred field boundaries and wording style.",
-        "Never copy values, materials, conditions, page numbers, or conclusions from these hints unless they also appear in the current PDF page block.",
-    ]
-    for index, sample in enumerate(samples[:limit], start=1):
-        corrected = sample.get("corrected") or {}
-        original = sample.get("original") or {}
-        changed = ", ".join(sample.get("changed_fields") or [])
-        lines.append(
-            f"{index}. {sample.get('sample_type')} changed=[{changed}] "
-            f"meaning={_shorten(corrected.get('meaning'))}; "
-            f"context={_shorten(corrected.get('context_explanation'))}; "
-            f"value={_shorten(corrected.get('value_text'), 80)}; "
-            f"unit={_shorten(corrected.get('unit'), 80)}"
-        )
-        if original and sample.get("sample_type") == "correction":
-            lines.append(
-                f"   corrected_from meaning={_shorten(original.get('meaning'))}; "
-                f"context={_shorten(original.get('context_explanation'))}"
-            )
-    return "\n".join(lines)
+    """Backward-compatible wrapper used by tests and extraction code."""
+
+    return build_learning_guidance(samples_payload, limit=limit)
 
 
 def _extraction_messages(paper: dict[str, Any], chunk: list[dict[str, Any]], focus: str,

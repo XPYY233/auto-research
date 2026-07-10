@@ -70,6 +70,10 @@
 .history-tools p{margin:0;color:var(--muted);font-size:11px;line-height:1.6;text-align:right;max-width:360px}
 .history-tools a{color:var(--blue);font-size:12px}
 .history-tools a.disabled{pointer-events:none;opacity:.45;text-decoration:none}
+.learning-guidance-card{display:grid;grid-template-columns:minmax(260px,1fr) minmax(190px,.45fr);gap:14px 18px;margin:0 0 16px;padding:18px;border:1px solid #d2dce1;border-radius:10px;background:#fff;box-shadow:0 10px 28px rgba(28,48,62,.07)}
+.learning-guidance-card span{display:block;color:var(--orange);font:700 10px "IBM Plex Mono",monospace;letter-spacing:.1em}.learning-guidance-card h3{margin:6px 0 8px;font:600 18px/1.35 Georgia,"Songti SC",serif}.learning-guidance-card p{margin:0;color:#536572;font-size:12px;line-height:1.65}
+.learning-guidance-card dl{display:grid;grid-template-columns:repeat(3,minmax(62px,1fr));gap:8px;margin:0}.learning-guidance-card dl div{padding:9px;border:1px solid #e0e8ec;border-radius:7px;background:#f8fbfc}.learning-guidance-card dt{color:var(--muted);font-size:10px}.learning-guidance-card dd{margin:4px 0 0;color:var(--blue);font:700 17px/1 Georgia,serif}
+.learning-guidance-card ul{grid-column:1/-1;display:grid;gap:8px;margin:0;padding:0;list-style:none}.learning-guidance-card li{padding:10px;border:1px solid #e4ebef;border-radius:7px;background:#f8fbfc}.learning-guidance-card li strong{display:block;font-size:12px}.learning-guidance-card li span{margin:4px 0;color:var(--green);letter-spacing:0}.learning-guidance-card details{grid-column:1/-1}.learning-guidance-card summary{cursor:pointer;color:var(--blue);font-size:12px}.learning-guidance-card pre{max-height:260px;overflow:auto;padding:12px;border-radius:7px;background:#102433;color:#eaf1f4;font:11px/1.55 "IBM Plex Mono",monospace;white-space:pre-wrap}.learning-empty{grid-column:1/-1;color:var(--muted)}
 .edit-table tr.confirmed td:first-child{box-shadow:inset 3px 0 var(--blue)}
 .edit-table tr.dirty td:first-child{box-shadow:inset 3px 0 var(--orange)}
 .edit-table tr.dirty td{background:#fffaf2}

@@ -19,6 +19,7 @@ from .evidence_audit import audit_six_column_evidence
 from .deepseek_extraction import DeepSeekEvidenceExtractor, latest_deepseek_run
 from .experiment_types import classify_experiment_types
 from .exporter import EXPORT_COLUMNS
+from .learning import build_learning_report, learning_report_markdown
 from .prompts import build_prompt_packet
 from .review_handoff import review_batch_payload
 from .six_column import (
@@ -200,6 +201,16 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
                 return self.json_response(collect_learning_samples(self.db, paper_id))
+            if parsed.path == "/api/current-paper/learning-report":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.json_response(build_learning_report(self.db, paper_id))
+            if parsed.path == "/api/current-paper/learning-report.md":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                report = build_learning_report(self.db, paper_id)
+                filename = f"paper-{paper_id}-learning-report.md"
+                return self.markdown_download_response(learning_report_markdown(report), filename)
             if parsed.path == "/api/current-paper/review-progress":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
@@ -218,6 +229,11 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.text_response(learning_samples_jsonl(self.db, paper_id), "application/x-ndjson; charset=utf-8")
             if parsed.path == "/api/learning-samples":
                 return self.json_response(collect_learning_samples(self.db))
+            if parsed.path == "/api/learning-report":
+                return self.json_response(build_learning_report(self.db))
+            if parsed.path == "/api/learning-report.md":
+                report = build_learning_report(self.db)
+                return self.markdown_download_response(learning_report_markdown(report), "all-learning-report.md")
             if parsed.path == "/api/learning-samples.jsonl":
                 return self.text_response(learning_samples_jsonl(self.db), "application/x-ndjson; charset=utf-8")
             if parsed.path == "/api/six-data":
