@@ -534,6 +534,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("manual_entry", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("confirm_and_next", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_keyboard_shortcuts", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("review_progress_card", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("source_highlight", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("next_unreviewed_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_batch_download", by_name["web_ui_contract"]["web_ui"]["checked"])

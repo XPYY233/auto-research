@@ -379,6 +379,7 @@ function isUnreviewedRow(row) {
 function renderTable() {
   const rows = filteredRows();
   const progress = reviewProgress();
+  renderReviewProgressCard(progress);
   const filterNote = state.reviewFilter === "all" ? "" : ` · 当前筛出 ${rows.length} 条`;
   const dirtyNote = hasUnsavedEdits() ? `，${state.dirtyRows.size} 行未确认` : "";
   const breakdown = `确认 ${progress.confirmed}、修正 ${progress.corrected}、人工 ${progress.manual}`;
@@ -812,6 +813,22 @@ function renderUploadResult(result) {
     if (!switched) return;
     switchView("review");
   });
+}
+
+function renderReviewProgressCard(progress) {
+  const total = progress.total || 0;
+  const ratio = total ? Math.round((progress.reviewed / total) * 100) : 0;
+  setText("review-progress-title", `${progress.reviewed}/${total} 已审核 · ${ratio}%`);
+  setText("review-progress-unreviewed", progress.unreviewed);
+  setText("review-progress-confirmed", progress.confirmed);
+  setText("review-progress-corrected", progress.corrected);
+  setText("review-progress-manual", progress.manual);
+  const bar = document.querySelector("#review-progress-bar");
+  if (bar) bar.style.width = `${ratio}%`;
+  const note = progress.unreviewed
+    ? `下一步：点击“下一条未审核”逐条核验，或下载待审核清单分批处理。`
+    : `当前文章已无未审核自动抽取数据，可进入搜索与学习样本复查。`;
+  setText("review-progress-note", note);
 }
 
 async function uploadPdf(event) {

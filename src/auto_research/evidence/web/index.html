@@ -88,6 +88,20 @@
             <span id="row-count">0 条</span>
           </div>
         </div>
+        <div class="review-progress-card" id="review-progress-card">
+          <div>
+            <span>人工核验进度</span>
+            <strong id="review-progress-title">0/0 已审核</strong>
+            <p id="review-progress-note">选择一篇文章后开始核验。</p>
+          </div>
+          <div class="review-progress-meter" aria-hidden="true"><i id="review-progress-bar"></i></div>
+          <dl>
+            <div><dt>待审核</dt><dd id="review-progress-unreviewed">0</dd></div>
+            <div><dt>已确认</dt><dd id="review-progress-confirmed">0</dd></div>
+            <div><dt>已修正</dt><dd id="review-progress-corrected">0</dd></div>
+            <div><dt>人工补录</dt><dd id="review-progress-manual">0</dd></div>
+          </dl>
+        </div>
         <div class="review-split">
           <section class="edit-pane" aria-label="可编辑数据表">
             <div class="table-scroll">

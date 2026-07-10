@@ -282,6 +282,8 @@ auto-research evidence-review-batch "Irradiation effects in high entropy alloys 
 
 # The review page also has a "下载待审核清单" button. It downloads the next
 # unreviewed rows as Markdown without writing database rows or calling DeepSeek.
+# The progress card above the table shows reviewed, unreviewed, confirmed,
+# corrected, and manually added counts for the current article.
 
 # Write a Markdown audit against the original user goal. This distinguishes
 # "ready for human review" from "automation goal complete".

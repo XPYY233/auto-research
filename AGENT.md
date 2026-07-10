@@ -284,6 +284,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - The review page paper switcher must be a selectable list of registered papers and should appear only on the review page. The visible option text should be paper title plus helpful bibliographic context such as year/DOI and saved-row count; do not make Zotero/storage codes the displayed selector. Use the internal paper id for switching.
 - The search page must search the whole six-column database by default, independent of the currently selected paper. Empty search/export from the search page must also use the whole database.
 - The review page should provide a direct download for the next unreviewed Markdown checklist via `/api/current-paper/review-batch.md`. This is a read-only manual-review aid and must not call DeepSeek or write database rows.
+- The review page should keep the human-review progress visible near the table, including reviewed/unreviewed totals and confirmation/correction/manual counts. This is a review aid only and must not mutate extracted rows.
 
 ### Current verified baseline
 

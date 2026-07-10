@@ -57,6 +57,10 @@
 .progress-panel.running .progress-track span{animation:progress-pulse 1.2s ease-in-out infinite}
 .progress-panel p{margin:8px 0 0;color:#465b68;font-size:11px}
 @keyframes progress-pulse{0%{filter:saturate(.9)}50%{filter:saturate(1.4);box-shadow:0 0 14px rgba(36,112,88,.25)}100%{filter:saturate(.9)}}
+.review-progress-card{display:grid;grid-template-columns:minmax(240px,1fr) minmax(170px,.7fr);gap:12px 18px;align-items:center;margin:-4px 0 14px;padding:14px 16px;border:1px solid #d2dce1;border-radius:9px;background:#fff;box-shadow:0 10px 28px rgba(28,48,62,.07)}
+.review-progress-card span{display:block;color:var(--orange);font:700 10px "IBM Plex Mono",monospace;letter-spacing:.1em}.review-progress-card strong{display:block;margin-top:4px;font:600 19px/1.25 Georgia,"Songti SC",serif}.review-progress-card p{margin:6px 0 0;color:#536572;font-size:11px;line-height:1.55}
+.review-progress-meter{grid-column:1/-1;height:8px;overflow:hidden;border-radius:999px;background:#e1eaee}.review-progress-meter i{display:block;width:0;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--orange),var(--green));transition:width .35s ease}
+.review-progress-card dl{display:grid;grid-template-columns:repeat(4,minmax(66px,1fr));gap:8px;margin:0}.review-progress-card dl div{padding:9px 10px;border:1px solid #e0e8ec;border-radius:7px;background:#f8fbfc}.review-progress-card dt{color:var(--muted);font-size:10px}.review-progress-card dd{margin:4px 0 0;color:var(--blue);font:700 17px/1 Georgia,serif}
 .empty-table{padding:28px 16px;color:var(--muted);font-size:12px;line-height:1.7;text-align:center}
 .import-card{margin-top:18px}
 #import-json-text{min-height:220px;font:12px/1.55 "IBM Plex Mono",monospace}
