@@ -2,6 +2,11 @@
 
 ## 2026-07-10
 
+### 本地编辑工作台快捷入口
+
+- 新增 `/Users/USER/Zotero/打开本地编辑工作台.command`，双击后启动或打开 `http://127.0.0.1:8765` 本地可编辑工作台。
+- 更新 `scripts/start_evidence_ui.command` 输出文案，明确该入口是本地可编辑模式；导师分享应使用“创建导师公网链接.command”。
+
 ### ngrok 免费账号公网分享路径
 
 - 新增 `scripts/start_readonly_ngrok.command`：双击或终端运行后，会启动 `8766` 只读网页服务并通过 ngrok 输出可发给导师的 HTTPS 链接。

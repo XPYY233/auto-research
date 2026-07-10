@@ -154,6 +154,14 @@ not running, it starts the service and then opens `http://127.0.0.1:8765`. Keep
 the Terminal window open while reviewing data; close it or press `Ctrl+C` to
 stop the local web page.
 
+On this Mac, a convenience launcher is available at:
+
+`/Users/USER/Zotero/打开本地编辑工作台.command`
+
+Use this launcher for the editable local workbench. Use
+`/Users/USER/Zotero/创建导师公网链接.command` only for the mentor-facing
+search-only public link.
+
 For mentor sharing, use the read-only ngrok launcher. This is the recommended
 free-account path for a live preview because it gives a temporary HTTPS link
 while keeping the editable workbench private:
