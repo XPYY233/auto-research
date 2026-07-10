@@ -8,6 +8,7 @@
 - 只读模式默认进入“搜索数据”页面，隐藏上传文献、人工补录、切换文章、自动提取/核验、DeepSeek 抽取和生成快照等写入入口。
 - 顶部新增“导师只读模式”标识，避免误以为这是可编辑工作台。
 - README 和 AGENT 文档补充推荐公网化路径：本机只读端口 `8766` + Cloudflare Quick Tunnel 临时链接。
+- 当前网络下 Cloudflare Tunnel 边缘连接被阻断，已记录 `localtunnel` 作为零配置备用路径：`npx --yes localtunnel --port 8766 --local-host 127.0.0.1`。
 - 搜索页每条结果新增“原文证据”按钮，可直接打开高亮后的 PDF 证据；可编辑模式下仍保留“去校对”按钮。
 - 自检网页契约新增 `readonly_mentor_mode` 和 `search_source_evidence_button`，确保后续 UI 修改不会破坏导师浏览动线。
 

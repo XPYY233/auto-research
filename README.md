@@ -162,6 +162,13 @@ PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --po
 cloudflared tunnel --url http://127.0.0.1:8766
 ```
 
+If the current network blocks Cloudflare Tunnel edge connections, use a temporary
+localtunnel link instead:
+
+```bash
+npx --yes localtunnel --port 8766 --local-host 127.0.0.1
+```
+
 Read-only mode uses the same database and web UI, but rejects all POST/write
 actions on the server side. The shared page supports browsing, whole-database
 search, evidence highlighting, PDF opening, and CSV/Excel export; it does not

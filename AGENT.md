@@ -394,6 +394,13 @@ sharing should use:
 cloudflared tunnel --url http://127.0.0.1:8766
 ```
 
+If the active network blocks Cloudflare Tunnel edge connectivity on port 7844,
+fallback to:
+
+```bash
+npx --yes localtunnel --port 8766 --local-host 127.0.0.1
+```
+
 The tunnel URL is suitable for a short mentor review session while the local Mac
 and both terminal processes remain running. For persistent group deployment,
 prefer a named Cloudflare Tunnel or a proper hosted read-only deployment after
