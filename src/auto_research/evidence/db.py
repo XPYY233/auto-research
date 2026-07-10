@@ -621,11 +621,48 @@ class EvidenceDB:
                 (SELECT COUNT(*) FROM measurements m WHERE m.paper_id=p.id) measurement_count,
                 (SELECT COUNT(*) FROM measurements m WHERE m.paper_id=p.id AND m.review_status='verified') verified_count,
                 (SELECT COUNT(*) FROM measurements m WHERE m.paper_id=p.id AND m.review_status='draft') draft_count,
-                (SELECT COUNT(*) FROM data_items i WHERE i.paper_id=p.id) six_row_count,
+                (SELECT COUNT(*) FROM v_current_six_column_data v WHERE v.paper_id=p.id) six_row_count,
+                (SELECT COUNT(*) FROM v_current_six_column_data v
+                  WHERE v.paper_id=p.id
+                    AND (v.review_action IN ('confirmation','correction') OR v.origin_type='manual')) six_reviewed_count,
+                (SELECT COUNT(*) FROM v_current_six_column_data v
+                  WHERE v.paper_id=p.id AND v.review_action='confirmation') six_confirmed_count,
+                (SELECT COUNT(*) FROM v_current_six_column_data v
+                  WHERE v.paper_id=p.id AND v.review_action='correction') six_corrected_count,
+                (SELECT COUNT(*) FROM v_current_six_column_data v
+                  WHERE v.paper_id=p.id AND v.origin_type='manual') six_manual_count,
+                (SELECT COUNT(*) FROM ai_extraction_runs r
+                  WHERE r.paper_id=p.id AND r.status='completed') completed_ai_run_count,
+                (SELECT r.status FROM ai_extraction_runs r
+                  WHERE r.paper_id=p.id ORDER BY r.id DESC LIMIT 1) latest_ai_run_status,
+                (SELECT COALESCE(r.finished_at,r.created_at) FROM ai_extraction_runs r
+                  WHERE r.paper_id=p.id ORDER BY r.id DESC LIMIT 1) latest_ai_run_at,
                 (SELECT COUNT(*) FROM pending_tasks t WHERE t.paper_id=p.id AND t.status='open') open_task_count
                 FROM papers p ORDER BY COALESCE(p.pilot_order,99999),p.year DESC,p.title"""
             ).fetchall()
-            return [dict(row) for row in rows]
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                paper = dict(row)
+                total = int(paper.get("six_row_count") or 0)
+                reviewed = int(paper.get("six_reviewed_count") or 0)
+                completed_runs = int(paper.get("completed_ai_run_count") or 0)
+                unreviewed = max(total - reviewed, 0)
+                paper["six_unreviewed_count"] = unreviewed
+                paper["six_reviewed_ratio"] = round(reviewed / total, 4) if total else 0.0
+                if total == 0 and completed_runs == 0:
+                    paper["six_workflow_state"] = "not_scanned"
+                    paper["six_workflow_label"] = "未扫描"
+                elif total == 0:
+                    paper["six_workflow_state"] = "scanned_empty"
+                    paper["six_workflow_label"] = "已扫描无入库数据"
+                elif unreviewed:
+                    paper["six_workflow_state"] = "pending_review"
+                    paper["six_workflow_label"] = f"待审核 {unreviewed}/{total}"
+                else:
+                    paper["six_workflow_state"] = "reviewed"
+                    paper["six_workflow_label"] = f"已完成 {total}/{total}"
+                result.append(paper)
+            return result
 
     def get_paper(self, paper_id: int) -> dict[str, Any] | None:
         self.init()

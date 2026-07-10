@@ -159,8 +159,8 @@ async function loadCurrentPaper() {
 function renderPaperOptions() {
   const optionHtml = state.papers.map(paper => {
     const rows = Number(paper.six_row_count || paper.row_count || 0);
-    const scan = rows ? ` · ${rows}条数据` : "";
-    return `<option value="${esc(paper.id)}">${esc(paperLabel(paper))}${esc(scan)}</option>`;
+    const scan = paper.six_workflow_label || (rows ? `${rows}条数据` : "未扫描");
+    return `<option value="${esc(paper.id)}">${esc(paperLabel(paper))} · ${esc(scan)}</option>`;
   }).join("");
   const switchSelect = document.querySelector("#paper-switch-input");
   if (switchSelect) {
@@ -177,15 +177,29 @@ function renderPaperOptions() {
       manualSelect.value = String(state.paper.id);
     }
   }
+  renderPaperStatusSummary();
+}
+
+function renderPaperStatusSummary() {
+  const el = document.querySelector("#paper-status-summary");
+  if (!el) return;
+  const total = state.papers.length;
+  const scanned = state.papers.filter(p => (Number(p.six_row_count || 0) > 0) || Number(p.completed_ai_run_count || 0) > 0).length;
+  const pending = state.papers.filter(p => p.six_workflow_state === "pending_review").length;
+  const reviewed = state.papers.filter(p => p.six_workflow_state === "reviewed").length;
+  el.textContent = `文章处理总览：共 ${total} 篇；已扫描 ${scanned} 篇；待人工审核 ${pending} 篇；已完成 ${reviewed} 篇。下拉框中的状态来自本地数据库。`;
+  el.className = pending ? "ready" : reviewed ? "supported" : "";
 }
 
 function renderPaper() {
   const paper = state.paper;
   if (!paper) return;
+  const paperStatus = state.papers.find(p => String(p.id) === String(paper.id)) || paper;
   const authorYear = [paper.first_author || "作者待补", paper.year || "年份待补"].filter(Boolean).join(" · ");
   setText("paper-key", authorYear);
   setText("paper-title", paper.title);
   setText("paper-doi", paper.doi || "—");
+  setText("paper-process-status", paperStatus.six_workflow_label || "未扫描");
   setText("mini-title", paper.title);
   setText("mini-doi", paper.doi || "—");
   setText("nav-count", state.rows.length);

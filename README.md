@@ -394,6 +394,12 @@ whole-database search result set. Search also expands common element names and
 symbols, such as `钨` ↔ `W` ↔ `tungsten`, and indexes first/corresponding
 authors when available.
 
+The review page article selector is also a lightweight work queue. Each paper
+option shows its six-column workflow state, such as `未扫描` or
+`待审核 112/114`, and the current article strip repeats that processing status.
+These labels come from the local evidence database, not from Zotero storage
+codes.
+
 The web page also marks whether an article has already been scanned. If a paper
 already has six-column rows or a completed DeepSeek run, pressing an extraction
 button opens a confirmation dialog; the backend rejects repeat scans unless that

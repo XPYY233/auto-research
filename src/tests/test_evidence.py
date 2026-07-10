@@ -342,6 +342,24 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(paper_counts[self.paper_id], 114)
         self.assertEqual(paper_counts[other], 1)
 
+    def test_paper_picker_exposes_workflow_review_status(self):
+        automatic_confirmed = next(r for r in list_current_data(self.db) if r["stable_key"] == "tem_voltage")
+        confirm_correction(
+            self.db,
+            automatic_confirmed["item_id"],
+            {field: automatic_confirmed[field] for field in ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")},
+            "tester",
+            "确认无修改",
+        )
+        other = self.db.upsert_paper(title="Unscanned paper", doi="10.1/not-scanned")
+        papers = {row["id"]: row for row in self.db.list_papers()}
+        self.assertEqual(papers[self.paper_id]["six_workflow_state"], "pending_review")
+        self.assertEqual(papers[self.paper_id]["six_reviewed_count"], 1)
+        self.assertEqual(papers[self.paper_id]["six_unreviewed_count"], 113)
+        self.assertEqual(papers[self.paper_id]["six_workflow_label"], "待审核 113/114")
+        self.assertEqual(papers[other]["six_workflow_state"], "not_scanned")
+        self.assertEqual(papers[other]["six_workflow_label"], "未扫描")
+
     def test_current_paper_can_be_resolved_by_article_key(self):
         other = self.db.upsert_paper(title="Another paper", doi="10.1/other", local_article_key="ALT0001")
         set_current_paper(self.db, article_key="ALT0001")
@@ -562,6 +580,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("review_all_download", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("item_id_review_filter", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("experiment_profile_card", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("paper_status_overview", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("readonly_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("readonly_search_only_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("search_source_evidence_button", by_name["web_ui_contract"]["web_ui"]["checked"])

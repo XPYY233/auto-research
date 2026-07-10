@@ -124,3 +124,6 @@ body[data-readonly="true"] .shortcut-hint,
 body[data-readonly="true"] #next-unreviewed,
 body[data-readonly="true"] #current-review-batch,
 body[data-readonly="true"] #current-review-all{display:none}
+.article-strip{grid-template-columns:130px minmax(240px,1fr) minmax(160px,.42fr) minmax(145px,.36fr) auto}
+#paper-status-summary{border-left:3px solid var(--blue);padding-left:10px}
+@media(max-width:1050px){.article-strip{grid-template-columns:90px 1fr}.article-strip div:nth-child(4){border-top:1px solid #ccd8df}}

@@ -287,6 +287,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - The review page should provide direct downloads for both the next unreviewed Markdown checklist and all remaining unreviewed rows via `/api/current-paper/review-batch.md`. These are read-only manual-review aids and must not call DeepSeek or write database rows.
 - The review page should keep the human-review progress visible near the table, including reviewed/unreviewed totals and confirmation/correction/manual counts. This is a review aid only and must not mutate extracted rows.
 - Each automatic row should expose a direct row-level source-evidence button that calls the existing highlighted source viewer. Manual rows should not pretend to have automatic source evidence.
+- `/api/papers` should expose per-paper six-column workflow state and label so the review article picker can act as a work queue. Use `not_scanned`, `scanned_empty`, `pending_review`, and `reviewed`; labels should be reader-facing Chinese such as `未扫描` or `待审核 112/114`.
 
 ### Current verified baseline
 
