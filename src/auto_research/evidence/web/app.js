@@ -209,6 +209,38 @@ function renderPaper() {
   updateReviewBatchLinks();
 }
 
+async function refreshReviewFeedback() {
+  const currentPaperId = state.paper?.id;
+  const requests = [
+    api("/api/papers"),
+    api("/api/learning-samples"),
+    api("/api/learning-report"),
+  ];
+  if (currentPaperId) {
+    requests.push(
+      api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(currentPaperId)}`),
+      api(`/api/current-paper/learning-report?paper_id=${encodeURIComponent(currentPaperId)}`),
+      api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(currentPaperId)}`),
+      api(`/api/current-paper/extraction?paper_id=${encodeURIComponent(currentPaperId)}`),
+    );
+  }
+  const [papers, allLearning, allLearningReport, learning, learningReport, audit, extraction] = await Promise.all(requests);
+  state.papers = papers;
+  state.allLearning = allLearning;
+  state.allLearningReport = allLearningReport;
+  if (currentPaperId) {
+    state.learning = learning;
+    state.learningReport = learningReport;
+    state.audit = audit;
+    state.extraction = extraction;
+  }
+  renderPaperOptions();
+  renderPaper();
+  renderExtractionStatus();
+  renderEvidenceAudit();
+  renderHistory();
+}
+
 function renderExtractionStatus() {
   const status = state.extraction;
   const el = document.querySelector("#paper-extraction-status");
@@ -709,16 +741,10 @@ async function confirmRow(id, options = {}) {
     });
     state.rows = state.rows.map(row => row.item_id === id ? result : row);
     clearDirtyRows(id);
-    state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
-    state.allLearning = await api("/api/learning-samples");
-    state.learningReport = await api(`/api/current-paper/learning-report?paper_id=${encodeURIComponent(state.paper.id)}`);
-    state.allLearningReport = await api("/api/learning-report");
-    state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
     state.selected = id;
+    await refreshReviewFeedback();
     renderTable();
     renderOriginal(result);
-    renderEvidenceAudit();
-    renderHistory();
     if (options.goNext) {
       window.requestAnimationFrame(() => selectNextUnreviewed());
     }
@@ -771,13 +797,8 @@ async function saveManual(event) {
       state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
       setText("nav-count", state.rows.length);
     }
-    [state.papers, state.allLearning, state.allLearningReport] = await Promise.all([
-      api("/api/papers"),
-      api("/api/learning-samples"),
-      api("/api/learning-report"),
-    ]);
+    await refreshReviewFeedback();
     form.reset();
-    renderPaperOptions();
     document.querySelector("#manual-paper-select").value = String(targetPaperId);
     fillManualDefaults();
     if (state.paper && targetPaperId === Number(state.paper.id)) {

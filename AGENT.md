@@ -288,6 +288,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - The review page should keep the human-review progress visible near the table, including reviewed/unreviewed totals and confirmation/correction/manual counts. This is a review aid only and must not mutate extracted rows.
 - Each automatic row should expose a direct row-level source-evidence button that calls the existing highlighted source viewer. Manual rows should not pretend to have automatic source evidence.
 - `/api/papers` should expose per-paper six-column workflow state and label so the review article picker can act as a work queue. Use `not_scanned`, `scanned_empty`, `pending_review`, and `reviewed`; labels should be reader-facing Chinese such as `未扫描` or `待审核 112/114`.
+- After any confirmation, correction, or manual entry, the web UI should refresh paper workflow labels, current/all learning reports, evidence audit, and extraction status so the researcher can immediately see how the human review sample changes the next extraction guidance.
 
 ### Current verified baseline
 

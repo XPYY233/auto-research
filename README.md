@@ -400,6 +400,11 @@ option shows its six-column workflow state, such as `未扫描` or
 These labels come from the local evidence database, not from Zotero storage
 codes.
 
+After you confirm, correct, or manually add a row, the page refreshes the paper
+workflow label, learning-sample summary, evidence audit, and extraction status.
+This keeps the manual-review loop visible: every saved correction immediately
+becomes part of the learning feedback used to guide later DeepSeek extraction.
+
 The web page also marks whether an article has already been scanned. If a paper
 already has six-column rows or a completed DeepSeek run, pressing an extraction
 button opens a confirmation dialog; the backend rejects repeat scans unless that

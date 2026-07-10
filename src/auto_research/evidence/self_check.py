@@ -52,6 +52,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("confirm_and_next", "确认并下一条" in js and "data-confirm-next" in js and "goNext" in js),
         ("review_keyboard_shortcuts", "快捷键" in html and "handleReviewKeyboard" in js and "confirmSelectedRow" in js and "openSelectedSource" in js),
         ("review_progress_card", "id=\"review-progress-card\"" in html and "renderReviewProgressCard" in js and "review-progress-bar" in js),
+        ("review_feedback_refresh", "refreshReviewFeedback" in js and "/api/papers" in js and "/api/learning-report" in js),
         ("review_source_sort", "id=\"review-sort\"" in html and "sortReviewRows" in js and "sourcePageNumber" in js and "unreviewed_source" in js),
         ("row_source_button", "data-source-row" in js and "source-action" in js and "openSourceViewer(Number(btn.dataset.sourceRow))" in js),
         ("item_id_review_filter", "item_id" in html and "rowFilterText" in js and "stable_key" in js),
