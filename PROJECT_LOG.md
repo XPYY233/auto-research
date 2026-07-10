@@ -5,7 +5,9 @@
 ### ngrok 免费账号公网分享路径
 
 - 新增 `scripts/start_readonly_ngrok.command`：双击或终端运行后，会启动 `8766` 只读网页服务并通过 ngrok 输出可发给导师的 HTTPS 链接。
-- 脚本只读取 `NGROK_AUTHTOKEN` 环境变量或本机 `.env.ngrok` 文件；`.env.ngrok` 已被 Git 忽略，避免把 ngrok token 写入版本库。
+- 新增便捷入口 `/Users/USER/Zotero/创建导师公网链接.command`，以后可直接双击创建公网只读链接。
+- 脚本只读取 `NGROK_AUTHTOKEN` 环境变量或本机 `.env.ngrok` 文件；当前支持 `/Users/USER/Zotero/.env.ngrok` 作为默认便捷配置位置，避免把 ngrok token 写入版本库。
+- 若已有 ngrok 正在服务同一个只读端口，脚本会直接显示现有公网链接，避免重复启动隧道。
 - 脚本在启动 ngrok 前会检查 `/api/ui-mode` 必须返回 `read_only: true`，防止误把可编辑工作台暴露到公网。
 - README 与 AGENT 文档改为推荐 ngrok 免费账号路线；Cloudflare/localtunnel 保留为备用但不再作为首选。
 - GitHub Pages 已记录为后续“静态只读快照”方案：适合长期展示和下载，但不能运行 DeepSeek、PDF 上传或 SQLite 写入。
@@ -45,6 +47,7 @@
 ### 网页端待审核清单下载
 
 - 校对页新增“下载待审核清单”入口，直接下载当前文章下一批未审核数据的 Markdown 清单。
+- 校对页新增“下载全部待审核”入口，按当前剩余未审核数量导出完整 Markdown 清单，便于一次性离线核对目标文章全部候选数据。
 - 新增只读接口 `/api/current-paper/review-batch.md?paper_id=<id>&limit=20`；该接口不调用 DeepSeek、不修改数据库、不生成额外行。
 - 批次清单生成逻辑拆分为 `review_batch_payload`，命令行留档和网页下载共用同一份内容。
 

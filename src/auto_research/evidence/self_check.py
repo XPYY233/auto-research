@@ -63,6 +63,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
         ("next_unreviewed_queue", "id=\"next-unreviewed\"" in html and "selectNextUnreviewed" in js and "scrollIntoView" in js),
         ("review_batch_download", "id=\"current-review-batch\"" in html and "/api/current-paper/review-batch.md" in js),
+        ("review_all_download", "id=\"current-review-all\"" in html and "下载全部待审核" in js and "updateReviewBatchLinks" in js),
         ("experiment_profile_card", "experiment-profile-card" in html and "renderExperimentProfile" in js and "/api/current-paper/experiment-profile" in js),
         ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
         ("readonly_mentor_mode", "id=\"readonly-badge\"" in html and "/api/ui-mode" in js and "isReadOnly" in js and "rejectReadOnlyAction" in js),
@@ -84,6 +85,7 @@ def _public_share_contract() -> dict[str, Any]:
         ("read_only_port", "--read-only" in text and "8766" in text),
         ("no_editable_port", "8765" not in text),
         ("token_not_committed", ".env.ngrok" in text and "NGROK_AUTHTOKEN" in text),
+        ("zotero_token_fallback", "/Users/USER/Zotero/.env.ngrok" in text),
         ("server_side_readonly_check", "/api/ui-mode" in text and '"read_only": true' in text),
         ("ngrok_public_url", "ngrok http" in text and "--authtoken" in text),
     ]

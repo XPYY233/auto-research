@@ -162,18 +162,28 @@ while keeping the editable workbench private:
 ./scripts/start_readonly_ngrok.command
 ```
 
+On this Mac, a convenience launcher is also available at:
+
+`/Users/USER/Zotero/创建导师公网链接.command`
+
+Double-clicking it starts the read-only local web server if needed, checks that
+the page is in read-only mode, and then prints the ngrok HTTPS URL to send to
+the mentor. If another ngrok window is already serving the same read-only port,
+the launcher prints the existing public URL instead of starting a duplicate
+tunnel.
+
 One-time ngrok setup:
 
 1. Open `https://dashboard.ngrok.com/get-started/your-authtoken`.
 2. Copy the free-account authtoken.
-3. Create `.env.ngrok` in the project root:
+3. Create `/Users/USER/Zotero/.env.ngrok`:
 
 ```bash
 NGROK_AUTHTOKEN=your-ngrok-token
 ```
 
-`.env.ngrok` is ignored by Git. Do not paste the token into README, AGENT.md, or
-any file that will be committed.
+Do not paste the token into README, AGENT.md, or any file that will be
+committed.
 
 The launcher starts the same interface in read-only mode on local port `8766`,
 checks `/api/ui-mode` before opening the tunnel, and then prints an
@@ -316,8 +326,9 @@ auto-research evidence-review-handoff "Irradiation effects in high entropy alloy
 # Write a smaller checklist for the next N unreviewed rows.
 auto-research evidence-review-batch "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C" --limit 20
 
-# The review page also has a "下载待审核清单" button. It downloads the next
-# unreviewed rows as Markdown without writing database rows or calling DeepSeek.
+# The review page also has "下载待审核清单" and "下载全部待审核" buttons.
+# They download Markdown checklists without writing database rows or calling
+# DeepSeek. The all-unreviewed link follows the current remaining count.
 # The progress card above the table shows reviewed, unreviewed, confirmed,
 # corrected, and manually added counts for the current article.
 # Each automatic row also has an "原文证据" button that opens the highlighted PDF

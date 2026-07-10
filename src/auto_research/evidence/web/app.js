@@ -174,7 +174,7 @@ function renderPaper() {
   document.querySelector("#open-paper").href = `/api/papers/${paper.id}/pdf`;
   document.querySelector("#current-export-csv").href = `/api/current-paper/export.csv?paper_id=${encodeURIComponent(paper.id)}`;
   document.querySelector("#current-export-xlsx").href = `/api/current-paper/export.xlsx?paper_id=${encodeURIComponent(paper.id)}`;
-  document.querySelector("#current-review-batch").href = `/api/current-paper/review-batch.md?paper_id=${encodeURIComponent(paper.id)}&limit=20`;
+  updateReviewBatchLinks();
 }
 
 function renderExtractionStatus() {
@@ -436,10 +436,28 @@ function isUnreviewedRow(row) {
   return row.origin_type !== "manual" && Number(row.version_no) === 0;
 }
 
+function updateReviewBatchLinks() {
+  const paperId = state.paper?.id;
+  if (!paperId) return;
+  const unreviewed = state.rows.filter(isUnreviewedRow).length;
+  const encoded = encodeURIComponent(paperId);
+  const batch = document.querySelector("#current-review-batch");
+  const all = document.querySelector("#current-review-all");
+  if (batch) batch.href = `/api/current-paper/review-batch.md?paper_id=${encoded}&limit=20`;
+  if (all) {
+    const limit = Math.max(unreviewed, 1);
+    all.href = `/api/current-paper/review-batch.md?paper_id=${encoded}&limit=${encodeURIComponent(limit)}`;
+    all.textContent = unreviewed ? `下载全部待审核（${unreviewed}）` : "下载全部待审核";
+    all.classList.toggle("disabled", unreviewed === 0);
+    all.setAttribute("aria-disabled", unreviewed === 0 ? "true" : "false");
+  }
+}
+
 function renderTable() {
   const rows = filteredRows();
   const progress = reviewProgress();
   renderReviewProgressCard(progress);
+  updateReviewBatchLinks();
   const filterNote = state.reviewFilter === "all" ? "" : ` · 当前筛出 ${rows.length} 条`;
   const sortNote = state.reviewSort === "original" ? "" : ` · ${document.querySelector("#review-sort")?.selectedOptions?.[0]?.textContent || "已排序"}`;
   const dirtyNote = hasUnsavedEdits() ? `，${state.dirtyRows.size} 行未确认` : "";

@@ -115,4 +115,5 @@
 body[data-readonly="true"] .cell{background:#f8fbfc;color:#405665;resize:none}
 body[data-readonly="true"] .shortcut-hint,
 body[data-readonly="true"] #next-unreviewed,
-body[data-readonly="true"] #current-review-batch{display:none}
+body[data-readonly="true"] #current-review-batch,
+body[data-readonly="true"] #current-review-all{display:none}

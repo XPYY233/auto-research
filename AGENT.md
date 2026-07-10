@@ -284,7 +284,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - CSV and Excel export must reproduce the current search result set.
 - The review page paper switcher must be a selectable list of registered papers and should appear only on the review page. The visible option text should be paper title plus helpful bibliographic context such as year/DOI and saved-row count; do not make Zotero/storage codes the displayed selector. Use the internal paper id for switching.
 - The search page must search the whole six-column database by default, independent of the currently selected paper. Empty search/export from the search page must also use the whole database.
-- The review page should provide a direct download for the next unreviewed Markdown checklist via `/api/current-paper/review-batch.md`. This is a read-only manual-review aid and must not call DeepSeek or write database rows.
+- The review page should provide direct downloads for both the next unreviewed Markdown checklist and all remaining unreviewed rows via `/api/current-paper/review-batch.md`. These are read-only manual-review aids and must not call DeepSeek or write database rows.
 - The review page should keep the human-review progress visible near the table, including reviewed/unreviewed totals and confirmation/correction/manual counts. This is a review aid only and must not mutate extracted rows.
 - Each automatic row should expose a direct row-level source-evidence button that calls the existing highlighted source viewer. Manual rows should not pretend to have automatic source evidence.
 
@@ -396,9 +396,12 @@ free-account sharing path is:
 ```
 
 The script reads `NGROK_AUTHTOKEN` from the environment or from the local
-`.env.ngrok` file. `.env.ngrok` is ignored by Git and must never be committed.
-The script must verify `/api/ui-mode` before starting ngrok so a public URL is
-never pointed at the editable workbench by accident.
+`.env.ngrok` file, including the user's convenience location
+`/Users/USER/Zotero/.env.ngrok`. `.env.ngrok` is ignored by Git and must
+never be committed. The script must verify `/api/ui-mode` before starting ngrok
+so a public URL is never pointed at the editable workbench by accident. It
+should also reuse/report an already-running ngrok tunnel for port `8766` instead
+of starting a duplicate tunnel.
 
 Temporary no-account/no-domain fallbacks may be tried if ngrok is unavailable,
 but they have already proven unreliable on the current network:
