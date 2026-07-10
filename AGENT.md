@@ -213,6 +213,7 @@ Maintain `PROJECT_LOG.md` as the user-facing project change log. `AGENT.md` reco
 - Authoritative PDF: `/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf`
 - Evidence database: `db/experimental_evidence.sqlite`
 - Local review UI: `http://127.0.0.1:8765`
+- macOS launcher: `scripts/start_evidence_ui.command`
 
 Do not substitute the accepted manuscript, a handbook, or a metadata record for this final published PDF. Do not modify the Zotero database for the evidence demo.
 

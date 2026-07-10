@@ -148,6 +148,12 @@ auto-research evidence-serve
 
 Open `http://127.0.0.1:8765`. The server refuses non-local bind addresses.
 
+On macOS you can also double-click `scripts/start_evidence_ui.command`. If the
+local service is already running, the script just opens the browser. If it is
+not running, it starts the service and then opens `http://127.0.0.1:8765`. Keep
+the Terminal window open while reviewing data; close it or press `Ctrl+C` to
+stop the local web page.
+
 Additional commands:
 
 ```bash
@@ -208,6 +214,10 @@ Open `http://127.0.0.1:8765`. Edits in the left table remain temporary until
 Confirmed corrections create a new version during the demo, and manual entries
 have no synthetic original version. The original six-column export is written
 to `data/extractions/XJZQ42XP_six_column_original.csv`.
+
+For day-to-day use on this Mac, double-click
+`scripts/start_evidence_ui.command` from Finder. It opens the same local page and
+keeps the server process visible in a Terminal window.
 
 ### B1 local PDF intake
 
