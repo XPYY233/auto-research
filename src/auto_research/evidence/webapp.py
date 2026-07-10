@@ -42,6 +42,7 @@ from .six_column import (
     search_current_data,
     seed_target_article,
     set_current_paper,
+    set_row_review_decision,
 )
 from .source_highlight import get_source_view, render_source_highlight_png, render_source_snippet_png
 from .workflow import run_article_workflow
@@ -369,6 +370,15 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 result = confirm_correction(
                     self.db, int(match.group(1)), body.get("fields") or {},
                     body.get("editor") or "本地研究者", body.get("note") or "",
+                )
+                return self.json_response(result)
+            match = re.fullmatch(r"/api/six-data/(\d+)/decision", parsed.path)
+            if match:
+                result = set_row_review_decision(
+                    self.db, int(match.group(1)), str(body.get("decision") or ""),
+                    reason_code=str(body.get("reason_code") or ""),
+                    note=str(body.get("note") or ""),
+                    editor=str(body.get("editor") or "本地研究者"),
                 )
                 return self.json_response(result)
             if parsed.path == "/api/six-data/manual":

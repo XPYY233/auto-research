@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
   review: { kicker: "EVIDENCE REVIEW", title: "校对实验数据", subtitle: "逐条核对抽取结果，并随时返回原文证据。" },
@@ -465,6 +465,10 @@ function filteredRows() {
     rows = rows.filter(row => row.review_action === "confirmation");
   } else if (state.reviewFilter === "corrected") {
     rows = rows.filter(row => row.review_action === "correction");
+  } else if (state.reviewFilter === "ambiguous") {
+    rows = rows.filter(row => row.review_action === "ambiguous");
+  } else if (state.reviewFilter === "rejected") {
+    rows = rows.filter(row => row.review_action === "rejected");
   } else if (state.reviewFilter === "manual") {
     rows = rows.filter(row => row.origin_type === "manual");
   }
@@ -533,12 +537,14 @@ function reviewProgress() {
   const manual = state.rows.filter(row => row.origin_type === "manual").length;
   const confirmed = state.rows.filter(row => row.review_action === "confirmation").length;
   const corrected = state.rows.filter(row => row.review_action === "correction").length;
-  const reviewed = manual + confirmed + corrected;
-  return { total, reviewed, unreviewed: Math.max(total - reviewed, 0), confirmed, corrected, manual };
+  const rejected = state.rows.filter(row => row.review_action === "rejected").length;
+  const ambiguous = state.rows.filter(row => row.review_action === "ambiguous").length;
+  const reviewed = manual + confirmed + corrected + rejected + ambiguous;
+  return { total, reviewed, unreviewed: Math.max(total - reviewed, 0), confirmed, corrected, rejected, ambiguous, manual };
 }
 
 function isUnreviewedRow(row) {
-  return row.origin_type !== "manual" && Number(row.version_no) === 0;
+  return row.origin_type !== "manual" && row.review_action === "automatic";
 }
 
 function updateReviewBatchLinks() {
@@ -566,7 +572,7 @@ function renderTable() {
   const filterNote = state.reviewFilter === "all" ? "" : ` · 当前筛出 ${rows.length} 条`;
   const sortNote = state.reviewSort === "original" ? "" : ` · ${document.querySelector("#review-sort")?.selectedOptions?.[0]?.textContent || "已排序"}`;
   const dirtyNote = hasUnsavedEdits() ? `，${state.dirtyRows.size} 行未确认` : "";
-  const breakdown = `确认 ${progress.confirmed}、修正 ${progress.corrected}、人工 ${progress.manual}`;
+  const breakdown = `确认 ${progress.confirmed}、修正 ${progress.corrected}、歧义 ${progress.ambiguous}、不采用 ${progress.rejected}、人工 ${progress.manual}`;
   setText("row-count", `${progress.reviewed}/${progress.total} 已审核（${breakdown}），${progress.unreviewed} 待审核${dirtyNote}${filterNote}${sortNote}`);
   const body = document.querySelector("#edit-rows");
   if (!rows.length) {
@@ -580,10 +586,10 @@ function renderTable() {
   }
   body.innerHTML = rows.map(row => {
     const priorityClass = isUnreviewedRow(row) && row.review_priority_level !== "normal" ? `priority-${row.review_priority_level}` : "";
-    const cls = [state.selected === row.item_id ? "selected" : "", state.dirtyRows.has(Number(row.item_id)) ? "dirty" : "", row.review_action === "confirmation" ? "confirmed" : "", row.version_no > 0 && row.review_action !== "confirmation" ? "revised" : "", row.origin_type === "manual" ? "manual" : "", priorityClass].filter(Boolean).join(" ");
+    const cls = [state.selected === row.item_id ? "selected" : "", state.dirtyRows.has(Number(row.item_id)) ? "dirty" : "", row.review_action === "confirmation" ? "confirmed" : "", row.review_action === "correction" ? "revised" : "", row.review_action === "rejected" ? "rejected" : "", row.review_action === "ambiguous" ? "ambiguous" : "", row.origin_type === "manual" ? "manual" : "", priorityClass].filter(Boolean).join(" ");
     const readonly = isReadOnly() ? " readonly" : "";
     const cells = fields.map(field => `<td><textarea class="cell ${field === "context_explanation" ? "context" : ""}" data-field="${field}" aria-label="${fieldLabels[field]}"${readonly}>${esc(row[field])}</textarea></td>`).join("");
-    const badge = row.origin_type === "manual" ? "人工" : row.review_action === "confirmation" ? `已确认 v${row.version_no}` : row.version_no > 0 ? `已修正 v${row.version_no}` : "未审核";
+    const badge = row.origin_type === "manual" ? "人工" : row.review_action === "confirmation" ? `已确认 v${row.version_no}` : row.review_action === "correction" ? `已修正 v${row.version_no}` : row.review_action === "rejected" ? `不采用 v${row.version_no}` : row.review_action === "ambiguous" ? `存在歧义 v${row.version_no}` : "未审核";
     const sourceDisabled = row.origin_type === "manual" ? " disabled" : "";
     const reviewButtons = isReadOnly()
       ? ""
@@ -591,7 +597,14 @@ function renderTable() {
     const priorityBadge = isUnreviewedRow(row) && row.review_priority_level !== "normal"
       ? `<span class="review-priority ${esc(row.review_priority_level)}" title="${esc((row.review_priority_reasons || []).join("；"))}">${esc(row.review_priority_label)}</span>`
       : "";
-    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action">${priorityBadge}${reviewButtons}<button data-original="${row.item_id}">查看原始</button><button class="source-action" data-source-row="${row.item_id}"${sourceDisabled}>原文证据</button><small>#${row.item_id} · ${badge}</small></div></td></tr>`;
+    const decisionButtons = isReadOnly() || row.origin_type === "manual"
+      ? ""
+      : isUnreviewedRow(row)
+        ? `<details class="row-review-more"><summary>其他决定</summary><button type="button" data-decision="ambiguous" data-item-id="${row.item_id}">存在歧义</button><button type="button" data-decision="rejected" data-item-id="${row.item_id}">不采用</button></details>`
+        : ["rejected", "ambiguous"].includes(row.review_action)
+          ? `<button type="button" class="reopen-action" data-reopen="${row.item_id}">恢复待审核</button>`
+          : "";
+    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action">${priorityBadge}${reviewButtons}${decisionButtons}<button data-original="${row.item_id}">查看原始</button><button class="source-action" data-source-row="${row.item_id}"${sourceDisabled}>原文证据</button><small>#${row.item_id} · ${badge}</small></div></td></tr>`;
   }).join("");
   body.querySelectorAll("tr[data-item]").forEach(tr => tr.addEventListener("click", event => {
     if (event.target.closest("button[data-confirm],button[data-confirm-next],button[data-source-row]")) return;
@@ -613,6 +626,14 @@ function renderTable() {
     event.stopPropagation();
     selectRow(Number(btn.dataset.sourceRow));
     openSourceViewer(Number(btn.dataset.sourceRow));
+  }));
+  body.querySelectorAll("[data-decision]").forEach(btn => btn.addEventListener("click", event => {
+    event.stopPropagation();
+    openReviewDecision(Number(btn.dataset.itemId), btn.dataset.decision);
+  }));
+  body.querySelectorAll("[data-reopen]").forEach(btn => btn.addEventListener("click", event => {
+    event.stopPropagation();
+    reopenReviewDecision(Number(btn.dataset.reopen));
   }));
   body.querySelectorAll("[data-field]").forEach(input => input.addEventListener("input", event => {
     if (isReadOnly()) return;
@@ -812,6 +833,85 @@ async function confirmRow(id, options = {}) {
   }
 }
 
+function closeReviewDecision() {
+  state.reviewDecision = null;
+  document.querySelector("#review-decision-dialog")?.close();
+}
+
+function openReviewDecision(itemId, decision) {
+  if (rejectReadOnlyAction("记录审核决定")) return;
+  if (hasUnsavedEdits() && !confirmDiscardUnsaved("记录审核决定")) return;
+  const row = state.rows.find(item => Number(item.item_id) === Number(itemId));
+  if (!row || row.origin_type === "manual") return;
+  state.reviewDecision = { itemId: Number(itemId), decision };
+  const rejected = decision === "rejected";
+  setText("review-decision-title", rejected ? "标记为不采用" : "标记为存在歧义");
+  setText(
+    "review-decision-description",
+    rejected
+      ? "这条候选不会再进入正常检索，并会作为负例帮助后续抽取避免同类错误。"
+      : "这条候选会退出待审核队列，并作为需要补充证据或条件的歧义样本。",
+  );
+  document.querySelector("#review-decision-reason").value = "";
+  document.querySelector("#review-decision-note").value = "";
+  const dialog = document.querySelector("#review-decision-dialog");
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "open");
+}
+
+async function submitReviewDecision(event) {
+  event.preventDefault();
+  const current = state.reviewDecision;
+  if (!current) return;
+  const reason = document.querySelector("#review-decision-reason").value;
+  const note = document.querySelector("#review-decision-note").value.trim();
+  if (!reason) {
+    toast("请选择主要原因。", true);
+    return;
+  }
+  try {
+    const result = await api(`/api/six-data/${current.itemId}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision: current.decision,
+        reason_code: reason,
+        note,
+        editor: "本地研究者",
+      }),
+    });
+    state.rows = state.rows.map(row => row.item_id === current.itemId ? result : row);
+    clearDirtyRows(current.itemId);
+    closeReviewDecision();
+    await refreshReviewFeedback();
+    state.selected = null;
+    renderTable();
+    toast(current.decision === "rejected"
+      ? "已标记为不采用；该候选不会进入正常检索。"
+      : "已标记为存在歧义；该候选已进入负例学习通道。");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function reopenReviewDecision(itemId) {
+  if (rejectReadOnlyAction("恢复待审核")) return;
+  try {
+    const result = await api(`/api/six-data/${itemId}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "automatic", note: "用户恢复为待审核", editor: "本地研究者" }),
+    });
+    state.rows = state.rows.map(row => row.item_id === itemId ? result : row);
+    await refreshReviewFeedback();
+    state.selected = itemId;
+    renderTable();
+    toast("已恢复为待审核。原始抽取版本和审核历史均已保留。");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
 function fillManualDefaults() {
   const form = document.querySelector("#manual-form");
   const paper = selectedManualPaper();
@@ -899,13 +999,22 @@ async function runSearch(event) {
   state.search = q;
   try {
     const rows = await api(`/api/six-search?q=${encodeURIComponent(q)}`);
-    setText("search-summary", q ? `“${q}” 找到 ${rows.length} 条相关数据` : `显示全部 ${rows.length} 条数据`);
+    setText("search-summary", q ? `“${q}” 找到 ${rows.length} 条可用数据` : `显示 ${rows.length} 条可用数据`);
     document.querySelector("#search-export").href = `/api/six-export.csv?q=${encodeURIComponent(q)}`;
     document.querySelector("#search-export-xlsx").href = `/api/six-export.xlsx?q=${encodeURIComponent(q)}`;
     renderResults(rows);
   } catch (error) {
     toast(error.message, true);
   }
+}
+
+function searchReviewLabel(row) {
+  if (row.origin_type === "manual") return "人工补录";
+  return {
+    confirmation: "已确认",
+    correction: "已修正",
+    automatic: "待审核",
+  }[row.review_action] || "待审核";
 }
 
 function renderResults(rows) {
@@ -917,9 +1026,10 @@ function renderResults(rows) {
   el.innerHTML = rows.map(row => {
     const authors = [row.first_author ? `一作：${row.first_author}` : "", row.corresponding_author ? `通讯：${row.corresponding_author}` : ""].filter(Boolean).join(" · ");
     const paperLine = [row.article_title, row.doi, authors].filter(Boolean).join(" · ");
+    const reviewLabel = searchReviewLabel(row);
     const reviewButton = isReadOnly() ? "" : `<button class="row-link" data-jump="${row.item_id}">去校对</button>`;
     const sourceButton = `<button class="row-link source-link" data-source-search="${row.item_id}">原文证据</button>`;
-    return `<article class="result"><div class="value">${esc(row.value_text)}<small> ${esc(row.unit)}</small></div><strong>${esc(row.meaning)}</strong><em>${row.search_score != null ? `相关度 ${esc(row.search_score)}` : ""}</em><p>${esc(row.context_explanation)}</p><div class="result-paper">${esc(paperLine)}</div><div class="result-actions">${sourceButton}${reviewButton}</div></article>`;
+    return `<article class="result"><div class="value">${esc(row.value_text)}<small> ${esc(row.unit)}</small></div><strong>${esc(row.meaning)}</strong><em class="search-review-state ${esc(row.review_action || row.origin_type)}">${esc(reviewLabel)}${row.search_score != null ? ` · 相关度 ${esc(row.search_score)}` : ""}</em><p>${esc(row.context_explanation)}</p><div class="result-paper">${esc(paperLine)}</div><div class="result-actions">${sourceButton}${reviewButton}</div></article>`;
   }).join("");
   el.querySelectorAll("[data-jump]").forEach(btn => btn.addEventListener("click", () => jumpToRow(Number(btn.dataset.jump))));
   el.querySelectorAll("[data-source-search]").forEach(btn => btn.addEventListener("click", () => openSourceViewer(Number(btn.dataset.sourceSearch))));
@@ -960,11 +1070,11 @@ function renderHistory() {
   const reportLink = document.querySelector("#learning-report-export");
   renderLearningGuidanceCard();
   if (summary && exportLink && exportAllLink && reportLink) {
-    const learning = state.learning || { sample_count: 0, correction_count: 0, confirmation_count: 0, manual_count: 0 };
+    const learning = state.learning || { sample_count: 0, correction_count: 0, confirmation_count: 0, manual_count: 0, rejected_count: 0, ambiguous_count: 0 };
     const allLearning = state.allLearning || { sample_count: 0 };
     const report = state.learningReport || { included_in_prompt: false };
     summary.textContent = learning.sample_count
-      ? `当前文章已有 ${learning.sample_count} 条学习样本：确认无误 ${learning.confirmation_count} 条，修正 ${learning.correction_count} 条，人工补录 ${learning.manual_count} 条。${report.included_in_prompt ? "下一次抽取会加入学习提示。" : "下一次抽取暂无学习提示。"}全库共 ${allLearning.sample_count || 0} 条。`
+      ? `当前文章已有 ${learning.sample_count} 条学习样本：确认 ${learning.confirmation_count}、修正 ${learning.correction_count}、歧义 ${learning.ambiguous_count || 0}、不采用 ${learning.rejected_count || 0}、补录 ${learning.manual_count}。${report.included_in_prompt ? "下一次抽取会加入学习提示。" : "下一次抽取暂无学习提示。"}全库共 ${allLearning.sample_count || 0} 条。`
       : `当前文章还没有学习样本；全库共 ${allLearning.sample_count || 0} 条。确认修正或人工补录后，这里会自动累积。`;
     exportLink.href = `/api/current-paper/learning-samples.jsonl?paper_id=${encodeURIComponent(state.paper?.id || "")}`;
     exportLink.classList.toggle("disabled", !learning.sample_count);
@@ -980,7 +1090,8 @@ function renderHistory() {
     el.innerHTML = '<div class="blank"><h3>还没有已确认修正</h3><p>左侧表格里的临时输入不会出现在这里。</p></div>';
     return;
   }
-  el.innerHTML = changed.map(row => `<article class="history-card"><span>${row.origin_type === "manual" ? "人工补录" : row.review_action === "confirmation" ? `确认无误 v${row.version_no}` : `已修正 v${row.version_no}`}</span><div><strong>${esc(row.meaning)} · ${esc(row.value_text)} ${esc(row.unit)}</strong><p>${esc(row.context_explanation)}</p></div><div><strong>${esc(row.editor)}</strong><p>${esc(row.edit_note || "")}<br>${esc(row.created_at)}</p></div></article>`).join("");
+  const historyLabels = { confirmation: "确认无误", correction: "已修正", rejected: "不采用", ambiguous: "存在歧义", automatic: "恢复待审核" };
+  el.innerHTML = changed.map(row => `<article class="history-card"><span>${row.origin_type === "manual" ? "人工补录" : `${historyLabels[row.review_action] || "审核记录"} v${row.version_no}`}</span><div><strong>${esc(row.meaning)} · ${esc(row.value_text)} ${esc(row.unit)}</strong><p>${esc(row.context_explanation)}</p></div><div><strong>${esc(row.editor)}</strong><p>${esc(row.edit_note || "")}<br>${esc(row.created_at)}</p></div></article>`).join("");
 }
 
 function renderLearningGuidanceCard() {
@@ -993,14 +1104,16 @@ function renderLearningGuidanceCard() {
     confirmations_only: "已有正例",
     useful: "可用于优化抽取",
   };
+  const sampleTypeLabels = { correction: "修正", confirmation: "确认", manual_addition: "人工补录", rejection: "不采用", ambiguity: "存在歧义" };
   const included = (report.included_samples || []).slice(0, 3).map(sample => {
     const changed = (sample.changed_labels || []).join("、") || "确认无误";
-    return `<li><strong>${esc(sample.sample_type)} · #${esc(sample.item_id)}</strong><span>${esc(changed)}</span><p>${esc(sample.corrected_meaning || "")}；${esc(sample.corrected_context || "")}</p></li>`;
+    return `<li><strong>${esc(sampleTypeLabels[sample.sample_type] || sample.sample_type)} · #${esc(sample.item_id)}</strong><span>${esc(changed)}</span><p>${esc(sample.corrected_meaning || "")}；${esc(sample.corrected_context || "")}</p></li>`;
   }).join("");
   const preview = report.guidance_preview
     ? `<details><summary>查看将加入 DeepSeek 提示的学习片段</summary><pre>${esc(report.guidance_preview)}</pre></details>`
     : `<p class="learning-empty">还没有可加入提示的人工学习样本。</p>`;
-  el.innerHTML = `<div><span>${esc(readinessLabels[report.readiness] || "学习状态")}</span><h3>${esc(report.message || "等待人工校对样本")}</h3><p>${esc(report.safety_rule || "学习样本只用于字段边界和措辞偏好；不能作为新论文数据证据。")}</p></div><dl><div><dt>当前文章样本</dt><dd>${esc(report.sample_count || 0)}</dd></div><div><dt>全库样本</dt><dd>${esc(allReport.sample_count || 0)}</dd></div><div><dt>进入提示</dt><dd>${esc(report.included_sample_count || 0)}</dd></div></dl><ul>${included || "<li><strong>尚无样本</strong><span>确认或修正后自动出现</span></li>"}</ul>${preview}`;
+  const negativeCount = Number(report.rejected_count || 0) + Number(report.ambiguous_count || 0);
+  el.innerHTML = `<div><span>${esc(readinessLabels[report.readiness] || "学习状态")}</span><h3>${esc(report.message || "等待人工校对样本")}</h3><p>${esc(report.safety_rule || "学习样本只用于字段边界、失败模式和措辞偏好；不能作为新论文数据证据。")}</p></div><dl><div><dt>当前文章样本</dt><dd>${esc(report.sample_count || 0)}</dd></div><div><dt>负例/歧义</dt><dd>${esc(negativeCount)}</dd></div><div><dt>全库样本</dt><dd>${esc(allReport.sample_count || 0)}</dd></div><div><dt>进入提示</dt><dd>${esc(report.included_sample_count || 0)}</dd></div></dl><ul>${included || "<li><strong>尚无样本</strong><span>完成任一审核决定后自动出现</span></li>"}</ul>${preview}`;
 }
 
 function switchView(name) {
@@ -1088,6 +1201,8 @@ function renderReviewProgressCard(progress) {
   setText("review-progress-unreviewed", progress.unreviewed);
   setText("review-progress-confirmed", progress.confirmed);
   setText("review-progress-corrected", progress.corrected);
+  setText("review-progress-ambiguous", progress.ambiguous);
+  setText("review-progress-rejected", progress.rejected);
   setText("review-progress-manual", progress.manual);
   const bar = document.querySelector("#review-progress-bar");
   if (bar) bar.style.width = `${ratio}%`;
@@ -1292,6 +1407,12 @@ document.querySelector("#paper-switch-form").addEventListener("submit", submitPa
 document.querySelector("#run-current-extraction").addEventListener("click", runCurrentExtraction);
 document.querySelector("#run-deepseek-preview").addEventListener("click", runDeepSeekPreview);
 document.querySelector("#save-current-snapshot").addEventListener("click", saveCurrentSnapshot);
+document.querySelector("#review-decision-form").addEventListener("submit", submitReviewDecision);
+document.querySelectorAll("[data-close-review-decision]").forEach(button => button.addEventListener("click", closeReviewDecision));
+document.querySelector("#review-decision-dialog")?.addEventListener("click", event => {
+  if (event.target === event.currentTarget) closeReviewDecision();
+});
+document.querySelector("#review-decision-dialog")?.addEventListener("close", () => { state.reviewDecision = null; });
 document.querySelector("[data-close-source]")?.addEventListener("click", () => document.querySelector("#source-dialog")?.close());
 document.querySelector("#source-dialog")?.addEventListener("click", event => {
   const dialog = event.currentTarget;

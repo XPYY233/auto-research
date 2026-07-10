@@ -52,6 +52,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("confirm_and_next", "确认并下一条" in js and "data-confirm-next" in js and "goNext" in js),
         ("review_keyboard_shortcuts", "快捷键" in html and "handleReviewKeyboard" in js and "confirmSelectedRow" in js and "openSelectedSource" in js),
         ("review_progress_card", "id=\"review-progress-card\"" in html and "renderReviewProgressCard" in js and "review-progress-bar" in js),
+        ("review_negative_decisions", "id=\"review-decision-dialog\"" in html and "存在歧义" in js and "不采用" in js and "/decision" in js and "恢复待审核" in js),
         ("review_feedback_refresh", "refreshReviewFeedback" in js and "/api/papers" in js and "/api/learning-report" in js),
         ("review_source_sort", "id=\"review-sort\"" in html and "sortReviewRows" in js and "sourcePageNumber" in js and "unreviewed_source" in js),
         ("review_priority_queue", 'value="priority"' in html and "review_priority_score" in js and "review_priority_counts" in js),
@@ -76,6 +77,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("readonly_mode", "id=\"readonly-badge\"" in html and "/api/ui-mode" in js and "isReadOnly" in js and "rejectReadOnlyAction" in js and ".readonly-badge[hidden]" in css),
         ("readonly_search_only_mode", "renderPublicSearchOnlyMode" in js and 'name !== "search"' in js and 'body[data-readonly="true"] .nav:not([data-view="search"])' in css),
         ("search_source_evidence_button", "data-source-search" in js and "原文证据" in js and "openSourceViewer(Number(btn.dataset.sourceSearch))" in js),
+        ("search_review_state", "search-review-state" in js and "待审核" in js and "已确认" in js and "已修正" in js),
     ]
     failed = [name for name, ok in expectations if not ok]
     return {
@@ -157,8 +159,8 @@ def _requirement_summary(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         },
         {
             "id": "review_learning_loop",
-            "ok": ok("learning_channel", "web_ui_contract") and ui_ok("learning_guidance_preview"),
-            "requirement": "人工确认、修正和补录可进入学习样本通道，并能预览它们如何作为后续抽取提示。",
+            "ok": ok("learning_channel", "web_ui_contract") and ui_ok("learning_guidance_preview", "review_negative_decisions"),
+            "requirement": "人工确认、修正、补录、歧义和不采用决定可进入学习样本通道，并能预览它们如何约束后续抽取。",
             "evidence": details("learning_channel"),
         },
     ]
@@ -308,14 +310,19 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
     _check(
         checks,
         "learning_channel",
-        all(key in learning for key in ("sample_count", "correction_count", "confirmation_count", "manual_count")),
+        all(key in learning for key in (
+            "sample_count", "correction_count", "confirmation_count", "manual_count",
+            "rejected_count", "ambiguous_count",
+        )),
         (
             f"学习样本通道可读取：共 {learning.get('sample_count', 0)} 条，"
             f"修正 {learning.get('correction_count', 0)}，确认 {learning.get('confirmation_count', 0)}，"
-            f"人工补录 {learning.get('manual_count', 0)}。"
+            f"人工补录 {learning.get('manual_count', 0)}，不采用 {learning.get('rejected_count', 0)}，"
+            f"歧义 {learning.get('ambiguous_count', 0)}。"
         ),
         learning_summary={key: learning.get(key, 0) for key in (
-            "sample_count", "correction_count", "confirmation_count", "manual_count"
+            "sample_count", "correction_count", "confirmation_count", "manual_count",
+            "rejected_count", "ambiguous_count",
         )},
     )
 

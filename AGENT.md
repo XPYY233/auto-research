@@ -266,10 +266,13 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - `confirmation` means the researcher reviewed the current content without changing it.
 - `correction` means one or more of the six fields changed before confirmation.
 - `manual` means the researcher added a missed datum; it has no automatic original.
+- `ambiguous` means the evidence or sample/condition relation cannot yet be resolved. It is a reviewed negative sample, remains fully traceable, and is excluded from ordinary search.
+- `rejected` means the researcher decided that an automatic candidate must not be used as article data. It is a reviewed negative sample, remains fully traceable, and is excluded from ordinary search.
+- Ambiguous and rejected decisions must record a reason and may be reversed to `automatic` (pending review) by appending a new version; never delete or overwrite their history.
 - Typing in a cell is temporary. Only `确认当前内容` may create a new version.
 - Temporary cell edits must be visibly marked and must trigger a discard warning before switching papers, importing, re-running extraction, or leaving the page.
 - The right pane must always retain the immutable automatic original for automatic rows.
-- Learning export must include confirmations, corrections, and manual additions as distinct sample types.
+- Learning export must include confirmations, corrections, manual additions, rejections, and ambiguities as distinct sample types. Rejections teach DeepSeek to avoid a candidate pattern; ambiguities teach it to route unresolved relations to a pending task rather than guessing.
 - The web learning trail must offer both current-paper and whole-database JSONL exports, because later DeepSeek extraction uses the whole reviewed sample pool as guidance.
 - The web learning trail must show a human-readable learning report and prompt-guidance preview. The preview must match the guidance generator used by DeepSeek extraction.
 - Every automatic row must retain a source page, locator, excerpt, and highlighted source-view path.
@@ -282,13 +285,14 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - Rank `meaning` highest (weight 6), followed one level lower by `context_explanation` (weight 5), then value, unit, title, DOI, first/corresponding author, and source excerpt.
 - Support partial and fuzzy scientific terms, including alloy names, temperatures, doses, particles, measurement names, and common element Chinese-name/symbol/English aliases such as `钨` / `W` / `tungsten`.
 - CSV and Excel export must reproduce the current search result set.
+- Ordinary search and export must exclude rows whose current review action is `rejected` or `ambiguous`. Pending automatic candidates remain searchable but must be visibly labelled `待审核`; confirmed, corrected, and manual rows must also expose their review state.
 - The review page paper switcher must be a selectable list of registered papers and should appear only on the review page. The visible option text should be paper title plus helpful bibliographic context such as year/DOI and saved-row count; do not make Zotero/storage codes the displayed selector. Use the internal paper id for switching.
 - The search page must search the whole six-column database by default, independent of the currently selected paper. Empty search/export from the search page must also use the whole database.
 - The review page should provide direct downloads for both the next unreviewed Markdown checklist and all remaining unreviewed rows via `/api/current-paper/review-batch.md`. These are read-only manual-review aids and must not call DeepSeek or write database rows.
-- The review page should keep the human-review progress visible near the table, including reviewed/unreviewed totals and confirmation/correction/manual counts. This is a review aid only and must not mutate extracted rows.
+- The review page should keep the human-review progress visible near the table, including reviewed/unreviewed totals and confirmation/correction/manual/rejected/ambiguous counts. This is a review aid only and must not mutate extracted rows.
 - Each automatic row should expose a direct row-level source-evidence button that calls the existing highlighted source viewer. Manual rows should not pretend to have automatic source evidence.
 - `/api/papers` should expose per-paper six-column workflow state and label so the review article picker can act as a work queue. Use `not_scanned`, `scanned_empty`, `pending_review`, and `reviewed`; labels should be reader-facing Chinese such as `未扫描` or `待审核 112/114`.
-- After any confirmation, correction, or manual entry, the web UI should refresh paper workflow labels, current/all learning reports, evidence audit, and extraction status so the researcher can immediately see how the human review sample changes the next extraction guidance.
+- After any confirmation, correction, rejection, ambiguity decision, restoration, or manual entry, the web UI should refresh paper workflow labels, current/all learning reports, evidence audit, and extraction status so the researcher can immediately see how the human review sample changes the next extraction guidance.
 
 ### Current verified baseline
 

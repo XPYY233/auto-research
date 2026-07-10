@@ -179,7 +179,7 @@ def audit_six_column_evidence(db: EvidenceDB, paper_id: int | None = None,
     }
     unreviewed_ids = {
         int(row["item_id"]) for row in automatic
-        if int(row.get("version_no") or 0) == 0
+        if row.get("review_action") == "automatic"
     }
     priority_counts["unreviewed_attention"] = sum(
         1 for item in review_priorities

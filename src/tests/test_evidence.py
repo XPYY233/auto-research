@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import csv
 import json
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -52,6 +54,7 @@ from auto_research.evidence.six_column import (
     search_current_data,
     seed_target_article,
     set_current_paper,
+    set_row_review_decision,
 )
 from auto_research.evidence.source_highlight import (
     _normalize_text,
@@ -96,6 +99,65 @@ class EvidenceDBTests(unittest.TestCase):
         )
         values.update(overrides)
         return self.db.add_measurement(**values)
+
+    def test_schema7_migration_quarantines_orphan_versions_without_data_loss(self):
+        stamp = "2026-07-10T00:00:00+00:00"
+        with closing(sqlite3.connect(self.db.path)) as conn:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("INSERT INTO data_items(id,paper_id,stable_key,origin_type,created_at) VALUES(1,?,?,?,?)", (
+                self.paper, "valid", "automatic", stamp,
+            ))
+            conn.execute("DROP VIEW v_current_six_column_data")
+            conn.execute("ALTER TABLE data_versions RENAME TO data_versions_schema7")
+            conn.execute(
+                """CREATE TABLE data_versions (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  item_id INTEGER NOT NULL REFERENCES data_items(id) ON DELETE CASCADE,
+                  version_no INTEGER NOT NULL,
+                  value_text TEXT NOT NULL,
+                  meaning TEXT NOT NULL,
+                  unit TEXT NOT NULL DEFAULT '',
+                  article_title TEXT NOT NULL,
+                  doi TEXT NOT NULL,
+                  context_explanation TEXT NOT NULL,
+                  source_page INTEGER,
+                  source_locator TEXT,
+                  source_excerpt TEXT,
+                  editor TEXT NOT NULL,
+                  edit_note TEXT,
+                  review_action TEXT NOT NULL DEFAULT 'automatic'
+                    CHECK(review_action IN ('automatic','confirmation','correction','manual')),
+                  created_at TEXT NOT NULL,
+                  UNIQUE(item_id, version_no)
+                )"""
+            )
+            values = (
+                0, "300", "辐照温度", "°C", "Ion irradiation experiment", "10.1/test",
+                "测试条件", 3, "Methods", "at 300 C", "legacy", "", "automatic", stamp,
+            )
+            conn.execute(
+                """INSERT INTO data_versions(id,item_id,version_no,value_text,meaning,unit,article_title,doi,
+                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
+                VALUES(1,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                values,
+            )
+            conn.execute(
+                """INSERT INTO data_versions(id,item_id,version_no,value_text,meaning,unit,article_title,doi,
+                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
+                VALUES(2,999,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                values,
+            )
+            conn.execute("DROP TABLE data_versions_schema7")
+            conn.commit()
+        self.db.init()
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_versions").fetchone()["count"], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_version_orphans").fetchone()["count"], 1)
+            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "7")
+            self.assertEqual(list(conn.execute("PRAGMA foreign_key_check")), [])
+        health = evidence_db_health(self.db, self.paper)
+        self.assertTrue(health["ok"], health)
+        self.assertEqual(health["row_count"], 1)
 
     def test_drafts_hidden_until_human_review(self):
         measurement = self.add_measurement()
@@ -230,6 +292,50 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(sample["sample_type"], "confirmation")
         self.assertEqual(sample["changed_fields"], [])
 
+    def test_rejection_and_ambiguity_are_reversible_negative_learning_samples(self):
+        rejected_row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")
+        ambiguous_row = next(r for r in list_current_data(self.db) if r["stable_key"] == "tem_voltage")
+        rejected = set_row_review_decision(
+            self.db, rejected_row["item_id"], "rejected",
+            reason_code="不是本文报告的实验数据", note="测试负例", editor="tester",
+        )
+        ambiguous = set_row_review_decision(
+            self.db, ambiguous_row["item_id"], "ambiguous",
+            reason_code="样品或实验条件对应不明确", note="测试歧义", editor="tester",
+        )
+        self.assertEqual(rejected["review_action"], "rejected")
+        self.assertEqual(ambiguous["review_action"], "ambiguous")
+        self.assertEqual(rejected["original_value_text"], rejected_row["original_value_text"])
+        self.assertEqual(ambiguous["original_value_text"], ambiguous_row["original_value_text"])
+
+        progress = review_progress(self.db, self.paper_id)
+        self.assertEqual(progress["rejected"], 1)
+        self.assertEqual(progress["ambiguous"], 1)
+        self.assertEqual(progress["reviewed"], 2)
+        self.assertEqual(progress["unreviewed"], 112)
+        learning = collect_learning_samples(self.db, self.paper_id)
+        self.assertEqual(learning["rejected_count"], 1)
+        self.assertEqual(learning["ambiguous_count"], 1)
+        self.assertEqual({sample["sample_type"] for sample in learning["samples"]}, {"rejection", "ambiguity"})
+        report = build_learning_report(self.db, self.paper_id)
+        self.assertIn("AVOID_CANDIDATE", report["guidance_preview"])
+        self.assertIn("ROUTE_TO_PENDING_TASK_UNLESS_RESOLVED", report["guidance_preview"])
+
+        normal_ids = {row["item_id"] for row in search_current_data(self.db, "辐照温度", limit=1000)}
+        all_ids = {row["item_id"] for row in search_current_data(self.db, "辐照温度", limit=1000, include_excluded=True)}
+        self.assertNotIn(rejected_row["item_id"], normal_ids)
+        self.assertIn(rejected_row["item_id"], all_ids)
+        papers = {row["id"]: row for row in self.db.list_papers()}
+        self.assertEqual(papers[self.paper_id]["six_rejected_count"], 1)
+        self.assertEqual(papers[self.paper_id]["six_ambiguous_count"], 1)
+
+        reopened = set_row_review_decision(
+            self.db, rejected_row["item_id"], "automatic", note="恢复待审核", editor="tester",
+        )
+        self.assertEqual(reopened["review_action"], "automatic")
+        self.assertGreater(reopened["version_no"], rejected["version_no"])
+        self.assertEqual(review_progress(self.db, self.paper_id)["unreviewed"], 113)
+
     def test_review_progress_counts_unreviewed_confirmed_corrected_and_manual_rows(self):
         automatic_confirmed = next(r for r in list_current_data(self.db) if r["stable_key"] == "tem_voltage")
         confirm_correction(
@@ -252,6 +358,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(progress["total"], 115)
         self.assertEqual(progress["confirmed"], 1)
         self.assertEqual(progress["corrected"], 1)
+        self.assertEqual(progress["rejected"], 0)
+        self.assertEqual(progress["ambiguous"], 0)
         self.assertEqual(progress["manual"], 1)
         self.assertEqual(progress["reviewed"], 3)
         self.assertEqual(progress["unreviewed"], 112)
@@ -582,6 +690,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("confirm_and_next", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_keyboard_shortcuts", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_progress_card", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("review_negative_decisions", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_feedback_refresh", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_source_sort", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_priority_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
@@ -600,6 +709,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("readonly_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("readonly_search_only_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("search_source_evidence_button", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("search_review_state", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertTrue(by_name["public_readonly_ngrok_share"]["ok"])
         self.assertIn("ngrok_public_url", by_name["public_readonly_ngrok_share"]["public_share"]["checked"])
         self.assertIn("zotero_token_fallback", by_name["public_readonly_ngrok_share"]["public_share"]["checked"])

@@ -339,7 +339,7 @@ auto-research evidence-review-batch "Irradiation effects in high entropy alloys 
 # They download Markdown checklists without writing database rows or calling
 # DeepSeek. The all-unreviewed link follows the current remaining count.
 # The progress card above the table shows reviewed, unreviewed, confirmed,
-# corrected, and manually added counts for the current article.
+# corrected, ambiguous, rejected, and manually added counts for the current article.
 # The default review order places rows with weak source localization, figure or
 # trend provenance, and approximate/qualitative wording first. This is a review
 # priority only; it never changes the six fields or claims that a row is wrong.
@@ -353,6 +353,11 @@ auto-research evidence-review-batch "Irradiation effects in high entropy alloys 
 # but this selection never saves or confirms data.
 # Each automatic row also has an "原文证据" button that opens the highlighted PDF
 # evidence directly.
+# If a candidate cannot be resolved, use "存在歧义"; if it is not article data,
+# use "不采用". Both decisions require a reason, preserve the full version trail,
+# feed negative guidance to later DeepSeek runs, and can be restored to "待审核".
+# Ordinary search and CSV/Excel exports exclude those two states. Pending automatic
+# candidates remain visible in search with a clear "待审核" label.
 
 # Write a Markdown audit against the original user goal. This distinguishes
 # "ready for human review" from "automation goal complete".
@@ -375,7 +380,7 @@ Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts
 are written to `data/evidence/deepseek_runs/`. Model output alone is never a
 publication gate: schema, page, numeric/table anchors, background/inference
 guards, independent verification, and human confirmation all remain required.
-When human confirmations, corrections, or manual additions exist, DeepSeek
+When human confirmations, corrections, manual additions, rejections, or ambiguity decisions exist, DeepSeek
 extraction includes a short learning-guidance block so later runs learn the
 preferred six-column field boundaries and Chinese wording style. Those examples
 are only prompt guidance, not evidence; accepted rows must still be grounded in

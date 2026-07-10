@@ -178,9 +178,30 @@ CREATE TABLE IF NOT EXISTS data_versions (
   source_excerpt TEXT,
   editor TEXT NOT NULL,
   edit_note TEXT,
-  review_action TEXT NOT NULL DEFAULT 'automatic' CHECK(review_action IN ('automatic','confirmation','correction','manual')),
+  review_action TEXT NOT NULL DEFAULT 'automatic' CHECK(review_action IN ('automatic','confirmation','correction','manual','rejected','ambiguous')),
   created_at TEXT NOT NULL,
   UNIQUE(item_id, version_no)
+);
+
+CREATE TABLE IF NOT EXISTS data_version_orphans (
+  id INTEGER PRIMARY KEY,
+  item_id INTEGER NOT NULL,
+  version_no INTEGER NOT NULL,
+  value_text TEXT NOT NULL,
+  meaning TEXT NOT NULL,
+  unit TEXT NOT NULL DEFAULT '',
+  article_title TEXT NOT NULL,
+  doi TEXT NOT NULL,
+  context_explanation TEXT NOT NULL,
+  source_page INTEGER,
+  source_locator TEXT,
+  source_excerpt TEXT,
+  editor TEXT NOT NULL,
+  edit_note TEXT,
+  review_action TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  quarantine_reason TEXT NOT NULL,
+  quarantined_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_data_items_paper ON data_items(paper_id);
@@ -283,6 +304,83 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _migrate_data_versions_review_actions(conn: sqlite3.Connection) -> None:
+    """Expand the six-column review enum while preserving every version."""
+
+    table = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='data_versions'"
+    ).fetchone()
+    table_sql = str(table["sql"] or "") if table else ""
+    if "'rejected'" in table_sql and "'ambiguous'" in table_sql:
+        return
+    conn.execute("DROP VIEW IF EXISTS v_current_six_column_data")
+    conn.execute("ALTER TABLE data_versions RENAME TO data_versions_before_review_decisions")
+    conn.execute(
+        """CREATE TABLE data_versions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id INTEGER NOT NULL REFERENCES data_items(id) ON DELETE CASCADE,
+          version_no INTEGER NOT NULL,
+          value_text TEXT NOT NULL,
+          meaning TEXT NOT NULL,
+          unit TEXT NOT NULL DEFAULT '',
+          article_title TEXT NOT NULL,
+          doi TEXT NOT NULL,
+          context_explanation TEXT NOT NULL,
+          source_page INTEGER,
+          source_locator TEXT,
+          source_excerpt TEXT,
+          editor TEXT NOT NULL,
+          edit_note TEXT,
+          review_action TEXT NOT NULL DEFAULT 'automatic'
+            CHECK(review_action IN ('automatic','confirmation','correction','manual','rejected','ambiguous')),
+          created_at TEXT NOT NULL,
+          UNIQUE(item_id, version_no)
+        )"""
+    )
+    columns = (
+        "id,item_id,version_no,value_text,meaning,unit,article_title,doi,context_explanation,"
+        "source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at"
+    )
+    stamp = now()
+    conn.execute(
+        f"""INSERT OR IGNORE INTO data_version_orphans({columns},quarantine_reason,quarantined_at)
+        SELECT {columns},'missing_data_item',?
+        FROM data_versions_before_review_decisions old
+        WHERE NOT EXISTS (SELECT 1 FROM data_items i WHERE i.id=old.item_id)""",
+        (stamp,),
+    )
+    conn.execute(
+        f"""INSERT INTO data_versions({columns})
+        SELECT {columns} FROM data_versions_before_review_decisions old
+        WHERE EXISTS (SELECT 1 FROM data_items i WHERE i.id=old.item_id)"""
+    )
+    conn.execute("DROP TABLE data_versions_before_review_decisions")
+    conn.executescript(
+        """CREATE INDEX IF NOT EXISTS idx_data_versions_item ON data_versions(item_id,version_no DESC);
+        CREATE INDEX IF NOT EXISTS idx_data_versions_review ON data_versions(review_action,version_no DESC);
+        CREATE INDEX IF NOT EXISTS idx_data_versions_source ON data_versions(source_page,source_locator);
+        CREATE VIEW v_current_six_column_data AS
+          SELECT i.id item_id,i.paper_id,i.stable_key,i.origin_type,
+                 p.title paper_title,p.doi paper_doi,p.year paper_year,
+                 p.local_article_key,p.zotero_key,p.pilot_code,p.first_author,p.corresponding_author,
+                 cur.id version_id,cur.version_no,cur.value_text,cur.meaning,cur.unit,cur.article_title,cur.doi,
+                 cur.context_explanation,cur.source_page,cur.source_locator,cur.source_excerpt,cur.editor,cur.edit_note,
+                 cur.review_action,cur.created_at,
+                 orig.value_text original_value_text,orig.meaning original_meaning,orig.unit original_unit,
+                 orig.article_title original_article_title,orig.doi original_doi,orig.context_explanation original_context_explanation,
+                 orig.source_page original_source_page,orig.source_locator original_source_locator,orig.source_excerpt original_source_excerpt
+          FROM data_items i
+          JOIN papers p ON p.id=i.paper_id
+          JOIN data_versions cur
+            ON cur.item_id=i.id
+           AND cur.version_no=(SELECT MAX(v.version_no) FROM data_versions v WHERE v.item_id=i.id)
+          LEFT JOIN data_versions orig
+            ON orig.item_id=i.id
+           AND orig.version_no=0
+           AND i.origin_type='automatic';"""
+    )
+
+
 class EvidenceDB:
     def __init__(self, path: Path = EVIDENCE_DB_PATH):
         ensure_dirs()
@@ -296,6 +394,9 @@ class EvidenceDB:
         try:
             yield conn
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -321,11 +422,12 @@ class EvidenceDB:
                     "UPDATE data_versions SET review_action='correction' "
                     "WHERE version_no>0 AND review_action='automatic'"
                 )
+            _migrate_data_versions_review_actions(conn)
             run_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ai_extraction_runs)")}
             if "duplicate_count" not in run_columns:
                 conn.execute("ALTER TABLE ai_extraction_runs ADD COLUMN duplicate_count INTEGER NOT NULL DEFAULT 0")
             conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('schema_version','6') "
+                "INSERT INTO schema_meta(key,value) VALUES('schema_version','7') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value "
                 "WHERE schema_meta.value IS NOT excluded.value"
             )
@@ -624,11 +726,15 @@ class EvidenceDB:
                 (SELECT COUNT(*) FROM v_current_six_column_data v WHERE v.paper_id=p.id) six_row_count,
                 (SELECT COUNT(*) FROM v_current_six_column_data v
                   WHERE v.paper_id=p.id
-                    AND (v.review_action IN ('confirmation','correction') OR v.origin_type='manual')) six_reviewed_count,
+                    AND (v.review_action IN ('confirmation','correction','rejected','ambiguous') OR v.origin_type='manual')) six_reviewed_count,
                 (SELECT COUNT(*) FROM v_current_six_column_data v
                   WHERE v.paper_id=p.id AND v.review_action='confirmation') six_confirmed_count,
                 (SELECT COUNT(*) FROM v_current_six_column_data v
                   WHERE v.paper_id=p.id AND v.review_action='correction') six_corrected_count,
+                (SELECT COUNT(*) FROM v_current_six_column_data v
+                  WHERE v.paper_id=p.id AND v.review_action='rejected') six_rejected_count,
+                (SELECT COUNT(*) FROM v_current_six_column_data v
+                  WHERE v.paper_id=p.id AND v.review_action='ambiguous') six_ambiguous_count,
                 (SELECT COUNT(*) FROM v_current_six_column_data v
                   WHERE v.paper_id=p.id AND v.origin_type='manual') six_manual_count,
                 (SELECT COUNT(*) FROM ai_extraction_runs r

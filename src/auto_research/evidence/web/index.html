@@ -103,6 +103,8 @@
                 <option value="unreviewed">只看未审核</option>
                 <option value="confirmed">只看已确认</option>
                 <option value="corrected">只看已修正</option>
+                <option value="ambiguous">只看存在歧义</option>
+                <option value="rejected">只看不采用</option>
                 <option value="manual">只看人工补录</option>
               </select>
             </label>
@@ -137,6 +139,8 @@
             <div><dt>待审核</dt><dd id="review-progress-unreviewed">0</dd></div>
             <div><dt>已确认</dt><dd id="review-progress-confirmed">0</dd></div>
             <div><dt>已修正</dt><dd id="review-progress-corrected">0</dd></div>
+            <div><dt>存在歧义</dt><dd id="review-progress-ambiguous">0</dd></div>
+            <div><dt>不采用</dt><dd id="review-progress-rejected">0</dd></div>
             <div><dt>人工补录</dt><dd id="review-progress-manual">0</dd></div>
           </dl>
         </div>
@@ -165,7 +169,7 @@
           <p class="eyebrow">FUZZY DATA SEARCH</p>
           <h2>全库关键词检索</h2>
           <form id="search-form"><input id="search-query" placeholder="例如：CoCrFeMnNi 300°C 辐照后 硬度" autocomplete="off"><button>搜索</button></form>
-          <p>默认检索整个数据库；优先匹配“具体意义”，其次匹配“数据在文中的解释”，并支持元素中文名/符号、题目、DOI 和作者。</p>
+          <p>默认检索整个数据库；优先匹配“具体意义”，其次匹配“数据在文中的解释”，并支持元素中文名/符号、题目、DOI 和作者。“不采用”和“存在歧义”记录不会进入正常检索。</p>
         </div>
         <div class="search-toolbar"><span id="search-summary">等待搜索</span><span><a id="search-export" href="/api/six-export.csv">导出 CSV</a><a id="search-export-xlsx" href="/api/six-export.xlsx">导出 Excel</a></span></div>
         <div class="result-list" id="search-results"></div>
@@ -259,6 +263,33 @@
         <a id="source-open-pdf" target="_blank" rel="noopener">打开原始 PDF</a>
       </div>
     </div>
+  </dialog>
+  <dialog class="review-decision-dialog" id="review-decision-dialog">
+    <form class="review-decision-card" id="review-decision-form">
+      <header>
+        <div><p class="eyebrow">REVIEW DECISION</p><h3 id="review-decision-title">记录审核决定</h3></div>
+        <button type="button" class="dialog-close" data-close-review-decision>关闭</button>
+      </header>
+      <p id="review-decision-description">这项决定会作为新的审核版本保存，自动抽取原始记录不会改变。</p>
+      <label>主要原因
+        <select id="review-decision-reason" required>
+          <option value="">请选择原因</option>
+          <option value="原文证据不足">原文证据不足</option>
+          <option value="样品或实验条件对应不明确">样品或实验条件对应不明确</option>
+          <option value="自动抽取的物理意义错误">自动抽取的物理意义错误</option>
+          <option value="图中无法获得精确数值">图中无法获得精确数值</option>
+          <option value="不是本文报告的实验数据">不是本文报告的实验数据</option>
+          <option value="其他">其他</option>
+        </select>
+      </label>
+      <label>补充说明（可选）
+        <textarea id="review-decision-note" placeholder="例如：该数值来自参考文献，不是本文实验结果。"></textarea>
+      </label>
+      <div class="review-decision-actions">
+        <button type="button" data-close-review-decision>取消</button>
+        <button type="submit" class="primary" id="save-review-decision">保存审核决定</button>
+      </div>
+    </form>
   </dialog>
   <script src="/static/app.js"></script>
 </body>

@@ -659,6 +659,8 @@ class DeepSeekEvidenceExtractor:
                     "correction_count": learning_payload.get("correction_count", 0),
                     "confirmation_count": learning_payload.get("confirmation_count", 0),
                     "manual_count": learning_payload.get("manual_count", 0),
+                    "rejected_count": learning_payload.get("rejected_count", 0),
+                    "ambiguous_count": learning_payload.get("ambiguous_count", 0),
                     "included_in_prompt": bool(learning_guidance),
                 },
                 "created_at": now(),

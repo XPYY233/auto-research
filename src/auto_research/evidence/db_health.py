@@ -56,6 +56,10 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             )
             """
         ).fetchone()["count"] if view_exists else None
+        foreign_key_violations = [dict(row) for row in conn.execute("PRAGMA foreign_key_check")]
+        quarantined_versions = conn.execute(
+            "SELECT COUNT(*) count FROM data_version_orphans"
+        ).fetchone()["count"]
 
     schema_version_text = schema_version_row["value"] if schema_version_row else ""
     try:
@@ -67,7 +71,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
     checks = [
         {
             "name": "schema_version",
-            "ok": schema_version >= 6,
+            "ok": schema_version >= 7,
             "detail": f"schema_version={schema_version_text or 'missing'}",
         },
         {
@@ -90,6 +94,17 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             "name": "stable_key_uniqueness",
             "ok": duplicate_current == 0,
             "detail": f"duplicate current paper_id/stable_key groups={duplicate_current}",
+        },
+        {
+            "name": "foreign_key_integrity",
+            "ok": not foreign_key_violations,
+            "detail": "no active foreign-key violations" if not foreign_key_violations else f"violations={len(foreign_key_violations)}",
+            "examples": foreign_key_violations[:20],
+        },
+        {
+            "name": "quarantined_legacy_versions",
+            "ok": True,
+            "detail": f"preserved outside active search={quarantined_versions}",
         },
     ]
     return {

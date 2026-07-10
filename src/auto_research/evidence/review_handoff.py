@@ -190,7 +190,7 @@ def _review_batch_markdown(paper: dict[str, Any], progress: dict[str, Any],
             f"- 原文片段：{row.get('original_source_excerpt') or row.get('source_excerpt') or ''}",
             f"- 本地证据接口：`/api/six-data/{row['item_id']}/source-view`",
             "",
-            "核验记录：- [ ] 确认无误  - [ ] 已修正  - [ ] 需要人工补录/备注",
+            "核验记录：- [ ] 确认无误  - [ ] 已修正  - [ ] 存在歧义  - [ ] 不采用  - [ ] 需要人工补录/备注",
             "",
         ])
     return "\n".join(lines)
@@ -201,7 +201,7 @@ def review_batch_payload(db: EvidenceDB, paper_id: int, *,
     paper = db.get_paper(paper_id) or {}
     rows = [
         row for row in list_current_data(db, paper_id)
-        if row.get("origin_type") != "manual" and int(row.get("version_no") or 0) == 0
+        if row.get("origin_type") != "manual" and row.get("review_action") == "automatic"
     ]
     try:
         audit = audit_six_column_evidence(db, paper_id)

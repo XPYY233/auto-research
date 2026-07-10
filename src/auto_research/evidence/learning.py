@@ -25,9 +25,11 @@ def _shorten(value: Any, limit: int = 260) -> str:
 def _ordered_samples(samples_payload: dict[str, Any], limit: int = 6) -> list[dict[str, Any]]:
     samples = [
         item for item in samples_payload.get("samples", [])
-        if isinstance(item, dict) and item.get("sample_type") in {"correction", "confirmation", "manual_addition"}
+        if isinstance(item, dict) and item.get("sample_type") in {
+            "correction", "confirmation", "manual_addition", "rejection", "ambiguity"
+        }
     ]
-    priority = {"correction": 0, "manual_addition": 1, "confirmation": 2}
+    priority = {"rejection": 0, "ambiguity": 1, "correction": 2, "manual_addition": 3, "confirmation": 4}
     samples.sort(key=lambda item: (priority.get(item.get("sample_type"), 9), str(item.get("created_at") or "")))
     return samples[:limit]
 
@@ -40,13 +42,29 @@ def build_learning_guidance(samples_payload: dict[str, Any], limit: int = 6) -> 
         return ""
     lines = [
         "HUMAN REVIEW LEARNING HINTS",
-        "Use these only to learn the researcher's preferred field boundaries and wording style.",
+        "Use these only to learn the researcher's field boundaries, wording style, and candidate failure patterns.",
         "Never copy values, materials, conditions, page numbers, or conclusions from these hints unless they also appear in the current PDF page block.",
     ]
     for index, sample in enumerate(samples, start=1):
         corrected = sample.get("corrected") or {}
         original = sample.get("original") or {}
         changed = ", ".join(sample.get("changed_fields") or [])
+        if sample.get("sample_type") == "rejection":
+            lines.append(
+                f"{index}. rejection AVOID_CANDIDATE "
+                f"meaning={_shorten(original.get('meaning'))}; "
+                f"context={_shorten(original.get('context_explanation'))}; "
+                f"reason={_shorten(sample.get('edit_note'))}"
+            )
+            continue
+        if sample.get("sample_type") == "ambiguity":
+            lines.append(
+                f"{index}. ambiguity ROUTE_TO_PENDING_TASK_UNLESS_RESOLVED "
+                f"meaning={_shorten(corrected.get('meaning') or original.get('meaning'))}; "
+                f"context={_shorten(corrected.get('context_explanation') or original.get('context_explanation'))}; "
+                f"reason={_shorten(sample.get('edit_note'))}"
+            )
+            continue
         lines.append(
             f"{index}. {sample.get('sample_type')} changed=[{changed}] "
             f"meaning={_shorten(corrected.get('meaning'))}; "
@@ -65,6 +83,7 @@ def build_learning_guidance(samples_payload: dict[str, Any], limit: int = 6) -> 
 def _sample_summary(sample: dict[str, Any]) -> dict[str, Any]:
     corrected = sample.get("corrected") or {}
     original = sample.get("original") or {}
+    display = corrected or original
     changed_fields = sample.get("changed_fields") or []
     return {
         "sample_type": sample.get("sample_type"),
@@ -73,10 +92,10 @@ def _sample_summary(sample: dict[str, Any]) -> dict[str, Any]:
         "doi": sample.get("doi"),
         "changed_fields": changed_fields,
         "changed_labels": [FIELD_LABELS.get(field, field) for field in changed_fields],
-        "corrected_meaning": corrected.get("meaning"),
-        "corrected_context": corrected.get("context_explanation"),
-        "corrected_value": corrected.get("value_text"),
-        "corrected_unit": corrected.get("unit"),
+        "corrected_meaning": display.get("meaning"),
+        "corrected_context": display.get("context_explanation"),
+        "corrected_value": display.get("value_text"),
+        "corrected_unit": display.get("unit"),
         "original_meaning": original.get("meaning") if original else None,
         "original_context": original.get("context_explanation") if original else None,
         "source": sample.get("source") or {},
@@ -94,9 +113,9 @@ def build_learning_report(db: EvidenceDB, paper_id: int | None = None,
     if sample_count == 0:
         readiness = "empty"
         message = "还没有人工确认、修正或补录样本；下一次抽取不会加入人工学习提示。"
-    elif payload.get("correction_count", 0) or payload.get("manual_count", 0):
+    elif any(payload.get(key, 0) for key in ("correction_count", "manual_count", "rejected_count", "ambiguous_count")):
         readiness = "useful"
-        message = "已有修正或人工补录样本；下一次 DeepSeek 抽取会用这些样本学习字段边界和中文表述偏好。"
+        message = "已有修正、补录或负例样本；下一次 DeepSeek 抽取会学习字段边界、表述偏好和应避免的候选模式。"
     else:
         readiness = "confirmations_only"
         message = "目前主要是确认无误样本；它们可作为正例，但对纠错边界的帮助有限。"
@@ -107,6 +126,8 @@ def build_learning_report(db: EvidenceDB, paper_id: int | None = None,
         "correction_count": payload.get("correction_count", 0),
         "confirmation_count": payload.get("confirmation_count", 0),
         "manual_count": payload.get("manual_count", 0),
+        "rejected_count": payload.get("rejected_count", 0),
+        "ambiguous_count": payload.get("ambiguous_count", 0),
         "included_in_prompt": bool(guidance),
         "included_sample_count": len(selected),
         "readiness": readiness,
@@ -124,7 +145,7 @@ def learning_report_markdown(report: dict[str, Any]) -> str:
         "",
         f"- 范围：{report.get('paper_title') or '全库'}",
         f"- 学习样本：{report.get('sample_count', 0)} 条",
-        f"- 修正：{report.get('correction_count', 0)}；确认无误：{report.get('confirmation_count', 0)}；人工补录：{report.get('manual_count', 0)}",
+        f"- 修正：{report.get('correction_count', 0)}；确认无误：{report.get('confirmation_count', 0)}；人工补录：{report.get('manual_count', 0)}；不采用：{report.get('rejected_count', 0)}；歧义：{report.get('ambiguous_count', 0)}",
         f"- 状态：{report.get('message')}",
         f"- 安全边界：{report.get('safety_rule')}",
         "",

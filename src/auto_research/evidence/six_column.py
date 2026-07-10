@@ -43,6 +43,7 @@ SAVED_SCAN_META_PREFIX = "six_column_saved_snapshot_"
 SAVED_SCANS_DIR = DATA_DIR / "evidence" / "saved_scans"
 
 SIX_FIELDS = ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")
+ROW_REVIEW_DECISIONS = {"rejected", "ambiguous", "automatic"}
 SNAPSHOT_FIELDS = (
     "item_id", "paper_id", "stable_key", "value_text", "meaning", "unit",
     "article_title", "doi", "context_explanation", "source_page",
@@ -712,6 +713,47 @@ def confirm_correction(db: EvidenceDB, item_id: int, fields: dict[str, Any],
     return get_data_item(db, item_id)
 
 
+def set_row_review_decision(db: EvidenceDB, item_id: int, decision: str, *,
+                            reason_code: str = "", note: str = "",
+                            editor: str = "本地研究者") -> dict[str, Any]:
+    """Record a reversible ambiguity/rejection decision as a new version."""
+
+    if decision not in ROW_REVIEW_DECISIONS:
+        raise ValueError(f"Unsupported row review decision: {decision}")
+    reason = re.sub(r"\s+", " ", str(reason_code or "").strip())
+    detail = re.sub(r"\s+", " ", str(note or "").strip())
+    if decision in {"rejected", "ambiguous"} and not reason:
+        raise ValueError("A review reason is required")
+    with db.connect() as conn:
+        item = conn.execute("SELECT * FROM data_items WHERE id=?", (item_id,)).fetchone()
+        if not item:
+            raise KeyError(f"Data item {item_id} not found")
+        if item["origin_type"] != "automatic":
+            raise ValueError("Manual rows cannot be marked as automatic extraction decisions")
+        latest = conn.execute(
+            "SELECT * FROM data_versions WHERE item_id=? ORDER BY version_no DESC LIMIT 1", (item_id,)
+        ).fetchone()
+        if not latest:
+            raise KeyError(f"Data item {item_id} has no version")
+        if decision == "automatic":
+            edit_note = detail or "恢复为待审核"
+        else:
+            label = "不采用" if decision == "rejected" else "存在歧义"
+            edit_note = f"{label}：{reason}" + (f"；{detail}" if detail else "")
+        conn.execute(
+            """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
+            context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                item_id, int(latest["version_no"]) + 1, latest["value_text"], latest["meaning"],
+                latest["unit"], latest["article_title"], latest["doi"], latest["context_explanation"],
+                latest["source_page"], latest["source_locator"], latest["source_excerpt"], editor,
+                edit_note, decision, now(),
+            ),
+        )
+    return get_data_item(db, item_id)
+
+
 def add_manual_item(db: EvidenceDB, paper_id: int, fields: dict[str, Any],
                     editor: str = "本地研究者") -> dict[str, Any]:
     clean = _validate_fields(fields)
@@ -737,7 +779,7 @@ def add_manual_item(db: EvidenceDB, paper_id: int, fields: dict[str, Any],
 def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
     rows = list_current_data(db, paper_id)
     samples: list[dict[str, Any]] = []
-    correction_count = confirmation_count = manual_count = 0
+    correction_count = confirmation_count = manual_count = rejected_count = ambiguous_count = 0
     for row in rows:
         paper_info = {
             "paper_id": row["paper_id"],
@@ -745,14 +787,20 @@ def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dic
             "article_title": row["article_title"],
             "doi": row["doi"],
         }
-        if row["origin_type"] == "automatic" and int(row["version_no"]) > 0:
+        action = str(row.get("review_action") or "automatic")
+        if row["origin_type"] == "automatic" and action in {"confirmation", "correction", "rejected", "ambiguous"}:
             original_fields = {field: row[f"original_{field}"] for field in SIX_FIELDS}
             corrected_fields = {field: row[field] for field in SIX_FIELDS}
             changed_fields = [
                 field for field in SIX_FIELDS
                 if str(original_fields.get(field) or "") != str(corrected_fields.get(field) or "")
             ]
-            sample_type = "confirmation" if row.get("review_action") == "confirmation" else "correction"
+            sample_type = {
+                "confirmation": "confirmation",
+                "correction": "correction",
+                "rejected": "rejection",
+                "ambiguous": "ambiguity",
+            }[action]
             samples.append({
                 "sample_type": sample_type,
                 "item_id": row["item_id"],
@@ -765,7 +813,7 @@ def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dic
                     "excerpt": row.get("original_source_excerpt"),
                 },
                 "original": original_fields,
-                "corrected": corrected_fields,
+                "corrected": None if sample_type == "rejection" else corrected_fields,
                 "editor": row.get("editor"),
                 "edit_note": row.get("edit_note"),
                 "review_action": row.get("review_action"),
@@ -774,8 +822,12 @@ def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dic
             })
             if sample_type == "confirmation":
                 confirmation_count += 1
-            else:
+            elif sample_type == "correction":
                 correction_count += 1
+            elif sample_type == "rejection":
+                rejected_count += 1
+            else:
+                ambiguous_count += 1
         elif row["origin_type"] == "manual":
             manual_fields = {field: row[field] for field in SIX_FIELDS}
             samples.append({
@@ -802,6 +854,8 @@ def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dic
         "correction_count": correction_count,
         "confirmation_count": confirmation_count,
         "manual_count": manual_count,
+        "rejected_count": rejected_count,
+        "ambiguous_count": ambiguous_count,
         "samples": samples,
     }
 
@@ -844,7 +898,9 @@ def review_progress(db: EvidenceDB, paper_id: int | None = None) -> dict[str, An
     manual = sum(1 for row in rows if row.get("origin_type") == "manual")
     confirmed = sum(1 for row in rows if row.get("review_action") == "confirmation")
     corrected = sum(1 for row in rows if row.get("review_action") == "correction")
-    reviewed = manual + confirmed + corrected
+    rejected = sum(1 for row in rows if row.get("review_action") == "rejected")
+    ambiguous = sum(1 for row in rows if row.get("review_action") == "ambiguous")
+    reviewed = manual + confirmed + corrected + rejected + ambiguous
     return {
         "paper_id": paper_id,
         "total": total,
@@ -852,6 +908,8 @@ def review_progress(db: EvidenceDB, paper_id: int | None = None) -> dict[str, An
         "unreviewed": max(total - reviewed, 0),
         "confirmed": confirmed,
         "corrected": corrected,
+        "rejected": rejected,
+        "ambiguous": ambiguous,
         "manual": manual,
         "automatic": total - manual,
         "reviewed_ratio": round(reviewed / total, 4) if total else 0.0,
@@ -917,8 +975,11 @@ def _field_score(term: str, text: str, weight: float) -> float:
     return weight * best if best >= 0.62 else 0.0
 
 
-def search_current_data(db: EvidenceDB, query: str, limit: int = 100) -> list[dict[str, Any]]:
+def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
+                        include_excluded: bool = False) -> list[dict[str, Any]]:
     rows = list_current_data(db)
+    if not include_excluded:
+        rows = [row for row in rows if row.get("review_action") not in {"rejected", "ambiguous"}]
     term_groups = _query_terms(query)
     if not term_groups:
         return rows[:limit]
