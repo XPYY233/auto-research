@@ -85,6 +85,14 @@
                 <option value="manual">只看人工补录</option>
               </select>
             </label>
+            <label class="compact-search">显示顺序
+              <select id="review-sort">
+                <option value="original">抽取顺序</option>
+                <option value="source_asc">原文页码升序</option>
+                <option value="source_desc">原文页码降序</option>
+                <option value="unreviewed_source">未审核优先，按页码</option>
+              </select>
+            </label>
             <button type="button" class="secondary-action" id="next-unreviewed">下一条未审核</button>
             <a class="secondary-action" id="current-review-batch" href="/api/current-paper/review-batch.md?limit=20">下载待审核清单</a>
             <span class="shortcut-hint">快捷键：Ctrl/⌘+Enter 确认；Shift+Ctrl/⌘+Enter 确认并下一条；Alt+N 下一条；Alt+S 原文证据</span>

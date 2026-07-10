@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "original", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const fieldLabels = {
   value_text: "具体数值",
@@ -368,8 +368,42 @@ function filteredRows() {
   } else if (state.reviewFilter === "manual") {
     rows = rows.filter(row => row.origin_type === "manual");
   }
-  if (!q) return rows;
-  return rows.filter(row => rowFilterText(row).includes(q));
+  return sortReviewRows(q ? rows.filter(row => rowFilterText(row).includes(q)) : rows);
+}
+
+function sourcePageNumber(row) {
+  const raw = row.original_source_page ?? row.source_page;
+  const match = String(raw ?? "").match(/\d+/);
+  return match ? Number(match[0]) : Number.POSITIVE_INFINITY;
+}
+
+function sourceLocatorText(row) {
+  return String(row.original_source_locator || row.source_locator || "").toLowerCase();
+}
+
+function sortReviewRows(rows) {
+  const withIndex = rows.map((row, index) => ({ row, index }));
+  if (state.reviewSort === "source_asc") {
+    withIndex.sort((a, b) => (
+      sourcePageNumber(a.row) - sourcePageNumber(b.row)
+      || sourceLocatorText(a.row).localeCompare(sourceLocatorText(b.row))
+      || a.index - b.index
+    ));
+  } else if (state.reviewSort === "source_desc") {
+    withIndex.sort((a, b) => (
+      sourcePageNumber(b.row) - sourcePageNumber(a.row)
+      || sourceLocatorText(b.row).localeCompare(sourceLocatorText(a.row))
+      || a.index - b.index
+    ));
+  } else if (state.reviewSort === "unreviewed_source") {
+    withIndex.sort((a, b) => (
+      Number(!isUnreviewedRow(a.row)) - Number(!isUnreviewedRow(b.row))
+      || sourcePageNumber(a.row) - sourcePageNumber(b.row)
+      || sourceLocatorText(a.row).localeCompare(sourceLocatorText(b.row))
+      || a.index - b.index
+    ));
+  }
+  return withIndex.map(item => item.row);
 }
 
 function rowFilterText(row) {
@@ -405,9 +439,10 @@ function renderTable() {
   const progress = reviewProgress();
   renderReviewProgressCard(progress);
   const filterNote = state.reviewFilter === "all" ? "" : ` · 当前筛出 ${rows.length} 条`;
+  const sortNote = state.reviewSort === "original" ? "" : ` · ${document.querySelector("#review-sort")?.selectedOptions?.[0]?.textContent || "已排序"}`;
   const dirtyNote = hasUnsavedEdits() ? `，${state.dirtyRows.size} 行未确认` : "";
   const breakdown = `确认 ${progress.confirmed}、修正 ${progress.corrected}、人工 ${progress.manual}`;
-  setText("row-count", `${progress.reviewed}/${progress.total} 已审核（${breakdown}），${progress.unreviewed} 待审核${dirtyNote}${filterNote}`);
+  setText("row-count", `${progress.reviewed}/${progress.total} 已审核（${breakdown}），${progress.unreviewed} 待审核${dirtyNote}${filterNote}${sortNote}`);
   const body = document.querySelector("#edit-rows");
   if (!rows.length) {
     body.innerHTML = '<tr><td colspan="7"><div class="empty-table">当前筛选条件下没有数据。你可以切回“全部”或“只看未审核”。</div></td></tr>';
@@ -1052,6 +1087,12 @@ document.querySelector("#table-filter").addEventListener("input", event => {
 });
 document.querySelector("#review-filter").addEventListener("change", event => {
   state.reviewFilter = event.target.value;
+  state.selected = null;
+  renderTable();
+  renderOriginalPlaceholder();
+});
+document.querySelector("#review-sort").addEventListener("change", event => {
+  state.reviewSort = event.target.value;
   state.selected = null;
   renderTable();
   renderOriginalPlaceholder();
