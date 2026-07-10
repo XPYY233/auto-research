@@ -391,6 +391,28 @@ Local editable mode must hide the read-only badge; preserve the explicit
 `.readonly-badge[hidden]` CSS rule because the badge's flex styling otherwise
 overrides the HTML `hidden` attribute.
 
+### Review UI hierarchy
+
+The review table and immutable source pane are the primary workspace. Keep the
+article selector visible, but place low-frequency extraction, export, AI-run,
+experiment-profile, and diagnostic status content inside the collapsed
+`#article-tools` disclosure. Do not let status text push the review table below
+the first viewport again.
+
+`#focus-review` is a presentation-only mode: it hides surrounding navigation
+and article controls, expands the table/source split, and must never confirm,
+save, call DeepSeek, or mutate database state. Escape and the visible exit
+button must both leave focus mode. Selecting the first visible review row on
+load or after a filter change is allowed because selection is not persistence;
+the original pane should immediately show that row.
+
+On narrow screens, the original pane must use normal document flow below the
+editable table. Do not restore the old fixed overlay, because automatic row
+selection would cover the article selector and review controls. Page headings
+must follow the active view through `renderViewHeader()` so users can tell
+whether they are reviewing, searching, uploading, manually entering, or
+inspecting history.
+
 ### Read-only public sharing
 
 The project now supports a share-safe read-only UI mode via:

@@ -28,41 +28,59 @@
 
     <main id="main">
       <header class="topbar">
-        <div><p class="eyebrow">EVIDENCE DATA WORKBENCH</p><h1>实验数据抽取、校对与检索</h1></div>
+        <div class="topbar-copy">
+          <p class="eyebrow" id="workspace-kicker">EVIDENCE REVIEW</p>
+          <h1 id="workspace-title">校对实验数据</h1>
+          <p class="workspace-subtitle" id="workspace-subtitle">逐条核对抽取结果，并随时返回原文证据。</p>
+        </div>
         <div class="topbar-status">
           <div class="readonly-badge" id="readonly-badge" hidden><i></i>只读模式</div>
-          <div class="git-status"><i></i>Git 已建立</div>
         </div>
       </header>
 
       <section class="article-picker">
-        <div>
-          <small>切换当前文章</small>
-          <strong>从已登记文章中按论文题目选择；切换只读取本地已保存数据</strong>
+        <div class="article-picker-main">
+          <div class="article-picker-copy">
+            <small>当前校对文章</small>
+            <strong>选择论文后读取已保存的抽取数据</strong>
+          </div>
+          <form id="paper-switch-form">
+            <label class="paper-select-label" for="paper-switch-input">论文题目</label>
+            <select id="paper-switch-input"></select>
+            <button type="submit" id="paper-switch-submit" data-write-action>切换文章</button>
+          </form>
         </div>
-        <form id="paper-switch-form">
-          <select id="paper-switch-input"></select>
-          <button type="submit" id="paper-switch-submit" data-write-action>切换文章</button>
-          <button type="button" id="run-current-extraction" data-write-action>自动提取/核验</button>
-          <button type="button" id="run-deepseek-preview" data-write-action>DeepSeek 补充抽取</button>
-          <button type="button" id="save-current-snapshot" data-write-action>生成当前文章 CSV 备份</button>
-          <a id="current-export-csv" href="/api/current-paper/export.csv">下载当前文章 CSV</a>
-          <a id="current-export-xlsx" href="/api/current-paper/export.xlsx">下载当前文章 Excel</a>
-          <a id="open-current-packet" target="_blank" rel="noopener">查看当前抽取包</a>
-        </form>
-        <p id="paper-status-summary"></p>
-        <p id="paper-extraction-status"></p>
-        <div class="experiment-profile-card" id="experiment-profile-card">
-          <strong>实验类型识别</strong>
-          <p id="experiment-profile-summary">正在识别当前文章的实验类型…</p>
-          <div id="experiment-profile-tags"></div>
-        </div>
-        <p id="paper-evidence-audit"></p>
-        <p id="paper-deepseek-status"></p>
-        <div class="progress-panel" id="deepseek-progress" hidden>
-          <div class="progress-track"><span id="deepseek-progress-bar"></span></div>
-          <p id="deepseek-progress-text">等待任务开始</p>
-        </div>
+        <details class="article-tools" id="article-tools">
+          <summary>
+            <span>提取、导出与文章状态</span>
+            <small id="paper-compact-status">正在读取文章状态…</small>
+          </summary>
+          <div class="article-tools-body">
+            <div class="article-tool-actions">
+              <button type="button" id="run-current-extraction" data-write-action>自动提取/核验</button>
+              <button type="button" id="run-deepseek-preview" data-write-action>DeepSeek 补充抽取</button>
+              <button type="button" id="save-current-snapshot" data-write-action>生成当前文章 CSV 备份</button>
+              <a id="current-export-csv" href="/api/current-paper/export.csv">下载 CSV</a>
+              <a id="current-export-xlsx" href="/api/current-paper/export.xlsx">下载 Excel</a>
+              <a id="open-current-packet" target="_blank" rel="noopener">查看抽取包</a>
+            </div>
+            <div class="article-status-grid">
+              <p id="paper-status-summary"></p>
+              <p id="paper-extraction-status"></p>
+              <div class="experiment-profile-card" id="experiment-profile-card">
+                <strong>实验类型识别</strong>
+                <p id="experiment-profile-summary">正在识别当前文章的实验类型…</p>
+                <div id="experiment-profile-tags"></div>
+              </div>
+              <p id="paper-evidence-audit"></p>
+              <p id="paper-deepseek-status"></p>
+              <div class="progress-panel" id="deepseek-progress" hidden>
+                <div class="progress-track"><span id="deepseek-progress-bar"></span></div>
+                <p id="deepseek-progress-text">等待任务开始</p>
+              </div>
+            </div>
+          </div>
+        </details>
       </section>
 
       <section class="article-strip">
@@ -98,9 +116,13 @@
               </select>
             </label>
             <button type="button" class="secondary-action" id="next-unreviewed">下一条未审核</button>
+            <button type="button" class="secondary-action focus-action" id="focus-review" aria-pressed="false">专注校对</button>
             <a class="secondary-action" id="current-review-batch" href="/api/current-paper/review-batch.md?limit=20">下载待审核清单</a>
             <a class="secondary-action" id="current-review-all" href="/api/current-paper/review-batch.md?limit=200">下载全部待审核</a>
-            <span class="shortcut-hint">快捷键：Ctrl/⌘+Enter 确认；Shift+Ctrl/⌘+Enter 确认并下一条；Alt+N 下一条；Alt+S 原文证据</span>
+            <details class="shortcut-help">
+              <summary>快捷键</summary>
+              <div>Ctrl/⌘+Enter 确认<br>Shift+Ctrl/⌘+Enter 确认并下一条<br>Alt+N 下一条<br>Alt+S 原文证据</div>
+            </details>
             <span id="row-count">0 条</span>
           </div>
         </div>
@@ -117,6 +139,11 @@
             <div><dt>已修正</dt><dd id="review-progress-corrected">0</dd></div>
             <div><dt>人工补录</dt><dd id="review-progress-manual">0</dd></div>
           </dl>
+        </div>
+        <div class="focus-review-bar" id="focus-review-bar" hidden>
+          <div><small>专注校对</small><strong id="focus-paper-title">当前文章</strong></div>
+          <span id="focus-review-progress">0/0 已审核</span>
+          <button type="button" id="exit-focus-review">退出专注模式</button>
         </div>
         <div class="review-split">
           <section class="edit-pane" aria-label="可编辑数据表">

@@ -1,5 +1,12 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0 };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
+const viewCopy = {
+  review: { kicker: "EVIDENCE REVIEW", title: "校对实验数据", subtitle: "逐条核对抽取结果，并随时返回原文证据。" },
+  search: { kicker: "DATABASE SEARCH", title: "搜索实验数据", subtitle: "用材料、条件、物理量或作者关键词检索整个数据库。" },
+  upload: { kicker: "PDF INTAKE", title: "导入实验文献", subtitle: "验证真实 PDF、识别重复论文，并加入待处理队列。" },
+  manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "为自动抽取未覆盖的实验结果补充六列记录。" },
+  history: { kicker: "REVISION HISTORY", title: "查看修正记录", subtitle: "复查人工确认、修正和补录留下的版本记录。" },
+};
 const fieldLabels = {
   value_text: "具体数值",
   meaning: "具体意义",
@@ -53,9 +60,20 @@ function applyUiMode() {
 function renderPublicSearchOnlyMode() {
   document.querySelector(".brand strong").textContent = "实验数据检索库";
   document.querySelector(".brand small").textContent = "READ-ONLY SEARCH";
-  document.querySelector("h1").textContent = "实验数据只读检索";
   const searchSummary = document.querySelector("#search-summary");
   if (searchSummary) searchSummary.textContent = "只读模式：仅支持搜索、原文证据查看和导出";
+}
+
+function renderViewHeader(name) {
+  const copy = viewCopy[name] || viewCopy.review;
+  setText("workspace-kicker", copy.kicker);
+  setText("workspace-title", copy.title);
+  setText(
+    "workspace-subtitle",
+    isReadOnly() && name === "search"
+      ? "只读浏览已提取数据；支持原文证据查看和结果导出。"
+      : copy.subtitle,
+  );
 }
 
 function rejectReadOnlyAction(action = "修改数据") {
@@ -152,7 +170,6 @@ async function loadCurrentPaper() {
   renderEvidenceAudit();
   renderDeepSeekRun();
   renderTable();
-  renderOriginalPlaceholder();
   renderHistory();
   fillManualDefaults();
 }
@@ -212,6 +229,8 @@ function renderPaper() {
   setText("paper-title", paper.title);
   setText("paper-doi", paper.doi || "—");
   setText("paper-process-status", paperStatus.six_workflow_label || "未扫描");
+  setText("paper-compact-status", `${paperStatus.six_workflow_label || "未扫描"} · ${state.rows.length} 条数据`);
+  setText("focus-paper-title", paper.title || "当前文章");
   setText("mini-title", paper.title);
   setText("mini-doi", paper.doi || "—");
   setText("nav-count", state.rows.length);
@@ -552,7 +571,12 @@ function renderTable() {
   const body = document.querySelector("#edit-rows");
   if (!rows.length) {
     body.innerHTML = '<tr><td colspan="7"><div class="empty-table">当前筛选条件下没有数据。你可以切回“全部”或“只看未审核”。</div></td></tr>';
+    state.selected = null;
+    renderOriginalPlaceholder();
     return;
+  }
+  if (!state.selected || !rows.some(row => Number(row.item_id) === Number(state.selected))) {
+    state.selected = Number(rows[0].item_id);
   }
   body.innerHTML = rows.map(row => {
     const priorityClass = isUnreviewedRow(row) && row.review_priority_level !== "normal" ? `priority-${row.review_priority_level}` : "";
@@ -599,6 +623,7 @@ function renderTable() {
     const dirty = fields.some(field => String(collectRowFields(id)[field] ?? "") !== String(row[field] ?? ""));
     markRowDirty(id, dirty);
   }));
+  renderOriginal(rows.find(row => Number(row.item_id) === Number(state.selected)) || null);
 }
 
 function selectRow(id) {
@@ -652,6 +677,11 @@ function openSelectedSource() {
 
 function handleReviewKeyboard(event) {
   if (document.body.dataset.view !== "review") return;
+  if (event.key === "Escape" && state.focusReview) {
+    event.preventDefault();
+    setFocusReview(false);
+    return;
+  }
   const key = event.key.toLowerCase();
   const commandOrCtrl = event.metaKey || event.ctrlKey;
   if (event.key === "Enter" && commandOrCtrl) {
@@ -975,13 +1005,29 @@ function renderLearningGuidanceCard() {
 
 function switchView(name) {
   if (isReadOnly() && name !== "search") name = "search";
+  if (name !== "review" && state.focusReview) setFocusReview(false);
   document.querySelectorAll(".nav,.view").forEach(el => el.classList.remove("active"));
   document.querySelector(`.nav[data-view="${name}"]`)?.classList.add("active");
   document.querySelector(`#view-${name}`).classList.add("active");
   document.body.dataset.view = name;
+  renderViewHeader(name);
   if (name === "search" && !document.querySelector("#search-results").children.length) runSearch();
   if (name === "upload") refreshUploadWorkspace();
   if (name === "manual") fillManualDefaults();
+}
+
+function setFocusReview(enabled) {
+  const active = Boolean(enabled) && document.body.dataset.view === "review" && !isReadOnly();
+  state.focusReview = active;
+  document.body.dataset.focusReview = active ? "true" : "false";
+  const button = document.querySelector("#focus-review");
+  const bar = document.querySelector("#focus-review-bar");
+  if (button) {
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.textContent = active ? "退出专注" : "专注校对";
+  }
+  if (bar) bar.hidden = !active;
+  if (active) document.querySelector("#view-review")?.scrollIntoView({ block: "start" });
 }
 
 async function refreshUploadWorkspace() {
@@ -1038,6 +1084,7 @@ function renderReviewProgressCard(progress) {
   const total = progress.total || 0;
   const ratio = total ? Math.round((progress.reviewed / total) * 100) : 0;
   setText("review-progress-title", `${progress.reviewed}/${total} 已审核 · ${ratio}%`);
+  setText("focus-review-progress", `${progress.reviewed}/${total} 已审核 · ${progress.unreviewed} 待审核`);
   setText("review-progress-unreviewed", progress.unreviewed);
   setText("review-progress-confirmed", progress.confirmed);
   setText("review-progress-corrected", progress.corrected);
@@ -1221,15 +1268,15 @@ document.querySelector("#review-filter").addEventListener("change", event => {
   state.reviewFilter = event.target.value;
   state.selected = null;
   renderTable();
-  renderOriginalPlaceholder();
 });
 document.querySelector("#review-sort").addEventListener("change", event => {
   state.reviewSort = event.target.value;
   state.selected = null;
   renderTable();
-  renderOriginalPlaceholder();
 });
 document.querySelector("#next-unreviewed").addEventListener("click", selectNextUnreviewed);
+document.querySelector("#focus-review").addEventListener("click", () => setFocusReview(!state.focusReview));
+document.querySelector("#exit-focus-review").addEventListener("click", () => setFocusReview(false));
 document.addEventListener("keydown", handleReviewKeyboard);
 document.querySelector("#search-form").addEventListener("submit", runSearch);
 document.querySelector("#manual-form").addEventListener("submit", saveManual);

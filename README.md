@@ -345,6 +345,12 @@ auto-research evidence-review-batch "Irradiation effects in high entropy alloys 
 # priority only; it never changes the six fields or claims that a row is wrong.
 # Use "只看重点项" to focus that queue, then open the highlighted source before
 # confirming or correcting each row.
+# The review page keeps article switching compact. Extraction, export, and
+# diagnostic details are under "提取、导出与文章状态" and stay collapsed during
+# ordinary review. "专注校对" hides the surrounding workspace and expands the
+# editable table plus immutable original pane; press Escape or the visible exit
+# button to return. The highest-priority visible row is selected automatically,
+# but this selection never saves or confirms data.
 # Each automatic row also has an "原文证据" button that opens the highlighted PDF
 # evidence directly.
 
