@@ -715,6 +715,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(by_name["public_readonly_ngrok_share"]["ok"])
         self.assertIn("ngrok_public_url", by_name["public_readonly_ngrok_share"]["public_share"]["checked"])
         self.assertIn("zotero_token_fallback", by_name["public_readonly_ngrok_share"]["public_share"]["checked"])
+        self.assertIn("startup_no_demo_seed", by_name["public_readonly_ngrok_share"]["public_share"]["checked"])
         requirements = {item["id"]: item for item in report["requirements"]}
         self.assertTrue(all(item["ok"] for item in requirements.values()))
         self.assertTrue(requirements["article_selector_to_extracted_rows"]["ok"])

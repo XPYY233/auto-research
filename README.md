@@ -203,6 +203,8 @@ export. The server rejects upload, review, manual entry, article switching,
 learning-sample, queue, current-paper, snapshot, and DeepSeek routes even if a
 visitor guesses the URL. The editable local workbench remains the separate
 `http://127.0.0.1:8765` service.
+Starting either service only opens the existing project state; it does not seed
+the demo article, switch papers, rescan a PDF, or call DeepSeek.
 
 The search-result `原文证据` action works without any editable-only API: it opens
 the public source metadata, highlighted sentence image, highlighted page image,

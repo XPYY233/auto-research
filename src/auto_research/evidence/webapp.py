@@ -40,7 +40,6 @@ from .six_column import (
     resolve_paper_selector,
     save_current_paper_snapshot,
     search_current_data,
-    seed_target_article,
     set_current_paper,
     set_row_review_decision,
 )
@@ -656,7 +655,6 @@ def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 876
           read_only: bool = False) -> None:
     evidence_db = db or EvidenceDB()
     evidence_db.init()
-    seed_target_article(evidence_db)
     upload_service = UploadService(evidence_db)
     index_result = upload_service.index_existing_pdfs()
     handler = type(

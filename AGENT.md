@@ -430,6 +430,10 @@ This is not a second app or a copied database. It is the same web UI and the sam
 Do not create or maintain a separate public HTML/JavaScript implementation. Any
 search-card, export, terminology, or source-evidence fix must be made once in the
 shared frontend and verified in both modes.
+Starting either server must not seed demo rows, update paper timestamps, switch
+the current article, or call DeepSeek. Startup may initialize a missing schema
+and index genuinely new managed PDFs, but an already initialized project must
+remain byte-stable when it is only opened and viewed.
 When `read_only` is enabled, every POST request is rejected before route-specific
 logic runs. The shared read-only server is search-only: GET routes are limited to
 the static app, `/api/ui-mode`, whole-database search/export, row-level source

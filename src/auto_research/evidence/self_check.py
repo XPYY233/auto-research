@@ -93,6 +93,7 @@ def _web_ui_contract() -> dict[str, Any]:
 def _public_share_contract() -> dict[str, Any]:
     script = PROJECT_ROOT / "scripts" / "start_readonly_ngrok.command"
     text = script.read_text(encoding="utf-8") if script.is_file() else ""
+    server_text = (WEB_DIR.parent / "webapp.py").read_text(encoding="utf-8")
     expectations = [
         ("ngrok_script_exists", script.is_file()),
         ("read_only_port", "--read-only" in text and "8766" in text),
@@ -101,6 +102,7 @@ def _public_share_contract() -> dict[str, Any]:
         ("zotero_token_fallback", "/Users/USER/Zotero/.env.ngrok" in text),
         ("server_side_readonly_check", "/api/ui-mode" in text and '"read_only": true' in text),
         ("ngrok_public_url", "ngrok http" in text and "--authtoken" in text),
+        ("startup_no_demo_seed", "seed_target_article(evidence_db)" not in server_text),
     ]
     failed = [name for name, ok in expectations if not ok]
     return {
