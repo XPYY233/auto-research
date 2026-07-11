@@ -167,3 +167,23 @@ body[data-focus-review="true"] .shell{display:block}body[data-focus-review="true
 .search-review-state.automatic{color:#8a5a16}.search-review-state.confirmation,.search-review-state.correction,.search-review-state.manual{color:var(--green)}
 @media(max-width:1100px){.review-progress-card dl{min-width:0}}
 @media(max-width:700px){.review-progress-card dl{grid-template-columns:repeat(2,1fr)}.review-decision-card{padding:17px}.review-decision-card h3{font-size:19px}}
+
+/* Dense evidence rows: readable data with a compact three-column action rail. */
+.edit-table{min-width:1380px;font-size:14px}
+.edit-table th{padding:12px 10px;font-size:12px;letter-spacing:.01em}
+.edit-table th:nth-child(1){width:110px}
+.edit-table th:nth-child(2){width:160px}
+.edit-table th:nth-child(3){width:80px}
+.edit-table th:nth-child(4){width:220px}
+.edit-table th:nth-child(5){width:180px}
+.edit-table .context-col{width:360px}
+.edit-table th:last-child{width:270px}
+.edit-table td{padding:8px 7px}
+.cell{min-height:46px;padding:9px 10px;font-size:14px;line-height:1.52;resize:vertical;word-break:break-word}
+.cell.context{min-height:58px}
+.row-action{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;align-content:start;min-width:254px}
+.row-action button{min-height:34px;padding:7px 6px;font-size:11px;line-height:1.25}
+.row-action>small{grid-column:1/-1}
+.row-action small{padding-top:2px;font-size:10px}
+.row-review-more button{width:100%;margin-top:0}
+@media(max-width:900px){.edit-table{min-width:1320px}.edit-table .context-col{width:320px}}

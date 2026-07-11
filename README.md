@@ -196,12 +196,17 @@ committed.
 The launcher starts the same interface in read-only mode on local port `8766`,
 checks `/api/ui-mode` before opening the tunnel, and then prints an
 `https://...ngrok...` URL that can be shared externally. Read-only mode uses
-the same database, but is intentionally search-only: the shared page exposes
+the same frontend files and the same database; it is not a separately maintained
+public website. It is intentionally search-only: the shared page exposes
 whole-database search, evidence highlighting, PDF evidence opening, and CSV/Excel
 export. The server rejects upload, review, manual entry, article switching,
 learning-sample, queue, current-paper, snapshot, and DeepSeek routes even if a
 visitor guesses the URL. The editable local workbench remains the separate
 `http://127.0.0.1:8765` service.
+
+The search-result `原文证据` action works without any editable-only API: it opens
+the public source metadata, highlighted sentence image, highlighted page image,
+and the corresponding local PDF page through the same read-only server.
 
 GitHub Pages is a good later option for a persistent read-only snapshot site:
 the project can export static HTML/JSON/CSV for external review, but Pages cannot run

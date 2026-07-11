@@ -427,6 +427,9 @@ PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --po
 
 This is not a second app or a copied database. It is the same web UI and the same
 `db/experimental_evidence.sqlite`, started with server-side write protection.
+Do not create or maintain a separate public HTML/JavaScript implementation. Any
+search-card, export, terminology, or source-evidence fix must be made once in the
+shared frontend and verified in both modes.
 When `read_only` is enabled, every POST request is rejected before route-specific
 logic runs. The shared read-only server is search-only: GET routes are limited to
 the static app, `/api/ui-mode`, whole-database search/export, row-level source
@@ -434,6 +437,16 @@ evidence images/metadata, and source PDF opening. Do not expose current-paper,
 paper-list, upload queue, learning samples, review, or extraction endpoints in
 public read-only mode. The frontend should hide every non-search navigation item
 and default to the whole-database search view.
+
+The public source-evidence button must open `/source-view` directly from the
+search result row. It must not prefetch `/api/six-data/<id>`, because that private
+detail route intentionally remains unavailable in search-only mode. Verify the
+snippet PNG, full-page highlight PNG, and PDF URL in an actual read-only browser.
+
+In the editable review table, avoid a narrow single-column stack of controls that
+artificially stretches every data row. Keep data text at a readable size, auto-fit
+textarea height to content within a bounded range, and arrange routine actions in
+a compact multi-column rail so row height is driven primarily by evidence text.
 
 Use this mode for any public tunnel or external preview URL. Do not expose the
 editable `8765` workbench through a public tunnel. The current recommended

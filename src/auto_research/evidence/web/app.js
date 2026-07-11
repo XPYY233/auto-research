@@ -564,6 +564,13 @@ function updateReviewBatchLinks() {
   }
 }
 
+function autoSizeReviewCell(input) {
+  input.style.height = "auto";
+  const target = Math.min(Math.max(input.scrollHeight + 2, 46), 132);
+  input.style.height = `${target}px`;
+  input.style.overflowY = input.scrollHeight > target ? "auto" : "hidden";
+}
+
 function renderTable() {
   const rows = filteredRows();
   const progress = reviewProgress();
@@ -635,15 +642,19 @@ function renderTable() {
     event.stopPropagation();
     reopenReviewDecision(Number(btn.dataset.reopen));
   }));
-  body.querySelectorAll("[data-field]").forEach(input => input.addEventListener("input", event => {
-    if (isReadOnly()) return;
-    const tr = event.target.closest("tr[data-item]");
-    const id = Number(tr?.dataset.item);
-    const row = state.rows.find(item => item.item_id === id);
-    if (!row) return;
-    const dirty = fields.some(field => String(collectRowFields(id)[field] ?? "") !== String(row[field] ?? ""));
-    markRowDirty(id, dirty);
-  }));
+  body.querySelectorAll("[data-field]").forEach(input => {
+    autoSizeReviewCell(input);
+    input.addEventListener("input", event => {
+      autoSizeReviewCell(event.target);
+      if (isReadOnly()) return;
+      const tr = event.target.closest("tr[data-item]");
+      const id = Number(tr?.dataset.item);
+      const row = state.rows.find(item => item.item_id === id);
+      if (!row) return;
+      const dirty = fields.some(field => String(collectRowFields(id)[field] ?? "") !== String(row[field] ?? ""));
+      markRowDirty(id, dirty);
+    });
+  });
   renderOriginal(rows.find(row => Number(row.item_id) === Number(state.selected)) || null);
 }
 
@@ -747,23 +758,16 @@ function sourceMetaHtml(data) {
   return `<article class="source-meta-card"><strong>${esc(data.match_label)}</strong><p>PDF第 ${esc(data.page_number)} 页 · ${esc(data.locator || "未标注")}<br>${esc(data.match_note)}</p></article>${matched}<article class="source-meta-card"><strong>证据片段</strong><p>${esc(data.excerpt || "未保留原始证据片段")}</p></article>`;
 }
 
-async function openSourceViewer(id) {
-  let row = state.rows.find(item => item.item_id === id);
-  if (!row) {
-    try {
-      row = await api(`/api/six-data/${id}`);
-    } catch (error) {
-      toast(error.message, true);
-      return;
-    }
-  }
-  if (!row) return;
+async function openSourceViewer(id, rowHint = null) {
+  const row = rowHint || state.rows.find(item => item.item_id === id) || null;
   const dialog = document.querySelector("#source-dialog");
   const meta = document.querySelector("#source-meta");
   const focusImage = document.querySelector("#source-focus-image");
   const image = document.querySelector("#source-image");
   const pdfLink = document.querySelector("#source-open-pdf");
-  meta.innerHTML = sourceMetaLoading(row);
+  meta.innerHTML = row
+    ? sourceMetaLoading(row)
+    : '<article class="source-meta-card"><strong>正在定位原文证据</strong><p>正在读取证据页码、原文片段和高亮位置。</p></article>';
   focusImage.removeAttribute("src");
   focusImage.alt = "正在加载高亮句子放大图";
   image.removeAttribute("src");
@@ -1032,7 +1036,10 @@ function renderResults(rows) {
     return `<article class="result"><div class="value">${esc(row.value_text)}<small> ${esc(row.unit)}</small></div><strong>${esc(row.meaning)}</strong><em class="search-review-state ${esc(row.review_action || row.origin_type)}">${esc(reviewLabel)}${row.search_score != null ? ` · 相关度 ${esc(row.search_score)}` : ""}</em><p>${esc(row.context_explanation)}</p><div class="result-paper">${esc(paperLine)}</div><div class="result-actions">${sourceButton}${reviewButton}</div></article>`;
   }).join("");
   el.querySelectorAll("[data-jump]").forEach(btn => btn.addEventListener("click", () => jumpToRow(Number(btn.dataset.jump))));
-  el.querySelectorAll("[data-source-search]").forEach(btn => btn.addEventListener("click", () => openSourceViewer(Number(btn.dataset.sourceSearch))));
+  el.querySelectorAll("[data-source-search]").forEach(btn => btn.addEventListener("click", () => {
+    const itemId = Number(btn.dataset.sourceSearch);
+    openSourceViewer(itemId, rows.find(row => Number(row.item_id) === itemId) || null);
+  }));
 }
 
 async function jumpToRow(id) {

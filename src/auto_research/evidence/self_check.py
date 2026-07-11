@@ -44,6 +44,7 @@ def _web_ui_contract() -> dict[str, Any]:
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
+    source_viewer_js = js.split("async function openSourceViewer", 1)[-1].split("function collectRowFields", 1)[0]
     expectations = [
         ("editable_table", "class=\"edit-table\"" in html and "id=\"edit-rows\"" in html),
         ("six_columns_visible", all(label in html for label in ("具体数值", "具体意义", "单位", "文章题目", "DOI", "数据在文中的解释"))),
@@ -76,8 +77,10 @@ def _web_ui_contract() -> dict[str, Any]:
         ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
         ("readonly_mode", "id=\"readonly-badge\"" in html and "/api/ui-mode" in js and "isReadOnly" in js and "rejectReadOnlyAction" in js and ".readonly-badge[hidden]" in css),
         ("readonly_search_only_mode", "renderPublicSearchOnlyMode" in js and 'name !== "search"' in js and 'body[data-readonly="true"] .nav:not([data-view="search"])' in css),
-        ("search_source_evidence_button", "data-source-search" in js and "原文证据" in js and "openSourceViewer(Number(btn.dataset.sourceSearch))" in js),
+        ("search_source_evidence_button", "data-source-search" in js and "原文证据" in js and "openSourceViewer(itemId" in js),
+        ("readonly_source_direct", "function openSourceViewer(id, rowHint = null)" in js and "rows.find(row => Number(row.item_id) === itemId)" in js and "await api(`/api/six-data/${id}`)" not in source_viewer_js),
         ("search_review_state", "search-review-state" in js and "待审核" in js and "已确认" in js and "已修正" in js),
+        ("dense_review_rows", "autoSizeReviewCell" in js and "grid-template-columns:repeat(3,minmax(0,1fr))" in css and ".edit-table{min-width:1380px;font-size:14px}" in css),
     ]
     failed = [name for name, ok in expectations if not ok]
     return {
