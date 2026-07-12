@@ -405,7 +405,19 @@ auto-research evidence-benchmark <paper-selector> --run-id <run-id>
 # This writes a preview/report only and never changes the six-column review table.
 auto-research evidence-ensemble-preview <paper-selector> \
   --primary-run 23 --supplemental-run 24
+
+# Multiple focused supplements can be combined without taking a whole variable run.
+# This adds the gap audit plus qualitative observations from the results pass.
+auto-research evidence-ensemble-preview <paper-selector> \
+  --primary-run 23 --supplemental-run 25 \
+  --supplemental-focus coverage_gap_audit \
+  --supplemental-focus qualitative_results
 ```
+
+Safe supplemental-focus aliases are `coverage_gap_audit`,
+`qualitative_results`, `results`, `methods`, `targeted`, and `all`. Prefer the
+narrowest focus that adds verified coverage; selecting an entire later run can
+increase human-review noise even when its candidates are evidence-grounded.
 
 Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts
 are written to `data/evidence/deepseek_runs/`. Model output alone is never a

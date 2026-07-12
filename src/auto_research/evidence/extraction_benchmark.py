@@ -17,6 +17,11 @@ from .six_column import list_current_data, resolve_paper_selector
 BENCHMARK_DIR = DATA_DIR / "evidence" / "benchmarks"
 MATCH_THRESHOLD = 0.68
 EXACT_THRESHOLD = 0.80
+NUMBER_WORDS = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+    "ten": "10", "eleven": "11", "twelve": "12",
+}
 
 
 def _text(value: Any) -> str:
@@ -32,6 +37,11 @@ def _compact(value: Any) -> str:
 
 def _numbers(value: Any) -> tuple[str, ...]:
     normalized = _text(value)
+    normalized = re.sub(
+        rf"\b({'|'.join(NUMBER_WORDS)})\b",
+        lambda match: NUMBER_WORDS[match.group(1)],
+        normalized,
+    )
     return tuple(re.findall(r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?", normalized))
 
 
@@ -535,11 +545,36 @@ def benchmark_extraction_run(db: EvidenceDB, article_key: str, *, run_id: int | 
 
 def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_id: int,
                                supplemental_run_ids: list[int],
-                               supplemental_focus: str = "coverage_gap_audit",
+                               supplemental_focus: str | list[str] = "coverage_gap_audit",
                                primary_artifact_path: Path | None = None,
                                supplemental_artifact_paths: dict[int, Path] | None = None,
                                out_dir: Path | None = None) -> dict[str, Any]:
     """Build a non-overwriting primary-run plus focused-supplement preview."""
+
+    focus_selectors = (
+        [supplemental_focus]
+        if isinstance(supplemental_focus, str)
+        else list(supplemental_focus)
+    )
+    focus_selectors = [str(item).strip() for item in focus_selectors if str(item).strip()]
+    if not focus_selectors:
+        focus_selectors = ["coverage_gap_audit"]
+
+    def focus_selected(item: dict[str, Any]) -> bool:
+        focus = str(item.get("extraction_focus") or "")
+        aliases = {
+            "coverage_gap_audit": lambda: focus == "coverage_gap_audit",
+            "results": lambda: focus.startswith("Focus on experimental results"),
+            "qualitative_results": lambda: (
+                focus.startswith("Focus on experimental results")
+                and item.get("evidence_type") == "qualitative"
+            ),
+            "methods": lambda: focus.startswith("Focus on experimental setup"),
+            "targeted": lambda: focus.startswith("Targeted experiment-specific pass"),
+            "all": lambda: True,
+        }
+        return any(aliases.get(selector, lambda selector=selector: focus == selector)()
+                   for selector in focus_selectors)
 
     paper_id = resolve_paper_selector(db, article_key=article_key)
     paper = db.get_paper(paper_id)
@@ -563,7 +598,7 @@ def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_
         artifact_paths.append(str(path))
         selected = [
             item for item in payload["verified_candidates"]
-            if isinstance(item, dict) and item.get("extraction_focus") == supplemental_focus
+            if isinstance(item, dict) and focus_selected(item)
         ]
         supplemental_counts[str(run_id)] = len(selected)
         for item in selected:
@@ -581,7 +616,8 @@ def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_
         "ensemble": {
             "primary_run_id": primary_run_id,
             "supplemental_run_ids": supplemental_run_ids,
-            "supplemental_focus": supplemental_focus,
+            "supplemental_focus": focus_selectors[0] if len(focus_selectors) == 1 else ",".join(focus_selectors),
+            "supplemental_focuses": focus_selectors,
             "supplemental_candidate_counts": supplemental_counts,
             "database_rows_changed": 0,
         },
@@ -590,5 +626,7 @@ def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_
         **replay["comparison"],
     }
     suffix = "_".join(f"{run_id:04d}" for run_id in supplemental_run_ids)
-    stem = f"paper_{paper_id:03d}_ensemble_{primary_run_id:04d}_plus_{suffix}_{supplemental_focus}"
+    focus_slug = "_".join(re.sub(r"[^a-z0-9_-]+", "-", item.casefold()).strip("-")
+                          for item in focus_selectors)
+    stem = f"paper_{paper_id:03d}_ensemble_{primary_run_id:04d}_plus_{suffix}_{focus_slug}"
     return _write_benchmark_report(report, Path(out_dir or BENCHMARK_DIR), stem)

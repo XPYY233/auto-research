@@ -98,6 +98,29 @@ class ValueTests(unittest.TestCase):
 
 
 class ExtractionBenchmarkTests(unittest.TestCase):
+    def test_number_words_match_numeric_method_values_without_rewriting_source(self):
+        candidate = {
+            "value_text": "five times",
+            "unit": "",
+            "meaning": "塑性区与压痕深度的倍数关系",
+            "context_explanation": "Berkovich tip",
+            "source_page": 9,
+            "source_locator": "Section 3.3",
+            "source_excerpt": "plastic zone is about five times the indentation depth",
+        }
+        baseline = {
+            "value_text": "~5",
+            "unit": "× indentation depth",
+            "meaning": "Berkovich压头塑性区相对压入深度倍数",
+            "context_explanation": "Berkovich tip",
+            "source_page": 9,
+            "source_locator": "Section 3.3",
+            "source_excerpt": "plastic zone is about five times the indentation depth",
+        }
+        scored = score_pair(candidate, baseline)
+        self.assertIsNotNone(scored)
+        self.assertEqual(candidate["value_text"], "five times")
+
     def test_matching_maximizes_coverage_instead_of_greedy_score(self):
         high = {"score": 0.95, "status": "exact", "disagreements": [], "signals": {}}
         medium = {"score": 0.80, "status": "exact", "disagreements": [], "signals": {}}
@@ -626,6 +649,43 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertLessEqual(report["summary"]["candidate_count"], 155)
         self.assertEqual(len(list_current_data(self.db, self.paper_id)), before)
         self.assertTrue(Path(report["json_path"]).is_file())
+
+    def test_ensemble_accepts_multiple_safe_focus_aliases(self):
+        before = len(list_current_data(self.db, self.paper_id))
+        run_dir = Path(__file__).resolve().parents[2] / "data/evidence/deepseek_runs"
+        report = benchmark_ensemble_preview(
+            self.db,
+            TARGET_DOI,
+            primary_run_id=23,
+            supplemental_run_ids=[25],
+            supplemental_focus=["coverage_gap_audit", "results"],
+            primary_artifact_path=run_dir / "paper_002_run_0023.json",
+            supplemental_artifact_paths={25: run_dir / "paper_002_run_0025.json"},
+            out_dir=Path(self.tmp.name) / "multi-focus-ensemble",
+        )
+        self.assertEqual(
+            report["ensemble"]["supplemental_focuses"],
+            ["coverage_gap_audit", "results"],
+        )
+        self.assertEqual(report["ensemble"]["supplemental_candidate_counts"], {"25": 31})
+        self.assertEqual(report["ensemble"]["database_rows_changed"], 0)
+        self.assertEqual(len(list_current_data(self.db, self.paper_id)), before)
+
+    def test_ensemble_can_add_only_qualitative_result_candidates(self):
+        run_dir = Path(__file__).resolve().parents[2] / "data/evidence/deepseek_runs"
+        report = benchmark_ensemble_preview(
+            self.db,
+            TARGET_DOI,
+            primary_run_id=23,
+            supplemental_run_ids=[25],
+            supplemental_focus=["coverage_gap_audit", "qualitative_results"],
+            primary_artifact_path=run_dir / "paper_002_run_0023.json",
+            supplemental_artifact_paths={25: run_dir / "paper_002_run_0025.json"},
+            out_dir=Path(self.tmp.name) / "qualitative-ensemble",
+        )
+        self.assertGreater(report["ensemble"]["supplemental_candidate_counts"]["25"], 6)
+        self.assertLess(report["ensemble"]["supplemental_candidate_counts"]["25"], 31)
+        self.assertEqual(report["category_coverage"]["显微观察与趋势"]["covered"], 6)
 
     def test_confirmed_correction_does_not_mutate_original(self):
         row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")

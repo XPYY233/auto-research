@@ -404,6 +404,13 @@ may retain an explicitly chosen primary run and add only candidates carrying the
 requested supplemental focus (normally `coverage_gap_audit`). The ensemble must
 re-run local gates and deduplication, preserve source-run provenance, remain
 non-overwriting, and report zero database row changes.
+The CLI accepts repeated `--supplemental-focus` options. Prefer narrow aliases:
+`coverage_gap_audit` for omitted atomic data and `qualitative_results` for
+explicit observations from a results pass. Broader aliases (`results`,
+`methods`, `targeted`, `all`) are diagnostic options and should be retained only
+when their added coverage justifies the extra review candidates. Benchmark
+comparison may treat standalone English number words such as `five` as numeric
+equivalents, but it must never rewrite the candidate's source-preserving value.
 
 Uncertainty belongs to its central value (`3.56±0.05`, not a second `0.05`
 datum). If the source includes an uncertainty, rejecting a candidate that drops

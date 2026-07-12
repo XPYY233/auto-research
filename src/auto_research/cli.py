@@ -140,7 +140,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p.add_argument("--primary-run", type=int, required=True, help="Primary completed DeepSeek run id")
     p.add_argument("--supplemental-run", type=int, action="append", required=True, help="Supplemental run id; may be repeated")
-    p.add_argument("--supplemental-focus", default="coverage_gap_audit", help="Only include supplemental candidates from this extraction focus")
+    p.add_argument(
+        "--supplemental-focus", action="append",
+        help="Include a supplemental focus; repeat as needed. Aliases: coverage_gap_audit, qualitative_results, results, methods, targeted, all",
+    )
     p.add_argument("--out-dir", help="Directory for JSON and Markdown ensemble reports")
 
     args = parser.parse_args(argv)
@@ -343,7 +346,7 @@ def cmd_evidence(args) -> int:
             args.article_key,
             primary_run_id=args.primary_run,
             supplemental_run_ids=args.supplemental_run,
-            supplemental_focus=args.supplemental_focus,
+            supplemental_focus=args.supplemental_focus or "coverage_gap_audit",
             out_dir=Path(args.out_dir) if args.out_dir else None,
         )
         print(json.dumps({

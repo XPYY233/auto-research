@@ -269,9 +269,17 @@ def _coverage_gap_messages(paper: dict[str, Any], chunk: list[dict[str, Any]],
                            learning_guidance: str = "") -> list[dict[str, str]]:
     focus = (
         "Coverage-gap audit only. Find supported atomic data missing from the existing inventory. "
-        "Prioritize overlooked sample geometry, times, spacing/counts, full vectors/ranges, table cells, "
-        "uncertainties attached to central values, observation onset/saturation thresholds, qualitative "
-        "size descriptions, and explicit presence/absence findings. Do not repeat an existing datum."
+        "Audit the source systematically rather than selecting only prominent results. Prioritize overlooked "
+        "sample geometry, durations and minimum/maximum conditions, spacing/counts, tolerances, instrument "
+        "settings, full vectors/ranges/sequences, dimensionless ratios or multiples, table cells, uncertainties "
+        "attached to central values, observation onset/saturation thresholds, qualitative size descriptions, "
+        "and explicit presence/absence findings. For every table, audit row by row and column by column: a "
+        "nominal (measured) cell is two data even when both values are equal, and markers such as n.m., bal., "
+        "not detected, and not observed are reportable values when their physical meaning is explicit. Preserve "
+        "a multi-dimensional quantity such as 0.2 × 0.2 nm as one complete value, and preserve a dose or "
+        "temperature sequence when the paper presents it as one set of observation points. Include numeric "
+        "method details written as words or hyphenated forms, such as three-mm, five times, or at least five "
+        "hours. Do not repeat an existing datum."
     )
     messages = _extraction_messages(paper, chunk, focus, learning_guidance)
     inventory = [{

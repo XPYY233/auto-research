@@ -296,6 +296,10 @@ class DeepSeekExtractionTests(unittest.TestCase):
         self.assertIn("return only evidence not already represented", messages[0]["content"])
         self.assertIn('"value_text": "3.5"', messages[1]["content"])
         self.assertIn("spacing/counts", messages[0]["content"])
+        self.assertIn("nominal (measured) cell is two data", messages[0]["content"])
+        self.assertIn("n.m., bal.", messages[0]["content"])
+        self.assertIn("0.2 × 0.2 nm", messages[0]["content"])
+        self.assertIn("three-mm", messages[0]["content"])
 
     def test_optional_coverage_gap_failure_becomes_pending_task(self):
         class GapFailClient(FakeDeepSeekClient):
