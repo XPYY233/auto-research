@@ -464,3 +464,6 @@ meaning, or experimental scope supplies an identity signal. Until the six-column
 baseline is fully reviewed, report the results as provisional baseline agreement
 and coverage, not as scientific precision, recall, or accuracy. An unmatched
 candidate is a manual-review item, not automatically an extraction error.
+Historical artifacts are replayed through the current deterministic evidence
+gate and deduplication rules without changing the artifact or calling DeepSeek;
+the report keeps raw, gate-passed, deduplicated, and rejected counts separately.

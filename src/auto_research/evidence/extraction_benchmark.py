@@ -100,10 +100,54 @@ def _value_score(candidate: Any, baseline: Any) -> float:
     return similarity if similarity >= 0.82 else 0.0
 
 
+def _observation_signature(item: dict[str, Any]) -> tuple[set[str], str | None]:
+    text = _text(
+        f"{item.get('value_text', '')} {item.get('meaning', '')} "
+        f"{item.get('context_explanation', '')} {item.get('source_excerpt', '')}"
+    )
+    concepts: set[str] = set()
+    patterns = {
+        "void": (r"\bvoids?\b", r"空洞"),
+        "precipitate": (r"\bprecipitates?\b", r"析出"),
+        "ordering_reflection": (r"\breflections?\b", r"\bdiffraction\b", r"有序", r"衍射", r"反射"),
+        "dislocation_loop": (r"\bdislocation loops?\b", r"位错环"),
+    }
+    for concept, expressions in patterns.items():
+        if any(re.search(expression, text) for expression in expressions):
+            concepts.add(concept)
+    absent = bool(re.search(
+        r"\b(?:no|without)\s+(?:additional\s+)?(?:voids?|precipitates?|reflections?)\b|"
+        r"\bnot\s+(?:be\s+)?(?:evidently\s+)?(?:observed|detected|revealed|found)\b|"
+        r"未(?:观察|发现|检测)|无(?:空洞|析出)|没有(?:空洞|析出)",
+        text,
+    ))
+    present = bool(re.search(
+        r"\b(?:detected|appeared|present)\b|\b(?:were|was|are|is)\s+observed\b|"
+        r"\ba trace of\b|观察到|检测到|发现|出现|存在",
+        text,
+    ))
+    polarity = "absent" if absent else ("present" if present else None)
+    return concepts, polarity
+
+
+def _observation_value_score(candidate: dict[str, Any], baseline: dict[str, Any]) -> float:
+    candidate_concepts, candidate_polarity = _observation_signature(candidate)
+    baseline_concepts, baseline_polarity = _observation_signature(baseline)
+    if not candidate_concepts or not baseline_concepts:
+        return 0.0
+    if not candidate_concepts.intersection(baseline_concepts):
+        return 0.0
+    if not candidate_polarity or candidate_polarity != baseline_polarity:
+        return 0.0
+    return 0.88
+
+
 def score_pair(candidate: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any] | None:
     """Score one candidate/baseline pair without assuming that equal page means equal meaning."""
 
     value_score = _value_score(candidate.get("value_text"), baseline.get("value_text"))
+    observation_score = _observation_value_score(candidate, baseline)
+    value_score = max(value_score, observation_score)
     if value_score < 0.82:
         return None
     candidate_page = int(candidate.get("source_page") or 0)
@@ -157,6 +201,7 @@ def score_pair(candidate: dict[str, Any], baseline: dict[str, Any]) -> dict[str,
             "source_locator": locator_score,
             "scope": scope_score,
             "meaning": meaning_score,
+            "observation_semantics": observation_score,
         },
     }
 
@@ -301,6 +346,7 @@ def _artifact_for_run(db: EvidenceDB, paper_id: int, run_id: int | None,
 
 def benchmark_markdown(report: dict[str, Any]) -> str:
     summary = report["summary"]
+    replay = report["postprocessing_replay"]
     lines = [
         f"# 自动抽取基准报告：{report['paper']['title']}",
         "",
@@ -308,13 +354,16 @@ def benchmark_markdown(report: dict[str, Any]) -> str:
         f"- DeepSeek 运行：{report.get('run_id') or '外部产物'}",
         f"- 产物：`{report['artifact_path']}`",
         f"- 基准数据：{summary['baseline_count']} 条（已人工审核 {summary['reviewed_baseline_count']}，未审核 {summary['unreviewed_baseline_count']}）",
-        f"- 已验证候选：{summary['candidate_count']} 条",
+        f"- 产物内已验证候选：{replay['raw_candidate_count']} 条",
+        f"- 按当前证据门离线回放：{replay['gate_passed_count']} 条（排除 {replay['gate_rejected_count']} 条非原子/不合格候选）",
+        f"- 按当前去重规则离线回放：{summary['candidate_count']} 条（合并 {replay['duplicate_removed_count']} 条重复表述）",
         f"- 一对一匹配：{summary['candidate_match_count']} 条，其中严格匹配 {summary['exact_match_count']}、部分匹配 {summary['partial_match_count']}",
         f"- 基准覆盖率：{summary['baseline_coverage_rate']:.1%}",
         f"- 候选一致率：{summary['candidate_agreement_rate']:.1%}",
         f"- 未匹配候选：{summary['unmatched_candidate_count']} 条；未覆盖基准：{summary['uncovered_baseline_count']} 条",
         "",
         "> 注意：当前基准仍有未审核数据。这里的“覆盖率/一致率”用于比较抽取版本，不等同于科学准确率；未匹配候选可能是新增真数据，也可能是误提取，必须人工核验。",
+        "> 离线回放只重跑本地确定性证据门、去重和基准比对，不调用 DeepSeek，也不改写原运行产物。",
         "",
         "## 分类型覆盖",
         "",
@@ -352,13 +401,46 @@ def benchmark_extraction_run(db: EvidenceDB, article_key: str, *, run_id: int | 
     if not paper:
         raise KeyError(f"Paper {paper_id} not found")
     artifact, payload = _artifact_for_run(db, paper_id, run_id, artifact_path)
-    candidates = [dict(item) for item in payload["verified_candidates"] if isinstance(item, dict)]
+    raw_candidates = [dict(item) for item in payload["verified_candidates"] if isinstance(item, dict)]
+    raw_summary = compare_candidates(list_current_data(db, paper_id), [dict(item) for item in raw_candidates])["summary"]
+    # Import locally to avoid a module-level cycle: the runtime extractor uses
+    # this benchmark matcher after its own deterministic post-processing.
+    from .deepseek_extraction import _deduplicate, _evidence_check, _read_pages
+
+    pdf_path = Path(str(paper.get("pdf_path") or ""))
+    page_text = {item["page"]: item["text"] for item in _read_pages(pdf_path)} if pdf_path.is_file() else {}
+    gate_passed: list[dict[str, Any]] = []
+    gate_rejected: list[dict[str, Any]] = []
+    for item in raw_candidates:
+        check = _evidence_check(item, page_text.get(int(item.get("source_page") or 0), ""))
+        if check.get("passed"):
+            gate_passed.append(dict(item))
+        else:
+            gate_rejected.append({
+                "candidate_id": item.get("candidate_id"),
+                "value_text": item.get("value_text"),
+                "meaning": item.get("meaning"),
+                "reason": check.get("reason"),
+            })
+    candidates = _deduplicate(gate_passed)
     comparison = compare_candidates(list_current_data(db, paper_id), candidates)
     report = {
         "paper": {"id": paper_id, "title": paper["title"], "doi": paper.get("doi")},
         "run_id": payload.get("run_id"),
         "artifact_path": str(artifact),
         "generated_without_model_call": True,
+        "postprocessing_replay": {
+            "raw_candidate_count": len(raw_candidates),
+            "gate_passed_count": len(gate_passed),
+            "gate_rejected_count": len(gate_rejected),
+            "current_candidate_count": len(candidates),
+            "duplicate_removed_count": len(gate_passed) - len(candidates),
+            "total_removed_count": len(raw_candidates) - len(candidates),
+            "raw_candidate_agreement_rate": raw_summary["candidate_agreement_rate"],
+            "current_candidate_agreement_rate": comparison["summary"]["candidate_agreement_rate"],
+            "artifact_unchanged": True,
+            "gate_rejected_candidates": gate_rejected,
+        },
         **comparison,
     }
     destination = Path(out_dir or BENCHMARK_DIR)

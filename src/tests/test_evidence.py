@@ -17,6 +17,13 @@ from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.db_health import evidence_db_health
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
 from auto_research.evidence.experiment_types import classify_experiment_types
+from auto_research.evidence.deepseek_extraction import (
+    _deduplicate,
+    _evidence_check,
+    _extraction_messages,
+    _is_reference_dominant,
+    _material_scope,
+)
 from auto_research.evidence.extraction_benchmark import (
     benchmark_extraction_run,
     compare_candidates,
@@ -150,6 +157,119 @@ class ExtractionBenchmarkTests(unittest.TestCase):
         self.assertIsNotNone(scored)
         self.assertEqual(scored["status"], "partial")
         self.assertIn("unit", scored["disagreements"])
+
+    def test_qualitative_observation_matches_by_concept_and_polarity(self):
+        candidate = {
+            "value_text": "No precipitates", "unit": "", "source_page": 8,
+            "source_locator": "Section 3.2",
+            "source_excerpt": "no precipitates can be evidently revealed under TEM at 1 dpa",
+            "meaning": "ordered precipitates observation",
+            "context_explanation": "Al0.3CoCrFeNi; irradiated to 1 dpa",
+        }
+        baseline = {
+            "value_text": "not observed", "unit": "", "source_page": 8,
+            "source_locator": "Section 3.2",
+            "source_excerpt": "no precipitates can be evidently revealed under TEM at 1 dpa",
+            "meaning": "有序析出物观察结果",
+            "context_explanation": "Al0.3CoCrFeNi；1 dpa",
+        }
+        scored = score_pair(candidate, baseline)
+        self.assertIsNotNone(scored)
+        self.assertGreater(scored["signals"]["observation_semantics"], 0)
+
+    def test_qualitative_observation_rejects_opposite_polarity(self):
+        candidate = {
+            "value_text": "no additional reflections", "source_page": 7,
+            "source_excerpt": "no additional reflections were found after irradiation",
+            "meaning": "phase stability",
+        }
+        baseline = {
+            "value_text": "detected", "source_page": 7,
+            "source_excerpt": "a trace of {100} reflections were observed after irradiation",
+            "meaning": "有序化信号",
+        }
+        self.assertIsNone(score_pair(candidate, baseline))
+
+
+class DeepSeekDeduplicationTests(unittest.TestCase):
+    def test_material_scope_normalizes_decimal_alloy_and_all_materials(self):
+        self.assertEqual(_material_scope("Al0.3CoCrFeNi; TEM"), "al03cocrfeni")
+        self.assertEqual(
+            _material_scope("Al0.3CoCrFeNi, CoCrFeMnNi and 316H"),
+            "allmaterials",
+        )
+
+    def test_cross_language_duplicate_is_merged_with_audit_ids(self):
+        common = {
+            "value_text": "1655", "unit": "K", "source_page": 8,
+            "source_locator": "Table 4", "source_excerpt": "Al0.3CoCrFeNi 1655",
+        }
+        candidates = [
+            {**common, "candidate_id": "cn", "meaning": "熔点", "context_explanation": "合金成分：Al0.3CoCrFeNi"},
+            {**common, "candidate_id": "en", "meaning": "melting temperature Tm", "context_explanation": "Al0.3CoCrFeNi; Table 4"},
+        ]
+        result = _deduplicate(candidates)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["duplicate_candidate_ids"], ["en"])
+
+    def test_equal_composition_values_for_different_elements_are_not_merged(self):
+        common = {
+            "value_text": "0.03", "unit": "at%", "source_page": 2,
+            "source_locator": "Table 1", "source_excerpt": "P 0.03, S 0.03",
+            "context_explanation": "316H nominal composition",
+        }
+        result = _deduplicate([
+            {**common, "candidate_id": "p", "meaning": "P nominal composition"},
+            {**common, "candidate_id": "s", "meaning": "S nominal composition"},
+        ])
+        self.assertEqual(len(result), 2)
+
+    def test_equal_temperature_for_different_experiment_types_is_not_merged(self):
+        common = {
+            "value_text": "300", "unit": "°C", "source_page": 2,
+            "source_locator": "Methods", "context_explanation": "Al0.3CoCrFeNi",
+        }
+        result = _deduplicate([
+            {**common, "candidate_id": "anneal", "meaning": "annealing temperature", "source_excerpt": "annealed at 300 °C"},
+            {**common, "candidate_id": "irradiate", "meaning": "irradiation temperature", "source_excerpt": "irradiated at 300 °C"},
+        ])
+        self.assertEqual(len(result), 2)
+
+    def test_compound_qualitative_observation_must_be_split(self):
+        item = {
+            "value_text": "high density of dislocation loops, no void",
+            "meaning": "irradiated microstructure",
+            "evidence_type": "qualitative",
+        }
+        checked = _evidence_check(item, "A high density of dislocation loops was found. No void was observed.")
+        self.assertFalse(checked["passed"])
+        self.assertIn("拆分", checked["reason"])
+
+    def test_extraction_prompt_requests_atomic_observation_thresholds(self):
+        messages = _extraction_messages(
+            {"title": "Test", "doi": "10.1/test"},
+            [{"page": 1, "text": "loops appeared at 0.01 dpa and saturated at 0.1 dpa"}],
+            "results",
+        )
+        system = messages[0]["content"]
+        self.assertIn("Split compound observations into atomic rows", system)
+        self.assertIn("onset/saturation thresholds", system)
+
+    def test_mixed_results_and_references_page_is_not_discarded(self):
+        text = (
+            "Discussion\n"
+            + ("The calculated hardness increase was 1.2 GPa after irradiation. "
+               "The indentation depth was 100 nm. " * 8)
+            + "\nReferences\n"
+            + "\n".join(f"[{index}] Author, Journal, {2000 + index}." for index in range(1, 12))
+        )
+        self.assertFalse(_is_reference_dominant(text))
+
+    def test_reference_only_page_is_discarded(self):
+        text = "References\n" + "\n".join(
+            f"[{index}] Author, Journal, {2000 + index}." for index in range(1, 12)
+        )
+        self.assertTrue(_is_reference_dominant(text))
 
 
 class EvidenceDBTests(unittest.TestCase):
@@ -345,7 +465,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
         )
         summary = report["summary"]
         self.assertEqual(summary["baseline_count"], 114)
-        self.assertEqual(summary["candidate_count"], 125)
+        self.assertEqual(report["postprocessing_replay"]["raw_candidate_count"], 125)
+        self.assertLess(summary["candidate_count"], 125)
+        self.assertTrue(report["postprocessing_replay"]["artifact_unchanged"])
         self.assertGreater(summary["candidate_match_count"], 0)
         self.assertTrue(summary["provisional"])
         self.assertTrue(report["generated_without_model_call"])

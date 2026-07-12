@@ -371,6 +371,17 @@ comparison metrics, not scientific accuracy/precision/recall. Treat unmatched
 candidates as pending human decisions rather than false positives. Preserve the
 JSON and Chinese Markdown reports under `data/evidence/benchmarks/` so later
 prompt, gate, and deduplication changes can be compared against the same run.
+Historical replay must preserve the original artifact, re-run only deterministic
+local gates and deduplication, and report raw, rejected, merged, and retained
+counts separately. A compound observation containing distinct physical findings
+must be split into atomic rows; do not accept a single row such as “loops present,
+no voids”. Do not discard a PDF page merely because its lower half contains many
+references when its upper portion still contains results, discussion, formulas,
+or experimental conditions.
+Deduplication must never use value/unit similarity alone. Preserve equal values
+when their physical meanings, material scopes, or experiment types differ (for
+example, 300 °C annealing versus 300 °C irradiation), and keep merged candidate
+ids on the retained row for audit.
 
 ### Five-paper blind validation (2026-07-08)
 

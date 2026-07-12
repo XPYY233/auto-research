@@ -50,6 +50,13 @@ def _evidence_check(item: dict[str, Any], page_text: str) -> dict[str, Any]:
             "passed": False, "score": 0.0, "missing_numbers": [],
             "reason": "多个表格单元被聚合成一条数据，必须拆分为一值一行",
         }
+    if item.get("evidence_type") == "qualitative":
+        concepts = _property_concepts(f"{raw_value} {item.get('meaning') or ''}")
+        if len(concepts.intersection({"void_observation", "precipitate_observation", "ordering_reflection", "dislocation_loop"})) > 1:
+            return {
+                "passed": False, "score": 0.0, "missing_numbers": [],
+                "reason": "多个定性观察被聚合成一条数据，必须按物理结论拆分",
+            }
     semantic_text = f"{item.get('context_explanation') or ''} {item.get('source_excerpt') or ''}".casefold()
     forbidden = [
         marker for marker in (
@@ -118,15 +125,27 @@ def _is_reference_dominant(text: str) -> bool:
     compact = " ".join(body.split())
     if not compact:
         return False
-    numbered_entries = len(re.findall(r"(?:^|\n)\s*\[\d+\]", body))
+    entry_matches = list(re.finditer(r"(?:^|\n)\s*\[\d+\]", body))
+    numbered_entries = len(entry_matches)
     begins_with_entry = bool(re.match(r"\s*(?:references\s*)?\[\d+\]", body, re.I))
     journal_markers = len(re.findall(
         r"\b(?:doi|vol\.|pp\.|et al\.|materials?|journal|phys\.|acta|scripta)\b",
         compact, re.I,
     ))
     has_data_anchor = bool(re.search(r"\b(?:table|figure|fig\.|experimental|methods?)\b", compact, re.I))
+    first_entry = entry_matches[0].start() if entry_matches else len(body)
+    mixed_content_page = (
+        numbered_entries >= 2
+        and first_entry > max(500, int(len(body) * 0.25))
+        and bool(re.search(
+            r"\b(?:results?|discussion|conclusions?|hardness|irradiat|indentation|microstructure|measured|calculated)\b",
+            body[:first_entry], re.I,
+        ))
+    )
+    if mixed_content_page:
+        return False
     return (
-        numbered_entries >= 5
+        (numbered_entries >= 5 and first_entry <= max(500, int(len(body) * 0.25)))
         or (begins_with_entry and numbered_entries >= 2 and not has_data_anchor)
         or (compact.casefold().startswith("references ") and numbered_entries >= 2)
     )
@@ -146,7 +165,7 @@ def _read_pages(pdf_path: Path, max_pages: int | None = None) -> list[dict[str, 
 
 BASE_EXTRACTION_FOCUSES = (
     "Focus on experimental setup, material/sample identity, composition, preparation, control variables, environmental conditions, measurement methods, instrument settings, and tables. Extract every explicit relevant table cell as one datum.",
-    "Focus on experimental results, measured and calculated properties, qualitative observations, comparisons, trends, uncertainties, and results tables.",
+    "Focus on experimental results, measured and calculated properties, qualitative observations, comparisons, trends, uncertainties, and results tables. Extract observation onset and saturation thresholds, qualitative size descriptions, explicit absence/presence findings, and split each distinct conclusion into one datum.",
 )
 
 
@@ -184,6 +203,7 @@ Rules:
 9. Put the unit only in unit. value_text contains the reported numeric/qualitative value without repeating the unit.
 10. Include json keys even when a list is empty.
 11. Write meaning and context_explanation in concise Chinese so the local Chinese search UI can retrieve them. Preserve material formulas, phase symbols, particle names, and instrument abbreviations exactly. source_excerpt must remain verbatim in the paper's original language.
+12. Split compound observations into atomic rows. For example, "high loop density and no voids" is two data rows. Extract explicit onset/saturation thresholds and qualitative size words such as "a few" exactly when the paper uses them.
 This pass has a specific recall focus: {focus}
 """
     if learning_guidance:
@@ -417,24 +437,13 @@ def _validated_candidates(payload: Any, chunk_pages: set[int], chunk_index: int,
 
 def _deduplicate(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
-    seen: set[str] = set()
     for item in candidates:
-        fingerprint = "|".join([
-            _compact(item.get("value_text")),
-            _compact(item.get("meaning")),
-            _compact(item.get("unit")),
-            _material_scope(item.get("context_explanation")),
-        ])
-        digest = hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()
-        if digest in seen:
-            continue
-        duplicate = False
+        duplicate_of: dict[str, Any] | None = None
         for existing in output:
             if (
                 _compact(item.get("value_text")) != _compact(existing.get("value_text"))
                 or _compact(item.get("unit")) != _compact(existing.get("unit"))
-                or _material_scope(item.get("context_explanation"))
-                != _material_scope(existing.get("context_explanation"))
+                or _candidate_scope(item) != _candidate_scope(existing)
             ):
                 continue
             item_elements = _property_elements(item.get("meaning"))
@@ -444,34 +453,99 @@ def _deduplicate(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
             meaning_similarity = difflib.SequenceMatcher(
                 None, _compact(item.get("meaning")), _compact(existing.get("meaning"))
             ).ratio()
-            if meaning_similarity >= 0.58:
-                duplicate = True
+            concepts = _property_concepts(item.get("meaning"))
+            existing_concepts = _property_concepts(existing.get("meaning"))
+            if concepts and existing_concepts and concepts.isdisjoint(existing_concepts):
+                continue
+            same_concept = bool(concepts and existing_concepts and concepts == existing_concepts)
+            same_page = int(item.get("source_page") or 0) == int(existing.get("source_page") or 0)
+            locator_similarity = _field_similarity(item.get("source_locator"), existing.get("source_locator"))
+            source_similarity = _field_similarity(item.get("source_excerpt"), existing.get("source_excerpt"))
+            if (
+                meaning_similarity >= 0.82
+                or same_concept
+                or (same_page and locator_similarity >= 0.75 and source_similarity >= 0.55)
+            ):
+                duplicate_of = existing
                 break
-        if not duplicate:
-            seen.add(digest)
+        if duplicate_of is None:
             output.append(item)
+        else:
+            merged = duplicate_of.setdefault("duplicate_candidate_ids", [])
+            candidate_id = item.get("candidate_id")
+            if candidate_id and candidate_id not in merged:
+                merged.append(candidate_id)
     return output
 
 
 def _material_scope(context: str | None) -> str:
-    text = _compact(context)
+    text = re.sub(r"[^a-z0-9]+", "", str(context or "").casefold())
     groups: list[str] = []
-    if "al03" in text and all(element in text for element in ("co", "cr", "fe", "ni")):
+    if "al03cocrfeni" in text:
         groups.append("al03cocrfeni")
     if "316h" in text:
         groups.append("316h")
-    if all(element in text for element in ("co", "cr", "fe", "mn", "ni")) and "al03" not in text:
+    if "cocrfemnni" in text or "cocrmnfeni" in text:
         groups.append("cocrfemnni")
     if any(marker in text for marker in ("allmaterials", "allsamples", "alltestedmaterials", "threematerials")):
-        groups.append("allmaterials")
+        return "allmaterials"
+    if len(set(groups)) >= 3:
+        return "allmaterials"
     return ",".join(sorted(set(groups))) or "unspecified"
 
 
+def _candidate_scope(item: dict[str, Any]) -> str:
+    return _material_scope(" ".join(str(item.get(field) or "") for field in (
+        "context_explanation", "meaning", "source_excerpt",
+    )))
+
+
+def _field_similarity(left: str | None, right: str | None) -> float:
+    a, b = _compact(left), _compact(right)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    containment = min(len(a), len(b)) / max(len(a), len(b)) if a in b or b in a else 0.0
+    return max(containment, difflib.SequenceMatcher(None, a, b).ratio())
+
+
+def _property_concepts(meaning: str | None) -> set[str]:
+    text = str(meaning or "").casefold()
+    concepts: set[str] = set()
+    patterns = {
+        "irradiation_temperature": ("irradiation temperature", "辐照温度"),
+        "annealing_temperature": ("annealing temperature", "anneal temperature", "退火温度"),
+        "irradiation_dose": ("irradiation dose", "dose", "辐照剂量"),
+        "incident_angle": ("incident angle", "入射角"),
+        "indentation_depth": ("indentation depth", "压痕压入深度", "纳米压痕深度"),
+        "precipitate_observation": ("precipitate", "析出相", "析出物"),
+        "void_observation": ("void", "空洞"),
+        "ordering_reflection": ("reflection", "diffraction", "有序化", "衍射", "反射"),
+        "dislocation_loop": ("dislocation loop", "位错环"),
+        "atomic_size_mismatch": ("atomic size mismatch", "原子尺寸失配"),
+        "melting_temperature": ("melting temperature", "熔点"),
+        "entropy_enthalpy_ratio": ("parameter u", "tm dsmix", "混合熵焓比"),
+        "hardness_before": ("hardness before irradiation", "as-received nanoindentation hardness", "hardness as-received", "辐照前纳米硬度"),
+        "hardness_increase": ("hardness increase", "硬化增量", "硬度增加"),
+        "median_filter_size": ("median filter", "中值滤波"),
+    }
+    for concept, aliases in patterns.items():
+        if any(alias in text for alias in aliases):
+            concepts.add(concept)
+    return concepts
+
+
 def _property_elements(meaning: str | None) -> set[str]:
-    return set(re.findall(
+    text = str(meaning or "").casefold()
+    elements = set(re.findall(
         r"\b(?:al|co|cr|fe|mn|ni|mo|si|c|n|p|s|v)\b",
-        str(meaning or "").casefold(),
+        text,
     ))
+    for symbol in ("Al", "Co", "Cr", "Fe", "Mn", "Ni", "Mo", "Si", "C", "N", "P", "S", "V"):
+        if re.search(rf"(?:^|[^A-Za-z]){symbol}(?=元素|名义|实测|\s+composition)", str(meaning or "")):
+            elements.add(symbol.casefold())
+    return elements
 
 
 def _compare_baseline(db: EvidenceDB, paper_id: int, candidates: list[dict[str, Any]]) -> dict[str, Any]:

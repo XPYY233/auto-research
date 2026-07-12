@@ -322,6 +322,7 @@ def cmd_evidence(args) -> int:
             "paper": report["paper"],
             "run_id": report["run_id"],
             "artifact_path": report["artifact_path"],
+            "postprocessing_replay": report["postprocessing_replay"],
             "summary": report["summary"],
             "category_coverage": report["category_coverage"],
             "json_path": report["json_path"],
