@@ -16,7 +16,7 @@ from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.db_health import evidence_db_health
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
-from auto_research.evidence.experiment_types import classify_experiment_types
+from auto_research.evidence.experiment_types import classify_experiment_types, extraction_focuses_for_profile
 from auto_research.evidence.deepseek_extraction import (
     _deduplicate,
     _evidence_check,
@@ -234,6 +234,76 @@ class DeepSeekDeduplicationTests(unittest.TestCase):
             {**common, "candidate_id": "irradiate", "meaning": "irradiation temperature", "source_excerpt": "irradiated at 300 °C"},
         ])
         self.assertEqual(len(result), 2)
+
+    def test_global_and_unspecified_scope_duplicates_can_merge(self):
+        common = {
+            "value_text": "1", "unit": "MeV", "source_page": 2,
+            "source_locator": "Methods", "source_excerpt": "irradiated with 1 MeV Kr ions",
+            "meaning": "离子能量",
+        }
+        result = _deduplicate([
+            {**common, "candidate_id": "global", "context_explanation": "all materials"},
+            {**common, "candidate_id": "unknown", "context_explanation": "Kr离子辐照"},
+        ])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["duplicate_candidate_ids"], ["unknown"])
+
+    def test_standalone_uncertainty_is_rejected(self):
+        checked = _evidence_check({
+            "value_text": "0.05", "unit": "GPa", "meaning": "纳米硬度不确定度",
+            "source_excerpt": "3.56 ± 0.05 GPa", "source_locator": "Table 3",
+            "source_precision": "exact_table", "evidence_type": "measured",
+        }, "Table 3: 3.56 ± 0.05 GPa")
+        self.assertFalse(checked["passed"])
+        self.assertIn("同一条", checked["reason"])
+
+    def test_central_value_cannot_drop_reported_uncertainty(self):
+        checked = _evidence_check({
+            "value_text": "3.56", "unit": "GPa", "meaning": "纳米硬度",
+            "source_excerpt": "Al0.3CoCrFeNi 3.56 ± 0.05 GPa", "source_locator": "Table 3",
+            "source_precision": "exact_table", "evidence_type": "measured",
+        }, "Table 3: Al0.3CoCrFeNi 3.56 ± 0.05 GPa")
+        self.assertFalse(checked["passed"])
+        self.assertIn("丢弃误差", checked["reason"])
+
+    def test_nominal_measured_pair_must_be_split(self):
+        checked = _evidence_check({
+            "value_text": "23.3 (23.7)", "unit": "at%", "meaning": "Fe名义(测量)成分",
+            "source_excerpt": "Fe 23.3 (23.7)", "source_locator": "Table 1",
+            "source_precision": "exact_table", "evidence_type": "measured",
+        }, "Table 1: Fe 23.3 (23.7) at%")
+        self.assertFalse(checked["passed"])
+        self.assertIn("两条", checked["reason"])
+
+    def test_scalar_assignment_and_equivalent_unit_spelling_are_deduplicated(self):
+        common = {
+            "source_page": 8, "source_locator": "Table 4", "meaning": "混合焓",
+            "context_explanation": "Al0.3CoCrFeNi", "source_excerpt": "ΔHmix -7.27 kJ mol-1",
+        }
+        result = _deduplicate([
+            {**common, "candidate_id": "plain", "value_text": "-7.27", "unit": "kJ mol^-1"},
+            {**common, "candidate_id": "formula", "value_text": "ΔH_mix = -7.27", "unit": "kJ mol⁻¹"},
+        ])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["duplicate_candidate_ids"], ["formula"])
+
+    def test_low_score_experiment_types_do_not_create_extra_passes(self):
+        profile = {
+            "primary_label": "辐照实验",
+            "types": [
+                {"type_id": "irradiation_experiment", "score": 39},
+                {"type_id": "mechanical_testing", "score": 21},
+                {"type_id": "electrochemical_testing", "score": 9},
+            ],
+            "selected_types": [
+                {"type_id": "irradiation_experiment", "score": 39},
+                {"type_id": "mechanical_testing", "score": 21},
+            ],
+        }
+        foci = extraction_focuses_for_profile(profile)
+        self.assertEqual(len(foci), 3)
+        self.assertIn("irradiation conditions", foci[-1])
+        self.assertNotIn("electrochemical", foci[-1])
 
     def test_compound_qualitative_observation_must_be_split(self):
         item = {

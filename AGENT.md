@@ -382,6 +382,17 @@ Deduplication must never use value/unit similarity alone. Preserve equal values
 when their physical meanings, material scopes, or experiment types differ (for
 example, 300 °C annealing versus 300 °C irradiation), and keep merged candidate
 ids on the retained row for audit.
+Keep the full experiment-type score list for diagnosis, but build extraction
+focuses only from title-supported or threshold-selected types. Combine selected
+type-specific concerns into one targeted pass so a page block uses the general
+methods pass, general results pass, and at most one targeted pass. Incidental
+low-score terms must not create separate DeepSeek scans.
+
+Uncertainty belongs to its central value (`3.56±0.05`, not a second `0.05`
+datum). If the source includes an uncertainty, rejecting a candidate that drops
+it is mandatory. A nominal/measured table pair must become two rows with distinct
+meanings. Simple scalar assignments such as `ΔH_mix = -7.27` should store only
+`-7.27` in value_text and keep the variable identity in meaning.
 
 ### Five-paper blind validation (2026-07-08)
 

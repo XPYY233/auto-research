@@ -467,3 +467,8 @@ candidate is a manual-review item, not automatically an extraction error.
 Historical artifacts are replayed through the current deterministic evidence
 gate and deduplication rules without changing the artifact or calling DeepSeek;
 the report keeps raw, gate-passed, deduplicated, and rejected counts separately.
+The experiment classifier may show low-score diagnostic types, but extraction
+uses only title-supported or threshold-selected types and combines them into one
+targeted pass. Together with the general methods and results passes, a normal
+page block therefore uses at most three complementary extraction passes rather
+than one pass for every incidental keyword category.

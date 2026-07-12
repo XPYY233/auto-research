@@ -4,6 +4,7 @@ import difflib
 import hashlib
 import json
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -45,10 +46,35 @@ def _numbers(value: str | None) -> list[str]:
 
 def _evidence_check(item: dict[str, Any], page_text: str) -> dict[str, Any]:
     raw_value = str(item.get("value_text") or "")
+    meaning_text = str(item.get("meaning") or "").casefold()
     if len(_numbers(raw_value)) > 4 and ("," in raw_value or ":" in raw_value):
         return {
             "passed": False, "score": 0.0, "missing_numbers": [],
             "reason": "多个表格单元被聚合成一条数据，必须拆分为一值一行",
+        }
+    if re.search(r"uncertaint|standard deviation|error bar|误差|不确定度|标准差", meaning_text):
+        return {
+            "passed": False, "score": 0.0, "missing_numbers": [],
+            "reason": "误差/不确定度必须与对应中心值保存在同一条数据中，不能单独成行",
+        }
+    value_numbers = _numbers(raw_value)
+    if "±" not in raw_value and len(value_numbers) == 1 and "±" in str(item.get("source_excerpt") or ""):
+        central_values = re.findall(
+            r"([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*±\s*(?:\d+(?:\.\d+)?|\.\d+)",
+            str(item.get("source_excerpt") or ""),
+        )
+        if value_numbers[0] in {value.lstrip("+-") for value in central_values}:
+            return {
+                "passed": False, "score": 0.0, "missing_numbers": [],
+                "reason": "原文给出了中心值±误差，候选不得丢弃误差部分",
+            }
+    if (
+        len(_numbers(raw_value)) >= 2
+        and re.search(r"nominal.*measur|measur.*nominal|名义.*(?:实测|测量)|(?:实测|测量).*名义", meaning_text)
+    ):
+        return {
+            "passed": False, "score": 0.0, "missing_numbers": [],
+            "reason": "名义值与实测值是不同物理含义，必须拆成两条数据",
         }
     if item.get("evidence_type") == "qualitative":
         concepts = _property_concepts(f"{raw_value} {item.get('meaning') or ''}")
@@ -204,6 +230,9 @@ Rules:
 10. Include json keys even when a list is empty.
 11. Write meaning and context_explanation in concise Chinese so the local Chinese search UI can retrieve them. Preserve material formulas, phase symbols, particle names, and instrument abbreviations exactly. source_excerpt must remain verbatim in the paper's original language.
 12. Split compound observations into atomic rows. For example, "high loop density and no voids" is two data rows. Extract explicit onset/saturation thresholds and qualitative size words such as "a few" exactly when the paper uses them.
+13. Never create a separate datum for uncertainty, standard deviation, or an error bar. Keep it in value_text with its central value, such as 3.56±0.05.
+14. A table cell written as nominal (measured) contains two distinct data. Emit separate nominal and measured rows, each with one value and an explicit meaning/context label.
+15. value_text must contain only the reported value, inequality, range, or qualitative phrase. Put variable labels such as ΔH_mix, δ, Tm, or U in meaning, never as a "label = value" prefix.
 This pass has a specific recall focus: {focus}
 """
     if learning_guidance:
@@ -427,9 +456,11 @@ def _validated_candidates(payload: Any, chunk_pages: set[int], chunk_index: int,
             rejected.append(item)
         else:
             item["unit"] = str(item.get("unit") or "")
-            item["value_text"], model_value = _separate_unit(item["value_text"], item["unit"])
-            if model_value:
-                item["model_value_text"] = model_value
+            original_value = item["value_text"]
+            separated_value, model_value = _separate_unit(original_value, item["unit"])
+            item["value_text"] = _canonical_scalar_assignment(separated_value)
+            if model_value or item["value_text"] != separated_value:
+                item["model_value_text"] = original_value
             item["source_locator"] = str(item.get("source_locator") or "")
             candidates.append(item)
     return candidates, rejected
@@ -441,10 +472,13 @@ def _deduplicate(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
         duplicate_of: dict[str, Any] | None = None
         for existing in output:
             if (
-                _compact(item.get("value_text")) != _compact(existing.get("value_text"))
-                or _compact(item.get("unit")) != _compact(existing.get("unit"))
-                or _candidate_scope(item) != _candidate_scope(existing)
+                _value_identity(item.get("value_text")) != _value_identity(existing.get("value_text"))
+                or _unit_identity(item.get("unit")) != _unit_identity(existing.get("unit"))
             ):
+                continue
+            item_scope = _candidate_scope(item)
+            existing_scope = _candidate_scope(existing)
+            if not _scopes_compatible(item_scope, existing_scope):
                 continue
             item_elements = _property_elements(item.get("meaning"))
             existing_elements = _property_elements(existing.get("meaning"))
@@ -457,14 +491,14 @@ def _deduplicate(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
             existing_concepts = _property_concepts(existing.get("meaning"))
             if concepts and existing_concepts and concepts.isdisjoint(existing_concepts):
                 continue
-            same_concept = bool(concepts and existing_concepts and concepts == existing_concepts)
+            same_concept = bool(concepts and existing_concepts and concepts.intersection(existing_concepts))
             same_page = int(item.get("source_page") or 0) == int(existing.get("source_page") or 0)
             locator_similarity = _field_similarity(item.get("source_locator"), existing.get("source_locator"))
             source_similarity = _field_similarity(item.get("source_excerpt"), existing.get("source_excerpt"))
             if (
                 meaning_similarity >= 0.82
                 or same_concept
-                or (same_page and locator_similarity >= 0.75 and source_similarity >= 0.55)
+                or (same_page and locator_similarity >= 0.45 and source_similarity >= 0.45)
             ):
                 duplicate_of = existing
                 break
@@ -500,6 +534,16 @@ def _candidate_scope(item: dict[str, Any]) -> str:
     )))
 
 
+def _scopes_compatible(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if "unspecified" in {left, right} or "allmaterials" in {left, right}:
+        return True
+    left_parts = set(left.split(","))
+    right_parts = set(right.split(","))
+    return bool(left_parts.intersection(right_parts))
+
+
 def _field_similarity(left: str | None, right: str | None) -> float:
     a, b = _compact(left), _compact(right)
     if not a or not b:
@@ -510,6 +554,25 @@ def _field_similarity(left: str | None, right: str | None) -> float:
     return max(containment, difflib.SequenceMatcher(None, a, b).ratio())
 
 
+def _canonical_scalar_assignment(value: str | None) -> str:
+    raw = str(value or "").strip()
+    match = re.match(
+        r"^[^=]{1,48}=\s*([~≈<>≤≥]?\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)\s*$",
+        raw,
+    )
+    return match.group(1).replace(" ", "") if match else raw
+
+
+def _value_identity(value: str | None) -> str:
+    return _compact(_canonical_scalar_assignment(value))
+
+
+def _unit_identity(value: str | None) -> str:
+    normalized = unicodedata.normalize("NFKC", str(value or ""))
+    normalized = normalized.replace("−", "-").replace("·", "")
+    return _compact(normalized)
+
+
 def _property_concepts(meaning: str | None) -> set[str]:
     text = str(meaning or "").casefold()
     concepts: set[str] = set()
@@ -517,17 +580,33 @@ def _property_concepts(meaning: str | None) -> set[str]:
         "irradiation_temperature": ("irradiation temperature", "辐照温度"),
         "annealing_temperature": ("annealing temperature", "anneal temperature", "退火温度"),
         "irradiation_dose": ("irradiation dose", "dose", "辐照剂量"),
+        "ion_energy": ("ion energy", "离子能量", "入射离子能量"),
+        "ion_flux": ("ion flux", "离子通量"),
         "incident_angle": ("incident angle", "入射角"),
+        "tem_voltage": ("tem voltage", "accelerating voltage", "加速电压", "工作电压"),
+        "beam_uniform_area": ("uniform beam", "uniform area", "均匀区", "均匀区域"),
+        "pixel_size": ("pixel size", "像素尺寸", "像素对应尺寸"),
         "indentation_depth": ("indentation depth", "压痕压入深度", "纳米压痕深度"),
         "precipitate_observation": ("precipitate", "析出相", "析出物"),
         "void_observation": ("void", "空洞"),
         "ordering_reflection": ("reflection", "diffraction", "有序化", "衍射", "反射"),
         "dislocation_loop": ("dislocation loop", "位错环"),
-        "atomic_size_mismatch": ("atomic size mismatch", "原子尺寸失配"),
-        "melting_temperature": ("melting temperature", "熔点"),
-        "entropy_enthalpy_ratio": ("parameter u", "tm dsmix", "混合熵焓比"),
+        "loop_density": ("loop density", "位错环密度"),
+        "loop_size": ("loop size", "位错环尺寸"),
+        "crystal_structure": ("crystal structure", "晶体结构"),
+        "wbdf_vector": ("diffraction vector", "衍射矢量", "成像矢量"),
+        "phase_stability": ("phase stability", "相稳定性"),
+        "short_range_order": ("short-range order", "short range order", "短程有序"),
+        "atomic_size_mismatch": ("atomic size mismatch", "原子尺寸失配", "原子尺寸差"),
+        "mixing_enthalpy": ("mixing enthalpy", "混合焓"),
+        "mixing_entropy": ("mixing entropy", "混合熵"),
+        "melting_temperature": ("melting temperature", "熔点", "熔化温度"),
+        "entropy_enthalpy_ratio": ("parameter u", "tm dsmix", "混合熵焓比", "混合熵与混合焓之比", "ω参数", "Ω参数"),
         "hardness_before": ("hardness before irradiation", "as-received nanoindentation hardness", "hardness as-received", "辐照前纳米硬度"),
-        "hardness_increase": ("hardness increase", "硬化增量", "硬度增加"),
+        "hardness_increase": ("hardness increase", "硬化增量", "硬度增加", "辐照硬化量", "计算硬化量"),
+        "burgers_vector": ("burgers vector", "burgers矢量", "伯氏矢量"),
+        "taylor_factor": ("taylor factor", "taylor因子", "泰勒因子"),
+        "hardening_constant": ("constant k", "常数k", "换算常数k", "硬化常数k"),
         "median_filter_size": ("median filter", "中值滤波"),
     }
     for concept, aliases in patterns.items():
@@ -612,6 +691,12 @@ class DeepSeekEvidenceExtractor:
                     pass_candidates, rejected = _validated_candidates(
                         payload, {int(page["page"]) for page in chunk}, chunk_index, pass_index
                     )
+                    for item in pass_candidates:
+                        item["extraction_pass"] = pass_index
+                        item["extraction_focus"] = focus
+                    for item in rejected:
+                        item["extraction_pass"] = pass_index
+                        item["extraction_focus"] = focus
                     candidates.extend(pass_candidates)
                     schema_rejected.extend(rejected)
                     if isinstance(payload.get("pending_tasks"), list):
@@ -701,6 +786,7 @@ class DeepSeekEvidenceExtractor:
                 "provider": "deepseek", "model": self.client.settings.extraction_model,
                 "mode": mode, "pdf_sha256": pdf_sha256, "chunk_count": len(chunks),
                 "experiment_profile": experiment_profile,
+                "extraction_focuses": list(extraction_foci),
                 "candidate_count": len(all_candidates) + len(schema_rejected),
                 "verified_count": len(verified),
                 "rejected_count": rejected_count,

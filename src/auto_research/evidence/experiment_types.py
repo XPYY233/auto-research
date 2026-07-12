@@ -158,6 +158,12 @@ def classify_experiment_types(paper: dict[str, Any], *,
         if keyword in title_text or keyword in body_text
     ]
     top_score = scored[0]["score"] if scored else 0
+    focus_threshold = max(8, round(top_score * 0.35)) if top_score else 0
+    selected_types = [
+        item for item in scored
+        if item["score"] >= focus_threshold
+        or any(match.get("source") == "title" for match in item.get("matches", []))
+    ]
     confidence = min(0.98, round(top_score / max(top_score + 8, 1), 3)) if top_score else 0.0
     if not scored:
         primary = {
@@ -178,13 +184,16 @@ def classify_experiment_types(paper: dict[str, Any], *,
         "is_experimental": is_experimental,
         "confidence": confidence,
         "types": scored,
+        "selected_types": selected_types,
+        "focus_threshold": focus_threshold,
         "non_experimental_signals": non_experimental_matches,
         "pages_used": [page.get("page") for page in pages],
     }
 
 
 def extraction_focuses_for_profile(profile: dict[str, Any]) -> tuple[str, ...]:
-    type_ids = {item.get("type_id") for item in profile.get("types", [])}
+    selected = profile.get("selected_types") or profile.get("types", [])
+    type_ids = {item.get("type_id") for item in selected}
     foci = [
         (
             "Focus on experimental setup, sample/material identity, composition, preparation, "
@@ -196,20 +205,23 @@ def extraction_focuses_for_profile(profile: dict[str, Any]) -> tuple[str, ...]:
             "qualitative observations, comparisons, trends, uncertainties, and result tables."
         ),
     ]
+    targeted: list[str] = []
     if "irradiation_experiment" in type_ids:
-        foci.append("Focus on irradiation-specific conditions: particle species, energy, dose, dpa, fluence, flux, temperature, beam geometry, facility, and pre/post-irradiation comparisons.")
+        targeted.append("irradiation conditions: particle species, energy, dose/dpa, fluence, flux, temperature, beam geometry, facility, and pre/post comparisons")
     if "mechanical_testing" in type_ids:
-        foci.append("Focus on mechanical testing data: hardness, indentation depth, modulus, yield strength, tensile/compression conditions, strain rate, creep/fatigue/fracture metrics, and uncertainties.")
+        targeted.append("mechanical data: hardness with uncertainty in the same value, indentation depth, modulus, strength, strain rate, creep/fatigue/fracture metrics")
     if "thermal_measurement" in type_ids:
-        foci.append("Focus on thermal measurement data: thermal conductivity, expansion, heat capacity, DSC/TGA transitions, heating/cooling rates, atmosphere, and temperature ranges.")
+        targeted.append("thermal data: conductivity, expansion, heat capacity, DSC/TGA transitions, rates, atmosphere, and temperature ranges")
     if "electrical_transport" in type_ids:
-        foci.append("Focus on electrical/transport data: resistivity, conductivity, impedance, Hall, I-V, carrier, dielectric, frequency, field, and temperature-dependent measurements.")
+        targeted.append("electrical/transport data: resistivity, conductivity, impedance, Hall, I-V, carrier, dielectric, frequency, field, and temperature dependence")
     if "microscopy_characterization" in type_ids or "spectroscopy" in type_ids:
-        foci.append("Focus on characterization data: microscopy/spectroscopy method, instrument settings, phase/defect/feature sizes, compositions, peak positions, intensities, and qualitative observations.")
+        targeted.append("characterization data: method/settings, phase, defect/feature sizes, composition, peaks, intensities, and qualitative observations")
     if "synthesis_processing" in type_ids:
-        foci.append("Focus on processing data: melting, sintering, annealing, rolling, deposition, heat treatment, times, temperatures, pressures, atmospheres, and sample preparation.")
+        targeted.append("processing data: melting, sintering, annealing, rolling, deposition, heat treatment, times, temperatures, pressures, atmospheres, and sample preparation")
     if "electrochemical_testing" in type_ids:
-        foci.append("Focus on electrochemical/corrosion data: electrolyte, potential/current, scan rate, impedance, polarization, corrosion rate, and cycling conditions.")
+        targeted.append("electrochemical/corrosion data: electrolyte, potential/current, scan rate, impedance, polarization, corrosion rate, and cycling")
     if "magnetic_measurement" in type_ids:
-        foci.append("Focus on magnetic data: magnetization, coercivity, hysteresis, transition temperatures, applied field, and temperature conditions.")
+        targeted.append("magnetic data: magnetization, coercivity, hysteresis, transitions, applied field, and temperature")
+    if targeted:
+        foci.append("Targeted experiment-specific pass. Focus on " + "; ".join(targeted) + ".")
     return tuple(foci)
