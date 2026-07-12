@@ -177,6 +177,12 @@ def current_experiment_profile(db: EvidenceDB, paper_id: int | None = None) -> d
     }
 
 
+def _startup_document_index(upload_service: UploadService, *, read_only: bool) -> dict[str, int | bool]:
+    if read_only:
+        return {"indexed": 0, "skipped": 0, "disabled": True}
+    return {**upload_service.index_existing_pdfs(), "disabled": False}
+
+
 class EvidenceHandler(BaseHTTPRequestHandler):
     db: EvidenceDB
     upload_service: UploadService
@@ -656,7 +662,7 @@ def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 876
     evidence_db = db or EvidenceDB()
     evidence_db.init()
     upload_service = UploadService(evidence_db)
-    index_result = upload_service.index_existing_pdfs()
+    index_result = _startup_document_index(upload_service, read_only=read_only)
     handler = type(
         "BoundEvidenceHandler", (EvidenceHandler,),
         {"db": evidence_db, "upload_service": upload_service, "read_only": read_only},
@@ -664,7 +670,10 @@ def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 876
     server = ThreadingHTTPServer((host, port), handler)
     mode = "只读模式" if read_only else "本地编辑模式"
     print(f"实验数据证据库（{mode}）: http://{host}:{port}")
-    print(f"PDF 文档索引: 新增 {index_result['indexed']}，跳过 {index_result['skipped']}")
+    if index_result["disabled"]:
+        print("PDF 文档索引: 只读模式下禁用，启动不会登记新文档。")
+    else:
+        print(f"PDF 文档索引: 新增 {index_result['indexed']}，跳过 {index_result['skipped']}")
     if read_only:
         print("只读模式会拒绝上传、校对确认、重新抽取和快照保存等写入操作。")
     print("按 Ctrl+C 停止。数据库仅绑定指定地址。")

@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import fitz
+import requests
 
 from auto_research.ai.deepseek import DeepSeekNotConfigured, DeepSeekClient, DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
@@ -119,6 +120,16 @@ class UploadWorkflowTests(unittest.TestCase):
 
 
 class DeepSeekFrameworkTests(unittest.TestCase):
+    def test_invalid_timeout_environment_uses_safe_bounded_default(self):
+        with patch.dict(os.environ, {"DEEPSEEK_TIMEOUT_SECONDS": "not-a-number"}, clear=True), patch(
+            "auto_research.ai.deepseek._read_project_keychain", return_value=None
+        ):
+            self.assertEqual(DeepSeekSettings.from_env().timeout_seconds, 180)
+        with patch.dict(os.environ, {"DEEPSEEK_TIMEOUT_SECONDS": "99999"}, clear=True), patch(
+            "auto_research.ai.deepseek._read_project_keychain", return_value=None
+        ):
+            self.assertEqual(DeepSeekSettings.from_env().timeout_seconds, 1800)
+
     def test_unconfigured_status_never_exposes_a_key(self):
         settings = DeepSeekSettings(api_key=None)
         status = settings.public_status()
@@ -166,6 +177,50 @@ class DeepSeekFrameworkTests(unittest.TestCase):
             def post(cls, *args, **kwargs):
                 cls.calls += 1
                 return Response("not-json" if cls.calls == 1 else '{"status":"ok"}')
+
+        client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=Session())
+        self.assertEqual(client.request_json([{"role": "user", "content": "Return json"}]), {"status": "ok"})
+        self.assertEqual(Session.calls, 2)
+
+    def test_transient_network_failure_is_retried_without_exposing_key(self):
+        class Response:
+            ok = True
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"choices": [{"message": {"content": '{"status":"ok"}'}}]}
+
+        class Session:
+            calls = 0
+
+            @classmethod
+            def post(cls, *args, **kwargs):
+                cls.calls += 1
+                if cls.calls == 1:
+                    raise requests.Timeout("temporary timeout")
+                return Response()
+
+        client = DeepSeekClient(DeepSeekSettings(api_key="fake-secret"), session=Session())
+        self.assertEqual(client.request_json([{"role": "user", "content": "Return json"}]), {"status": "ok"})
+        self.assertEqual(Session.calls, 2)
+
+    def test_http_429_is_retried_once(self):
+        class Response:
+            def __init__(self, status_code):
+                self.status_code = status_code
+                self.ok = status_code == 200
+
+            def json(self):
+                return {"choices": [{"message": {"content": '{"status":"ok"}'}}]}
+
+        class Session:
+            calls = 0
+
+            @classmethod
+            def post(cls, *args, **kwargs):
+                cls.calls += 1
+                return Response(429 if cls.calls == 1 else 200)
 
         client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=Session())
         self.assertEqual(client.request_json([{"role": "user", "content": "Return json"}]), {"status": "ok"})

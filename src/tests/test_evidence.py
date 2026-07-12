@@ -40,6 +40,7 @@ from auto_research.evidence.review_handoff import generate_review_batch, generat
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
 from auto_research.evidence.webapp import (
+    _startup_document_index,
     current_experiment_profile,
     is_read_only_public_get,
     is_read_only_mutation,
@@ -388,6 +389,22 @@ class DeepSeekDeduplicationTests(unittest.TestCase):
 
 
 class EvidenceDBTests(unittest.TestCase):
+    def test_read_only_startup_never_indexes_or_writes_documents(self):
+        class Service:
+            calls = 0
+
+            def index_existing_pdfs(self):
+                self.calls += 1
+                return {"indexed": 1, "skipped": 2}
+
+        service = Service()
+        readonly = _startup_document_index(service, read_only=True)
+        self.assertEqual(readonly, {"indexed": 0, "skipped": 0, "disabled": True})
+        self.assertEqual(service.calls, 0)
+        editable = _startup_document_index(service, read_only=False)
+        self.assertEqual(editable, {"indexed": 1, "skipped": 2, "disabled": False})
+        self.assertEqual(service.calls, 1)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.db = EvidenceDB(Path(self.tmp.name) / "evidence.sqlite")
@@ -1083,6 +1100,44 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(checks["current_view"]["ok"])
         self.assertTrue(checks["required_indexes"]["ok"])
         self.assertTrue(checks["six_required_fields"]["ok"])
+        self.assertTrue(checks["sqlite_integrity"]["ok"])
+        self.assertTrue(checks["stale_ai_runs"]["ok"])
+        self.assertTrue(checks["completed_run_artifacts"]["ok"])
+
+    def test_db_health_reports_stale_ai_runs_and_missing_artifacts(self):
+        with self.db.connect() as conn:
+            common = (
+                self.paper_id,
+                "deepseek",
+                "deepseek-chat",
+                "preview",
+                "0" * 64,
+            )
+            conn.execute(
+                """INSERT INTO ai_extraction_runs(
+                     paper_id,provider,model,mode,status,pdf_sha256,output_path,created_at
+                   ) VALUES(?,?,?,?,?,?,?,?)""",
+                (*common[:4], "running", common[4], None, "2020-01-01T00:00:00+00:00"),
+            )
+            conn.execute(
+                """INSERT INTO ai_extraction_runs(
+                     paper_id,provider,model,mode,status,pdf_sha256,output_path,created_at,finished_at
+                   ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                (
+                    *common[:4],
+                    "completed",
+                    common[4],
+                    str(Path(self.tmp.name) / "missing-run.json"),
+                    "2026-01-01T00:00:00+00:00",
+                    "2026-01-01T00:01:00+00:00",
+                ),
+            )
+
+        checks = {check["name"]: check for check in evidence_db_health(self.db)["checks"]}
+        self.assertFalse(checks["stale_ai_runs"]["ok"])
+        self.assertTrue(checks["stale_ai_runs"]["examples"])
+        self.assertFalse(checks["completed_run_artifacts"]["ok"])
+        self.assertTrue(checks["completed_run_artifacts"]["examples"])
 
     def test_read_only_mode_classifies_post_requests_as_mutating(self):
         self.assertFalse(is_read_only_mutation("GET", "/api/six-search"))

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .db import EvidenceDB
@@ -60,6 +62,30 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         quarantined_versions = conn.execute(
             "SELECT COUNT(*) count FROM data_version_orphans"
         ).fetchone()["count"]
+        integrity_result = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        ai_runs = [dict(row) for row in conn.execute(
+            "SELECT id,status,output_path,created_at FROM ai_extraction_runs"
+        )]
+
+    now_utc = datetime.now(timezone.utc)
+    stale_running_ids: list[int] = []
+    for run in ai_runs:
+        if run["status"] != "running":
+            continue
+        try:
+            created = datetime.fromisoformat(str(run["created_at"]).replace("Z", "+00:00"))
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if (now_utc - created.astimezone(timezone.utc)).total_seconds() > 6 * 3600:
+                stale_running_ids.append(int(run["id"]))
+        except (TypeError, ValueError):
+            stale_running_ids.append(int(run["id"]))
+    missing_run_artifacts = [
+        int(run["id"]) for run in ai_runs
+        if run["status"] == "completed"
+        and (not run.get("output_path") or not Path(str(run["output_path"])).is_file())
+    ]
+    failed_run_count = sum(run["status"] == "failed" for run in ai_runs)
 
     schema_version_text = schema_version_row["value"] if schema_version_row else ""
     try:
@@ -100,6 +126,30 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             "ok": not foreign_key_violations,
             "detail": "no active foreign-key violations" if not foreign_key_violations else f"violations={len(foreign_key_violations)}",
             "examples": foreign_key_violations[:20],
+        },
+        {
+            "name": "sqlite_integrity",
+            "ok": integrity_result == "ok",
+            "detail": f"PRAGMA integrity_check={integrity_result}",
+        },
+        {
+            "name": "stale_ai_runs",
+            "ok": not stale_running_ids,
+            "detail": "no AI run has remained running for more than 6 hours"
+            if not stale_running_ids else f"stale running ids={stale_running_ids}",
+            "examples": stale_running_ids[:20],
+        },
+        {
+            "name": "completed_run_artifacts",
+            "ok": not missing_run_artifacts,
+            "detail": "all completed AI runs have readable artifacts"
+            if not missing_run_artifacts else f"missing artifact ids={missing_run_artifacts}",
+            "examples": missing_run_artifacts[:20],
+        },
+        {
+            "name": "failed_ai_run_history",
+            "ok": True,
+            "detail": f"preserved failed runs={failed_run_count}",
         },
         {
             "name": "quarantined_legacy_versions",

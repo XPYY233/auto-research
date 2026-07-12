@@ -41,6 +41,7 @@ for candidate in "${TOKEN_CANDIDATES[@]}"; do
   fi
 done
 NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN:-${token_from_file:-}}"
+export NGROK_AUTHTOKEN
 
 if [[ -z "${NGROK_AUTHTOKEN}" ]]; then
   echo "尚未配置 ngrok 免费账号 token。"
@@ -133,4 +134,4 @@ echo "只读网页服务已就绪。下面 ngrok 输出中的 https://...ngrok..
 echo "保持本窗口打开，公网链接才会持续可用；按 Ctrl+C 可停止分享。"
 echo
 
-npx --yes ngrok http "${PORT}" --authtoken "${NGROK_AUTHTOKEN}" --log=stdout
+npx --yes ngrok http "${PORT}" --log=stdout

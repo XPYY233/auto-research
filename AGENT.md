@@ -337,6 +337,13 @@ Runtime AI in the released project is DeepSeek-only. Codex is for project develo
 
 On this Mac, the project-specific credential may instead be stored in macOS Keychain under service `auto-research-deepseek` and the current macOS account. `DeepSeekSettings` checks `DEEPSEEK_API_KEY` first and this project Keychain entry second. Never print the credential, return it through `/api/ai/status`, reuse it in another project, or place it in a Git-tracked file.
 
+Treat DeepSeek as an unreliable external dependency. The runtime may retry one
+transient network error, HTTP 429, or 5xx response once, but must not include the
+API key or remote response body in raised errors. Parse
+`DEEPSEEK_TIMEOUT_SECONDS` defensively and keep it within 10–1800 seconds so a
+malformed local environment file cannot prevent the web application from
+starting.
+
 ### B2 DeepSeek evidence extraction
 
 `DeepSeekEvidenceExtractor` is the only runtime path for new AI extraction. It processes the real local PDF in two-page blocks and uses two complementary extraction passes per block: methods/materials/conditions/tables, then results/calculations/observations. Candidates must then pass all gates:
@@ -479,9 +486,10 @@ Do not create or maintain a separate public HTML/JavaScript implementation. Any
 search-card, export, terminology, or source-evidence fix must be made once in the
 shared frontend and verified in both modes.
 Starting either server must not seed demo rows, update paper timestamps, switch
-the current article, or call DeepSeek. Startup may initialize a missing schema
-and index genuinely new managed PDFs, but an already initialized project must
-remain byte-stable when it is only opened and viewed.
+the current article, or call DeepSeek. Editable startup may initialize a missing
+schema and index genuinely new managed PDFs. Read-only startup must skip document
+indexing entirely; an initialized database must remain byte-stable while the
+shared service is opened and viewed.
 When `read_only` is enabled, every POST request is rejected before route-specific
 logic runs. The shared read-only server is search-only: GET routes are limited to
 the static app, `/api/ui-mode`, whole-database search/export, row-level source
@@ -511,7 +519,9 @@ free-account sharing path is:
 The script reads `NGROK_AUTHTOKEN` from the environment or from the local
 `.env.ngrok` file, including the user's convenience location
 `/Users/USER/Zotero/.env.ngrok`. `.env.ngrok` is ignored by Git and must
-never be committed. The script must verify `/api/ui-mode` before starting ngrok
+never be committed. Export the token only through the child-process environment;
+never pass it as an `--authtoken` command argument where it can appear in the
+system process list. The script must verify `/api/ui-mode` before starting ngrok
 so a public URL is never pointed at the editable workbench by accident. It
 should also reuse/report an already-running ngrok tunnel for port `8766` instead
 of starting a duplicate tunnel.
@@ -530,3 +540,14 @@ prefer a GitHub Pages static read-only snapshot, a named Cloudflare Tunnel, or a
 proper hosted read-only deployment after the user explicitly approves that next
 step. GitHub Pages must be treated as a static export target only: do not expect
 it to run DeepSeek extraction, upload PDFs, or mutate SQLite.
+
+### Maintenance acceptance
+
+Before a maintenance checkpoint, run the full unit suite, `evidence-db-health`,
+and the target-paper `evidence-self-check`. Database health must cover SQLite
+integrity, foreign keys, required indexes and fields, current-row stable-key
+uniqueness, stale running AI jobs, and missing artifacts for completed AI runs.
+Historical failed runs are audit history and should be reported without making
+the database unhealthy. Also validate frontend syntax, macOS launcher syntax,
+Python compilation, installed dependency consistency, Git object integrity, and
+whitespace errors before committing and bundling the checkpoint.

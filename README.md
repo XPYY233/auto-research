@@ -205,6 +205,8 @@ visitor guesses the URL. The editable local workbench remains the separate
 `http://127.0.0.1:8765` service.
 Starting either service only opens the existing project state; it does not seed
 the demo article, switch papers, rescan a PDF, or call DeepSeek.
+The read-only service also skips PDF indexing at startup, so opening a public
+search session cannot silently update the SQLite database.
 
 The search-result `原文证据` action works without any editable-only API: it opens
 the public source metadata, highlighted sentence image, highlighted page image,
@@ -215,6 +217,19 @@ the project can export static HTML/JSON/CSV for external review, but Pages canno
 the local Python backend, DeepSeek extraction, PDF upload, or SQLite writes.
 Use ngrok for a live local preview; use GitHub Pages only after explicitly
 building a static snapshot package.
+
+For maintenance, `evidence-db-health` checks the SQLite file, foreign keys,
+six-column view and indexes, required fields, stable-key uniqueness, stale AI
+runs, and missing JSON artifacts from completed DeepSeek runs:
+
+```bash
+auto-research evidence-db-health
+```
+
+DeepSeek transient network failures, HTTP 429, and service-side 5xx responses
+are retried once. `DEEPSEEK_TIMEOUT_SECONDS` defaults safely to 180 seconds and
+is constrained to 10–1800 seconds. Error messages never include the API key or
+remote response body.
 
 Additional commands:
 

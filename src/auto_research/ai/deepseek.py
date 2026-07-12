@@ -13,6 +13,15 @@ import requests
 DEFAULT_KEYCHAIN_SERVICE = "auto-research-deepseek"
 
 
+def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    raw = os.environ.get(name)
+    try:
+        value = int(raw) if raw not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+    return min(max(value, minimum), maximum)
+
+
 def _read_project_keychain(service: str) -> str | None:
     if not service or os.name != "posix":
         return None
@@ -61,7 +70,9 @@ class DeepSeekSettings:
             base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/"),
             extraction_model=os.environ.get("DEEPSEEK_EXTRACTION_MODEL", "deepseek-v4-pro"),
             analysis_model=os.environ.get("DEEPSEEK_ANALYSIS_MODEL", "deepseek-v4-flash"),
-            timeout_seconds=int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "180")),
+            timeout_seconds=_env_int(
+                "DEEPSEEK_TIMEOUT_SECONDS", 180, minimum=10, maximum=1800
+            ),
             credential_source=(
                 "DEEPSEEK_API_KEY" if environment_key
                 else f"macOS Keychain:{keychain_service}" if keychain_key
@@ -108,16 +119,27 @@ class DeepSeekClient:
             payload["thinking"] = {"type": "enabled" if thinking else "disabled"}
         last_error: Exception | None = None
         for attempt in range(2):
-            response = self.session.post(
-                f"{self.settings.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.settings.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=self.settings.timeout_seconds,
-            )
+            try:
+                response = self.session.post(
+                    f"{self.settings.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.settings.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=self.settings.timeout_seconds,
+                )
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt == 0:
+                    continue
+                raise DeepSeekResponseError("DeepSeek API 网络请求连续两次失败") from exc
             if not response.ok:
+                if attempt == 0 and (response.status_code == 429 or response.status_code >= 500):
+                    last_error = DeepSeekResponseError(
+                        f"transient HTTP {response.status_code}"
+                    )
+                    continue
                 raise DeepSeekResponseError(f"DeepSeek API 请求失败：HTTP {response.status_code}")
             try:
                 content = response.json()["choices"][0]["message"]["content"]

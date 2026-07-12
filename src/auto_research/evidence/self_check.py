@@ -101,7 +101,12 @@ def _public_share_contract() -> dict[str, Any]:
         ("token_not_committed", ".env.ngrok" in text and "NGROK_AUTHTOKEN" in text),
         ("zotero_token_fallback", "/Users/USER/Zotero/.env.ngrok" in text),
         ("server_side_readonly_check", "/api/ui-mode" in text and '"read_only": true' in text),
-        ("ngrok_public_url", "ngrok http" in text and "--authtoken" in text),
+        (
+            "ngrok_public_url",
+            "ngrok http" in text
+            and "export NGROK_AUTHTOKEN" in text
+            and "--authtoken" not in text,
+        ),
         ("startup_no_demo_seed", "seed_target_article(evidence_db)" not in server_text),
     ]
     failed = [name for name, ok in expectations if not ok]
