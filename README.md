@@ -381,6 +381,10 @@ auto-research evidence-deepseek-extract <paper-selector> --commit
 # Explicitly allow a repeat DeepSeek run for an already scanned paper
 auto-research evidence-deepseek-extract <paper-selector> --force-rescan
 auto-research evidence-run-article <paper-selector> --force-rescan
+
+# Compare a saved DeepSeek run with the current six-column review baseline.
+# This reads local files only and does not call DeepSeek or modify review rows.
+auto-research evidence-benchmark <paper-selector> --run-id <run-id>
 ```
 
 Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts
@@ -452,3 +456,11 @@ a translation when a numeric condition disappears.
 The reproducible five-paper blind validation is documented in
 `data/evidence/random5_20260708_audit.md`; its machine-readable manifest is
 `data/evidence/random5_20260708_manifest.csv`.
+
+Benchmark reports are written to `data/evidence/benchmarks/` as JSON and
+Chinese Markdown. Matching is deterministic and one-to-one: equal values on the
+same PDF page are not considered the same datum unless source text, locator,
+meaning, or experimental scope supplies an identity signal. Until the six-column
+baseline is fully reviewed, report the results as provisional baseline agreement
+and coverage, not as scientific precision, recall, or accuracy. An unmatched
+candidate is a manual-review item, not automatically an extraction error.

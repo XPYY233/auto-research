@@ -13,6 +13,7 @@ from auto_research.ai.deepseek import DeepSeekClient, DeepSeekResponseError
 from auto_research.paths import DATA_DIR
 
 from .db import EVIDENCE_TYPES, SOURCE_PRECISIONS, EvidenceDB, now
+from .extraction_benchmark import compare_candidates
 from .experiment_types import classify_experiment_types, extraction_focuses_for_profile
 from .learning import build_learning_guidance
 from .six_column import collect_learning_samples, import_ai_result_to_six_column, list_current_data
@@ -474,37 +475,19 @@ def _property_elements(meaning: str | None) -> set[str]:
 
 
 def _compare_baseline(db: EvidenceDB, paper_id: int, candidates: list[dict[str, Any]]) -> dict[str, Any]:
-    baseline = list_current_data(db, paper_id)
-    matched_ids: set[int] = set()
-    candidate_matches = 0
-    for candidate in candidates:
-        value = _compact(candidate.get("value_text"))
-        meaning = _compact(candidate.get("meaning"))
-        unit = _compact(candidate.get("unit"))
-        best = None
-        best_score = 0.0
-        candidate_page = int(candidate.get("source_page") or 0)
-        for row in baseline:
-            if value != _compact(row.get("value_text")) or unit != _compact(row.get("unit")):
-                continue
-            same_page = candidate_page == int(row.get("source_page") or 0)
-            score = 1.0 if same_page else difflib.SequenceMatcher(
-                None, meaning, _compact(row.get("meaning"))
-            ).ratio()
-            if score > best_score:
-                best, best_score = row, score
-        if best and best_score >= 0.68:
-            candidate_matches += 1
-            matched_ids.add(int(best["item_id"]))
-            candidate["baseline_match"] = {
-                "item_id": best["item_id"], "stable_key": best["stable_key"],
-                "meaning": best["meaning"], "score": round(best_score, 4),
-            }
+    report = compare_candidates(list_current_data(db, paper_id), candidates, attach=True)
+    summary = report["summary"]
     return {
-        "baseline_count": len(baseline),
-        "candidate_match_count": candidate_matches,
-        "baseline_covered_count": len(matched_ids),
-        "candidate_new_count": len(candidates) - candidate_matches,
+        "baseline_count": summary["baseline_count"],
+        "candidate_match_count": summary["candidate_match_count"],
+        "baseline_covered_count": summary["baseline_covered_count"],
+        "candidate_new_count": summary["unmatched_candidate_count"],
+        "exact_match_count": summary["exact_match_count"],
+        "partial_match_count": summary["partial_match_count"],
+        "candidate_agreement_rate": summary["candidate_agreement_rate"],
+        "baseline_coverage_rate": summary["baseline_coverage_rate"],
+        "provisional": summary["provisional"],
+        "metric_note": "Agreement with the current review baseline; not scientific accuracy until human review is complete.",
     }
 
 

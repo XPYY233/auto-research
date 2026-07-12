@@ -17,6 +17,11 @@ from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.db_health import evidence_db_health
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
 from auto_research.evidence.experiment_types import classify_experiment_types
+from auto_research.evidence.extraction_benchmark import (
+    benchmark_extraction_run,
+    compare_candidates,
+    score_pair,
+)
 from auto_research.evidence.goal_audit import generate_goal_audit
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
 from auto_research.evidence.learning import build_learning_report
@@ -80,6 +85,71 @@ class ValueTests(unittest.TestCase):
         self.assertEqual(normalize_value(300, None, "°C"), (573.15, None, "K"))
         self.assertEqual(normalize_value(1, 0.1, "MeV"), (1_000_000, 100_000, "eV"))
         self.assertEqual(normalize_value(1, None, "mystery"), (None, None, None))
+
+
+class ExtractionBenchmarkTests(unittest.TestCase):
+    def test_scalar_does_not_match_repeated_vector_value(self):
+        candidate = {
+            "value_text": "0.2", "unit": "nm", "source_page": 2,
+            "source_locator": "Section 2", "source_excerpt": "each pixel 0.2 nm x 0.2 nm",
+            "meaning": "pixel size", "context_explanation": "WBDF image analysis",
+        }
+        baseline = {
+            "value_text": "0.2 × 0.2", "unit": "nm²", "source_page": 2,
+            "source_locator": "Section 2", "source_excerpt": "each pixel 0.2 nm x 0.2 nm",
+            "meaning": "图像像素尺寸", "context_explanation": "WBDF图像分析",
+        }
+        self.assertIsNone(score_pair(candidate, baseline))
+
+    def test_one_to_one_matching_uses_source_identity_for_repeated_values(self):
+        baseline = [
+            {
+                "item_id": 1, "stable_key": "anneal", "value_text": "300", "unit": "°C",
+                "source_page": 2, "source_locator": "Methods",
+                "source_excerpt": "annealed at 300 °C for one hour",
+                "meaning": "退火温度", "context_explanation": "样品A；退火",
+                "review_action": "automatic", "origin_type": "automatic",
+            },
+            {
+                "item_id": 2, "stable_key": "irradiation_temperature", "value_text": "300", "unit": "°C",
+                "source_page": 2, "source_locator": "Methods",
+                "source_excerpt": "irradiated at 300 °C to 1 dpa",
+                "meaning": "辐照温度", "context_explanation": "样品B；Kr离子辐照",
+                "review_action": "automatic", "origin_type": "automatic",
+            },
+        ]
+        candidates = [
+            {
+                "candidate_id": "irr", "value_text": "300", "unit": "°C", "source_page": 2,
+                "source_locator": "Methods", "source_excerpt": "irradiated at 300 °C to 1 dpa",
+                "meaning": "irradiation temperature", "context_explanation": "sample B; Kr irradiation",
+            },
+            {
+                "candidate_id": "ann", "value_text": "300", "unit": "°C", "source_page": 2,
+                "source_locator": "Methods", "source_excerpt": "annealed at 300 °C for one hour",
+                "meaning": "annealing temperature", "context_explanation": "sample A; annealing",
+            },
+        ]
+        report = compare_candidates(baseline, candidates)
+        matched = {item["candidate_id"]: item["baseline_stable_key"] for item in report["matches"]}
+        self.assertEqual(matched, {"irr": "irradiation_temperature", "ann": "anneal"})
+        self.assertEqual(report["summary"]["baseline_covered_count"], 2)
+
+    def test_unit_disagreement_is_reported_as_partial_match(self):
+        candidate = {
+            "value_text": "5", "unit": "", "source_page": 5,
+            "source_locator": "Section 3", "source_excerpt": "about five times the indentation depth",
+            "meaning": "plastic zone ratio", "context_explanation": "Berkovich indentation",
+        }
+        baseline = {
+            "value_text": "5", "unit": "× indentation depth", "source_page": 5,
+            "source_locator": "Section 3", "source_excerpt": "about five times the indentation depth",
+            "meaning": "塑性区倍数", "context_explanation": "Berkovich压痕",
+        }
+        scored = score_pair(candidate, baseline)
+        self.assertIsNotNone(scored)
+        self.assertEqual(scored["status"], "partial")
+        self.assertIn("unit", scored["disagreements"])
 
 
 class EvidenceDBTests(unittest.TestCase):
@@ -261,6 +331,28 @@ class SixColumnWorkflowTests(unittest.TestCase):
         # Zotero storage/XJZQ42XP, not the 18-page accepted manuscript.
         self.assertEqual(hardness["source_page"], 5)
         self.assertIn("Al0.3CoCrFeNi", hardness["context_explanation"])
+
+    def test_benchmark_reads_saved_run_without_model_call_and_writes_reports(self):
+        artifact = (
+            Path(__file__).resolve().parents[2]
+            / "data/evidence/deepseek_runs/paper_002_run_0008.json"
+        )
+        report = benchmark_extraction_run(
+            self.db,
+            TARGET_DOI,
+            artifact_path=artifact,
+            out_dir=Path(self.tmp.name) / "benchmark",
+        )
+        summary = report["summary"]
+        self.assertEqual(summary["baseline_count"], 114)
+        self.assertEqual(summary["candidate_count"], 125)
+        self.assertGreater(summary["candidate_match_count"], 0)
+        self.assertTrue(summary["provisional"])
+        self.assertTrue(report["generated_without_model_call"])
+        self.assertTrue(Path(report["json_path"]).is_file())
+        markdown = Path(report["markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("不等同于科学准确率", markdown)
+        self.assertIn("优先人工检查的未匹配候选", markdown)
 
     def test_confirmed_correction_does_not_mutate_original(self):
         row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")

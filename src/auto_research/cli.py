@@ -131,6 +131,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--force-rescan", action="store_true", help="Allow DeepSeek to run again for an already scanned paper")
     p = sub.add_parser("evidence-deepseek-localize", help="Localize unreviewed automatic meaning/context fields into Chinese")
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
+    p = sub.add_parser("evidence-benchmark", help="Compare a completed DeepSeek run with the current six-column review baseline")
+    p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
+    p.add_argument("--run-id", type=int, help="Completed DeepSeek run id; defaults to the latest completed run")
+    p.add_argument("--artifact", help="Explicit DeepSeek run JSON artifact path")
+    p.add_argument("--out-dir", help="Directory for JSON and Markdown benchmark reports")
 
     args = parser.parse_args(argv)
     db = ResearchDB()
@@ -302,6 +307,26 @@ def cmd_evidence(args) -> int:
 
         paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key)
         print(json.dumps(localize_unreviewed_rows(evidence_db, paper_id), ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-benchmark":
+        from .evidence.extraction_benchmark import benchmark_extraction_run
+
+        report = benchmark_extraction_run(
+            evidence_db,
+            args.article_key,
+            run_id=args.run_id,
+            artifact_path=Path(args.artifact) if args.artifact else None,
+            out_dir=Path(args.out_dir) if args.out_dir else None,
+        )
+        print(json.dumps({
+            "paper": report["paper"],
+            "run_id": report["run_id"],
+            "artifact_path": report["artifact_path"],
+            "summary": report["summary"],
+            "category_coverage": report["category_coverage"],
+            "json_path": report["json_path"],
+            "markdown_path": report["markdown_path"],
+        }, ensure_ascii=False, indent=2))
         return 0
     if args.cmd == "evidence-init":
         evidence_db.init()

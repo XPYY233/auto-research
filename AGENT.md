@@ -356,6 +356,22 @@ Primary command:
 auto-research evidence-deepseek-extract <paper-selector>
 ```
 
+### Extraction benchmark
+
+Use `evidence-benchmark <paper-selector> --run-id <id>` to compare a saved
+DeepSeek artifact with the current six-column baseline without making a model
+call or modifying review rows. The evaluator must use deterministic one-to-one
+matching and require an identity signal from source text, locator, meaning, or
+experimental scope; value + unit + page alone is insufficient because scientific
+tables frequently repeat them.
+
+Keep the language conservative while any baseline row remains unreviewed:
+`candidate_agreement_rate` and `baseline_coverage_rate` are provisional baseline
+comparison metrics, not scientific accuracy/precision/recall. Treat unmatched
+candidates as pending human decisions rather than false positives. Preserve the
+JSON and Chinese Markdown reports under `data/evidence/benchmarks/` so later
+prompt, gate, and deduplication changes can be compared against the same run.
+
 ### Five-paper blind validation (2026-07-08)
 
 The first cross-paper blind validation is recorded in
