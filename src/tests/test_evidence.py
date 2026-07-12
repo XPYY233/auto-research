@@ -25,6 +25,8 @@ from auto_research.evidence.deepseek_extraction import (
     _material_scope,
 )
 from auto_research.evidence.extraction_benchmark import (
+    _maximum_cardinality_edges,
+    benchmark_ensemble_preview,
     benchmark_extraction_run,
     compare_candidates,
     score_pair,
@@ -95,6 +97,19 @@ class ValueTests(unittest.TestCase):
 
 
 class ExtractionBenchmarkTests(unittest.TestCase):
+    def test_matching_maximizes_coverage_instead_of_greedy_score(self):
+        high = {"score": 0.95, "status": "exact", "disagreements": [], "signals": {}}
+        medium = {"score": 0.80, "status": "exact", "disagreements": [], "signals": {}}
+        specific = {"score": 0.90, "status": "exact", "disagreements": [], "signals": {}}
+        # Candidate 0 can use either baseline. Candidate 1 can only use baseline
+        # 0. Greedy would take (0,0) and cover one row; augmenting must cover two.
+        matched = _maximum_cardinality_edges([
+            (0.95, 0, 0, high),
+            (0.80, 0, 1, medium),
+            (0.90, 1, 0, specific),
+        ])
+        self.assertEqual({(candidate, baseline) for candidate, baseline, _ in matched}, {(0, 1), (1, 0)})
+
     def test_scalar_does_not_match_repeated_vector_value(self):
         candidate = {
             "value_text": "0.2", "unit": "nm", "source_page": 2,
@@ -575,6 +590,25 @@ class SixColumnWorkflowTests(unittest.TestCase):
         markdown = Path(report["markdown_path"]).read_text(encoding="utf-8")
         self.assertIn("不等同于科学准确率", markdown)
         self.assertIn("优先人工检查的未匹配候选", markdown)
+
+    def test_ensemble_preview_adds_only_focused_supplement_without_database_writes(self):
+        before = len(list_current_data(self.db, self.paper_id))
+        run_dir = Path(__file__).resolve().parents[2] / "data/evidence/deepseek_runs"
+        report = benchmark_ensemble_preview(
+            self.db,
+            TARGET_DOI,
+            primary_run_id=23,
+            supplemental_run_ids=[24],
+            primary_artifact_path=run_dir / "paper_002_run_0023.json",
+            supplemental_artifact_paths={24: run_dir / "paper_002_run_0024.json"},
+            out_dir=Path(self.tmp.name) / "ensemble",
+        )
+        self.assertEqual(report["ensemble"]["supplemental_candidate_counts"], {"24": 4})
+        self.assertEqual(report["ensemble"]["database_rows_changed"], 0)
+        self.assertGreaterEqual(report["summary"]["baseline_coverage_rate"], 0.88)
+        self.assertLessEqual(report["summary"]["candidate_count"], 155)
+        self.assertEqual(len(list_current_data(self.db, self.paper_id)), before)
+        self.assertTrue(Path(report["json_path"]).is_file())
 
     def test_confirmed_correction_does_not_mutate_original(self):
         row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")

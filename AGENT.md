@@ -391,6 +391,13 @@ evidence. Incidental low-score terms must not create separate DeepSeek scans. A
 gap-audit API failure becomes a pending retry task and must not invalidate the
 already verified candidates.
 
+Do not automatically treat the latest completed run as the best run: DeepSeek
+recall varies between otherwise identical previews. `evidence-ensemble-preview`
+may retain an explicitly chosen primary run and add only candidates carrying the
+requested supplemental focus (normally `coverage_gap_audit`). The ensemble must
+re-run local gates and deduplication, preserve source-run provenance, remain
+non-overwriting, and report zero database row changes.
+
 Uncertainty belongs to its central value (`3.56±0.05`, not a second `0.05`
 datum). If the source includes an uncertainty, rejecting a candidate that drops
 it is mandatory. A nominal/measured table pair must become two rows with distinct

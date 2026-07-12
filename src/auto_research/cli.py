@@ -136,6 +136,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run-id", type=int, help="Completed DeepSeek run id; defaults to the latest completed run")
     p.add_argument("--artifact", help="Explicit DeepSeek run JSON artifact path")
     p.add_argument("--out-dir", help="Directory for JSON and Markdown benchmark reports")
+    p = sub.add_parser("evidence-ensemble-preview", help="Combine one primary run with focused candidates from supplemental runs")
+    p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
+    p.add_argument("--primary-run", type=int, required=True, help="Primary completed DeepSeek run id")
+    p.add_argument("--supplemental-run", type=int, action="append", required=True, help="Supplemental run id; may be repeated")
+    p.add_argument("--supplemental-focus", default="coverage_gap_audit", help="Only include supplemental candidates from this extraction focus")
+    p.add_argument("--out-dir", help="Directory for JSON and Markdown ensemble reports")
 
     args = parser.parse_args(argv)
     db = ResearchDB()
@@ -322,6 +328,28 @@ def cmd_evidence(args) -> int:
             "paper": report["paper"],
             "run_id": report["run_id"],
             "artifact_path": report["artifact_path"],
+            "postprocessing_replay": report["postprocessing_replay"],
+            "summary": report["summary"],
+            "category_coverage": report["category_coverage"],
+            "json_path": report["json_path"],
+            "markdown_path": report["markdown_path"],
+        }, ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-ensemble-preview":
+        from .evidence.extraction_benchmark import benchmark_ensemble_preview
+
+        report = benchmark_ensemble_preview(
+            evidence_db,
+            args.article_key,
+            primary_run_id=args.primary_run,
+            supplemental_run_ids=args.supplemental_run,
+            supplemental_focus=args.supplemental_focus,
+            out_dir=Path(args.out_dir) if args.out_dir else None,
+        )
+        print(json.dumps({
+            "paper": report["paper"],
+            "run_id": report["run_id"],
+            "ensemble": report["ensemble"],
             "postprocessing_replay": report["postprocessing_replay"],
             "summary": report["summary"],
             "category_coverage": report["category_coverage"],

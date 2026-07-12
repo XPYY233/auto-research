@@ -244,6 +244,54 @@ def _category(stable_key: str) -> str:
     return "其他实验数据"
 
 
+def _maximum_cardinality_edges(
+    edges: list[tuple[float, int, int, dict[str, Any]]],
+) -> list[tuple[int, int, dict[str, Any]]]:
+    """Return deterministic maximum-cardinality candidate/baseline assignments.
+
+    Score-sorted greedy matching can lose valid coverage when one flexible
+    candidate takes the only baseline available to a more specific candidate.
+    This augmenting-path matcher maximizes the number of one-to-one matches;
+    score ordering is retained as the deterministic preference within that
+    maximum-cardinality solution.
+    """
+
+    adjacency: dict[int, list[tuple[int, dict[str, Any]]]] = {}
+    for _, candidate_index, baseline_index, scored in sorted(
+        edges, key=lambda edge: (-edge[0], edge[1], edge[2])
+    ):
+        adjacency.setdefault(candidate_index, []).append((baseline_index, scored))
+    baseline_match: dict[int, tuple[int, dict[str, Any]]] = {}
+
+    def augment(candidate_index: int, seen_baselines: set[int], seen_candidates: set[int]) -> bool:
+        if candidate_index in seen_candidates:
+            return False
+        seen_candidates.add(candidate_index)
+        for baseline_index, scored in adjacency.get(candidate_index, []):
+            if baseline_index in seen_baselines:
+                continue
+            seen_baselines.add(baseline_index)
+            previous = baseline_match.get(baseline_index)
+            if previous is None or augment(previous[0], seen_baselines, seen_candidates):
+                baseline_match[baseline_index] = (candidate_index, scored)
+                return True
+        return False
+
+    candidate_order = sorted(
+        adjacency,
+        key=lambda index: (len(adjacency[index]), -adjacency[index][0][1]["score"], index),
+    )
+    for candidate_index in candidate_order:
+        augment(candidate_index, set(), set())
+    return sorted(
+        (
+            (candidate_index, baseline_index, scored)
+            for baseline_index, (candidate_index, scored) in baseline_match.items()
+        ),
+        key=lambda item: item[0],
+    )
+
+
 def compare_candidates(baseline: list[dict[str, Any]], candidates: list[dict[str, Any]],
                        *, attach: bool = False) -> dict[str, Any]:
     """Create a deterministic one-to-one benchmark comparison."""
@@ -254,13 +302,10 @@ def compare_candidates(baseline: list[dict[str, Any]], candidates: list[dict[str
             scored = score_pair(candidate, row)
             if scored:
                 edges.append((scored["score"], candidate_index, baseline_index, scored))
-    edges.sort(key=lambda edge: (-edge[0], edge[1], edge[2]))
     used_candidates: set[int] = set()
     used_baseline: set[int] = set()
     matches: list[dict[str, Any]] = []
-    for _, candidate_index, baseline_index, scored in edges:
-        if candidate_index in used_candidates or baseline_index in used_baseline:
-            continue
+    for candidate_index, baseline_index, scored in _maximum_cardinality_edges(edges):
         used_candidates.add(candidate_index)
         used_baseline.add(baseline_index)
         candidate, row = candidates[candidate_index], baseline[baseline_index]
@@ -412,16 +457,10 @@ def benchmark_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def benchmark_extraction_run(db: EvidenceDB, article_key: str, *, run_id: int | None = None,
-                             artifact_path: Path | None = None,
-                             out_dir: Path | None = None) -> dict[str, Any]:
-    paper_id = resolve_paper_selector(db, article_key=article_key)
-    paper = db.get_paper(paper_id)
-    if not paper:
-        raise KeyError(f"Paper {paper_id} not found")
-    artifact, payload = _artifact_for_run(db, paper_id, run_id, artifact_path)
-    raw_candidates = [dict(item) for item in payload["verified_candidates"] if isinstance(item, dict)]
-    raw_summary = compare_candidates(list_current_data(db, paper_id), [dict(item) for item in raw_candidates])["summary"]
+def _replay_candidates(db: EvidenceDB, paper_id: int, paper: dict[str, Any],
+                       raw_candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    baseline = list_current_data(db, paper_id)
+    raw_summary = compare_candidates(baseline, [dict(item) for item in raw_candidates])["summary"]
     # Import locally to avoid a module-level cycle: the runtime extractor uses
     # this benchmark matcher after its own deterministic post-processing.
     from .deepseek_extraction import _deduplicate, _evidence_check, _read_pages
@@ -442,12 +481,10 @@ def benchmark_extraction_run(db: EvidenceDB, article_key: str, *, run_id: int | 
                 "reason": check.get("reason"),
             })
     candidates = _deduplicate(gate_passed)
-    comparison = compare_candidates(list_current_data(db, paper_id), candidates)
-    report = {
-        "paper": {"id": paper_id, "title": paper["title"], "doi": paper.get("doi")},
-        "run_id": payload.get("run_id"),
-        "artifact_path": str(artifact),
-        "generated_without_model_call": True,
+    comparison = compare_candidates(baseline, candidates)
+    return {
+        "candidates": candidates,
+        "comparison": comparison,
         "postprocessing_replay": {
             "raw_candidate_count": len(raw_candidates),
             "gate_passed_count": len(gate_passed),
@@ -460,11 +497,11 @@ def benchmark_extraction_run(db: EvidenceDB, article_key: str, *, run_id: int | 
             "artifact_unchanged": True,
             "gate_rejected_candidates": gate_rejected,
         },
-        **comparison,
     }
-    destination = Path(out_dir or BENCHMARK_DIR)
+
+
+def _write_benchmark_report(report: dict[str, Any], destination: Path, stem: str) -> dict[str, Any]:
     destination.mkdir(parents=True, exist_ok=True)
-    stem = f"paper_{paper_id:03d}_run_{int(payload.get('run_id') or 0):04d}_benchmark"
     json_path = destination / f"{stem}.json"
     markdown_path = destination / f"{stem}.md"
     report["json_path"] = str(json_path)
@@ -472,3 +509,86 @@ def benchmark_extraction_run(db: EvidenceDB, article_key: str, *, run_id: int | 
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     markdown_path.write_text(benchmark_markdown(report), encoding="utf-8")
     return report
+
+
+def benchmark_extraction_run(db: EvidenceDB, article_key: str, *, run_id: int | None = None,
+                             artifact_path: Path | None = None,
+                             out_dir: Path | None = None) -> dict[str, Any]:
+    paper_id = resolve_paper_selector(db, article_key=article_key)
+    paper = db.get_paper(paper_id)
+    if not paper:
+        raise KeyError(f"Paper {paper_id} not found")
+    artifact, payload = _artifact_for_run(db, paper_id, run_id, artifact_path)
+    raw_candidates = [dict(item) for item in payload["verified_candidates"] if isinstance(item, dict)]
+    replay = _replay_candidates(db, paper_id, paper, raw_candidates)
+    report = {
+        "paper": {"id": paper_id, "title": paper["title"], "doi": paper.get("doi")},
+        "run_id": payload.get("run_id"),
+        "artifact_path": str(artifact),
+        "generated_without_model_call": True,
+        "postprocessing_replay": replay["postprocessing_replay"],
+        **replay["comparison"],
+    }
+    stem = f"paper_{paper_id:03d}_run_{int(payload.get('run_id') or 0):04d}_benchmark"
+    return _write_benchmark_report(report, Path(out_dir or BENCHMARK_DIR), stem)
+
+
+def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_id: int,
+                               supplemental_run_ids: list[int],
+                               supplemental_focus: str = "coverage_gap_audit",
+                               primary_artifact_path: Path | None = None,
+                               supplemental_artifact_paths: dict[int, Path] | None = None,
+                               out_dir: Path | None = None) -> dict[str, Any]:
+    """Build a non-overwriting primary-run plus focused-supplement preview."""
+
+    paper_id = resolve_paper_selector(db, article_key=article_key)
+    paper = db.get_paper(paper_id)
+    if not paper:
+        raise KeyError(f"Paper {paper_id} not found")
+    primary_path, primary_payload = _artifact_for_run(
+        db, paper_id, primary_run_id, primary_artifact_path
+    )
+    raw_candidates: list[dict[str, Any]] = []
+    for item in primary_payload["verified_candidates"]:
+        if isinstance(item, dict):
+            candidate = dict(item)
+            candidate["ensemble_source_run"] = primary_run_id
+            raw_candidates.append(candidate)
+    artifact_paths = [str(primary_path)]
+    supplemental_counts: dict[str, int] = {}
+    for run_id in supplemental_run_ids:
+        path, payload = _artifact_for_run(
+            db, paper_id, run_id, (supplemental_artifact_paths or {}).get(run_id)
+        )
+        artifact_paths.append(str(path))
+        selected = [
+            item for item in payload["verified_candidates"]
+            if isinstance(item, dict) and item.get("extraction_focus") == supplemental_focus
+        ]
+        supplemental_counts[str(run_id)] = len(selected)
+        for item in selected:
+            candidate = dict(item)
+            candidate["ensemble_source_run"] = run_id
+            raw_candidates.append(candidate)
+    replay = _replay_candidates(db, paper_id, paper, raw_candidates)
+    run_label = f"ensemble {primary_run_id}+" + "+".join(str(run_id) for run_id in supplemental_run_ids)
+    report = {
+        "paper": {"id": paper_id, "title": paper["title"], "doi": paper.get("doi")},
+        "run_id": run_label,
+        "artifact_path": "；".join(artifact_paths),
+        "artifact_paths": artifact_paths,
+        "generated_without_model_call": True,
+        "ensemble": {
+            "primary_run_id": primary_run_id,
+            "supplemental_run_ids": supplemental_run_ids,
+            "supplemental_focus": supplemental_focus,
+            "supplemental_candidate_counts": supplemental_counts,
+            "database_rows_changed": 0,
+        },
+        "ensemble_candidates": replay["candidates"],
+        "postprocessing_replay": replay["postprocessing_replay"],
+        **replay["comparison"],
+    }
+    suffix = "_".join(f"{run_id:04d}" for run_id in supplemental_run_ids)
+    stem = f"paper_{paper_id:03d}_ensemble_{primary_run_id:04d}_plus_{suffix}_{supplemental_focus}"
+    return _write_benchmark_report(report, Path(out_dir or BENCHMARK_DIR), stem)

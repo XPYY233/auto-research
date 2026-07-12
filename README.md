@@ -385,6 +385,11 @@ auto-research evidence-run-article <paper-selector> --force-rescan
 # Compare a saved DeepSeek run with the current six-column review baseline.
 # This reads local files only and does not call DeepSeek or modify review rows.
 auto-research evidence-benchmark <paper-selector> --run-id <run-id>
+
+# Keep one best primary run and add only coverage-gap candidates from a later run.
+# This writes a preview/report only and never changes the six-column review table.
+auto-research evidence-ensemble-preview <paper-selector> \
+  --primary-run 23 --supplemental-run 24
 ```
 
 Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts
