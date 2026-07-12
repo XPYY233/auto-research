@@ -10,7 +10,7 @@ import fitz
 from auto_research.ai.deepseek import DeepSeekResponseError, DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.deepseek_extraction import (
-    DeepSeekEvidenceExtractor, _deduplicate, _evidence_check, _extract_focus_payload, _localize_candidates, _numbers,
+    DeepSeekEvidenceExtractor, _coverage_gap_messages, _deduplicate, _evidence_check, _extract_focus_payload, _localize_candidates, _numbers,
     _is_reference_dominant, _learning_guidance, _verification_batches,
 )
 from auto_research.evidence.six_column import add_manual_item, list_current_data
@@ -81,13 +81,13 @@ class DeepSeekExtractionTests(unittest.TestCase):
     def test_preview_requires_local_and_independent_ai_verification(self):
         client = FakeDeepSeekClient()
         result = DeepSeekEvidenceExtractor(self.db, client, self.run_dir).run(self.paper_id)
-        self.assertEqual(client.calls, ["extraction", "extraction", "extraction", "verification"])
+        self.assertEqual(client.calls, ["extraction", "extraction", "extraction", "extraction", "verification"])
         extraction_system = next(messages[0]["content"] for task, messages in client.messages if task == "extraction")
         self.assertNotIn("HUMAN REVIEW LEARNING HINTS", extraction_system)
         self.assertEqual(result["experiment_profile"]["primary_type"], "irradiation_experiment")
-        self.assertEqual(result["candidate_count"], 3)
+        self.assertEqual(result["candidate_count"], 4)
         self.assertEqual(result["verified_count"], 1)
-        self.assertEqual(result["duplicate_count"], 2)
+        self.assertEqual(result["duplicate_count"], 3)
         self.assertEqual(result["rejected_count"], 0)
         self.assertEqual(result["imported"]["inserted"], 0)
         self.assertTrue(Path(result["output_path"]).is_file())
@@ -132,9 +132,9 @@ class DeepSeekExtractionTests(unittest.TestCase):
     def test_hallucinated_value_is_rejected_before_ai_verifier(self):
         client = FakeDeepSeekClient(value_text="999")
         result = DeepSeekEvidenceExtractor(self.db, client, self.run_dir).run(self.paper_id)
-        self.assertEqual(client.calls, ["extraction", "extraction", "extraction"])
+        self.assertEqual(client.calls, ["extraction", "extraction", "extraction", "extraction"])
         self.assertEqual(result["verified_count"], 0)
-        self.assertEqual(result["rejected_count"], 3)
+        self.assertEqual(result["rejected_count"], 4)
         candidate = result["all_candidates"][0]
         self.assertFalse(candidate["local_evidence"]["passed"])
         self.assertIn("999", candidate["local_evidence"]["missing_numbers"])
@@ -283,6 +283,36 @@ class DeepSeekExtractionTests(unittest.TestCase):
         self.assertEqual(client.calls, 4)
         self.assertEqual(client.assert_max_tokens, 16_000)
         self.assertEqual(len(payload["pending_tasks"]), 3)
+
+    def test_coverage_gap_prompt_contains_existing_inventory(self):
+        messages = _coverage_gap_messages(
+            {"title": "Test", "doi": "10.1/test"},
+            [{"page": 1, "text": "hardness 3.5 GPa and spacing 30 um"}],
+            [{
+                "value_text": "3.5", "unit": "GPa", "meaning": "硬度",
+                "source_page": 1, "source_locator": "Table 1",
+            }],
+        )
+        self.assertIn("return only evidence not already represented", messages[0]["content"])
+        self.assertIn('"value_text": "3.5"', messages[1]["content"])
+        self.assertIn("spacing/counts", messages[0]["content"])
+
+    def test_optional_coverage_gap_failure_becomes_pending_task(self):
+        class GapFailClient(FakeDeepSeekClient):
+            def request_json(self, messages, *, task="extraction", max_tokens=0, thinking=None):
+                if task == "extraction" and "Coverage-gap rule" in messages[0]["content"]:
+                    self.calls.append(task)
+                    raise DeepSeekResponseError("temporary gap failure")
+                return super().request_json(
+                    messages, task=task, max_tokens=max_tokens, thinking=thinking
+                )
+
+        result = DeepSeekEvidenceExtractor(self.db, GapFailClient(), self.run_dir).run(self.paper_id)
+        self.assertEqual(result["verified_count"], 1)
+        self.assertTrue(any(
+            task.get("task_type") == "coverage_gap_retry"
+            for task in result["pending_tasks"]
+        ))
 
     def test_bibliography_only_page_is_skipped_but_cited_methods_are_kept(self):
         references = """References

@@ -470,5 +470,8 @@ the report keeps raw, gate-passed, deduplicated, and rejected counts separately.
 The experiment classifier may show low-score diagnostic types, but extraction
 uses only title-supported or threshold-selected types and combines them into one
 targeted pass. Together with the general methods and results passes, a normal
-page block therefore uses at most three complementary extraction passes rather
-than one pass for every incidental keyword category.
+page block therefore uses three complementary extraction passes rather than one
+pass for every incidental keyword category. A final coverage-gap audit receives
+the existing candidate inventory and is instructed to return only overlooked
+atomic evidence. If that optional audit fails, the run preserves verified data
+and records a retry task instead of discarding the whole result.

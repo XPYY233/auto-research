@@ -68,6 +68,26 @@ def _evidence_check(item: dict[str, Any], page_text: str) -> dict[str, Any]:
                 "passed": False, "score": 0.0, "missing_numbers": [],
                 "reason": "原文给出了中心值±误差，候选不得丢弃误差部分",
             }
+    if len(value_numbers) == 1:
+        excerpt_text = str(item.get("source_excerpt") or "")
+        vector_pairs = list(re.finditer(
+            r"([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*(?:[A-Za-zµμ²^0-9/.-]+\s*)?[×x]\s*"
+            r"([+-]?(?:\d+(?:\.\d+)?|\.\d+))",
+            excerpt_text, re.I,
+        ))
+        truncated_vector = any(
+            value_numbers[0] in {match.group(1).lstrip("+-"), match.group(2).lstrip("+-")}
+            and not (
+                match.group(2).lstrip("+-") == "10"
+                and re.match(r"\s*\^\s*[+-]?\d+", excerpt_text[match.end():])
+            )
+            for match in vector_pairs
+        )
+        if truncated_vector:
+            return {
+                "passed": False, "score": 0.0, "missing_numbers": [],
+                "reason": "原文报告二维/多维数值，候选不得截断成单个标量",
+            }
     if (
         len(_numbers(raw_value)) >= 2
         and re.search(r"nominal.*measur|measur.*nominal|名义.*(?:实测|测量)|(?:实测|测量).*名义", meaning_text)
@@ -242,6 +262,34 @@ This pass has a specific recall focus: {focus}
         f"Extract all supported data from the following page block as json.\n\n{source}"
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def _coverage_gap_messages(paper: dict[str, Any], chunk: list[dict[str, Any]],
+                           existing: list[dict[str, Any]],
+                           learning_guidance: str = "") -> list[dict[str, str]]:
+    focus = (
+        "Coverage-gap audit only. Find supported atomic data missing from the existing inventory. "
+        "Prioritize overlooked sample geometry, times, spacing/counts, full vectors/ranges, table cells, "
+        "uncertainties attached to central values, observation onset/saturation thresholds, qualitative "
+        "size descriptions, and explicit presence/absence findings. Do not repeat an existing datum."
+    )
+    messages = _extraction_messages(paper, chunk, focus, learning_guidance)
+    inventory = [{
+        "value_text": item.get("value_text"),
+        "unit": item.get("unit"),
+        "meaning": item.get("meaning"),
+        "source_page": item.get("source_page"),
+        "source_locator": item.get("source_locator"),
+    } for item in existing]
+    messages[0]["content"] += (
+        "\nCoverage-gap rule: return only evidence not already represented in the supplied inventory. "
+        "An alternative wording of the same value/meaning/context is not a gap.\n"
+    )
+    messages[1]["content"] += (
+        "\n\nExisting candidate inventory for this page block:\n"
+        + json.dumps(inventory, ensure_ascii=False)
+    )
+    return messages
 
 
 def _verification_messages(chunk: list[dict[str, Any]], candidates: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -423,7 +471,16 @@ def _separate_unit(value_text: str, unit: str) -> tuple[str, str | None]:
     clean_unit = unit.strip()
     if not clean_unit:
         return raw, None
-    pattern = re.compile(rf"\s*{re.escape(clean_unit)}\s*$", re.IGNORECASE)
+    aliases = {
+        "nm": ("nm", "nanometer", "nanometers", "nanometre", "nanometres"),
+        "µm": ("µm", "μm", "um", "micrometer", "micrometers", "micrometre", "micrometres"),
+        "mm": ("mm", "millimeter", "millimeters", "millimetre", "millimetres"),
+    }
+    choices = aliases.get(clean_unit.casefold(), (clean_unit,))
+    pattern = re.compile(
+        rf"\s*(?:{'|'.join(re.escape(choice) for choice in choices)})\s*$",
+        re.IGNORECASE,
+    )
     separated = pattern.sub("", raw).strip()
     return (separated or raw), (raw if separated != raw else None)
 
@@ -701,6 +758,37 @@ class DeepSeekEvidenceExtractor:
                     schema_rejected.extend(rejected)
                     if isinstance(payload.get("pending_tasks"), list):
                         pending_tasks.extend(item for item in payload["pending_tasks"] if isinstance(item, dict))
+                gap_pass_index = len(extraction_foci) + 1
+                try:
+                    gap_payload = self.client.request_json(
+                        _coverage_gap_messages(
+                            paper, chunk, candidates, learning_guidance=learning_guidance
+                        ),
+                        task="extraction", max_tokens=12_000, thinking=False,
+                    )
+                except DeepSeekResponseError as exc:
+                    pending_tasks.append({
+                        "task_type": "coverage_gap_retry",
+                        "description": f"覆盖缺口复查未完成：{exc}",
+                        "locator": f"PDF pages {chunk[0]['page']}-{chunk[-1]['page']}",
+                    })
+                else:
+                    gap_candidates, gap_rejected = _validated_candidates(
+                        gap_payload, {int(page["page"]) for page in chunk},
+                        chunk_index, gap_pass_index,
+                    )
+                    for item in gap_candidates:
+                        item["extraction_pass"] = gap_pass_index
+                        item["extraction_focus"] = "coverage_gap_audit"
+                    for item in gap_rejected:
+                        item["extraction_pass"] = gap_pass_index
+                        item["extraction_focus"] = "coverage_gap_audit"
+                    candidates.extend(gap_candidates)
+                    schema_rejected.extend(gap_rejected)
+                    if isinstance(gap_payload.get("pending_tasks"), list):
+                        pending_tasks.extend(
+                            item for item in gap_payload["pending_tasks"] if isinstance(item, dict)
+                        )
                 page_by_number = {int(page["page"]): page["text"] for page in chunk}
                 local_passed: list[dict[str, Any]] = []
                 for item in candidates:
@@ -787,6 +875,7 @@ class DeepSeekEvidenceExtractor:
                 "mode": mode, "pdf_sha256": pdf_sha256, "chunk_count": len(chunks),
                 "experiment_profile": experiment_profile,
                 "extraction_focuses": list(extraction_foci),
+                "coverage_gap_pass": True,
                 "candidate_count": len(all_candidates) + len(schema_rejected),
                 "verified_count": len(verified),
                 "rejected_count": rejected_count,

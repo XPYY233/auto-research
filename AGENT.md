@@ -385,8 +385,11 @@ ids on the retained row for audit.
 Keep the full experiment-type score list for diagnosis, but build extraction
 focuses only from title-supported or threshold-selected types. Combine selected
 type-specific concerns into one targeted pass so a page block uses the general
-methods pass, general results pass, and at most one targeted pass. Incidental
-low-score terms must not create separate DeepSeek scans.
+methods pass, general results pass, and at most one targeted pass. Follow those
+with one inventory-aware coverage-gap audit that must return only omitted atomic
+evidence. Incidental low-score terms must not create separate DeepSeek scans. A
+gap-audit API failure becomes a pending retry task and must not invalidate the
+already verified candidates.
 
 Uncertainty belongs to its central value (`3.56±0.05`, not a second `0.05`
 datum). If the source includes an uncertainty, rejecting a candidate that drops

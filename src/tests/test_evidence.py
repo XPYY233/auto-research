@@ -190,6 +190,19 @@ class ExtractionBenchmarkTests(unittest.TestCase):
         }
         self.assertIsNone(score_pair(candidate, baseline))
 
+    def test_qualitative_value_repeated_unit_can_match_clean_baseline(self):
+        candidate = {
+            "value_text": "a few nanometers", "unit": "nm", "source_page": 5,
+            "source_excerpt": "the majority of loops remained to be a few nanometers",
+            "meaning": "位错环尺寸", "context_explanation": "1 dpa前",
+        }
+        baseline = {
+            "value_text": "a few", "unit": "nm", "source_page": 5,
+            "source_excerpt": "the majority of loops remained to be a few nanometers",
+            "meaning": "多数位错环尺寸", "context_explanation": "最高1 dpa",
+        }
+        self.assertIsNotNone(score_pair(candidate, baseline))
+
 
 class DeepSeekDeduplicationTests(unittest.TestCase):
     def test_material_scope_normalizes_decimal_alloy_and_all_materials(self):
@@ -265,6 +278,23 @@ class DeepSeekDeduplicationTests(unittest.TestCase):
         }, "Table 3: Al0.3CoCrFeNi 3.56 ± 0.05 GPa")
         self.assertFalse(checked["passed"])
         self.assertIn("丢弃误差", checked["reason"])
+
+    def test_vector_source_cannot_be_truncated_to_scalar(self):
+        checked = _evidence_check({
+            "value_text": "0.2", "unit": "nm", "meaning": "图像像素尺寸",
+            "source_excerpt": "each pixel (0.2 nm × 0.2 nm)", "source_locator": "Methods",
+            "source_precision": "exact_text", "evidence_type": "measured",
+        }, "each pixel (0.2 nm × 0.2 nm)")
+        self.assertFalse(checked["passed"])
+        self.assertIn("截断", checked["reason"])
+
+    def test_scientific_notation_multiplication_is_not_a_vector(self):
+        checked = _evidence_check({
+            "value_text": "6.3 × 10^15", "unit": "ions/(m²·s)", "meaning": "离子通量",
+            "source_excerpt": "flux was 6.3 × 10^15 ions/(m2 s)", "source_locator": "Methods",
+            "source_precision": "exact_text", "evidence_type": "measured",
+        }, "flux was 6.3 × 10^15 ions/(m2 s)")
+        self.assertTrue(checked["passed"], checked)
 
     def test_nominal_measured_pair_must_be_split(self):
         checked = _evidence_check({

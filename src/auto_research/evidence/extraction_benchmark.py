@@ -100,6 +100,23 @@ def _value_score(candidate: Any, baseline: Any) -> float:
     return similarity if similarity >= 0.82 else 0.0
 
 
+def _value_without_repeated_unit(value: Any, unit: Any) -> str:
+    raw = str(value or "").strip()
+    clean_unit = str(unit or "").strip().casefold()
+    aliases = {
+        "nm": ("nm", "nanometer", "nanometers", "nanometre", "nanometres"),
+        "µm": ("µm", "μm", "um", "micrometer", "micrometers", "micrometre", "micrometres"),
+        "mm": ("mm", "millimeter", "millimeters", "millimetre", "millimetres"),
+    }
+    choices = aliases.get(clean_unit)
+    if not choices:
+        return raw
+    return re.sub(
+        rf"\s*(?:{'|'.join(re.escape(choice) for choice in choices)})\s*$",
+        "", raw, flags=re.I,
+    ).strip() or raw
+
+
 def _observation_signature(item: dict[str, Any]) -> tuple[set[str], str | None]:
     text = _text(
         f"{item.get('value_text', '')} {item.get('meaning', '')} "
@@ -145,7 +162,9 @@ def _observation_value_score(candidate: dict[str, Any], baseline: dict[str, Any]
 def score_pair(candidate: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any] | None:
     """Score one candidate/baseline pair without assuming that equal page means equal meaning."""
 
-    value_score = _value_score(candidate.get("value_text"), baseline.get("value_text"))
+    candidate_value = _value_without_repeated_unit(candidate.get("value_text"), candidate.get("unit"))
+    baseline_value = _value_without_repeated_unit(baseline.get("value_text"), baseline.get("unit"))
+    value_score = _value_score(candidate_value, baseline_value)
     observation_score = _observation_value_score(candidate, baseline)
     value_score = max(value_score, observation_score)
     if value_score < 0.82:
