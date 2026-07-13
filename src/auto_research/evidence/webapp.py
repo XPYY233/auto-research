@@ -35,7 +35,8 @@ from .six_column import (
     get_six_extraction_status,
     import_ai_result_to_six_column,
     learning_samples_jsonl,
-    list_current_data,
+    list_paper_workflow_summaries,
+    list_reportable_current_data,
     prepare_current_paper_packet,
     review_progress,
     resolve_paper_selector,
@@ -305,7 +306,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/six-data":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
-                return self.json_response(list_current_data(self.db, paper_id))
+                return self.json_response(list_reportable_current_data(self.db, paper_id))
             match = re.fullmatch(r"/api/six-data/(\d+)", parsed.path)
             if match:
                 return self.json_response(get_data_item(self.db, int(match.group(1))))
@@ -374,13 +375,13 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/current-paper/export.csv":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
-                return self.six_csv_response(list_current_data(self.db, paper_id), "current-paper-data.csv")
+                return self.six_csv_response(list_reportable_current_data(self.db, paper_id), "current-paper-data.csv")
             if parsed.path == "/api/current-paper/export.xlsx":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
-                return self.six_xlsx_response(list_current_data(self.db, paper_id), "current-paper-data.xlsx")
+                return self.six_xlsx_response(list_reportable_current_data(self.db, paper_id), "current-paper-data.xlsx")
             if parsed.path == "/api/papers":
-                return self.json_response(annotate_navigation_tags(self.db.list_papers()))
+                return self.json_response(annotate_navigation_tags(list_paper_workflow_summaries(self.db)))
             if parsed.path == "/api/test-set":
                 from .test_set import resolve_five_paper_test_set
                 return self.json_response(resolve_five_paper_test_set(self.db))

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .db import EvidenceDB
-from .six_column import SIX_FIELDS, list_current_data, review_progress
+from .six_column import SIX_FIELDS, is_reportable_value_text, list_current_data, review_progress
 
 
 EXPECTED_INDEXES = {
@@ -25,6 +25,9 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
 
     db.init()
     rows = list_current_data(db, paper_id)
+    nonreportable_rows = [
+        row for row in rows if not is_reportable_value_text(row.get("value_text"))
+    ]
     missing_fields: list[dict[str, Any]] = []
     for row in rows:
         for field in SIX_FIELDS:
@@ -130,6 +133,18 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             "examples": missing_fields[:20],
         },
         {
+            "name": "nonreportable_rows_quarantined",
+            "ok": True,
+            "detail": (
+                f"user-facing data={len(rows) - len(nonreportable_rows)}; "
+                f"legacy prose preserved in history and excluded from user-facing data={len(nonreportable_rows)}"
+            ),
+            "examples": [
+                {"item_id": row.get("item_id"), "value_text": row.get("value_text")}
+                for row in nonreportable_rows[:20]
+            ],
+        },
+        {
             "name": "stable_key_uniqueness",
             "ok": duplicate_current == 0,
             "detail": f"duplicate current paper_id/stable_key groups={duplicate_current}",
@@ -181,6 +196,8 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         "ok": all(check["ok"] for check in checks),
         "paper_id": paper_id,
         "row_count": len(rows),
+        "reportable_row_count": len(rows) - len(nonreportable_rows),
+        "excluded_nonreportable_count": len(nonreportable_rows),
         "review_progress": progress,
         "checks": checks,
     }

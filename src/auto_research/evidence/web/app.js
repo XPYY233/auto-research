@@ -307,6 +307,18 @@ function rememberRecentPaper(paperId) {
   }
 }
 
+function syncPaperFilterControls() {
+  document.querySelector("#paper-picker-query").value = state.paperFilters.query;
+  document.querySelector("#paper-author-filter").value = state.paperFilters.author;
+  document.querySelector("#paper-status-filter").value = state.paperFilters.status;
+}
+
+function applyPaperScopePreset(scope) {
+  state.paperFilters = { query: "", author: "", topic: "all", status: "all", scope };
+  syncPaperFilterControls();
+  renderPaperOptions();
+}
+
 function paperMatchesFilters(paper) {
   const filters = state.paperFilters;
   const queryTerms = filters.query.trim().toLocaleLowerCase("zh-CN").split(/\s+/).filter(Boolean);
@@ -2113,15 +2125,10 @@ document.querySelector("#paper-status-filter").addEventListener("change", event 
   renderPaperOptions();
 });
 document.querySelectorAll("[data-paper-scope]").forEach(button => button.addEventListener("click", () => {
-  state.paperFilters.scope = button.dataset.paperScope;
-  renderPaperOptions();
+  applyPaperScopePreset(button.dataset.paperScope);
 }));
 document.querySelector("#paper-filter-reset").addEventListener("click", () => {
-  state.paperFilters = { query: "", author: "", topic: "all", status: "all", scope: "all" };
-  document.querySelector("#paper-picker-query").value = "";
-  document.querySelector("#paper-author-filter").value = "";
-  document.querySelector("#paper-status-filter").value = "all";
-  renderPaperOptions();
+  applyPaperScopePreset("all");
   document.querySelector("#paper-picker-query").focus();
 });
 document.querySelector("#paper-switch-input").addEventListener("change", renderPaperSelectionMeta);

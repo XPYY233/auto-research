@@ -9,7 +9,7 @@ from auto_research.paths import DATA_DIR
 
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
-from .six_column import list_current_data, resolve_paper_selector, review_progress
+from .six_column import list_reportable_current_data, resolve_paper_selector, review_progress
 
 
 REVIEW_HANDOFF_DIR = DATA_DIR / "evidence" / "review_handoffs"
@@ -363,7 +363,7 @@ def review_batch_payload(db: EvidenceDB, paper_id: int, *,
         raise ValueError(f"unsupported review batch strategy: {strategy}")
     paper = db.get_paper(paper_id) or {}
     rows = [
-        row for row in list_current_data(db, paper_id)
+        row for row in list_reportable_current_data(db, paper_id)
         if row.get("origin_type") != "manual" and row.get("review_action") == "automatic"
     ]
     try:

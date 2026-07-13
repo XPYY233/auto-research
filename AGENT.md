@@ -646,6 +646,13 @@ submits the switch form. Filtering must never call DeepSeek, scan a PDF, or writ
 the database. Prefer title, DOI, author and year in user-facing labels; keep the
 device-specific Zotero key as legacy internal metadata only.
 
+Treat `all`, `test_set`, and `recent` as article-collection presets, not ordinary
+stackable filters. Selecting any collection must clear title, author, topic and
+workflow-status filters before rendering the picker. The fixed five-paper preset
+must therefore show exactly five papers whenever its configuration resolves;
+`all` must show every registered paper. Label the topic reset as "全部方向" so it
+cannot be mistaken for the all-articles preset.
+
 Do not render hundreds of six-column textarea rows on initial load. Keep the
 review table chunked at 80 rows and expand it only through the visible control or
 an explicit next-item navigation. Full-paper evidence auditing is a background
@@ -662,6 +669,16 @@ they must not become pure-text values. Preserve legacy rows for audit, hide them
 from user-facing item search, and require the reviewer to correct them to a
 numeric datum or mark them as not used. Do not delete history to enforce this
 rule.
+
+All user-facing current-data surfaces must use
+`list_reportable_current_data()`: review rows, calibration batches, search,
+current-paper CSV/XLSX export, paper-picker counts, evidence audits and fixed
+test-set audits. `list_current_data()` is the raw provenance/history layer and
+must not be returned directly as the current experimental dataset. A value with
+digits embedded in narrative prose is still non-reportable; compact ranges,
+inequalities, scientific notation, alloy formulas, units and explicit table
+markers remain valid. Database health must report raw, reportable and excluded
+counts without deleting the excluded history.
 
 Visual assets are authoritative PDF screenshots created locally with PyMuPDF
 layout detection and recorded as `extraction_method=pdf_layout`. The current

@@ -13,7 +13,7 @@ from .six_column import (
     SIX_FIELDS,
     collect_learning_samples,
     get_six_extraction_status,
-    list_current_data,
+    list_reportable_current_data,
     review_progress,
     resolve_paper_selector,
     search_current_data,
@@ -87,6 +87,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("paper_status_overview", "id=\"paper-status-summary\"" in html and "renderPaperStatusSummary" in js and "six_workflow_label" in js),
         ("five_paper_test_set_picker", "/api/test-set" in js and "五篇测试集 v1" in js and "testOrder" in js),
         ("article_navigation_filters", all(item in html for item in ("paper-picker-query", "paper-author-filter", "data-paper-topic", "paper-status-filter", "paper-filter-summary")) and "paperMatchesFilters" in js and "navigation_method_tags" in js and "first_author" in js and "最近访问" in html and "筛选不会切换文章或重新扫描" in html),
+        ("article_scope_presets", "文章集合（点击后清除其他筛选）" in html and "applyPaperScopePreset" in js and 'applyPaperScopePreset(button.dataset.paperScope)' in js),
         ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
         ("readonly_mode", "id=\"readonly-badge\"" in html and "/api/ui-mode" in js and "isReadOnly" in js and "rejectReadOnlyAction" in js and ".readonly-badge[hidden]" in css),
         ("readonly_search_only_mode", "renderPublicSearchOnlyMode" in js and 'name !== "search"' in js and 'body[data-readonly="true"] .nav:not([data-view="search"])' in css),
@@ -235,7 +236,7 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
     )
 
     status = get_six_extraction_status(db, paper_id)
-    rows = list_current_data(db, paper_id)
+    rows = list_reportable_current_data(db, paper_id)
     review = review_progress(db, paper_id)
     _check(
         checks,

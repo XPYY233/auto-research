@@ -14,7 +14,7 @@ from .experiment_types import classify_experiment_types
 from .review_handoff import review_batch_payload
 from .six_column import (
     SIX_FIELDS,
-    list_current_data,
+    list_reportable_current_data,
     review_progress,
     resolve_paper_selector,
     search_current_data,
@@ -126,7 +126,7 @@ def audit_five_paper_test_set(
         doi = str(spec["doi"])
         paper_id = resolve_paper_selector(db, article_key=doi)
         paper = db.get_paper(paper_id) or {}
-        rows = list_current_data(db, paper_id)
+        rows = list_reportable_current_data(db, paper_id)
         pdf = _pdf_status(paper)
         missing = _missing_six_fields(rows)
         evidence = audit_six_column_evidence(db, paper_id)

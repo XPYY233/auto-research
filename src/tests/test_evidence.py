@@ -66,6 +66,8 @@ from auto_research.evidence.six_column import (
     get_six_extraction_status,
     is_reportable_value_text,
     list_current_data,
+    list_paper_workflow_summaries,
+    list_reportable_current_data,
     prepare_current_paper_packet,
     resolve_paper_selector,
     review_progress,
@@ -95,8 +97,15 @@ class ValueTests(unittest.TestCase):
         self.assertTrue(is_reportable_value_text("3.56±0.05"))
         self.assertTrue(is_reportable_value_text("n.m."))
         self.assertTrue(is_reportable_value_text("bal."))
+        self.assertTrue(is_reportable_value_text("0.16 to 1.0"))
+        self.assertTrue(is_reportable_value_text("50 keV He+"))
+        self.assertTrue(is_reportable_value_text("W29.4Ta42Cr5.0V16.1Hf7.5"))
+        self.assertTrue(is_reportable_value_text("below 4.9"))
         self.assertFalse(is_reportable_value_text("lattice swelling occurs"))
         self.assertFalse(is_reportable_value_text("room temperature"))
+        self.assertFalse(is_reportable_value_text("less than half of the lattice swelling in pure W"))
+        self.assertFalse(is_reportable_value_text("less than half of the thermal degradation in pure W (-60%)"))
+        self.assertFalse(is_reportable_value_text("Increases from 500 to 580 °C but ceases at 700 °C"))
 
     def test_article_navigation_tags_keep_experiment_and_simulation_distinct(self):
         experiment = navigation_tags({
@@ -656,6 +665,21 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(hardness["source_page"], 5)
         self.assertIn("Al0.3CoCrFeNi", hardness["context_explanation"])
 
+    def test_user_facing_rows_exclude_legacy_text_values_without_deleting_history(self):
+        raw_rows = list_current_data(self.db, self.paper_id)
+        reportable_rows = list_reportable_current_data(self.db, self.paper_id)
+        self.assertEqual(len(raw_rows), 114)
+        self.assertLess(len(reportable_rows), len(raw_rows))
+        self.assertTrue(all(is_reportable_value_text(row["value_text"]) for row in reportable_rows))
+        excluded_ids = {row["item_id"] for row in raw_rows} - {row["item_id"] for row in reportable_rows}
+        self.assertTrue(excluded_ids)
+        self.assertTrue(all(get_data_item(self.db, item_id)["history"] for item_id in excluded_ids))
+
+        paper = next(item for item in list_paper_workflow_summaries(self.db) if item["id"] == self.paper_id)
+        self.assertEqual(paper["six_raw_row_count"], 114)
+        self.assertEqual(paper["six_row_count"], len(reportable_rows))
+        self.assertEqual(paper["six_excluded_nonreportable_count"], len(excluded_ids))
+
     def test_target_visual_index_renders_complete_tables_and_figures(self):
         result = index_visual_evidence(self.db, self.paper_id)
         self.assertEqual(result["table_count"], 4)
@@ -763,7 +787,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         )
         self.assertGreater(report["ensemble"]["supplemental_candidate_counts"]["25"], 6)
         self.assertLess(report["ensemble"]["supplemental_candidate_counts"]["25"], 31)
-        self.assertEqual(report["category_coverage"]["显微观察与趋势"]["covered"], 3)
+        self.assertEqual(report["category_coverage"]["显微观察与趋势"]["covered"], 2)
 
     def test_ensemble_can_select_composition_table_candidates_by_semantics(self):
         run_dir = Path(__file__).resolve().parents[2] / "data/evidence/deepseek_runs"
@@ -804,7 +828,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
             {"25": ["coverage_gap_audit", "qualitative_results"], "26": ["composition_table"]},
         )
         self.assertEqual(report["ensemble"]["supplemental_candidate_counts"], {"25": 14, "26": 60})
-        self.assertGreaterEqual(report["summary"]["baseline_coverage_rate"], 0.92)
+        self.assertGreaterEqual(report["summary"]["baseline_coverage_rate"], 0.90)
         self.assertEqual(report["ensemble"]["database_rows_changed"], 0)
 
     def test_confirmed_correction_does_not_mutate_original(self):
@@ -875,7 +899,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(collect_learning_samples(self.db, self.paper_id)["sample_count"], 0)
         progress = review_progress(self.db, self.paper_id)
         self.assertEqual(progress["reviewed"], 0)
-        self.assertEqual(progress["unreviewed"], 114)
+        self.assertEqual(progress["unreviewed"], len(list_reportable_current_data(self.db, self.paper_id)))
 
     def test_rejection_and_ambiguity_are_reversible_negative_learning_samples(self):
         rejected_row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")
@@ -897,7 +921,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(progress["rejected"], 1)
         self.assertEqual(progress["ambiguous"], 1)
         self.assertEqual(progress["reviewed"], 2)
-        self.assertEqual(progress["unreviewed"], 112)
+        reportable_total = len(list_reportable_current_data(self.db, self.paper_id))
+        self.assertEqual(progress["unreviewed"], reportable_total - 2)
         learning = collect_learning_samples(self.db, self.paper_id)
         self.assertEqual(learning["rejected_count"], 1)
         self.assertEqual(learning["ambiguous_count"], 1)
@@ -919,7 +944,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(reopened["review_action"], "automatic")
         self.assertGreater(reopened["version_no"], rejected["version_no"])
-        self.assertEqual(review_progress(self.db, self.paper_id)["unreviewed"], 113)
+        self.assertEqual(review_progress(self.db, self.paper_id)["unreviewed"], reportable_total - 1)
 
     def test_review_progress_counts_unreviewed_confirmed_corrected_and_manual_rows(self):
         automatic_confirmed = next(r for r in list_current_data(self.db) if r["stable_key"] == "tem_voltage")
@@ -940,15 +965,16 @@ class SixColumnWorkflowTests(unittest.TestCase):
             "context_explanation": "人工补录；用于核验进度统计",
         })
         progress = review_progress(self.db, self.paper_id)
-        self.assertEqual(progress["total"], 115)
+        reportable_total = len(list_reportable_current_data(self.db, self.paper_id))
+        self.assertEqual(progress["total"], reportable_total)
         self.assertEqual(progress["confirmed"], 1)
         self.assertEqual(progress["corrected"], 1)
         self.assertEqual(progress["rejected"], 0)
         self.assertEqual(progress["ambiguous"], 0)
         self.assertEqual(progress["manual"], 1)
         self.assertEqual(progress["reviewed"], 3)
-        self.assertEqual(progress["unreviewed"], 112)
-        self.assertAlmostEqual(progress["reviewed_ratio"], round(3 / 115, 4))
+        self.assertEqual(progress["unreviewed"], reportable_total - 3)
+        self.assertAlmostEqual(progress["reviewed_ratio"], round(3 / reportable_total, 4))
 
     def test_manual_entry_has_no_automatic_original(self):
         manual = add_manual_item(self.db, self.paper_id, {
@@ -1060,8 +1086,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn(other_row["item_id"], {row["item_id"] for row in all_rows})
         exported_rows = search_export_rows(self.db, "")
         self.assertIn(other_row["item_id"], {row["item_id"] for row in exported_rows})
-        paper_counts = {row["id"]: row["six_row_count"] for row in self.db.list_papers()}
-        self.assertEqual(paper_counts[self.paper_id], 114)
+        paper_counts = {row["id"]: row["six_row_count"] for row in list_paper_workflow_summaries(self.db)}
+        self.assertEqual(paper_counts[self.paper_id], len(list_reportable_current_data(self.db, self.paper_id)))
         self.assertEqual(paper_counts[other], 1)
 
     def test_paper_picker_exposes_workflow_review_status(self):
@@ -1074,11 +1100,14 @@ class SixColumnWorkflowTests(unittest.TestCase):
             "确认无修改",
         )
         other = self.db.upsert_paper(title="Unscanned paper", doi="10.1/not-scanned")
-        papers = {row["id"]: row for row in self.db.list_papers()}
+        papers = {row["id"]: row for row in list_paper_workflow_summaries(self.db)}
         self.assertEqual(papers[self.paper_id]["six_workflow_state"], "pending_review")
         self.assertEqual(papers[self.paper_id]["six_reviewed_count"], 1)
-        self.assertEqual(papers[self.paper_id]["six_unreviewed_count"], 113)
-        self.assertEqual(papers[self.paper_id]["six_workflow_label"], "待审核 113/114")
+        reportable_total = len(list_reportable_current_data(self.db, self.paper_id))
+        self.assertEqual(papers[self.paper_id]["six_unreviewed_count"], reportable_total - 1)
+        self.assertEqual(papers[self.paper_id]["six_workflow_label"], f"待审核 {reportable_total - 1}/{reportable_total}")
+        self.assertEqual(papers[self.paper_id]["six_raw_row_count"], 114)
+        self.assertEqual(papers[self.paper_id]["six_excluded_nonreportable_count"], 114 - reportable_total)
         self.assertEqual(papers[other]["six_workflow_state"], "not_scanned")
         self.assertEqual(papers[other]["six_workflow_label"], "未扫描")
 
@@ -1222,15 +1251,16 @@ class SixColumnWorkflowTests(unittest.TestCase):
 
     def test_evidence_audit_checks_pdf_highlight_coverage(self):
         audit = audit_six_column_evidence(self.db, self.paper_id)
-        self.assertEqual(audit["automatic_rows"], 114)
-        self.assertEqual(audit["checked_rows"], 114)
+        reportable_count = len(list_reportable_current_data(self.db, self.paper_id))
+        self.assertEqual(audit["automatic_rows"], reportable_count)
+        self.assertEqual(audit["checked_rows"], reportable_count)
         self.assertGreater(audit["highlighted_rows"], 80)
         self.assertGreater(audit["strong_rows"], 40)
-        self.assertEqual(len(audit["review_priority_rows"]), 114)
+        self.assertEqual(len(audit["review_priority_rows"]), reportable_count)
         self.assertGreater(audit["review_priority_counts"]["unreviewed_attention"], 0)
         self.assertEqual(
             sum(audit["review_priority_counts"][level] for level in ("high", "medium", "normal")),
-            114,
+            reportable_count,
         )
         self.assertGreaterEqual(
             audit["review_priority_rows"][0]["score"],
@@ -1242,8 +1272,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
         result = run_article_workflow(self.db, article_key="TESTKEY")
         self.assertEqual(result["action"], "extract")
         self.assertEqual(result["paper"]["id"], self.paper_id)
-        self.assertEqual(result["status_after"]["row_count"], 114)
-        self.assertEqual(result["evidence_audit"]["checked_rows"], 114)
+        reportable_count = len(list_reportable_current_data(self.db, self.paper_id))
+        self.assertEqual(result["status_after"]["row_count"], reportable_count)
+        self.assertEqual(result["evidence_audit"]["checked_rows"], reportable_count)
         self.assertEqual(result["learning"]["sample_count"], 0)
         self.assertEqual(result["experiment_profile"]["primary_type"], "irradiation_experiment")
 
@@ -1291,8 +1322,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(report["ok"], report["checks"])
         self.assertEqual(report["paper"]["id"], self.paper_id)
         self.assertEqual(report["summary"]["primary_experiment_type"], "irradiation_experiment")
-        self.assertEqual(report["summary"]["row_count"], 114)
-        self.assertEqual(report["summary"]["review_progress"]["total"], 114)
+        reportable_count = len(list_reportable_current_data(self.db, self.paper_id))
+        self.assertEqual(report["summary"]["row_count"], reportable_count)
+        self.assertEqual(report["summary"]["review_progress"]["total"], reportable_count)
         self.assertGreaterEqual(report["summary"]["review_progress"]["unreviewed"], 100)
         self.assertGreaterEqual(report["summary"]["highlighted_rows"], 100)
         self.assertTrue(all(check["ok"] for check in report["checks"]))
@@ -1347,7 +1379,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         report = evidence_db_health(self.db, paper_id=self.paper_id)
         self.assertTrue(report["ok"], report["checks"])
         self.assertEqual(report["row_count"], 114)
-        self.assertEqual(report["review_progress"]["total"], 114)
+        self.assertEqual(report["review_progress"]["total"], len(list_reportable_current_data(self.db, self.paper_id)))
         checks = {check["name"]: check for check in report["checks"]}
         self.assertTrue(checks["schema_version"]["ok"])
         self.assertTrue(checks["current_view"]["ok"])
@@ -1539,7 +1571,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         status = get_six_extraction_status(self.db, self.paper_id)
         self.assertTrue(status["scanned"])
         self.assertEqual(status["scan_state"], "scanned")
-        self.assertEqual(status["row_count"], 114)
+        self.assertEqual(status["row_count"], len(list_reportable_current_data(self.db, self.paper_id)))
         self.assertTrue(requires_rescan_confirmation(self.db, self.paper_id))
 
         empty = self.db.upsert_paper(
@@ -1585,12 +1617,13 @@ class SixColumnWorkflowTests(unittest.TestCase):
         try:
             result = save_current_paper_snapshot(self.db, self.paper_id)
             self.assertTrue(result["ok"])
-            self.assertEqual(result["row_count"], 114)
+            reportable_count = len(list_reportable_current_data(self.db, self.paper_id))
+            self.assertEqual(result["row_count"], reportable_count)
             path = Path(result["path"])
             self.assertTrue(path.is_file())
             with path.open(encoding="utf-8-sig", newline="") as handle:
                 rows = list(csv.DictReader(handle))
-            self.assertEqual(len(rows), 114)
+            self.assertEqual(len(rows), reportable_count)
             self.assertIn("value_text", rows[0])
             status = get_six_extraction_status(self.db, self.paper_id)
             self.assertEqual(status["saved_snapshot_path"], str(path))

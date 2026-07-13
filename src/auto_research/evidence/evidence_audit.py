@@ -7,7 +7,7 @@ from typing import Any
 import fitz
 
 from .db import EvidenceDB
-from .six_column import is_reportable_value_text, list_current_data
+from .six_column import is_reportable_value_text, list_reportable_current_data
 from .source_highlight import locate_highlight
 
 
@@ -110,7 +110,7 @@ def _paper_pdf_path(db: EvidenceDB, paper_id: int) -> Path:
 
 def audit_six_column_evidence(db: EvidenceDB, paper_id: int | None = None,
                               sample_limit: int = 12) -> dict[str, Any]:
-    rows = list_current_data(db, paper_id)
+    rows = list_reportable_current_data(db, paper_id)
     automatic = [row for row in rows if row["origin_type"] == "automatic"]
     manual = [row for row in rows if row["origin_type"] == "manual"]
     if not automatic:

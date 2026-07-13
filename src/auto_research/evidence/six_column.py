@@ -46,6 +46,29 @@ CURRENT_PAPER_META_KEY = "six_column_current_paper_id"
 SAVED_SCAN_META_PREFIX = "six_column_saved_snapshot_"
 SAVED_SCANS_DIR = DATA_DIR / "evidence" / "saved_scans"
 NON_NUMERIC_CELL_MARKERS = {"bal", "bal.", "n.m", "n.m.", "n/a", "na", "—", "-"}
+REPORTABLE_VALUE_WORDS = {
+    "to", "and", "or", "at", "from", "between", "about", "around",
+    "approximately", "approximate", "approx", "below", "above", "under",
+    "over", "less", "than", "greater", "more", "maximum", "minimum",
+    "max", "min", "dpa", "appm", "ppm", "nm", "um", "mm", "cm",
+    "pm", "m", "km", "k", "c", "pa", "kpa", "mpa", "gpa", "tpa",
+    "ev", "kev", "mev", "gev", "hz", "khz", "mhz", "ghz", "s",
+    "sec", "ms", "min", "h", "hr", "day", "w", "kw", "mw", "v",
+    "mv", "kv", "a", "ma", "ua", "na", "j", "kj", "mj", "mol",
+    "torr", "bar", "mbar", "atm", "ions", "ion", "atom", "atoms",
+    "atomic", "weight", "percent", "vol", "rpm", "rad", "deg", "cps",
+}
+REPORTABLE_ELEMENT_SYMBOLS = {
+    "h", "he", "li", "be", "b", "c", "n", "o", "f", "ne", "na",
+    "mg", "al", "si", "p", "s", "cl", "ar", "k", "ca", "sc", "ti",
+    "v", "cr", "mn", "fe", "co", "ni", "cu", "zn", "ga", "ge", "as",
+    "se", "br", "kr", "rb", "sr", "y", "zr", "nb", "mo", "tc", "ru",
+    "rh", "pd", "ag", "cd", "in", "sn", "sb", "te", "i", "xe", "cs",
+    "ba", "la", "ce", "pr", "nd", "pm", "sm", "eu", "gd", "tb", "dy",
+    "ho", "er", "tm", "yb", "lu", "hf", "ta", "w", "re", "os", "ir",
+    "pt", "au", "hg", "tl", "pb", "bi", "po", "at", "rn", "fr", "ra",
+    "ac", "th", "pa", "u", "np", "pu",
+}
 
 SIX_FIELDS = ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")
 ROW_REVIEW_DECISIONS = {"rejected", "ambiguous", "automatic"}
@@ -106,7 +129,22 @@ def is_reportable_value_text(value: Any) -> bool:
     """
 
     text = str(value or "").strip()
-    return bool(text) and (any(character.isdigit() for character in text) or text.casefold() in NON_NUMERIC_CELL_MARKERS)
+    if not text:
+        return False
+    if text.casefold() in NON_NUMERIC_CELL_MARKERS:
+        return True
+    if not any(character.isdigit() for character in text):
+        return False
+
+    # The value column may retain units and compact comparison words from the
+    # source, but it must not contain a narrative sentence with a number buried
+    # inside it. Long physical explanations belong in meaning/context instead.
+    words = re.findall(r"[A-Za-z]+", text)
+    return all(
+        word.casefold() in REPORTABLE_VALUE_WORDS
+        or word.casefold() in REPORTABLE_ELEMENT_SYMBOLS
+        for word in words
+    )
 
 ELEMENT_SYMBOLS = {
     "al", "cr", "co", "fe", "mn", "ni", "ta", "w", "v", "hf", "ti", "zr", "mo", "re", "si", "c", "he",
@@ -395,7 +433,7 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
     paper = db.get_paper(resolved_id)
     if not paper:
         raise KeyError(f"Paper {resolved_id} not found")
-    row_count = len(list_current_data(db, resolved_id))
+    row_count = len(list_reportable_current_data(db, resolved_id))
     with db.connect() as conn:
         run_summary = conn.execute(
             """SELECT
@@ -479,7 +517,7 @@ def save_current_paper_snapshot(db: EvidenceDB, paper_id: int | None = None) -> 
     paper = db.get_paper(resolved_id)
     if not paper:
         raise KeyError(f"Paper {resolved_id} not found")
-    rows = list_current_data(db, resolved_id)
+    rows = list_reportable_current_data(db, resolved_id)
     if not rows:
         raise ValueError("当前文章还没有可保存的六列表格数据。请先完成扫描或人工录入。")
     article_key = paper.get("local_article_key") or paper.get("zotero_key") or paper.get("pilot_code") or str(resolved_id)
@@ -802,7 +840,7 @@ def add_manual_item(db: EvidenceDB, paper_id: int, fields: dict[str, Any],
 
 
 def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
-    rows = list_current_data(db, paper_id)
+    rows = list_reportable_current_data(db, paper_id)
     samples: list[dict[str, Any]] = []
     correction_count = confirmation_count = manual_count = rejected_count = ambiguous_count = 0
     for row in rows:
@@ -936,10 +974,86 @@ def list_current_data(db: EvidenceDB, paper_id: int | None = None) -> list[dict[
     return rows
 
 
+def list_reportable_current_data(db: EvidenceDB, paper_id: int | None = None) -> list[dict[str, Any]]:
+    """Return current rows that satisfy the user-facing numeric-data contract.
+
+    Non-reportable legacy versions remain in SQLite for provenance and history,
+    but are not presented as current experimental data or calibration work.
+    """
+
+    return [
+        row for row in list_current_data(db, paper_id)
+        if is_reportable_value_text(row.get("value_text"))
+    ]
+
+
+def list_paper_workflow_summaries(db: EvidenceDB) -> list[dict[str, Any]]:
+    """Return paper-picker counts based on reportable current data only."""
+
+    papers = db.list_papers()
+    reportable_rows = list_reportable_current_data(db)
+    counts: dict[int, dict[str, int]] = {}
+    for row in reportable_rows:
+        paper_id = int(row["paper_id"])
+        current = counts.setdefault(paper_id, {
+            "total": 0, "reviewed": 0, "confirmed": 0, "corrected": 0,
+            "rejected": 0, "ambiguous": 0, "manual": 0,
+        })
+        current["total"] += 1
+        action = str(row.get("review_action") or "automatic")
+        origin = str(row.get("origin_type") or "automatic")
+        if origin == "manual":
+            current["manual"] += 1
+            current["reviewed"] += 1
+        elif action in {"confirmation", "correction", "rejected", "ambiguous"}:
+            current["reviewed"] += 1
+            current[{"confirmation": "confirmed", "correction": "corrected"}.get(action, action)] += 1
+
+    result: list[dict[str, Any]] = []
+    for source in papers:
+        paper = dict(source)
+        raw_total = int(paper.get("six_row_count") or 0)
+        current = counts.get(int(paper["id"]), {
+            "total": 0, "reviewed": 0, "confirmed": 0, "corrected": 0,
+            "rejected": 0, "ambiguous": 0, "manual": 0,
+        })
+        total = current["total"]
+        reviewed = current["reviewed"]
+        unreviewed = max(total - reviewed, 0)
+        paper.update({
+            "six_raw_row_count": raw_total,
+            "six_excluded_nonreportable_count": max(raw_total - total, 0),
+            "six_row_count": total,
+            "six_reviewed_count": reviewed,
+            "six_confirmed_count": current["confirmed"],
+            "six_corrected_count": current["corrected"],
+            "six_rejected_count": current["rejected"],
+            "six_ambiguous_count": current["ambiguous"],
+            "six_manual_count": current["manual"],
+            "six_unreviewed_count": unreviewed,
+            "six_reviewed_ratio": round(reviewed / total, 4) if total else 0.0,
+        })
+        completed_runs = int(paper.get("completed_ai_run_count") or 0)
+        if total == 0 and completed_runs == 0:
+            paper["six_workflow_state"] = "not_scanned"
+            paper["six_workflow_label"] = "未扫描"
+        elif total == 0:
+            paper["six_workflow_state"] = "scanned_empty"
+            paper["six_workflow_label"] = "已扫描无可报告数据"
+        elif unreviewed:
+            paper["six_workflow_state"] = "pending_review"
+            paper["six_workflow_label"] = f"待审核 {unreviewed}/{total}"
+        else:
+            paper["six_workflow_state"] = "reviewed"
+            paper["six_workflow_label"] = f"已完成 {total}/{total}"
+        result.append(paper)
+    return result
+
+
 def review_progress(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
     """Summarize human-review progress for the current six-column rows."""
 
-    rows = list_current_data(db, paper_id)
+    rows = list_reportable_current_data(db, paper_id)
     total = len(rows)
     manual = sum(1 for row in rows if row.get("origin_type") == "manual")
     confirmed = sum(1 for row in rows if row.get("review_action") == "confirmation")
@@ -1065,10 +1179,9 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
                         review_filter: str = "all",
                         source_filter: str = "all",
                         sort: str = "relevance") -> list[dict[str, Any]]:
-    rows = list_current_data(db)
+    rows = list_reportable_current_data(db)
     if not include_excluded:
         rows = [row for row in rows if row.get("review_action") not in {"rejected", "ambiguous"}]
-    rows = [row for row in rows if is_reportable_value_text(row.get("value_text"))]
     rows = _filter_search_rows(rows, review_filter=review_filter, source_filter=source_filter)
     if sort not in SEARCH_SORTS:
         raise ValueError(f"unsupported search sort: {sort}")
@@ -1124,7 +1237,7 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
 def export_original_csv(db: EvidenceDB, path: Path = TARGET_EXPORT) -> Path:
     paper_id = find_target_paper(db)
     rows = []
-    for current in list_current_data(db, paper_id):
+    for current in list_reportable_current_data(db, paper_id):
         if current["origin_type"] != "automatic":
             continue
         original = dict(current)
