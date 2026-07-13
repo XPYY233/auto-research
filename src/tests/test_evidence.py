@@ -53,6 +53,7 @@ from auto_research.evidence.webapp import (
 from auto_research.evidence.workflow import run_article_workflow
 from auto_research.evidence.six_column import (
     CURRENT_PAPER_META_KEY,
+    SIX_FIELDS,
     TARGET_DOI,
     TARGET_TITLE,
     add_manual_item,
@@ -828,6 +829,34 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(sample["sample_type"], "confirmation")
         self.assertEqual(sample["changed_fields"], [])
 
+    def test_confirmation_and_correction_can_return_to_pending_without_losing_history(self):
+        confirmed_row = next(r for r in list_current_data(self.db) if r["stable_key"] == "tem_voltage")
+        confirmed_fields = {field: confirmed_row[field] for field in SIX_FIELDS}
+        confirmed = confirm_correction(self.db, confirmed_row["item_id"], confirmed_fields, "tester")
+
+        corrected_row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")
+        corrected_fields = {field: corrected_row[field] for field in SIX_FIELDS}
+        corrected_fields["context_explanation"] += "；人工修正后待复查"
+        corrected = confirm_correction(self.db, corrected_row["item_id"], corrected_fields, "tester")
+
+        reopened_confirmation = set_row_review_decision(
+            self.db, confirmed["item_id"], "automatic", note="撤销误确认", editor="tester",
+        )
+        reopened_correction = set_row_review_decision(
+            self.db, corrected["item_id"], "automatic", note="修正仍需复查", editor="tester",
+        )
+
+        self.assertEqual(reopened_confirmation["review_action"], "automatic")
+        self.assertEqual(reopened_correction["review_action"], "automatic")
+        self.assertEqual(reopened_confirmation["version_no"], 2)
+        self.assertEqual(reopened_correction["version_no"], 2)
+        self.assertEqual(reopened_correction["context_explanation"], corrected_fields["context_explanation"])
+        self.assertEqual(reopened_correction["original_context_explanation"], corrected_row["original_context_explanation"])
+        self.assertEqual(collect_learning_samples(self.db, self.paper_id)["sample_count"], 0)
+        progress = review_progress(self.db, self.paper_id)
+        self.assertEqual(progress["reviewed"], 0)
+        self.assertEqual(progress["unreviewed"], 114)
+
     def test_rejection_and_ambiguity_are_reversible_negative_learning_samples(self):
         rejected_row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")
         ambiguous_row = next(r for r in list_current_data(self.db) if r["stable_key"] == "tem_voltage")
@@ -1256,6 +1285,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("review_keyboard_shortcuts", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_progress_card", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_negative_decisions", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("review_reopen_all_states", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_feedback_refresh", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_source_sort", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_priority_queue", by_name["web_ui_contract"]["web_ui"]["checked"])

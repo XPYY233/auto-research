@@ -836,7 +836,7 @@ function renderTable() {
       ? ""
       : isUnreviewedRow(row)
         ? `<details class="row-review-more"><summary>其他决定</summary><button type="button" data-decision="ambiguous" data-item-id="${row.item_id}">存在歧义</button><button type="button" data-decision="rejected" data-item-id="${row.item_id}">不采用</button></details>`
-        : ["rejected", "ambiguous"].includes(row.review_action)
+        : ["confirmation", "correction", "rejected", "ambiguous"].includes(row.review_action)
           ? `<button type="button" class="reopen-action" data-reopen="${row.item_id}">恢复待审核</button>`
           : "";
     return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action">${priorityBadge}${reviewButtons}${decisionButtons}<button data-original="${row.item_id}">查看原始</button><button class="source-action" data-source-row="${row.item_id}"${sourceDisabled}>原文证据</button><small>#${row.item_id} · ${badge}</small></div></td></tr>`;
@@ -1133,6 +1133,19 @@ async function submitReviewDecision(event) {
 
 async function reopenReviewDecision(itemId) {
   if (rejectReadOnlyAction("恢复待审核")) return;
+  const current = state.rows.find(row => Number(row.item_id) === Number(itemId));
+  if (!current || current.origin_type === "manual" || current.review_action === "automatic") return;
+  if (hasUnsavedEdits() && !confirmDiscardUnsaved("恢复为待审核")) return;
+  const previousLabel = {
+    confirmation: "已确认",
+    correction: "已修正",
+    rejected: "不采用",
+    ambiguous: "存在歧义",
+  }[current.review_action] || "已审核";
+  if (!window.confirm(
+    `确定将 #${itemId} 从“${previousLabel}”恢复为待审核吗？\n\n` +
+    "已保存版本、自动抽取原始版本和修正历史都会保留。"
+  )) return;
   try {
     const result = await api(`/api/six-data/${itemId}/decision`, {
       method: "POST",
@@ -1140,6 +1153,7 @@ async function reopenReviewDecision(itemId) {
       body: JSON.stringify({ decision: "automatic", note: "用户恢复为待审核", editor: "本地研究者" }),
     });
     state.rows = state.rows.map(row => row.item_id === itemId ? result : row);
+    clearDirtyRows();
     await refreshReviewFeedback();
     state.selected = itemId;
     renderTable();
@@ -1973,10 +1987,6 @@ document.querySelector("#review-filter").addEventListener("change", event => {
   }
   state.reviewFilter = event.target.value;
   state.calibrationActive = event.target.value === "calibration";
-  if (!state.calibrationActive) {
-    state.calibrationReviewIds = new Set();
-    state.calibrationBatchTotal = 0;
-  }
   state.selected = null;
   renderTable();
 });

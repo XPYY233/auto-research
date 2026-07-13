@@ -542,6 +542,12 @@ switching to another paper does not silently replace the unfinished sample;
 return to the paper and press `继续本轮校准`. Only item IDs are stored locally,
 and no row is confirmed or changed by this resume mechanism.
 
+Every automatic row review decision is reversible. Confirmed, corrected,
+ambiguous, and rejected rows expose `恢复待审核`; the action asks for explicit
+confirmation and appends another version instead of deleting the prior review,
+the edited fields, or the immutable automatic-extraction original. The reopened
+row leaves the active learning-sample set until it is reviewed again.
+
 After you confirm, correct, or manually add a row, the page refreshes the paper
 workflow label, learning-sample summary, evidence audit, and extraction status.
 This keeps the manual-review loop visible: every saved correction immediately
