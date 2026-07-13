@@ -87,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("evidence-classify-experiment", help="Classify experimental types for one local evidence paper")
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p.add_argument("--max-pages", type=int, default=5)
+    p = sub.add_parser("evidence-index-visuals", help="Render and index complete tables/figures from one local evidence paper")
+    p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p = sub.add_parser("evidence-export", help="Export evidence records to CSV")
     p.add_argument("--out")
     p.add_argument("--include-drafts", action="store_true")
@@ -420,6 +422,14 @@ def cmd_evidence(args) -> int:
         pdf_path = Path(paper["pdf_path"]) if paper.get("pdf_path") else None
         report = classify_experiment_types(paper, pdf_path=pdf_path, max_pages=args.max_pages)
         print(json.dumps({"paper": {"id": paper_id, "title": paper["title"], "doi": paper.get("doi")}, **report}, ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-index-visuals":
+        from .evidence.six_column import resolve_paper_selector
+        from .evidence.visual_evidence import index_visual_evidence
+
+        paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key)
+        result = index_visual_evidence(evidence_db, paper_id)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.cmd == "evidence-export":
         path = Path(args.out).expanduser().resolve() if args.out else None

@@ -16,6 +16,7 @@ from .six_column import (
     resolve_paper_selector,
     set_current_paper,
 )
+from .visual_evidence import index_visual_evidence
 
 
 def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
@@ -47,6 +48,7 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
     else:
         raise ValueError(before["message"])
     after = get_six_extraction_status(db, resolved_id)
+    visual_evidence = index_visual_evidence(db, resolved_id) if before["pdf_ready"] else None
     audit = audit_six_column_evidence(db, resolved_id) if after["row_count"] else None
     learning = collect_learning_samples(db, resolved_id)
     review = review_progress(db, resolved_id)
@@ -62,6 +64,7 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
         "status_before": before,
         "status_after": after,
         "action_result": action_result,
+        "visual_evidence": visual_evidence,
         "experiment_profile": action_result.get("experiment_profile", experiment_profile)
         if isinstance(action_result, dict) else experiment_profile,
         "evidence_audit": audit,

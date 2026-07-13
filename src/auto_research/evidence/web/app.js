@@ -1,8 +1,8 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", search: "", extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", search: "", searchMode: "item", visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
   review: { kicker: "EVIDENCE REVIEW", title: "校对实验数据", subtitle: "逐条核对抽取结果，并随时返回原文证据。" },
-  search: { kicker: "DATABASE SEARCH", title: "搜索实验数据", subtitle: "用材料、条件、物理量或作者关键词检索整个数据库。" },
+  search: { kicker: "DATABASE SEARCH", title: "搜索实验数据与图表", subtitle: "在条目、完整表格和完整图片之间切换，并用同一个关键词搜索。" },
   upload: { kicker: "PDF INTAKE", title: "导入实验文献", subtitle: "验证真实 PDF、识别重复论文，并加入待处理队列。" },
   manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "为自动抽取未覆盖的实验结果补充六列记录。" },
   history: { kicker: "REVISION HISTORY", title: "查看修正记录", subtitle: "复查人工确认、修正和补录留下的版本记录。" },
@@ -1002,14 +1002,51 @@ async function runSearch(event) {
   const q = document.querySelector("#search-query").value.trim();
   state.search = q;
   try {
-    const rows = await api(`/api/six-search?q=${encodeURIComponent(q)}`);
-    setText("search-summary", q ? `“${q}” 找到 ${rows.length} 条可用数据` : `显示 ${rows.length} 条可用数据`);
-    document.querySelector("#search-export").href = `/api/six-export.csv?q=${encodeURIComponent(q)}`;
-    document.querySelector("#search-export-xlsx").href = `/api/six-export.xlsx?q=${encodeURIComponent(q)}`;
-    renderResults(rows);
+    if (state.searchMode === "item") {
+      const rows = await api(`/api/six-search?q=${encodeURIComponent(q)}`);
+      setText("search-summary", q ? `“${q}” 找到 ${rows.length} 条可用数据` : `显示 ${rows.length} 条可用数据`);
+      document.querySelector("#search-export").href = `/api/six-export.csv?q=${encodeURIComponent(q)}`;
+      document.querySelector("#search-export-xlsx").href = `/api/six-export.xlsx?q=${encodeURIComponent(q)}`;
+      renderResults(rows);
+      return;
+    }
+    const assets = await api(`/api/visual-search?type=${encodeURIComponent(state.searchMode)}&q=${encodeURIComponent(q)}`);
+    const label = state.searchMode === "table" ? "张完整表格" : "幅完整图片";
+    setText("search-summary", q ? `“${q}” 找到 ${assets.length} ${label}` : `显示 ${assets.length} ${label}`);
+    renderVisualResults(assets);
   } catch (error) {
     toast(error.message, true);
   }
+}
+
+const searchModeCopy = {
+  item: {
+    placeholder: "例如：CoCrFeMnNi 300°C 辐照后 硬度",
+    help: "检索整个六列数据库；同一原表的命中数据默认集中显示，并支持展开全部。",
+  },
+  table: {
+    placeholder: "例如：三种材料 辐照前后 纳米硬度",
+    help: "以完整表格为单位检索物理量、材料、实验条件、方法、表题和正文解释。",
+  },
+  figure: {
+    placeholder: "例如：位错环密度 随剂量变化 300°C",
+    help: "以完整图片为单位检索坐标变量、材料、条件、图注和正文结论；不会自动猜读曲线点。",
+  },
+};
+
+function setSearchMode(mode, options = {}) {
+  if (!searchModeCopy[mode]) return;
+  state.searchMode = mode;
+  document.querySelectorAll("[data-search-mode]").forEach(button => {
+    const active = button.dataset.searchMode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  const input = document.querySelector("#search-query");
+  input.placeholder = searchModeCopy[mode].placeholder;
+  setText("search-help", searchModeCopy[mode].help);
+  document.querySelector("#search-exports").hidden = mode !== "item";
+  if (options.run !== false) runSearch();
 }
 
 function searchReviewLabel(row) {
@@ -1021,25 +1058,140 @@ function searchReviewLabel(row) {
   }[row.review_action] || "待审核";
 }
 
+function sourceLabel(row) {
+  const primary = row.primary_visual_asset;
+  if (row.source_kind === "table" && primary) return `表格数据 · ${primary.label}`;
+  if (row.source_kind === "figure" && primary) return `图片数据 · ${primary.label}`;
+  const relatedFigure = (row.visual_assets || []).find(asset => asset.asset_type === "figure");
+  if (relatedFigure) return `正文数据 · 关联 ${relatedFigure.label}`;
+  if (row.source_kind === "manual") return "人工补录";
+  return "正文数据";
+}
+
+function itemResultHtml(row) {
+  const authors = [row.first_author ? `一作：${row.first_author}` : "", row.corresponding_author ? `通讯：${row.corresponding_author}` : ""].filter(Boolean).join(" · ");
+  const paperLine = [row.article_title, row.doi, authors].filter(Boolean).join(" · ");
+  const reviewLabel = searchReviewLabel(row);
+  const reviewButton = isReadOnly() ? "" : `<button class="row-link" data-jump="${row.item_id}">去校对</button>`;
+  const sourceButton = `<button class="row-link source-link" data-source-search="${row.item_id}">原文证据</button>`;
+  const linked = row.primary_visual_asset || (row.visual_assets || []).find(asset => asset.asset_type === "figure");
+  const visualButton = linked
+    ? `<button class="row-link visual-link" data-visual-open="${linked.id}">${linked.asset_type === "table" ? "查看原始表格" : "查看相关图片"}</button>`
+    : "";
+  return `<article class="result" data-item-result="${row.item_id}"><div class="value">${esc(row.value_text)}<small> ${esc(row.unit)}</small><span class="source-kind ${esc(row.source_kind)}">${esc(sourceLabel(row))}</span></div><strong>${esc(row.meaning)}</strong><em class="search-review-state ${esc(row.review_action || row.origin_type)}">${esc(reviewLabel)}${row.search_score != null ? ` · 相关度 ${esc(row.search_score)}` : ""}</em><p>${esc(row.context_explanation)}</p><div class="result-paper">${esc(paperLine)}</div><div class="result-actions">${visualButton}${sourceButton}${reviewButton}</div></article>`;
+}
+
 function renderResults(rows) {
   const el = document.querySelector("#search-results");
   if (!rows.length) {
     el.innerHTML = '<div class="blank"><h3>没有找到相关数据</h3><p>尝试材料名称、环境条件、物理量或它们的组合。</p></div>';
     return;
   }
-  el.innerHTML = rows.map(row => {
-    const authors = [row.first_author ? `一作：${row.first_author}` : "", row.corresponding_author ? `通讯：${row.corresponding_author}` : ""].filter(Boolean).join(" · ");
-    const paperLine = [row.article_title, row.doi, authors].filter(Boolean).join(" · ");
-    const reviewLabel = searchReviewLabel(row);
-    const reviewButton = isReadOnly() ? "" : `<button class="row-link" data-jump="${row.item_id}">去校对</button>`;
-    const sourceButton = `<button class="row-link source-link" data-source-search="${row.item_id}">原文证据</button>`;
-    return `<article class="result"><div class="value">${esc(row.value_text)}<small> ${esc(row.unit)}</small></div><strong>${esc(row.meaning)}</strong><em class="search-review-state ${esc(row.review_action || row.origin_type)}">${esc(reviewLabel)}${row.search_score != null ? ` · 相关度 ${esc(row.search_score)}` : ""}</em><p>${esc(row.context_explanation)}</p><div class="result-paper">${esc(paperLine)}</div><div class="result-actions">${sourceButton}${reviewButton}</div></article>`;
-  }).join("");
+  const tableGroups = new Map();
+  rows.forEach(row => {
+    const table = row.source_kind === "table" ? row.primary_visual_asset : null;
+    if (!table) return;
+    if (!tableGroups.has(Number(table.id))) tableGroups.set(Number(table.id), { asset: table, rows: [] });
+    tableGroups.get(Number(table.id)).rows.push(row);
+  });
+  const renderedTables = new Set();
+  const html = [];
+  rows.forEach(row => {
+    const table = row.source_kind === "table" ? row.primary_visual_asset : null;
+    if (!table) {
+      html.push(itemResultHtml(row));
+      return;
+    }
+    const assetId = Number(table.id);
+    if (renderedTables.has(assetId)) return;
+    renderedTables.add(assetId);
+    const group = tableGroups.get(assetId);
+    const visible = group.rows.slice(0, 3);
+    const hidden = group.rows.slice(3);
+    html.push(`<section class="table-result-group"><header><div><span>同一原表集中显示</span><h3>${esc(group.asset.label)} · ${group.rows.length} 条匹配数据</h3><p>${esc(group.asset.caption || "表格来源数据")}</p></div><button type="button" data-visual-open="${group.asset.id}">查看完整原表</button></header><div class="table-group-visible">${visible.map(itemResultHtml).join("")}</div>${hidden.length ? `<details><summary>展开其余 ${hidden.length} 条数据</summary><div>${hidden.map(itemResultHtml).join("")}</div></details>` : ""}</section>`);
+  });
+  el.innerHTML = html.join("");
   el.querySelectorAll("[data-jump]").forEach(btn => btn.addEventListener("click", () => jumpToRow(Number(btn.dataset.jump))));
   el.querySelectorAll("[data-source-search]").forEach(btn => btn.addEventListener("click", () => {
     const itemId = Number(btn.dataset.sourceSearch);
     openSourceViewer(itemId, rows.find(row => Number(row.item_id) === itemId) || null);
   }));
+  el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
+}
+
+function renderVisualResults(assets) {
+  const el = document.querySelector("#search-results");
+  if (!assets.length) {
+    el.innerHTML = `<div class="blank"><h3>没有找到相关${state.searchMode === "table" ? "表格" : "图片"}</h3><p>尝试物理量、材料、实验条件、测试方法或变量关系。</p></div>`;
+    return;
+  }
+  el.innerHTML = assets.map(asset => {
+    const typeLabel = asset.asset_type === "table" ? "完整表格" : "完整图片";
+    const quantities = (asset.physical_quantities || []).map(value => `<span>${esc(value)}</span>`).join("");
+    const materials = (asset.materials || []).join(" · ");
+    return `<article class="visual-result"><button class="visual-thumb" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(asset.label)}"><img src="${esc(asset.image_url)}" alt="${esc(asset.label)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${esc(asset.caption)}</h3></div><div class="visual-quantity-list">${quantities}</div><p>${esc(asset.context_explanation)}</p><dl><div><dt>材料</dt><dd>${esc(materials || "原文未单独列出")}</dd></div><div><dt>条件</dt><dd>${esc(asset.conditions_text || "见原文图注与正文")}</dd></div><div><dt>方法</dt><dd>${esc(asset.methods_text || "见原文")}</dd></div></dl><small>${esc(asset.article_title)} · ${esc(asset.doi)}${asset.search_score != null ? ` · 相关度 ${esc(asset.search_score)}` : ""}</small><button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></article>`;
+  }).join("");
+  el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
+}
+
+function formatVisualVariables(variables) {
+  return Object.entries(variables || {}).map(([key, value]) => `${key}：${value}`).join("；");
+}
+
+async function openVisualAsset(assetId) {
+  const dialog = document.querySelector("#visual-dialog");
+  setText("visual-dialog-title", "正在读取完整图表…");
+  document.querySelector("#visual-image").removeAttribute("src");
+  if (typeof dialog.showModal === "function") {
+    if (!dialog.open) dialog.showModal();
+  } else {
+    dialog.setAttribute("open", "open");
+  }
+  try {
+    const asset = await api(`/api/visual-assets/${assetId}`);
+    state.visualAsset = asset;
+    setText("visual-dialog-type", asset.asset_type === "table" ? "ORIGINAL TABLE" : "ORIGINAL FIGURE");
+    setText("visual-dialog-title", `${asset.label} · PDF第 ${asset.page_start} 页`);
+    const image = document.querySelector("#visual-image");
+    image.src = `${asset.image_url}?ts=${Date.now()}`;
+    image.alt = `${asset.label}高分辨率原文截图`;
+    setText("visual-caption", asset.caption);
+    setText("visual-context", asset.context_explanation || "尚未生成结构化解释。");
+    const details = [
+      ["物理量", (asset.physical_quantities || []).join("、")],
+      ["变量/表头", formatVisualVariables(asset.variables)],
+      ["材料/样品", (asset.materials || []).join("、")],
+      ["实验条件", asset.conditions_text],
+      ["方法", asset.methods_text],
+      ["关联条目", `${asset.linked_item_count || 0} 条`],
+    ].filter(([, value]) => String(value || "").trim());
+    document.querySelector("#visual-details").innerHTML = details.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("");
+    setText("visual-source-context", asset.source_context || asset.caption);
+    setText("visual-paper", `${asset.article_title} · ${asset.doi} · PDF第 ${asset.page_start} 页`);
+    document.querySelector("#visual-tags").innerHTML = (asset.tags || []).map(tag => `<span>${esc(tag)}</span>`).join("");
+    document.querySelector("#visual-open-pdf").href = asset.pdf_url;
+    const related = document.querySelector("#visual-related-items");
+    related.textContent = `查看相关数据条目（${asset.linked_item_count || 0}）`;
+    related.disabled = !asset.linked_item_count;
+  } catch (error) {
+    setText("visual-dialog-title", "图表加载失败");
+    setText("visual-context", error.message);
+    toast(error.message, true);
+  }
+}
+
+function closeVisualAsset() {
+  state.visualAsset = null;
+  document.querySelector("#visual-dialog")?.close();
+}
+
+function showVisualRelatedItems() {
+  const asset = state.visualAsset;
+  if (!asset) return;
+  closeVisualAsset();
+  document.querySelector("#search-query").value = asset.label;
+  setSearchMode("item", { run: false });
+  runSearch();
 }
 
 async function jumpToRow(id) {
@@ -1401,6 +1553,7 @@ document.querySelector("#focus-review").addEventListener("click", () => setFocus
 document.querySelector("#exit-focus-review").addEventListener("click", () => setFocusReview(false));
 document.addEventListener("keydown", handleReviewKeyboard);
 document.querySelector("#search-form").addEventListener("submit", runSearch);
+document.querySelectorAll("[data-search-mode]").forEach(button => button.addEventListener("click", () => setSearchMode(button.dataset.searchMode)));
 document.querySelector("#manual-form").addEventListener("submit", saveManual);
 document.querySelector("#manual-paper-select").addEventListener("change", fillManualDefaults);
 document.querySelector("#import-json-form").addEventListener("submit", importJsonResult);
@@ -1425,6 +1578,12 @@ document.querySelector("#source-dialog")?.addEventListener("click", event => {
   const dialog = event.currentTarget;
   if (event.target === dialog) dialog.close();
 });
+document.querySelectorAll("[data-close-visual]").forEach(button => button.addEventListener("click", closeVisualAsset));
+document.querySelector("#visual-dialog")?.addEventListener("click", event => {
+  if (event.target === event.currentTarget) closeVisualAsset();
+});
+document.querySelector("#visual-dialog")?.addEventListener("close", () => { state.visualAsset = null; });
+document.querySelector("#visual-related-items")?.addEventListener("click", showVisualRelatedItems);
 window.addEventListener("beforeunload", event => {
   if (!hasUnsavedEdits()) return;
   event.preventDefault();

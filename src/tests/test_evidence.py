@@ -77,6 +77,13 @@ from auto_research.evidence.source_highlight import (
     render_source_highlight_png,
     render_source_snippet_png,
 )
+from auto_research.evidence.visual_evidence import (
+    get_visual_asset,
+    index_visual_evidence,
+    list_visual_assets,
+    search_visual_assets,
+    visual_asset_image_path,
+)
 
 
 class ValueTests(unittest.TestCase):
@@ -503,7 +510,7 @@ class EvidenceDBTests(unittest.TestCase):
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_versions").fetchone()["count"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_version_orphans").fetchone()["count"], 1)
-            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "7")
+            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "8")
             self.assertEqual(list(conn.execute("PRAGMA foreign_key_check")), [])
         health = evidence_db_health(self.db, self.paper)
         self.assertTrue(health["ok"], health)
@@ -611,6 +618,35 @@ class SixColumnWorkflowTests(unittest.TestCase):
         # Zotero storage/XJZQ42XP, not the 18-page accepted manuscript.
         self.assertEqual(hardness["source_page"], 5)
         self.assertIn("Al0.3CoCrFeNi", hardness["context_explanation"])
+
+    def test_target_visual_index_renders_complete_tables_and_figures(self):
+        result = index_visual_evidence(self.db, self.paper_id)
+        self.assertEqual(result["table_count"], 4)
+        self.assertEqual(result["figure_count"], 10)
+        self.assertEqual(result["links"]["asset_count"], 14)
+        assets = list_visual_assets(self.db, paper_id=self.paper_id)
+        self.assertEqual(len(assets), 14)
+        table3 = next(asset for asset in assets if asset["label"] == "Table 3")
+        self.assertIn("辐照后硬度", table3["physical_quantities"])
+        self.assertTrue(visual_asset_image_path(self.db, table3["id"]).is_file())
+        self.assertTrue(visual_asset_image_path(self.db, table3["id"]).read_bytes().startswith(b"\x89PNG"))
+        self.assertEqual(get_visual_asset(self.db, table3["id"])["caption"], table3["caption"])
+
+    def test_visual_search_and_item_source_kinds_stay_distinct(self):
+        index_visual_evidence(self.db, self.paper_id)
+        table_hits = search_visual_assets(self.db, "纳米硬度", asset_type="table")
+        figure_hits = search_visual_assets(self.db, "位错环密度 随剂量", asset_type="figure")
+        self.assertEqual(table_hits[0]["label"], "Table 3")
+        self.assertEqual(figure_hits[0]["label"], "Figure 8")
+        rows = list_current_data(self.db, self.paper_id)
+        table_row = next(row for row in rows if row["stable_key"] == "table3_al0_3cocrfeni_h0")
+        text_row = next(row for row in rows if row["stable_key"] == "irradiation_temperature")
+        figure_related = next(row for row in rows if row["stable_key"] == "obs_loop_saturation")
+        self.assertEqual(table_row["source_kind"], "table")
+        self.assertEqual(table_row["primary_visual_asset"]["label"], "Table 3")
+        self.assertEqual(text_row["source_kind"], "text")
+        self.assertEqual(figure_related["source_kind"], "text_with_figure")
+        self.assertEqual(search_current_data(self.db, "Table 3", limit=100)[0]["primary_visual_asset"]["label"], "Table 3")
 
     def test_benchmark_reads_saved_run_without_model_call_and_writes_reports(self):
         artifact = (
@@ -1260,6 +1296,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(is_read_only_public_get("/api/six-data/335/source-highlight.png"))
         self.assertTrue(is_read_only_public_get("/api/six-data/335/source-snippet.png"))
         self.assertTrue(is_read_only_public_get("/api/papers/2/pdf"))
+        self.assertTrue(is_read_only_public_get("/api/visual-search"))
+        self.assertTrue(is_read_only_public_get("/api/visual-assets/3"))
+        self.assertTrue(is_read_only_public_get("/api/visual-assets/3/image"))
         self.assertFalse(is_read_only_public_get("/api/current-paper"))
         self.assertFalse(is_read_only_public_get("/api/papers"))
         self.assertFalse(is_read_only_public_get("/api/uploads"))

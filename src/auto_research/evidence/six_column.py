@@ -37,6 +37,7 @@ SEARCH_FIELD_WEIGHTS = {
     "first_author": 1.0,
     "corresponding_author": 1.0,
     "source_excerpt": 0.8,
+    "source_locator": 0.8,
 }
 CURRENT_PAPER_META_KEY = "six_column_current_paper_id"
 SAVED_SCAN_META_PREFIX = "six_column_saved_snapshot_"
@@ -887,7 +888,28 @@ def list_current_data(db: EvidenceDB, paper_id: int | None = None) -> list[dict[
         params = (paper_id,)
     sql += " ORDER BY i.item_id"
     with db.connect() as conn:
-        return [dict(row) for row in conn.execute(sql, params)]
+        rows = [dict(row) for row in conn.execute(sql, params)]
+    # Visual assets are optional provenance. Import lazily to avoid coupling the
+    # core six-column schema to PDF rendering during module import.
+    from .visual_evidence import links_for_items
+
+    links = links_for_items(db, [int(row["item_id"]) for row in rows])
+    for row in rows:
+        row_links = links.get(int(row["item_id"]), [])
+        row["visual_assets"] = row_links
+        primary = next((asset for asset in row_links if asset["relation_kind"] == "primary"), None)
+        row["primary_visual_asset"] = primary
+        if row.get("origin_type") == "manual":
+            row["source_kind"] = "manual"
+        elif primary and primary["asset_type"] == "table":
+            row["source_kind"] = "table"
+        elif primary and primary["asset_type"] == "figure":
+            row["source_kind"] = "figure"
+        elif any(asset["asset_type"] == "figure" for asset in row_links):
+            row["source_kind"] = "text_with_figure"
+        else:
+            row["source_kind"] = "text"
+    return rows
 
 
 def review_progress(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
@@ -980,6 +1002,18 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
     rows = list_current_data(db)
     if not include_excluded:
         rows = [row for row in rows if row.get("review_action") not in {"rejected", "ambiguous"}]
+    visual_label = re.fullmatch(r"\s*(table|figure|fig\.?)\s*(\d+)\s*", query, re.I)
+    if visual_label:
+        asset_type = "table" if visual_label.group(1).lower() == "table" else "figure"
+        number = int(visual_label.group(2))
+        matched = [
+            row for row in rows
+            if any(
+                asset.get("asset_type") == asset_type and int(asset.get("asset_number") or 0) == number
+                for asset in row.get("visual_assets", [])
+            )
+        ]
+        return [{**row, "search_score": 100.0} for row in matched[:limit]]
     term_groups = _query_terms(query)
     if not term_groups:
         return rows[:limit]
@@ -998,6 +1032,7 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
                 max(_field_score(term, row.get("first_author"), SEARCH_FIELD_WEIGHTS["first_author"]) for term in term_group),
                 max(_field_score(term, row.get("corresponding_author"), SEARCH_FIELD_WEIGHTS["corresponding_author"]) for term in term_group),
                 max(_field_score(term, row["source_excerpt"], SEARCH_FIELD_WEIGHTS["source_excerpt"]) for term in term_group),
+                max(_field_score(term, row["source_locator"], SEARCH_FIELD_WEIGHTS["source_locator"]) for term in term_group),
             )
             if score:
                 matched_terms += 1

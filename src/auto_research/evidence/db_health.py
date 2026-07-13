@@ -14,6 +14,9 @@ EXPECTED_INDEXES = {
     "idx_data_versions_item",
     "idx_data_versions_review",
     "idx_data_versions_source",
+    "idx_visual_assets_paper_type",
+    "idx_visual_assets_label",
+    "idx_data_item_visual_asset",
 }
 
 
@@ -66,6 +69,11 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         ai_runs = [dict(row) for row in conn.execute(
             "SELECT id,status,output_path,created_at FROM ai_extraction_runs"
         )]
+        visual_assets = [dict(row) for row in conn.execute(
+            "SELECT id,paper_id,asset_type,label,image_path FROM visual_assets"
+            + (" WHERE paper_id=?" if paper_id is not None else ""),
+            (() if paper_id is None else (paper_id,)),
+        )]
 
     now_utc = datetime.now(timezone.utc)
     stale_running_ids: list[int] = []
@@ -86,6 +94,11 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         and (not run.get("output_path") or not Path(str(run["output_path"])).is_file())
     ]
     failed_run_count = sum(run["status"] == "failed" for run in ai_runs)
+    missing_visual_images = [
+        int(asset["id"]) for asset in visual_assets
+        if not (Path(__file__).resolve().parents[3] / str(asset["image_path"])).is_file()
+        and not Path(str(asset["image_path"])).is_file()
+    ]
 
     schema_version_text = schema_version_row["value"] if schema_version_row else ""
     try:
@@ -97,7 +110,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
     checks = [
         {
             "name": "schema_version",
-            "ok": schema_version >= 7,
+            "ok": schema_version >= 8,
             "detail": f"schema_version={schema_version_text or 'missing'}",
         },
         {
@@ -155,6 +168,13 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             "name": "quarantined_legacy_versions",
             "ok": True,
             "detail": f"preserved outside active search={quarantined_versions}",
+        },
+        {
+            "name": "visual_asset_images",
+            "ok": not missing_visual_images,
+            "detail": f"visual assets={len(visual_assets)}; all rendered images exist"
+            if not missing_visual_images else f"missing visual image ids={missing_visual_images}",
+            "examples": missing_visual_images[:20],
         },
     ]
     return {

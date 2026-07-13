@@ -294,12 +294,54 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - `/api/papers` should expose per-paper six-column workflow state and label so the review article picker can act as a work queue. Use `not_scanned`, `scanned_empty`, `pending_review`, and `reviewed`; labels should be reader-facing Chinese such as `未扫描` or `待审核 112/114`.
 - After any confirmation, correction, rejection, ambiguity decision, restoration, or manual entry, the web UI should refresh paper workflow labels, current/all learning reports, evidence audit, and extraction status so the researcher can immediately see how the human review sample changes the next extraction guidance.
 
+### Visual evidence search contract
+
+The search workspace has exactly three user-facing modes: `条目搜索`,
+`表格搜索`, and `图片搜索`. They are three views over the same evidence database,
+not separately maintained applications. Read-only sharing must use the same
+frontend and database as the local editor and may expose the public visual search,
+visual metadata, and visual image routes without exposing mutation APIs.
+
+Schema version 8 adds `visual_assets` and `data_item_visual_links`:
+
+- `visual_assets` stores one paper-level table or figure object, its label,
+  caption, PDF page, crop coordinates, rendered image path and checksum, source
+  PDF fingerprint, searchable tags, quantities, variables, materials,
+  conditions, methods, and source-grounded explanation.
+- `data_item_visual_links` connects six-column data rows to their primary or
+  supporting table/figure. A link enriches provenance; it must never rewrite,
+  merge, confirm, or reject the underlying six-column record.
+- Keep `source_kind` distinct as `text`, `table`, `text_with_figure`, or
+  `figure_only`. Do not classify a calculated or qualitative result as a direct
+  measurement merely because it is linked to a figure.
+
+Table and figure display must use high-resolution crops rendered from the
+authoritative local PDF, with page and PDF fingerprint retained for audit. Do
+not redraw the original table, use OCR text as a substitute for the original
+view, or infer exact data points from graph pixels. Generic caption/image
+detection may create pending visual objects for other readable PDFs; ambiguous
+crops or compound-panel boundaries require human checking.
+
+In `条目搜索`, records linked to the same table are grouped and show the first
+three rows by default. The remaining rows are available through a native expand
+control. This is display-only collapsing: result counts, exports, review state,
+and row identity must remain unchanged. Exact queries such as `Table 3` or
+`Figure 8` should resolve through visual links rather than broad same-page
+matching.
+
+Use `evidence-index-visuals <paper-selector>` to create or refresh visual assets.
+The stable public routes are `/api/visual-search`,
+`/api/visual-assets/{id}`, and `/api/visual-assets/{id}/image`. Health checks
+must require schema version 8, the visual indexes, and the existence of every
+recorded image file.
+
 ### Current verified baseline
 
-As of 2026-07-08:
+As of 2026-07-13:
 
 - Target article rows: 114
 - Rows with PDF highlight localization: 114/114
+- Indexed visual evidence: 4 tables and 10 figures from PDF pages 2-9
 - Sentence or fragment-level strong localization: 109/114
 - Test command: `PYTHONPATH=src python3 -m unittest src/tests/test_evidence.py`
 - The 114-row target baseline remains article-specific and human review is still incomplete. B2 can now process other readable PDFs through DeepSeek, but do not claim general scientific accuracy until the benchmark and human-review metrics support it.

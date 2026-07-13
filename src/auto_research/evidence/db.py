@@ -297,6 +297,47 @@ CREATE TABLE IF NOT EXISTS ai_extraction_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_extraction_runs_paper ON ai_extraction_runs(paper_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS visual_assets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  asset_type TEXT NOT NULL CHECK(asset_type IN ('table','figure')),
+  label TEXT NOT NULL,
+  asset_number INTEGER NOT NULL,
+  caption TEXT NOT NULL,
+  page_start INTEGER NOT NULL,
+  page_end INTEGER NOT NULL,
+  bbox_json TEXT NOT NULL,
+  image_path TEXT NOT NULL,
+  image_sha256 TEXT NOT NULL,
+  physical_quantities_json TEXT NOT NULL DEFAULT '[]',
+  variables_json TEXT NOT NULL DEFAULT '{}',
+  materials_json TEXT NOT NULL DEFAULT '[]',
+  conditions_text TEXT NOT NULL DEFAULT '',
+  methods_text TEXT NOT NULL DEFAULT '',
+  context_explanation TEXT NOT NULL DEFAULT '',
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  source_context TEXT NOT NULL DEFAULT '',
+  review_status TEXT NOT NULL DEFAULT 'draft'
+    CHECK(review_status IN ('draft','verified','ambiguous')),
+  extraction_method TEXT NOT NULL DEFAULT 'pdf_layout',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(paper_id,asset_type,label)
+);
+
+CREATE TABLE IF NOT EXISTS data_item_visual_links (
+  item_id INTEGER NOT NULL REFERENCES data_items(id) ON DELETE CASCADE,
+  asset_id INTEGER NOT NULL REFERENCES visual_assets(id) ON DELETE CASCADE,
+  relation_kind TEXT NOT NULL CHECK(relation_kind IN ('primary','supporting')),
+  cell_locator TEXT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(item_id,asset_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_visual_assets_paper_type ON visual_assets(paper_id,asset_type,asset_number);
+CREATE INDEX IF NOT EXISTS idx_visual_assets_label ON visual_assets(label);
+CREATE INDEX IF NOT EXISTS idx_data_item_visual_asset ON data_item_visual_links(asset_id,item_id);
 """
 
 
@@ -432,7 +473,7 @@ class EvidenceDB:
             if "duplicate_count" not in run_columns:
                 conn.execute("ALTER TABLE ai_extraction_runs ADD COLUMN duplicate_count INTEGER NOT NULL DEFAULT 0")
             conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('schema_version','7') "
+                "INSERT INTO schema_meta(key,value) VALUES('schema_version','8') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value "
                 "WHERE schema_meta.value IS NOT excluded.value"
             )

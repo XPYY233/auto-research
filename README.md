@@ -298,6 +298,35 @@ For day-to-day use on this Mac, double-click
 `scripts/start_evidence_ui.command` from Finder. It opens the same local page and
 keeps the server process visible in a Terminal window.
 
+The whole-database search page now has three modes:
+
+- `条目搜索` searches the six-column records. Records linked to the same source
+  table are grouped together and show the first three rows by default; expanding
+  the group reveals the remaining rows without changing or merging the data.
+- `表格搜索` treats each original paper table as one searchable evidence object.
+  Opening a result shows a high-resolution crop from the published PDF on the
+  left and source-grounded quantities, variables, materials, conditions,
+  methods, context, page, DOI, and related data rows on the right.
+- `图片搜索` uses the same evidence-object model for figures. It stores and
+  searches the original figure image and its documented meaning, but never
+  guesses precise curve points from pixels.
+
+The editable and read-only services share the same HTML, JavaScript, CSS,
+SQLite database, and visual assets. The read-only service exposes these three
+search modes and the public visual-evidence viewer without exposing review or
+mutation APIs.
+
+```bash
+# Index or refresh table/figure evidence for one local article
+auto-research evidence-index-visuals "10.1016/j.jnucmat.2018.08.031"
+```
+
+Rendered evidence crops are tracked under `data/evidence/visual_assets/`. The
+database stores their PDF page, caption/label, crop coordinates, source PDF
+fingerprint, search metadata, and links back to six-column records. Re-indexing
+is deterministic and does not modify the six editable values or their review
+history.
+
 ### B1 local PDF intake
 
 The `上传文献` view validates a local PDF before accepting it, checks exact file,

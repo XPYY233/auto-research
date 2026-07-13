@@ -44,6 +44,7 @@ from .six_column import (
     set_row_review_decision,
 )
 from .source_highlight import get_source_view, render_source_highlight_png, render_source_snippet_png
+from .visual_evidence import get_visual_asset, search_visual_assets, visual_asset_image_path
 from .workflow import run_article_workflow
 from .uploads import MAX_UPLOAD_BYTES, UploadService
 
@@ -68,6 +69,7 @@ def is_read_only_public_get(path: str) -> bool:
         "/api/six-search",
         "/api/six-export.csv",
         "/api/six-export.xlsx",
+        "/api/visual-search",
     }:
         return True
     if path.startswith("/static/"):
@@ -79,6 +81,10 @@ def is_read_only_public_get(path: str) -> bool:
     if re.fullmatch(r"/api/six-data/\d+/source-snippet\.png", path):
         return True
     if re.fullmatch(r"/api/papers/\d+/pdf", path):
+        return True
+    if re.fullmatch(r"/api/visual-assets/\d+", path):
+        return True
+    if re.fullmatch(r"/api/visual-assets/\d+/image", path):
         return True
     return False
 
@@ -303,6 +309,17 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 query = parse_qs(parsed.query).get("q", [""])[0]
                 rows = search_export_rows(self.db, query)
                 return self.six_xlsx_response(rows, "six-column-search-results.xlsx")
+            if parsed.path == "/api/visual-search":
+                params = parse_qs(parsed.query)
+                query = params.get("q", [""])[0]
+                asset_type = params.get("type", ["figure"])[0]
+                return self.json_response(search_visual_assets(self.db, query, asset_type=asset_type))
+            match = re.fullmatch(r"/api/visual-assets/(\d+)", parsed.path)
+            if match:
+                return self.json_response(get_visual_asset(self.db, int(match.group(1))))
+            match = re.fullmatch(r"/api/visual-assets/(\d+)/image", parsed.path)
+            if match:
+                return self.png_response(visual_asset_image_path(self.db, int(match.group(1))).read_bytes())
             if parsed.path == "/api/current-paper/export.csv":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
