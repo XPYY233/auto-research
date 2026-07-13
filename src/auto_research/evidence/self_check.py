@@ -55,6 +55,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("review_progress_card", "id=\"review-progress-card\"" in html and "renderReviewProgressCard" in js and "review-progress-bar" in js),
         ("review_negative_decisions", "id=\"review-decision-dialog\"" in html and "存在歧义" in js and "不采用" in js and "/decision" in js and "恢复待审核" in js),
         ("review_reopen_all_states", all(action in js for action in ('"confirmation", "correction", "rejected", "ambiguous"', "确定将 #", "已保存版本、自动抽取原始版本和修正历史都会保留"))),
+        ("optional_reviewer_note", "id=\"selected-review-note\"" in js and "可选，不属于六列数据" in js and "人工核验备注" in js and "reviewNotes" in js and ".review-note-panel" in css),
         ("review_feedback_refresh", "refreshReviewFeedback" in js and "/api/papers" in js and "/api/learning-report" in js),
         ("review_source_sort", "id=\"review-sort\"" in html and "sortReviewRows" in js and "sourcePageNumber" in js and "unreviewed_source" in js),
         ("review_priority_queue", 'value="priority"' in html and "review_priority_score" in js and "review_priority_counts" in js),

@@ -70,7 +70,8 @@ def build_learning_guidance(samples_payload: dict[str, Any], limit: int = 6) -> 
             f"meaning={_shorten(corrected.get('meaning'))}; "
             f"context={_shorten(corrected.get('context_explanation'))}; "
             f"value={_shorten(corrected.get('value_text'), 80)}; "
-            f"unit={_shorten(corrected.get('unit'), 80)}"
+            f"unit={_shorten(corrected.get('unit'), 80)}; "
+            f"reviewer_rationale={_shorten(sample.get('edit_note'))}"
         )
         if original and sample.get("sample_type") == "correction":
             lines.append(

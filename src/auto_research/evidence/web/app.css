@@ -244,3 +244,6 @@ body[data-focus-review="true"] .shell{display:block}body[data-focus-review="true
 /* In-page calibration review: representative feedback without leaving the table. */
 .review-progress-copy{min-width:0}.calibration-start{margin-top:9px;padding:7px 11px;border:1px solid #dfa171;border-radius:7px;background:#fff8f1;color:#88491f;cursor:pointer;font-size:10px;font-weight:700}.calibration-start:hover{border-color:#c96a32;background:#fff0e3}.calibration-start.active{border-color:var(--blue-deep);background:var(--blue-deep);color:#fff}.calibration-start:disabled{cursor:wait;opacity:.65}
 body[data-readonly="true"] #review-calibration-start{display:none}
+
+/* Optional reviewer rationale lives beside the immutable source, not in the six data columns. */
+.review-note-panel{margin:0 17px 17px;padding:13px;border:1px solid #d5e0e5;border-left:3px solid var(--green);border-radius:7px;background:#f7faf9}.review-note-panel label{display:flex;justify-content:space-between;gap:12px;color:var(--ink);font-weight:700}.review-note-panel label small{color:var(--muted);font-weight:400}.review-note-panel textarea{min-height:72px;margin-top:8px;padding:9px;font-size:11px;line-height:1.55}.review-note-panel p{margin:7px 0 0;color:var(--muted);font-size:10px;line-height:1.5}

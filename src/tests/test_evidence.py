@@ -829,6 +829,18 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(sample["sample_type"], "confirmation")
         self.assertEqual(sample["changed_fields"], [])
 
+    def test_optional_reviewer_note_reaches_history_and_learning_guidance(self):
+        row = next(r for r in list_current_data(self.db) if r["stable_key"] == "tem_voltage")
+        fields = {field: row[field] for field in SIX_FIELDS}
+        note = "人工确认：内容无修改；人工核验备注：单位来自实验方法段"
+        confirmed = confirm_correction(self.db, row["item_id"], fields, "tester", note)
+
+        self.assertEqual(confirmed["edit_note"], note)
+        samples = collect_learning_samples(self.db, self.paper_id)
+        self.assertEqual(samples["samples"][0]["edit_note"], note)
+        report = build_learning_report(self.db, self.paper_id)
+        self.assertIn("单位来自实验方法段", report["guidance_preview"])
+
     def test_confirmation_and_correction_can_return_to_pending_without_losing_history(self):
         confirmed_row = next(r for r in list_current_data(self.db) if r["stable_key"] == "tem_voltage")
         confirmed_fields = {field: confirmed_row[field] for field in SIX_FIELDS}
@@ -1286,6 +1298,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("review_progress_card", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_negative_decisions", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_reopen_all_states", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("optional_reviewer_note", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_feedback_refresh", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_source_sort", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_priority_queue", by_name["web_ui_contract"]["web_ui"]["checked"])

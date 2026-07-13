@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], testSet: null, paperFilters: { query: "", object: "all", method: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, search: "", searchMode: "item", searchFilters: { review: "all", source: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], testSet: null, paperFilters: { query: "", object: "all", method: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
   review: { kicker: "EVIDENCE REVIEW", title: "校对实验数据", subtitle: "逐条核对抽取结果，并随时返回原文证据。" },
@@ -92,14 +92,21 @@ function hasUnsavedEdits() {
 }
 
 function clearDirtyRows(itemId = null) {
-  if (itemId == null) state.dirtyRows.clear();
-  else state.dirtyRows.delete(Number(itemId));
+  if (itemId == null) {
+    state.dirtyRows.clear();
+    state.reviewNotes.clear();
+    state.fieldDirtyRows.clear();
+  } else {
+    state.dirtyRows.delete(Number(itemId));
+    state.reviewNotes.delete(Number(itemId));
+    state.fieldDirtyRows.delete(Number(itemId));
+  }
 }
 
 function confirmDiscardUnsaved(actionLabel) {
   if (!hasUnsavedEdits()) return true;
   return window.confirm(
-    `当前有 ${state.dirtyRows.size} 行修改尚未确认。\n\n` +
+    `当前有 ${state.dirtyRows.size} 行修改或核验备注尚未确认。\n\n` +
     `继续“${actionLabel}”将放弃这些未写入数据库的临时修改。\n\n` +
     "是否继续？"
   );
@@ -879,8 +886,10 @@ function renderTable() {
       const id = Number(tr?.dataset.item);
       const row = state.rows.find(item => item.item_id === id);
       if (!row) return;
-      const dirty = fields.some(field => String(collectRowFields(id)[field] ?? "") !== String(row[field] ?? ""));
-      markRowDirty(id, dirty);
+      const fieldsDirty = rowFieldsDirty(id);
+      if (fieldsDirty) state.fieldDirtyRows.add(id);
+      else state.fieldDirtyRows.delete(id);
+      markRowDirty(id, fieldsDirty || Boolean(String(state.reviewNotes.get(id) || "").trim()));
     });
   });
   renderOriginal(rows.find(row => Number(row.item_id) === Number(state.selected)) || null);
@@ -976,8 +985,16 @@ function renderOriginal(row) {
     return;
   }
   const sourcePage = row.original_source_page;
-  pane.innerHTML = `<header class="original-head"><span>IMMUTABLE ORIGINAL · #${row.item_id}</span><h3>${esc(row.original_meaning)}</h3></header><div class="original-grid">${fields.map(field => `<div class="original-field ${field === "context_explanation" ? "context" : ""}"><small>${fieldLabels[field]}</small><p>${esc(originalValue(row, field))}</p></div>`).join("")}</div><div class="provenance"><strong>论文定位</strong><p>PDF第 ${esc(sourcePage || "?")} 页 · ${esc(row.original_source_locator || "未标注")}<br>${esc(row.original_source_excerpt || "")}</p><button class="source-open" type="button" data-source-open="${row.item_id}">打开原文定位并高亮 →</button></div>`;
+  const reviewNote = state.reviewNotes.get(Number(row.item_id)) || "";
+  pane.innerHTML = `<header class="original-head"><span>IMMUTABLE ORIGINAL · #${row.item_id}</span><h3>${esc(row.original_meaning)}</h3></header><div class="original-grid">${fields.map(field => `<div class="original-field ${field === "context_explanation" ? "context" : ""}"><small>${fieldLabels[field]}</small><p>${esc(originalValue(row, field))}</p></div>`).join("")}</div><div class="provenance"><strong>论文定位</strong><p>PDF第 ${esc(sourcePage || "?")} 页 · ${esc(row.original_source_locator || "未标注")}<br>${esc(row.original_source_excerpt || "")}</p><button class="source-open" type="button" data-source-open="${row.item_id}">打开原文定位并高亮 →</button></div><div class="review-note-panel"><label for="selected-review-note">核验备注 <small>可选，不属于六列数据</small></label><textarea id="selected-review-note" maxlength="500" placeholder="例如：材料条件应来自表头；该值是计算量，不是直接测量。">${esc(reviewNote)}</textarea><p>仅在确认或修正时写入版本历史，并用于改进后续抽取。</p></div>`;
   pane.querySelector("[data-source-open]")?.addEventListener("click", () => openSourceViewer(row.item_id));
+  pane.querySelector("#selected-review-note")?.addEventListener("input", event => {
+    const itemId = Number(row.item_id);
+    const note = event.target.value.trim();
+    if (note) state.reviewNotes.set(itemId, event.target.value);
+    else state.reviewNotes.delete(itemId);
+    markRowDirty(itemId, Boolean(note) || state.fieldDirtyRows.has(itemId));
+  });
 }
 
 function sourceMetaLoading(row) {
@@ -1038,19 +1055,31 @@ function collectRowFields(id) {
   return values;
 }
 
+function rowFieldsDirty(id) {
+  const row = state.rows.find(item => Number(item.item_id) === Number(id));
+  const tr = document.querySelector(`tr[data-item="${id}"]`);
+  if (!row || !tr) return false;
+  return fields.some(field => {
+    const input = tr.querySelector(`[data-field="${field}"]`);
+    return String(input?.value ?? "") !== String(row[field] ?? "");
+  });
+}
+
 async function confirmRow(id, options = {}) {
   if (rejectReadOnlyAction("确认或修正数据")) return;
   try {
     const values = collectRowFields(id);
     const current = state.rows.find(row => row.item_id === id);
     const changed = fields.filter(field => String(values[field] ?? "") !== String(current[field] ?? ""));
+    const reviewerNote = String(state.reviewNotes.get(Number(id)) || "").trim();
+    const automaticNote = changed.length ? `修改字段：${changed.map(field => fieldLabels[field]).join("、")}` : "人工确认：内容无修改";
     const result = await api(`/api/six-data/${id}/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         fields: values,
         editor: "本地研究者",
-        note: changed.length ? `修改字段：${changed.map(field => fieldLabels[field]).join("、")}` : "人工确认：内容无修改",
+        note: reviewerNote ? `${automaticNote}；人工核验备注：${reviewerNote}` : automaticNote,
       }),
     });
     state.rows = state.rows.map(row => row.item_id === id ? result : row);

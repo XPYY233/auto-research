@@ -548,6 +548,12 @@ confirmation and appends another version instead of deleting the prior review,
 the edited fields, or the immutable automatic-extraction original. The reopened
 row leaves the active learning-sample set until it is reviewed again.
 
+The immutable-source pane also provides an optional reviewer rationale. This is
+not a seventh data column and is not indexed as scientific data. It remains
+temporary until the row is confirmed or corrected, then becomes the version's
+audit note and a bounded `reviewer_rationale` hint for later DeepSeek extraction.
+Clearing or leaving it unconfirmed does not write anything to the database.
+
 After you confirm, correct, or manually add a row, the page refreshes the paper
 workflow label, learning-sample summary, evidence audit, and extraction status.
 This keeps the manual-review loop visible: every saved correction immediately
