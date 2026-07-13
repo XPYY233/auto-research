@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", search: "", searchMode: "item", visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", search: "", searchMode: "item", searchFilters: { review: "all", source: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
   review: { kicker: "EVIDENCE REVIEW", title: "校对实验数据", subtitle: "逐条核对抽取结果，并随时返回原文证据。" },
@@ -999,42 +999,166 @@ async function importJsonResult(event) {
   }
 }
 
-async function runSearch(event) {
-  event?.preventDefault();
-  const q = document.querySelector("#search-query").value.trim();
-  state.search = q;
-  try {
-    if (state.searchMode === "item") {
-      const rows = await api(`/api/six-search?q=${encodeURIComponent(q)}`);
-      setText("search-summary", q ? `“${q}” 找到 ${rows.length} 条可用数据` : `显示 ${rows.length} 条可用数据`);
-      document.querySelector("#search-export").href = `/api/six-export.csv?q=${encodeURIComponent(q)}`;
-      document.querySelector("#search-export-xlsx").href = `/api/six-export.xlsx?q=${encodeURIComponent(q)}`;
-      renderResults(rows);
-      return;
-    }
-    const assets = await api(`/api/visual-search?type=${encodeURIComponent(state.searchMode)}&q=${encodeURIComponent(q)}`);
-    const label = state.searchMode === "table" ? "张完整表格" : "幅完整图片";
-    setText("search-summary", q ? `“${q}” 找到 ${assets.length} ${label}` : `显示 ${assets.length} ${label}`);
-    renderVisualResults(assets);
-  } catch (error) {
-    toast(error.message, true);
-  }
-}
-
 const searchModeCopy = {
   item: {
     placeholder: "例如：CoCrFeMnNi 300°C 辐照后 硬度",
-    help: "检索整个六列数据库；同一原表的命中数据默认集中显示，并支持展开全部。",
+    help: "检索六列数据及原文证据；同一原表的命中数据会集中显示，并支持展开全部。",
+    suggestions: ["CoCrFeMnNi 300°C 辐照后 硬度", "钨 辐照温度", "Table 3"],
   },
   table: {
     placeholder: "例如：三种材料 辐照前后 纳米硬度",
     help: "以完整表格为单位检索物理量、材料、实验条件、方法、表题和正文解释。",
+    suggestions: ["纳米硬度", "材料成分 EDS", "热力学参数"],
   },
   figure: {
     placeholder: "例如：位错环密度 随剂量变化 300°C",
     help: "以完整图片为单位检索坐标变量、材料、条件、图注和正文结论；不会自动猜读曲线点。",
+    suggestions: ["位错环密度 随剂量", "SRIM 损伤深度", "纳米压痕 载荷 位移"],
   },
 };
+
+function itemSearchParams(q) {
+  return new URLSearchParams({
+    q,
+    review: state.searchFilters.review,
+    source: state.searchFilters.source,
+    sort: state.searchFilters.sort,
+  }).toString();
+}
+
+function setSearchBusy(busy) {
+  const results = document.querySelector("#search-results");
+  results.classList.toggle("is-loading", busy);
+  if (busy) {
+    results.innerHTML = Array.from({ length: 3 }, () => '<div class="search-skeleton"><i></i><span></span><span></span></div>').join("");
+    setText("search-summary", "正在检索证据库…");
+  }
+}
+
+function recentSearches() {
+  try {
+    return JSON.parse(localStorage.getItem("evidenceRecentSearches") || "[]").filter(item => item && item.query && searchModeCopy[item.mode]);
+  } catch (_) {
+    return [];
+  }
+}
+
+function rememberSearch(query) {
+  if (!query) return;
+  const next = [{ mode: state.searchMode, query }, ...recentSearches().filter(item => !(item.mode === state.searchMode && item.query === query))].slice(0, 12);
+  try { localStorage.setItem("evidenceRecentSearches", JSON.stringify(next)); } catch (_) { /* local history is optional */ }
+  renderRecentSearches();
+}
+
+function useSearchQuery(query, remember = true) {
+  const input = document.querySelector("#search-query");
+  input.value = query;
+  document.querySelector("#search-clear").hidden = !query;
+  runSearch(null, { remember });
+}
+
+function renderSearchSuggestions() {
+  const suggestions = searchModeCopy[state.searchMode].suggestions || [];
+  const container = document.querySelector("#search-suggestions");
+  container.innerHTML = suggestions.map(query => `<button type="button" data-search-suggestion="${esc(query)}">${esc(query)}</button>`).join("");
+  container.querySelectorAll("[data-search-suggestion]").forEach(button => button.addEventListener("click", () => useSearchQuery(button.dataset.searchSuggestion)));
+  renderRecentSearches();
+}
+
+function renderRecentSearches() {
+  const wrapper = document.querySelector("#recent-searches");
+  const container = document.querySelector("#recent-search-items");
+  const items = recentSearches().filter(item => item.mode === state.searchMode).slice(0, 4);
+  wrapper.hidden = !items.length;
+  container.innerHTML = items.map(item => `<button type="button" data-recent-search="${esc(item.query)}">${esc(item.query)}</button>`).join("");
+  container.querySelectorAll("[data-recent-search]").forEach(button => button.addEventListener("click", () => useSearchQuery(button.dataset.recentSearch, false)));
+}
+
+function activeFilterLabels() {
+  const labels = [];
+  if (state.searchFilters.review === "reviewed") labels.push("仅人工核验");
+  if (state.searchFilters.review === "pending") labels.push("仅待审核");
+  const sourceLabels = { text: "正文数据", table: "表格数据", figure: "图片关联", manual: "人工补录" };
+  if (sourceLabels[state.searchFilters.source]) labels.push(sourceLabels[state.searchFilters.source]);
+  const sortLabels = { source_page: "按文章与页码", article: "按文章归类" };
+  if (sortLabels[state.searchFilters.sort]) labels.push(sortLabels[state.searchFilters.sort]);
+  return labels;
+}
+
+function renderActiveFilters() {
+  const container = document.querySelector("#search-active-filters");
+  const labels = state.searchMode === "item" ? activeFilterLabels() : [];
+  container.innerHTML = labels.map(label => `<span>${esc(label)}</span>`).join("");
+}
+
+function resetSearchWorkspace() {
+  state.searchFilters = { review: "all", source: "all", sort: "relevance" };
+  document.querySelector("#search-review-filter").value = "all";
+  document.querySelector("#search-source-filter").value = "all";
+  document.querySelector("#search-sort").value = "relevance";
+  document.querySelector("#search-query").value = "";
+  document.querySelector("#search-clear").hidden = true;
+  renderActiveFilters();
+  runSearch(null, { remember: false });
+}
+
+let searchInputTimer = null;
+function scheduleSearchFromInput() {
+  const input = document.querySelector("#search-query");
+  document.querySelector("#search-clear").hidden = !input.value;
+  if (state.searchComposing) return;
+  clearTimeout(searchInputTimer);
+  searchInputTimer = setTimeout(() => runSearch(null, { remember: false }), 420);
+}
+
+function focusSearchShortcut(event) {
+  if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+  const target = event.target;
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target?.isContentEditable) return;
+  if (document.body.dataset.view !== "search") return;
+  event.preventDefault();
+  document.querySelector("#search-query").focus();
+}
+
+async function runSearch(event, options = {}) {
+  event?.preventDefault();
+  const q = document.querySelector("#search-query").value.trim();
+  const requestId = ++state.searchRequest;
+  state.search = q;
+  document.querySelector("#search-clear").hidden = !q;
+  setSearchBusy(true);
+  renderActiveFilters();
+  try {
+    if (state.searchMode === "item") {
+      const params = itemSearchParams(q);
+      const result = await api(`/api/six-search?${params}&meta=1`);
+      if (requestId !== state.searchRequest) return;
+      const rows = result.rows;
+      state.searchResults = rows;
+      const countText = result.total > rows.length
+        ? `显示前 ${rows.length} 条，共 ${result.total} 条`
+        : `${rows.length} 条数据`;
+      setText("search-summary", q ? `“${q}” · ${countText}` : `最近收录 · ${countText}`);
+      document.querySelector("#search-export").href = `/api/six-export.csv?${params}`;
+      document.querySelector("#search-export-xlsx").href = `/api/six-export.xlsx?${params}`;
+      renderResults(rows);
+    } else {
+      const assets = await api(`/api/visual-search?type=${encodeURIComponent(state.searchMode)}&q=${encodeURIComponent(q)}`);
+      if (requestId !== state.searchRequest) return;
+      state.searchResults = assets;
+      const label = state.searchMode === "table" ? "张原始表格" : "幅论文图片";
+      setText("search-summary", q ? `“${q}” · ${assets.length} ${label}` : `当前收录 ${assets.length} ${label}`);
+      renderVisualResults(assets);
+    }
+    if (options.remember ?? Boolean(event)) rememberSearch(q);
+  } catch (error) {
+    if (requestId !== state.searchRequest) return;
+    document.querySelector("#search-results").innerHTML = `<div class="blank search-error"><h3>检索暂时不可用</h3><p>${esc(error.message)}</p></div>`;
+    toast(error.message, true);
+  } finally {
+    if (requestId === state.searchRequest) document.querySelector("#search-results").classList.remove("is-loading");
+  }
+}
 
 function setSearchMode(mode, options = {}) {
   if (!searchModeCopy[mode]) return;
@@ -1048,6 +1172,9 @@ function setSearchMode(mode, options = {}) {
   input.placeholder = searchModeCopy[mode].placeholder;
   setText("search-help", searchModeCopy[mode].help);
   document.querySelector("#search-exports").hidden = mode !== "item";
+  document.querySelector("#search-filter-bar").hidden = mode !== "item";
+  renderSearchSuggestions();
+  renderActiveFilters();
   if (options.run !== false) runSearch();
 }
 
@@ -1070,9 +1197,22 @@ function sourceLabel(row) {
   return "正文数据";
 }
 
+function brief(value, maxLength = 240) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength).trim()}…` : text;
+}
+
+function highlightSearchText(value) {
+  const text = String(value ?? "");
+  const terms = state.search.split(/\s+/).map(term => term.trim()).filter(term => term.length > 1);
+  if (!terms.length) return esc(text);
+  const escapedTerms = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(`(${escapedTerms.join("|")})`, "gi");
+  return text.split(pattern).map(part => terms.some(term => part.toLocaleLowerCase() === term.toLocaleLowerCase()) ? `<mark>${esc(part)}</mark>` : esc(part)).join("");
+}
+
 function itemResultHtml(row) {
   const authors = [row.first_author ? `一作：${row.first_author}` : "", row.corresponding_author ? `通讯：${row.corresponding_author}` : ""].filter(Boolean).join(" · ");
-  const paperLine = [row.article_title, row.doi, authors].filter(Boolean).join(" · ");
   const reviewLabel = searchReviewLabel(row);
   const reviewButton = isReadOnly() ? "" : `<button class="row-link" data-jump="${row.item_id}">去校对</button>`;
   const sourceButton = `<button class="row-link source-link" data-source-search="${row.item_id}">原文证据</button>`;
@@ -1080,13 +1220,25 @@ function itemResultHtml(row) {
   const visualButton = linked
     ? `<button class="row-link visual-link" data-visual-open="${linked.id}">${linked.asset_type === "table" ? "查看原始表格" : "查看相关图片"}</button>`
     : "";
-  return `<article class="result" data-item-result="${row.item_id}"><div class="value">${esc(row.value_text)}<small> ${esc(row.unit)}</small><span class="source-kind ${esc(row.source_kind)}">${esc(sourceLabel(row))}</span></div><strong>${esc(row.meaning)}</strong><em class="search-review-state ${esc(row.review_action || row.origin_type)}">${esc(reviewLabel)}${row.search_score != null ? ` · 相关度 ${esc(row.search_score)}` : ""}</em><p>${esc(row.context_explanation)}</p><div class="result-paper">${esc(paperLine)}</div><div class="result-actions">${visualButton}${sourceButton}${reviewButton}</div></article>`;
+  const page = row.source_page || row.original_source_page;
+  const scoreTitle = row.search_score != null ? ` title="内部匹配得分 ${esc(row.search_score)}"` : "";
+  const excerpt = brief(row.source_excerpt || row.original_source_excerpt);
+  return `<article class="result" data-item-result="${row.item_id}">
+    <div class="result-value-block"><small>报告值</small><div class="value">${highlightSearchText(row.value_text)}<span>${esc(row.unit)}</span></div><span class="source-kind ${esc(row.source_kind)}">${esc(sourceLabel(row))}</span></div>
+    <div class="result-content">
+      <div class="result-heading"><div><small>具体意义</small><h3>${highlightSearchText(row.meaning)}</h3></div><em class="search-review-state ${esc(row.review_action || row.origin_type)}"${scoreTitle}>${esc(reviewLabel)}</em></div>
+      <div class="result-context"><small>实验条件与文章语境</small><p>${highlightSearchText(row.context_explanation)}</p></div>
+      ${excerpt ? `<blockquote><span>原文证据</span><p>${highlightSearchText(excerpt)}</p></blockquote>` : ""}
+      <footer><div class="result-paper"><strong>${highlightSearchText(row.article_title)}</strong><span>${[row.doi, authors, page ? `PDF 第 ${page} 页` : ""].filter(Boolean).map(esc).join(" · ")}</span></div><div class="result-actions">${visualButton}${sourceButton}${reviewButton}</div></footer>
+    </div>
+  </article>`;
 }
 
 function renderResults(rows) {
   const el = document.querySelector("#search-results");
   if (!rows.length) {
-    el.innerHTML = '<div class="blank"><h3>没有找到相关数据</h3><p>尝试材料名称、环境条件、物理量或它们的组合。</p></div>';
+    el.innerHTML = `<div class="blank search-empty"><span>⌕</span><h3>没有找到直接匹配的数据</h3><p>减少一个条件，或改用材料名称、元素符号、物理量和测试方法重新组合。</p><button type="button" data-clear-empty>清除条件，浏览最近数据</button></div>`;
+    el.querySelector("[data-clear-empty]")?.addEventListener("click", resetSearchWorkspace);
     return;
   }
   const tableGroups = new Map();
@@ -1110,7 +1262,7 @@ function renderResults(rows) {
     const group = tableGroups.get(assetId);
     const visible = group.rows.slice(0, 3);
     const hidden = group.rows.slice(3);
-    html.push(`<section class="table-result-group"><header><div><span>同一原表集中显示</span><h3>${esc(group.asset.label)} · ${group.rows.length} 条匹配数据</h3><p>${esc(group.asset.caption || "表格来源数据")}</p></div><button type="button" data-visual-open="${group.asset.id}">查看完整原表</button></header><div class="table-group-visible">${visible.map(itemResultHtml).join("")}</div>${hidden.length ? `<details><summary>展开其余 ${hidden.length} 条数据</summary><div>${hidden.map(itemResultHtml).join("")}</div></details>` : ""}</section>`);
+    html.push(`<section class="table-result-group"><header><div><span>TABLE GROUP · 同一原表</span><h3>${esc(group.asset.label)} · ${group.rows.length} 条匹配数据</h3><p>${highlightSearchText(group.asset.caption || "表格来源数据")}</p></div><button type="button" data-visual-open="${group.asset.id}">查看完整原表</button></header><div class="table-group-visible">${visible.map(itemResultHtml).join("")}</div>${hidden.length ? `<details><summary>展开其余 ${hidden.length} 条数据</summary><div>${hidden.map(itemResultHtml).join("")}</div></details>` : ""}</section>`);
   });
   el.innerHTML = html.join("");
   el.querySelectorAll("[data-jump]").forEach(btn => btn.addEventListener("click", () => jumpToRow(Number(btn.dataset.jump))));
@@ -1124,14 +1276,15 @@ function renderResults(rows) {
 function renderVisualResults(assets) {
   const el = document.querySelector("#search-results");
   if (!assets.length) {
-    el.innerHTML = `<div class="blank"><h3>没有找到相关${state.searchMode === "table" ? "表格" : "图片"}</h3><p>尝试物理量、材料、实验条件、测试方法或变量关系。</p></div>`;
+    el.innerHTML = `<div class="blank search-empty"><span>⌕</span><h3>没有找到相关${state.searchMode === "table" ? "表格" : "图片"}</h3><p>尝试物理量、材料、实验条件、测试方法或变量关系。</p><button type="button" data-clear-empty>清除关键词，浏览全部</button></div>`;
+    el.querySelector("[data-clear-empty]")?.addEventListener("click", resetSearchWorkspace);
     return;
   }
   el.innerHTML = assets.map(asset => {
     const typeLabel = asset.asset_type === "table" ? "完整表格" : "完整图片";
     const quantities = (asset.physical_quantities || []).map(value => `<span>${esc(value)}</span>`).join("");
     const materials = (asset.materials || []).join(" · ");
-    return `<article class="visual-result"><button class="visual-thumb" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(asset.label)}"><img src="${esc(asset.image_url)}" alt="${esc(asset.label)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${esc(asset.caption)}</h3></div><div class="visual-quantity-list">${quantities}</div><p>${esc(asset.context_explanation)}</p><dl><div><dt>材料</dt><dd>${esc(materials || "原文未单独列出")}</dd></div><div><dt>条件</dt><dd>${esc(asset.conditions_text || "见原文图注与正文")}</dd></div><div><dt>方法</dt><dd>${esc(asset.methods_text || "见原文")}</dd></div></dl><small>${esc(asset.article_title)} · ${esc(asset.doi)}${asset.search_score != null ? ` · 相关度 ${esc(asset.search_score)}` : ""}</small><button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></article>`;
+    return `<article class="visual-result"><button class="visual-thumb" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(asset.label)}"><img src="${esc(asset.image_url)}" alt="${esc(asset.label)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${highlightSearchText(asset.caption)}</h3></div><div class="visual-quantity-list">${quantities}</div><p>${highlightSearchText(asset.context_explanation)}</p><dl><div><dt>材料</dt><dd>${highlightSearchText(materials || "原文未单独列出")}</dd></div><div><dt>条件</dt><dd>${highlightSearchText(asset.conditions_text || "见原文图注与正文")}</dd></div><div><dt>方法</dt><dd>${highlightSearchText(asset.methods_text || "见原文")}</dd></div></dl><small>${esc(asset.article_title)} · ${esc(asset.doi)}</small><button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></article>`;
   }).join("");
   el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
 }
@@ -1191,6 +1344,10 @@ function showVisualRelatedItems() {
   const asset = state.visualAsset;
   if (!asset) return;
   closeVisualAsset();
+  state.searchFilters = { review: "all", source: "all", sort: "relevance" };
+  document.querySelector("#search-review-filter").value = "all";
+  document.querySelector("#search-source-filter").value = "all";
+  document.querySelector("#search-sort").value = "relevance";
   document.querySelector("#search-query").value = asset.label;
   setSearchMode("item", { run: false });
   runSearch();
@@ -1556,6 +1713,27 @@ document.querySelector("#exit-focus-review").addEventListener("click", () => set
 document.addEventListener("keydown", handleReviewKeyboard);
 document.querySelector("#search-form").addEventListener("submit", runSearch);
 document.querySelectorAll("[data-search-mode]").forEach(button => button.addEventListener("click", () => setSearchMode(button.dataset.searchMode)));
+document.querySelector("#search-query").addEventListener("input", scheduleSearchFromInput);
+document.querySelector("#search-query").addEventListener("compositionstart", () => { state.searchComposing = true; });
+document.querySelector("#search-query").addEventListener("compositionend", () => { state.searchComposing = false; scheduleSearchFromInput(); });
+document.querySelector("#search-clear").addEventListener("click", () => {
+  document.querySelector("#search-query").value = "";
+  document.querySelector("#search-clear").hidden = true;
+  document.querySelector("#search-query").focus();
+  runSearch(null, { remember: false });
+});
+document.querySelector("#search-review-filter").addEventListener("change", event => { state.searchFilters.review = event.target.value; runSearch(null, { remember: false }); });
+document.querySelector("#search-source-filter").addEventListener("change", event => { state.searchFilters.source = event.target.value; runSearch(null, { remember: false }); });
+document.querySelector("#search-sort").addEventListener("change", event => { state.searchFilters.sort = event.target.value; runSearch(null, { remember: false }); });
+document.querySelector("#search-reset-filters").addEventListener("click", () => {
+  state.searchFilters = { review: "all", source: "all", sort: "relevance" };
+  document.querySelector("#search-review-filter").value = "all";
+  document.querySelector("#search-source-filter").value = "all";
+  document.querySelector("#search-sort").value = "relevance";
+  renderActiveFilters();
+  runSearch(null, { remember: false });
+});
+document.addEventListener("keydown", focusSearchShortcut);
 document.querySelector("#manual-form").addEventListener("submit", saveManual);
 document.querySelector("#manual-paper-select").addEventListener("change", fillManualDefaults);
 document.querySelector("#import-json-form").addEventListener("submit", importJsonResult);
@@ -1591,4 +1769,6 @@ window.addEventListener("beforeunload", event => {
   event.preventDefault();
   event.returnValue = "";
 });
+renderSearchSuggestions();
+renderActiveFilters();
 load().catch(error => toast(error.message, true));

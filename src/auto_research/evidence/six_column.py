@@ -39,6 +39,9 @@ SEARCH_FIELD_WEIGHTS = {
     "source_excerpt": 0.8,
     "source_locator": 0.8,
 }
+SEARCH_REVIEW_FILTERS = {"all", "reviewed", "pending"}
+SEARCH_SOURCE_FILTERS = {"all", "text", "table", "figure", "manual"}
+SEARCH_SORTS = {"relevance", "article", "source_page"}
 CURRENT_PAPER_META_KEY = "six_column_current_paper_id"
 SAVED_SCAN_META_PREFIX = "six_column_saved_snapshot_"
 SAVED_SCANS_DIR = DATA_DIR / "evidence" / "saved_scans"
@@ -997,11 +1000,56 @@ def _field_score(term: str, text: str, weight: float) -> float:
     return weight * best if best >= 0.62 else 0.0
 
 
+def _filter_search_rows(rows: list[dict[str, Any]], *,
+                        review_filter: str, source_filter: str) -> list[dict[str, Any]]:
+    if review_filter not in SEARCH_REVIEW_FILTERS:
+        raise ValueError(f"unsupported search review filter: {review_filter}")
+    if source_filter not in SEARCH_SOURCE_FILTERS:
+        raise ValueError(f"unsupported search source filter: {source_filter}")
+    if review_filter == "reviewed":
+        rows = [row for row in rows if row.get("origin_type") == "manual" or row.get("review_action") in {"confirmation", "correction"}]
+    elif review_filter == "pending":
+        rows = [row for row in rows if row.get("origin_type") != "manual" and row.get("review_action") == "automatic"]
+    if source_filter == "text":
+        rows = [row for row in rows if row.get("source_kind") == "text"]
+    elif source_filter == "table":
+        rows = [row for row in rows if row.get("source_kind") == "table"]
+    elif source_filter == "figure":
+        rows = [row for row in rows if row.get("source_kind") in {"figure", "text_with_figure"}]
+    elif source_filter == "manual":
+        rows = [row for row in rows if row.get("source_kind") == "manual"]
+    return rows
+
+
+def _sort_search_rows(rows: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
+    if sort not in SEARCH_SORTS:
+        raise ValueError(f"unsupported search sort: {sort}")
+    if sort == "article":
+        return sorted(rows, key=lambda row: (
+            str(row.get("article_title") or "").casefold(),
+            str(row.get("meaning") or "").casefold(),
+            int(row["item_id"]),
+        ))
+    if sort == "source_page":
+        return sorted(rows, key=lambda row: (
+            str(row.get("article_title") or "").casefold(),
+            int(row.get("source_page") or row.get("original_source_page") or 10**9),
+            int(row["item_id"]),
+        ))
+    return rows
+
+
 def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
-                        include_excluded: bool = False) -> list[dict[str, Any]]:
+                        include_excluded: bool = False,
+                        review_filter: str = "all",
+                        source_filter: str = "all",
+                        sort: str = "relevance") -> list[dict[str, Any]]:
     rows = list_current_data(db)
     if not include_excluded:
         rows = [row for row in rows if row.get("review_action") not in {"rejected", "ambiguous"}]
+    rows = _filter_search_rows(rows, review_filter=review_filter, source_filter=source_filter)
+    if sort not in SEARCH_SORTS:
+        raise ValueError(f"unsupported search sort: {sort}")
     visual_label = re.fullmatch(r"\s*(table|figure|fig\.?)\s*(\d+)\s*", query, re.I)
     if visual_label:
         asset_type = "table" if visual_label.group(1).lower() == "table" else "figure"
@@ -1013,10 +1061,11 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
                 for asset in row.get("visual_assets", [])
             )
         ]
-        return [{**row, "search_score": 100.0} for row in matched[:limit]]
+        matched = [{**row, "search_score": 100.0} for row in matched]
+        return _sort_search_rows(matched, sort)[:limit]
     term_groups = _query_terms(query)
     if not term_groups:
-        return rows[:limit]
+        return _sort_search_rows(rows, sort)[:limit]
     ranked: list[tuple[float, dict[str, Any]]] = []
     for row in rows:
         total = 0.0
@@ -1047,7 +1096,7 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
         row = dict(row)
         row["search_score"] = round(score, 3)
         output.append(row)
-    return output
+    return _sort_search_rows(output, sort)
 
 
 def export_original_csv(db: EvidenceDB, path: Path = TARGET_EXPORT) -> Path:

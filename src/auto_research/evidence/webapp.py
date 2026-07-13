@@ -161,10 +161,15 @@ def requires_rescan_confirmation(db: EvidenceDB, paper_id: int) -> bool:
     return bool(status.get("scanned"))
 
 
-def search_export_rows(db: EvidenceDB, query: str, limit: int = 100000) -> list[dict]:
+def search_export_rows(db: EvidenceDB, query: str, limit: int = 100000, *,
+                       review_filter: str = "all", source_filter: str = "all",
+                       sort: str = "relevance") -> list[dict]:
     """Return the whole-database result set used by search-page exports."""
 
-    return search_current_data(db, query, limit=limit)
+    return search_current_data(
+        db, query, limit=limit, review_filter=review_filter,
+        source_filter=source_filter, sort=sort,
+    )
 
 
 def current_experiment_profile(db: EvidenceDB, paper_id: int | None = None) -> dict:
@@ -303,15 +308,46 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             if match:
                 return self.png_response(render_source_snippet_png(self.db, int(match.group(1))))
             if parsed.path == "/api/six-search":
-                query = parse_qs(parsed.query).get("q", [""])[0]
-                return self.json_response(search_current_data(self.db, query))
+                params = parse_qs(parsed.query)
+                query = params.get("q", [""])[0]
+                review_filter = params.get("review", ["all"])[0]
+                source_filter = params.get("source", ["all"])[0]
+                sort = params.get("sort", ["relevance"])[0]
+                if params.get("meta", ["0"])[0] in {"1", "true"}:
+                    limit = min(max(int(params.get("limit", ["100"])[0]), 1), 500)
+                    all_rows = search_current_data(
+                        self.db, query, limit=100000,
+                        review_filter=review_filter,
+                        source_filter=source_filter, sort=sort,
+                    )
+                    return self.json_response({
+                        "rows": all_rows[:limit],
+                        "total": len(all_rows),
+                        "limit": limit,
+                    })
+                return self.json_response(search_current_data(
+                    self.db, query, review_filter=review_filter,
+                    source_filter=source_filter, sort=sort,
+                ))
             if parsed.path == "/api/six-export.csv":
-                query = parse_qs(parsed.query).get("q", [""])[0]
-                rows = search_export_rows(self.db, query)
+                params = parse_qs(parsed.query)
+                query = params.get("q", [""])[0]
+                rows = search_export_rows(
+                    self.db, query,
+                    review_filter=params.get("review", ["all"])[0],
+                    source_filter=params.get("source", ["all"])[0],
+                    sort=params.get("sort", ["relevance"])[0],
+                )
                 return self.six_csv_response(rows)
             if parsed.path == "/api/six-export.xlsx":
-                query = parse_qs(parsed.query).get("q", [""])[0]
-                rows = search_export_rows(self.db, query)
+                params = parse_qs(parsed.query)
+                query = params.get("q", [""])[0]
+                rows = search_export_rows(
+                    self.db, query,
+                    review_filter=params.get("review", ["all"])[0],
+                    source_filter=params.get("source", ["all"])[0],
+                    sort=params.get("sort", ["relevance"])[0],
+                )
                 return self.six_xlsx_response(rows, "six-column-search-results.xlsx")
             if parsed.path == "/api/visual-search":
                 params = parse_qs(parsed.query)
@@ -361,6 +397,11 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
         except (ValueError, KeyError, FileNotFoundError) as exc:
             self.json_response({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except (BrokenPipeError, ConnectionResetError):
+            # The browser may close an in-flight request while switching views
+            # or leaving the page. This is a normal client disconnect, not a
+            # server failure, so do not try to write a second response.
+            return
         except Exception as exc:
             self.json_response({"error": f"server_error: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
@@ -506,6 +547,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
         except (ValueError, KeyError, FileNotFoundError, json.JSONDecodeError) as exc:
             self.json_response({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except (BrokenPipeError, ConnectionResetError):
+            return
         except Exception as exc:
             self.json_response({"error": f"server_error: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 

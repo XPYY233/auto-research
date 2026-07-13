@@ -937,6 +937,35 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(results)
         self.assertIn(self.paper_id, {row["paper_id"] for row in results})
 
+    def test_search_filters_and_sort_are_shared_with_exports(self):
+        manual = add_manual_item(self.db, self.paper_id, {
+            "value_text": "42", "meaning": "搜索筛选人工量", "unit": "a.u.",
+            "article_title": TARGET_TITLE, "doi": TARGET_DOI,
+            "context_explanation": "人工补录；搜索筛选测试",
+        })
+        reviewed = search_current_data(self.db, "", limit=1000, review_filter="reviewed")
+        pending = search_current_data(self.db, "", limit=1000, review_filter="pending")
+        manual_only = search_current_data(self.db, "", limit=1000, source_filter="manual")
+        self.assertIn(manual["item_id"], {row["item_id"] for row in reviewed})
+        self.assertNotIn(manual["item_id"], {row["item_id"] for row in pending})
+        self.assertEqual({row["item_id"] for row in manual_only}, {manual["item_id"]})
+        exported = search_export_rows(self.db, "", review_filter="reviewed", source_filter="manual")
+        self.assertEqual([row["item_id"] for row in exported], [manual["item_id"]])
+        by_page = search_current_data(self.db, "", limit=1000, sort="source_page")
+        target_rows = [row for row in by_page if row["paper_id"] == self.paper_id and row.get("source_page")]
+        self.assertEqual(
+            [row["source_page"] for row in target_rows],
+            sorted(row["source_page"] for row in target_rows),
+        )
+
+    def test_search_rejects_unknown_filter_and_sort_values(self):
+        with self.assertRaisesRegex(ValueError, "unsupported search review filter"):
+            search_current_data(self.db, "", review_filter="trusted")
+        with self.assertRaisesRegex(ValueError, "unsupported search source filter"):
+            search_current_data(self.db, "", source_filter="spreadsheet")
+        with self.assertRaisesRegex(ValueError, "unsupported search sort"):
+            search_current_data(self.db, "", sort="random")
+
     def test_xlsx_export_package_contains_sheet_data(self):
         rows = search_current_data(self.db, "温度", limit=5)
         data = make_xlsx(rows, ["value_text", "meaning", "unit", "article_title", "doi"])

@@ -284,7 +284,9 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - Search is free text, not tag selection.
 - Rank `meaning` highest (weight 6), followed one level lower by `context_explanation` (weight 5), then value, unit, title, DOI, first/corresponding author, and source excerpt.
 - Support partial and fuzzy scientific terms, including alloy names, temperatures, doses, particles, measurement names, and common element Chinese-name/symbol/English aliases such as `钨` / `W` / `tungsten`.
-- CSV and Excel export must reproduce the current search result set.
+- CSV and Excel export must reuse the current query and filters. The browser may
+  render only the first 100 matches for responsiveness, but it must state the
+  full count and clearly label exports as containing all matches.
 - Ordinary search and export must exclude rows whose current review action is `rejected` or `ambiguous`. Pending automatic candidates remain searchable but must be visibly labelled `待审核`; confirmed, corrected, and manual rows must also expose their review state.
 - The review page paper switcher must be a selectable list of registered papers and should appear only on the review page. The visible option text should be paper title plus helpful bibliographic context such as year/DOI and saved-row count; do not make Zotero/storage codes the displayed selector. Use the internal paper id for switching.
 - The search page must search the whole six-column database by default, independent of the currently selected paper. Empty search/export from the search page must also use the whole database.
@@ -297,8 +299,8 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 
 ### Visual evidence search contract
 
-The search workspace has exactly three user-facing modes: `条目搜索`,
-`表格搜索`, and `图片搜索`. They are three views over the same evidence database,
+The search workspace has exactly three user-facing modes: `数据条目`,
+`原始表格`, and `论文图片`. They are three views over the same evidence database,
 not separately maintained applications. Read-only sharing must use the same
 frontend and database as the local editor and may expose the public visual search,
 visual metadata, and visual image routes without exposing mutation APIs.
@@ -323,7 +325,15 @@ view, or infer exact data points from graph pixels. Generic caption/image
 detection may create pending visual objects for other readable PDFs; ambiguous
 crops or compound-panel boundaries require human checking.
 
-In `条目搜索`, records linked to the same table are grouped and show the first
+Treat the search page as an evidence index rather than a generic card grid. Its
+visual hierarchy is: reported value -> physical meaning -> experiment context ->
+source excerpt -> paper identity and evidence actions. Keep the deep navy,
+paper-white and beam-orange palette consistent across editable and read-only
+modes. Suggestions, review/source filters, result ordering, local recent
+searches, keyword highlighting and the `/` focus shortcut are presentation
+features only and must never write to SQLite.
+
+In `数据条目`, records linked to the same table are grouped and show the first
 three rows by default. The remaining rows are available through a native expand
 control. This is display-only collapsing: result counts, exports, review state,
 and row identity must remain unchanged. Exact queries such as `Table 3` or

@@ -300,16 +300,24 @@ keeps the server process visible in a Terminal window.
 
 The whole-database search page now has three modes:
 
-- `条目搜索` searches the six-column records. Records linked to the same source
+- `数据条目` searches the six-column records. Records linked to the same source
   table are grouped together and show the first three rows by default; expanding
   the group reveals the remaining rows without changing or merging the data.
-- `表格搜索` treats each original paper table as one searchable evidence object.
+- `原始表格` treats each original paper table as one searchable evidence object.
   Opening a result shows a high-resolution crop from the published PDF on the
   left and source-grounded quantities, variables, materials, conditions,
   methods, context, page, DOI, and related data rows on the right.
-- `图片搜索` uses the same evidence-object model for figures. It stores and
+- `论文图片` uses the same evidence-object model for figures. It stores and
   searches the original figure image and its documented meaning, but never
   guesses precise curve points from pixels.
+
+`数据条目` additionally supports human-review status, evidence source and result
+ordering filters. It performs live search after a short pause, offers example
+queries and local recent searches, highlights matching text, and shows the
+source excerpt directly in every result. The page renders at most the first 100
+matches for responsiveness, states the complete match count, and exports all
+matching records—not just the visible first page—to CSV or Excel with the same
+query and filter conditions.
 
 The editable and read-only services share the same HTML, JavaScript, CSS,
 SQLite database, and visual assets. The read-only service exposes these three

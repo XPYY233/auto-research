@@ -167,18 +167,48 @@
 
       <section class="view" id="view-search">
         <div class="search-hero">
-          <p class="eyebrow">EVIDENCE SEARCH</p>
-          <h2>选择检索对象，再输入关键词</h2>
-          <div class="search-mode-switch" id="search-mode-switch" role="tablist" aria-label="检索对象">
-            <button type="button" class="active" role="tab" aria-selected="true" data-search-mode="item"><span>条目搜索</span><small>数值与性质</small></button>
-            <button type="button" role="tab" aria-selected="false" data-search-mode="table"><span>表格搜索</span><small>完整原表</small></button>
-            <button type="button" role="tab" aria-selected="false" data-search-mode="figure"><span>图片搜索</span><small>完整原图</small></button>
+          <div class="search-hero-heading">
+            <div>
+              <p class="eyebrow">EVIDENCE SEARCH</p>
+              <h2>从实验条件出发，找到可追溯的数据</h2>
+              <p>输入材料、物理量和实验条件的任意组合。系统会同时理解文章语境、元素名称与符号。</p>
+            </div>
+            <div class="search-scope"><span>检索范围</span><strong>整个证据数据库</strong><small>不受当前校对文章影响</small></div>
           </div>
-          <form id="search-form"><input id="search-query" placeholder="例如：CoCrFeMnNi 300°C 辐照后 硬度" autocomplete="off"><button>搜索</button></form>
-          <p id="search-help">检索整个六列数据库；同一原表的命中数据默认集中显示，并支持展开全部。</p>
+          <div class="search-mode-switch" id="search-mode-switch" role="tablist" aria-label="检索对象">
+            <button type="button" class="active" role="tab" aria-selected="true" data-search-mode="item"><i>01</i><span>数据条目</span><small>查数值、性质与条件</small></button>
+            <button type="button" role="tab" aria-selected="false" data-search-mode="table"><i>02</i><span>原始表格</span><small>查完整表格及上下文</small></button>
+            <button type="button" role="tab" aria-selected="false" data-search-mode="figure"><i>03</i><span>论文图片</span><small>查图像、变量与结论</small></button>
+          </div>
+          <div class="search-box-wrap">
+            <form id="search-form" role="search">
+              <span class="search-glyph" aria-hidden="true">⌕</span>
+              <label class="visually-hidden" for="search-query">搜索实验数据</label>
+              <input id="search-query" placeholder="例如：CoCrFeMnNi 300°C 辐照后 硬度" autocomplete="off" spellcheck="false">
+              <button type="button" class="search-clear" id="search-clear" aria-label="清除搜索" hidden>清除</button>
+              <button class="search-submit" type="submit">搜索</button>
+            </form>
+            <kbd title="按 / 快速聚焦搜索框">/</kbd>
+          </div>
+          <div class="search-discovery">
+            <span>试试这样搜索</span>
+            <div class="search-suggestions" id="search-suggestions"></div>
+            <div class="recent-searches" id="recent-searches" hidden><span>最近搜索</span><div id="recent-search-items"></div></div>
+          </div>
+          <p id="search-help">检索六列数据及原文证据；同一原表的命中数据会集中显示，并支持展开全部。</p>
         </div>
-        <div class="search-toolbar"><span id="search-summary">等待搜索</span><span id="search-exports"><a id="search-export" href="/api/six-export.csv">导出 CSV</a><a id="search-export-xlsx" href="/api/six-export.xlsx">导出 Excel</a></span></div>
-        <div class="result-list" id="search-results"></div>
+        <div class="search-controls" id="search-filter-bar">
+          <div class="search-control-copy"><span>精确结果</span><small>筛选会同步应用到 CSV 和 Excel 导出</small></div>
+          <label>核验状态<select id="search-review-filter"><option value="all">全部状态</option><option value="reviewed">仅人工核验</option><option value="pending">仅待审核</option></select></label>
+          <label>证据来源<select id="search-source-filter"><option value="all">全部来源</option><option value="text">正文数据</option><option value="table">表格数据</option><option value="figure">图片关联</option><option value="manual">人工补录</option></select></label>
+          <label>结果排序<select id="search-sort"><option value="relevance">相关度优先</option><option value="source_page">按文章与页码</option><option value="article">按文章归类</option></select></label>
+          <button type="button" id="search-reset-filters">重置</button>
+        </div>
+        <div class="search-toolbar">
+          <div><span class="search-live-dot" aria-hidden="true"></span><strong id="search-summary">等待搜索</strong><div id="search-active-filters"></div></div>
+          <span id="search-exports"><small>导出全部匹配</small><a id="search-export" href="/api/six-export.csv">CSV</a><a id="search-export-xlsx" href="/api/six-export.xlsx">Excel</a></span>
+        </div>
+        <div class="result-list" id="search-results" aria-live="polite"></div>
       </section>
 
       <section class="view" id="view-upload">
