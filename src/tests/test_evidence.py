@@ -1268,6 +1268,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("next_unreviewed_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_batch_download", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_calibration_download", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("resumable_calibration_review", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_all_download", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("item_id_review_filter", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("experiment_profile_card", by_name["web_ui_contract"]["web_ui"]["checked"])

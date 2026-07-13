@@ -78,6 +78,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("review_batch_download", "id=\"current-review-batch\"" in html and "/api/current-paper/review-batch.md" in js),
         ("review_calibration_download", "id=\"current-review-calibration\"" in html and "strategy=calibration" in js),
         ("interactive_calibration_review", "id=\"review-calibration-start\"" in html and "/api/current-paper/review-batch" in js and "toggleCalibrationReview" in js and "calibrationReviewIds" in js),
+        ("resumable_calibration_review", "calibrationStoragePrefix" in js and "restoreCalibrationBatch" in js and "继续本轮校准" in js and "saveCalibrationBatch" in js),
         ("review_all_download", "id=\"current-review-all\"" in html and "下载全部待审核" in js and "updateReviewBatchLinks" in js),
         ("experiment_profile_card", "experiment-profile-card" in html and "renderExperimentProfile" in js and "/api/current-paper/experiment-profile" in js),
         ("paper_status_overview", "id=\"paper-status-summary\"" in html and "renderPaperStatusSummary" in js and "six_workflow_label" in js),

@@ -15,6 +15,7 @@ const fieldLabels = {
   doi: "DOI",
   context_explanation: "数据在文中的解释",
 };
+const calibrationStoragePrefix = "evidence-calibration-batch-v1:";
 
 async function api(url, options = {}) {
   const response = await fetch(url, options);
@@ -125,6 +126,57 @@ function paperLabel(paper) {
   return details.length ? `${title} · ${details.join(" · ")}` : title;
 }
 
+function calibrationStorageKey(paperId) {
+  return `${calibrationStoragePrefix}${Number(paperId)}`;
+}
+
+function readSavedCalibrationBatch(paperId) {
+  if (!paperId) return [];
+  try {
+    const payload = JSON.parse(window.localStorage.getItem(calibrationStorageKey(paperId)) || "null");
+    if (!payload || Number(payload.paper_id) !== Number(paperId) || !Array.isArray(payload.item_ids)) return [];
+    return [...new Set(payload.item_ids.map(Number).filter(Number.isInteger))];
+  } catch (_error) {
+    return [];
+  }
+}
+
+function saveCalibrationBatch(paperId, itemIds) {
+  if (!paperId || !itemIds.length) return;
+  try {
+    window.localStorage.setItem(calibrationStorageKey(paperId), JSON.stringify({
+      paper_id: Number(paperId),
+      item_ids: itemIds.map(Number),
+      saved_at: new Date().toISOString(),
+    }));
+  } catch (_error) {
+    // The review still works when private browsing disables local storage.
+  }
+}
+
+function clearSavedCalibrationBatch(paperId) {
+  if (!paperId) return;
+  try {
+    window.localStorage.removeItem(calibrationStorageKey(paperId));
+  } catch (_error) {
+    // Nothing else is required when storage is unavailable.
+  }
+}
+
+function restoreCalibrationBatch() {
+  const rowsById = new Map(state.rows.map(row => [Number(row.item_id), row]));
+  const saved = readSavedCalibrationBatch(state.paper?.id).filter(id => rowsById.has(id));
+  const remaining = saved.filter(id => isUnreviewedRow(rowsById.get(id)));
+  if (!remaining.length) {
+    clearSavedCalibrationBatch(state.paper?.id);
+    state.calibrationReviewIds = new Set();
+    state.calibrationBatchTotal = 0;
+    return;
+  }
+  state.calibrationReviewIds = new Set(saved);
+  state.calibrationBatchTotal = saved.length;
+}
+
 function renderOriginalPlaceholder() {
   document.querySelector("#original-pane").innerHTML = '<div class="blank"><span>↖</span><h3>选择一条数据</h3><p>右侧显示原始抽取值、证据页码和原文定位。</p></div>';
 }
@@ -162,12 +214,11 @@ async function loadCurrentPaper() {
     api("/api/current-paper/evidence-audit"),
     api("/api/current-paper/deepseek-run"),
   ]);
-  state.calibrationReviewIds = new Set();
   state.calibrationActive = false;
-  state.calibrationBatchTotal = 0;
   if (state.reviewFilter === "calibration") state.reviewFilter = "all";
   const reviewFilter = document.querySelector("#review-filter");
   if (reviewFilter) reviewFilter.value = state.reviewFilter;
+  restoreCalibrationBatch();
   applyReviewPriorities();
   clearDirtyRows();
   state.selected = null;
@@ -658,25 +709,53 @@ function renderCalibrationReviewState() {
   const button = document.querySelector("#review-calibration-start");
   if (!button) return;
   const remaining = state.rows.filter(row => state.calibrationReviewIds.has(Number(row.item_id)) && isUnreviewedRow(row)).length;
+  if (!state.calibrationActive && state.calibrationReviewIds.size && !remaining) {
+    clearSavedCalibrationBatch(state.paper?.id);
+    state.calibrationReviewIds = new Set();
+    state.calibrationBatchTotal = 0;
+  }
   button.setAttribute("aria-pressed", state.calibrationActive ? "true" : "false");
   button.classList.toggle("active", state.calibrationActive);
   button.textContent = state.calibrationActive
-    ? `退出校准模式（剩余 ${remaining}/${state.calibrationBatchTotal}）`
-    : "开始分层校准（20 条）";
+    ? remaining
+      ? `暂离本轮校准（剩余 ${remaining}/${state.calibrationBatchTotal}）`
+      : "完成并退出本轮校准"
+    : remaining
+      ? `继续本轮校准（剩余 ${remaining}/${state.calibrationBatchTotal}）`
+      : "开始分层校准（20 条）";
 }
 
 async function toggleCalibrationReview() {
   if (rejectReadOnlyAction("启动分层校准")) return;
   if (hasUnsavedEdits() && !confirmDiscardUnsaved("切换分层校准模式")) return;
   if (state.calibrationActive) {
+    const remaining = state.rows.filter(row => state.calibrationReviewIds.has(Number(row.item_id)) && isUnreviewedRow(row)).length;
     state.calibrationActive = false;
-    state.calibrationReviewIds = new Set();
-    state.calibrationBatchTotal = 0;
     state.reviewFilter = "all";
     document.querySelector("#review-filter").value = "all";
     state.selected = null;
+    if (!remaining) {
+      clearSavedCalibrationBatch(state.paper?.id);
+      state.calibrationReviewIds = new Set();
+      state.calibrationBatchTotal = 0;
+    }
     renderTable();
-    toast("已退出分层校准模式。未确认的候选数据没有被修改。");
+    toast(remaining
+      ? `已暂离本轮校准，剩余 ${remaining} 条已保存在本机浏览器，可稍后继续。`
+      : "本轮分层校准已完成，可以开始下一批。未改变自动抽取原始版本。");
+    return;
+  }
+  const savedRemaining = state.rows.filter(row => state.calibrationReviewIds.has(Number(row.item_id)) && isUnreviewedRow(row));
+  if (savedRemaining.length) {
+    state.calibrationActive = true;
+    state.reviewFilter = "calibration";
+    document.querySelector("#review-filter").value = "calibration";
+    state.selected = Number(savedRemaining[0].item_id);
+    renderTable();
+    window.requestAnimationFrame(() => {
+      document.querySelector(`#edit-rows tr[data-item="${state.selected}"]`)?.scrollIntoView({ block: "center" });
+    });
+    toast(`已恢复本轮分层校准：剩余 ${savedRemaining.length}/${state.calibrationBatchTotal} 条。`);
     return;
   }
   const button = document.querySelector("#review-calibration-start");
@@ -692,6 +771,7 @@ async function toggleCalibrationReview() {
     state.calibrationReviewIds = new Set(ids);
     state.calibrationBatchTotal = ids.length;
     state.calibrationActive = true;
+    saveCalibrationBatch(state.paper.id, ids);
     state.reviewFilter = "calibration";
     document.querySelector("#review-filter").value = "calibration";
     state.selected = ids[0];
@@ -1681,6 +1761,8 @@ function renderReviewProgressCard(progress) {
     ? calibrationRemaining
       ? `分层校准进行中：本轮剩余 ${calibrationRemaining}/${state.calibrationBatchTotal} 条。样本覆盖正文、表格、图片关联和不同数值形态。`
       : `本轮分层校准已完成。退出校准模式后可继续审核其余数据。`
+    : calibrationRemaining
+      ? `本机保存了一轮未完成的分层校准，剩余 ${calibrationRemaining}/${state.calibrationBatchTotal} 条；点击“继续本轮校准”恢复。`
     : progress.unreviewed
       ? attention
         ? `建议先核验 ${attention} 条重点项；系统只按证据定位强弱排序，不代表这些数据一定有误。`
