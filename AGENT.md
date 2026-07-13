@@ -635,3 +635,38 @@ Historical failed runs are audit history and should be reported without making
 the database unhealthy. Also validate frontend syntax, macOS launcher syntax,
 Python compilation, installed dependency consistency, Git object integrity, and
 whitespace errors before committing and bundling the checkpoint.
+
+### Article navigation and large-review performance
+
+The review-page article picker is a navigation aid, not an extraction trigger.
+Topic tags are conservative and non-exclusive; title/DOI search, first- or
+corresponding-author search, processing status, fixed test-set scope, and recent
+articles may narrow the dropdown, but none may switch the paper until the user
+submits the switch form. Filtering must never call DeepSeek, scan a PDF, or write
+the database. Prefer title, DOI, author and year in user-facing labels; keep the
+device-specific Zotero key as legacy internal metadata only.
+
+Do not render hundreds of six-column textarea rows on initial load. Keep the
+review table chunked at 80 rows and expand it only through the visible control or
+an explicit next-item navigation. Full-paper evidence auditing is a background
+article-level operation. A row confirmation, correction, negative decision or
+reopen action must not synchronously recompute the full evidence audit.
+
+### Numeric data rows and visual provenance
+
+`value_text` in the searchable six-column item dataset must be a reportable
+numeric expression or an explicit table marker such as `bal.` or `n/a`.
+Material names, methods, facilities, conditions and qualitative prose belong in
+`meaning`, `context_explanation`, evidence metadata or visual-asset metadata;
+they must not become pure-text values. Preserve legacy rows for audit, hide them
+from user-facing item search, and require the reviewer to correct them to a
+numeric datum or mark them as not used. Do not delete history to enforce this
+rule.
+
+Visual assets are authoritative PDF screenshots created locally with PyMuPDF
+layout detection and recorded as `extraction_method=pdf_layout`. The current
+DeepSeek adapter receives extracted text for semantic candidate generation; it
+does not receive figure pixels. Never claim that DeepSeek or GPT visually read,
+cropped or digitized these screenshots. Do not infer curve points. Every fixed
+five-paper test-set member must have at least one visual asset, and the audit
+must report per-paper figure/table counts and the generation method.

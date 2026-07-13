@@ -45,6 +45,7 @@ SEARCH_SORTS = {"relevance", "article", "source_page"}
 CURRENT_PAPER_META_KEY = "six_column_current_paper_id"
 SAVED_SCAN_META_PREFIX = "six_column_saved_snapshot_"
 SAVED_SCANS_DIR = DATA_DIR / "evidence" / "saved_scans"
+NON_NUMERIC_CELL_MARKERS = {"bal", "bal.", "n.m", "n.m.", "n/a", "na", "—", "-"}
 
 SIX_FIELDS = ("value_text", "meaning", "unit", "article_title", "doi", "context_explanation")
 ROW_REVIEW_DECISIONS = {"rejected", "ambiguous", "automatic"}
@@ -92,6 +93,20 @@ ELEMENT_SEARCH_ALIASES = {
     "氦": ("氦", "He", "helium"),
     "he": ("氦", "He", "helium"),
 }
+
+
+def is_reportable_value_text(value: Any) -> bool:
+    """Return whether a six-column value is a real datum rather than prose metadata.
+
+    Numeric values are the normal contract. A small explicit set of table-cell
+    markers is retained because values such as ``bal.`` and ``n.m.`` carry a
+    defined column meaning in the source table. Material names, methods,
+    facilities, conditions, and qualitative sentences belong in meaning or
+    context_explanation instead of the value column.
+    """
+
+    text = str(value or "").strip()
+    return bool(text) and (any(character.isdigit() for character in text) or text.casefold() in NON_NUMERIC_CELL_MARKERS)
 
 ELEMENT_SYMBOLS = {
     "al", "cr", "co", "fe", "mn", "ni", "ta", "w", "v", "hf", "ti", "zr", "mo", "re", "si", "c", "he",
@@ -576,9 +591,12 @@ def import_ai_result_to_six_column(db: EvidenceDB, paper_id: int, source: Path |
     paper = db.get_paper(paper_id)
     if not paper:
         raise KeyError(f"Paper {paper_id} not found")
-    inserted = existing = 0
+    inserted = existing = rejected_non_numeric = 0
     with db.connect() as conn:
         for item in payload.get("measurements", []):
+            if not is_reportable_value_text(item.get("value_raw")):
+                rejected_non_numeric += 1
+                continue
             stable_key = _ai_stable_key(item)
             row = conn.execute(
                 "SELECT id FROM data_items WHERE paper_id=? AND stable_key=?",
@@ -618,6 +636,7 @@ def import_ai_result_to_six_column(db: EvidenceDB, paper_id: int, source: Path |
         "paper_id": paper_id,
         "inserted": inserted,
         "existing": existing,
+        "rejected_non_numeric": rejected_non_numeric,
         "total": inserted + existing,
         "packet_measurements": len(payload.get("measurements", [])),
         "packet_tasks": len(payload.get("pending_tasks", [])),
@@ -685,6 +704,8 @@ def _validate_fields(fields: dict[str, Any]) -> dict[str, str]:
     for required in ("value_text", "meaning", "article_title", "doi", "context_explanation"):
         if not clean[required]:
             raise ValueError(f"{required} cannot be empty")
+    if not is_reportable_value_text(clean["value_text"]):
+        raise ValueError("具体数值必须包含数字；材料、方法、设施、条件和定性句子请写入具体意义或文章解释。")
     return clean
 
 
@@ -1047,6 +1068,7 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
     rows = list_current_data(db)
     if not include_excluded:
         rows = [row for row in rows if row.get("review_action") not in {"rejected", "ambiguous"}]
+    rows = [row for row in rows if is_reportable_value_text(row.get("value_text"))]
     rows = _filter_search_rows(rows, review_filter=review_filter, source_filter=source_filter)
     if sort not in SEARCH_SORTS:
         raise ValueError(f"unsupported search sort: {sort}")

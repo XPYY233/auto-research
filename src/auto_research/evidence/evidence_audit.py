@@ -7,7 +7,7 @@ from typing import Any
 import fitz
 
 from .db import EvidenceDB
-from .six_column import list_current_data
+from .six_column import is_reportable_value_text, list_current_data
 from .source_highlight import locate_highlight
 
 
@@ -62,6 +62,9 @@ def _review_priority(row: dict[str, Any], match: Any) -> dict[str, Any]:
         reasons.append("抽取结果标记为趋势信息")
 
     value = str(row.get("original_value_text") or row.get("value_text") or "").strip().lower()
+    if not is_reportable_value_text(value):
+        score += 100
+        reasons.append("具体数值是纯文字；应改为数值记录或标记为不采用")
     if (
         re.search(r"^(?:[~≈<>≤≥]|about\b|approximately\b|around\b|a few\b|few\b)", value)
         or value in {"detected", "not detected", "observed", "not observed", "none"}

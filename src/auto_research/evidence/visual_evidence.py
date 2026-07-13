@@ -223,6 +223,43 @@ def _target_specs(paper: dict[str, Any]) -> list[dict[str, Any]] | None:
     return [dict(spec) for spec in TARGET_VISUAL_SPECS]
 
 
+def _infer_visual_metadata(caption: str, asset_type: str) -> dict[str, Any]:
+    """Create conservative search tags from a real caption without reading curves."""
+
+    text = caption.casefold()
+    rules = (
+        (("hardness", "nanoindent"), "硬度/压痕", "纳米压痕"),
+        (("void", "swelling"), "空洞/肿胀", "TEM"),
+        (("dislocation", "loop"), "位错/位错环", "TEM"),
+        (("grain", "microstructure"), "晶粒/微观结构", "显微表征"),
+        (("composition", "elemental", "concentration"), "元素组成", "EDS/EDX"),
+        (("diffraction", "saed"), "衍射/相结构", "衍射分析"),
+        (("spectrum", "spectra", "spectroscopy"), "光谱/能谱", "光谱分析"),
+        (("damage", "dpa", "irradiat"), "辐照损伤", "辐照实验"),
+        (("energy", "formation energy", "binding energy"), "能量", "计算/能量分析"),
+        (("diffusion", "mean square displacement"), "扩散", "扩散分析"),
+        (("density",), "密度", "统计分析"),
+        (("size", "diameter", "radius"), "尺寸", "统计分析"),
+    )
+    quantities: list[str] = []
+    methods: list[str] = []
+    for terms, quantity, method in rules:
+        if any(term in text for term in terms):
+            if quantity not in quantities:
+                quantities.append(quantity)
+            if method not in methods:
+                methods.append(method)
+    variable_match = re.search(r"as (?:a )?function of ([^.;]+)", caption, re.I)
+    variables = {"independent": variable_match.group(1).strip()} if variable_match else {}
+    tags = ["原文表格" if asset_type == "table" else "原文图片", *quantities, *methods]
+    return {
+        "physical_quantities": quantities,
+        "variables": variables,
+        "methods": "、".join(methods),
+        "tags": tags,
+    }
+
+
 def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
     """Find caption-led visual regions without interpreting curve values."""
 
@@ -241,19 +278,27 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
                 text = " ".join(str(block[4]).split())
                 match = re.match(r"(?:Fig\.|Figure)\s*(\d+)\.?\s*(.*)", text, re.I)
                 if match:
+                    caption_body = match.group(2).strip()
+                    if re.match(r"^(?:[)\],;:]|shows?\b|is\b|are\b|presents?\b|depicts?\b|illustrates?\b|demonstrates?\b)", caption_body, re.I):
+                        continue
                     caption_rect = fitz.Rect(*block[:4])
-                    candidates = [rect for rect in image_rects if rect.y1 <= caption_rect.y0 + 12]
+                    candidates = [
+                        rect for rect in image_rects
+                        if rect.y1 <= caption_rect.y0 + 12 and caption_rect.y0 - rect.y1 <= 120
+                    ]
                     if not candidates:
                         continue
                     image_rect = min(candidates, key=lambda rect: (max(caption_rect.y0 - rect.y1, 0), -rect.get_area()))
                     crop = image_rect | caption_rect
                     crop = fitz.Rect(crop.x0 - 8, crop.y0 - 7, crop.x1 + 8, crop.y1 + 7) & page.rect
+                    caption = match.group(2).strip() or text
+                    inferred = _infer_visual_metadata(caption, "figure")
                     specs.append({
                         "asset_type": "figure", "number": int(match.group(1)), "page": page_index + 1,
-                        "bbox": list(crop), "caption": match.group(2).strip() or text,
-                        "physical_quantities": [], "variables": {}, "materials": [],
-                        "conditions": "", "methods": "", "context": match.group(2).strip(),
-                        "tags": ["Figure", f"Figure {match.group(1)}"], "source_context": text,
+                        "bbox": list(crop), "caption": caption,
+                        "physical_quantities": inferred["physical_quantities"], "variables": inferred["variables"], "materials": [],
+                        "conditions": "", "methods": inferred["methods"], "context": caption,
+                        "tags": ["Figure", f"Figure {match.group(1)}", *inferred["tags"]], "source_context": text,
                     })
                     continue
                 match = re.match(r"Table\s*(\d+)\.?\s*(.*)", text, re.I)
@@ -269,12 +314,14 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
                 bottom = max(rect.y1 for rect in horizontal)
                 column_right = page.rect.width - 28 if caption_rect.x0 > page.rect.width / 2 else min(page.rect.width - 28, caption_rect.x0 + 270)
                 crop = fitz.Rect(caption_rect.x0 - 6, caption_rect.y0 - 6, column_right, min(bottom + 26, page.rect.height - 28)) & page.rect
+                caption = match.group(2).strip() or text
+                inferred = _infer_visual_metadata(caption, "table")
                 specs.append({
                     "asset_type": "table", "number": int(match.group(1)), "page": page_index + 1,
-                    "bbox": list(crop), "caption": match.group(2).strip() or text,
-                    "physical_quantities": [], "variables": {}, "materials": [],
-                    "conditions": "", "methods": "", "context": match.group(2).strip(),
-                    "tags": ["Table", f"Table {match.group(1)}"], "source_context": text,
+                    "bbox": list(crop), "caption": caption,
+                    "physical_quantities": inferred["physical_quantities"], "variables": inferred["variables"], "materials": [],
+                    "conditions": "", "methods": inferred["methods"], "context": caption,
+                    "tags": ["Table", f"Table {match.group(1)}", *inferred["tags"]], "source_context": text,
                 })
     finally:
         doc.close()
@@ -415,6 +462,26 @@ def index_visual_evidence(db: EvidenceDB, paper_id: int) -> dict[str, Any]:
         if "doc" in locals():
             doc.close()
     specs = _target_specs(paper) or _generic_specs(pdf_path)
+    valid_keys = {(str(spec["asset_type"]), _asset_label(str(spec["asset_type"]), int(spec["number"]))) for spec in specs}
+    output_root = VISUAL_ASSET_DIR if db.path.resolve() == EVIDENCE_DB_PATH.resolve() else db.path.parent / "visual_assets"
+    with db.connect() as conn:
+        stale_assets = [
+            dict(row)
+            for row in conn.execute("SELECT id,asset_type,label,image_path FROM visual_assets WHERE paper_id=?", (paper_id,))
+            if (str(row["asset_type"]), str(row["label"])) not in valid_keys
+        ]
+        if stale_assets:
+            stale_ids = [int(row["id"]) for row in stale_assets]
+            placeholders = ",".join("?" for _ in stale_ids)
+            conn.execute(f"DELETE FROM visual_assets WHERE id IN ({placeholders})", stale_ids)
+    for stale in stale_assets:
+        stale_path = _resolve_image_path(str(stale.get("image_path") or ""))
+        try:
+            stale_path.resolve().relative_to(output_root.resolve())
+        except ValueError:
+            continue
+        if stale_path.is_file():
+            stale_path.unlink()
     assets = [_upsert_asset(db, paper, spec) for spec in specs]
     links = link_data_items_to_visuals(db, paper_id)
     return {

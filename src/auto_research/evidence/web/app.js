@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], testSet: null, paperFilters: { query: "", object: "all", method: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
   review: { kicker: "EVIDENCE REVIEW", title: "校对实验数据", subtitle: "逐条核对抽取结果，并随时返回原文证据。" },
@@ -16,6 +16,8 @@ const fieldLabels = {
   context_explanation: "数据在文中的解释",
 };
 const calibrationStoragePrefix = "evidence-calibration-batch-v1:";
+const recentPapersStorageKey = "evidence-recent-papers-v1";
+const reviewPageSize = 80;
 
 async function api(url, options = {}) {
   const response = await fetch(url, options);
@@ -209,7 +211,7 @@ async function load() {
 }
 
 async function loadCurrentPaper() {
-  [state.paper, state.rows, state.extraction, state.experimentProfile, state.learning, state.allLearning, state.learningReport, state.allLearningReport, state.audit, state.deepseekRun] = await Promise.all([
+  [state.paper, state.rows, state.extraction, state.experimentProfile, state.learning, state.allLearning, state.learningReport, state.allLearningReport, state.deepseekRun] = await Promise.all([
     api("/api/current-paper"),
     api("/api/six-data"),
     api("/api/current-paper/extraction"),
@@ -218,9 +220,10 @@ async function loadCurrentPaper() {
     api("/api/learning-samples"),
     api("/api/current-paper/learning-report"),
     api("/api/learning-report"),
-    api("/api/current-paper/evidence-audit"),
     api("/api/current-paper/deepseek-run"),
   ]);
+  state.audit = null;
+  state.reviewVisibleLimit = reviewPageSize;
   state.calibrationActive = false;
   if (state.reviewFilter === "calibration") state.reviewFilter = "all";
   const reviewFilter = document.querySelector("#review-filter");
@@ -238,6 +241,25 @@ async function loadCurrentPaper() {
   renderTable();
   renderHistory();
   fillManualDefaults();
+  void loadEvidenceAuditForPaper(Number(state.paper.id));
+}
+
+async function loadEvidenceAuditForPaper(paperId) {
+  try {
+    const audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(paperId)}`);
+    if (Number(state.paper?.id) !== Number(paperId)) return;
+    state.audit = audit;
+    applyReviewPriorities();
+    renderEvidenceAudit();
+    if (!hasUnsavedEdits()) renderTable();
+  } catch (error) {
+    if (Number(state.paper?.id) !== Number(paperId)) return;
+    const el = document.querySelector("#paper-evidence-audit");
+    if (el) {
+      el.textContent = `证据定位检查未完成：${error.message}`;
+      el.className = "audit-warning";
+    }
+  }
 }
 
 function applyReviewPriorities() {
@@ -262,20 +284,54 @@ function paperSearchText(paper) {
   ].filter(Boolean).join(" ").toLocaleLowerCase("zh-CN");
 }
 
+function paperAuthorText(paper) {
+  return [paper?.first_author, paper?.corresponding_author].filter(Boolean).join(" ").toLocaleLowerCase("zh-CN");
+}
+
+function readRecentPaperIds() {
+  try {
+    const ids = JSON.parse(window.localStorage.getItem(recentPapersStorageKey) || "[]");
+    return Array.isArray(ids) ? ids.map(Number).filter(Number.isInteger).slice(0, 8) : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+function rememberRecentPaper(paperId) {
+  try {
+    const id = Number(paperId);
+    const ids = [id, ...readRecentPaperIds().filter(item => item !== id)].slice(0, 8);
+    window.localStorage.setItem(recentPapersStorageKey, JSON.stringify(ids));
+  } catch (_error) {
+    // Recent navigation is optional; article switching remains available.
+  }
+}
+
 function paperMatchesFilters(paper) {
   const filters = state.paperFilters;
   const queryTerms = filters.query.trim().toLocaleLowerCase("zh-CN").split(/\s+/).filter(Boolean);
   if (queryTerms.length && !queryTerms.every(term => paperSearchText(paper).includes(term))) return false;
-  if (filters.object !== "all" && !(paper.navigation_object_tags || []).includes(filters.object)) return false;
-  if (filters.method !== "all" && !(paper.navigation_method_tags || []).includes(filters.method)) return false;
+  const authorTerms = filters.author.trim().toLocaleLowerCase("zh-CN").split(/\s+/).filter(Boolean);
+  if (authorTerms.length && !authorTerms.every(term => paperAuthorText(paper).includes(term))) return false;
+  const navigationTags = [...(paper.navigation_object_tags || []), ...(paper.navigation_method_tags || [])];
+  if (filters.topic !== "all" && !navigationTags.includes(filters.topic)) return false;
   if (filters.scope === "test_set") {
     const testIds = new Set((state.testSet?.papers || []).map(item => Number(item.paper_id)));
     if (!testIds.has(Number(paper.id))) return false;
+  } else if (filters.scope === "recent") {
+    if (!new Set(readRecentPaperIds()).has(Number(paper.id))) return false;
   }
   const workflow = paper.six_workflow_state || "not_scanned";
   if (filters.status === "scanned" && Number(paper.six_row_count || 0) <= 0) return false;
   if (!["all", "scanned"].includes(filters.status) && workflow !== filters.status) return false;
   return true;
+}
+
+function primaryPaperGroup(paper) {
+  const methodTags = paper.navigation_method_tags || [];
+  const objectTags = paper.navigation_object_tags || [];
+  return ["辐照实验", "辐照模拟/计算", "显微/缺陷表征", "力学性能", "氢同位素行为", "热学/热分析", "光谱/能谱", "材料制备"]
+    .find(tag => methodTags.includes(tag)) || objectTags[0] || "其他文章";
 }
 
 function paperOptionHtml(papers, testOrder, includeGroups = true) {
@@ -289,10 +345,28 @@ function paperOptionHtml(papers, testOrder, includeGroups = true) {
   const testPapers = [...papers].filter(paper => testOrder.has(Number(paper.id))).sort((a, b) => testOrder.get(Number(a.id)) - testOrder.get(Number(b.id)));
   const otherPapers = papers.filter(paper => !testOrder.has(Number(paper.id)));
   if (!includeGroups) return papers.map(optionFor).join("");
-  return [
-    testPapers.length ? `<optgroup label="五篇测试集 v1">${testPapers.map(optionFor).join("")}</optgroup>` : "",
-    otherPapers.length ? `<optgroup label="其他已登记文章">${otherPapers.map(optionFor).join("")}</optgroup>` : "",
-  ].join("");
+  const groupOrder = ["辐照实验", "辐照模拟/计算", "显微/缺陷表征", "力学性能", "氢同位素行为", "热学/热分析", "光谱/能谱", "材料制备", "聚变堆材料", "高熵/中熵合金", "钨与难熔合金", "其他材料", "其他文章"];
+  const grouped = new Map();
+  otherPapers.forEach(paper => {
+    const group = primaryPaperGroup(paper);
+    if (!grouped.has(group)) grouped.set(group, []);
+    grouped.get(group).push(paper);
+  });
+  const groups = groupOrder.filter(group => grouped.has(group)).map(group => (
+    `<optgroup label="${esc(group)}">${grouped.get(group).sort((a, b) => paperLabel(a).localeCompare(paperLabel(b), "zh-CN")).map(optionFor).join("")}</optgroup>`
+  ));
+  return [testPapers.length ? `<optgroup label="五篇测试集 v1">${testPapers.map(optionFor).join("")}</optgroup>` : "", ...groups].join("");
+}
+
+function renderAuthorOptions() {
+  const datalist = document.querySelector("#paper-author-options");
+  if (!datalist) return;
+  const names = new Set();
+  state.papers.forEach(paper => {
+    if (paper.first_author) names.add(paper.first_author);
+    if (paper.corresponding_author) names.add(paper.corresponding_author);
+  });
+  datalist.innerHTML = [...names].sort((a, b) => a.localeCompare(b, "zh-CN")).map(name => `<option value="${esc(name)}"></option>`).join("");
 }
 
 function renderPaperSelectionMeta() {
@@ -348,6 +422,12 @@ function renderPaperOptions() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   });
+  document.querySelectorAll("[data-paper-topic]").forEach(button => {
+    const active = button.dataset.paperTopic === state.paperFilters.topic;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  renderAuthorOptions();
   renderPaperSelectionMeta();
   renderPaperStatusSummary();
 }
@@ -384,30 +464,36 @@ function renderPaper() {
   updateReviewBatchLinks();
 }
 
-async function refreshReviewFeedback() {
+async function refreshReviewFeedback({ includeAudit = false } = {}) {
   const currentPaperId = state.paper?.id;
-  const requests = [
+  const commonRequests = [
     api("/api/papers"),
     api("/api/learning-samples"),
     api("/api/learning-report"),
   ];
+  const paperRequests = [];
   if (currentPaperId) {
-    requests.push(
+    paperRequests.push(
       api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(currentPaperId)}`),
       api(`/api/current-paper/learning-report?paper_id=${encodeURIComponent(currentPaperId)}`),
-      api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(currentPaperId)}`),
       api(`/api/current-paper/extraction?paper_id=${encodeURIComponent(currentPaperId)}`),
     );
+    if (includeAudit) {
+      paperRequests.push(api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(currentPaperId)}`));
+    }
   }
-  const [papers, allLearning, allLearningReport, learning, learningReport, audit, extraction] = await Promise.all(requests);
+  const [[papers, allLearning, allLearningReport], paperPayload] = await Promise.all([
+    Promise.all(commonRequests),
+    Promise.all(paperRequests),
+  ]);
   state.papers = papers;
   state.allLearning = allLearning;
   state.allLearningReport = allLearningReport;
   if (currentPaperId) {
-    state.learning = learning;
-    state.learningReport = learningReport;
-    state.audit = audit;
-    state.extraction = extraction;
+    state.learning = paperPayload[0];
+    state.learningReport = paperPayload[1];
+    state.extraction = paperPayload[2];
+    if (includeAudit) state.audit = paperPayload[3];
     applyReviewPriorities();
   }
   renderPaperOptions();
@@ -415,6 +501,15 @@ async function refreshReviewFeedback() {
   renderExtractionStatus();
   renderEvidenceAudit();
   renderHistory();
+}
+
+function setReviewRowBusy(itemId, busy, label = "正在保存…") {
+  const row = document.querySelector(`#edit-rows tr[data-item="${Number(itemId)}"]`);
+  if (!row) return;
+  row.setAttribute("aria-busy", busy ? "true" : "false");
+  row.querySelectorAll("button").forEach(button => { button.disabled = busy; });
+  const status = row.querySelector(".row-action>small");
+  if (busy && status) status.textContent = label;
 }
 
 function renderExtractionStatus() {
@@ -473,8 +568,8 @@ function renderEvidenceAudit() {
   const el = document.querySelector("#paper-evidence-audit");
   if (!el) return;
   if (!audit) {
-    el.textContent = "";
-    el.className = "";
+    el.textContent = "正在后台核验证据定位；校对表已可使用。";
+    el.className = "ready";
     return;
   }
   const coverage = Math.round((audit.coverage_ratio || 0) * 100);
@@ -803,16 +898,23 @@ function autoSizeReviewCell(input) {
 }
 
 function renderTable() {
-  const rows = filteredRows();
+  const allRows = filteredRows();
+  const rows = allRows.slice(0, state.reviewVisibleLimit);
   const progress = reviewProgress();
   renderReviewProgressCard(progress);
   renderCalibrationReviewState();
   updateReviewBatchLinks();
-  const filterNote = state.reviewFilter === "all" ? "" : ` · 当前筛出 ${rows.length} 条`;
+  const filterNote = state.reviewFilter === "all" ? "" : ` · 当前筛出 ${allRows.length} 条`;
+  const visibleNote = rows.length < allRows.length ? ` · 当前显示 ${rows.length}/${allRows.length} 条` : "";
   const sortNote = state.reviewSort === "original" ? "" : ` · ${document.querySelector("#review-sort")?.selectedOptions?.[0]?.textContent || "已排序"}`;
   const dirtyNote = hasUnsavedEdits() ? `，${state.dirtyRows.size} 行未确认` : "";
   const breakdown = `确认 ${progress.confirmed}、修正 ${progress.corrected}、歧义 ${progress.ambiguous}、不采用 ${progress.rejected}、人工 ${progress.manual}`;
-  setText("row-count", `${progress.reviewed}/${progress.total} 已审核（${breakdown}），${progress.unreviewed} 待审核${dirtyNote}${filterNote}${sortNote}`);
+  setText("row-count", `${progress.reviewed}/${progress.total} 已审核（${breakdown}），${progress.unreviewed} 待审核${dirtyNote}${filterNote}${visibleNote}${sortNote}`);
+  const loadMore = document.querySelector("#review-load-more");
+  if (loadMore) {
+    loadMore.hidden = rows.length >= allRows.length;
+    loadMore.textContent = rows.length < allRows.length ? `显示更多（剩余 ${allRows.length - rows.length}）` : "显示更多";
+  }
   const body = document.querySelector("#edit-rows");
   if (!rows.length) {
     const message = state.reviewFilter === "calibration"
@@ -923,7 +1025,14 @@ function selectNextUnreviewed() {
   }
   const currentIndex = candidates.findIndex(row => Number(row.item_id) === Number(state.selected));
   const next = candidates[currentIndex >= 0 ? (currentIndex + 1) % candidates.length : 0];
-  selectRow(Number(next.item_id));
+  const visibleIndex = filteredRows().findIndex(row => Number(row.item_id) === Number(next.item_id));
+  if (visibleIndex >= state.reviewVisibleLimit) {
+    state.reviewVisibleLimit = Math.ceil((visibleIndex + 1) / reviewPageSize) * reviewPageSize;
+    state.selected = Number(next.item_id);
+    renderTable();
+  } else {
+    selectRow(Number(next.item_id));
+  }
   document.querySelector(`#edit-rows tr[data-item="${next.item_id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
@@ -1067,6 +1176,7 @@ function rowFieldsDirty(id) {
 
 async function confirmRow(id, options = {}) {
   if (rejectReadOnlyAction("确认或修正数据")) return;
+  setReviewRowBusy(id, true);
   try {
     const values = collectRowFields(id);
     const current = state.rows.find(row => row.item_id === id);
@@ -1096,6 +1206,8 @@ async function confirmRow(id, options = {}) {
       : `已保存修正并创建版本 v${result.version_no}；自动提取原始版本未改变。`);
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    setReviewRowBusy(id, false);
   }
 }
 
@@ -1129,12 +1241,15 @@ async function submitReviewDecision(event) {
   event.preventDefault();
   const current = state.reviewDecision;
   if (!current) return;
+  const saveButton = document.querySelector("#save-review-decision");
   const reason = document.querySelector("#review-decision-reason").value;
   const note = document.querySelector("#review-decision-note").value.trim();
   if (!reason) {
     toast("请选择主要原因。", true);
     return;
   }
+  saveButton.disabled = true;
+  saveButton.textContent = "正在保存…";
   try {
     const result = await api(`/api/six-data/${current.itemId}/decision`, {
       method: "POST",
@@ -1157,6 +1272,9 @@ async function submitReviewDecision(event) {
       : "已标记为存在歧义；该候选已进入负例学习通道。");
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = "保存审核决定";
   }
 }
 
@@ -1175,6 +1293,7 @@ async function reopenReviewDecision(itemId) {
     `确定将 #${itemId} 从“${previousLabel}”恢复为待审核吗？\n\n` +
     "已保存版本、自动抽取原始版本和修正历史都会保留。"
   )) return;
+  setReviewRowBusy(itemId, true, "正在恢复…");
   try {
     const result = await api(`/api/six-data/${itemId}/decision`, {
       method: "POST",
@@ -1189,6 +1308,8 @@ async function reopenReviewDecision(itemId) {
     toast("已恢复为待审核。原始抽取版本和审核历史均已保留。");
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    setReviewRowBusy(itemId, false);
   }
 }
 
@@ -1964,6 +2085,7 @@ async function submitPaperSwitch(event) {
   try {
     const switched = await switchCurrentPaper({ paperId, silent: true });
     if (!switched) return;
+    rememberRecentPaper(paperId);
     toast(`已切换到《${state.paper.title || "未命名文章"}》。`);
   } catch (error) {
     toast(error.message, true);
@@ -1978,14 +2100,14 @@ document.querySelector("#paper-picker-query").addEventListener("input", event =>
   state.paperFilters.query = event.target.value;
   renderPaperOptions();
 });
-document.querySelector("#paper-object-filter").addEventListener("change", event => {
-  state.paperFilters.object = event.target.value;
+document.querySelector("#paper-author-filter").addEventListener("input", event => {
+  state.paperFilters.author = event.target.value;
   renderPaperOptions();
 });
-document.querySelector("#paper-method-filter").addEventListener("change", event => {
-  state.paperFilters.method = event.target.value;
+document.querySelectorAll("[data-paper-topic]").forEach(button => button.addEventListener("click", () => {
+  state.paperFilters.topic = button.dataset.paperTopic;
   renderPaperOptions();
-});
+}));
 document.querySelector("#paper-status-filter").addEventListener("change", event => {
   state.paperFilters.status = event.target.value;
   renderPaperOptions();
@@ -1995,10 +2117,9 @@ document.querySelectorAll("[data-paper-scope]").forEach(button => button.addEven
   renderPaperOptions();
 }));
 document.querySelector("#paper-filter-reset").addEventListener("click", () => {
-  state.paperFilters = { query: "", object: "all", method: "all", status: "all", scope: "all" };
+  state.paperFilters = { query: "", author: "", topic: "all", status: "all", scope: "all" };
   document.querySelector("#paper-picker-query").value = "";
-  document.querySelector("#paper-object-filter").value = "all";
-  document.querySelector("#paper-method-filter").value = "all";
+  document.querySelector("#paper-author-filter").value = "";
   document.querySelector("#paper-status-filter").value = "all";
   renderPaperOptions();
   document.querySelector("#paper-picker-query").focus();
@@ -2006,6 +2127,7 @@ document.querySelector("#paper-filter-reset").addEventListener("click", () => {
 document.querySelector("#paper-switch-input").addEventListener("change", renderPaperSelectionMeta);
 document.querySelector("#table-filter").addEventListener("input", event => {
   state.filter = event.target.value;
+  state.reviewVisibleLimit = reviewPageSize;
   renderTable();
 });
 document.querySelector("#review-filter").addEventListener("change", event => {
@@ -2017,14 +2139,20 @@ document.querySelector("#review-filter").addEventListener("change", event => {
   state.reviewFilter = event.target.value;
   state.calibrationActive = event.target.value === "calibration";
   state.selected = null;
+  state.reviewVisibleLimit = reviewPageSize;
   renderTable();
 });
 document.querySelector("#review-sort").addEventListener("change", event => {
   state.reviewSort = event.target.value;
   state.selected = null;
+  state.reviewVisibleLimit = reviewPageSize;
   renderTable();
 });
 document.querySelector("#next-unreviewed").addEventListener("click", selectNextUnreviewed);
+document.querySelector("#review-load-more").addEventListener("click", () => {
+  state.reviewVisibleLimit += reviewPageSize;
+  renderTable();
+});
 document.querySelector("#review-calibration-start").addEventListener("click", toggleCalibrationReview);
 document.querySelector("#focus-review").addEventListener("click", () => setFocusReview(!state.focusReview));
 document.querySelector("#exit-focus-review").addEventListener("click", () => setFocusReview(false));

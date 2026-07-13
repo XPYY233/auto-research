@@ -50,24 +50,9 @@
               <label class="paper-query">搜索题目、作者或 DOI
                 <input id="paper-picker-query" type="search" placeholder="例如：El-Atwani、tungsten、10.1016…" autocomplete="off">
               </label>
-              <label>研究对象
-                <select id="paper-object-filter">
-                  <option value="all">全部研究对象</option>
-                  <option value="聚变堆材料">聚变堆材料</option>
-                  <option value="高熵/中熵合金">高熵/中熵合金</option>
-                  <option value="钨与难熔合金">钨与难熔合金</option>
-                  <option value="其他材料">其他材料</option>
-                </select>
-              </label>
-              <label>研究方式
-                <select id="paper-method-filter">
-                  <option value="all">全部研究方式</option>
-                  <option value="辐照实验">辐照实验</option>
-                  <option value="辐照模拟/计算">辐照模拟/计算</option>
-                  <option value="显微/缺陷表征">显微/缺陷表征</option>
-                  <option value="力学性能">力学性能</option>
-                  <option value="氢同位素行为">氢同位素行为</option>
-                </select>
+              <label>按作者筛选
+                <input id="paper-author-filter" type="search" list="paper-author-options" placeholder="输入一作或通讯作者" autocomplete="off">
+                <datalist id="paper-author-options"></datalist>
               </label>
               <label>处理状态
                 <select id="paper-status-filter">
@@ -80,10 +65,22 @@
               </label>
               <button type="button" class="paper-filter-reset" id="paper-filter-reset">清除筛选</button>
             </div>
+            <div class="paper-topic-bar" aria-label="文章研究方向">
+              <span>研究方向</span>
+              <button type="button" class="active" data-paper-topic="all" aria-pressed="true">全部</button>
+              <button type="button" data-paper-topic="聚变堆材料" aria-pressed="false">聚变堆</button>
+              <button type="button" data-paper-topic="辐照实验" aria-pressed="false">辐照实验</button>
+              <button type="button" data-paper-topic="辐照模拟/计算" aria-pressed="false">辐照模拟</button>
+              <button type="button" data-paper-topic="高熵/中熵合金" aria-pressed="false">高熵/中熵合金</button>
+              <button type="button" data-paper-topic="钨与难熔合金" aria-pressed="false">钨与难熔合金</button>
+              <button type="button" data-paper-topic="显微/缺陷表征" aria-pressed="false">显微/缺陷表征</button>
+              <button type="button" data-paper-topic="力学性能" aria-pressed="false">力学性能</button>
+            </div>
             <div class="paper-scope-bar" aria-label="文章快捷范围">
               <span>快捷范围</span>
               <button type="button" class="active" data-paper-scope="all" aria-pressed="true">全部文章</button>
               <button type="button" data-paper-scope="test_set" aria-pressed="false">五篇测试集</button>
+              <button type="button" data-paper-scope="recent" aria-pressed="false">最近访问</button>
               <strong id="paper-filter-summary">正在载入文章…</strong>
             </div>
             <form id="paper-switch-form">
@@ -163,6 +160,7 @@
               </select>
             </label>
             <button type="button" class="secondary-action" id="next-unreviewed">下一条未审核</button>
+            <button type="button" class="secondary-action" id="review-load-more" hidden>显示更多</button>
             <button type="button" class="secondary-action focus-action" id="focus-review" aria-pressed="false">专注校对</button>
             <a class="secondary-action calibration-action" id="current-review-calibration" href="/api/current-paper/review-batch.md?limit=20&amp;strategy=calibration">下载分层校准集</a>
             <a class="secondary-action" id="current-review-batch" href="/api/current-paper/review-batch.md?limit=20">下载待审核清单</a>

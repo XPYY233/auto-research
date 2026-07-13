@@ -77,9 +77,11 @@ def build_prompt_packet(db: EvidenceDB, paper_id: int, max_pages: int = 8) -> Pa
             "Do not assume the paper is an irradiation experiment unless the evidence supports that classification.",
             "Use extraction_foci as the recall priorities for this packet.",
             "Never infer a unit, sample-condition link, or curve value that is not explicit.",
+            "Only create measurement rows whose value_raw contains a reported number, inequality, range, sequence, or the explicit table marker bal., n.m., n/a, or —.",
+            "Do not put material names, phase names, particle species, methods, instruments, facilities, condition labels, trend words, or qualitative sentences in value_raw; retain them in the structured context or pending tasks.",
             "Classify evidence_type as measured, derived, calculated, or qualitative.",
             "Classify source_precision as exact_table, exact_text, trend, or figure_only.",
-            "Every candidate must include page_number and a short verbatim excerpt. Figure-only numeric candidates must have value_num=null.",
+            "Every candidate must include page_number and a short verbatim excerpt. Do not create precise curve-point values from figures; create a figure_digitization task.",
             "Return JSON only, matching output_schema.",
         ],
         "output_schema": {

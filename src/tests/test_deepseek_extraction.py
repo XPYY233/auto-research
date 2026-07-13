@@ -230,7 +230,7 @@ class DeepSeekExtractionTests(unittest.TestCase):
         self.assertFalse(background["passed"])
         self.assertFalse(assumed["passed"])
 
-    def test_explicit_reference_value_is_rejected_but_current_result_comparison_is_kept(self):
+    def test_reference_and_prose_only_values_are_rejected(self):
         reference = _evidence_check({
             "value_text": "8.4×10^13", "source_excerpt": "a loop density of 8.4×10^13 m-2",
             "source_locator": "Discussion", "source_precision": "exact_text",
@@ -243,7 +243,8 @@ class DeepSeekExtractionTests(unittest.TestCase):
         }, "Ni and Co are enriched around all voids, consistent with previous reports.")
         self.assertFalse(reference["passed"])
         self.assertIn("参考文献", reference["reason"])
-        self.assertTrue(current["passed"])
+        self.assertFalse(current["passed"])
+        self.assertIn("不含数字", current["reason"])
 
         zone_axis = _evidence_check({
             "value_text": "25", "source_excerpt": "25 dpa at 350 C from [001] zone axis",
@@ -354,7 +355,7 @@ class DeepSeekExtractionTests(unittest.TestCase):
         self.assertIn('"value_text": "3.5"', messages[1]["content"])
         self.assertIn("spacing/counts", messages[0]["content"])
         self.assertIn("nominal (measured) cell is two data", messages[0]["content"])
-        self.assertIn("n.m., bal.", messages[0]["content"])
+        self.assertIn("bal., n.m., n/a", messages[0]["content"])
         self.assertIn("0.2 × 0.2 nm", messages[0]["content"])
         self.assertIn("three-mm", messages[0]["content"])
         self.assertIn("same numeric value", messages[0]["content"])

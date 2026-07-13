@@ -16,6 +16,9 @@ METHOD_TAGS = (
     "显微/缺陷表征",
     "力学性能",
     "氢同位素行为",
+    "热学/热分析",
+    "光谱/能谱",
+    "材料制备",
 )
 
 
@@ -108,6 +111,21 @@ def navigation_tags(paper: dict[str, Any]) -> dict[str, list[str]]:
         ("deuterium", "tritium", "hydrogen", "retention", "desorption", "plasma"),
     ):
         method_tags.append("氢同位素行为")
+    if _contains_any(
+        title,
+        ("thermal", "heat capacity", "conductivity", "calorim", "dsc", "tga", "anneal"),
+    ):
+        method_tags.append("热学/热分析")
+    if _contains_any(
+        title,
+        ("spectroscop", "spectrum", "spectra", "xps", "raman", "edx", "eds", "diffraction", "rutherford"),
+    ):
+        method_tags.append("光谱/能谱")
+    if _contains_any(
+        title,
+        ("synthesis", "fabrication", "deposition", "sputter", "additive manufact", "processing"),
+    ):
+        method_tags.append("材料制备")
 
     return {"object_tags": object_tags, "method_tags": method_tags}
 

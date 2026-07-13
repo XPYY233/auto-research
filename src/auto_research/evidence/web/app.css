@@ -175,6 +175,17 @@ body[data-focus-review="true"] .shell{display:block}body[data-focus-review="true
 @media(max-width:1100px){.review-progress-card dl{min-width:0}}
 @media(max-width:700px){.review-progress-card dl{grid-template-columns:repeat(2,1fr)}.review-decision-card{padding:17px}.review-decision-card h3{font-size:19px}}
 
+/* Article navigator: topic-first narrowing with a dedicated author search. */
+.paper-filter-grid{grid-template-columns:minmax(240px,1.7fr) minmax(180px,1fr) minmax(145px,.7fr) auto}
+.paper-topic-bar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:9px 10px;border:1px solid #d8e2e7;border-radius:9px;background:#f5f8fa}
+.paper-topic-bar>span{margin-right:3px;color:var(--muted);font-size:10px}
+.article-picker .paper-topic-bar button{min-height:29px;padding:5px 10px;border:1px solid #c7d5dc;border-radius:999px;background:#fff;color:#46677a;font-size:10px;font-weight:600}
+.article-picker .paper-topic-bar button:hover{border-color:#7e9cac;background:#eef5f8}
+.article-picker .paper-topic-bar button.active{border-color:var(--orange);background:#fff1e7;color:#a64d1f;box-shadow:0 0 0 2px rgba(226,109,47,.08)}
+#review-load-more[hidden]{display:none!important}
+@media(max-width:1050px){.paper-filter-grid{grid-template-columns:1fr 1fr}.paper-filter-grid .paper-query{grid-column:1/-1}.paper-filter-grid .paper-filter-reset{grid-column:1/-1}}
+@media(max-width:700px){.paper-filter-grid{grid-template-columns:1fr}.paper-filter-grid .paper-query{grid-column:auto}.paper-topic-bar{align-items:flex-start}.article-picker .paper-topic-bar button{width:auto}}
+
 /* Dense evidence rows: readable data with a compact three-column action rail. */
 .edit-table{min-width:1380px;font-size:14px}
 .edit-table th{padding:12px 10px;font-size:12px;letter-spacing:.01em}

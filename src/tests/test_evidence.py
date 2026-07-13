@@ -64,6 +64,7 @@ from auto_research.evidence.six_column import (
     get_current_paper_id,
     get_data_item,
     get_six_extraction_status,
+    is_reportable_value_text,
     list_current_data,
     prepare_current_paper_packet,
     resolve_paper_selector,
@@ -90,6 +91,13 @@ from auto_research.evidence.visual_evidence import (
 
 
 class ValueTests(unittest.TestCase):
+    def test_six_column_values_require_numeric_data_or_explicit_table_marker(self):
+        self.assertTrue(is_reportable_value_text("3.56±0.05"))
+        self.assertTrue(is_reportable_value_text("n.m."))
+        self.assertTrue(is_reportable_value_text("bal."))
+        self.assertFalse(is_reportable_value_text("lattice swelling occurs"))
+        self.assertFalse(is_reportable_value_text("room temperature"))
+
     def test_article_navigation_tags_keep_experiment_and_simulation_distinct(self):
         experiment = navigation_tags({
             "title": "Heavy ion irradiation of a tungsten heavy alloy in a simulated fusion environment",
@@ -410,7 +418,7 @@ class DeepSeekDeduplicationTests(unittest.TestCase):
         self.assertIn("irradiation conditions", foci[-1])
         self.assertNotIn("electrochemical", foci[-1])
 
-    def test_compound_qualitative_observation_must_be_split(self):
+    def test_compound_qualitative_observation_is_not_a_numeric_data_row(self):
         item = {
             "value_text": "high density of dislocation loops, no void",
             "meaning": "irradiated microstructure",
@@ -418,17 +426,17 @@ class DeepSeekDeduplicationTests(unittest.TestCase):
         }
         checked = _evidence_check(item, "A high density of dislocation loops was found. No void was observed.")
         self.assertFalse(checked["passed"])
-        self.assertIn("拆分", checked["reason"])
+        self.assertIn("不含数字", checked["reason"])
 
-    def test_extraction_prompt_requests_atomic_observation_thresholds(self):
+    def test_extraction_prompt_requests_numeric_observation_thresholds(self):
         messages = _extraction_messages(
             {"title": "Test", "doi": "10.1/test"},
             [{"page": 1, "text": "loops appeared at 0.01 dpa and saturated at 0.1 dpa"}],
             "results",
         )
         system = messages[0]["content"]
-        self.assertIn("Split compound observations into atomic rows", system)
-        self.assertIn("onset/saturation thresholds", system)
+        self.assertIn("Do not create a data row", system)
+        self.assertIn("reported number, inequality, range", system)
 
     def test_mixed_results_and_references_page_is_not_discarded(self):
         text = (
@@ -715,7 +723,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(report["ensemble"]["supplemental_candidate_counts"], {"24": 4})
         self.assertEqual(report["ensemble"]["database_rows_changed"], 0)
-        self.assertGreaterEqual(report["summary"]["baseline_coverage_rate"], 0.88)
+        self.assertGreaterEqual(report["summary"]["baseline_coverage_rate"], 0.85)
         self.assertLessEqual(report["summary"]["candidate_count"], 155)
         self.assertEqual(len(list_current_data(self.db, self.paper_id)), before)
         self.assertTrue(Path(report["json_path"]).is_file())
@@ -741,7 +749,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(report["ensemble"]["database_rows_changed"], 0)
         self.assertEqual(len(list_current_data(self.db, self.paper_id)), before)
 
-    def test_ensemble_can_add_only_qualitative_result_candidates(self):
+    def test_ensemble_qualitative_focus_keeps_only_numeric_trend_results(self):
         run_dir = Path(__file__).resolve().parents[2] / "data/evidence/deepseek_runs"
         report = benchmark_ensemble_preview(
             self.db,
@@ -755,7 +763,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         )
         self.assertGreater(report["ensemble"]["supplemental_candidate_counts"]["25"], 6)
         self.assertLess(report["ensemble"]["supplemental_candidate_counts"]["25"], 31)
-        self.assertEqual(report["category_coverage"]["显微观察与趋势"]["covered"], 6)
+        self.assertEqual(report["category_coverage"]["显微观察与趋势"]["covered"], 3)
 
     def test_ensemble_can_select_composition_table_candidates_by_semantics(self):
         run_dir = Path(__file__).resolve().parents[2] / "data/evidence/deepseek_runs"
@@ -796,7 +804,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
             {"25": ["coverage_gap_audit", "qualitative_results"], "26": ["composition_table"]},
         )
         self.assertEqual(report["ensemble"]["supplemental_candidate_counts"], {"25": 14, "26": 60})
-        self.assertGreaterEqual(report["summary"]["baseline_coverage_rate"], 0.96)
+        self.assertGreaterEqual(report["summary"]["baseline_coverage_rate"], 0.92)
         self.assertEqual(report["ensemble"]["database_rows_changed"], 0)
 
     def test_confirmed_correction_does_not_mutate_original(self):
