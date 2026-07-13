@@ -412,6 +412,11 @@ class DeepSeekDeduplicationTests(unittest.TestCase):
 
 
 class EvidenceDBTests(unittest.TestCase):
+    def test_database_connections_wait_for_transient_writers(self):
+        with self.db.connect() as conn:
+            timeout_ms = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+        self.assertEqual(timeout_ms, 30000)
+
     def test_read_only_startup_never_indexes_or_writes_documents(self):
         class Service:
             calls = 0
@@ -686,6 +691,48 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertGreater(report["ensemble"]["supplemental_candidate_counts"]["25"], 6)
         self.assertLess(report["ensemble"]["supplemental_candidate_counts"]["25"], 31)
         self.assertEqual(report["category_coverage"]["显微观察与趋势"]["covered"], 6)
+
+    def test_ensemble_can_select_composition_table_candidates_by_semantics(self):
+        run_dir = Path(__file__).resolve().parents[2] / "data/evidence/deepseek_runs"
+        report = benchmark_ensemble_preview(
+            self.db,
+            TARGET_DOI,
+            primary_run_id=23,
+            supplemental_run_ids=[26],
+            supplemental_focus="composition_table",
+            primary_artifact_path=run_dir / "paper_002_run_0023.json",
+            supplemental_artifact_paths={26: run_dir / "paper_002_run_0026.json"},
+            out_dir=Path(self.tmp.name) / "composition-ensemble",
+        )
+        self.assertGreater(report["ensemble"]["supplemental_candidate_counts"]["26"], 30)
+        self.assertGreaterEqual(report["category_coverage"]["材料成分"]["covered"], 37)
+        self.assertEqual(report["ensemble"]["database_rows_changed"], 0)
+
+    def test_ensemble_can_assign_different_focuses_to_each_supplemental_run(self):
+        run_dir = Path(__file__).resolve().parents[2] / "data/evidence/deepseek_runs"
+        report = benchmark_ensemble_preview(
+            self.db,
+            TARGET_DOI,
+            primary_run_id=23,
+            supplemental_run_ids=[25, 26],
+            supplemental_focus_by_run={
+                25: ["coverage_gap_audit", "qualitative_results"],
+                26: ["composition_table"],
+            },
+            primary_artifact_path=run_dir / "paper_002_run_0023.json",
+            supplemental_artifact_paths={
+                25: run_dir / "paper_002_run_0025.json",
+                26: run_dir / "paper_002_run_0026.json",
+            },
+            out_dir=Path(self.tmp.name) / "per-run-ensemble",
+        )
+        self.assertEqual(
+            report["ensemble"]["supplemental_focuses_by_run"],
+            {"25": ["coverage_gap_audit", "qualitative_results"], "26": ["composition_table"]},
+        )
+        self.assertEqual(report["ensemble"]["supplemental_candidate_counts"], {"25": 14, "26": 60})
+        self.assertGreaterEqual(report["summary"]["baseline_coverage_rate"], 0.96)
+        self.assertEqual(report["ensemble"]["database_rows_changed"], 0)
 
     def test_confirmed_correction_does_not_mutate_original(self):
         row = next(r for r in list_current_data(self.db) if r["stable_key"] == "irradiation_temperature")

@@ -50,6 +50,10 @@ class DeepSeekResponseError(RuntimeError):
     pass
 
 
+class DeepSeekUnavailableError(DeepSeekResponseError):
+    """The provider/network is unavailable; changing prompt shape will not help."""
+
+
 @dataclass(frozen=True)
 class DeepSeekSettings:
     api_key: str | None
@@ -133,14 +137,19 @@ class DeepSeekClient:
                 last_error = exc
                 if attempt == 0:
                     continue
-                raise DeepSeekResponseError("DeepSeek API 网络请求连续两次失败") from exc
+                raise DeepSeekUnavailableError("DeepSeek API 网络请求连续两次失败") from exc
             if not response.ok:
                 if attempt == 0 and (response.status_code == 429 or response.status_code >= 500):
                     last_error = DeepSeekResponseError(
                         f"transient HTTP {response.status_code}"
                     )
                     continue
-                raise DeepSeekResponseError(f"DeepSeek API 请求失败：HTTP {response.status_code}")
+                error_type = (
+                    DeepSeekUnavailableError
+                    if response.status_code == 429 or response.status_code >= 500
+                    else DeepSeekResponseError
+                )
+                raise error_type(f"DeepSeek API 请求失败：HTTP {response.status_code}")
             try:
                 content = response.json()["choices"][0]["message"]["content"]
                 if not content or not str(content).strip():

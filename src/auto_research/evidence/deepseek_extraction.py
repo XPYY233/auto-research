@@ -4,13 +4,19 @@ import difflib
 import hashlib
 import json
 import re
+import sqlite3
+import time
 import unicodedata
 from pathlib import Path
 from typing import Any
 
 import fitz
 
-from auto_research.ai.deepseek import DeepSeekClient, DeepSeekResponseError
+from auto_research.ai.deepseek import (
+    DeepSeekClient,
+    DeepSeekResponseError,
+    DeepSeekUnavailableError,
+)
 from auto_research.paths import DATA_DIR
 
 from .db import EVIDENCE_TYPES, SOURCE_PRECISIONS, EvidenceDB, now
@@ -30,6 +36,24 @@ BACKGROUND_PROVENANCE_PATTERNS = (
     r"\breference value\b",
     r"\bcalculations?\s+from\s+(?:table\s+\d+\s*)?\[\d+\]",
 )
+SQLITE_TRANSIENT_LOCK_MARKERS = ("locked", "busy", "locking protocol")
+
+
+def _execute_run_update(db: EvidenceDB, sql: str, params: tuple[Any, ...],
+                        attempts: int = 6) -> int | None:
+    """Execute a short AI-run audit write with bounded lock retries."""
+
+    for attempt in range(attempts):
+        try:
+            with db.connect() as conn:
+                cursor = conn.execute(sql, params)
+                return int(cursor.lastrowid) if cursor.lastrowid is not None else None
+        except sqlite3.OperationalError as exc:
+            transient = any(marker in str(exc).casefold() for marker in SQLITE_TRANSIENT_LOCK_MARKERS)
+            if not transient or attempt + 1 >= attempts:
+                raise
+            time.sleep(2 ** attempt)
+    return None
 
 
 def _compact(value: str | None) -> str:
@@ -279,25 +303,67 @@ def _coverage_gap_messages(paper: dict[str, Any], chunk: list[dict[str, Any]],
         "a multi-dimensional quantity such as 0.2 × 0.2 nm as one complete value, and preserve a dose or "
         "temperature sequence when the paper presents it as one set of observation points. Include numeric "
         "method details written as words or hyphenated forms, such as three-mm, five times, or at least five "
-        "hours. Do not repeat an existing datum."
+        "hours. Treat identity as value plus physical meaning plus material/sample plus experimental role. The "
+        "same numeric value is still a missing datum when it belongs to another material, element, table row or "
+        "column, or when nominal and measured roles differ. Do not repeat a truly identical datum."
     )
     messages = _extraction_messages(paper, chunk, focus, learning_guidance)
     inventory = [{
         "value_text": item.get("value_text"),
         "unit": item.get("unit"),
         "meaning": item.get("meaning"),
+        "context_explanation": str(item.get("context_explanation") or "")[:240],
         "source_page": item.get("source_page"),
         "source_locator": item.get("source_locator"),
+        "source_excerpt": str(item.get("source_excerpt") or "")[:240],
     } for item in existing]
     messages[0]["content"] += (
         "\nCoverage-gap rule: return only evidence not already represented in the supplied inventory. "
-        "An alternative wording of the same value/meaning/context is not a gap.\n"
+        "An alternative wording of the same value/meaning/context is not a gap. Equal values with different "
+        "material, element, sample state, nominal/measured role, or physical meaning are separate data.\n"
     )
     messages[1]["content"] += (
         "\n\nExisting candidate inventory for this page block:\n"
         + json.dumps(inventory, ensure_ascii=False)
+        + "\n\nSource quantity-anchor checklist (audit each anchor; extract it when it is this study's "
+        "data and not already represented, otherwise omit it or create an ambiguity pending task):\n"
+        + json.dumps(_coverage_quantity_anchors(chunk), ensure_ascii=False)
     )
     return messages
+
+
+def _coverage_quantity_anchors(chunk: list[dict[str, Any]], limit_per_page: int = 40) -> list[dict[str, Any]]:
+    """Return exact PDF text lines likely to contain overlooked atomic quantities."""
+
+    if limit_per_page < 1:
+        return []
+    quantity_pattern = re.compile(
+        r"(?:[±≥≤<>~≈]?\s*\d+(?:\.\d+)?(?:\s*[×x]\s*10\s*\^?\s*[+-]?\d+)?)|"
+        r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
+        r"(?:[-\s]+(?:mm|nm|um|µm|hours?|times?|pixels?|indents?|disks?))\b",
+        re.IGNORECASE,
+    )
+    anchors: list[dict[str, Any]] = []
+    seen: set[tuple[int, str]] = set()
+    for page in chunk:
+        page_number = int(page["page"])
+        page_added = 0
+        lines = [re.sub(r"\s+", " ", line).strip() for line in str(page.get("text") or "").splitlines()]
+        for index, line in enumerate(lines):
+            if len(line) < 8 or not quantity_pattern.search(line):
+                continue
+            start = max(0, index - 1)
+            end = min(len(lines), index + 2)
+            excerpt = " ".join(part for part in lines[start:end] if part)[:360].strip()
+            identity = (page_number, excerpt.casefold())
+            if not excerpt or identity in seen:
+                continue
+            seen.add(identity)
+            anchors.append({"source_page": page_number, "source_excerpt": excerpt})
+            page_added += 1
+            if page_added >= limit_per_page:
+                break
+    return anchors
 
 
 def _verification_messages(chunk: list[dict[str, Any]], candidates: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -453,6 +519,8 @@ def _extract_focus_payload(client: DeepSeekClient, paper: dict[str, Any],
             _extraction_messages(paper, chunk, focus, learning_guidance), task="extraction",
             max_tokens=16_000, thinking=False,
         )
+    except DeepSeekUnavailableError:
+        raise
     except DeepSeekResponseError:
         merged: dict[str, list[Any]] = {"data": [], "pending_tasks": []}
         if len(chunk) > 1:
@@ -730,13 +798,14 @@ class DeepSeekEvidenceExtractor:
             raise ValueError("当前文章已有六列数据；请先使用 preview，避免重复导入")
         pdf_sha256 = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
         mode = "commit" if commit else "preview"
-        with self.db.connect() as conn:
-            cur = conn.execute(
-                """INSERT INTO ai_extraction_runs(paper_id,provider,model,mode,status,pdf_sha256,created_at)
-                VALUES(?,?,?,?,?,?,?)""",
-                (paper_id, "deepseek", self.client.settings.extraction_model, mode, "running", pdf_sha256, now()),
-            )
-            run_id = int(cur.lastrowid)
+        run_id = _execute_run_update(
+            self.db,
+            """INSERT INTO ai_extraction_runs(paper_id,provider,model,mode,status,pdf_sha256,created_at)
+            VALUES(?,?,?,?,?,?,?)""",
+            (paper_id, "deepseek", self.client.settings.extraction_model, mode, "running", pdf_sha256, now()),
+        )
+        if run_id is None:
+            raise RuntimeError("AI extraction run could not be created")
         try:
             pages = _read_pages(pdf_path, max_pages=max_pages)
             experiment_profile = classify_experiment_types(paper, pages=pages)
@@ -835,15 +904,15 @@ class DeepSeekEvidenceExtractor:
                 interim_rejected = (
                     len(schema_rejected) + len(all_candidates) - len(interim_verified_raw)
                 )
-                with self.db.connect() as conn:
-                    conn.execute(
-                        """UPDATE ai_extraction_runs SET chunk_count=?,candidate_count=?,verified_count=?,
-                        rejected_count=?,duplicate_count=? WHERE id=?""",
-                        (
-                            chunk_index, len(all_candidates) + len(schema_rejected), interim_verified,
-                            interim_rejected, interim_duplicates, run_id,
-                        ),
-                    )
+                _execute_run_update(
+                    self.db,
+                    """UPDATE ai_extraction_runs SET chunk_count=?,candidate_count=?,verified_count=?,
+                    rejected_count=?,duplicate_count=? WHERE id=?""",
+                    (
+                        chunk_index, len(all_candidates) + len(schema_rejected), interim_verified,
+                        interim_rejected, interim_duplicates, run_id,
+                    ),
+                )
             verified_raw = [
                 item for item in all_candidates
                 if item["local_evidence"]["passed"]
@@ -908,23 +977,28 @@ class DeepSeekEvidenceExtractor:
             self.run_dir.mkdir(parents=True, exist_ok=True)
             output_path = self.run_dir / f"paper_{paper_id:03d}_run_{run_id:04d}.json"
             output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-            with self.db.connect() as conn:
-                conn.execute(
-                    """UPDATE ai_extraction_runs SET status='completed',output_path=?,chunk_count=?,candidate_count=?,
-                    verified_count=?,rejected_count=?,duplicate_count=?,imported_count=?,finished_at=? WHERE id=?""",
-                    (
-                        str(output_path), len(chunks), result["candidate_count"], len(verified),
-                        result["rejected_count"], duplicate_count, int(imported.get("inserted", 0)), now(), run_id,
-                    ),
-                )
+            _execute_run_update(
+                self.db,
+                """UPDATE ai_extraction_runs SET status='completed',output_path=?,chunk_count=?,candidate_count=?,
+                verified_count=?,rejected_count=?,duplicate_count=?,imported_count=?,finished_at=? WHERE id=?""",
+                (
+                    str(output_path), len(chunks), result["candidate_count"], len(verified),
+                    result["rejected_count"], duplicate_count, int(imported.get("inserted", 0)), now(), run_id,
+                ),
+            )
             result["output_path"] = str(output_path)
             return result
         except BaseException as exc:
-            with self.db.connect() as conn:
-                conn.execute(
+            try:
+                _execute_run_update(
+                    self.db,
                     "UPDATE ai_extraction_runs SET status='failed',error_message=?,finished_at=? WHERE id=?",
                     (str(exc)[:1000], now(), run_id),
                 )
+            except sqlite3.OperationalError:
+                # Preserve the extraction exception even if the audit write
+                # remains unavailable after bounded retries.
+                pass
             raise
 
 

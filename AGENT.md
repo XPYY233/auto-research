@@ -406,11 +406,28 @@ re-run local gates and deduplication, preserve source-run provenance, remain
 non-overwriting, and report zero database row changes.
 The CLI accepts repeated `--supplemental-focus` options. Prefer narrow aliases:
 `coverage_gap_audit` for omitted atomic data and `qualitative_results` for
-explicit observations from a results pass. Broader aliases (`results`,
+explicit observations from a results pass. Use `composition_table` to select
+only candidates whose material, element, at% unit, and nominal/measured identity
+are explicit. `--supplemental-run-focus RUN_ID:FOCUS` may assign different
+selectors to different supplemental runs. Broader aliases (`results`,
 `methods`, `targeted`, `all`) are diagnostic options and should be retained only
 when their added coverage justifies the extra review candidates. Benchmark
 comparison may treat standalone English number words such as `five` as numeric
 equivalents, but it must never rewrite the candidate's source-preserving value.
+
+The coverage-gap inventory must include meaning, material/context, page,
+locator, and a bounded source excerpt. Equal values do not represent the same
+datum when material, element, specimen state, or nominal/measured role differs.
+Also supply a bounded per-page quantity-anchor checklist built from exact PDF
+text lines so overlooked method quantities written as words, tolerances, or
+spacing values receive an explicit audit. Anchors never override local evidence
+checks and must not be used to infer precise curve points.
+
+AI-run audit writes must tolerate concurrent readers. Keep SQLite busy waiting
+enabled and use bounded retries for run creation, progress, completion, and
+failure updates. A provider/network outage is not a dense-output error: propagate
+`DeepSeekUnavailableError` without page/focus splitting, while malformed JSON
+may still use the controlled extraction fallback.
 
 Uncertainty belongs to its central value (`3.56±0.05`, not a second `0.05`
 datum). If the source includes an uncertainty, rejecting a candidate that drops

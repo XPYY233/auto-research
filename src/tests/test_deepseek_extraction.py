@@ -3,15 +3,24 @@ from __future__ import annotations
 import tempfile
 import unittest
 import re
+import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 import fitz
 
-from auto_research.ai.deepseek import DeepSeekResponseError, DeepSeekSettings
+from auto_research.ai.deepseek import (
+    DeepSeekResponseError,
+    DeepSeekSettings,
+    DeepSeekUnavailableError,
+)
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.deepseek_extraction import (
-    DeepSeekEvidenceExtractor, _coverage_gap_messages, _deduplicate, _evidence_check, _extract_focus_payload, _localize_candidates, _numbers,
-    _is_reference_dominant, _learning_guidance, _verification_batches,
+    DeepSeekEvidenceExtractor, _coverage_gap_messages, _coverage_quantity_anchors,
+    _deduplicate, _evidence_check, _execute_run_update, _extract_focus_payload,
+    _is_reference_dominant, _learning_guidance, _localize_candidates, _numbers,
+    _verification_batches,
 )
 from auto_research.evidence.six_column import add_manual_item, list_current_data
 
@@ -64,6 +73,52 @@ class FakeDeepSeekClient:
 
 
 class DeepSeekExtractionTests(unittest.TestCase):
+    def test_provider_outage_does_not_trigger_dense_page_fallback_requests(self):
+        class OfflineClient:
+            calls = 0
+
+            def request_json(self, messages, **kwargs):
+                self.calls += 1
+                raise DeepSeekUnavailableError("DNS unavailable")
+
+        client = OfflineClient()
+        with self.assertRaises(DeepSeekUnavailableError):
+            _extract_focus_payload(
+                client,
+                {"title": "Offline paper", "doi": "10.1/offline"},
+                [{"page": 1, "text": "hardness 3.5 GPa"}],
+                "Focus on experimental results",
+            )
+        self.assertEqual(client.calls, 1)
+
+    def test_ai_run_audit_write_retries_sqlite_locking_protocol(self):
+        class Cursor:
+            lastrowid = 42
+
+        class Connection:
+            def __init__(self, owner):
+                self.owner = owner
+
+            def execute(self, sql, params):
+                self.owner.calls += 1
+                if self.owner.calls == 1:
+                    raise sqlite3.OperationalError("locking protocol")
+                return Cursor()
+
+        class DB:
+            calls = 0
+
+            @contextmanager
+            def connect(self):
+                yield Connection(self)
+
+        db = DB()
+        with patch("auto_research.evidence.deepseek_extraction.time.sleep") as sleep:
+            row_id = _execute_run_update(db, "INSERT test", (), attempts=2)
+        self.assertEqual(row_id, 42)
+        self.assertEqual(db.calls, 2)
+        sleep.assert_called_once_with(1)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
@@ -290,7 +345,9 @@ class DeepSeekExtractionTests(unittest.TestCase):
             [{"page": 1, "text": "hardness 3.5 GPa and spacing 30 um"}],
             [{
                 "value_text": "3.5", "unit": "GPa", "meaning": "硬度",
+                "context_explanation": "Material A；irradiated specimen",
                 "source_page": 1, "source_locator": "Table 1",
+                "source_excerpt": "Material A hardness 3.5 GPa",
             }],
         )
         self.assertIn("return only evidence not already represented", messages[0]["content"])
@@ -300,6 +357,26 @@ class DeepSeekExtractionTests(unittest.TestCase):
         self.assertIn("n.m., bal.", messages[0]["content"])
         self.assertIn("0.2 × 0.2 nm", messages[0]["content"])
         self.assertIn("three-mm", messages[0]["content"])
+        self.assertIn("same numeric value", messages[0]["content"])
+        self.assertIn("Equal values with different", messages[0]["content"])
+        self.assertIn('"context_explanation": "Material A；irradiated specimen"', messages[1]["content"])
+        self.assertIn('"source_excerpt": "Material A hardness 3.5 GPa"', messages[1]["content"])
+        self.assertIn("Source quantity-anchor checklist", messages[1]["content"])
+        self.assertIn("spacing 30 um", messages[1]["content"])
+
+    def test_quantity_anchor_inventory_keeps_number_words_and_uncertainty_lines(self):
+        anchors = _coverage_quantity_anchors([{
+            "page": 2,
+            "text": (
+                "Three-mm disks for TEM were punched.\n"
+                "A variation of ±10 in grey scale represented background fluctuation.\n"
+                "The indent spacing was 30 um."
+            ),
+        }])
+        joined = " ".join(item["source_excerpt"] for item in anchors)
+        self.assertIn("Three-mm", joined)
+        self.assertIn("±10", joined)
+        self.assertIn("30 um", joined)
 
     def test_optional_coverage_gap_failure_becomes_pending_task(self):
         class GapFailClient(FakeDeepSeekClient):

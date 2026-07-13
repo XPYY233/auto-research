@@ -142,7 +142,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--supplemental-run", type=int, action="append", required=True, help="Supplemental run id; may be repeated")
     p.add_argument(
         "--supplemental-focus", action="append",
-        help="Include a supplemental focus; repeat as needed. Aliases: coverage_gap_audit, qualitative_results, results, methods, targeted, all",
+        help="Include a supplemental focus; repeat as needed. Aliases: coverage_gap_audit, qualitative_results, composition_table, results, methods, targeted, all",
+    )
+    p.add_argument(
+        "--supplemental-run-focus", action="append", metavar="RUN_ID:FOCUS",
+        help="Assign a focus to one supplemental run; repeat for multiple focuses or runs",
     )
     p.add_argument("--out-dir", help="Directory for JSON and Markdown ensemble reports")
 
@@ -341,12 +345,24 @@ def cmd_evidence(args) -> int:
     if args.cmd == "evidence-ensemble-preview":
         from .evidence.extraction_benchmark import benchmark_ensemble_preview
 
+        focus_by_run: dict[int, list[str]] = {}
+        for specification in args.supplemental_run_focus or []:
+            try:
+                run_text, focus = specification.split(":", 1)
+                run_id = int(run_text)
+            except (ValueError, AttributeError) as exc:
+                raise SystemExit("--supplemental-run-focus 必须使用 RUN_ID:FOCUS 格式") from exc
+            if run_id not in args.supplemental_run or not focus.strip():
+                raise SystemExit("每个 RUN_ID:FOCUS 必须对应已指定的 --supplemental-run")
+            focus_by_run.setdefault(run_id, []).append(focus.strip())
+
         report = benchmark_ensemble_preview(
             evidence_db,
             args.article_key,
             primary_run_id=args.primary_run,
             supplemental_run_ids=args.supplemental_run,
             supplemental_focus=args.supplemental_focus or "coverage_gap_audit",
+            supplemental_focus_by_run=focus_by_run or None,
             out_dir=Path(args.out_dir) if args.out_dir else None,
         )
         print(json.dumps({

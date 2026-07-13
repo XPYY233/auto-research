@@ -546,6 +546,7 @@ def benchmark_extraction_run(db: EvidenceDB, article_key: str, *, run_id: int | 
 def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_id: int,
                                supplemental_run_ids: list[int],
                                supplemental_focus: str | list[str] = "coverage_gap_audit",
+                               supplemental_focus_by_run: dict[int, list[str]] | None = None,
                                primary_artifact_path: Path | None = None,
                                supplemental_artifact_paths: dict[int, Path] | None = None,
                                out_dir: Path | None = None) -> dict[str, Any]:
@@ -560,8 +561,26 @@ def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_
     if not focus_selectors:
         focus_selectors = ["coverage_gap_audit"]
 
-    def focus_selected(item: dict[str, Any]) -> bool:
+    def focus_selected(item: dict[str, Any], selectors: list[str]) -> bool:
         focus = str(item.get("extraction_focus") or "")
+        candidate_text = _text(
+            f"{item.get('meaning') or ''} {item.get('context_explanation') or ''} "
+            f"{item.get('source_excerpt') or ''}"
+        )
+        is_composition_table = (
+            bool(re.search(
+                r"\b(?:fe|cr|ni|mn|co|al|mo|si|c|n|v|p|s|b)\b|元素",
+                candidate_text,
+            ))
+            and bool(re.search(
+                r"\b(?:nominal|measured|eds|composition)\b|名义|实测|测量|成分|原子分数",
+                candidate_text,
+            ))
+            and (
+                _unit(item.get("unit")) in {"at", "atomic"}
+                or bool(re.search(r"\bat\s*%|atomic percent|原子百分比", candidate_text))
+            )
+        )
         aliases = {
             "coverage_gap_audit": lambda: focus == "coverage_gap_audit",
             "results": lambda: focus.startswith("Focus on experimental results"),
@@ -570,11 +589,12 @@ def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_
                 and item.get("evidence_type") == "qualitative"
             ),
             "methods": lambda: focus.startswith("Focus on experimental setup"),
+            "composition_table": lambda: is_composition_table,
             "targeted": lambda: focus.startswith("Targeted experiment-specific pass"),
             "all": lambda: True,
         }
         return any(aliases.get(selector, lambda selector=selector: focus == selector)()
-                   for selector in focus_selectors)
+                   for selector in selectors)
 
     paper_id = resolve_paper_selector(db, article_key=article_key)
     paper = db.get_paper(paper_id)
@@ -591,14 +611,17 @@ def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_
             raw_candidates.append(candidate)
     artifact_paths = [str(primary_path)]
     supplemental_counts: dict[str, int] = {}
+    effective_focuses_by_run: dict[str, list[str]] = {}
     for run_id in supplemental_run_ids:
         path, payload = _artifact_for_run(
             db, paper_id, run_id, (supplemental_artifact_paths or {}).get(run_id)
         )
         artifact_paths.append(str(path))
+        run_focuses = list((supplemental_focus_by_run or {}).get(run_id) or focus_selectors)
+        effective_focuses_by_run[str(run_id)] = run_focuses
         selected = [
             item for item in payload["verified_candidates"]
-            if isinstance(item, dict) and focus_selected(item)
+            if isinstance(item, dict) and focus_selected(item, run_focuses)
         ]
         supplemental_counts[str(run_id)] = len(selected)
         for item in selected:
@@ -618,6 +641,7 @@ def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_
             "supplemental_run_ids": supplemental_run_ids,
             "supplemental_focus": focus_selectors[0] if len(focus_selectors) == 1 else ",".join(focus_selectors),
             "supplemental_focuses": focus_selectors,
+            "supplemental_focuses_by_run": effective_focuses_by_run,
             "supplemental_candidate_counts": supplemental_counts,
             "database_rows_changed": 0,
         },
@@ -628,5 +652,13 @@ def benchmark_ensemble_preview(db: EvidenceDB, article_key: str, *, primary_run_
     suffix = "_".join(f"{run_id:04d}" for run_id in supplemental_run_ids)
     focus_slug = "_".join(re.sub(r"[^a-z0-9_-]+", "-", item.casefold()).strip("-")
                           for item in focus_selectors)
+    if supplemental_focus_by_run:
+        focus_slug = "_".join(
+            f"r{run_id}-" + "-".join(
+                re.sub(r"[^a-z0-9_-]+", "-", item.casefold()).strip("-")
+                for item in effective_focuses_by_run[str(run_id)]
+            )
+            for run_id in supplemental_run_ids
+        )
     stem = f"paper_{paper_id:03d}_ensemble_{primary_run_id:04d}_plus_{suffix}_{focus_slug}"
     return _write_benchmark_report(report, Path(out_dir or BENCHMARK_DIR), stem)

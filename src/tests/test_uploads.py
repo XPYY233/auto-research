@@ -9,7 +9,12 @@ from unittest.mock import patch
 import fitz
 import requests
 
-from auto_research.ai.deepseek import DeepSeekNotConfigured, DeepSeekClient, DeepSeekSettings
+from auto_research.ai.deepseek import (
+    DeepSeekClient,
+    DeepSeekNotConfigured,
+    DeepSeekSettings,
+    DeepSeekUnavailableError,
+)
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.uploads import UploadService
 
@@ -224,6 +229,24 @@ class DeepSeekFrameworkTests(unittest.TestCase):
 
         client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=Session())
         self.assertEqual(client.request_json([{"role": "user", "content": "Return json"}]), {"status": "ok"})
+        self.assertEqual(Session.calls, 2)
+
+    def test_repeated_http_503_is_classified_as_provider_unavailable(self):
+        class Response:
+            ok = False
+            status_code = 503
+
+        class Session:
+            calls = 0
+
+            @classmethod
+            def post(cls, *args, **kwargs):
+                cls.calls += 1
+                return Response()
+
+        client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=Session())
+        with self.assertRaises(DeepSeekUnavailableError):
+            client.request_json([{"role": "user", "content": "Return json"}])
         self.assertEqual(Session.calls, 2)
 
     def test_project_keychain_is_used_without_exposing_secret(self):

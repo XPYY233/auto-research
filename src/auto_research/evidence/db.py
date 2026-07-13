@@ -388,14 +388,19 @@ class EvidenceDB:
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=30000")
         try:
             yield conn
             conn.commit()
         except Exception:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                # Preserve the original statement/commit exception.
+                pass
             raise
         finally:
             conn.close()

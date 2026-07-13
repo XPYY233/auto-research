@@ -118,6 +118,8 @@ The evidence database is deliberately separate from Zotero and from `db/research
 Zotero remains the source of papers/PDFs; every publishable value must retain a
 page or table/figure locator and pass human review.
 
+教师展示前请先阅读 [`TEACHER_DEMO.md`](TEACHER_DEMO.md)，其中包含只读公网端、本地编辑端、推荐演示顺序和当前数据边界。
+
 The current evidence workflow first classifies what kind of experiment the paper
 contains, then chooses the extraction focus accordingly. Irradiation remains the
 first mature pilot type, but it is no longer the hard-coded project boundary.
@@ -415,9 +417,24 @@ auto-research evidence-ensemble-preview <paper-selector> \
 ```
 
 Safe supplemental-focus aliases are `coverage_gap_audit`,
-`qualitative_results`, `results`, `methods`, `targeted`, and `all`. Prefer the
+`qualitative_results`, `composition_table`, `results`, `methods`, `targeted`,
+and `all`. Prefer the
 narrowest focus that adds verified coverage; selecting an entire later run can
 increase human-review noise even when its candidates are evidence-grounded.
+
+Different supplemental runs can use different selectors:
+
+```bash
+auto-research evidence-ensemble-preview <paper-selector> \
+  --primary-run 23 --supplemental-run 25 --supplemental-run 26 \
+  --supplemental-run-focus 25:coverage_gap_audit \
+  --supplemental-run-focus 25:qualitative_results \
+  --supplemental-run-focus 26:composition_table
+```
+
+Long DeepSeek runs use bounded SQLite lock retries for audit/progress writes.
+Provider outages such as DNS failure, timeout, HTTP 429, or 5xx are classified
+as unavailable and do not trigger the malformed-output page-splitting fallback.
 
 Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts
 are written to `data/evidence/deepseek_runs/`. Model output alone is never a
