@@ -553,8 +553,10 @@ function updateReviewBatchLinks() {
   const unreviewed = state.rows.filter(isUnreviewedRow).length;
   const encoded = encodeURIComponent(paperId);
   const batch = document.querySelector("#current-review-batch");
+  const calibration = document.querySelector("#current-review-calibration");
   const all = document.querySelector("#current-review-all");
   if (batch) batch.href = `/api/current-paper/review-batch.md?paper_id=${encoded}&limit=20`;
+  if (calibration) calibration.href = `/api/current-paper/review-batch.md?paper_id=${encoded}&limit=20&strategy=calibration`;
   if (all) {
     const limit = Math.max(unreviewed, 1);
     all.href = `/api/current-paper/review-batch.md?paper_id=${encoded}&limit=${encodeURIComponent(limit)}`;

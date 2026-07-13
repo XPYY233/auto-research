@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import re
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from .six_column import list_current_data, resolve_paper_selector, review_progre
 
 REVIEW_HANDOFF_DIR = DATA_DIR / "evidence" / "review_handoffs"
 REVIEW_BATCH_DIR = DATA_DIR / "evidence" / "review_batches"
+REVIEW_BATCH_STRATEGIES = {"priority", "calibration"}
 
 
 def _slug(text: str, limit: int = 64) -> str:
@@ -152,14 +154,154 @@ def generate_review_handoff(db: EvidenceDB, selector: str, *,
     }
 
 
+def _value_shape(value: str) -> str:
+    text = str(value or "").strip()
+    if not re.search(r"\d", text):
+        return "qualitative"
+    if "±" in text or re.search(r"\+\s*/\s*-", text):
+        return "uncertainty"
+    if re.search(r"[,;，；]", text):
+        return "vector"
+    if re.search(r"(?:[<>≤≥~≈]|\d\s*[-–—]\s*\d)", text):
+        return "range_or_limit"
+    return "scalar"
+
+
+def _locator_kind(row: dict[str, Any]) -> str:
+    locator = str(row.get("original_source_locator") or row.get("source_locator") or "")
+    if re.search(r"\btable\b", locator, re.I):
+        return "table"
+    if re.search(r"\b(?:fig(?:ure)?s?\.?|图)\b", locator, re.I):
+        return "figure"
+    if re.search(r"\b(?:eq(?:uation)?\.?|公式)\b", locator, re.I):
+        return "equation"
+    if re.search(r"\b(?:section|sec\.?)\b", locator, re.I):
+        return "section"
+    return "other"
+
+
+def _semantic_family(row: dict[str, Any]) -> str:
+    stable_key = str(row.get("stable_key") or "").lower()
+    if stable_key.startswith("comp_") or stable_key.startswith("table1_"):
+        return "composition"
+    if stable_key.startswith("table2_"):
+        return "microstructure"
+    if stable_key.startswith("table3_"):
+        return "mechanical"
+    if stable_key.startswith("table4_") or stable_key.startswith(("orowan_", "srim_")):
+        return "calculation"
+    text = " ".join(str(row.get(field) or "") for field in (
+        "stable_key", "meaning", "context_explanation", "source_excerpt",
+    )).lower()
+    families = (
+        ("composition", ("成分", "原子分数", "composition", "at%", "comp_")),
+        ("microstructure", ("晶粒", "位错", "夹杂", "空洞", "析出", "微观", "loop", "void")),
+        ("mechanical", ("硬度", "硬化", "压痕", "载荷", "屈服", "hardness", "indent")),
+        ("calculation", ("计算", "模型", "混合焓", "混合熵", "失配", "参数ω", "orowan", "srim")),
+        ("preparation", ("制备", "轧", "退火", "均匀化", "固溶", "抛光", "试样", "specimen")),
+        ("irradiation", ("辐照", "dpa", "注量", "通量", "kr离子", "irradiat", "dose")),
+    )
+    for family, keywords in families:
+        if any(keyword in text for keyword in keywords):
+            return family
+    return "other"
+
+
+def _candidate_role(row: dict[str, Any]) -> str:
+    """A sampling hint, never a published evidence classification."""
+
+    value_shape = _value_shape(str(row.get("value_text") or ""))
+    if value_shape == "qualitative":
+        return "qualitative"
+    stable_key = str(row.get("stable_key") or "").lower()
+    text = " ".join(str(row.get(field) or "") for field in (
+        "meaning", "context_explanation", "source_excerpt",
+    )).lower()
+    if stable_key.startswith(("table4_", "orowan_", "srim_")) or any(
+        keyword in text for keyword in ("模型计算", "由文章给出的材料成分", "srim计算", "calculated")
+    ):
+        return "calculated"
+    if any(keyword in text for keyword in ("增量", "倍数", "关系常数", "终止深度", "趋于饱和")):
+        return "derived_or_interpreted"
+    return "direct_or_reported_numeric"
+
+
+def _calibration_facets(row: dict[str, Any]) -> dict[str, str]:
+    page = row.get("original_source_page") or row.get("source_page") or "unknown"
+    return {
+        "source_kind": str(row.get("source_kind") or "text"),
+        "locator_kind": _locator_kind(row),
+        "value_shape": _value_shape(str(row.get("value_text") or "")),
+        "candidate_role": _candidate_role(row),
+        "semantic_family": _semantic_family(row),
+        "page": str(page),
+        "priority": str(row.get("review_priority_level") or "normal"),
+    }
+
+
+def _select_calibration_rows(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    """Greedily cover rare evidence forms before taking near-duplicate rows."""
+
+    facet_weights = {
+        "source_kind": 8.0,
+        "locator_kind": 7.0,
+        "value_shape": 6.0,
+        "candidate_role": 6.0,
+        "semantic_family": 6.0,
+        "page": 3.0,
+        "priority": 2.0,
+    }
+    frequencies: dict[tuple[str, str], int] = Counter()
+    for row in rows:
+        row["calibration_facets"] = _calibration_facets(row)
+        for name, value in row["calibration_facets"].items():
+            frequencies[(name, value)] += 1
+
+    selected: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    seen_meanings: set[str] = set()
+    remaining = list(rows)
+    while remaining and len(selected) < max(0, limit):
+        def marginal(row: dict[str, Any]) -> tuple[float, int, int]:
+            novelty = sum(
+                facet_weights[name] / max(1, frequencies[(name, value)]) ** 0.5
+                for name, value in row["calibration_facets"].items()
+                if (name, value) not in seen
+            )
+            priority = int(row.get("review_priority_score") or 0)
+            meaning = re.sub(r"\W+", "", str(row.get("meaning") or "").lower(), flags=re.UNICODE)
+            repeat_penalty = 3.0 if meaning and meaning in seen_meanings else 0.0
+            return novelty + priority * 0.04 - repeat_penalty, priority, -int(row["item_id"])
+
+        chosen = max(remaining, key=marginal)
+        remaining.remove(chosen)
+        selected.append(chosen)
+        seen.update((name, value) for name, value in chosen["calibration_facets"].items())
+        meaning = re.sub(r"\W+", "", str(chosen.get("meaning") or "").lower(), flags=re.UNICODE)
+        if meaning:
+            seen_meanings.add(meaning)
+    return selected
+
+
+def _calibration_summary(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    summary: dict[str, Counter[str]] = {}
+    for row in rows:
+        for name, value in (row.get("calibration_facets") or {}).items():
+            summary.setdefault(name, Counter())[value] += 1
+    return {name: dict(values) for name, values in summary.items()}
+
+
 def _review_batch_markdown(paper: dict[str, Any], progress: dict[str, Any],
-                           rows: list[dict[str, Any]], limit: int) -> str:
+                           rows: list[dict[str, Any]], limit: int,
+                           strategy: str = "priority") -> str:
+    is_calibration = strategy == "calibration"
     lines = [
-        "# 下一批待审核数据清单",
+        "# 分层校准核验清单" if is_calibration else "# 下一批待审核数据清单",
         "",
         f"- 文章：{paper.get('title') or '未命名文章'}",
         f"- DOI：{paper.get('doi') or '未登记 DOI'}",
         f"- 本批数量：{len(rows)} 条（请求上限 {limit} 条）",
+        f"- 取样方式：{'分层校准取样' if is_calibration else '核验优先级排序'}",
         f"- 总待审核：{progress['unreviewed']} 条",
         f"- 已审核：{progress['reviewed']}/{progress['total']} 条",
         "",
@@ -169,9 +311,26 @@ def _review_batch_markdown(paper: dict[str, Any], progress: dict[str, Any],
         "2. 按下方 `item_id` 在页面中定位，或点击“下一条未审核”逐条前进。",
         "3. 用 `Alt+S` 打开原文证据；确认无误后用 `Shift+Ctrl/⌘+Enter` 保存并进入下一条。",
         "",
+    ]
+    if is_calibration:
+        summary = _calibration_summary(rows)
+        lines.extend([
+            "本清单优先覆盖不同证据来源、数值形态、物理类别和页面，适合用较少反馈校准后续自动抽取；它不是对候选可靠性的自动判定。",
+            "",
+            "## 本批覆盖",
+            "",
+            f"- 证据来源：{summary.get('source_kind', {})}",
+            f"- 原文位置：{summary.get('locator_kind', {})}",
+            f"- 数值形态：{summary.get('value_shape', {})}",
+            f"- 候选角色：{summary.get('candidate_role', {})}（仅用于抽样覆盖，不替代人工判定）",
+            f"- 物理类别：{summary.get('semantic_family', {})}",
+            f"- PDF 页面：{summary.get('page', {})}",
+            "",
+        ])
+    lines.extend([
         "## 本批待审核数据",
         "",
-    ]
+    ])
     if not rows:
         lines.append("- 当前没有未审核自动抽取数据。")
     for index, row in enumerate(rows, start=1):
@@ -180,6 +339,7 @@ def _review_batch_markdown(paper: dict[str, Any], progress: dict[str, Any],
             f"### {index}. item_id={row['item_id']} · {row.get('meaning') or '未命名数据'}",
             "",
             f"- 核验优先级：{row.get('review_priority_label') or '常规核验'}（{priority_reasons}）",
+            *( [f"- 校准覆盖：{row.get('calibration_facets') or {}}"] if is_calibration else [] ),
             f"- 具体数值：`{row.get('value_text') or ''}`",
             f"- 具体意义：{row.get('meaning') or ''}",
             f"- 单位：{row.get('unit') or ''}",
@@ -197,7 +357,10 @@ def _review_batch_markdown(paper: dict[str, Any], progress: dict[str, Any],
 
 
 def review_batch_payload(db: EvidenceDB, paper_id: int, *,
-                         limit: int = 20) -> dict[str, Any]:
+                         limit: int = 20,
+                         strategy: str = "priority") -> dict[str, Any]:
+    if strategy not in REVIEW_BATCH_STRATEGIES:
+        raise ValueError(f"unsupported review batch strategy: {strategy}")
     paper = db.get_paper(paper_id) or {}
     rows = [
         row for row in list_current_data(db, paper_id)
@@ -211,42 +374,55 @@ def review_batch_payload(db: EvidenceDB, paper_id: int, *,
     for row in rows:
         priority = priorities.get(int(row["item_id"]), {})
         row["review_priority_score"] = int(priority.get("score") or 0)
+        row["review_priority_level"] = priority.get("level") or "normal"
         row["review_priority_label"] = priority.get("label") or "常规核验"
         row["review_priority_reasons"] = priority.get("reasons") or []
     rows.sort(key=lambda row: (-int(row["review_priority_score"]), int(row["item_id"])))
-    selected = rows[:max(0, limit)]
+    selected = (
+        _select_calibration_rows(rows, limit)
+        if strategy == "calibration"
+        else rows[:max(0, limit)]
+    )
     progress = review_progress(db, paper_id)
     return {
         "ok": True,
+        "strategy": strategy,
         "paper": {"id": paper_id, "title": paper.get("title"), "doi": paper.get("doi")},
         "batch_count": len(selected),
         "remaining_unreviewed": progress["unreviewed"],
         "first_item_id": selected[0]["item_id"] if selected else None,
         "last_item_id": selected[-1]["item_id"] if selected else None,
-        "markdown": _review_batch_markdown(paper, progress, selected, limit),
+        "calibration_summary": _calibration_summary(selected) if strategy == "calibration" else {},
+        "selected_item_ids": [int(row["item_id"]) for row in selected],
+        "markdown": _review_batch_markdown(paper, progress, selected, limit, strategy),
     }
 
 
 def generate_review_batch(db: EvidenceDB, selector: str, *,
                           limit: int = 20,
+                          strategy: str = "priority",
                           out: Path | None = None) -> dict[str, Any]:
     paper_id = resolve_paper_selector(db, article_key=selector)
-    payload = review_batch_payload(db, paper_id, limit=limit)
+    payload = review_batch_payload(db, paper_id, limit=limit, strategy=strategy)
     paper = payload["paper"]
     target = out
     if target is None:
         REVIEW_BATCH_DIR.mkdir(parents=True, exist_ok=True)
-        target = REVIEW_BATCH_DIR / f"{paper_id}_{_slug(paper.get('title') or selector)}_next{limit}.md"
+        batch_label = "calibration" if strategy == "calibration" else "next"
+        target = REVIEW_BATCH_DIR / f"{paper_id}_{_slug(paper.get('title') or selector)}_{batch_label}{limit}.md"
     else:
         target = target.expanduser().resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(payload["markdown"], encoding="utf-8")
     return {
         "ok": True,
+        "strategy": strategy,
         "path": str(target),
         "paper": paper,
         "batch_count": payload["batch_count"],
         "remaining_unreviewed": payload["remaining_unreviewed"],
         "first_item_id": payload["first_item_id"],
         "last_item_id": payload["last_item_id"],
+        "selected_item_ids": payload["selected_item_ids"],
+        "calibration_summary": payload["calibration_summary"],
     }

@@ -116,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("evidence-review-batch", help="Write a Markdown checklist for the next unreviewed evidence rows")
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p.add_argument("--limit", type=int, default=20)
+    p.add_argument("--strategy", choices=("priority", "calibration"), default="priority",
+                   help="priority orders risky rows; calibration selects a diverse representative set")
     p.add_argument("--out", help="Markdown output path")
     p = sub.add_parser("evidence-goal-audit", help="Write a Markdown audit against the user's end-to-end evidence extraction goal")
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
@@ -488,6 +490,7 @@ def cmd_evidence(args) -> int:
             evidence_db,
             args.article_key,
             limit=args.limit,
+            strategy=args.strategy,
             out=Path(args.out) if args.out else None,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))

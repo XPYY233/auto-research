@@ -266,8 +266,12 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
                 limit = int(params.get("limit", ["20"])[0])
                 limit = min(max(limit, 1), 100)
-                payload = review_batch_payload(self.db, paper_id, limit=limit)
-                filename = f"paper-{paper_id}-next{limit}-review-batch.md"
+                strategy = params.get("strategy", ["priority"])[0]
+                if strategy not in {"priority", "calibration"}:
+                    return self.json_response({"error": "invalid review batch strategy"}, status=400)
+                payload = review_batch_payload(self.db, paper_id, limit=limit, strategy=strategy)
+                label = "calibration" if strategy == "calibration" else "next"
+                filename = f"paper-{paper_id}-{label}{limit}-review-batch.md"
                 return self.markdown_download_response(payload["markdown"], filename)
             if parsed.path == "/api/current-paper/learning-samples.jsonl":
                 params = parse_qs(parsed.query)

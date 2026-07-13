@@ -388,7 +388,16 @@ auto-research evidence-review-handoff "Irradiation effects in high entropy alloy
 # Write a smaller checklist for the next N unreviewed rows.
 auto-research evidence-review-batch "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C" --limit 20
 
-# The review page also has "下载待审核清单" and "下载全部待审核" buttons.
+# Select a representative calibration set instead of 20 adjacent high-priority
+# rows. This covers different source forms, value shapes, semantic families,
+# PDF pages, and provisional measured/derived/calculated/qualitative roles.
+# Sampling labels guide coverage only and never change the six-column records.
+auto-research evidence-review-batch \
+  "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C" \
+  --limit 20 --strategy calibration
+
+# The review page also has "下载分层校准集", "下载待审核清单" and
+# "下载全部待审核" buttons.
 # They download Markdown checklists without writing database rows or calling
 # DeepSeek. The all-unreviewed link follows the current remaining count.
 # The progress card above the table shows reviewed, unreviewed, confirmed,

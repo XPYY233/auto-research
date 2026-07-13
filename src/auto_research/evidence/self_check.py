@@ -74,6 +74,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
         ("next_unreviewed_queue", "id=\"next-unreviewed\"" in html and "selectNextUnreviewed" in js and "scrollIntoView" in js),
         ("review_batch_download", "id=\"current-review-batch\"" in html and "/api/current-paper/review-batch.md" in js),
+        ("review_calibration_download", "id=\"current-review-calibration\"" in html and "strategy=calibration" in js),
         ("review_all_download", "id=\"current-review-all\"" in html and "下载全部待审核" in js and "updateReviewBatchLinks" in js),
         ("experiment_profile_card", "experiment-profile-card" in html and "renderExperimentProfile" in js and "/api/current-paper/experiment-profile" in js),
         ("paper_status_overview", "id=\"paper-status-summary\"" in html and "renderPaperStatusSummary" in js and "six_workflow_label" in js),

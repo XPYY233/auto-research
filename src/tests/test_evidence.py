@@ -1210,6 +1210,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("source_highlight", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("next_unreviewed_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_batch_download", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("review_calibration_download", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_all_download", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("item_id_review_filter", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("experiment_profile_card", by_name["web_ui_contract"]["web_ui"]["checked"])
@@ -1345,6 +1346,31 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("下一批待审核数据清单", payload["markdown"])
         self.assertIn("item_id=", payload["markdown"])
         self.assertNotIn("path", payload)
+
+    def test_calibration_review_batch_covers_diverse_evidence_forms(self):
+        payload = review_batch_payload(self.db, self.paper_id, limit=20, strategy="calibration")
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["strategy"], "calibration")
+        self.assertEqual(payload["batch_count"], 20)
+        self.assertEqual(len(payload["selected_item_ids"]), len(set(payload["selected_item_ids"])))
+        summary = payload["calibration_summary"]
+        self.assertGreaterEqual(len(summary["locator_kind"]), 3)
+        self.assertGreaterEqual(len(summary["value_shape"]), 4)
+        self.assertGreaterEqual(len(summary["candidate_role"]), 4)
+        self.assertGreaterEqual(len(summary["semantic_family"]), 4)
+        self.assertGreaterEqual(len(summary["page"]), 5)
+        selected = {
+            row["item_id"]: row for row in list_current_data(self.db, self.paper_id)
+            if row["item_id"] in payload["selected_item_ids"]
+        }
+        self.assertGreaterEqual(len({row["meaning"] for row in selected.values()}), 17)
+        self.assertIn("分层校准核验清单", payload["markdown"])
+        self.assertIn("本批覆盖", payload["markdown"])
+        self.assertIn("校准覆盖", payload["markdown"])
+
+    def test_review_batch_rejects_unknown_strategy(self):
+        with self.assertRaisesRegex(ValueError, "unsupported review batch strategy"):
+            review_batch_payload(self.db, self.paper_id, limit=3, strategy="random")
 
     def test_goal_audit_distinguishes_review_ready_from_goal_complete(self):
         out = Path(self.tmp.name) / "goal_audit.md"

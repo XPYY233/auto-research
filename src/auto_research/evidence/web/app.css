@@ -124,12 +124,15 @@ body[data-readonly="true"] .article-strip{display:none!important}
 body[data-readonly="true"] .shortcut-hint,
 body[data-readonly="true"] #next-unreviewed,
 body[data-readonly="true"] #current-review-batch,
+body[data-readonly="true"] #current-review-calibration,
 body[data-readonly="true"] #current-review-all{display:none}
 .article-strip{grid-template-columns:130px minmax(240px,1fr) minmax(160px,.42fr) minmax(145px,.36fr) auto}
 #paper-status-summary{border-left:3px solid var(--blue);padding-left:10px}
 .review-priority{display:block;padding:4px 6px;border-radius:4px;text-align:center;font-size:10px;font-weight:700}
 .review-priority.high{color:#8d2e21;background:#fff0ec;border:1px solid #efb8ab}
 .review-priority.medium{color:#8a5a16;background:#fff8e8;border:1px solid #ead39f}
+.calibration-action{border-color:#e6a16d;color:#8c4a20;background:#fff8f1}
+.calibration-action:hover{border-color:#cf7640;background:#fff1e5}
 .edit-table tr.priority-high td:first-child{box-shadow:inset 3px 0 #c94f3d}
 .edit-table tr.priority-medium td:first-child{box-shadow:inset 3px 0 #d99a36}
 @media(max-width:1050px){.article-strip{grid-template-columns:90px 1fr}.article-strip div:nth-child(4){border-top:1px solid #ccd8df}}
