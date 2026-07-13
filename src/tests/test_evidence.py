@@ -13,6 +13,7 @@ import fitz
 import auto_research.evidence.prompts as prompt_module
 import auto_research.evidence.six_column as six_column_module
 from auto_research.ai.deepseek import DeepSeekSettings
+from auto_research.evidence.article_navigation import navigation_tags
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.db_health import evidence_db_health
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
@@ -36,6 +37,7 @@ from auto_research.evidence.importers import import_ai_result, import_legacy_sam
 from auto_research.evidence.learning import build_learning_report
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.self_check import check_evidence_workflow
+from auto_research.evidence.test_set import DEFAULT_CONFIG, load_test_set
 from auto_research.evidence.review_handoff import generate_review_batch, generate_review_handoff, review_batch_payload
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
@@ -87,6 +89,32 @@ from auto_research.evidence.visual_evidence import (
 
 
 class ValueTests(unittest.TestCase):
+    def test_article_navigation_tags_keep_experiment_and_simulation_distinct(self):
+        experiment = navigation_tags({
+            "title": "Heavy ion irradiation of a tungsten heavy alloy in a simulated fusion environment",
+            "material_focus": "W-Refractory-Alloys",
+        })
+        self.assertIn("聚变堆材料", experiment["object_tags"])
+        self.assertIn("钨与难熔合金", experiment["object_tags"])
+        self.assertIn("辐照实验", experiment["method_tags"])
+        self.assertNotIn("辐照模拟/计算", experiment["method_tags"])
+
+        simulation = navigation_tags({
+            "title": "Shielding characteristics evaluated using Phy-X/PSD and SRIM programs",
+        })
+        self.assertIn("辐照模拟/计算", simulation["method_tags"])
+        self.assertNotIn("辐照实验", simulation["method_tags"])
+
+    def test_article_navigation_tags_are_nonexclusive(self):
+        tags = navigation_tags({
+            "title": "Irradiation effects in high entropy alloys: TEM defects and hardness",
+            "material_focus": "HEA-RHEA-CCA",
+        })
+        self.assertIn("高熵/中熵合金", tags["object_tags"])
+        self.assertIn("辐照实验", tags["method_tags"])
+        self.assertIn("显微/缺陷表征", tags["method_tags"])
+        self.assertIn("力学性能", tags["method_tags"])
+
     def test_pdf_flattened_scientific_exponent_matches_source_value(self):
         self.assertEqual(_normalize_text("8×10^16"), _normalize_text("8×1016"))
 
@@ -1481,6 +1509,23 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(completed_status["scanned"])
         self.assertEqual(completed_status["completed_ai_run_count"], 1)
         self.assertTrue(requires_rescan_confirmation(self.db, empty))
+
+    def test_default_five_paper_test_set_has_unique_dois_and_queries(self):
+        payload = load_test_set(DEFAULT_CONFIG)
+        self.assertEqual(payload["version"], "five-paper-v1")
+        self.assertEqual(len(payload["papers"]), 5)
+        self.assertEqual(len({item["doi"].lower() for item in payload["papers"]}), 5)
+        self.assertTrue(all(item["queries"] for item in payload["papers"]))
+
+    def test_five_paper_test_set_rejects_duplicate_dois(self):
+        path = Path(self.tmp.name) / "invalid-test-set.json"
+        papers = [
+            {"doi": "10.1/duplicate", "queries": ["硬度"]}
+            for _ in range(5)
+        ]
+        path.write_text(json.dumps({"version": "invalid", "papers": papers}), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "5 unique DOI"):
+            load_test_set(path)
 
     def test_scanned_paper_can_be_saved_as_timestamped_snapshot(self):
         old_dir = six_column_module.SAVED_SCANS_DIR

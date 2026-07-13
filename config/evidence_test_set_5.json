@@ -1,0 +1,37 @@
+{
+  "version": "five-paper-v1",
+  "description": "主基准论文加四篇实验对象与表征方法互补的本地真实 PDF，用于自动抽取、证据定位和人工校准。",
+  "calibration_limit_per_paper": 20,
+  "papers": [
+    {
+      "doi": "10.1016/j.jnucmat.2018.08.031",
+      "role": "主基准：HEA/316H，原位 TEM、离子辐照与纳米硬度",
+      "min_rows": 100,
+      "queries": ["原位TEM", "硬度", "位错环"]
+    },
+    {
+      "doi": "10.1038/s41467-023-38000-y",
+      "role": "RHEA：纳米晶 WTaCrVHf、极端辐照与硬度",
+      "min_rows": 100,
+      "queries": ["WTaCrVHf", "硬度", "晶粒"]
+    },
+    {
+      "doi": "10.1016/j.actamat.2023.119499",
+      "role": "纯钨：多能量 RBS/C 缺陷深度表征",
+      "min_rows": 50,
+      "queries": ["RBS", "钨", "缺陷"]
+    },
+    {
+      "doi": "10.1073/pnas.2218673120",
+      "role": "MEA：CrCoNi 局域化学有序与辐照缺陷演化",
+      "min_rows": 50,
+      "queries": ["局域化学有序", "CrCoNi", "缺陷"]
+    },
+    {
+      "doi": "10.1016/j.mtla.2020.100603",
+      "role": "CCA：NiCoFeCr 空洞生长与肿胀",
+      "min_rows": 50,
+      "queries": ["空洞", "肿胀", "辐照温度"]
+    }
+  ]
+}

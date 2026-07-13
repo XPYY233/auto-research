@@ -125,6 +125,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--query", action="append", help="Keyword that should return search results; can be repeated")
     p.add_argument("--min-rows", type=int, default=100)
     p.add_argument("--min-highlight-ratio", type=float, default=0.8)
+    p = sub.add_parser("evidence-test-set-audit", help="Audit the fixed five-paper extraction and calibration test set")
+    p.add_argument("--config", help="Five-paper test-set JSON; defaults to config/evidence_test_set_5.json")
+    p.add_argument("--out-dir", help="Directory for JSON and Markdown audit reports")
     sub.add_parser("evidence-deepseek-status", help="Show redacted DeepSeek runtime configuration")
     sub.add_parser("evidence-deepseek-smoke-test", help="Send a minimal synthetic JSON connection check to DeepSeek")
     p = sub.add_parser("evidence-deepseek-extract", help="Run evidence-grounded DeepSeek extraction for one paper selector")
@@ -507,6 +510,15 @@ def cmd_evidence(args) -> int:
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["ready_for_human_review"] else 2
+    if args.cmd == "evidence-test-set-audit":
+        from .evidence.test_set import DEFAULT_CONFIG, DEFAULT_OUTPUT_DIR, audit_five_paper_test_set
+        result = audit_five_paper_test_set(
+            evidence_db,
+            config_path=Path(args.config).expanduser().resolve() if args.config else DEFAULT_CONFIG,
+            output_dir=Path(args.out_dir).expanduser().resolve() if args.out_dir else DEFAULT_OUTPUT_DIR,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 2
     return 1
 
 

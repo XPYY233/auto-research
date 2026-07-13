@@ -294,6 +294,14 @@ Confirmed corrections create a new version during the demo, and manual entries
 have no synthetic original version. The original six-column export is written
 to `data/extractions/XJZQ42XP_six_column_original.csv`.
 
+For the first human-learning cycle, press `开始分层校准（20 条）` in the review
+progress card. The browser selects a deterministic, representative subset from
+the remaining unreviewed rows and keeps only those rows in the table. The subset
+covers different source kinds, value shapes, provisional roles, semantic
+families and PDF pages. Confirm-and-next stays inside that subset; leaving the
+mode never changes unconfirmed rows. This is a sampling aid, not an automatic
+accuracy judgment.
+
 For day-to-day use on this Mac, double-click
 `scripts/start_evidence_ui.command` from Finder. It opens the same local page and
 keeps the server process visible in a Terminal window.
@@ -502,9 +510,15 @@ be started with the separate current-article extraction button.
 Temporary edits in the review table are highlighted but not saved until you
 click `确认当前内容`; switching papers, importing results, re-running extraction,
 or leaving the page warns before those unsaved edits are discarded.
-The switcher displays registered papers by title, year/DOI, and saved-row count.
-The visible option text does not require or foreground Zotero/storage codes; the
-web app switches by the internal paper id.
+The switcher displays registered papers by title, first author, year/DOI, and
+saved-row count. It can narrow the list by title/author/DOI, research object,
+experiment method, workflow status, or the fixed five-paper validation set.
+Research-object and method tags are conservative, non-exclusive navigation aids;
+they do not replace the scientific experiment classification used by extraction.
+Filtering only changes the candidate list. It never switches the current paper
+or calls DeepSeek until the user explicitly presses the switch button. The
+visible option text does not require or foreground Zotero/storage codes; the web
+app switches by the internal paper id.
 
 The manual-entry page has a separate registered-paper selector. Manual rows are
 saved directly to the selected paper and become searchable in the whole database;
@@ -551,6 +565,19 @@ a translation when a numeric condition disappears.
 The reproducible five-paper blind validation is documented in
 `data/evidence/random5_20260708_audit.md`; its machine-readable manifest is
 `data/evidence/random5_20260708_manifest.csv`.
+
+The current fixed five-paper real-PDF validation set is declared in
+`config/evidence_test_set_5.json`. Audit the registered paper, local PDF,
+fingerprint, six-column rows, source highlighting, and calibration sample with:
+
+```bash
+auto-research evidence-test-set-audit
+```
+
+The generated human-readable and machine-readable reports are stored under
+`data/evidence/test_sets/`. The review-page article navigator exposes the same
+set as a one-click scope, so it can be used repeatedly instead of silently
+choosing a different random sample.
 
 Benchmark reports are written to `data/evidence/benchmarks/` as JSON and
 Chinese Markdown. Matching is deterministic and one-to-one: equal values on the

@@ -42,13 +42,57 @@
         <div class="article-picker-main">
           <div class="article-picker-copy">
             <small>当前校对文章</small>
-            <strong>选择论文后读取已保存的抽取数据</strong>
+            <strong>快速定位论文并读取已保存数据</strong>
+            <p>筛选不会切换文章或重新扫描。</p>
           </div>
-          <form id="paper-switch-form">
-            <label class="paper-select-label" for="paper-switch-input">论文题目</label>
-            <select id="paper-switch-input"></select>
-            <button type="submit" id="paper-switch-submit" data-write-action>切换文章</button>
-          </form>
+          <div class="paper-picker-workspace">
+            <div class="paper-filter-grid">
+              <label class="paper-query">搜索题目、作者或 DOI
+                <input id="paper-picker-query" type="search" placeholder="例如：El-Atwani、tungsten、10.1016…" autocomplete="off">
+              </label>
+              <label>研究对象
+                <select id="paper-object-filter">
+                  <option value="all">全部研究对象</option>
+                  <option value="聚变堆材料">聚变堆材料</option>
+                  <option value="高熵/中熵合金">高熵/中熵合金</option>
+                  <option value="钨与难熔合金">钨与难熔合金</option>
+                  <option value="其他材料">其他材料</option>
+                </select>
+              </label>
+              <label>研究方式
+                <select id="paper-method-filter">
+                  <option value="all">全部研究方式</option>
+                  <option value="辐照实验">辐照实验</option>
+                  <option value="辐照模拟/计算">辐照模拟/计算</option>
+                  <option value="显微/缺陷表征">显微/缺陷表征</option>
+                  <option value="力学性能">力学性能</option>
+                  <option value="氢同位素行为">氢同位素行为</option>
+                </select>
+              </label>
+              <label>处理状态
+                <select id="paper-status-filter">
+                  <option value="all">全部处理状态</option>
+                  <option value="pending_review">待人工审核</option>
+                  <option value="reviewed">已完成审核</option>
+                  <option value="scanned">已有抽取数据</option>
+                  <option value="not_scanned">尚未扫描</option>
+                </select>
+              </label>
+              <button type="button" class="paper-filter-reset" id="paper-filter-reset">清除筛选</button>
+            </div>
+            <div class="paper-scope-bar" aria-label="文章快捷范围">
+              <span>快捷范围</span>
+              <button type="button" class="active" data-paper-scope="all" aria-pressed="true">全部文章</button>
+              <button type="button" data-paper-scope="test_set" aria-pressed="false">五篇测试集</button>
+              <strong id="paper-filter-summary">正在载入文章…</strong>
+            </div>
+            <form id="paper-switch-form">
+              <label class="paper-select-label" for="paper-switch-input">筛选后的文章</label>
+              <select id="paper-switch-input" aria-describedby="paper-selected-meta"></select>
+              <button type="submit" id="paper-switch-submit" data-write-action>切换文章</button>
+            </form>
+            <div class="paper-selected-meta" id="paper-selected-meta"></div>
+          </div>
         </div>
         <details class="article-tools" id="article-tools">
           <summary>
@@ -99,6 +143,7 @@
             <label class="compact-search">审核状态
               <select id="review-filter">
                 <option value="all">全部</option>
+                <option value="calibration">本轮分层校准</option>
                 <option value="priority">只看重点项</option>
                 <option value="unreviewed">只看未审核</option>
                 <option value="confirmed">只看已确认</option>
@@ -130,10 +175,11 @@
           </div>
         </div>
         <div class="review-progress-card" id="review-progress-card">
-          <div>
+          <div class="review-progress-copy">
             <span>人工核验进度</span>
             <strong id="review-progress-title">0/0 已审核</strong>
             <p id="review-progress-note">选择一篇文章后开始核验。</p>
+            <button type="button" id="review-calibration-start" class="calibration-start" aria-pressed="false">开始分层校准（20 条）</button>
           </div>
           <div class="review-progress-meter" aria-hidden="true"><i id="review-progress-bar"></i></div>
           <dl>

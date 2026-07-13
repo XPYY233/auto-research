@@ -14,6 +14,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 from auto_research.ai.deepseek import DeepSeekSettings
 
+from .article_navigation import annotate_navigation_tags
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
 from .deepseek_extraction import DeepSeekEvidenceExtractor, latest_deepseek_run
@@ -278,6 +279,16 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 label = "calibration" if strategy == "calibration" else "next"
                 filename = f"paper-{paper_id}-{label}{limit}-review-batch.md"
                 return self.markdown_download_response(payload["markdown"], filename)
+            if parsed.path == "/api/current-paper/review-batch":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                limit = min(max(int(params.get("limit", ["20"])[0]), 1), 100)
+                strategy = params.get("strategy", ["priority"])[0]
+                if strategy not in {"priority", "calibration"}:
+                    return self.json_response({"error": "invalid review batch strategy"}, status=400)
+                payload = review_batch_payload(self.db, paper_id, limit=limit, strategy=strategy)
+                payload.pop("markdown", None)
+                return self.json_response(payload)
             if parsed.path == "/api/current-paper/learning-samples.jsonl":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
@@ -369,7 +380,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
                 return self.six_xlsx_response(list_current_data(self.db, paper_id), "current-paper-data.xlsx")
             if parsed.path == "/api/papers":
-                return self.json_response(self.db.list_papers())
+                return self.json_response(annotate_navigation_tags(self.db.list_papers()))
+            if parsed.path == "/api/test-set":
+                from .test_set import resolve_five_paper_test_set
+                return self.json_response(resolve_five_paper_test_set(self.db))
             match = re.fullmatch(r"/api/papers/(\d+)", parsed.path)
             if match:
                 paper = self.db.get_paper(int(match.group(1)))
