@@ -48,6 +48,8 @@ from auto_research.evidence.review_handoff import generate_review_batch, generat
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
 from auto_research.evidence.webapp import (
+    EvidenceHandler,
+    RELEASE_INFO,
     _startup_document_index,
     current_experiment_profile,
     is_read_only_public_get,
@@ -1209,6 +1211,19 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(data.startswith(b"PK"))
         self.assertIn(b"xl/worksheets/sheet1.xml", data)
 
+    def test_qualitative_export_keeps_source_and_cluster_provenance(self):
+        finding = search_qualitative_findings(self.db, "空洞", limit=1)[0]
+        rows, fields = EvidenceHandler._qualitative_export_rows([finding])
+        self.assertIn("finding_text", fields)
+        self.assertIn("evidence_occurrences", fields)
+        self.assertEqual(rows[0]["finding_text"], finding["finding_text"])
+        self.assertIsInstance(json.loads(rows[0]["finding_member_ids"]), list)
+        self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
+
+    def test_stable_release_metadata_is_explicit(self):
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.14-stable.1")
+        self.assertEqual(RELEASE_INFO["evidence_schema"], 8)
+
     def test_blank_search_and_paper_picker_counts_cover_all_papers(self):
         other = self.db.upsert_paper(title="Other irradiation paper", doi="10.1/search-all")
         other_row = add_manual_item(self.db, other, {
@@ -1568,6 +1583,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(is_read_only_public_get("/"))
         self.assertTrue(is_read_only_public_get("/api/six-search"))
         self.assertTrue(is_read_only_public_get("/api/qualitative-search"))
+        self.assertTrue(is_read_only_public_get("/api/qualitative-export.csv"))
+        self.assertTrue(is_read_only_public_get("/api/qualitative-export.xlsx"))
         self.assertTrue(is_read_only_public_get("/api/six-export.xlsx"))
         self.assertTrue(is_read_only_public_get("/api/six-data/335/source-view"))
         self.assertTrue(is_read_only_public_get("/api/six-data/335/source-highlight.png"))

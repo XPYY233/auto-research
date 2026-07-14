@@ -73,6 +73,8 @@ def _web_ui_contract() -> dict[str, Any]:
         ("search_filters_and_export", all(item in html for item in ("search-review-filter", "search-source-filter", "search-sort")) and "itemSearchParams" in js and "search-active-filters" in html),
         ("search_guidance_and_shortcut", "search-suggestions" in html and "renderSearchSuggestions" in js and "focusSearchShortcut" in js and "recentSearches" in js),
         ("four_mode_evidence_search", all(mode in html for mode in ("数据条目", "原始表格", "论文图片", "实验结论")) and "/api/visual-search" in js and "/api/qualitative-search" in js and "setSearchMode" in js),
+        ("qualitative_result_export", "/api/qualitative-export.csv" in js and "/api/qualitative-export.xlsx" in js and '["item", "finding"]' in js),
+        ("resilient_boot_and_release", "apiOptional" in js and "runtimeWarnings" in js and "id=\"runtime-warning\"" in html and "id=\"release-badge\"" in html),
         ("physical_fact_clustering", all(token in js for token in ("fact_cluster_size", "evidence_occurrences", "data-source-member", "重复记录已合并"))),
         ("complete_visual_dialog", "id=\"visual-dialog\"" in html and "id=\"visual-image\"" in html and "openVisualAsset" in js and ".visual-dialog-layout" in css),
         ("table_result_collapsing", "table-result-group" in js and "同一原表" in js and "展开其余" in js),
@@ -123,6 +125,7 @@ def _public_share_contract() -> dict[str, Any]:
             and "--authtoken" not in text,
         ),
         ("startup_no_demo_seed", "seed_target_article(evidence_db)" not in server_text),
+        ("public_security_headers", all(header in server_text for header in ("X-Content-Type-Options", "Referrer-Policy", "X-Frame-Options", "Permissions-Policy"))),
     ]
     failed = [name for name, ok in expectations if not ok]
     return {

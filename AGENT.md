@@ -694,6 +694,29 @@ explicit table markers remain valid. Database health must report raw rows,
 numeric source occurrences, independent facts, semantic duplicates, qualitative
 findings and excluded history without deleting anything.
 
+### Stable-release contract
+
+The user-facing release identity lives in `webapp.RELEASE_INFO` and must be
+shown by the shared editable/read-only frontend. Bump it only after full tests,
+database health, the fixed five-paper audit, editable-browser smoke testing and
+read-only route testing all pass. Keep `STABLE_RELEASE.md`, `PROJECT_LOG.md`, the
+Git tag and the bundle filename aligned with that release identity.
+
+Core editor startup depends on `/api/ui-mode`, `/api/papers`,
+`/api/current-paper`, and `/api/six-data`. Test-set metadata, upload history,
+job history, AI status, experiment classification, learning reports and latest
+DeepSeek-run metadata are auxiliary. A failure in one auxiliary endpoint must
+produce a visible degraded-function warning without blanking the paper picker
+or review table. A core failure must produce a clear refresh/startup message and
+must never write to the database as part of recovery.
+
+The `实验结论` search mode must export its current query to both CSV and
+Excel with conclusion text, meaning, paper identity, source page/locator,
+source excerpt, cluster members and all evidence occurrences. Public read-only
+mode may expose these two export routes. All HTTP responses must retain the
+baseline `nosniff`, no-referrer, same-origin framing and restricted browser
+permission headers.
+
 Visual assets are authoritative PDF screenshots created locally with PyMuPDF
 layout detection and recorded as `extraction_method=pdf_layout`. The current
 DeepSeek adapter receives extracted text for semantic candidate generation; it

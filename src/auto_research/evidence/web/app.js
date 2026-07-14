@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
   review: { kicker: "EVIDENCE REVIEW", title: "校对实验数据", subtitle: "逐条核对抽取结果，并随时返回原文证据。" },
@@ -26,6 +26,28 @@ async function api(url, options = {}) {
   return body;
 }
 
+function renderRuntimeWarnings() {
+  const el = document.querySelector("#runtime-warning");
+  if (!el) return;
+  const warnings = [...state.runtimeWarnings.values()];
+  el.hidden = !warnings.length;
+  el.textContent = warnings.length ? `部分功能未载入 · ${warnings.length}` : "";
+  el.title = warnings.join("\n");
+}
+
+async function apiOptional(url, fallback, label) {
+  try {
+    const result = await api(url);
+    state.runtimeWarnings.delete(label);
+    renderRuntimeWarnings();
+    return result;
+  } catch (error) {
+    state.runtimeWarnings.set(label, `${label}：${error.message}`);
+    renderRuntimeWarnings();
+    return fallback;
+  }
+}
+
 function esc(value) {
   return String(value ?? "").replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
 }
@@ -49,6 +71,13 @@ function applyUiMode() {
   document.body.dataset.readonly = readonly ? "true" : "false";
   const badge = document.querySelector("#readonly-badge");
   if (badge) badge.hidden = !readonly;
+  const release = document.querySelector("#release-badge span");
+  if (release) release.textContent = state.uiMode?.release?.label || "本地版本";
+  const releaseBadge = document.querySelector("#release-badge");
+  if (releaseBadge) releaseBadge.title = [
+    state.uiMode?.release?.version,
+    state.uiMode?.release?.evidence_schema ? `证据库结构 v${state.uiMode.release.evidence_schema}` : "",
+  ].filter(Boolean).join(" · ");
   document.querySelectorAll('[data-view="upload"],[data-view="manual"],[data-write-action]').forEach(el => {
     el.hidden = readonly;
   });
@@ -200,10 +229,10 @@ async function load() {
   }
   [state.papers, state.testSet, state.uploads, state.jobs, state.ai] = await Promise.all([
     api("/api/papers"),
-    api("/api/test-set"),
-    api("/api/uploads"),
-    api("/api/processing-jobs"),
-    api("/api/ai/status"),
+    apiOptional("/api/test-set", { paper_count: 0, papers: [] }, "五篇测试集"),
+    apiOptional("/api/uploads", [], "上传记录"),
+    apiOptional("/api/processing-jobs", [], "处理队列"),
+    apiOptional("/api/ai/status", { configured: false }, "DeepSeek 状态"),
   ]);
   await loadCurrentPaper();
   renderPaperOptions();
@@ -214,13 +243,13 @@ async function loadCurrentPaper() {
   [state.paper, state.rows, state.extraction, state.experimentProfile, state.learning, state.allLearning, state.learningReport, state.allLearningReport, state.deepseekRun] = await Promise.all([
     api("/api/current-paper"),
     api("/api/six-data"),
-    api("/api/current-paper/extraction"),
-    api("/api/current-paper/experiment-profile"),
-    api("/api/current-paper/learning-samples"),
-    api("/api/learning-samples"),
-    api("/api/current-paper/learning-report"),
-    api("/api/learning-report"),
-    api("/api/current-paper/deepseek-run"),
+    apiOptional("/api/current-paper/extraction", null, "当前文章处理状态"),
+    apiOptional("/api/current-paper/experiment-profile", null, "实验类型识别"),
+    apiOptional("/api/current-paper/learning-samples", null, "当前文章学习样本"),
+    apiOptional("/api/learning-samples", null, "全库学习样本"),
+    apiOptional("/api/current-paper/learning-report", null, "当前文章学习报告"),
+    apiOptional("/api/learning-report", null, "全库学习报告"),
+    apiOptional("/api/current-paper/deepseek-run", null, "DeepSeek 运行记录"),
   ]);
   state.audit = null;
   state.reviewVisibleLimit = reviewPageSize;
@@ -1579,6 +1608,8 @@ async function runSearch(event, options = {}) {
         ? `显示前 ${rows.length} 条，共 ${result.total} 条`
         : `${rows.length} 条结论`;
       setText("search-summary", q ? `“${q}” · ${countText}` : `当前收录 · ${countText}`);
+      document.querySelector("#search-export").href = `/api/qualitative-export.csv?q=${encodeURIComponent(q)}`;
+      document.querySelector("#search-export-xlsx").href = `/api/qualitative-export.xlsx?q=${encodeURIComponent(q)}`;
       renderQualitativeResults(rows);
     } else {
       const assets = await api(`/api/visual-search?type=${encodeURIComponent(state.searchMode)}&q=${encodeURIComponent(q)}`);
@@ -1609,7 +1640,7 @@ function setSearchMode(mode, options = {}) {
   const input = document.querySelector("#search-query");
   input.placeholder = searchModeCopy[mode].placeholder;
   setText("search-help", searchModeCopy[mode].help);
-  document.querySelector("#search-exports").hidden = mode !== "item";
+  document.querySelector("#search-exports").hidden = !["item", "finding"].includes(mode);
   document.querySelector("#search-filter-bar").hidden = mode !== "item";
   renderSearchSuggestions();
   renderActiveFilters();
@@ -2288,4 +2319,10 @@ window.addEventListener("beforeunload", event => {
 });
 renderSearchSuggestions();
 renderActiveFilters();
-load().catch(error => toast(error.message, true));
+load().catch(error => {
+  state.runtimeWarnings.set("核心服务", `核心服务：${error.message}`);
+  renderRuntimeWarnings();
+  setText("workspace-title", "项目服务未完全连接");
+  setText("workspace-subtitle", "请确认本地服务正在运行，然后刷新页面。数据库不会因页面加载失败而改变。");
+  toast(`页面载入失败：${error.message}`, true);
+});

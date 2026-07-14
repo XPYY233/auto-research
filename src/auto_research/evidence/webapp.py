@@ -53,6 +53,11 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 
 WEB_DIR = Path(__file__).parent / "web"
+RELEASE_INFO = {
+    "version": "2026.07.14-stable.1",
+    "label": "稳定版 2026.07.14",
+    "evidence_schema": 8,
+}
 
 
 def is_read_only_mutation(method: str, path: str) -> bool:
@@ -73,6 +78,8 @@ def is_read_only_public_get(path: str) -> bool:
         "/api/six-export.csv",
         "/api/six-export.xlsx",
         "/api/qualitative-search",
+        "/api/qualitative-export.csv",
+        "/api/qualitative-export.xlsx",
         "/api/visual-search",
     }:
         return True
@@ -206,6 +213,15 @@ class EvidenceHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         print(f"[evidence-web] {self.address_string()} {fmt % args}")
 
+    def end_headers(self) -> None:
+        """Apply conservative headers to local and publicly shared responses."""
+
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        super().end_headers()
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         try:
@@ -224,6 +240,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     "read_only": bool(self.read_only),
                     "mode": "readonly" if self.read_only else "editable",
                     "label": "只读模式" if self.read_only else "本地编辑模式",
+                    "release": RELEASE_INFO,
                 })
             if parsed.path == "/api/ai/status":
                 return self.json_response(DeepSeekSettings.from_env().public_status())
@@ -349,6 +366,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 limit = min(max(int(params.get("limit", ["100"])[0]), 1), 500)
                 rows = search_qualitative_findings(self.db, query, limit=100000)
                 return self.json_response({"rows": rows[:limit], "total": len(rows), "limit": limit})
+            if parsed.path == "/api/qualitative-export.csv":
+                query = parse_qs(parsed.query).get("q", [""])[0]
+                rows = search_qualitative_findings(self.db, query, limit=100000)
+                return self.qualitative_csv_response(rows)
+            if parsed.path == "/api/qualitative-export.xlsx":
+                query = parse_qs(parsed.query).get("q", [""])[0]
+                rows = search_qualitative_findings(self.db, query, limit=100000)
+                return self.qualitative_xlsx_response(rows)
             if parsed.path == "/api/six-export.csv":
                 params = parse_qs(parsed.query)
                 query = params.get("q", [""])[0]
@@ -666,6 +691,46 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    @staticmethod
+    def _qualitative_export_rows(rows: list[dict]) -> tuple[list[dict], list[str]]:
+        fieldnames = [
+            "finding_text", "meaning", "context_explanation", "article_title", "doi",
+            "first_author", "corresponding_author", "source_page", "source_locator",
+            "source_excerpt", "review_action", "finding_id", "finding_cluster_size",
+            "finding_member_ids", "evidence_count", "evidence_occurrences",
+        ]
+        export_rows = []
+        for row in rows:
+            item = dict(row)
+            for field in ("finding_member_ids", "evidence_occurrences"):
+                item[field] = json.dumps(item.get(field) or [], ensure_ascii=False)
+            export_rows.append(item)
+        return export_rows, fieldnames
+
+    def qualitative_csv_response(self, rows: list[dict]) -> None:
+        export_rows, fieldnames = self._qualitative_export_rows(rows)
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(export_rows)
+        data = ("\ufeff" + output.getvalue()).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", 'attachment; filename="qualitative-findings.csv"')
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def qualitative_xlsx_response(self, rows: list[dict]) -> None:
+        export_rows, fieldnames = self._qualitative_export_rows(rows)
+        data = make_xlsx(export_rows, fieldnames)
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.send_header("Content-Disposition", 'attachment; filename="qualitative-findings.xlsx"')
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)

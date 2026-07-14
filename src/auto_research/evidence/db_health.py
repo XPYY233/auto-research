@@ -146,8 +146,8 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             "name": "nonreportable_rows_quarantined",
             "ok": True,
             "detail": (
-                f"user-facing data={len(rows) - len(nonreportable_rows)}; "
-                f"legacy prose preserved in history and excluded from user-facing data={len(nonreportable_rows)}"
+                f"numeric source rows={len(rows) - len(nonreportable_rows)}; "
+                f"legacy prose preserved in history and excluded from numeric facts={len(nonreportable_rows)}"
             ),
             "examples": [
                 {"item_id": row.get("item_id"), "value_text": row.get("value_text")}

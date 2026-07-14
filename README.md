@@ -306,6 +306,10 @@ For day-to-day use on this Mac, double-click
 `scripts/start_evidence_ui.command` from Finder. It opens the same local page and
 keeps the server process visible in a Terminal window.
 
+The current presentation-ready checkpoint, verified workflows, data counts,
+known scientific-review boundary, and recovery instructions are recorded in
+[`STABLE_RELEASE.md`](STABLE_RELEASE.md).
+
 The whole-database search page now has four modes:
 
 - `数据条目` searches independent physical facts. Repeated mentions of the same
