@@ -20,7 +20,7 @@ from auto_research.evidence.deepseek_extraction import (
     DeepSeekEvidenceExtractor, _coverage_gap_messages, _coverage_quantity_anchors,
     _deduplicate, _evidence_check, _execute_run_update, _extract_focus_payload,
     _is_reference_dominant, _learning_guidance, _localize_candidates, _numbers,
-    _verification_batches,
+    _validated_findings, _verification_batches,
 )
 from auto_research.evidence.six_column import add_manual_item, list_current_data
 
@@ -68,11 +68,50 @@ class FakeDeepSeekClient:
                 "evidence_type": "measured",
                 "source_precision": "exact_text",
             }],
+            "findings": [],
             "pending_tasks": [],
         }
 
 
 class DeepSeekExtractionTests(unittest.TestCase):
+    def test_qualitative_findings_have_a_separate_evidence_gate(self):
+        chunk = [{"page": 1, "text": "TEM examination showed that no voids were observed after irradiation."}]
+        accepted, rejected = _validated_findings({
+            "findings": [{
+                "finding_text": "no voids were observed",
+                "meaning": "辐照后空洞观察结果",
+                "context_explanation": "W合金；离子辐照后；TEM观察",
+                "source_page": 1,
+                "source_locator": "Results",
+                "source_excerpt": "no voids were observed after irradiation",
+                "source_precision": "exact_text",
+            }],
+        }, chunk, 1, 1)
+        self.assertEqual(len(accepted), 1)
+        self.assertFalse(rejected)
+        self.assertEqual(accepted[0]["finding_text"], "no voids were observed")
+
+    def test_methods_and_numeric_results_cannot_enter_qualitative_findings(self):
+        chunk = [{"page": 1, "text": "A FEI Titan TEM was operated at 300 kV."}]
+        accepted, rejected = _validated_findings({
+            "findings": [
+                {
+                    "finding_text": "FEI Titan TEM", "meaning": "显微镜型号",
+                    "context_explanation": "TEM表征", "source_page": 1,
+                    "source_locator": "Methods", "source_excerpt": "FEI Titan TEM",
+                    "source_precision": "exact_text",
+                },
+                {
+                    "finding_text": "300", "meaning": "TEM工作电压",
+                    "context_explanation": "TEM表征", "source_page": 1,
+                    "source_locator": "Methods", "source_excerpt": "operated at 300 kV",
+                    "source_precision": "exact_text",
+                },
+            ],
+        }, chunk, 1, 1)
+        self.assertFalse(accepted)
+        self.assertEqual(len(rejected), 2)
+
     def test_provider_outage_does_not_trigger_dense_page_fallback_requests(self):
         class OfflineClient:
             calls = 0

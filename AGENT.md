@@ -306,8 +306,8 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 
 ### Visual evidence search contract
 
-The search workspace has exactly three user-facing modes: `数据条目`,
-`原始表格`, and `论文图片`. They are three views over the same evidence database,
+The search workspace has exactly four user-facing modes: `数据条目`,
+`原始表格`, `论文图片`, and `实验结论`. They are four views over the same evidence database,
 not separately maintained applications. Read-only sharing must use the same
 frontend and database as the local editor and may expose the public visual search,
 visual metadata, and visual image routes without exposing mutation APIs.
@@ -670,15 +670,29 @@ from user-facing item search, and require the reviewer to correct them to a
 numeric datum or mark them as not used. Do not delete history to enforce this
 rule.
 
-All user-facing current-data surfaces must use
-`list_reportable_current_data()`: review rows, calibration batches, search,
-current-paper CSV/XLSX export, paper-picker counts, evidence audits and fixed
-test-set audits. `list_current_data()` is the raw provenance/history layer and
-must not be returned directly as the current experimental dataset. A value with
-digits embedded in narrative prose is still non-reportable; compact ranges,
-inequalities, scientific notation, alloy formulas, units and explicit table
-markers remain valid. Database health must report raw, reportable and excluded
-counts without deleting the excluded history.
+Keep three explicit evidence layers and do not collapse their responsibilities:
+
+- `list_current_data()` is the immutable/versioned provenance layer. It includes
+  legacy rows and is used to reconstruct every extraction and review decision.
+- `list_reportable_current_data()` is the numeric source-occurrence layer. It is
+  used for evidence-location audits and must retain every page/table/figure/text
+  occurrence even when two occurrences describe the same physical fact.
+- `list_current_facts()` is the user-facing numeric fact layer. Review rows,
+  calibration batches, search, CSV/XLSX export, paper-picker counts, progress,
+  self-checks and fixed-test-set fact counts must all use this layer. Each fact
+  exposes `fact_member_ids` and `evidence_occurrences`; semantic clustering is a
+  reversible view and must never delete or rewrite its source rows.
+
+Prose-only scientific observations belong in `list_qualitative_findings()` and
+the `实验结论` search mode, never in numeric facts. Methods, instruments,
+facilities, material labels and standalone conditions are context, not findings.
+The DeepSeek extraction contract must keep numeric `data`, prose `findings`, and
+`pending_tasks` separate, and all candidates remain pending human review.
+A value with digits embedded in narrative prose is still non-reportable;
+compact ranges, inequalities, scientific notation, alloy formulas, units and
+explicit table markers remain valid. Database health must report raw rows,
+numeric source occurrences, independent facts, semantic duplicates, qualitative
+findings and excluded history without deleting anything.
 
 Visual assets are authoritative PDF screenshots created locally with PyMuPDF
 layout detection and recorded as `extraction_method=pdf_layout`. The current

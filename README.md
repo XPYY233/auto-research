@@ -306,11 +306,12 @@ For day-to-day use on this Mac, double-click
 `scripts/start_evidence_ui.command` from Finder. It opens the same local page and
 keeps the server process visible in a Terminal window.
 
-The whole-database search page now has three modes:
+The whole-database search page now has four modes:
 
-- `数据条目` searches the six-column records. Records linked to the same source
-  table are grouped together and show the first three rows by default; expanding
-  the group reveals the remaining rows without changing or merging the data.
+- `数据条目` searches independent physical facts. Repeated mentions of the same
+  value under the same material and experimental conditions appear once, while
+  every original sentence/table/figure location remains available as supporting
+  evidence. Records linked to the same source table are then grouped for display.
 - `原始表格` treats each original paper table as one searchable evidence object.
   Opening a result shows a high-resolution crop from the published PDF on the
   left and source-grounded quantities, variables, materials, conditions,
@@ -318,6 +319,9 @@ The whole-database search page now has three modes:
 - `论文图片` uses the same evidence-object model for figures. It stores and
   searches the original figure image and its documented meaning, but never
   guesses precise curve points from pixels.
+- `实验结论` searches source-grounded prose observations, trends and comparisons
+  that cannot be represented as numeric rows. Methods, instruments, facilities
+  and standalone condition labels are excluded from this collection.
 
 `数据条目` additionally supports human-review status, evidence source and result
 ordering filters. It performs live search after a short pause, offers example
@@ -328,8 +332,8 @@ matching records—not just the visible first page—to CSV or Excel with the sa
 query and filter conditions.
 
 The editable and read-only services share the same HTML, JavaScript, CSS,
-SQLite database, and visual assets. The read-only service exposes these three
-search modes and the public visual-evidence viewer without exposing review or
+SQLite database, and visual assets. The read-only service exposes these four
+search modes and the public evidence viewers without exposing review or
 mutation APIs.
 
 ```bash

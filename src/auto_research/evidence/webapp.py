@@ -35,13 +35,14 @@ from .six_column import (
     get_six_extraction_status,
     import_ai_result_to_six_column,
     learning_samples_jsonl,
+    list_current_facts,
     list_paper_workflow_summaries,
-    list_reportable_current_data,
     prepare_current_paper_packet,
     review_progress,
     resolve_paper_selector,
     save_current_paper_snapshot,
     search_current_data,
+    search_qualitative_findings,
     set_current_paper,
     set_row_review_decision,
 )
@@ -71,6 +72,7 @@ def is_read_only_public_get(path: str) -> bool:
         "/api/six-search",
         "/api/six-export.csv",
         "/api/six-export.xlsx",
+        "/api/qualitative-search",
         "/api/visual-search",
     }:
         return True
@@ -306,7 +308,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/six-data":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
-                return self.json_response(list_reportable_current_data(self.db, paper_id))
+                return self.json_response(list_current_facts(self.db, paper_id))
             match = re.fullmatch(r"/api/six-data/(\d+)", parsed.path)
             if match:
                 return self.json_response(get_data_item(self.db, int(match.group(1))))
@@ -341,6 +343,12 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     self.db, query, review_filter=review_filter,
                     source_filter=source_filter, sort=sort,
                 ))
+            if parsed.path == "/api/qualitative-search":
+                params = parse_qs(parsed.query)
+                query = params.get("q", [""])[0]
+                limit = min(max(int(params.get("limit", ["100"])[0]), 1), 500)
+                rows = search_qualitative_findings(self.db, query, limit=100000)
+                return self.json_response({"rows": rows[:limit], "total": len(rows), "limit": limit})
             if parsed.path == "/api/six-export.csv":
                 params = parse_qs(parsed.query)
                 query = params.get("q", [""])[0]
@@ -375,11 +383,11 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/current-paper/export.csv":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
-                return self.six_csv_response(list_reportable_current_data(self.db, paper_id), "current-paper-data.csv")
+                return self.six_csv_response(list_current_facts(self.db, paper_id), "current-paper-data.csv")
             if parsed.path == "/api/current-paper/export.xlsx":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
-                return self.six_xlsx_response(list_reportable_current_data(self.db, paper_id), "current-paper-data.xlsx")
+                return self.six_xlsx_response(list_current_facts(self.db, paper_id), "current-paper-data.xlsx")
             if parsed.path == "/api/papers":
                 return self.json_response(annotate_navigation_tags(list_paper_workflow_summaries(self.db)))
             if parsed.path == "/api/test-set":
@@ -623,10 +631,17 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         fieldnames = [
             *SIX_FIELDS, "first_author", "corresponding_author",
             "origin_type", "version_no", "source_page", "source_locator",
+            "fact_id", "fact_cluster_size", "fact_member_ids", "evidence_count", "evidence_occurrences",
         ]
         writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
+        export_rows = []
+        for row in rows:
+            item = dict(row)
+            for field in ("fact_member_ids", "evidence_occurrences"):
+                item[field] = json.dumps(item.get(field) or [], ensure_ascii=False)
+            export_rows.append(item)
+        writer.writerows(export_rows)
         data = ("\ufeff" + output.getvalue()).encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/csv; charset=utf-8")
@@ -639,8 +654,15 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         fieldnames = [
             *SIX_FIELDS, "first_author", "corresponding_author",
             "origin_type", "version_no", "source_page", "source_locator",
+            "fact_id", "fact_cluster_size", "fact_member_ids", "evidence_count", "evidence_occurrences",
         ]
-        data = make_xlsx(rows, fieldnames)
+        export_rows = []
+        for row in rows:
+            item = dict(row)
+            for field in ("fact_member_ids", "evidence_occurrences"):
+                item[field] = json.dumps(item.get(field) or [], ensure_ascii=False)
+            export_rows.append(item)
+        data = make_xlsx(export_rows, fieldnames)
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')

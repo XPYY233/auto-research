@@ -14,7 +14,7 @@ from .experiment_types import classify_experiment_types
 from .review_handoff import review_batch_payload
 from .six_column import (
     SIX_FIELDS,
-    list_reportable_current_data,
+    list_current_facts,
     review_progress,
     resolve_paper_selector,
     search_current_data,
@@ -126,7 +126,10 @@ def audit_five_paper_test_set(
         doi = str(spec["doi"])
         paper_id = resolve_paper_selector(db, article_key=doi)
         paper = db.get_paper(paper_id) or {}
-        rows = list_reportable_current_data(db, paper_id)
+        # User-facing acceptance follows the same independent-fact view as
+        # review, search and export.  Source rows remain available to the
+        # evidence audit below, so semantic folding never hides provenance.
+        rows = list_current_facts(db, paper_id)
         pdf = _pdf_status(paper)
         missing = _missing_six_fields(rows)
         evidence = audit_six_column_evidence(db, paper_id)
@@ -187,10 +190,11 @@ def audit_five_paper_test_set(
             },
             "rows": {
                 "total": len(rows),
+                "source_occurrences": evidence.get("checked_rows"),
                 "missing_required_fields": len(missing),
                 "source_kinds": dict(source_kinds),
-                "highlighted": evidence.get("highlighted_rows"),
-                "strong_highlight": evidence.get("strong_rows"),
+                "highlighted_source_occurrences": evidence.get("highlighted_rows"),
+                "strong_source_occurrences": evidence.get("strong_rows"),
                 "highlight_ratio": evidence.get("coverage_ratio"),
             },
             "visuals": {
@@ -216,6 +220,7 @@ def audit_five_paper_test_set(
         "config_path": config["config_path"],
         "paper_count": len(paper_reports),
         "total_rows": sum(item["rows"]["total"] for item in paper_reports),
+        "total_source_occurrences": sum(int(item["rows"].get("source_occurrences") or 0) for item in paper_reports),
         "total_reviewed": sum(item["review_progress"]["reviewed"] for item in paper_reports),
         "total_unreviewed": sum(item["review_progress"]["unreviewed"] for item in paper_reports),
         "calibration_rows": sum(item["calibration"]["batch_count"] for item in paper_reports),
@@ -243,14 +248,15 @@ def test_set_markdown(report: dict[str, Any]) -> str:
         f"- 版本：{report.get('version')}",
         f"- 状态：{'通过' if report.get('ok') else '存在未通过项'}",
         f"- 文章：{report.get('paper_count')} 篇",
-        f"- 六列数据：{report.get('total_rows')} 条",
+        f"- 独立物理事实：{report.get('total_rows')} 个",
+        f"- 原始数值证据：{report.get('total_source_occurrences')} 处（重复提及仍保留）",
         f"- 已审核 / 待审核：{report.get('total_reviewed')} / {report.get('total_unreviewed')}",
         f"- 首轮分层校准：{report.get('calibration_rows')} 条（每篇最多 20 条）",
         f"- 原文图表：{report.get('total_visuals')} 个（表格 {report.get('total_tables')}，图片 {report.get('total_figures')}）",
         "",
         "这五篇均使用本地真实 PDF。测试集审计只读取数据库、PDF 和现有证据定位，不调用 DeepSeek，也不确认、修正或删除数据。",
         "",
-        "| 文章 | 作用 | 数据 | 图/表 | 原文定位 | 待审核 | 校准 | 结果 |",
+        "| 文章 | 作用 | 物理事实 | 图/表 | 证据定位 | 待审核 | 校准 | 结果 |",
         "|---|---|---:|---:|---:|---:|---:|---|",
     ]
     for item in report.get("papers", []):
@@ -259,7 +265,7 @@ def test_set_markdown(report: dict[str, Any]) -> str:
         lines.append(
             f"| {paper.get('title')} | {item.get('role')} | {rows.get('total')} | "
             f"{item['visuals'].get('figures')}/{item['visuals'].get('tables')} | "
-            f"{rows.get('highlighted')}/{rows.get('total')} | {item['review_progress'].get('unreviewed')} | "
+            f"{rows.get('highlighted_source_occurrences')}/{rows.get('source_occurrences')} | {item['review_progress'].get('unreviewed')} | "
             f"{item['calibration'].get('batch_count')} | {'通过' if item.get('ok') else '检查'} |"
         )
     lines.extend(["", "## 逐篇检查", ""])
@@ -275,8 +281,8 @@ def test_set_markdown(report: dict[str, Any]) -> str:
             f"- 测试作用：{item.get('role')}",
             f"- 实验类型：{item['experiment'].get('primary_label')}（置信度 {item['experiment'].get('confidence')}）",
             f"- 本地 PDF：{item['pdf'].get('path')}；{item['pdf'].get('page_count')} 页；指纹一致：{item['pdf'].get('fingerprint_matches')}",
-            f"- 六列数据：{item['rows'].get('total')}；必需字段缺失：{item['rows'].get('missing_required_fields')}",
-            f"- 原文定位：{item['rows'].get('highlighted')}/{item['rows'].get('total')}；强定位：{item['rows'].get('strong_highlight')}",
+            f"- 独立物理事实：{item['rows'].get('total')}；必需字段缺失：{item['rows'].get('missing_required_fields')}",
+            f"- 原文数值证据：{item['rows'].get('source_occurrences')} 处；可定位 {item['rows'].get('highlighted_source_occurrences')}；强定位 {item['rows'].get('strong_source_occurrences')}",
             f"- 原文图表：图片 {item['visuals'].get('figures')}；表格 {item['visuals'].get('tables')}；生成方式 {item['visuals'].get('extraction_methods')}",
             f"- 人工审核：{item['review_progress'].get('reviewed')}/{item['review_progress'].get('total')}；待审核 {item['review_progress'].get('unreviewed')}",
             f"- 本轮校准：{item['calibration'].get('batch_count')} 条；item_id：{item['calibration'].get('selected_item_ids')}",

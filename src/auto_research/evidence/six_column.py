@@ -15,6 +15,7 @@ from auto_research.paths import DATA_DIR
 from auto_research.ai.deepseek import DeepSeekSettings
 
 from .db import EvidenceDB, now
+from .fact_model import classify_nonreportable_row, cluster_fact_rows, cluster_qualitative_rows
 from .importers import load_ai_result_payload
 from .prompts import prompt_packet_path
 
@@ -76,7 +77,8 @@ SNAPSHOT_FIELDS = (
     "item_id", "paper_id", "stable_key", "value_text", "meaning", "unit",
     "article_title", "doi", "context_explanation", "source_page",
     "source_locator", "source_excerpt", "origin_type", "version_no",
-    "review_action", "first_author", "corresponding_author",
+    "review_action", "first_author", "corresponding_author", "fact_id",
+    "fact_cluster_size", "fact_member_ids", "evidence_count", "evidence_occurrences",
 )
 
 ELEMENT_SEARCH_ALIASES = {
@@ -433,7 +435,7 @@ def get_six_extraction_status(db: EvidenceDB, paper_id: int | None = None) -> di
     paper = db.get_paper(resolved_id)
     if not paper:
         raise KeyError(f"Paper {resolved_id} not found")
-    row_count = len(list_reportable_current_data(db, resolved_id))
+    row_count = len(list_current_facts(db, resolved_id))
     with db.connect() as conn:
         run_summary = conn.execute(
             """SELECT
@@ -517,7 +519,7 @@ def save_current_paper_snapshot(db: EvidenceDB, paper_id: int | None = None) -> 
     paper = db.get_paper(resolved_id)
     if not paper:
         raise KeyError(f"Paper {resolved_id} not found")
-    rows = list_reportable_current_data(db, resolved_id)
+    rows = list_current_facts(db, resolved_id)
     if not rows:
         raise ValueError("当前文章还没有可保存的六列表格数据。请先完成扫描或人工录入。")
     article_key = paper.get("local_article_key") or paper.get("zotero_key") or paper.get("pilot_code") or str(resolved_id)
@@ -527,6 +529,8 @@ def save_current_paper_snapshot(db: EvidenceDB, paper_id: int | None = None) -> 
     enriched = []
     for row in rows:
         item = {field: row.get(field) for field in SNAPSHOT_FIELDS}
+        for field in ("fact_member_ids", "evidence_occurrences"):
+            item[field] = json.dumps(item.get(field) or [], ensure_ascii=False)
         item["paper_id"] = resolved_id
         item["local_article_key"] = article_key
         enriched.append(item)
@@ -750,30 +754,48 @@ def _validate_fields(fields: dict[str, Any]) -> dict[str, str]:
 def confirm_correction(db: EvidenceDB, item_id: int, fields: dict[str, Any],
                        editor: str = "本地研究者", note: str = "") -> dict[str, Any]:
     clean = _validate_fields(fields)
+    try:
+        cluster = fact_cluster_for_item(db, item_id)
+        member_ids = [int(value) for value in cluster.get("fact_member_ids", [item_id])]
+    except KeyError:
+        member_ids = [item_id]
     with db.connect() as conn:
         item = conn.execute("SELECT * FROM data_items WHERE id=?", (item_id,)).fetchone()
         if not item:
             raise KeyError(f"Data item {item_id} not found")
-        latest = conn.execute(
+        representative_latest = conn.execute(
             "SELECT * FROM data_versions WHERE item_id=? ORDER BY version_no DESC LIMIT 1", (item_id,)
         ).fetchone()
-        changed_fields = [field for field in SIX_FIELDS if str(clean[field]) != str(latest[field] or "")]
+        changed_fields = [
+            field for field in SIX_FIELDS
+            if str(clean[field]) != str(representative_latest[field] or "")
+        ]
         review_action = "correction" if changed_fields else "confirmation"
         edit_note = note or (
             f"修改字段：{'、'.join(changed_fields)}" if changed_fields else "人工确认：内容无修改"
         )
-        next_version = int(latest["version_no"]) + 1
-        conn.execute(
-            """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
-            context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                item_id, next_version, clean["value_text"], clean["meaning"], clean["unit"], clean["article_title"],
-                clean["doi"], clean["context_explanation"], latest["source_page"], latest["source_locator"],
-                latest["source_excerpt"], editor, edit_note, review_action, now(),
-            ),
-        )
-    return get_data_item(db, item_id)
+        if len(member_ids) > 1:
+            edit_note += f"；同一物理事实簇共 {len(member_ids)} 条来源记录"
+        for member_id in member_ids:
+            latest = conn.execute(
+                "SELECT * FROM data_versions WHERE item_id=? ORDER BY version_no DESC LIMIT 1", (member_id,)
+            ).fetchone()
+            if not latest:
+                continue
+            conn.execute(
+                """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
+                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    member_id, int(latest["version_no"]) + 1, clean["value_text"], clean["meaning"],
+                    clean["unit"], clean["article_title"], clean["doi"], clean["context_explanation"],
+                    latest["source_page"], latest["source_locator"], latest["source_excerpt"], editor,
+                    edit_note, review_action, now(),
+                ),
+            )
+    result = fact_cluster_for_item(db, item_id)
+    result["history"] = get_data_item(db, int(result["item_id"]))["history"]
+    return result
 
 
 def set_row_review_decision(db: EvidenceDB, item_id: int, decision: str, *,
@@ -787,34 +809,44 @@ def set_row_review_decision(db: EvidenceDB, item_id: int, decision: str, *,
     detail = re.sub(r"\s+", " ", str(note or "").strip())
     if decision in {"rejected", "ambiguous"} and not reason:
         raise ValueError("A review reason is required")
+    try:
+        cluster = fact_cluster_for_item(db, item_id)
+        member_ids = [int(value) for value in cluster.get("fact_member_ids", [item_id])]
+    except KeyError:
+        member_ids = [item_id]
     with db.connect() as conn:
         item = conn.execute("SELECT * FROM data_items WHERE id=?", (item_id,)).fetchone()
         if not item:
             raise KeyError(f"Data item {item_id} not found")
         if item["origin_type"] != "automatic":
             raise ValueError("Manual rows cannot be marked as automatic extraction decisions")
-        latest = conn.execute(
-            "SELECT * FROM data_versions WHERE item_id=? ORDER BY version_no DESC LIMIT 1", (item_id,)
-        ).fetchone()
-        if not latest:
-            raise KeyError(f"Data item {item_id} has no version")
         if decision == "automatic":
             edit_note = detail or "恢复为待审核"
         else:
             label = "不采用" if decision == "rejected" else "存在歧义"
             edit_note = f"{label}：{reason}" + (f"；{detail}" if detail else "")
-        conn.execute(
-            """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
-            context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                item_id, int(latest["version_no"]) + 1, latest["value_text"], latest["meaning"],
-                latest["unit"], latest["article_title"], latest["doi"], latest["context_explanation"],
-                latest["source_page"], latest["source_locator"], latest["source_excerpt"], editor,
-                edit_note, decision, now(),
-            ),
-        )
-    return get_data_item(db, item_id)
+        if len(member_ids) > 1:
+            edit_note += f"；同一物理事实簇共 {len(member_ids)} 条来源记录"
+        for member_id in member_ids:
+            latest = conn.execute(
+                "SELECT * FROM data_versions WHERE item_id=? ORDER BY version_no DESC LIMIT 1", (member_id,)
+            ).fetchone()
+            if not latest:
+                continue
+            conn.execute(
+                """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
+                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    member_id, int(latest["version_no"]) + 1, latest["value_text"], latest["meaning"],
+                    latest["unit"], latest["article_title"], latest["doi"], latest["context_explanation"],
+                    latest["source_page"], latest["source_locator"], latest["source_excerpt"], editor,
+                    edit_note, decision, now(),
+                ),
+            )
+    result = fact_cluster_for_item(db, item_id)
+    result["history"] = get_data_item(db, int(result["item_id"]))["history"]
+    return result
 
 
 def add_manual_item(db: EvidenceDB, paper_id: int, fields: dict[str, Any],
@@ -837,6 +869,62 @@ def add_manual_item(db: EvidenceDB, paper_id: int, fields: dict[str, Any],
             ),
         )
     return get_data_item(db, item_id)
+
+
+def add_qualitative_item(db: EvidenceDB, paper_id: int, finding: dict[str, Any],
+                         editor: str = "DeepSeek qualitative extraction") -> dict[str, Any]:
+    """Store an evidence-grounded prose finding outside the numeric fact view."""
+
+    paper = db.get_paper(paper_id)
+    if not paper:
+        raise KeyError(f"Paper {paper_id} not found")
+    fields = {
+        "value_text": str(finding.get("finding_text") or finding.get("value_text") or "").strip(),
+        "meaning": str(finding.get("meaning") or "").strip(),
+        "unit": "",
+        "article_title": str(paper.get("title") or "").strip(),
+        "doi": str(paper.get("doi") or "").strip(),
+        "context_explanation": str(finding.get("context_explanation") or "").strip(),
+    }
+    for required in ("value_text", "meaning", "article_title", "doi", "context_explanation"):
+        if not fields[required]:
+            raise ValueError(f"qualitative finding {required} cannot be empty")
+    if is_reportable_value_text(fields["value_text"]):
+        raise ValueError("numeric values belong in the physical fact collection")
+    if classify_nonreportable_row(fields) != "qualitative_finding":
+        raise ValueError("methods, instruments, facilities, and condition labels are not qualitative findings")
+    identity = "|".join((
+        fields["value_text"].casefold(), fields["meaning"].casefold(),
+        fields["context_explanation"].casefold(), str(finding.get("source_page") or ""),
+        str(finding.get("source_excerpt") or "").casefold(),
+    ))
+    stable_key = f"qualitative_{hashlib.sha1(identity.encode('utf-8')).hexdigest()[:20]}"
+    existing_id: int | None = None
+    with db.connect() as conn:
+        existing = conn.execute(
+            "SELECT id FROM data_items WHERE paper_id=? AND stable_key=?", (paper_id, stable_key)
+        ).fetchone()
+        if existing:
+            existing_id = int(existing["id"])
+        else:
+            cur = conn.execute(
+                "INSERT INTO data_items(paper_id,stable_key,origin_type,created_at) VALUES(?,?,?,?)",
+                (paper_id, stable_key, "automatic", now()),
+            )
+            existing_id = int(cur.lastrowid)
+            conn.execute(
+                """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
+                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    existing_id, 0, fields["value_text"], fields["meaning"], "", fields["article_title"],
+                    fields["doi"], fields["context_explanation"], finding.get("source_page"),
+                    str(finding.get("source_locator") or ""), str(finding.get("source_excerpt") or ""),
+                    editor, "Automatically separated from numeric data as a qualitative finding",
+                    "automatic", now(),
+                ),
+            )
+    return get_data_item(db, int(existing_id))
 
 
 def collect_learning_samples(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
@@ -987,11 +1075,46 @@ def list_reportable_current_data(db: EvidenceDB, paper_id: int | None = None) ->
     ]
 
 
+def list_current_facts(db: EvidenceDB, paper_id: int | None = None) -> list[dict[str, Any]]:
+    """Return one user-facing physical fact per semantic cluster.
+
+    The underlying six-column rows and every source location remain intact.
+    A fact exposes ``fact_member_ids`` and ``evidence_occurrences`` so review,
+    search, and export can use one fact without losing provenance.
+    """
+
+    return cluster_fact_rows(list_reportable_current_data(db, paper_id))
+
+
+def list_qualitative_findings(db: EvidenceDB, paper_id: int | None = None) -> list[dict[str, Any]]:
+    """Return prose observations separated from the numeric fact collection."""
+
+    prose_rows = [
+        row for row in list_current_data(db, paper_id)
+        if not is_reportable_value_text(row.get("value_text"))
+    ]
+    return cluster_qualitative_rows(prose_rows)
+
+
+def fact_cluster_for_item(db: EvidenceDB, item_id: int) -> dict[str, Any]:
+    row = get_data_item(db, item_id)
+    facts = list_current_facts(db, int(row["paper_id"]))
+    for fact in facts:
+        if item_id in fact.get("fact_member_ids", []):
+            return fact
+    raise KeyError(f"Physical fact for data item {item_id} not found")
+
+
 def list_paper_workflow_summaries(db: EvidenceDB) -> list[dict[str, Any]]:
-    """Return paper-picker counts based on reportable current data only."""
+    """Return paper-picker counts based on independent physical facts."""
 
     papers = db.list_papers()
-    reportable_rows = list_reportable_current_data(db)
+    raw_reportable_rows = list_reportable_current_data(db)
+    reportable_rows = cluster_fact_rows(raw_reportable_rows)
+    reportable_counts: dict[int, int] = {}
+    for row in raw_reportable_rows:
+        row_paper_id = int(row["paper_id"])
+        reportable_counts[row_paper_id] = reportable_counts.get(row_paper_id, 0) + 1
     counts: dict[int, dict[str, int]] = {}
     for row in reportable_rows:
         paper_id = int(row["paper_id"])
@@ -1020,9 +1143,12 @@ def list_paper_workflow_summaries(db: EvidenceDB) -> list[dict[str, Any]]:
         total = current["total"]
         reviewed = current["reviewed"]
         unreviewed = max(total - reviewed, 0)
+        reportable_count = reportable_counts.get(int(paper["id"]), 0)
         paper.update({
             "six_raw_row_count": raw_total,
-            "six_excluded_nonreportable_count": max(raw_total - total, 0),
+            "six_reportable_row_count": reportable_count,
+            "six_excluded_nonreportable_count": max(raw_total - reportable_count, 0),
+            "six_semantic_duplicate_count": max(reportable_count - total, 0),
             "six_row_count": total,
             "six_reviewed_count": reviewed,
             "six_confirmed_count": current["confirmed"],
@@ -1051,9 +1177,9 @@ def list_paper_workflow_summaries(db: EvidenceDB) -> list[dict[str, Any]]:
 
 
 def review_progress(db: EvidenceDB, paper_id: int | None = None) -> dict[str, Any]:
-    """Summarize human-review progress for the current six-column rows."""
+    """Summarize human-review progress by independent physical fact."""
 
-    rows = list_reportable_current_data(db, paper_id)
+    rows = list_current_facts(db, paper_id)
     total = len(rows)
     manual = sum(1 for row in rows if row.get("origin_type") == "manual")
     confirmed = sum(1 for row in rows if row.get("review_action") == "confirmation")
@@ -1179,7 +1305,7 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
                         review_filter: str = "all",
                         source_filter: str = "all",
                         sort: str = "relevance") -> list[dict[str, Any]]:
-    rows = list_reportable_current_data(db)
+    rows = list_current_facts(db)
     if not include_excluded:
         rows = [row for row in rows if row.get("review_action") not in {"rejected", "ambiguous"}]
     rows = _filter_search_rows(rows, review_filter=review_filter, source_filter=source_filter)
@@ -1217,6 +1343,7 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
                 max(_field_score(term, row.get("corresponding_author"), SEARCH_FIELD_WEIGHTS["corresponding_author"]) for term in term_group),
                 max(_field_score(term, row["source_excerpt"], SEARCH_FIELD_WEIGHTS["source_excerpt"]) for term in term_group),
                 max(_field_score(term, row["source_locator"], SEARCH_FIELD_WEIGHTS["source_locator"]) for term in term_group),
+                max(_field_score(term, row.get("search_text"), SEARCH_FIELD_WEIGHTS["source_excerpt"]) for term in term_group),
             )
             if score:
                 matched_terms += 1
@@ -1232,6 +1359,41 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
         row["search_score"] = round(score, 3)
         output.append(row)
     return _sort_search_rows(output, sort)
+
+
+def search_qualitative_findings(db: EvidenceDB, query: str, limit: int = 100) -> list[dict[str, Any]]:
+    """Search prose observations without mixing them into numeric data rows."""
+
+    findings = [
+        row for row in list_qualitative_findings(db)
+        if row.get("review_action") not in {"rejected"}
+    ]
+    term_groups = _query_terms(query)
+    if not term_groups:
+        return findings[:limit]
+    ranked: list[tuple[float, dict[str, Any]]] = []
+    for row in findings:
+        total = 0.0
+        matched = 0
+        for group in term_groups:
+            score = max(
+                max(_field_score(term, row.get("finding_text"), 6.0) for term in group),
+                max(_field_score(term, row.get("meaning"), 5.5) for term in group),
+                max(_field_score(term, row.get("context_explanation"), 4.5) for term in group),
+                max(_field_score(term, row.get("search_text"), 2.0) for term in group),
+                max(_field_score(term, row.get("article_title"), 1.0) for term in group),
+                max(_field_score(term, row.get("doi"), 1.0) for term in group),
+            )
+            if score:
+                matched += 1
+                total += score
+        minimum = 1 if len(term_groups) == 1 else math.ceil(len(term_groups) * 0.5)
+        if matched >= minimum:
+            result = dict(row)
+            result["search_score"] = round(total * (0.65 + 0.35 * matched / len(term_groups)), 3)
+            ranked.append((result["search_score"], result))
+    ranked.sort(key=lambda pair: (-pair[0], int(pair[1]["item_id"])))
+    return [row for _, row in ranked[:limit]]
 
 
 def export_original_csv(db: EvidenceDB, path: Path = TARGET_EXPORT) -> Path:

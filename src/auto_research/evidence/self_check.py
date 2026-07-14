@@ -13,7 +13,7 @@ from .six_column import (
     SIX_FIELDS,
     collect_learning_samples,
     get_six_extraction_status,
-    list_reportable_current_data,
+    list_current_facts,
     review_progress,
     resolve_paper_selector,
     search_current_data,
@@ -72,7 +72,8 @@ def _web_ui_contract() -> dict[str, Any]:
         ("search_engine", "id=\"search-form\"" in html and "/api/six-search" in js and "整个证据数据库" in html),
         ("search_filters_and_export", all(item in html for item in ("search-review-filter", "search-source-filter", "search-sort")) and "itemSearchParams" in js and "search-active-filters" in html),
         ("search_guidance_and_shortcut", "search-suggestions" in html and "renderSearchSuggestions" in js and "focusSearchShortcut" in js and "recentSearches" in js),
-        ("three_mode_visual_search", all(mode in html for mode in ("数据条目", "原始表格", "论文图片")) and "/api/visual-search" in js and "setSearchMode" in js),
+        ("four_mode_evidence_search", all(mode in html for mode in ("数据条目", "原始表格", "论文图片", "实验结论")) and "/api/visual-search" in js and "/api/qualitative-search" in js and "setSearchMode" in js),
+        ("physical_fact_clustering", all(token in js for token in ("fact_cluster_size", "evidence_occurrences", "data-source-member", "重复记录已合并"))),
         ("complete_visual_dialog", "id=\"visual-dialog\"" in html and "id=\"visual-image\"" in html and "openVisualAsset" in js and ".visual-dialog-layout" in css),
         ("table_result_collapsing", "table-result-group" in js and "同一原表" in js and "展开其余" in js),
         ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
@@ -236,13 +237,13 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
     )
 
     status = get_six_extraction_status(db, paper_id)
-    rows = list_reportable_current_data(db, paper_id)
+    rows = list_current_facts(db, paper_id)
     review = review_progress(db, paper_id)
     _check(
         checks,
         "six_column_rows",
         len(rows) >= min_rows,
-        f"当前文章已有 {len(rows)} 条六列数据；最低要求 {min_rows} 条",
+        f"当前文章已有 {len(rows)} 个独立物理事实；最低要求 {min_rows} 个",
         row_count=len(rows),
     )
 

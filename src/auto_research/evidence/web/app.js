@@ -2,7 +2,7 @@ const state = { paper: null, papers: [], testSet: null, paperFilters: { query: "
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
   review: { kicker: "EVIDENCE REVIEW", title: "校对实验数据", subtitle: "逐条核对抽取结果，并随时返回原文证据。" },
-  search: { kicker: "DATABASE SEARCH", title: "搜索实验数据与图表", subtitle: "在条目、完整表格和完整图片之间切换，并用同一个关键词搜索。" },
+  search: { kicker: "DATABASE SEARCH", title: "搜索实验数据与证据", subtitle: "在数值事实、原始表格、论文图片和定性结论之间切换。" },
   upload: { kicker: "PDF INTAKE", title: "导入实验文献", subtitle: "验证真实 PDF、识别重复论文，并加入待处理队列。" },
   manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "为自动抽取未覆盖的实验结果补充六列记录。" },
   history: { kicker: "REVISION HISTORY", title: "查看修正记录", subtitle: "复查人工确认、修正和补录留下的版本记录。" },
@@ -350,9 +350,10 @@ function paperOptionHtml(papers, testOrder, includeGroups = true) {
   const optionFor = paper => {
     const rows = Number(paper.six_row_count || paper.row_count || 0);
     const scan = paper.six_workflow_label || (rows ? `${rows}条数据` : "未扫描");
+    const folded = Number(paper.six_semantic_duplicate_count || 0);
     const order = testOrder.get(Number(paper.id));
     const prefix = order ? `【测试集 ${order}/5】` : "";
-    return `<option value="${esc(paper.id)}">${esc(prefix)}${esc(paperLabel(paper))} · ${esc(scan)}</option>`;
+    return `<option value="${esc(paper.id)}">${esc(prefix)}${esc(paperLabel(paper))} · ${esc(scan)}${folded ? ` · 已合并${folded}条重复` : ""}</option>`;
   };
   const testPapers = [...papers].filter(paper => testOrder.has(Number(paper.id))).sort((a, b) => testOrder.get(Number(a.id)) - testOrder.get(Number(b.id)));
   const otherPapers = papers.filter(paper => !testOrder.has(Number(paper.id)));
@@ -465,7 +466,7 @@ function renderPaper() {
   setText("paper-title", paper.title);
   setText("paper-doi", paper.doi || "—");
   setText("paper-process-status", paperStatus.six_workflow_label || "未扫描");
-  setText("paper-compact-status", `${paperStatus.six_workflow_label || "未扫描"} · ${state.rows.length} 条数据`);
+  setText("paper-compact-status", `${paperStatus.six_workflow_label || "未扫描"} · ${state.rows.length} 个独立事实`);
   setText("focus-paper-title", paper.title || "当前文章");
   setText("mini-title", paper.title);
   setText("mini-doi", paper.doi || "—");
@@ -535,7 +536,7 @@ function renderExtractionStatus() {
   const packetNote = status.packet_ready ? ` · 抽取包可查看` : "";
   const savedNote = status.saved_snapshot_path ? ` · 最近 CSV 备份：${status.saved_snapshot_path}` : "";
   const scanNote = status.scanned
-    ? `已入库 ${status.row_count} 条数据${status.completed_ai_run_count ? `；DeepSeek 已完成 ${status.completed_ai_run_count} 次` : ""}`
+    ? `已整理为 ${status.row_count} 个独立事实${status.completed_ai_run_count ? `；DeepSeek 已完成 ${status.completed_ai_run_count} 次` : ""}`
     : "尚无已入库抽取结果";
   el.textContent = `${lead} · ${scanNote}${packetNote}${savedNote} · ${status.message}`;
   el.className = status.supported ? "supported" : status.packet_ready ? "ready" : "unsupported";
@@ -610,7 +611,12 @@ function renderDeepSeekRun() {
   }
   const run = state.deepseekRun;
   const link = run.output_url ? ` · <a href="${esc(run.output_url)}" target="_blank" rel="noopener">查看运行 JSON</a>` : "";
-  el.innerHTML = `最近一次 DeepSeek 运行：${esc(run.status)} · 候选 ${esc(run.candidate_count)} 条 · 双重验证通过 ${esc(run.verified_count)} 条 · 重复 ${esc(run.duplicate_count || 0)} 条 · 拒绝/歧义 ${esc(run.rejected_count)} 条 · 预览结果不会自动替代校对表${link}`;
+  const findingCount = Number(run.qualitative_finding_count || 0);
+  const importedFindings = Number(run.qualitative_imported?.inserted || 0);
+  const findingText = findingCount
+    ? ` · 定性结论 ${esc(findingCount)} 条（新增 ${esc(importedFindings)} 条）`
+    : "";
+  el.innerHTML = `最近一次 DeepSeek 运行：${esc(run.status)} · 数值候选 ${esc(run.candidate_count)} 条 · 证据验证通过 ${esc(run.verified_count)} 条${findingText} · 重复 ${esc(run.duplicate_count || 0)} 条 · 拒绝/歧义 ${esc(run.rejected_count)} 条 · 候选结果已保存，须在校对页人工确认${link}`;
   el.className = run.status === "completed" ? "supported" : run.status === "failed" ? "unsupported" : "ready";
 }
 
@@ -630,9 +636,9 @@ function startProgress(kind) {
   clearInterval(state.progressTimer);
   const stages = [
     "准备任务与读取 PDF",
-    "按页分块提取候选数据",
+    "按页分块识别数值与定性结论",
     "核对证据页码与原文片段",
-    "合并重复项并生成可校对结果",
+    "聚合物理事实并生成可校对结果",
   ];
   let index = 0;
   updateProgress(12, `${kind}：${stages[index]}`);
@@ -893,7 +899,7 @@ async function toggleCalibrationReview() {
     window.requestAnimationFrame(() => {
       document.querySelector(`#edit-rows tr[data-item="${ids[0]}"]`)?.scrollIntoView({ block: "center" });
     });
-    toast(`已进入分层校准模式：从 ${payload.remaining_unreviewed} 条待审核数据中选出 ${ids.length} 条代表性样本。`);
+    toast(`已进入分层校准模式：从 ${payload.remaining_unreviewed} 个待审核事实中选出 ${ids.length} 个代表性样本。`);
   } catch (error) {
     toast(error.message, true);
   } finally {
@@ -921,7 +927,7 @@ function renderTable() {
   const sortNote = state.reviewSort === "original" ? "" : ` · ${document.querySelector("#review-sort")?.selectedOptions?.[0]?.textContent || "已排序"}`;
   const dirtyNote = hasUnsavedEdits() ? `，${state.dirtyRows.size} 行未确认` : "";
   const breakdown = `确认 ${progress.confirmed}、修正 ${progress.corrected}、歧义 ${progress.ambiguous}、不采用 ${progress.rejected}、人工 ${progress.manual}`;
-  setText("row-count", `${progress.reviewed}/${progress.total} 已审核（${breakdown}），${progress.unreviewed} 待审核${dirtyNote}${filterNote}${visibleNote}${sortNote}`);
+  setText("row-count", `${progress.reviewed}/${progress.total} 个事实已审核（${breakdown}），${progress.unreviewed} 个待审核${dirtyNote}${filterNote}${visibleNote}${sortNote}`);
   const loadMore = document.querySelector("#review-load-more");
   if (loadMore) {
     loadMore.hidden = rows.length >= allRows.length;
@@ -960,7 +966,13 @@ function renderTable() {
         : ["confirmation", "correction", "rejected", "ambiguous"].includes(row.review_action)
           ? `<button type="button" class="reopen-action" data-reopen="${row.item_id}">恢复待审核</button>`
           : "";
-    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action">${priorityBadge}${reviewButtons}${decisionButtons}<button data-original="${row.item_id}">查看原始</button><button class="source-action" data-source-row="${row.item_id}"${sourceDisabled}>原文证据</button><small>#${row.item_id} · ${badge}</small></div></td></tr>`;
+    const clusterNote = Number(row.fact_cluster_size || 1) > 1
+      ? `<span class="review-cluster-note">${row.fact_cluster_size} 条重复记录已合并</span>`
+      : "";
+    const evidenceMenu = Number(row.evidence_count || 0) > 1
+      ? `<details class="row-evidence-menu"><summary>${row.evidence_count} 处证据</summary>${(row.evidence_occurrences || []).map((source, index) => `<button type="button" data-source-member="${source.item_id}">证据 ${index + 1} · 第${source.page || "?"}页</button>`).join("")}</details>`
+      : `<button class="source-action" data-source-row="${row.item_id}"${sourceDisabled}>原文证据</button>`;
+    return `<tr class="${cls}" data-item="${row.item_id}">${cells}<td><div class="row-action">${clusterNote}${priorityBadge}${reviewButtons}${decisionButtons}<button data-original="${row.item_id}">查看原始</button>${evidenceMenu}<small>#${row.item_id} · ${badge}</small></div></td></tr>`;
   }).join("");
   body.querySelectorAll("tr[data-item]").forEach(tr => tr.addEventListener("click", event => {
     if (event.target.closest("button[data-confirm],button[data-confirm-next],button[data-source-row]")) return;
@@ -969,6 +981,10 @@ function renderTable() {
   body.querySelectorAll("[data-original]").forEach(btn => btn.addEventListener("click", event => {
     event.stopPropagation();
     selectRow(Number(btn.dataset.original));
+  }));
+  body.querySelectorAll("[data-source-member]").forEach(btn => btn.addEventListener("click", event => {
+    event.stopPropagation();
+    openSourceViewer(Number(btn.dataset.sourceMember));
   }));
   body.querySelectorAll("[data-confirm]").forEach(btn => btn.addEventListener("click", event => {
     event.stopPropagation();
@@ -1422,6 +1438,11 @@ const searchModeCopy = {
     help: "以完整图片为单位检索坐标变量、材料、条件、图注和正文结论；不会自动猜读曲线点。",
     suggestions: ["位错环密度 随剂量", "SRIM 损伤深度", "纳米压痕 载荷 位移"],
   },
+  finding: {
+    placeholder: "例如：未观察到空洞 辐照后 相稳定",
+    help: "单独检索不适合作为数值的数据结论，例如趋势、比较、存在、缺失和显微观察。",
+    suggestions: ["未观察到 空洞", "硬度 随温度降低", "辐照后 相变"],
+  },
 };
 
 function itemSearchParams(q) {
@@ -1544,11 +1565,21 @@ async function runSearch(event, options = {}) {
       state.searchResults = rows;
       const countText = result.total > rows.length
         ? `显示前 ${rows.length} 条，共 ${result.total} 条`
-        : `${rows.length} 条数据`;
+        : `${rows.length} 个物理事实`;
       setText("search-summary", q ? `“${q}” · ${countText}` : `最近收录 · ${countText}`);
       document.querySelector("#search-export").href = `/api/six-export.csv?${params}`;
       document.querySelector("#search-export-xlsx").href = `/api/six-export.xlsx?${params}`;
       renderResults(rows);
+    } else if (state.searchMode === "finding") {
+      const result = await api(`/api/qualitative-search?q=${encodeURIComponent(q)}&limit=100`);
+      if (requestId !== state.searchRequest) return;
+      const rows = result.rows || [];
+      state.searchResults = rows;
+      const countText = result.total > rows.length
+        ? `显示前 ${rows.length} 条，共 ${result.total} 条`
+        : `${rows.length} 条结论`;
+      setText("search-summary", q ? `“${q}” · ${countText}` : `当前收录 · ${countText}`);
+      renderQualitativeResults(rows);
     } else {
       const assets = await api(`/api/visual-search?type=${encodeURIComponent(state.searchMode)}&q=${encodeURIComponent(q)}`);
       if (requestId !== state.searchRequest) return;
@@ -1630,15 +1661,48 @@ function itemResultHtml(row) {
   const page = row.source_page || row.original_source_page;
   const scoreTitle = row.search_score != null ? ` title="内部匹配得分 ${esc(row.search_score)}"` : "";
   const excerpt = brief(row.source_excerpt || row.original_source_excerpt);
+  const clusterBadge = Number(row.fact_cluster_size || 1) > 1
+    ? `<span class="fact-cluster-badge" title="${esc((row.fact_member_ids || []).join("、"))}">${esc(row.fact_cluster_size)} 条重复记录已合并 · ${esc(row.evidence_count || 1)} 处证据</span>`
+    : `<span class="fact-cluster-badge single">${esc(row.evidence_count || 1)} 处证据</span>`;
   return `<article class="result" data-item-result="${row.item_id}">
     <div class="result-value-block"><small>报告值</small><div class="value">${highlightSearchText(row.value_text)}<span>${esc(row.unit)}</span></div><span class="source-kind ${esc(row.source_kind)}">${esc(sourceLabel(row))}</span></div>
     <div class="result-content">
-      <div class="result-heading"><div><small>具体意义</small><h3>${highlightSearchText(row.meaning)}</h3></div><em class="search-review-state ${esc(row.review_action || row.origin_type)}"${scoreTitle}>${esc(reviewLabel)}</em></div>
+      <div class="result-heading"><div><small>具体意义</small><h3>${highlightSearchText(row.meaning)}</h3>${clusterBadge}</div><em class="search-review-state ${esc(row.review_action || row.origin_type)}"${scoreTitle}>${esc(reviewLabel)}</em></div>
       <div class="result-context"><small>实验条件与文章语境</small><p>${highlightSearchText(row.context_explanation)}</p></div>
       ${excerpt ? `<blockquote><span>原文证据</span><p>${highlightSearchText(excerpt)}</p></blockquote>` : ""}
       <footer><div class="result-paper"><strong>${highlightSearchText(row.article_title)}</strong><span>${[row.doi, authors, page ? `PDF 第 ${page} 页` : ""].filter(Boolean).map(esc).join(" · ")}</span></div><div class="result-actions">${visualButton}${sourceButton}${reviewButton}</div></footer>
     </div>
   </article>`;
+}
+
+function renderQualitativeResults(rows) {
+  const el = document.querySelector("#search-results");
+  if (!rows.length) {
+    el.innerHTML = `<div class="blank search-empty"><span>⌕</span><h3>没有找到相关实验结论</h3><p>可以尝试材料、缺陷类型、趋势词或“观察到/未观察到”等表达。</p><button type="button" data-clear-empty>清除关键词，浏览全部</button></div>`;
+    el.querySelector("[data-clear-empty]")?.addEventListener("click", resetSearchWorkspace);
+    return;
+  }
+  el.innerHTML = rows.map(row => {
+    const page = row.source_page || row.original_source_page;
+    const evidence = brief(row.source_excerpt || row.original_source_excerpt);
+    const merged = Number(row.finding_cluster_size || 1) > 1
+      ? `${row.finding_cluster_size} 条近义结论已合并 · ${row.evidence_count || 1} 处证据`
+      : `${row.evidence_count || 1} 处证据`;
+    return `<article class="result qualitative-result" data-item-result="${row.item_id}">
+      <div class="finding-mark"><small>QUALITATIVE</small><span>实验结论</span></div>
+      <div class="result-content">
+        <div class="result-heading"><div><small>具体意义</small><h3>${highlightSearchText(row.meaning)}</h3><span class="fact-cluster-badge">${esc(merged)}</span></div></div>
+        <div class="finding-text"><small>论文报告的结论</small><p>${highlightSearchText(row.finding_text)}</p></div>
+        <div class="result-context"><small>实验条件与文章语境</small><p>${highlightSearchText(row.context_explanation)}</p></div>
+        ${evidence ? `<blockquote><span>原文证据</span><p>${highlightSearchText(evidence)}</p></blockquote>` : ""}
+        <footer><div class="result-paper"><strong>${highlightSearchText(row.article_title)}</strong><span>${[row.doi, page ? `PDF 第 ${page} 页` : ""].filter(Boolean).map(esc).join(" · ")}</span></div><div class="result-actions"><button class="row-link source-link" data-source-finding="${row.item_id}">原文证据</button></div></footer>
+      </div>
+    </article>`;
+  }).join("");
+  el.querySelectorAll("[data-source-finding]").forEach(button => button.addEventListener("click", () => {
+    const itemId = Number(button.dataset.sourceFinding);
+    openSourceViewer(itemId, rows.find(row => Number(row.item_id) === itemId) || null);
+  }));
 }
 
 function renderResults(rows) {

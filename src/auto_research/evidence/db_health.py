@@ -5,7 +5,14 @@ from pathlib import Path
 from typing import Any
 
 from .db import EvidenceDB
-from .six_column import SIX_FIELDS, is_reportable_value_text, list_current_data, review_progress
+from .six_column import (
+    SIX_FIELDS,
+    is_reportable_value_text,
+    list_current_data,
+    list_current_facts,
+    list_qualitative_findings,
+    review_progress,
+)
 
 
 EXPECTED_INDEXES = {
@@ -28,6 +35,9 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
     nonreportable_rows = [
         row for row in rows if not is_reportable_value_text(row.get("value_text"))
     ]
+    reportable_count = len(rows) - len(nonreportable_rows)
+    facts = list_current_facts(db, paper_id)
+    qualitative_findings = list_qualitative_findings(db, paper_id)
     missing_fields: list[dict[str, Any]] = []
     for row in rows:
         for field in SIX_FIELDS:
@@ -145,6 +155,15 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             ],
         },
         {
+            "name": "semantic_fact_layer",
+            "ok": len(facts) <= reportable_count,
+            "detail": (
+                f"numeric source rows={reportable_count}; independent physical facts={len(facts)}; "
+                f"semantic duplicates folded={reportable_count - len(facts)}; "
+                f"qualitative findings separated={len(qualitative_findings)}"
+            ),
+        },
+        {
             "name": "stable_key_uniqueness",
             "ok": duplicate_current == 0,
             "detail": f"duplicate current paper_id/stable_key groups={duplicate_current}",
@@ -196,7 +215,10 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         "ok": all(check["ok"] for check in checks),
         "paper_id": paper_id,
         "row_count": len(rows),
-        "reportable_row_count": len(rows) - len(nonreportable_rows),
+        "reportable_row_count": reportable_count,
+        "physical_fact_count": len(facts),
+        "semantic_duplicate_count": reportable_count - len(facts),
+        "qualitative_finding_count": len(qualitative_findings),
         "excluded_nonreportable_count": len(nonreportable_rows),
         "review_progress": progress,
         "checks": checks,

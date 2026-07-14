@@ -33,6 +33,12 @@ from auto_research.evidence.extraction_benchmark import (
     score_pair,
 )
 from auto_research.evidence.goal_audit import generate_goal_audit
+from auto_research.evidence.fact_model import (
+    classify_nonreportable_row,
+    cluster_fact_rows,
+    cluster_qualitative_rows,
+    rows_are_same_fact,
+)
 from auto_research.evidence.importers import import_ai_result, import_legacy_sample
 from auto_research.evidence.learning import build_learning_report
 from auto_research.evidence.pilot import select_pilot
@@ -66,13 +72,16 @@ from auto_research.evidence.six_column import (
     get_six_extraction_status,
     is_reportable_value_text,
     list_current_data,
+    list_current_facts,
     list_paper_workflow_summaries,
+    list_qualitative_findings,
     list_reportable_current_data,
     prepare_current_paper_packet,
     resolve_paper_selector,
     review_progress,
     save_current_paper_snapshot,
     search_current_data,
+    search_qualitative_findings,
     seed_target_article,
     set_current_paper,
     set_row_review_decision,
@@ -148,6 +157,72 @@ class ValueTests(unittest.TestCase):
         self.assertEqual(normalize_value(300, None, "°C"), (573.15, None, "K"))
         self.assertEqual(normalize_value(1, 0.1, "MeV"), (1_000_000, 100_000, "eV"))
         self.assertEqual(normalize_value(1, None, "mystery"), (None, None, None))
+
+
+class PhysicalFactModelTests(unittest.TestCase):
+    def _row(self, item_id: int, **changes):
+        row = {
+            "item_id": item_id, "paper_id": 1, "origin_type": "automatic",
+            "review_action": "automatic", "value_text": "23.9", "unit": "W/m·K",
+            "meaning": "未辐照W90Ta10电子热导率",
+            "context_explanation": "W90Ta10薄膜；未辐照；由电阻率推导",
+            "source_page": 7, "source_locator": "Section 3",
+            "source_excerpt": "W90Ta10 has 23.9 W/m·K",
+            "visual_assets": [], "article_title": "Paper", "doi": "10.1/fact",
+        }
+        row.update(changes)
+        return row
+
+    def test_semantic_duplicates_become_one_fact_with_multiple_sources(self):
+        rows = [
+            self._row(1),
+            self._row(
+                2, unit="W/(m·K)", meaning="电子热导率",
+                source_locator="Fig. 2(c)",
+                source_excerpt="W90Ta10 has 23.9 W/m·K, while W90Re10 has 29.5 W/m·K",
+            ),
+        ]
+        facts = cluster_fact_rows(rows)
+        self.assertEqual(len(facts), 1)
+        self.assertEqual(facts[0]["fact_member_ids"], [1, 2])
+        self.assertEqual(facts[0]["fact_cluster_size"], 2)
+        self.assertEqual(facts[0]["evidence_count"], 2)
+
+    def test_same_number_for_different_element_or_condition_is_not_merged(self):
+        iron = self._row(1, value_text="20", unit="at%", meaning="Fe元素名义原子分数")
+        nickel = self._row(2, value_text="20", unit="at.%", meaning="Ni元素名义原子分数")
+        self.assertFalse(rows_are_same_fact(iron, nickel)[0])
+        low_dose = self._row(3, value_text="3.5", unit="GPa", meaning="辐照后硬度", context_explanation="1 dpa；300 °C")
+        high_dose = self._row(4, value_text="3.5", unit="GPa", meaning="辐照后硬度", context_explanation="10 dpa；300 °C")
+        self.assertFalse(rows_are_same_fact(low_dose, high_dose)[0])
+        self.assertEqual(len(cluster_fact_rows([iron, nickel, low_dose, high_dose])), 4)
+
+    def test_similarity_bridge_cannot_merge_conflicting_conditions(self):
+        one_dpa = self._row(
+            1, value_text="3.5", unit="GPa", meaning="辐照后硬度",
+            context_explanation="1 dpa；300 °C",
+        )
+        condition_unspecified = self._row(
+            2, value_text="3.5", unit="GPa", meaning="辐照后硬度",
+            context_explanation="300 °C",
+        )
+        ten_dpa = self._row(
+            3, value_text="3.5", unit="GPa", meaning="辐照后硬度",
+            context_explanation="10 dpa；300 °C",
+        )
+        facts = cluster_fact_rows([one_dpa, condition_unspecified, ten_dpa])
+        self.assertEqual(len(facts), 2)
+        self.assertFalse(any({1, 3}.issubset(set(fact["fact_member_ids"])) for fact in facts))
+
+    def test_qualitative_observation_is_separate_from_context_labels(self):
+        observation = self._row(1, value_text="not observed", unit="", meaning="辐照诱导空洞观察结果")
+        instrument = self._row(2, value_text="FEI Titan 80-300 TEM", unit="", meaning="透射电子显微镜型号")
+        deposition = self._row(3, value_text="room temperature", unit="", meaning="沉积温度")
+        self.assertEqual(classify_nonreportable_row(observation), "qualitative_finding")
+        self.assertEqual(classify_nonreportable_row(instrument), "context_only")
+        self.assertEqual(classify_nonreportable_row(deposition), "context_only")
+        findings = cluster_qualitative_rows([observation, instrument, deposition])
+        self.assertEqual([item["item_id"] for item in findings], [1])
 
 
 class ExtractionBenchmarkTests(unittest.TestCase):
@@ -679,6 +754,65 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(paper["six_raw_row_count"], 114)
         self.assertEqual(paper["six_row_count"], len(reportable_rows))
         self.assertEqual(paper["six_excluded_nonreportable_count"], len(excluded_ids))
+
+    def test_review_search_and_export_share_one_reversible_fact_cluster(self):
+        source = next(row for row in list_current_data(self.db, self.paper_id) if row["stable_key"] == "irradiation_temperature")
+        with self.db.connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO data_items(paper_id,stable_key,origin_type,created_at) VALUES(?,?,?,?)",
+                (self.paper_id, "irradiation_temperature_duplicate", "automatic", "2026-07-13T00:00:00+00:00"),
+            )
+            duplicate_id = int(cur.lastrowid)
+            conn.execute(
+                """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
+                context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,review_action,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    duplicate_id, 0, source["value_text"], "实验辐照温度", source["unit"],
+                    source["article_title"], source["doi"], source["context_explanation"],
+                    source["source_page"], "Methods duplicate mention", source["source_excerpt"],
+                    "test", "duplicate evidence", "automatic", "2026-07-13T00:00:00+00:00",
+                ),
+            )
+        cluster = next(
+            fact for fact in list_current_facts(self.db, self.paper_id)
+            if source["item_id"] in fact["fact_member_ids"]
+        )
+        self.assertEqual(cluster["fact_member_ids"], sorted([source["item_id"], duplicate_id]))
+        self.assertEqual(cluster["fact_cluster_size"], 2)
+
+        fields = {field: cluster[field] for field in SIX_FIELDS}
+        confirmed = confirm_correction(self.db, cluster["item_id"], fields, "tester")
+        self.assertEqual(confirmed["review_action"], "confirmation")
+        self.assertEqual(confirmed["fact_cluster_size"], 2)
+        raw_members = {
+            row["item_id"]: row for row in list_current_data(self.db, self.paper_id)
+            if row["item_id"] in {source["item_id"], duplicate_id}
+        }
+        self.assertEqual({row["review_action"] for row in raw_members.values()}, {"confirmation"})
+        self.assertTrue(all(len(get_data_item(self.db, item_id)["history"]) == 2 for item_id in raw_members))
+
+        search_hits = [
+            row for row in search_current_data(self.db, "辐照温度", limit=1000)
+            if source["item_id"] in row.get("fact_member_ids", [])
+        ]
+        export_hits = [
+            row for row in search_export_rows(self.db, "辐照温度")
+            if source["item_id"] in row.get("fact_member_ids", [])
+        ]
+        self.assertEqual(len(search_hits), 1)
+        self.assertEqual(len(export_hits), 1)
+
+    def test_legacy_prose_is_searchable_only_as_qualitative_finding(self):
+        numeric_ids = {row["item_id"] for row in search_current_data(self.db, "空洞", limit=1000)}
+        findings = search_qualitative_findings(self.db, "空洞", limit=1000)
+        self.assertTrue(findings)
+        self.assertTrue(all(not is_reportable_value_text(row["finding_text"]) for row in findings))
+        self.assertTrue(all(row["item_id"] not in numeric_ids for row in findings))
+        self.assertEqual(
+            {row["finding_id"] for row in findings},
+            {row["finding_id"] for row in list_qualitative_findings(self.db, self.paper_id) if "空洞" in row["search_text"]},
+        )
 
     def test_target_visual_index_renders_complete_tables_and_figures(self):
         result = index_visual_evidence(self.db, self.paper_id)
@@ -1433,6 +1567,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
     def test_read_only_public_get_allowlist_is_search_only(self):
         self.assertTrue(is_read_only_public_get("/"))
         self.assertTrue(is_read_only_public_get("/api/six-search"))
+        self.assertTrue(is_read_only_public_get("/api/qualitative-search"))
         self.assertTrue(is_read_only_public_get("/api/six-export.xlsx"))
         self.assertTrue(is_read_only_public_get("/api/six-data/335/source-view"))
         self.assertTrue(is_read_only_public_get("/api/six-data/335/source-highlight.png"))

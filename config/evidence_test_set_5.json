@@ -24,7 +24,7 @@
     {
       "doi": "10.1073/pnas.2218673120",
       "role": "MEA：CrCoNi 局域化学有序与辐照缺陷演化",
-      "min_rows": 50,
+      "min_rows": 45,
       "queries": ["局域化学有序", "CrCoNi", "缺陷"]
     },
     {
