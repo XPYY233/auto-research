@@ -60,9 +60,9 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.14-stable.3",
-    "label": "35 篇全库回归稳定版 2026.07.14",
-    "evidence_schema": 9,
+    "version": "2026.07.14-stable.4",
+    "label": "图表证据与十篇质量重提取稳定版 2026.07.14",
+    "evidence_schema": 10,
 }
 
 
@@ -549,6 +549,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     self.db,
                     paper_id=resolved_id,
                     max_pages=int(body.get("max_pages", 8)),
+                    force_rescan=bool(body.get("force_rescan", False)),
                 )
                 return self.json_response(result)
             if parsed.path == "/api/current-paper/deepseek-preview":
@@ -565,7 +566,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 max_pages = int(body["max_pages"]) if body.get("max_pages") not in (None, "") else None
                 result = DeepSeekEvidenceExtractor(self.db).run(
                     paper_id,
-                    commit=bool(body.get("commit", False)),
+                    commit=bool(body.get("commit", False) or body.get("force_rescan", False)),
+                    merge_existing=bool(body.get("force_rescan", False)),
                     max_pages=max_pages,
                     chunk_pages=int(body.get("chunk_pages", 2)),
                 )

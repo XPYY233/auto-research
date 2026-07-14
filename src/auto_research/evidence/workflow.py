@@ -28,7 +28,12 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
         paper, pdf_path=Path(paper["pdf_path"]) if paper.get("pdf_path") else None
     )
     before = get_six_extraction_status(db, resolved_id)
-    if before["supported"]:
+    if force_rescan and before["pdf_ready"] and before.get("deepseek_ready"):
+        action_result = DeepSeekEvidenceExtractor(db).run(
+            resolved_id, commit=True, merge_existing=True, max_pages=max_pages, chunk_pages=2
+        )
+        action = "deepseek_rescan"
+    elif before["supported"]:
         action_result = extract_current_paper_data(db, resolved_id)
         action = "extract"
     elif before["pdf_ready"] and before.get("deepseek_ready"):

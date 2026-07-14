@@ -6,6 +6,7 @@ import json
 import re
 import sqlite3
 import time
+from concurrent.futures import ThreadPoolExecutor
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,7 @@ from auto_research.ai.deepseek import (
 )
 from auto_research.paths import DATA_DIR
 
-from .db import EVIDENCE_TYPES, SOURCE_PRECISIONS, EvidenceDB, now
+from .db import EVIDENCE_TYPES, SOURCE_PRECISIONS, TASK_TYPES, EvidenceDB, now
 from .extraction_benchmark import compare_candidates
 from .experiment_types import classify_experiment_types, extraction_focuses_for_profile
 from .fact_model import classify_nonreportable_row
@@ -44,6 +45,41 @@ BACKGROUND_PROVENANCE_PATTERNS = (
     r"\bcalculations?\s+from\s+(?:table\s+\d+\s*)?\[\d+\]",
 )
 SQLITE_TRANSIENT_LOCK_MARKERS = ("locked", "busy", "locking protocol")
+
+
+def _normalize_pending_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Map model wording onto the database's four auditable pending-task types."""
+
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in tasks:
+        if not isinstance(item, dict):
+            continue
+        raw_type = str(item.get("task_type") or "").strip().casefold()
+        description = str(item.get("description") or "").strip()
+        locator = str(item.get("locator") or "").strip()
+        if not description:
+            continue
+        if raw_type in TASK_TYPES:
+            task_type = raw_type
+        elif any(token in raw_type for token in ("figure", "plot", "curve", "graph", "digit")):
+            task_type = "figure_digitization"
+        elif "ocr" in raw_type or "scan" in raw_type:
+            task_type = "ocr"
+        elif any(token in raw_type for token in ("supplement", "appendix", "supporting")):
+            task_type = "missing_supplement"
+        else:
+            task_type = "ambiguous_condition"
+        key = (task_type, description.casefold(), locator.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append({
+            "task_type": task_type,
+            "description": description,
+            "locator": locator or None,
+        })
+    return normalized
 
 
 def _execute_run_update(db: EvidenceDB, sql: str, params: tuple[Any, ...],
@@ -879,7 +915,8 @@ class DeepSeekEvidenceExtractor:
         self.db.init()
 
     def run(self, paper_id: int, *, commit: bool = False, max_pages: int | None = None,
-            chunk_pages: int = 2) -> dict[str, Any]:
+            chunk_pages: int = 2, merge_existing: bool = False,
+            parallel_focuses: bool = False) -> dict[str, Any]:
         paper = self.db.get_paper(paper_id)
         if not paper or not paper.get("pdf_path"):
             raise FileNotFoundError("Paper has no local PDF")
@@ -887,7 +924,7 @@ class DeepSeekEvidenceExtractor:
         if not pdf_path.is_file():
             raise FileNotFoundError(pdf_path)
         existing_rows = list_current_data(self.db, paper_id)
-        if commit and existing_rows:
+        if commit and existing_rows and not merge_existing:
             raise ValueError("当前文章已有六列数据；请先使用 preview，避免重复导入")
         pdf_sha256 = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
         mode = "commit" if commit else "preview"
@@ -913,13 +950,23 @@ class DeepSeekEvidenceExtractor:
             # review even when the network/model stage later fails.
             visual_evidence: dict[str, Any]
             try:
-                from .visual_evidence import index_visual_evidence
+                from .visual_evidence import enrich_visual_metadata, index_visual_evidence
                 visual_evidence = index_visual_evidence(self.db, paper_id)
             except Exception as visual_exc:
                 visual_evidence = {
                     "asset_count": 0, "table_count": 0, "figure_count": 0,
                     "warning": str(visual_exc), "assets": [],
                 }
+            else:
+                try:
+                    visual_evidence["metadata"] = enrich_visual_metadata(
+                        self.db, paper_id, client=self.client
+                    )
+                except Exception as metadata_exc:
+                    visual_evidence["metadata_warning"] = str(metadata_exc)
+                # The screenshots are available through their API URLs; avoid
+                # duplicating all visual metadata inside each extraction artifact.
+                visual_evidence["assets"] = []
             pages = _read_pages(pdf_path, max_pages=max_pages)
             experiment_profile = classify_experiment_types(paper, pages=pages)
             extraction_foci = extraction_focuses_for_profile(experiment_profile) or BASE_EXTRACTION_FOCUSES
@@ -933,10 +980,25 @@ class DeepSeekEvidenceExtractor:
             pending_tasks: list[dict[str, Any]] = []
             for chunk_index, chunk in enumerate(chunks, start=1):
                 candidates: list[dict[str, Any]] = []
-                for pass_index, focus in enumerate(extraction_foci, start=1):
-                    payload = _extract_focus_payload(
-                        self.client, paper, chunk, focus, learning_guidance=learning_guidance
-                    )
+                focus_payloads: list[dict[str, Any]]
+                if parallel_focuses and len(extraction_foci) > 1:
+                    with ThreadPoolExecutor(max_workers=min(3, len(extraction_foci))) as executor:
+                        focus_payloads = list(executor.map(
+                            lambda focus: _extract_focus_payload(
+                                self.client, paper, chunk, focus, learning_guidance=learning_guidance
+                            ),
+                            extraction_foci,
+                        ))
+                else:
+                    focus_payloads = [
+                        _extract_focus_payload(
+                            self.client, paper, chunk, focus, learning_guidance=learning_guidance
+                        )
+                        for focus in extraction_foci
+                    ]
+                for pass_index, (focus, payload) in enumerate(
+                    zip(extraction_foci, focus_payloads, strict=True), start=1
+                ):
                     pass_candidates, rejected = _validated_candidates(
                         payload, {int(page["page"]) for page in chunk}, chunk_index, pass_index
                     )
@@ -1011,11 +1073,25 @@ class DeepSeekEvidenceExtractor:
                         local_passed.append(item)
                 if local_passed:
                     verdicts: dict[str, dict[str, Any]] = {}
-                    for verification_batch in _verification_batches(local_passed):
-                        verification = self.client.request_json(
-                            _verification_messages(chunk, verification_batch), task="verification",
-                            max_tokens=4_000, thinking=False,
-                        )
+                    verification_batches = _verification_batches(local_passed)
+                    if parallel_focuses and len(verification_batches) > 1:
+                        with ThreadPoolExecutor(max_workers=min(3, len(verification_batches))) as executor:
+                            verifications = list(executor.map(
+                                lambda batch: self.client.request_json(
+                                    _verification_messages(chunk, batch), task="verification",
+                                    max_tokens=4_000, thinking=False,
+                                ),
+                                verification_batches,
+                            ))
+                    else:
+                        verifications = [
+                            self.client.request_json(
+                                _verification_messages(chunk, batch), task="verification",
+                                max_tokens=4_000, thinking=False,
+                            )
+                            for batch in verification_batches
+                        ]
+                    for verification in verifications:
                         verdicts.update({
                             item.get("candidate_id"): item for item in verification.get("verdicts", [])
                             if isinstance(item, dict) and item.get("verdict") in VERDICTS
@@ -1059,6 +1135,7 @@ class DeepSeekEvidenceExtractor:
             verified = _localize_candidates(self.client, verified)
             duplicate_count = len(verified_raw) - len(verified)
             rejected_count = len(schema_rejected) + len(all_candidates) - len(verified_raw)
+            pending_tasks = _normalize_pending_tasks(pending_tasks)
             comparison = _compare_baseline(self.db, paper_id, verified)
             imported = {"inserted": 0, "existing": 0}
             verified_findings = _deduplicate_findings(all_findings)

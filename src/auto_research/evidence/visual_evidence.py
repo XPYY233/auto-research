@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import difflib
 import hashlib
+import contextlib
+import io
 import json
 import re
 from pathlib import Path
@@ -32,10 +34,21 @@ JSON_FIELDS = {
     "tags": "tags_json",
 }
 VISUAL_EDITABLE_FIELDS = (
-    "caption", "physical_quantities", "variables", "materials", "conditions_text",
+    "display_name", "physical_quantities", "variables", "materials", "conditions_text",
     "methods_text", "context_explanation", "tags",
 )
 VISUAL_REVIEW_ACTIONS = {"automatic", "confirmation", "correction", "ambiguous", "rejected"}
+
+
+def _caption_body_is_reference(body: str) -> bool:
+    """Reject prose references such as 'Table 1 lists...' as visual titles."""
+
+    return not body or bool(re.match(
+        r"^(?:[()\[\],;:]|shows?\b|lists?\b|summari[sz]es?\b|is\b|are\b|presents?\b|"
+        r"reports?\b|depicts?\b|illustrates?\b|demonstrates?\b)",
+        body,
+        re.IGNORECASE,
+    ))
 
 
 TARGET_DOI = "10.1016/j.jnucmat.2018.08.031"
@@ -228,8 +241,36 @@ def _target_specs(paper: dict[str, Any]) -> list[dict[str, Any]] | None:
     return [dict(spec) for spec in TARGET_VISUAL_SPECS]
 
 
+def _short_visual_name(caption: str, asset_type: str) -> str:
+    """Return a compact Chinese fallback; DeepSeek may refine it from context later."""
+
+    text = caption.casefold()
+    rules = (
+        (("short-range order", "order to disorder"), "化学短程有序与转变温度"),
+        (("atomic snapshots", "grain boundary structures"), "辐照级联后的晶界结构"),
+        (("stopping and range", "srim"), "SRIM 辐照损伤深度分布"),
+        (("nanoindentation hardness",), "纳米压痕硬度对比"),
+        (("isotopic abundance", "isotope"), "辐照钨同位素丰度对比"),
+        (("grain size",), "平均晶粒尺寸对比"),
+        (("bubble volume density",), "He 气泡体密度对比"),
+        (("cluster", "msm"), "MSM 团簇定量参数"),
+        (("dislocation loop",), "位错环演化"),
+        (("void", "swelling"), "空洞与肿胀特征"),
+        (("composition", "elemental"), "元素组成对比"),
+        (("diffraction", "saed"), "衍射与相结构"),
+        (("spectrum", "spectra"), "光谱与能谱特征"),
+        (("hardness",), "硬度对比"),
+        (("density",), "密度对比"),
+        (("size", "diameter", "radius"), "尺寸分布"),
+    )
+    for terms, name in rules:
+        if any(term in text for term in terms):
+            return name
+    return "实验数据表" if asset_type == "table" else "实验结果图"
+
+
 def _infer_visual_metadata(caption: str, asset_type: str) -> dict[str, Any]:
-    """Create conservative search tags from a real caption without reading curves."""
+    """Create conservative Chinese search metadata without reading curve values."""
 
     text = caption.casefold()
     rules = (
@@ -256,13 +297,179 @@ def _infer_visual_metadata(caption: str, asset_type: str) -> dict[str, Any]:
                 methods.append(method)
     variable_match = re.search(r"as (?:a )?function of ([^.;]+)", caption, re.I)
     variables = {"independent": variable_match.group(1).strip()} if variable_match else {}
-    tags = ["原文表格" if asset_type == "table" else "原文图片", *quantities, *methods]
+    # Tags describe the actual evidence object.  Do not add generic material or
+    # method placeholders when the caption does not support them.
+    tags = list(dict.fromkeys([*quantities, *methods]))
     return {
+        "display_name": _short_visual_name(caption, asset_type),
         "physical_quantities": quantities,
         "variables": variables,
         "methods": "、".join(methods),
         "tags": tags,
     }
+
+
+_FIGURE_CAPTION_RE = re.compile(
+    # Reject inline panel references such as Fig. 9a, Fig. 9(a), or Figure 9[b].
+    # A real whole-figure caption continues after the figure number delimiter.
+    r"^(?:fig(?:ure)?\.?)\s*(\d+)(?!\s*(?:[\[(]|[a-z](?:\b|[.)])))\s*(?:[.|:]\s*)?(.*)$",
+    re.I,
+)
+_TABLE_CAPTION_RE = re.compile(r"^table\s*(\d+)\s*(?:[.|:]\s*)?(.*)$", re.I)
+
+
+def _caption_context(blocks: list[tuple[Any, ...]], index: int) -> str:
+    selected = blocks[max(0, index - 2):min(len(blocks), index + 3)]
+    return " ".join(" ".join(str(block[4]).split()) for block in selected)[:4000]
+
+
+def _complete_caption(
+    blocks: list[tuple[Any, ...]], index: int, body: str, *, stop_y: float | None = None
+) -> tuple[str, fitz.Rect]:
+    """Join publisher captions split into one text block per rendered line."""
+
+    parts = [body.strip(" |")] if body.strip(" |") else []
+    rect = fitz.Rect(*blocks[index][:4])
+    previous = rect
+    for following in blocks[index + 1:index + 9]:
+        text = " ".join(str(following[4]).split()).strip()
+        next_rect = fitz.Rect(*following[:4])
+        if not text:
+            break
+        if stop_y is not None and next_rect.y0 >= stop_y - 3:
+            break
+        if _FIGURE_CAPTION_RE.match(text) or _TABLE_CAPTION_RE.match(text):
+            break
+        # PDF block order may wrap from a bottom caption back to the running
+        # header. Caption continuation lines must move down the page.
+        if next_rect.y0 < previous.y0 - 2:
+            break
+        if next_rect.y0 - previous.y1 > 14 or abs(next_rect.x0 - rect.x0) > 18:
+            break
+        if _x_overlap(next_rect, rect) < 0.35:
+            break
+        parts.append(text)
+        rect |= next_rect
+        previous = next_rect
+    return " ".join(parts)[:2400], rect
+
+
+def _x_overlap(left: fitz.Rect, right: fitz.Rect) -> float:
+    width = max(0.0, min(left.x1, right.x1) - max(left.x0, right.x0))
+    return width / max(1.0, min(left.width, right.width))
+
+
+def _connected_table_rules(
+    drawings: list[fitz.Rect], caption_rect: fitz.Rect, page_height: float
+) -> list[fitz.Rect]:
+    """Return the continuous horizontal-rule group immediately below a table title."""
+
+    candidates = sorted(
+        (
+            rect for rect in drawings
+            if rect.y0 >= caption_rect.y1 - 2
+            and rect.y0 <= page_height - 24
+            and rect.width > 40
+            and rect.height < 10
+        ),
+        key=lambda rect: (rect.y0, rect.x0),
+    )
+    if not candidates or candidates[0].y0 - caption_rect.y1 > 90:
+        return []
+    group: list[fitz.Rect] = []
+    last_y = candidates[0].y0
+    for rect in candidates:
+        if rect.y0 - last_y > 52:
+            break
+        group.append(rect)
+        last_y = max(last_y, rect.y0)
+    return group
+
+
+def _nearest_detected_table(
+    table_rects: list[fitz.Rect], caption_rect: fitz.Rect
+) -> fitz.Rect | None:
+    candidates = [
+        rect for rect in table_rects
+        if rect.y0 >= caption_rect.y0 - 8
+        and rect.y0 - caption_rect.y1 <= 140
+        and rect.y1 >= caption_rect.y1 + 18
+        and _x_overlap(rect, caption_rect) >= 0.2
+    ]
+    return min(candidates, key=lambda rect: abs(rect.y0 - caption_rect.y1)) if candidates else None
+
+
+def _detected_table_rects(page: fitz.Page) -> list[fitz.Rect]:
+    """Use PyMuPDF's table detector when available, without polluting CLI JSON."""
+
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return [fitz.Rect(table.bbox) for table in page.find_tables().tables]
+    except Exception:
+        return []
+
+
+def _previous_page_figure_crop(
+    doc: fitz.Document, page_index: int, caption_rect: fitz.Rect
+) -> tuple[int, int, fitz.Rect] | None:
+    """Handle a full-page raster figure whose caption starts the next page."""
+
+    if page_index <= 0 or caption_rect.y0 > doc[page_index].rect.height * 0.22:
+        return None
+    previous = doc[page_index - 1]
+    image_rects = [
+        rect
+        for image in previous.get_images(full=True)
+        for rect in previous.get_image_rects(image[0])
+    ]
+    text_blocks = [
+        fitz.Rect(*block[:4])
+        for block in previous.get_text("blocks")
+        if len(" ".join(str(block[4]).split())) > 4 and float(block[3]) < previous.rect.height - 45
+    ]
+    if not text_blocks:
+        return None
+    text_bottom = max(rect.y1 for rect in text_blocks)
+    if text_bottom >= previous.rect.height * 0.72:
+        return None
+    figure_images = [
+        rect for rect in image_rects
+        if rect.get_area() >= previous.rect.get_area() * 0.08
+        and rect.y0 >= text_bottom - 24
+    ]
+    if figure_images:
+        image_rect = max(figure_images, key=lambda rect: rect.get_area())
+        crop = fitz.Rect(
+            image_rect.x0 - 10, image_rect.y0 - 10,
+            image_rect.x1 + 10, image_rect.y1 + 10,
+        ) & previous.rect
+        return page_index, page_index + 1, crop
+    if not any(rect.get_area() >= previous.rect.get_area() * 0.65 for rect in image_rects):
+        return None
+    x0 = min(rect.x0 for rect in text_blocks)
+    x1 = max(rect.x1 for rect in text_blocks)
+    crop = fitz.Rect(
+        max(24, x0), min(previous.rect.height - 160, text_bottom + 12),
+        min(previous.rect.width - 24, x1), previous.rect.height - 70,
+    ) & previous.rect
+    return page_index, page_index + 1, crop
+
+
+def _visual_index_kinds(blocks: list[tuple[Any, ...]]) -> set[str]:
+    """Identify list-of-figures/tables pages so references are not saved as assets."""
+
+    text = "\n".join(str(block[4]) for block in blocks)
+    dotted_leader = bool(re.search(r"\.{4,}\s*\d+", text))
+    kinds: set[str] = set()
+    for kind, pattern in (
+        ("table", r"\bTable\s+\d+[A-Za-z]?\s*[.:]"),
+        ("figure", r"\b(?:Fig(?:ure)?\.?)[ \t]+\d+[A-Za-z]?\s*[.:]"),
+    ):
+        references = re.findall(pattern, text, flags=re.IGNORECASE)
+        heading = bool(re.search(rf"\bList\s+of\s+{kind}s\b", text, flags=re.IGNORECASE))
+        if heading or (dotted_leader and len(references) >= 3):
+            kinds.add(kind)
+    return kinds
 
 
 def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
@@ -273,76 +480,121 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
     try:
         for page_index, page in enumerate(doc):
             blocks = [b for b in page.get_text("blocks") if str(b[4]).strip()]
+            index_kinds = _visual_index_kinds(blocks)
             image_rects: list[fitz.Rect] = []
             for image in page.get_images(full=True):
                 for rect in page.get_image_rects(image[0]):
                     if rect.width > 60 and rect.height > 40:
                         image_rects.append(rect)
             drawings = [drawing["rect"] for drawing in page.get_drawings()]
-            for block in blocks:
+            detected_tables = _detected_table_rects(page)
+            for block_index, block in enumerate(blocks):
                 text = " ".join(str(block[4]).split())
-                match = re.match(r"(?:Fig\.|Figure)\s*(\d+)\.?\s*(.*)", text, re.I)
-                if match:
-                    caption_body = match.group(2).strip()
-                    if re.match(r"^(?:[)\],;:]|shows?\b|is\b|are\b|presents?\b|depicts?\b|illustrates?\b|demonstrates?\b)", caption_body, re.I):
+                match = _FIGURE_CAPTION_RE.match(text)
+                if match and "figure" not in index_kinds:
+                    caption_body = match.group(2).strip(" |")
+                    if _caption_body_is_reference(caption_body):
                         continue
-                    caption_rect = fitz.Rect(*block[:4])
-                    candidates = [
+                    caption, caption_rect = _complete_caption(blocks, block_index, caption_body)
+                    above = [
                         rect for rect in image_rects
-                        if rect.y1 <= caption_rect.y0 + 12 and caption_rect.y0 - rect.y1 <= 120
+                        if rect.y1 <= caption_rect.y0 + 12
+                        and caption_rect.y0 - rect.y1 <= 180
+                        and _x_overlap(rect, caption_rect) >= 0.25
                     ]
+                    below = [
+                        rect for rect in image_rects
+                        if rect.y0 >= caption_rect.y1 - 12
+                        and rect.y0 - caption_rect.y1 <= 180
+                        and _x_overlap(rect, caption_rect) >= 0.25
+                    ]
+                    candidates = above or below
+                    actual_page = page_index + 1
+                    page_end = actual_page
                     if candidates:
-                        image_rect = min(candidates, key=lambda rect: (max(caption_rect.y0 - rect.y1, 0), -rect.get_area()))
+                        image_rect = min(
+                            candidates,
+                            key=lambda rect: (
+                                min(abs(caption_rect.y0 - rect.y1), abs(rect.y0 - caption_rect.y1)),
+                                -rect.get_area(),
+                            ),
+                        )
                         crop = image_rect | caption_rect
                         crop = fitz.Rect(crop.x0 - 8, crop.y0 - 7, crop.x1 + 8, crop.y1 + 7) & page.rect
                     else:
-                        # Scanned publishers may store the whole page as one
-                        # raster, while charts exported from LaTeX are often
-                        # pure vector drawings with no image object.  In both
-                        # cases use the caption column and preceding page
-                        # region, retaining the caption in the crop.  This is
-                        # only a screenshot boundary; no curve values are read.
-                        full_width = caption_rect.width >= page.rect.width * 0.45
-                        x0 = 28 if full_width else max(24, caption_rect.x0 - 12)
-                        x1 = page.rect.width - 28 if full_width else min(page.rect.width - 24, caption_rect.x1 + 12)
-                        lookback = 540 if full_width else 300
-                        y0 = max(35, caption_rect.y0 - lookback)
-                        crop = fitz.Rect(x0, y0, x1, min(page.rect.height - 24, caption_rect.y1 + 10))
-                    caption = match.group(2).strip() or text
+                        previous_crop = _previous_page_figure_crop(doc, page_index, caption_rect)
+                        if previous_crop:
+                            actual_page, page_end, crop = previous_crop
+                        else:
+                            nearby_drawings = [
+                                rect for rect in drawings
+                                if rect.get_area() > 100
+                                and (
+                                    (rect.y1 <= caption_rect.y0 + 12 and caption_rect.y0 - rect.y1 <= 300)
+                                    or (rect.y0 >= caption_rect.y1 - 12 and rect.y0 - caption_rect.y1 <= 300)
+                                )
+                            ]
+                            if not nearby_drawings:
+                                continue
+                            crop = nearby_drawings[0]
+                            for rect in nearby_drawings[1:]:
+                                crop |= rect
+                            crop |= caption_rect
+                            crop = fitz.Rect(crop.x0 - 10, crop.y0 - 10, crop.x1 + 10, crop.y1 + 10) & page.rect
                     inferred = _infer_visual_metadata(caption, "figure")
                     specs.append({
-                        "asset_type": "figure", "number": int(match.group(1)), "page": page_index + 1,
+                        "asset_type": "figure", "number": int(match.group(1)), "page": actual_page,
+                        "page_end": page_end,
                         "bbox": list(crop), "caption": caption,
+                        "display_name": inferred["display_name"],
                         "physical_quantities": inferred["physical_quantities"], "variables": inferred["variables"], "materials": [],
-                        "conditions": "", "methods": inferred["methods"], "context": caption,
-                        "tags": ["Figure", f"Figure {match.group(1)}", *inferred["tags"]], "source_context": text,
+                        "conditions": "", "methods": inferred["methods"], "context": "",
+                        "tags": inferred["tags"], "source_context": _caption_context(blocks, block_index),
                     })
                     continue
-                match = re.match(r"Table\s*(\d+)\.?\s*(.*)", text, re.I)
-                if not match:
+                match = _TABLE_CAPTION_RE.match(text)
+                if not match or "table" in index_kinds:
                     continue
-                caption_rect = fitz.Rect(*block[:4])
-                horizontal = [
-                    rect for rect in drawings
-                    if rect.y0 >= caption_rect.y1 - 2 and rect.width > 100 and rect.height < 10
-                ]
-                column_right = page.rect.width - 28 if caption_rect.x0 > page.rect.width / 2 else min(page.rect.width - 28, caption_rect.x0 + 270)
-                if horizontal:
+                caption_body = match.group(2).strip(" |")
+                if _caption_body_is_reference(caption_body):
+                    continue
+                initial_caption_rect = fitz.Rect(*block[:4])
+                detected_table = _nearest_detected_table(detected_tables, initial_caption_rect)
+                caption, caption_rect = _complete_caption(
+                    blocks, block_index, caption_body,
+                    stop_y=detected_table.y0 if detected_table is not None else None,
+                )
+                horizontal = _connected_table_rules(drawings, caption_rect, page.rect.height)
+                if detected_table is not None:
+                    crop = fitz.Rect(
+                        min(caption_rect.x0, detected_table.x0) - 6,
+                        caption_rect.y0 - 6,
+                        max(caption_rect.x1, detected_table.x1) + 6,
+                        min(detected_table.y1 + 5, page.rect.height - 28),
+                    ) & page.rect
+                elif horizontal:
                     bottom = max(rect.y1 for rect in horizontal)
-                    crop = fitz.Rect(caption_rect.x0 - 6, caption_rect.y0 - 6, column_right, min(bottom + 26, page.rect.height - 28)) & page.rect
+                    crop = fitz.Rect(
+                        min(caption_rect.x0, *(rect.x0 for rect in horizontal)) - 6,
+                        caption_rect.y0 - 6,
+                        max(caption_rect.x1, *(rect.x1 for rect in horizontal)) + 6,
+                        min(bottom + 4, page.rect.height - 28),
+                    ) & page.rect
                 else:
                     full_width = caption_rect.width >= page.rect.width * 0.45
                     x0 = 28 if full_width else max(24, caption_rect.x0 - 8)
-                    x1 = page.rect.width - 28 if full_width else column_right
-                    crop = fitz.Rect(x0, max(30, caption_rect.y0 - 6), x1, min(page.rect.height - 28, caption_rect.y1 + 320))
-                caption = match.group(2).strip() or text
+                    x1 = page.rect.width - 28 if full_width else min(page.rect.width - 24, caption_rect.x1 + 30)
+                    following_images = [rect for rect in image_rects if rect.y0 >= caption_rect.y1]
+                    bottom = min((rect.y0 - 8 for rect in following_images), default=caption_rect.y1 + 220)
+                    crop = fitz.Rect(x0, max(30, caption_rect.y0 - 6), x1, min(page.rect.height - 28, bottom))
                 inferred = _infer_visual_metadata(caption, "table")
                 specs.append({
                     "asset_type": "table", "number": int(match.group(1)), "page": page_index + 1,
                     "bbox": list(crop), "caption": caption,
+                    "display_name": inferred["display_name"],
                     "physical_quantities": inferred["physical_quantities"], "variables": inferred["variables"], "materials": [],
-                    "conditions": "", "methods": inferred["methods"], "context": caption,
-                    "tags": ["Table", f"Table {match.group(1)}", *inferred["tags"]], "source_context": text,
+                    "conditions": "", "methods": inferred["methods"], "context": "",
+                    "tags": inferred["tags"], "source_context": _caption_context(blocks, block_index),
                 })
     finally:
         doc.close()
@@ -403,31 +655,60 @@ def _upsert_asset(db: EvidenceDB, paper: dict[str, Any], spec: dict[str, Any]) -
     except ValueError:
         relative_path = str(output)
     stamp = now()
+    inferred = _infer_visual_metadata(str(spec.get("caption") or ""), asset_type)
     values = (
-        int(paper["id"]), asset_type, label, number, str(spec["caption"]), int(spec["page"]),
+        int(paper["id"]), asset_type, label,
+        str(spec.get("display_name") or inferred["display_name"]),
+        number, str(spec["caption"]), int(spec["page"]),
         int(spec.get("page_end") or spec["page"]), _json(spec["bbox"]), relative_path, image_sha,
-        _json(spec.get("physical_quantities") or []), _json(spec.get("variables") or {}),
+        _json(spec.get("physical_quantities") or inferred["physical_quantities"]), _json(spec.get("variables") or inferred["variables"]),
         _json(spec.get("materials") or []), str(spec.get("conditions") or ""),
-        str(spec.get("methods") or ""), str(spec.get("context") or ""),
-        _json(spec.get("tags") or []), str(spec.get("source_context") or ""),
-        str(spec.get("review_status") or "draft"), str(spec.get("extraction_method") or "pdf_layout"), stamp, stamp,
+        str(spec.get("methods") or inferred["methods"]), str(spec.get("context") or ""),
+        _json(spec.get("tags") or inferred["tags"]), str(spec.get("source_context") or ""),
+        str(spec.get("review_status") or "draft"), str(spec.get("extraction_method") or "pdf_layout"),
+        str(spec.get("metadata_source") or "deterministic"), stamp, stamp,
     )
     with db.connect() as conn:
         conn.execute(
             """INSERT INTO visual_assets(
-              paper_id,asset_type,label,asset_number,caption,page_start,page_end,bbox_json,image_path,image_sha256,
+              paper_id,asset_type,label,display_name,asset_number,caption,page_start,page_end,bbox_json,image_path,image_sha256,
               physical_quantities_json,variables_json,materials_json,conditions_text,methods_text,
-              context_explanation,tags_json,source_context,review_status,extraction_method,created_at,updated_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+              context_explanation,tags_json,source_context,review_status,extraction_method,metadata_source,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(paper_id,asset_type,label) DO UPDATE SET
+              display_name=CASE WHEN (visual_assets.metadata_source='manual' OR
+                (visual_assets.metadata_source='deepseek' AND visual_assets.caption=excluded.caption))
+                AND excluded.metadata_source='deterministic' THEN visual_assets.display_name ELSE excluded.display_name END,
               asset_number=excluded.asset_number,caption=excluded.caption,page_start=excluded.page_start,
               page_end=excluded.page_end,bbox_json=excluded.bbox_json,image_path=excluded.image_path,
-              image_sha256=excluded.image_sha256,physical_quantities_json=excluded.physical_quantities_json,
-              variables_json=excluded.variables_json,materials_json=excluded.materials_json,
-              conditions_text=excluded.conditions_text,methods_text=excluded.methods_text,
-              context_explanation=excluded.context_explanation,tags_json=excluded.tags_json,
+              image_sha256=excluded.image_sha256,
+              physical_quantities_json=CASE WHEN (visual_assets.metadata_source='manual' OR
+                (visual_assets.metadata_source='deepseek' AND visual_assets.caption=excluded.caption))
+                AND excluded.metadata_source='deterministic' THEN visual_assets.physical_quantities_json ELSE excluded.physical_quantities_json END,
+              variables_json=CASE WHEN (visual_assets.metadata_source='manual' OR
+                (visual_assets.metadata_source='deepseek' AND visual_assets.caption=excluded.caption))
+                AND excluded.metadata_source='deterministic' THEN visual_assets.variables_json ELSE excluded.variables_json END,
+              materials_json=CASE WHEN (visual_assets.metadata_source='manual' OR
+                (visual_assets.metadata_source='deepseek' AND visual_assets.caption=excluded.caption))
+                AND excluded.metadata_source='deterministic' THEN visual_assets.materials_json ELSE excluded.materials_json END,
+              conditions_text=CASE WHEN (visual_assets.metadata_source='manual' OR
+                (visual_assets.metadata_source='deepseek' AND visual_assets.caption=excluded.caption))
+                AND excluded.metadata_source='deterministic' THEN visual_assets.conditions_text ELSE excluded.conditions_text END,
+              methods_text=CASE WHEN (visual_assets.metadata_source='manual' OR
+                (visual_assets.metadata_source='deepseek' AND visual_assets.caption=excluded.caption))
+                AND excluded.metadata_source='deterministic' THEN visual_assets.methods_text ELSE excluded.methods_text END,
+              context_explanation=CASE WHEN (visual_assets.metadata_source='manual' OR
+                (visual_assets.metadata_source='deepseek' AND visual_assets.caption=excluded.caption))
+                AND excluded.metadata_source='deterministic' THEN visual_assets.context_explanation ELSE excluded.context_explanation END,
+              tags_json=CASE WHEN (visual_assets.metadata_source='manual' OR
+                (visual_assets.metadata_source='deepseek' AND visual_assets.caption=excluded.caption))
+                AND excluded.metadata_source='deterministic' THEN visual_assets.tags_json ELSE excluded.tags_json END,
               source_context=excluded.source_context,review_status=excluded.review_status,
-              extraction_method=excluded.extraction_method,updated_at=excluded.updated_at""",
+              extraction_method=excluded.extraction_method,
+              metadata_source=CASE WHEN (visual_assets.metadata_source='manual' OR
+                (visual_assets.metadata_source='deepseek' AND visual_assets.caption=excluded.caption))
+                AND excluded.metadata_source='deterministic' THEN visual_assets.metadata_source ELSE excluded.metadata_source END,
+              updated_at=excluded.updated_at""",
             values,
         )
         row = conn.execute(
@@ -533,6 +814,139 @@ def index_visual_evidence(db: EvidenceDB, paper_id: int) -> dict[str, Any]:
     }
 
 
+def _visual_metadata_messages(paper: dict[str, Any], assets: list[dict[str, Any]]) -> list[dict[str, str]]:
+    evidence = [{
+        "asset_id": int(asset["id"]),
+        "type": asset["asset_type"],
+        "label": asset["label"],
+        "original_caption": asset["caption"],
+        "nearby_source_text": asset.get("source_context") or "",
+    } for asset in assets]
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是科学论文图表证据编目助手。只能依据给出的原始图注和相邻原文，"
+                "不得读取曲线点、猜测数值、补写原文没有的材料或实验条件。输出严格 JSON。"
+                "为每个图表生成：display_name（4至24字的简短中文名称，保留 W、TEM、SRIM、dpa 等必要符号）；"
+                "context_explanation（1至3句中文，说明图表在本文中的作用与比较关系）；"
+                "physical_quantities（中文数组）；variables（对象）；materials（材料或样品数组）；"
+                "conditions_text（中文）；methods_text（中文）；tags（2至7个针对该图表的具体检索标签）。"
+                "标签不得使用‘原文图片’‘原文表格’‘材料’‘方法’这类空泛词。"
+                "无法从证据确定的字段使用空字符串、空数组或空对象。"
+                "返回 {\"assets\":[...]}，每项必须原样带回 asset_id。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps({
+                "paper": {"title": paper.get("title"), "doi": paper.get("doi")},
+                "visual_evidence": evidence,
+            }, ensure_ascii=False),
+        },
+    ]
+
+
+def _clean_model_visual_metadata(item: dict[str, Any]) -> dict[str, Any]:
+    display_name = str(item.get("display_name") or "").strip()
+    if not display_name or len(display_name) > 60:
+        raise ValueError("invalid display_name")
+
+    def string_list(name: str, limit: int = 12) -> list[str]:
+        value = item.get(name, [])
+        if not isinstance(value, list):
+            raise ValueError(f"{name} must be a list")
+        return list(dict.fromkeys(str(entry).strip() for entry in value if str(entry).strip()))[:limit]
+
+    variables = item.get("variables", {})
+    if isinstance(variables, list):
+        variables = {
+            f"变量{index}": str(value).strip()
+            for index, value in enumerate(variables, start=1) if str(value).strip()
+        }
+    elif isinstance(variables, str):
+        variables = {"变量关系": variables.strip()} if variables.strip() else {}
+    elif not isinstance(variables, dict):
+        raise ValueError("variables must be an object, list, or string")
+    physical_quantities = string_list("physical_quantities")
+    materials = string_list("materials")
+    context_explanation = str(item.get("context_explanation") or "").strip()
+    if not context_explanation:
+        raise ValueError("context_explanation cannot be empty")
+    generic_tags = {"材料", "方法", "图片", "表格", "原文图片", "原文表格"}
+    tags = [tag for tag in string_list("tags", limit=7) if tag not in generic_tags]
+    if len(tags) < 2:
+        tags = list(dict.fromkeys([
+            *tags, display_name, *physical_quantities, *materials,
+        ]))[:7]
+    if len(tags) < 2:
+        raise ValueError("at least two specific tags are required")
+    return {
+        "display_name": display_name,
+        "physical_quantities": physical_quantities,
+        "variables": {
+            str(key).strip(): str(value).strip()
+            for key, value in variables.items()
+            if str(key).strip() and str(value).strip()
+        },
+        "materials": materials,
+        "conditions_text": str(item.get("conditions_text") or "").strip(),
+        "methods_text": str(item.get("methods_text") or "").strip(),
+        "context_explanation": context_explanation,
+        "tags": tags,
+    }
+
+
+def enrich_visual_metadata(
+    db: EvidenceDB, paper_id: int, *, client: Any | None = None, batch_size: int = 10
+) -> dict[str, Any]:
+    """Ground visual search metadata in captions/context while preserving original evidence."""
+
+    if client is None:
+        from auto_research.ai.deepseek import DeepSeekClient
+        client = DeepSeekClient()
+    paper = db.get_paper(paper_id)
+    if not paper:
+        raise KeyError(f"paper not found: {paper_id}")
+    assets = list_visual_assets(db, paper_id=paper_id)
+    updated = 0
+    rejected: list[dict[str, Any]] = []
+    for offset in range(0, len(assets), max(1, batch_size)):
+        batch = assets[offset:offset + max(1, batch_size)]
+        payload = client.request_json(
+            _visual_metadata_messages(paper, batch), task="analysis", max_tokens=8_000, thinking=False
+        )
+        raw_items = payload.get("assets", [])
+        if not isinstance(raw_items, list):
+            raise ValueError("DeepSeek visual metadata response requires an assets list")
+        allowed_ids = {int(asset["id"]) for asset in batch}
+        for raw in raw_items:
+            if not isinstance(raw, dict):
+                rejected.append({"reason": "item is not an object"})
+                continue
+            try:
+                asset_id = int(raw.get("asset_id"))
+                if asset_id not in allowed_ids:
+                    raise ValueError("asset_id is not in the requested batch")
+                clean = _clean_model_visual_metadata(raw)
+            except (TypeError, ValueError) as exc:
+                rejected.append({"asset_id": raw.get("asset_id"), "reason": str(exc)})
+                continue
+            with db.connect() as conn:
+                conn.execute(
+                    """UPDATE visual_assets SET display_name=?,physical_quantities_json=?,variables_json=?,
+                       materials_json=?,conditions_text=?,methods_text=?,context_explanation=?,tags_json=?,
+                       metadata_source='deepseek',updated_at=? WHERE id=?""",
+                    (
+                        clean["display_name"], _json(clean["physical_quantities"]), _json(clean["variables"]),
+                        _json(clean["materials"]), clean["conditions_text"], clean["methods_text"],
+                        clean["context_explanation"], _json(clean["tags"]), now(), asset_id,
+                    ),
+                )
+            updated += 1
+    return {"paper_id": paper_id, "asset_count": len(assets), "updated": updated, "rejected": rejected}
+
+
 def list_visual_assets(db: EvidenceDB, *, asset_type: str | None = None, paper_id: int | None = None) -> list[dict[str, Any]]:
     db.init()
     sql = (
@@ -583,8 +997,10 @@ def _clean_visual_fields(fields: dict[str, Any], current: dict[str, Any]) -> dic
             }
         else:
             clean[field] = str(value or "").strip()
-    if not clean["caption"]:
-        raise ValueError("图表标题不能为空")
+    if not clean["display_name"]:
+        raise ValueError("简短中文名称不能为空")
+    if len(clean["display_name"]) > 60:
+        raise ValueError("简短中文名称请控制在 60 个字符内")
     return clean
 
 
@@ -658,7 +1074,8 @@ def search_visual_assets(db: EvidenceDB, query: str, *, asset_type: str, limit: 
     if not groups:
         return assets[:limit]
     weights = {
-        "physical_quantities": 6.0, "caption": 5.5, "context_explanation": 5.0,
+        "display_name": 7.0, "physical_quantities": 6.0, "caption": 5.0,
+        "context_explanation": 5.5,
         "tags": 4.5, "variables": 4.0, "materials": 4.0, "conditions_text": 3.5,
         "methods_text": 3.0, "source_context": 2.0, "label": 1.5,
         "article_title": 1.0, "doi": 1.0, "first_author": 1.0, "corresponding_author": 1.0,
@@ -692,8 +1109,8 @@ def links_for_items(db: EvidenceDB, item_ids: list[int]) -> dict[int, list[dict[
     placeholders = ",".join("?" for _ in item_ids)
     with db.connect() as conn:
         rows = [dict(row) for row in conn.execute(
-            f"""SELECT l.item_id,l.relation_kind,l.cell_locator,a.id,a.asset_type,a.label,a.asset_number,
-                       a.page_start,a.caption,a.image_path
+            f"""SELECT l.item_id,l.relation_kind,l.cell_locator,a.id,a.asset_type,a.label,a.display_name,
+                       a.asset_number,a.page_start,a.caption,a.context_explanation,a.tags_json,a.image_path
                 FROM data_item_visual_links l JOIN visual_assets a ON a.id=l.asset_id
                 WHERE l.item_id IN ({placeholders})
                 ORDER BY l.item_id,CASE l.relation_kind WHEN 'primary' THEN 0 ELSE 1 END,a.asset_number""",
@@ -702,5 +1119,9 @@ def links_for_items(db: EvidenceDB, item_ids: list[int]) -> dict[int, list[dict[
     output: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
         row["image_url"] = f"/api/visual-assets/{row['id']}/image"
+        try:
+            row["tags"] = json.loads(str(row.pop("tags_json") or "[]"))
+        except (json.JSONDecodeError, TypeError):
+            row["tags"] = []
         output.setdefault(int(row["item_id"]), []).append(row)
     return output

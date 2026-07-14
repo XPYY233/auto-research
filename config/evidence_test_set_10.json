@@ -1,0 +1,68 @@
+{
+  "version": "content-valid-10-v1",
+  "description": "首批 10 篇可正常提取文字与表格的 PDF 稳定回归集",
+  "expected_paper_count": 10,
+  "calibration_limit_per_paper": 20,
+  "papers": [
+    {
+      "doi": "10.1557/s43578-020-00071-8",
+      "role": "HEA 辐照空洞演化",
+      "min_rows": 1,
+      "queries": ["10.1557/s43578-020-00071-8"]
+    },
+    {
+      "doi": "10.1016/j.jnucmat.2018.08.031",
+      "role": "HEA/316H 原位辐照基准",
+      "min_rows": 1,
+      "queries": ["10.1016/j.jnucmat.2018.08.031"]
+    },
+    {
+      "doi": "10.1038/s41467-023-38000-y",
+      "role": "WTaCrVHf RHEA 辐照",
+      "min_rows": 1,
+      "queries": ["10.1038/s41467-023-38000-y"]
+    },
+    {
+      "doi": "10.1016/j.nme.2023.101513",
+      "role": "W-Ta-Cr-V RHEA 氦离子辐照",
+      "min_rows": 1,
+      "queries": ["10.1016/j.nme.2023.101513"]
+    },
+    {
+      "doi": "10.1016/j.mtla.2023.101991",
+      "role": "钨离子/中子辐照综述性实验数据",
+      "min_rows": 1,
+      "queries": ["10.1016/j.mtla.2023.101991"]
+    },
+    {
+      "doi": "10.1039/d5ma01373a",
+      "role": "CrCoNi 局域化学有序",
+      "min_rows": 1,
+      "queries": ["10.1039/d5ma01373a"]
+    },
+    {
+      "doi": "10.1038/s41529-025-00642-2",
+      "role": "NiCoFeCr 高温辐照",
+      "min_rows": 1,
+      "queries": ["10.1038/s41529-025-00642-2"]
+    },
+    {
+      "doi": "10.1063/5.0206224",
+      "role": "高熵硼化物辐照力学性能",
+      "min_rows": 1,
+      "queries": ["10.1063/5.0206224"]
+    },
+    {
+      "doi": "10.1557/s43579-024-00648-y",
+      "role": "高熵焦绿石辐照非晶化",
+      "min_rows": 1,
+      "queries": ["10.1557/s43579-024-00648-y"]
+    },
+    {
+      "doi": "10.3390/met13040727",
+      "role": "NbTiVZr 重离子辐照",
+      "min_rows": 1,
+      "queries": ["10.3390/met13040727"]
+    }
+  ]
+}

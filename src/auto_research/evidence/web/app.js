@@ -1144,7 +1144,7 @@ function visualReviewCard(asset) {
     </div>
     <form class="visual-review-form">
       <header><div><small>${typeName.toUpperCase()} METADATA</small><h3>${esc(asset.label)} 的检索信息</h3></div><span>截图与原图注保持不变</span></header>
-      <label class="span-2">图表标题<textarea name="caption"${readonly}>${esc(asset.caption)}</textarea></label>
+      <label class="span-2">简短中文名称<input name="display_name" maxlength="60"${readonly} value="${esc(asset.display_name || asset.label)}" placeholder="例如：辐照前后纳米硬度对比"></label>
       <label>展示的物理量<textarea name="physical_quantities"${readonly} placeholder="用顿号或换行分隔">${esc(visualListText(asset.physical_quantities))}</textarea></label>
       <label>变量或表头<textarea name="variables"${readonly} placeholder="例如 x：Dose；y：Hardness">${esc(visualVariablesText(asset.variables))}</textarea></label>
       <label>材料或样品<textarea name="materials"${readonly}>${esc(visualListText(asset.materials))}</textarea></label>
@@ -1182,7 +1182,7 @@ function renderVisualReview() {
 function visualFieldsFromForm(form) {
   const values = Object.fromEntries(new FormData(form).entries());
   return {
-    caption: String(values.caption || "").trim(),
+    display_name: String(values.display_name || "").trim(),
     physical_quantities: parseVisualList(values.physical_quantities),
     variables: parseVisualVariables(values.variables),
     materials: parseVisualList(values.materials),
@@ -1933,7 +1933,7 @@ function renderResults(rows) {
     const group = tableGroups.get(assetId);
     const visible = group.rows.slice(0, 3);
     const hidden = group.rows.slice(3);
-    html.push(`<section class="table-result-group"><header><div><span>TABLE GROUP · 同一原表</span><h3>${esc(group.asset.label)} · ${group.rows.length} 条匹配数据</h3><p>${highlightSearchText(group.asset.caption || "表格来源数据")}</p></div><button type="button" data-visual-open="${group.asset.id}">查看完整原表</button></header><div class="table-group-visible">${visible.map(itemResultHtml).join("")}</div>${hidden.length ? `<details><summary>展开其余 ${hidden.length} 条数据</summary><div>${hidden.map(itemResultHtml).join("")}</div></details>` : ""}</section>`);
+    html.push(`<section class="table-result-group"><header><div><span>${esc(group.asset.label)} · 同一原表</span><h3>${highlightSearchText(group.asset.display_name || group.asset.label)} · ${group.rows.length} 条匹配数据</h3><p>${highlightSearchText(group.asset.context_explanation || group.asset.caption || "表格来源数据")}</p></div><button type="button" data-visual-open="${group.asset.id}">查看完整原表</button></header><div class="table-group-visible">${visible.map(itemResultHtml).join("")}</div>${hidden.length ? `<details><summary>展开其余 ${hidden.length} 条数据</summary><div>${hidden.map(itemResultHtml).join("")}</div></details>` : ""}</section>`);
   });
   el.innerHTML = html.join("");
   el.querySelectorAll("[data-jump]").forEach(btn => btn.addEventListener("click", () => jumpToRow(Number(btn.dataset.jump))));
@@ -1953,9 +1953,13 @@ function renderVisualResults(assets) {
   }
   el.innerHTML = assets.map(asset => {
     const typeLabel = asset.asset_type === "table" ? "完整表格" : "完整图片";
-    const quantities = (asset.physical_quantities || []).map(value => `<span>${esc(value)}</span>`).join("");
+    const tags = (asset.tags || []).slice(0, 7).map(value => `<span>${esc(value)}</span>`).join("");
     const materials = (asset.materials || []).join(" · ");
-    return `<article class="visual-result"><button class="visual-thumb" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(asset.label)}"><img src="${esc(asset.image_url)}" alt="${esc(asset.label)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${highlightSearchText(asset.caption)}</h3></div><div class="visual-quantity-list">${quantities}</div><p>${highlightSearchText(asset.context_explanation)}</p><dl><div><dt>材料</dt><dd>${highlightSearchText(materials || "原文未单独列出")}</dd></div><div><dt>条件</dt><dd>${highlightSearchText(asset.conditions_text || "见原文图注与正文")}</dd></div><div><dt>方法</dt><dd>${highlightSearchText(asset.methods_text || "见原文")}</dd></div></dl><small>${esc(asset.article_title)} · ${esc(asset.doi)}</small><button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></article>`;
+    const facts = [
+      ["材料", materials], ["条件", asset.conditions_text], ["方法", asset.methods_text],
+    ].filter(([, value]) => String(value || "").trim());
+    const factHtml = facts.length ? `<dl>${facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${highlightSearchText(value)}</dd></div>`).join("")}</dl>` : "";
+    return `<article class="visual-result"><button class="visual-thumb visual-thumb-${esc(asset.asset_type)}" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(asset.display_name || asset.label)}"><img src="${esc(asset.image_url)}" alt="${esc(asset.display_name || asset.label)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${highlightSearchText(asset.display_name || asset.label)}</h3></div><div class="visual-quantity-list">${tags}</div><p>${highlightSearchText(asset.context_explanation || "待核对原文上下文。")}</p>${factHtml}<small>${esc(asset.article_title)} · ${esc(asset.doi || "无 DOI")}</small><button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></article>`;
   }).join("");
   el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
 }
@@ -1977,10 +1981,10 @@ async function openVisualAsset(assetId) {
     const asset = await api(`/api/visual-assets/${assetId}`);
     state.visualAsset = asset;
     setText("visual-dialog-type", asset.asset_type === "table" ? "ORIGINAL TABLE" : "ORIGINAL FIGURE");
-    setText("visual-dialog-title", `${asset.label} · PDF第 ${asset.page_start} 页`);
+    setText("visual-dialog-title", `${asset.display_name || asset.label} · ${asset.label} · PDF第 ${asset.page_start} 页`);
     const image = document.querySelector("#visual-image");
     image.src = `${asset.image_url}?ts=${Date.now()}`;
-    image.alt = `${asset.label}高分辨率原文截图`;
+    image.alt = `${asset.display_name || asset.label}高分辨率原文截图`;
     setText("visual-caption", asset.caption);
     setText("visual-context", asset.context_explanation || "尚未生成结构化解释。");
     const details = [

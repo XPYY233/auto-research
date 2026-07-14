@@ -303,6 +303,7 @@ CREATE TABLE IF NOT EXISTS visual_assets (
   paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
   asset_type TEXT NOT NULL CHECK(asset_type IN ('table','figure')),
   label TEXT NOT NULL,
+  display_name TEXT NOT NULL DEFAULT '',
   asset_number INTEGER NOT NULL,
   caption TEXT NOT NULL,
   page_start INTEGER NOT NULL,
@@ -321,6 +322,8 @@ CREATE TABLE IF NOT EXISTS visual_assets (
   review_status TEXT NOT NULL DEFAULT 'draft'
     CHECK(review_status IN ('draft','verified','ambiguous')),
   extraction_method TEXT NOT NULL DEFAULT 'pdf_layout',
+  metadata_source TEXT NOT NULL DEFAULT 'deterministic'
+    CHECK(metadata_source IN ('deterministic','deepseek','manual')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE(paper_id,asset_type,label)
@@ -488,8 +491,18 @@ class EvidenceDB:
             run_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ai_extraction_runs)")}
             if "duplicate_count" not in run_columns:
                 conn.execute("ALTER TABLE ai_extraction_runs ADD COLUMN duplicate_count INTEGER NOT NULL DEFAULT 0")
+            visual_columns = {row["name"] for row in conn.execute("PRAGMA table_info(visual_assets)")}
+            if "display_name" not in visual_columns:
+                conn.execute("ALTER TABLE visual_assets ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
+                conn.execute(
+                    "UPDATE visual_assets SET display_name=label WHERE display_name=''"
+                )
+            if "metadata_source" not in visual_columns:
+                conn.execute(
+                    "ALTER TABLE visual_assets ADD COLUMN metadata_source TEXT NOT NULL DEFAULT 'deterministic'"
+                )
             conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('schema_version','9') "
+                "INSERT INTO schema_meta(key,value) VALUES('schema_version','10') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value "
                 "WHERE schema_meta.value IS NOT excluded.value"
             )

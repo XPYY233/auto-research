@@ -124,7 +124,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
     checks = [
         {
             "name": "schema_version",
-            "ok": schema_version >= 9,
+            "ok": schema_version >= 10,
             "detail": f"schema_version={schema_version_text or 'missing'}",
         },
         {

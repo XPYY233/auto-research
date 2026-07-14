@@ -1256,9 +1256,14 @@ def _field_score(term: str, text: str, weight: float) -> float:
         return 0.0
     if term in candidate:
         return weight * (3.0 if candidate == term else 2.0)
+    # Short scientific/search tokens create excessive fuzzy collisions (for
+    # example "less" matching "stress" or "half" matching Hf contexts).
+    # Keep them exact; reserve typo tolerance for longer, distinctive terms.
+    if len(term) < 5:
+        return 0.0
     words = re.findall(r"[\w.+×<≥±°µΩΔ]+", candidate, flags=re.UNICODE)
     best = max((difflib.SequenceMatcher(None, term, word).ratio() for word in words), default=0.0)
-    return weight * best if best >= 0.62 else 0.0
+    return weight * best if best >= 0.82 else 0.0
 
 
 def _filter_search_rows(rows: list[dict[str, Any]], *,

@@ -20,6 +20,7 @@ from auto_research.evidence.db_health import evidence_db_health
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
 from auto_research.evidence.experiment_types import classify_experiment_types, extraction_focuses_for_profile
 from auto_research.evidence.deepseek_extraction import (
+    _normalize_pending_tasks,
     _deduplicate,
     _evidence_check,
     _extraction_messages,
@@ -97,6 +98,14 @@ from auto_research.evidence.source_highlight import (
     render_source_snippet_png,
 )
 from auto_research.evidence.visual_evidence import (
+    _FIGURE_CAPTION_RE,
+    _TABLE_CAPTION_RE,
+    _caption_body_is_reference,
+    _complete_caption,
+    _connected_table_rules,
+    _nearest_detected_table,
+    _visual_index_kinds,
+    enrich_visual_metadata,
     get_visual_asset,
     index_visual_evidence,
     list_visual_assets,
@@ -107,6 +116,55 @@ from auto_research.evidence.visual_evidence import (
 
 
 class ValueTests(unittest.TestCase):
+    def test_visual_caption_rules_reject_panel_references_and_page_order_wrap(self):
+        self.assertIsNotNone(_FIGURE_CAPTION_RE.match("Fig. 9. TEM microstructure"))
+        self.assertIsNone(_FIGURE_CAPTION_RE.match("Fig. 9a and Fig. 10a show the results"))
+        self.assertIsNone(_FIGURE_CAPTION_RE.match("Fig. 9(a) shows the results"))
+        blocks = [
+            (37.0, 723.0, 557.0, 744.0, "Fig. 9. TEM microstructure"),
+            (37.0, 33.0, 500.0, 44.0, "Running page header"),
+        ]
+        caption, rect = _complete_caption(blocks, 0, "TEM microstructure")
+        self.assertEqual(caption, "TEM microstructure")
+        self.assertGreater(rect.y0, 700)
+        self.assertIsNotNone(_TABLE_CAPTION_RE.match("Table 1. Summary of specimen builds"))
+        self.assertTrue(_caption_body_is_reference("lists all specimen builds"))
+        self.assertFalse(_caption_body_is_reference("Summary of specimen builds"))
+
+    def test_table_rule_group_stops_before_distant_footer(self):
+        caption = fitz.Rect(39, 466, 295, 505)
+        rules = [
+            fitz.Rect(39, 512, 295, 513),
+            fitz.Rect(39, 540, 295, 541),
+            fitz.Rect(39, 683, 295, 684),
+            fitz.Rect(39, 754, 561, 755),
+        ]
+        selected = _connected_table_rules(rules, caption, 791)
+        self.assertEqual(len(selected), 2)
+        self.assertLess(max(rule.x1 for rule in selected), 300)
+        detected = _nearest_detected_table(
+            [fitz.Rect(40, 520, 295, 690), fitz.Rect(310, 100, 560, 300)], caption
+        )
+        self.assertEqual(detected, fitz.Rect(40, 520, 295, 690))
+
+    def test_list_of_tables_is_not_treated_as_the_first_real_table(self):
+        blocks = [(20, 20, 560, 220, (
+            "Table 1. Specimen builds ................................ 4\n"
+            "Table 2. Weibull statistics ............................. 8\n"
+            "Table 3. Irradiation matrix ............................ 12"
+        ))]
+        self.assertEqual(_visual_index_kinds(blocks), {"table"})
+        actual_table = [(20, 20, 560, 220, "Table 1. Specimen builds\nID  Temperature  Dose")]
+        self.assertEqual(_visual_index_kinds(actual_table), set())
+
+    def test_model_pending_task_aliases_are_constrained_before_database_import(self):
+        tasks = _normalize_pending_tasks([
+            {"task_type": "figure_only", "description": "read Figure 3", "locator": "Figure 3"},
+            {"task_type": "coverage_gap_retry", "description": "condition unclear", "locator": "Methods"},
+        ])
+        self.assertEqual(tasks[0]["task_type"], "figure_digitization")
+        self.assertEqual(tasks[1]["task_type"], "ambiguous_condition")
+
     def test_six_column_values_require_numeric_data_or_explicit_table_marker(self):
         self.assertTrue(is_reportable_value_text("3.56±0.05"))
         self.assertTrue(is_reportable_value_text("n.m."))
@@ -636,7 +694,7 @@ class EvidenceDBTests(unittest.TestCase):
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_versions").fetchone()["count"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_version_orphans").fetchone()["count"], 1)
-            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "9")
+            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "10")
             self.assertEqual(list(conn.execute("PRAGMA foreign_key_check")), [])
         health = evidence_db_health(self.db, self.paper)
         self.assertTrue(health["ok"], health)
@@ -837,7 +895,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         table = next(asset for asset in result["assets"] if asset["label"] == "Table 3")
         image_sha = table["image_sha256"]
         fields = {key: table[key] for key in (
-            "caption", "physical_quantities", "variables", "materials", "conditions_text",
+            "display_name", "physical_quantities", "variables", "materials", "conditions_text",
             "methods_text", "context_explanation", "tags",
         )}
         fields["context_explanation"] = "人工核对：该表集中比较三种材料的辐照前后硬度。"
@@ -852,6 +910,44 @@ class SixColumnWorkflowTests(unittest.TestCase):
         reopened = review_visual_asset(self.db, table["id"], fields, "automatic")
         self.assertEqual(reopened["review_action"], "automatic")
         self.assertEqual(reopened["version_no"], 2)
+
+    def test_deepseek_visual_metadata_keeps_caption_and_adds_short_chinese_name(self):
+        result = index_visual_evidence(self.db, self.paper_id)
+        original_captions = {asset["id"]: asset["caption"] for asset in result["assets"]}
+
+        class FakeVisualClient:
+            def request_json(self, messages, **kwargs):
+                request = json.loads(messages[-1]["content"])
+                return {"assets": [{
+                    "asset_id": asset["asset_id"],
+                    "display_name": f"{asset['label']} 辐照结果",
+                    "context_explanation": "依据原始图注，用于比较辐照条件下的实验结果。",
+                    "physical_quantities": ["辐照响应"],
+                    "variables": {}, "materials": [], "conditions_text": "",
+                    "methods_text": "", "tags": ["辐照响应", asset["label"]],
+                } for asset in request["visual_evidence"]]}
+
+        summary = enrich_visual_metadata(self.db, self.paper_id, client=FakeVisualClient(), batch_size=5)
+        self.assertEqual(summary["updated"], 14)
+        assets = list_visual_assets(self.db, paper_id=self.paper_id)
+        self.assertTrue(all(asset["metadata_source"] == "deepseek" for asset in assets))
+        self.assertTrue(all(asset["display_name"].endswith("辐照结果") for asset in assets))
+        self.assertEqual({asset["id"]: asset["caption"] for asset in assets}, original_captions)
+        index_visual_evidence(self.db, self.paper_id)
+        reindexed = list_visual_assets(self.db, paper_id=self.paper_id)
+        self.assertTrue(all(asset["metadata_source"] == "deepseek" for asset in reindexed))
+        self.assertTrue(all(asset["display_name"].endswith("辐照结果") for asset in reindexed))
+
+        changed = reindexed[0]
+        with self.db.connect() as conn:
+            conn.execute(
+                "UPDATE visual_assets SET caption=? WHERE id=?",
+                ("stale caption from a false PDF reference", changed["id"]),
+            )
+        index_visual_evidence(self.db, self.paper_id)
+        corrected = get_visual_asset(self.db, changed["id"])
+        self.assertEqual(corrected["metadata_source"], "deterministic")
+        self.assertFalse(corrected["display_name"].endswith("辐照结果"))
 
     def test_qualitative_finding_allows_paper_without_doi(self):
         paper_id = self.db.upsert_paper(
@@ -1262,8 +1358,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.14-stable.3")
-        self.assertEqual(RELEASE_INFO["evidence_schema"], 9)
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.14-stable.4")
+        self.assertEqual(RELEASE_INFO["evidence_schema"], 10)
 
     def test_blank_search_and_paper_picker_counts_cover_all_papers(self):
         other = self.db.upsert_paper(title="Other irradiation paper", doi="10.1/search-all")
@@ -1928,9 +2024,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
             result = run_article_workflow(
                 self.db, article_key="ALT0003", max_pages=2, force_rescan=True
             )
-        self.assertEqual(result["action"], "deepseek_preview")
+        self.assertEqual(result["action"], "deepseek_rescan")
         extractor.return_value.run.assert_called_once_with(
-            other, commit=False, max_pages=2, chunk_pages=2
+            other, commit=True, merge_existing=True, max_pages=2, chunk_pages=2
         )
 
 

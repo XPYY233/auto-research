@@ -84,6 +84,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p.add_argument("--max-pages", type=int, default=8)
     p.add_argument("--force-rescan", action="store_true", help="Allow DeepSeek to run again for an already scanned paper")
+    p = sub.add_parser("evidence-reextract-test-set", help="Resume full DeepSeek re-extraction of the fixed 35-paper corpus")
+    p.add_argument("--config", help="Fixed test-set JSON; defaults to config/evidence_test_set_35.json")
+    p.add_argument("--state", help="Resumable JSON state path")
+    p.add_argument("--max-pages", type=int, help="Optional page cap; omit to process complete PDFs")
+    p.add_argument("--chunk-pages", type=int, default=4)
+    p.add_argument("--valid-limit", type=int, help="Stop after the first N content-valid PDFs")
+    p.add_argument("--force-completed", action="store_true", help="Run papers already completed in this state file again")
     p = sub.add_parser("evidence-classify-experiment", help="Classify experimental types for one local evidence paper")
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p.add_argument("--max-pages", type=int, default=5)
@@ -312,7 +319,8 @@ def cmd_evidence(args) -> int:
                 "当前文章已经扫描过；如确需再次调用 DeepSeek，请加 --force-rescan。"
             )
         result = DeepSeekEvidenceExtractor(evidence_db).run(
-            paper_id, commit=args.commit, max_pages=args.max_pages, chunk_pages=args.chunk_pages
+            paper_id, commit=args.commit, max_pages=args.max_pages, chunk_pages=args.chunk_pages,
+            merge_existing=bool(args.commit and args.force_rescan),
         )
         summary = {key: result[key] for key in (
             "run_id", "paper", "provider", "model", "mode", "chunk_count",
@@ -320,6 +328,20 @@ def cmd_evidence(args) -> int:
             "experiment_profile", "comparison", "imported", "output_path",
         )}
         print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-reextract-test-set":
+        from .evidence.reextract_test_set import reextract_test_set
+
+        result = reextract_test_set(
+            evidence_db,
+            config_path=args.config,
+            state_path=args.state,
+            max_pages=args.max_pages,
+            chunk_pages=args.chunk_pages,
+            force_completed=args.force_completed,
+            valid_limit=args.valid_limit,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.cmd == "evidence-deepseek-localize":
         from .evidence.deepseek_extraction import localize_unreviewed_rows

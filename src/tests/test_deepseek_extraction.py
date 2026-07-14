@@ -441,7 +441,8 @@ class DeepSeekExtractionTests(unittest.TestCase):
         result = DeepSeekEvidenceExtractor(self.db, GapFailClient(), self.run_dir).run(self.paper_id)
         self.assertEqual(result["verified_count"], 1)
         self.assertTrue(any(
-            task.get("task_type") == "coverage_gap_retry"
+            task.get("task_type") == "ambiguous_condition"
+            and "覆盖缺口复查未完成" in str(task.get("description") or "")
             for task in result["pending_tasks"]
         ))
 

@@ -744,3 +744,41 @@ does not receive figure pixels. Never claim that DeepSeek or GPT visually read,
 cropped or digitized these screenshots. Do not infer curve points. Every fixed
 full-corpus test-set member with a valid PDF must have at least one visual asset, and the audit
 must report per-paper figure/table counts and the generation method.
+
+Visual evidence uses three separate fields that must not be collapsed again:
+
+- `label` is the immutable source locator (`Figure 8`, `Table 3`).
+- `display_name` is a short, preferably Chinese, search name grounded in the
+  caption and nearby text. Keep formulas, element symbols and established
+  acronyms such as W, TEM, SRIM and dpa unchanged.
+- `caption` is the original publisher caption. It is evidence, not an editable
+  Chinese summary. `context_explanation` is the separate evidence-grounded
+  explanation of the visual's role in the paper.
+
+DeepSeek may enrich visual metadata from extracted caption/context text, but it
+must not overwrite the screenshot, PDF locator or original caption. Re-indexing
+PDF layout must preserve manual metadata, all visual review versions, and
+DeepSeek metadata when the source caption is unchanged. If a corrected detector
+replaces the underlying caption, invalidate stale DeepSeek metadata and enrich
+the corrected evidence again. Require at least two visual-specific tags; reject empty boilerplate
+such as `材料`, `方法`, `原文图片` and `原文表格`.
+
+Caption detection must reject inline panel references such as `Fig. 8(b)` and
+join publisher captions split into consecutive line blocks. Same-page adjacent
+figures must be separated by horizontal overlap, table crops must stop at the
+last nearby table rule before the next figure, and captions on the following
+page may point to a large image on the preceding page. Always inspect known
+regression examples before release; a text paragraph is not a valid figure.
+Pages that list several figures/tables with dotted page-number leaders are
+indexes, not evidence assets. Prose references such as `Table 1 lists...` are
+not captions. For ruled tables, prefer the PDF table detector's full bounding
+box over a fixed-height crop or a short run of nearby rules. Search-card
+previews must use a contained aspect ratio; the complete source screenshot may
+never be clipped merely to fill the card.
+
+The full-corpus re-extraction command is resumable and must run the fixed
+DOI/title configuration through the PDF-content gate. Invalid placeholders are
+reported and skipped before any model request. Existing rows are merged by
+stable key; reviewed data is never replaced. Production-quality corpus runs use
+four-page chunks. Independent focus passes may execute concurrently, but the
+coverage-gap pass and independent evidence verification must remain enabled.
