@@ -89,7 +89,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("review_all_download", "id=\"current-review-all\"" in html and "下载全部待审核" in js and "updateReviewBatchLinks" in js),
         ("experiment_profile_card", "experiment-profile-card" in html and "renderExperimentProfile" in js and "/api/current-paper/experiment-profile" in js),
         ("paper_status_overview", "id=\"paper-status-summary\"" in html and "renderPaperStatusSummary" in js and "six_workflow_label" in js),
-        ("five_paper_test_set_picker", "/api/test-set" in js and "五篇测试集 v1" in js and "testOrder" in js),
+        ("full_corpus_test_set_picker", "/api/test-set" in js and "全库测试集" in js and "testOrder" in js),
         ("article_navigation_filters", all(item in html for item in ("paper-picker-query", "paper-author-filter", "data-paper-topic", "paper-status-filter", "paper-filter-summary")) and "paperMatchesFilters" in js and "navigation_method_tags" in js and "first_author" in js and "最近访问" in html and "筛选不会切换文章或重新扫描" in html),
         ("article_scope_presets", "文章集合（点击后清除其他筛选）" in html and "applyPaperScopePreset" in js and 'applyPaperScopePreset(button.dataset.paperScope)' in js),
         ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),

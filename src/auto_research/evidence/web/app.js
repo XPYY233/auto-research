@@ -229,7 +229,7 @@ async function load() {
   }
   [state.papers, state.testSet, state.uploads, state.jobs, state.ai] = await Promise.all([
     api("/api/papers"),
-    apiOptional("/api/test-set", { paper_count: 0, papers: [] }, "五篇测试集"),
+    apiOptional("/api/test-set", { paper_count: 0, papers: [] }, "全库测试集"),
     apiOptional("/api/uploads", [], "上传记录"),
     apiOptional("/api/processing-jobs", [], "处理队列"),
     apiOptional("/api/ai/status", { configured: false }, "DeepSeek 状态"),
@@ -378,12 +378,13 @@ function primaryPaperGroup(paper) {
 }
 
 function paperOptionHtml(papers, testOrder, includeGroups = true) {
+  const testTotal = testOrder.size;
   const optionFor = paper => {
     const rows = Number(paper.six_row_count || paper.row_count || 0);
     const scan = paper.six_workflow_label || (rows ? `${rows}条数据` : "未扫描");
     const folded = Number(paper.six_semantic_duplicate_count || 0);
     const order = testOrder.get(Number(paper.id));
-    const prefix = order ? `【测试集 ${order}/5】` : "";
+    const prefix = order ? `【测试集 ${order}/${testTotal}】` : "";
     return `<option value="${esc(paper.id)}">${esc(prefix)}${esc(paperLabel(paper))} · ${esc(scan)}${folded ? ` · 已合并${folded}条重复` : ""}</option>`;
   };
   const testPapers = [...papers].filter(paper => testOrder.has(Number(paper.id))).sort((a, b) => testOrder.get(Number(a.id)) - testOrder.get(Number(b.id)));
@@ -399,7 +400,7 @@ function paperOptionHtml(papers, testOrder, includeGroups = true) {
   const groups = groupOrder.filter(group => grouped.has(group)).map(group => (
     `<optgroup label="${esc(group)}">${grouped.get(group).sort((a, b) => paperLabel(a).localeCompare(paperLabel(b), "zh-CN")).map(optionFor).join("")}</optgroup>`
   ));
-  return [testPapers.length ? `<optgroup label="五篇测试集 v1">${testPapers.map(optionFor).join("")}</optgroup>` : "", ...groups].join("");
+  return [testPapers.length ? `<optgroup label="${testTotal} 篇全库测试集">${testPapers.map(optionFor).join("")}</optgroup>` : "", ...groups].join("");
 }
 
 function renderAuthorOptions() {
@@ -484,7 +485,7 @@ function renderPaperStatusSummary() {
   const pending = state.papers.filter(p => p.six_workflow_state === "pending_review").length;
   const reviewed = state.papers.filter(p => p.six_workflow_state === "reviewed").length;
   const testSetCount = Number(state.testSet?.paper_count || 0);
-  el.textContent = `文章处理总览：共 ${total} 篇；五篇测试集 ${testSetCount} 篇；已扫描 ${scanned} 篇；待人工审核 ${pending} 篇；已完成 ${reviewed} 篇。下拉框中的状态来自本地数据库。`;
+  el.textContent = `文章处理总览：共 ${total} 篇；全库测试集 ${testSetCount} 篇；已扫描 ${scanned} 篇；待人工审核 ${pending} 篇；已完成 ${reviewed} 篇。`;
   el.className = pending ? "ready" : reviewed ? "supported" : "";
 }
 

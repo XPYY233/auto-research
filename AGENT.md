@@ -291,7 +291,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - The review page paper switcher must be a selectable list of registered papers and should appear only on the review page. The visible option text should be paper title plus helpful bibliographic context such as first author, year/DOI, and saved-row count; do not make Zotero/storage codes the displayed selector. Use the internal paper id for switching.
 - Article-picker research-object and method tags are deterministic, conservative, non-exclusive navigation aids. Do not write them back as scientific truth or use them to override the extraction classifier. Filtering must never switch the current article or trigger DeepSeek.
 - Search first and corresponding authors only when those fields exist in the evidence database. Show missing author metadata instead of guessing it from filenames or titles.
-- Keep the fixed five-paper validation set in `config/evidence_test_set_5.json`. Every member must resolve to a registered paper and a real local PDF whose fingerprint still matches the database. Run `evidence-test-set-audit` after changes to source evidence, article navigation, calibration review, or PDF association, and keep its reports under `data/evidence/test_sets/`.
+- Keep the fixed 35-paper full-corpus validation set in `config/evidence_test_set_35.json`. Every member must resolve through a portable DOI or title selector to a registered paper. The audit must independently validate the local PDF fingerprint and content; keep invalid PDF members in the report as explicit blockers until a real paper is re-associated. Run `evidence-test-set-audit` after changes to extraction, search, source evidence, article navigation, calibration review, visual evidence, or PDF association, and keep its reports under `data/evidence/test_sets/`. A valid paper with no current facts must be reported as `pending_extraction`; never fabricate rows to make the audit pass.
 - The search page must search the whole six-column database by default, independent of the currently selected paper. Empty search/export from the search page must also use the whole database.
 - The review page should provide direct downloads for both the next unreviewed Markdown checklist and all remaining unreviewed rows via `/api/current-paper/review-batch.md`. These are read-only manual-review aids and must not call DeepSeek or write database rows.
 - The same review-batch endpoint accepts `strategy=calibration`. Calibration selection must deterministically spread a small batch across source kinds, locator forms, value shapes, provisional candidate roles, semantic families, pages, and review priorities. These facets are sampling hints only: they must never mutate six-column data or be presented as a human-confirmed evidence classification. Keep the ordinary priority-ordered batch available separately.
@@ -534,7 +534,7 @@ Blind-test reliability rules are mandatory for later papers:
 - write `meaning` and `context_explanation` in Chinese while preserving source-language excerpts and every numeric condition;
 - localization is a retrieval aid, not an evidence gate: a localization failure keeps the evidence-grounded English fields instead of failing the extraction.
 
-The five-paper results remain version-0 candidates. Do not describe their
+The extracted test-corpus results remain version-0 candidates. Do not describe their
 physical interpretation as human-confirmed until the researcher reviews them.
 
 ### Human-review priority queue
@@ -668,8 +668,8 @@ device-specific Zotero key as legacy internal metadata only.
 
 Treat `all`, `test_set`, and `recent` as article-collection presets, not ordinary
 stackable filters. Selecting any collection must clear title, author, topic and
-workflow-status filters before rendering the picker. The fixed five-paper preset
-must therefore show exactly five papers whenever its configuration resolves;
+workflow-status filters before rendering the picker. The fixed full-corpus preset
+must therefore show exactly 35 papers whenever its configuration resolves;
 `all` must show every registered paper. Label the topic reset as "全部方向" so it
 cannot be mistaken for the all-articles preset.
 
@@ -718,7 +718,7 @@ findings and excluded history without deleting anything.
 
 The user-facing release identity lives in `webapp.RELEASE_INFO` and must be
 shown by the shared editable/read-only frontend. Bump it only after full tests,
-database health, the fixed five-paper audit, editable-browser smoke testing and
+database health, the fixed full-corpus audit, editable-browser smoke testing and
 read-only route testing all pass. Keep `STABLE_RELEASE.md`, `PROJECT_LOG.md`, the
 Git tag and the bundle filename aligned with that release identity.
 
@@ -742,5 +742,5 @@ layout detection and recorded as `extraction_method=pdf_layout`. The current
 DeepSeek adapter receives extracted text for semantic candidate generation; it
 does not receive figure pixels. Never claim that DeepSeek or GPT visually read,
 cropped or digitized these screenshots. Do not infer curve points. Every fixed
-five-paper test-set member must have at least one visual asset, and the audit
+full-corpus test-set member with a valid PDF must have at least one visual asset, and the audit
 must report per-paper figure/table counts and the generation method.

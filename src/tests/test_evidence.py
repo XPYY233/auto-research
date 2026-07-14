@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -43,7 +44,7 @@ from auto_research.evidence.importers import import_ai_result, import_legacy_sam
 from auto_research.evidence.learning import build_learning_report
 from auto_research.evidence.pilot import select_pilot
 from auto_research.evidence.self_check import check_evidence_workflow
-from auto_research.evidence.test_set import DEFAULT_CONFIG, load_test_set
+from auto_research.evidence.test_set import DEFAULT_CONFIG, _pdf_status, load_test_set
 from auto_research.evidence.review_handoff import generate_review_batch, generate_review_handoff, review_batch_payload
 from auto_research.evidence.validation import validate_database
 from auto_research.evidence.values import normalize_value, parse_value
@@ -1261,7 +1262,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.14-stable.2")
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.14-stable.3")
         self.assertEqual(RELEASE_INFO["evidence_schema"], 9)
 
     def test_blank_search_and_paper_picker_counts_cover_all_papers(self):
@@ -1786,22 +1787,73 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(completed_status["completed_ai_run_count"], 1)
         self.assertTrue(requires_rescan_confirmation(self.db, empty))
 
-    def test_default_five_paper_test_set_has_unique_dois_and_queries(self):
+    def test_default_full_corpus_test_set_has_35_unique_selectors_and_queries(self):
         payload = load_test_set(DEFAULT_CONFIG)
-        self.assertEqual(payload["version"], "five-paper-v1")
-        self.assertEqual(len(payload["papers"]), 5)
-        self.assertEqual(len({item["doi"].lower() for item in payload["papers"]}), 5)
+        self.assertEqual(payload["version"], "full-corpus-35-v1")
+        self.assertEqual(payload["expected_paper_count"], 35)
+        self.assertEqual(len(payload["papers"]), 35)
+        selectors = {
+            ("doi", item["doi"].lower()) if item.get("doi") else ("title", item["title"].casefold())
+            for item in payload["papers"]
+        }
+        self.assertEqual(len(selectors), 35)
         self.assertTrue(all(item["queries"] for item in payload["papers"]))
 
-    def test_five_paper_test_set_rejects_duplicate_dois(self):
+    def test_fixed_test_set_rejects_duplicate_selectors(self):
         path = Path(self.tmp.name) / "invalid-test-set.json"
         papers = [
             {"doi": "10.1/duplicate", "queries": ["硬度"]}
             for _ in range(5)
         ]
-        path.write_text(json.dumps({"version": "invalid", "papers": papers}), encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "5 unique DOI"):
+        path.write_text(json.dumps({"version": "invalid", "expected_paper_count": 5, "papers": papers}), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "5 unique paper selectors"):
             load_test_set(path)
+
+    def test_test_set_pdf_gate_uses_document_fingerprint_and_rejects_download_pages(self):
+        valid_path = Path(self.tmp.name) / "valid.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_textbox(
+            fitz.Rect(30, 30, 560, 780),
+            ("Experimental methods irradiation temperature hardness results. " * 40),
+            fontsize=9,
+        )
+        doc.save(valid_path)
+        doc.close()
+        actual_hash = hashlib.sha256(valid_path.read_bytes()).hexdigest()
+        valid_id = self.db.upsert_paper(
+            title="Valid registered paper", doi="10.1/valid-pdf", pdf_path=str(valid_path),
+            pdf_sha256="stale-paper-fingerprint", authenticity_status="verified_pdf",
+        )
+        with self.db.connect() as conn:
+            conn.execute(
+                """INSERT INTO documents(
+                     paper_id,source_type,original_filename,stored_path,pdf_sha256,text_sha256,
+                     text_sketch_json,page_count,text_char_count,needs_ocr,version_label,created_at
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (valid_id, "existing", valid_path.name, str(valid_path), actual_hash, None,
+                 "[]", 1, 2400, 0, "primary", "2026-07-14T00:00:00Z"),
+            )
+        valid_status = _pdf_status(self.db, self.db.get_paper(valid_id))
+        self.assertTrue(valid_status["content_valid"])
+        self.assertTrue(valid_status["fingerprint_matches"])
+        self.assertEqual(valid_status["fingerprint_source"], "document")
+
+        placeholder_path = Path(self.tmp.name) / "placeholder.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((40, 80), "Preparing to download ... HHS Vulnerability Disclosure")
+        doc.save(placeholder_path)
+        doc.close()
+        placeholder_hash = hashlib.sha256(placeholder_path.read_bytes()).hexdigest()
+        placeholder_id = self.db.upsert_paper(
+            title="Download placeholder", doi="10.1/placeholder", pdf_path=str(placeholder_path),
+            pdf_sha256=placeholder_hash, authenticity_status="verified_pdf",
+        )
+        placeholder_status = _pdf_status(self.db, self.db.get_paper(placeholder_id))
+        self.assertTrue(placeholder_status["openable"])
+        self.assertTrue(placeholder_status["placeholder_detected"])
+        self.assertFalse(placeholder_status["content_valid"])
 
     def test_scanned_paper_can_be_saved_as_timestamped_snapshot(self):
         old_dir = six_column_module.SAVED_SCANS_DIR

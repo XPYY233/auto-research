@@ -278,9 +278,6 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
                 for rect in page.get_image_rects(image[0]):
                     if rect.width > 60 and rect.height > 40:
                         image_rects.append(rect)
-            background_raster = any(
-                rect.get_area() >= page.rect.get_area() * 0.70 for rect in image_rects
-            )
             drawings = [drawing["rect"] for drawing in page.get_drawings()]
             for block in blocks:
                 text = " ".join(str(block[4]).split())
@@ -298,20 +295,19 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
                         image_rect = min(candidates, key=lambda rect: (max(caption_rect.y0 - rect.y1, 0), -rect.get_area()))
                         crop = image_rect | caption_rect
                         crop = fitz.Rect(crop.x0 - 8, crop.y0 - 7, crop.x1 + 8, crop.y1 + 7) & page.rect
-                    elif background_raster:
-                        # Scanned and older publisher PDFs often store the
-                        # entire page as one raster plus an OCR text layer.  In
-                        # that case there is no individual image object to
-                        # match.  Use the caption's column and the preceding
-                        # page region, retaining the caption in the crop.
+                    else:
+                        # Scanned publishers may store the whole page as one
+                        # raster, while charts exported from LaTeX are often
+                        # pure vector drawings with no image object.  In both
+                        # cases use the caption column and preceding page
+                        # region, retaining the caption in the crop.  This is
+                        # only a screenshot boundary; no curve values are read.
                         full_width = caption_rect.width >= page.rect.width * 0.45
                         x0 = 28 if full_width else max(24, caption_rect.x0 - 12)
                         x1 = page.rect.width - 28 if full_width else min(page.rect.width - 24, caption_rect.x1 + 12)
                         lookback = 540 if full_width else 300
                         y0 = max(35, caption_rect.y0 - lookback)
                         crop = fitz.Rect(x0, y0, x1, min(page.rect.height - 24, caption_rect.y1 + 10))
-                    else:
-                        continue
                     caption = match.group(2).strip() or text
                     inferred = _infer_visual_metadata(caption, "figure")
                     specs.append({
@@ -330,8 +326,6 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
                     rect for rect in drawings
                     if rect.y0 >= caption_rect.y1 - 2 and rect.width > 100 and rect.height < 10
                 ]
-                if not horizontal and not background_raster:
-                    continue
                 column_right = page.rect.width - 28 if caption_rect.x0 > page.rect.width / 2 else min(page.rect.width - 28, caption_rect.x0 + 270)
                 if horizontal:
                     bottom = max(rect.y1 for rect in horizontal)

@@ -60,8 +60,8 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.14-stable.2",
-    "label": "图表校对稳定版 2026.07.14",
+    "version": "2026.07.14-stable.3",
+    "label": "35 篇全库回归稳定版 2026.07.14",
     "evidence_schema": 9,
 }
 
@@ -426,8 +426,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/papers":
                 return self.json_response(annotate_navigation_tags(list_paper_workflow_summaries(self.db)))
             if parsed.path == "/api/test-set":
-                from .test_set import resolve_five_paper_test_set
-                return self.json_response(resolve_five_paper_test_set(self.db))
+                from .test_set import resolve_test_set
+                return self.json_response(resolve_test_set(self.db))
             match = re.fullmatch(r"/api/papers/(\d+)", parsed.path)
             if match:
                 paper = self.db.get_paper(int(match.group(1)))

@@ -1,0 +1,218 @@
+{
+  "version": "full-corpus-35-v1",
+  "description": "当前数据库登记的 35 篇真实本地 PDF 固定回归集，用于验证文献关联、自动抽取、六列数据、原文定位、图表证据与全库搜索。",
+  "expected_paper_count": 35,
+  "calibration_limit_per_paper": 20,
+  "papers": [
+    {
+      "doi": "10.1557/s43578-020-00071-8",
+      "role": "HEA 辐照空洞演化",
+      "min_rows": 1,
+      "queries": ["10.1557/s43578-020-00071-8"]
+    },
+    {
+      "doi": "10.1016/j.jnucmat.2018.08.031",
+      "role": "HEA/316H 原位辐照基准",
+      "min_rows": 1,
+      "queries": ["10.1016/j.jnucmat.2018.08.031"]
+    },
+    {
+      "doi": "10.1038/s41467-023-38000-y",
+      "role": "WTaCrVHf RHEA 辐照",
+      "min_rows": 1,
+      "queries": ["10.1038/s41467-023-38000-y"]
+    },
+    {
+      "doi": "10.1016/j.nme.2023.101513",
+      "role": "W-Ta-Cr-V RHEA 氦离子辐照",
+      "min_rows": 1,
+      "queries": ["10.1016/j.nme.2023.101513"]
+    },
+    {
+      "doi": "10.1016/j.mtla.2023.101991",
+      "role": "钨离子/中子辐照综述性实验数据",
+      "min_rows": 1,
+      "queries": ["10.1016/j.mtla.2023.101991"]
+    },
+    {
+      "doi": "10.1039/d5ma01373a",
+      "role": "CrCoNi 局域化学有序",
+      "min_rows": 1,
+      "queries": ["10.1039/d5ma01373a"]
+    },
+    {
+      "doi": "10.1038/s41529-025-00642-2",
+      "role": "NiCoFeCr 高温辐照",
+      "min_rows": 1,
+      "queries": ["10.1038/s41529-025-00642-2"]
+    },
+    {
+      "doi": "10.1063/5.0206224",
+      "role": "高熵硼化物辐照力学性能",
+      "min_rows": 1,
+      "queries": ["10.1063/5.0206224"]
+    },
+    {
+      "doi": "10.1557/s43579-024-00648-y",
+      "role": "高熵焦绿石辐照非晶化",
+      "min_rows": 1,
+      "queries": ["10.1557/s43579-024-00648-y"]
+    },
+    {
+      "doi": "10.3390/ma17174383",
+      "role": "CoCrFeNi 系氦离子辐照",
+      "min_rows": 1,
+      "queries": ["10.3390/ma17174383"]
+    },
+    {
+      "doi": "10.3390/met13040727",
+      "role": "NbTiVZr 重离子辐照",
+      "min_rows": 1,
+      "queries": ["10.3390/met13040727"]
+    },
+    {
+      "doi": "10.3724/j.0253-3219.2026.hjs.49.250019",
+      "role": "钨氘滞留与脱附",
+      "min_rows": 1,
+      "queries": ["10.3724/j.0253-3219.2026.hjs.49.250019"]
+    },
+    {
+      "doi": "10.1016/j.jmst.2025.01.058",
+      "role": "RHEA 早期辐照缺陷与硬化",
+      "min_rows": 1,
+      "queries": ["10.1016/j.jmst.2025.01.058"]
+    },
+    {
+      "doi": "10.1016/j.jnucmat.2023.154761",
+      "role": "W 基 HEA 氦离子辐照",
+      "min_rows": 1,
+      "queries": ["10.1016/j.jnucmat.2023.154761"]
+    },
+    {
+      "doi": "10.1016/j.jnucmat.2022.154066",
+      "role": "W 基合金组合筛选",
+      "min_rows": 1,
+      "queries": ["10.1016/j.jnucmat.2022.154066"]
+    },
+    {
+      "doi": "10.1016/j.jnucmat.2014.10.054",
+      "role": "中子辐照钨退火与氘脱附",
+      "min_rows": 1,
+      "queries": ["10.1016/j.jnucmat.2014.10.054"]
+    },
+    {
+      "doi": "10.2172/1814305",
+      "role": "SiC 跨材料兼容性测试",
+      "min_rows": 1,
+      "queries": ["10.2172/1814305"]
+    },
+    {
+      "doi": "10.3390/ma17194751",
+      "role": "CoCrFeNi 系 Kr/He 顺序辐照",
+      "min_rows": 1,
+      "queries": ["10.3390/ma17194751"]
+    },
+    {
+      "doi": "10.1007/s44210-024-00050-2",
+      "role": "高熵碳化物涂层辐照",
+      "min_rows": 1,
+      "queries": ["10.1007/s44210-024-00050-2"]
+    },
+    {
+      "doi": "10.1016/j.jnucmat.2024.155194",
+      "role": "掺杂 NiCoFeCr 辐照",
+      "min_rows": 1,
+      "queries": ["10.1016/j.jnucmat.2024.155194"]
+    },
+    {
+      "doi": "10.1016/j.actamat.2023.119059",
+      "role": "钨重合金模拟聚变辐照",
+      "min_rows": 1,
+      "queries": ["10.1016/j.actamat.2023.119059"]
+    },
+    {
+      "doi": "10.1016/j.jnucmat.2024.155093",
+      "role": "相变 HEA 自愈与辐照稳定性",
+      "min_rows": 1,
+      "queries": ["10.1016/j.jnucmat.2024.155093"]
+    },
+    {
+      "doi": "10.1038/s41524-024-01370-y",
+      "role": "高熵 MAX 相原位辐照",
+      "min_rows": 1,
+      "queries": ["10.1038/s41524-024-01370-y"]
+    },
+    {
+      "doi": "10.3390/ma16165530",
+      "role": "低活化 HEA 氦离子辐照",
+      "min_rows": 1,
+      "queries": ["10.3390/ma16165530"]
+    },
+    {
+      "doi": "10.1038/s41598-025-19080-w",
+      "role": "WTaCrV 与钨含氦对比",
+      "min_rows": 1,
+      "queries": ["10.1038/s41598-025-19080-w"]
+    },
+    {
+      "doi": "10.1007/s11837-019-03861-6",
+      "role": "TiZrNbHfTa 离子辐照力学性能",
+      "min_rows": 1,
+      "queries": ["10.1007/s11837-019-03861-6"]
+    },
+    {
+      "doi": "10.1088/1361-651x/ab1eec",
+      "role": "钨循环再结晶与辐照硬化",
+      "min_rows": 1,
+      "queries": ["10.1088/1361-651x/ab1eec"]
+    },
+    {
+      "doi": "10.1126/sciadv.aav2002",
+      "role": "W 基 HEA 辐照抗性",
+      "min_rows": 1,
+      "queries": ["10.1126/sciadv.aav2002"]
+    },
+    {
+      "doi": "10.1088/0031-8949/2011/t145/014051",
+      "role": "中子辐照钨氘深度分布",
+      "min_rows": 1,
+      "queries": ["10.1088/0031-8949/2011/t145/014051"]
+    },
+    {
+      "doi": "10.2172/6065200",
+      "role": "钨及钨合金离子辐照恢复",
+      "min_rows": 1,
+      "queries": ["10.2172/6065200"]
+    },
+    {
+      "doi": "10.1016/j.heliyon.2023.e17725",
+      "role": "辐射屏蔽模拟分类边界",
+      "min_rows": 1,
+      "queries": ["10.1016/j.heliyon.2023.e17725"]
+    },
+    {
+      "doi": "10.1016/j.actamat.2023.119499",
+      "role": "纯钨多能量 RBS/C 缺陷表征",
+      "min_rows": 1,
+      "queries": ["10.1016/j.actamat.2023.119499"]
+    },
+    {
+      "doi": "10.1073/pnas.2218673120",
+      "role": "CrCoNi 辐照缺陷演化",
+      "min_rows": 1,
+      "queries": ["10.1073/pnas.2218673120"]
+    },
+    {
+      "doi": "10.1016/j.mtla.2020.100603",
+      "role": "NiCoFeCr 空洞生长与肿胀",
+      "min_rows": 1,
+      "queries": ["10.1016/j.mtla.2020.100603"]
+    },
+    {
+      "title": "Large-angle scattering of light ions in the weakly screened Rutherford region",
+      "role": "无 DOI 文献标题关联与数据搜索",
+      "min_rows": 1,
+      "queries": ["Large-angle scattering of light ions"]
+    }
+  ]
+}

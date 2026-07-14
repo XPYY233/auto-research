@@ -538,7 +538,7 @@ click `确认当前内容`; switching papers, importing results, re-running extr
 or leaving the page warns before those unsaved edits are discarded.
 The switcher displays registered papers by title, first author, year/DOI, and
 saved-row count. It can narrow the list by title/author/DOI, research object,
-experiment method, workflow status, or the fixed five-paper validation set.
+experiment method, workflow status, or the fixed 35-paper full-corpus validation set.
 Research-object and method tags are conservative, non-exclusive navigation aids;
 they do not replace the scientific experiment classification used by extraction.
 Filtering only changes the candidate list. It never switches the current paper
@@ -610,9 +610,10 @@ The reproducible five-paper blind validation is documented in
 `data/evidence/random5_20260708_audit.md`; its machine-readable manifest is
 `data/evidence/random5_20260708_manifest.csv`.
 
-The current fixed five-paper real-PDF validation set is declared in
-`config/evidence_test_set_5.json`. Audit the registered paper, local PDF,
-fingerprint, six-column rows, source highlighting, and calibration sample with:
+The current fixed 35-paper full-corpus validation set is declared in
+`config/evidence_test_set_35.json`. Audit every registered paper, local PDF,
+fingerprint, six-column rows, source highlighting, search linkage, visual evidence,
+and calibration sample with:
 
 ```bash
 auto-research evidence-test-set-audit
