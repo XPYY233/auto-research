@@ -174,6 +174,12 @@
             <span id="row-count">0 条</span>
           </div>
         </div>
+        <div class="review-object-switch" id="review-object-switch" role="tablist" aria-label="校对对象">
+          <button type="button" class="active" role="tab" aria-selected="true" data-review-object="data"><span>01</span><strong>数据条目</strong><small id="review-data-count">0 条</small></button>
+          <button type="button" role="tab" aria-selected="false" data-review-object="table"><span>02</span><strong>原始表格</strong><small id="review-table-count">0 张</small></button>
+          <button type="button" role="tab" aria-selected="false" data-review-object="figure"><span>03</span><strong>论文图片</strong><small id="review-figure-count">0 幅</small></button>
+        </div>
+        <div id="data-review-workspace">
         <div class="review-progress-card" id="review-progress-card">
           <div class="review-progress-copy">
             <span>人工核验进度</span>
@@ -209,6 +215,14 @@
             <div class="blank"><span>↖</span><h3>选择一条数据</h3><p>右侧显示原始抽取值、证据页码和原文定位。</p></div>
           </aside>
         </div>
+        </div>
+        <section class="visual-review-workspace" id="visual-review-workspace" hidden aria-live="polite">
+          <header>
+            <div><p class="eyebrow" id="visual-review-kicker">TABLE EVIDENCE REVIEW</p><h2 id="visual-review-title">原始表格校对</h2><p id="visual-review-summary">核对截图、图注和上下文标签；不会自动读取曲线点。</p></div>
+            <div class="visual-review-legend"><span><i class="pending"></i>待审核</span><span><i class="confirmed"></i>已确认/修正</span><span><i class="attention"></i>歧义/不采用</span></div>
+          </header>
+          <div class="visual-review-grid" id="visual-review-grid"></div>
+        </section>
       </section>
 
       <section class="view" id="view-search">

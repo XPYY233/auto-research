@@ -338,6 +338,22 @@ CREATE TABLE IF NOT EXISTS data_item_visual_links (
 CREATE INDEX IF NOT EXISTS idx_visual_assets_paper_type ON visual_assets(paper_id,asset_type,asset_number);
 CREATE INDEX IF NOT EXISTS idx_visual_assets_label ON visual_assets(label);
 CREATE INDEX IF NOT EXISTS idx_data_item_visual_asset ON data_item_visual_links(asset_id,item_id);
+
+CREATE TABLE IF NOT EXISTS visual_asset_reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL REFERENCES visual_assets(id) ON DELETE CASCADE,
+  version_no INTEGER NOT NULL,
+  review_action TEXT NOT NULL
+    CHECK(review_action IN ('automatic','confirmation','correction','ambiguous','rejected')),
+  fields_json TEXT NOT NULL DEFAULT '{}',
+  reviewer TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(asset_id,version_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_visual_asset_reviews_current
+  ON visual_asset_reviews(asset_id,version_no DESC);
 """
 
 
@@ -473,7 +489,7 @@ class EvidenceDB:
             if "duplicate_count" not in run_columns:
                 conn.execute("ALTER TABLE ai_extraction_runs ADD COLUMN duplicate_count INTEGER NOT NULL DEFAULT 0")
             conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('schema_version','8') "
+                "INSERT INTO schema_meta(key,value) VALUES('schema_version','9') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value "
                 "WHERE schema_meta.value IS NOT excluded.value"
             )

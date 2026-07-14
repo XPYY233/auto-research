@@ -47,16 +47,22 @@ from .six_column import (
     set_row_review_decision,
 )
 from .source_highlight import get_source_view, render_source_highlight_png, render_source_snippet_png
-from .visual_evidence import get_visual_asset, search_visual_assets, visual_asset_image_path
+from .visual_evidence import (
+    get_visual_asset,
+    list_visual_assets,
+    review_visual_asset,
+    search_visual_assets,
+    visual_asset_image_path,
+)
 from .workflow import run_article_workflow
 from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.14-stable.1",
-    "label": "稳定版 2026.07.14",
-    "evidence_schema": 8,
+    "version": "2026.07.14-stable.2",
+    "label": "图表校对稳定版 2026.07.14",
+    "evidence_schema": 9,
 }
 
 
@@ -399,6 +405,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 query = params.get("q", [""])[0]
                 asset_type = params.get("type", ["figure"])[0]
                 return self.json_response(search_visual_assets(self.db, query, asset_type=asset_type))
+            if parsed.path == "/api/current-paper/visual-assets":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.json_response(list_visual_assets(self.db, paper_id=paper_id))
             match = re.fullmatch(r"/api/visual-assets/(\d+)", parsed.path)
             if match:
                 return self.json_response(get_visual_asset(self.db, int(match.group(1))))
@@ -494,6 +504,17 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     reason_code=str(body.get("reason_code") or ""),
                     note=str(body.get("note") or ""),
                     editor=str(body.get("editor") or "本地研究者"),
+                )
+                return self.json_response(result)
+            match = re.fullmatch(r"/api/visual-assets/(\d+)/review", parsed.path)
+            if match:
+                result = review_visual_asset(
+                    self.db,
+                    int(match.group(1)),
+                    body.get("fields") or {},
+                    str(body.get("decision") or "confirmation"),
+                    reviewer=str(body.get("reviewer") or "本地研究者"),
+                    note=str(body.get("note") or ""),
                 )
                 return self.json_response(result)
             if parsed.path == "/api/six-data/manual":

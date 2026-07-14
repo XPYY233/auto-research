@@ -272,6 +272,10 @@ level below it. The contextual explanation records the material, specimen,
 experiment type, control variables, environment, and other conditions needed to
 interpret the value.
 
+DOI is preferred but optional. Older valid papers without a DOI remain
+traceable by their article title and verified PDF fingerprint; an empty DOI does
+not block numeric facts, qualitative findings, visual evidence, or review.
+
 The canonical source is the final published PDF stored locally at:
 
 `/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf`
@@ -305,6 +309,20 @@ accuracy judgment.
 For day-to-day use on this Mac, double-click
 `scripts/start_evidence_ui.command` from Finder. It opens the same local page and
 keeps the server process visible in a Terminal window.
+
+The review page has three explicit objects: `数据条目`, `原始表格`, and
+`论文图片`. Table/figure cards show the immutable high-resolution PDF crop and
+original caption beside editable search metadata. Confirm, correct, ambiguous,
+rejected, and reopen decisions are appended as visual-review versions; they do
+not rewrite the screenshot. A linked table or figure can also be opened from a
+numeric data row.
+
+Automatic processing indexes table/figure screenshots locally before sending
+PDF text to DeepSeek. This preserves visual evidence even if the network or
+model stage fails. DeepSeek currently receives the PDF text layer, not image
+pixels: captions and nearby text may produce candidate metadata, but curves are
+never digitized automatically. Caption-led cropping also supports old PDFs that
+store each page as one raster image with an OCR text layer.
 
 The current presentation-ready checkpoint, verified workflows, data counts,
 known scientific-review boundary, and recovery instructions are recorded in

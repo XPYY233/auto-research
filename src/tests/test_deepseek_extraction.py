@@ -191,6 +191,16 @@ class DeepSeekExtractionTests(unittest.TestCase):
         self.assertEqual(run["verified_count"], 1)
         self.assertFalse(result["learning_guidance"]["included_in_prompt"])
 
+    def test_visual_evidence_is_indexed_before_model_extraction(self):
+        visual_result = {"asset_count": 2, "table_count": 1, "figure_count": 1, "assets": []}
+        with patch(
+            "auto_research.evidence.visual_evidence.index_visual_evidence",
+            return_value=visual_result,
+        ) as indexer:
+            result = DeepSeekEvidenceExtractor(self.db, FakeDeepSeekClient(), self.run_dir).run(self.paper_id)
+        indexer.assert_called_once_with(self.db, self.paper_id)
+        self.assertEqual(result["visual_evidence"]["asset_count"], 2)
+
     def test_human_review_samples_are_used_as_prompt_guidance_not_evidence(self):
         add_manual_item(self.db, self.paper_id, {
             "value_text": "42", "meaning": "人工新增验证量", "unit": "a.u.",

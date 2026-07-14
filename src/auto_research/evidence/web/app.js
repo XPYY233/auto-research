@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
   review: { kicker: "EVIDENCE REVIEW", title: "校对实验数据", subtitle: "逐条核对抽取结果，并随时返回原文证据。" },
@@ -240,9 +240,10 @@ async function load() {
 }
 
 async function loadCurrentPaper() {
-  [state.paper, state.rows, state.extraction, state.experimentProfile, state.learning, state.allLearning, state.learningReport, state.allLearningReport, state.deepseekRun] = await Promise.all([
+  [state.paper, state.rows, state.visualAssets, state.extraction, state.experimentProfile, state.learning, state.allLearning, state.learningReport, state.allLearningReport, state.deepseekRun] = await Promise.all([
     api("/api/current-paper"),
     api("/api/six-data"),
+    apiOptional("/api/current-paper/visual-assets", [], "当前文章图表证据"),
     apiOptional("/api/current-paper/extraction", null, "当前文章处理状态"),
     apiOptional("/api/current-paper/experiment-profile", null, "实验类型识别"),
     apiOptional("/api/current-paper/learning-samples", null, "当前文章学习样本"),
@@ -267,6 +268,7 @@ async function loadCurrentPaper() {
   renderExperimentProfile();
   renderEvidenceAudit();
   renderDeepSeekRun();
+  renderReviewObject();
   renderTable();
   renderHistory();
   fillManualDefaults();
@@ -645,7 +647,15 @@ function renderDeepSeekRun() {
   const findingText = findingCount
     ? ` · 定性结论 ${esc(findingCount)} 条（新增 ${esc(importedFindings)} 条）`
     : "";
-  el.innerHTML = `最近一次 DeepSeek 运行：${esc(run.status)} · 数值候选 ${esc(run.candidate_count)} 条 · 证据验证通过 ${esc(run.verified_count)} 条${findingText} · 重复 ${esc(run.duplicate_count || 0)} 条 · 拒绝/歧义 ${esc(run.rejected_count)} 条 · 候选结果已保存，须在校对页人工确认${link}`;
+  const tableCount = state.visualAssets.filter(asset => asset.asset_type === "table").length;
+  const figureCount = state.visualAssets.filter(asset => asset.asset_type === "figure").length;
+  const visualText = tableCount || figureCount ? ` · 图表证据 ${tableCount} 张表 / ${figureCount} 幅图` : " · 未定位到可截图图表";
+  if (run.status === "failed" && state.rows.length) {
+    el.innerHTML = `最近一次 DeepSeek 运行在后处理阶段失败，但此前已保存的 ${state.rows.length} 条数据和${visualText.replace(/^ · /, "")}仍可校对。失败原因：${esc(run.error_message || "未记录")}${link}`;
+    el.className = "unsupported";
+    return;
+  }
+  el.innerHTML = `最近一次 DeepSeek 运行：${esc(run.status)} · 数值候选 ${esc(run.candidate_count)} 条 · 证据验证通过 ${esc(run.verified_count)} 条${findingText}${visualText} · 重复 ${esc(run.duplicate_count || 0)} 条 · 拒绝/歧义 ${esc(run.rejected_count)} 条 · 候选结果已保存，须在校对页人工确认${link}`;
   el.className = run.status === "completed" ? "supported" : run.status === "failed" ? "unsupported" : "ready";
 }
 
@@ -664,7 +674,7 @@ function updateProgress(value, text, running = true) {
 function startProgress(kind) {
   clearInterval(state.progressTimer);
   const stages = [
-    "准备任务与读取 PDF",
+    "读取 PDF 并建立图表截图",
     "按页分块识别数值与定性结论",
     "核对证据页码与原文片段",
     "聚合物理事实并生成可校对结果",
@@ -727,8 +737,9 @@ async function runDeepSeekPreview() {
     };
     if (result.imported?.inserted) await loadCurrentPaper();
     renderDeepSeekRun();
-    finishProgress(`完成：候选 ${result.candidate_count} 条，证据核验通过 ${result.verified_count} 条。`);
-    toast(`DeepSeek 抽取完成：候选 ${result.candidate_count} 条，双重验证通过 ${result.verified_count} 条。`);
+    const visuals = result.visual_evidence || {};
+    finishProgress(`完成：候选 ${result.candidate_count} 条，证据核验通过 ${result.verified_count} 条；图表 ${visuals.table_count || 0} 张表 / ${visuals.figure_count || 0} 幅图。`);
+    toast(`DeepSeek 抽取完成：通过 ${result.verified_count} 条；已建立 ${visuals.table_count || 0} 张表和 ${visuals.figure_count || 0} 幅图。`);
   } catch (error) {
     finishProgress(`处理失败：${error.message}`, false);
     toast(error.message, true);
@@ -1054,6 +1065,157 @@ function renderTable() {
   renderOriginal(rows.find(row => Number(row.item_id) === Number(state.selected)) || null);
 }
 
+function visualListText(values) {
+  return (values || []).join("、");
+}
+
+function visualVariablesText(values) {
+  return Object.entries(values || {}).map(([key, value]) => `${key}：${value}`).join("\n");
+}
+
+function parseVisualList(value) {
+  return [...new Set(String(value || "").split(/[、,，;；\n]+/).map(item => item.trim()).filter(Boolean))];
+}
+
+function parseVisualVariables(value) {
+  const result = {};
+  String(value || "").split(/[\n;；]+/).forEach(line => {
+    const match = line.trim().match(/^([^:：=]+)[:：=](.+)$/);
+    if (match) result[match[1].trim()] = match[2].trim();
+  });
+  return result;
+}
+
+function visualReviewLabel(asset) {
+  return {
+    automatic: "待审核",
+    confirmation: `已确认 v${asset.version_no}`,
+    correction: `已修正 v${asset.version_no}`,
+    ambiguous: `存在歧义 v${asset.version_no}`,
+    rejected: `不采用 v${asset.version_no}`,
+  }[asset.review_action] || "待审核";
+}
+
+function setReviewObject(mode) {
+  if (!["data", "table", "figure"].includes(mode)) return;
+  if (mode !== "data" && hasUnsavedEdits() && !confirmDiscardUnsaved("切换图表校对")) return;
+  state.reviewObject = mode;
+  renderReviewObject();
+}
+
+function renderReviewObject() {
+  const tables = state.visualAssets.filter(asset => asset.asset_type === "table");
+  const figures = state.visualAssets.filter(asset => asset.asset_type === "figure");
+  setText("review-data-count", `${state.rows.length} 条`);
+  setText("review-table-count", `${tables.length} 张`);
+  setText("review-figure-count", `${figures.length} 幅`);
+  document.querySelectorAll("[data-review-object]").forEach(button => {
+    const active = button.dataset.reviewObject === state.reviewObject;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  const dataMode = state.reviewObject === "data";
+  document.querySelector("#data-review-workspace").hidden = !dataMode;
+  document.querySelector("#visual-review-workspace").hidden = dataMode;
+  const controls = document.querySelector("#view-review .view-actions");
+  if (controls) controls.hidden = !dataMode;
+  if (!dataMode) renderVisualReview();
+}
+
+function visualReviewCard(asset) {
+  const attention = ["ambiguous", "rejected"].includes(asset.review_action);
+  const reviewed = ["confirmation", "correction"].includes(asset.review_action);
+  const statusClass = attention ? "attention" : reviewed ? "reviewed" : "pending";
+  const typeName = asset.asset_type === "table" ? "表格" : "图片";
+  const readonly = isReadOnly() ? " readonly" : "";
+  const actions = isReadOnly() ? "" : `<div class="visual-review-actions">
+    <button type="button" class="visual-confirm" data-visual-decision="confirmation">确认当前信息</button>
+    <button type="button" data-visual-decision="ambiguous">存在歧义</button>
+    <button type="button" data-visual-decision="rejected">不采用</button>
+    ${asset.review_action !== "automatic" ? '<button type="button" data-visual-decision="automatic">恢复待审核</button>' : ""}
+  </div>`;
+  return `<article class="visual-review-card ${statusClass}" data-visual-review="${asset.id}">
+    <div class="visual-review-proof">
+      <div class="visual-review-proof-head"><span>${esc(asset.label)} · PDF 第 ${esc(asset.page_start)} 页</span><em>${esc(visualReviewLabel(asset))}</em></div>
+      <button type="button" class="visual-review-image" data-open-review-visual="${asset.id}" aria-label="放大查看${esc(asset.label)}"><img src="${esc(asset.image_url)}" alt="${esc(asset.label)}原文截图" loading="lazy"></button>
+      <div class="visual-proof-actions"><button type="button" data-open-review-visual="${asset.id}">放大查看</button><a href="${esc(asset.pdf_url)}" target="_blank" rel="noopener">打开原文 PDF</a></div>
+      <p><strong>原始图注</strong>${esc(asset.original_caption || asset.caption)}</p>
+    </div>
+    <form class="visual-review-form">
+      <header><div><small>${typeName.toUpperCase()} METADATA</small><h3>${esc(asset.label)} 的检索信息</h3></div><span>截图与原图注保持不变</span></header>
+      <label class="span-2">图表标题<textarea name="caption"${readonly}>${esc(asset.caption)}</textarea></label>
+      <label>展示的物理量<textarea name="physical_quantities"${readonly} placeholder="用顿号或换行分隔">${esc(visualListText(asset.physical_quantities))}</textarea></label>
+      <label>变量或表头<textarea name="variables"${readonly} placeholder="例如 x：Dose；y：Hardness">${esc(visualVariablesText(asset.variables))}</textarea></label>
+      <label>材料或样品<textarea name="materials"${readonly}>${esc(visualListText(asset.materials))}</textarea></label>
+      <label>测试/分析方法<textarea name="methods_text"${readonly}>${esc(asset.methods_text)}</textarea></label>
+      <label class="span-2">实验条件<textarea name="conditions_text"${readonly}>${esc(asset.conditions_text)}</textarea></label>
+      <label class="span-2">数据在文中的解释（搜索核心）<textarea name="context_explanation"${readonly}>${esc(asset.context_explanation)}</textarea></label>
+      <label class="span-2">检索标签<textarea name="tags"${readonly}>${esc(visualListText(asset.tags))}</textarea></label>
+      ${asset.review_note ? `<p class="visual-review-note"><strong>核验说明</strong>${esc(asset.review_note)}</p>` : ""}
+      ${actions}
+    </form>
+  </article>`;
+}
+
+function renderVisualReview() {
+  const type = state.reviewObject;
+  const assets = state.visualAssets.filter(asset => asset.asset_type === type);
+  const typeName = type === "table" ? "原始表格" : "论文图片";
+  setText("visual-review-kicker", type === "table" ? "TABLE EVIDENCE REVIEW" : "FIGURE EVIDENCE REVIEW");
+  setText("visual-review-title", `${typeName}校对`);
+  const reviewed = assets.filter(asset => asset.review_action !== "automatic").length;
+  setText("visual-review-summary", `${reviewed}/${assets.length} 已审核。核对截图、图注与检索标签；图片曲线不会被自动转换为精确数值。`);
+  const grid = document.querySelector("#visual-review-grid");
+  if (!assets.length) {
+    grid.innerHTML = `<div class="blank visual-review-empty"><span>▧</span><h3>当前文章尚未建立${typeName}</h3><p>运行“自动提取/核验”后，系统会先从本地 PDF 建立高分辨率图表截图；识别不到的扫描件将保留为待处理任务。</p></div>`;
+    return;
+  }
+  grid.innerHTML = assets.map(visualReviewCard).join("");
+  grid.querySelectorAll("[data-open-review-visual]").forEach(button => button.addEventListener("click", () => openVisualAsset(Number(button.dataset.openReviewVisual))));
+  grid.querySelectorAll("[data-visual-decision]").forEach(button => button.addEventListener("click", () => {
+    const card = button.closest("[data-visual-review]");
+    saveVisualReview(Number(card.dataset.visualReview), button.dataset.visualDecision, card.querySelector("form"));
+  }));
+}
+
+function visualFieldsFromForm(form) {
+  const values = Object.fromEntries(new FormData(form).entries());
+  return {
+    caption: String(values.caption || "").trim(),
+    physical_quantities: parseVisualList(values.physical_quantities),
+    variables: parseVisualVariables(values.variables),
+    materials: parseVisualList(values.materials),
+    conditions_text: String(values.conditions_text || "").trim(),
+    methods_text: String(values.methods_text || "").trim(),
+    context_explanation: String(values.context_explanation || "").trim(),
+    tags: parseVisualList(values.tags),
+  };
+}
+
+async function saveVisualReview(assetId, decision, form) {
+  if (rejectReadOnlyAction("校对图表")) return;
+  let note = "";
+  if (["ambiguous", "rejected"].includes(decision)) {
+    note = window.prompt(decision === "ambiguous" ? "请说明无法确定的字段或原因：" : "请说明不采用该图表的原因：", "") || "";
+    if (!note.trim()) return;
+  }
+  const button = form.querySelector(`[data-visual-decision="${decision}"]`);
+  if (button) button.disabled = true;
+  try {
+    const result = await api(`/api/visual-assets/${assetId}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: visualFieldsFromForm(form), decision, note, reviewer: "本地研究者" }),
+    });
+    state.visualAssets = state.visualAssets.map(asset => Number(asset.id) === assetId ? result : asset);
+    renderReviewObject();
+    toast(decision === "automatic" ? "该图表已恢复为待审核。" : `图表核验已保存：${visualReviewLabel(result)}。`);
+  } catch (error) {
+    toast(error.message, true);
+    if (button) button.disabled = false;
+  }
+}
+
 function selectRow(id) {
   state.selected = id;
   const row = state.rows.find(item => item.item_id === id);
@@ -1152,8 +1314,14 @@ function renderOriginal(row) {
   }
   const sourcePage = row.original_source_page;
   const reviewNote = state.reviewNotes.get(Number(row.item_id)) || "";
-  pane.innerHTML = `<header class="original-head"><span>IMMUTABLE ORIGINAL · #${row.item_id}</span><h3>${esc(row.original_meaning)}</h3></header><div class="original-grid">${fields.map(field => `<div class="original-field ${field === "context_explanation" ? "context" : ""}"><small>${fieldLabels[field]}</small><p>${esc(originalValue(row, field))}</p></div>`).join("")}</div><div class="provenance"><strong>论文定位</strong><p>PDF第 ${esc(sourcePage || "?")} 页 · ${esc(row.original_source_locator || "未标注")}<br>${esc(row.original_source_excerpt || "")}</p><button class="source-open" type="button" data-source-open="${row.item_id}">打开原文定位并高亮 →</button></div><div class="review-note-panel"><label for="selected-review-note">核验备注 <small>可选，不属于六列数据</small></label><textarea id="selected-review-note" maxlength="500" placeholder="例如：材料条件应来自表头；该值是计算量，不是直接测量。">${esc(reviewNote)}</textarea><p>仅在确认或修正时写入版本历史，并用于改进后续抽取。</p></div>`;
+  const relatedVisuals = (row.visual_assets || []).map(asset => `<button type="button" data-review-related-visual="${asset.id}" data-review-related-type="${esc(asset.asset_type)}"><img src="${esc(asset.image_url)}" alt="${esc(asset.label)}截图"><span>${asset.asset_type === "table" ? "原始表格" : "相关图片"}<strong>${esc(asset.label)}</strong></span></button>`).join("");
+  const visualPanel = relatedVisuals ? `<div class="related-visual-review"><strong>关联图表证据</strong><div>${relatedVisuals}</div></div>` : "";
+  pane.innerHTML = `<header class="original-head"><span>IMMUTABLE ORIGINAL · #${row.item_id}</span><h3>${esc(row.original_meaning)}</h3></header><div class="original-grid">${fields.map(field => `<div class="original-field ${field === "context_explanation" ? "context" : ""}"><small>${fieldLabels[field]}</small><p>${esc(originalValue(row, field))}</p></div>`).join("")}</div>${visualPanel}<div class="provenance"><strong>论文定位</strong><p>PDF第 ${esc(sourcePage || "?")} 页 · ${esc(row.original_source_locator || "未标注")}<br>${esc(row.original_source_excerpt || "")}</p><button class="source-open" type="button" data-source-open="${row.item_id}">打开原文定位并高亮 →</button></div><div class="review-note-panel"><label for="selected-review-note">核验备注 <small>可选，不属于六列数据</small></label><textarea id="selected-review-note" maxlength="500" placeholder="例如：材料条件应来自表头；该值是计算量，不是直接测量。">${esc(reviewNote)}</textarea><p>仅在确认或修正时写入版本历史，并用于改进后续抽取。</p></div>`;
   pane.querySelector("[data-source-open]")?.addEventListener("click", () => openSourceViewer(row.item_id));
+  pane.querySelectorAll("[data-review-related-visual]").forEach(button => button.addEventListener("click", () => {
+    setReviewObject(button.dataset.reviewRelatedType);
+    window.requestAnimationFrame(() => document.querySelector(`[data-visual-review="${button.dataset.reviewRelatedVisual}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }));
   pane.querySelector("#selected-review-note")?.addEventListener("input", event => {
     const itemId = Number(row.item_id);
     const note = event.target.value.trim();
@@ -2126,8 +2294,9 @@ async function runCurrentExtraction() {
       finishProgress("抽取包已生成，等待导入结构化结果。");
       toast(`当前文章已切换，抽取包已生成：${result.action_result?.packet_path || "默认目录"}。`);
     } else if (result.action === "deepseek_extract" || result.action === "deepseek_preview") {
-      finishProgress(`完成：候选 ${result.action_result?.candidate_count ?? 0} 条，证据核验通过 ${result.action_result?.verified_count ?? 0} 条。`);
-      toast(`DeepSeek 处理完成：候选 ${result.action_result?.candidate_count ?? 0} 条，双重验证通过 ${result.action_result?.verified_count ?? 0} 条。`);
+      const visuals = result.visual_evidence || result.action_result?.visual_evidence || {};
+      finishProgress(`完成：证据核验通过 ${result.action_result?.verified_count ?? 0} 条；图表 ${visuals.table_count || 0} 张表 / ${visuals.figure_count || 0} 幅图。`);
+      toast(`DeepSeek 处理完成：通过 ${result.action_result?.verified_count ?? 0} 条；已建立 ${visuals.table_count || 0} 张表和 ${visuals.figure_count || 0} 幅图。`);
     } else {
       const extraction = result.action_result?.extraction || {};
       finishProgress(`完成：新增 ${extraction.inserted ?? 0} 条，已存在 ${extraction.existing ?? 0} 条。`);
@@ -2203,6 +2372,7 @@ async function submitPaperSwitch(event) {
 }
 
 document.querySelectorAll(".nav").forEach(btn => btn.addEventListener("click", () => switchView(btn.dataset.view)));
+document.querySelectorAll("[data-review-object]").forEach(button => button.addEventListener("click", () => setReviewObject(button.dataset.reviewObject)));
 document.querySelector("#paper-picker-query").addEventListener("input", event => {
   state.paperFilters.query = event.target.value;
   renderPaperOptions();

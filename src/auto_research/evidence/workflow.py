@@ -48,7 +48,11 @@ def run_article_workflow(db: EvidenceDB, article_key: str | None = None,
     else:
         raise ValueError(before["message"])
     after = get_six_extraction_status(db, resolved_id)
-    visual_evidence = index_visual_evidence(db, resolved_id) if before["pdf_ready"] else None
+    visual_evidence = (
+        action_result.get("visual_evidence")
+        if isinstance(action_result, dict) and action_result.get("visual_evidence") is not None
+        else index_visual_evidence(db, resolved_id) if before["pdf_ready"] else None
+    )
     audit = audit_six_column_evidence(db, resolved_id) if after["row_count"] else None
     learning = collect_learning_samples(db, resolved_id)
     review = review_progress(db, resolved_id)

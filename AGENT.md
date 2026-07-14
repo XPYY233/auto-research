@@ -350,8 +350,28 @@ matching.
 Use `evidence-index-visuals <paper-selector>` to create or refresh visual assets.
 The stable public routes are `/api/visual-search`,
 `/api/visual-assets/{id}`, and `/api/visual-assets/{id}/image`. Health checks
-must require schema version 8, the visual indexes, and the existence of every
+must require schema version 9, the visual indexes, and the existence of every
 recorded image file.
+
+The editable review page must expose data, table, and figure as three explicit
+review objects for the current paper. Visual review decisions are append-only in
+`visual_asset_reviews`: confirmation, correction, ambiguity, rejection, and
+reopen must preserve the original PDF screenshot, original caption/metadata,
+and every earlier decision. Correct only searchable metadata such as quantities,
+variables, materials, conditions, methods, explanation, and tags; never edit the
+source crop. A table/figure may be opened directly from a linked numeric fact.
+
+Automatic article processing must run deterministic visual indexing before the
+DeepSeek text request. This guarantees that reviewable screenshots survive a
+network or model failure. The current DeepSeek adapter still receives text only;
+caption/context semantics are drafts, not proof that the model inspected image
+pixels. Full-page scanned/raster PDFs may use caption-led page-region crops when
+no separate embedded image object exists. Such crops remain pending human review.
+
+DOI is portable and preferred when present, but it is not mandatory for older
+or otherwise valid local PDFs. Title plus the verified PDF fingerprint remains
+the minimum paper identity. Empty DOI must not abort numeric or qualitative
+imports, visual indexing, review, search, or database health checks.
 
 ### Current verified baseline
 

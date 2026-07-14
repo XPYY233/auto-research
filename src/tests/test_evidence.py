@@ -65,6 +65,7 @@ from auto_research.evidence.six_column import (
     TARGET_DOI,
     TARGET_TITLE,
     add_manual_item,
+    add_qualitative_item,
     collect_learning_samples,
     confirm_correction,
     extract_current_paper_data,
@@ -98,6 +99,7 @@ from auto_research.evidence.visual_evidence import (
     get_visual_asset,
     index_visual_evidence,
     list_visual_assets,
+    review_visual_asset,
     search_visual_assets,
     visual_asset_image_path,
 )
@@ -633,7 +635,7 @@ class EvidenceDBTests(unittest.TestCase):
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_versions").fetchone()["count"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_version_orphans").fetchone()["count"], 1)
-            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "8")
+            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "9")
             self.assertEqual(list(conn.execute("PRAGMA foreign_key_check")), [])
         health = evidence_db_health(self.db, self.paper)
         self.assertTrue(health["ok"], health)
@@ -828,6 +830,44 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(visual_asset_image_path(self.db, table3["id"]).is_file())
         self.assertTrue(visual_asset_image_path(self.db, table3["id"]).read_bytes().startswith(b"\x89PNG"))
         self.assertEqual(get_visual_asset(self.db, table3["id"])["caption"], table3["caption"])
+
+    def test_visual_review_is_versioned_without_changing_original_screenshot(self):
+        result = index_visual_evidence(self.db, self.paper_id)
+        table = next(asset for asset in result["assets"] if asset["label"] == "Table 3")
+        image_sha = table["image_sha256"]
+        fields = {key: table[key] for key in (
+            "caption", "physical_quantities", "variables", "materials", "conditions_text",
+            "methods_text", "context_explanation", "tags",
+        )}
+        fields["context_explanation"] = "人工核对：该表集中比较三种材料的辐照前后硬度。"
+        reviewed = review_visual_asset(
+            self.db, table["id"], fields, "confirmation", reviewer="tester", note="核对表头和正文"
+        )
+        self.assertEqual(reviewed["review_action"], "correction")
+        self.assertEqual(reviewed["version_no"], 1)
+        self.assertEqual(reviewed["image_sha256"], image_sha)
+        self.assertEqual(reviewed["original_context_explanation"], table["context_explanation"])
+        self.assertEqual(reviewed["context_explanation"], fields["context_explanation"])
+        reopened = review_visual_asset(self.db, table["id"], fields, "automatic")
+        self.assertEqual(reopened["review_action"], "automatic")
+        self.assertEqual(reopened["version_no"], 2)
+
+    def test_qualitative_finding_allows_paper_without_doi(self):
+        paper_id = self.db.upsert_paper(
+            title="Historic experiment without DOI",
+            doi=None,
+            pdf_path=self.db.get_paper(self.paper_id)["pdf_path"],
+        )
+        item = add_qualitative_item(self.db, paper_id, {
+            "finding_text": "no voids were observed after irradiation",
+            "meaning": "辐照后空洞观察结果",
+            "context_explanation": "历史实验论文；TEM观察；无 DOI",
+            "source_page": 3,
+            "source_locator": "Results",
+            "source_excerpt": "no voids were observed after irradiation",
+        })
+        self.assertEqual(item["doi"], "")
+        self.assertEqual(item["article_title"], "Historic experiment without DOI")
 
     def test_visual_search_and_item_source_kinds_stay_distinct(self):
         index_visual_evidence(self.db, self.paper_id)
@@ -1221,8 +1261,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.14-stable.1")
-        self.assertEqual(RELEASE_INFO["evidence_schema"], 8)
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.14-stable.2")
+        self.assertEqual(RELEASE_INFO["evidence_schema"], 9)
 
     def test_blank_search_and_paper_picker_counts_cover_all_papers(self):
         other = self.db.upsert_paper(title="Other irradiation paper", doi="10.1/search-all")

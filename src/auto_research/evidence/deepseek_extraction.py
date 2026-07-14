@@ -899,7 +899,27 @@ class DeepSeekEvidenceExtractor:
         )
         if run_id is None:
             raise RuntimeError("AI extraction run could not be created")
+        _execute_run_update(
+            self.db,
+            """UPDATE processing_jobs SET status='running',provider='deepseek',
+               message='正在建立图表证据并执行 DeepSeek 抽取',attempts=attempts+1,updated_at=?
+               WHERE id=(SELECT id FROM processing_jobs WHERE paper_id=? AND job_type='extract'
+                         ORDER BY id DESC LIMIT 1)""",
+            (now(), paper_id),
+        )
         try:
+            # Visual evidence is a local, deterministic PDF operation.  Run it
+            # before the paid model request so screenshots remain available for
+            # review even when the network/model stage later fails.
+            visual_evidence: dict[str, Any]
+            try:
+                from .visual_evidence import index_visual_evidence
+                visual_evidence = index_visual_evidence(self.db, paper_id)
+            except Exception as visual_exc:
+                visual_evidence = {
+                    "asset_count": 0, "table_count": 0, "figure_count": 0,
+                    "warning": str(visual_exc), "assets": [],
+                }
             pages = _read_pages(pdf_path, max_pages=max_pages)
             experiment_profile = classify_experiment_types(paper, pages=pages)
             extraction_foci = extraction_focuses_for_profile(experiment_profile) or BASE_EXTRACTION_FOCUSES
@@ -1043,6 +1063,7 @@ class DeepSeekEvidenceExtractor:
             imported = {"inserted": 0, "existing": 0}
             verified_findings = _deduplicate_findings(all_findings)
             qualitative_imported = {"inserted": 0, "existing": 0}
+            qualitative_import_errors: list[dict[str, Any]] = []
             if commit and verified:
                 import_payload = {
                     "materials": [], "experiments": [],
@@ -1067,12 +1088,24 @@ class DeepSeekEvidenceExtractor:
             if commit and verified_findings:
                 before_ids = {row["item_id"] for row in list_current_data(self.db, paper_id)}
                 for finding in verified_findings:
-                    item = add_qualitative_item(self.db, paper_id, finding)
+                    try:
+                        item = add_qualitative_item(self.db, paper_id, finding)
+                    except (ValueError, KeyError) as finding_exc:
+                        rejected = dict(finding)
+                        rejected["validation_errors"] = [f"database import: {finding_exc}"]
+                        qualitative_import_errors.append(rejected)
+                        continue
                     if int(item["item_id"]) in before_ids:
                         qualitative_imported["existing"] += 1
                     else:
                         qualitative_imported["inserted"] += 1
                         before_ids.add(int(item["item_id"]))
+            if commit and (verified or verified_findings):
+                try:
+                    from .visual_evidence import link_data_items_to_visuals
+                    visual_evidence["links"] = link_data_items_to_visuals(self.db, paper_id)
+                except Exception as link_exc:
+                    visual_evidence["link_warning"] = str(link_exc)
             result = {
                 "run_id": run_id,
                 "paper": {"id": paper_id, "title": paper["title"], "doi": paper.get("doi")},
@@ -1090,7 +1123,9 @@ class DeepSeekEvidenceExtractor:
                 "qualitative_finding_count": len(verified_findings),
                 "qualitative_findings": verified_findings,
                 "qualitative_rejected": finding_rejected,
+                "qualitative_import_errors": qualitative_import_errors,
                 "qualitative_imported": qualitative_imported,
+                "visual_evidence": visual_evidence,
                 "verified_candidates": verified,
                 "all_candidates": all_candidates,
                 "schema_rejected": schema_rejected,
@@ -1120,6 +1155,18 @@ class DeepSeekEvidenceExtractor:
                     now(), run_id,
                 ),
             )
+            _execute_run_update(
+                self.db,
+                """UPDATE processing_jobs SET status='completed',provider='deepseek',
+                   message=?,updated_at=?
+                   WHERE id=(SELECT id FROM processing_jobs WHERE paper_id=? AND job_type='extract'
+                             ORDER BY id DESC LIMIT 1)""",
+                (
+                    f"抽取完成：入库 {int(imported.get('inserted', 0)) + int(qualitative_imported.get('inserted', 0))} 条；"
+                    f"图表 {int(visual_evidence.get('table_count', 0))} 张表 / {int(visual_evidence.get('figure_count', 0))} 幅图",
+                    now(), paper_id,
+                ),
+            )
             result["output_path"] = str(output_path)
             return result
         except BaseException as exc:
@@ -1132,6 +1179,16 @@ class DeepSeekEvidenceExtractor:
             except sqlite3.OperationalError:
                 # Preserve the extraction exception even if the audit write
                 # remains unavailable after bounded retries.
+                pass
+            try:
+                _execute_run_update(
+                    self.db,
+                    """UPDATE processing_jobs SET status='failed',provider='deepseek',message=?,updated_at=?
+                       WHERE id=(SELECT id FROM processing_jobs WHERE paper_id=? AND job_type='extract'
+                                 ORDER BY id DESC LIMIT 1)""",
+                    (f"DeepSeek 处理失败：{str(exc)[:700]}", now(), paper_id),
+                )
+            except sqlite3.OperationalError:
                 pass
             raise
 

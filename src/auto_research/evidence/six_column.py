@@ -743,7 +743,7 @@ def _validate_fields(fields: dict[str, Any]) -> dict[str, str]:
         if value is None:
             value = ""
         clean[field] = str(value).strip()
-    for required in ("value_text", "meaning", "article_title", "doi", "context_explanation"):
+    for required in ("value_text", "meaning", "article_title", "context_explanation"):
         if not clean[required]:
             raise ValueError(f"{required} cannot be empty")
     if not is_reportable_value_text(clean["value_text"]):
@@ -886,7 +886,7 @@ def add_qualitative_item(db: EvidenceDB, paper_id: int, finding: dict[str, Any],
         "doi": str(paper.get("doi") or "").strip(),
         "context_explanation": str(finding.get("context_explanation") or "").strip(),
     }
-    for required in ("value_text", "meaning", "article_title", "doi", "context_explanation"):
+    for required in ("value_text", "meaning", "article_title", "context_explanation"):
         if not fields[required]:
             raise ValueError(f"qualitative finding {required} cannot be empty")
     if is_reportable_value_text(fields["value_text"]):

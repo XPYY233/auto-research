@@ -31,6 +31,11 @@ JSON_FIELDS = {
     "materials": "materials_json",
     "tags": "tags_json",
 }
+VISUAL_EDITABLE_FIELDS = (
+    "caption", "physical_quantities", "variables", "materials", "conditions_text",
+    "methods_text", "context_explanation", "tags",
+)
+VISUAL_REVIEW_ACTIONS = {"automatic", "confirmation", "correction", "ambiguous", "rejected"}
 
 
 TARGET_DOI = "10.1016/j.jnucmat.2018.08.031"
@@ -273,6 +278,9 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
                 for rect in page.get_image_rects(image[0]):
                     if rect.width > 60 and rect.height > 40:
                         image_rects.append(rect)
+            background_raster = any(
+                rect.get_area() >= page.rect.get_area() * 0.70 for rect in image_rects
+            )
             drawings = [drawing["rect"] for drawing in page.get_drawings()]
             for block in blocks:
                 text = " ".join(str(block[4]).split())
@@ -286,11 +294,24 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
                         rect for rect in image_rects
                         if rect.y1 <= caption_rect.y0 + 12 and caption_rect.y0 - rect.y1 <= 120
                     ]
-                    if not candidates:
+                    if candidates:
+                        image_rect = min(candidates, key=lambda rect: (max(caption_rect.y0 - rect.y1, 0), -rect.get_area()))
+                        crop = image_rect | caption_rect
+                        crop = fitz.Rect(crop.x0 - 8, crop.y0 - 7, crop.x1 + 8, crop.y1 + 7) & page.rect
+                    elif background_raster:
+                        # Scanned and older publisher PDFs often store the
+                        # entire page as one raster plus an OCR text layer.  In
+                        # that case there is no individual image object to
+                        # match.  Use the caption's column and the preceding
+                        # page region, retaining the caption in the crop.
+                        full_width = caption_rect.width >= page.rect.width * 0.45
+                        x0 = 28 if full_width else max(24, caption_rect.x0 - 12)
+                        x1 = page.rect.width - 28 if full_width else min(page.rect.width - 24, caption_rect.x1 + 12)
+                        lookback = 540 if full_width else 300
+                        y0 = max(35, caption_rect.y0 - lookback)
+                        crop = fitz.Rect(x0, y0, x1, min(page.rect.height - 24, caption_rect.y1 + 10))
+                    else:
                         continue
-                    image_rect = min(candidates, key=lambda rect: (max(caption_rect.y0 - rect.y1, 0), -rect.get_area()))
-                    crop = image_rect | caption_rect
-                    crop = fitz.Rect(crop.x0 - 8, crop.y0 - 7, crop.x1 + 8, crop.y1 + 7) & page.rect
                     caption = match.group(2).strip() or text
                     inferred = _infer_visual_metadata(caption, "figure")
                     specs.append({
@@ -309,11 +330,17 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
                     rect for rect in drawings
                     if rect.y0 >= caption_rect.y1 - 2 and rect.width > 100 and rect.height < 10
                 ]
-                if not horizontal:
+                if not horizontal and not background_raster:
                     continue
-                bottom = max(rect.y1 for rect in horizontal)
                 column_right = page.rect.width - 28 if caption_rect.x0 > page.rect.width / 2 else min(page.rect.width - 28, caption_rect.x0 + 270)
-                crop = fitz.Rect(caption_rect.x0 - 6, caption_rect.y0 - 6, column_right, min(bottom + 26, page.rect.height - 28)) & page.rect
+                if horizontal:
+                    bottom = max(rect.y1 for rect in horizontal)
+                    crop = fitz.Rect(caption_rect.x0 - 6, caption_rect.y0 - 6, column_right, min(bottom + 26, page.rect.height - 28)) & page.rect
+                else:
+                    full_width = caption_rect.width >= page.rect.width * 0.45
+                    x0 = 28 if full_width else max(24, caption_rect.x0 - 8)
+                    x1 = page.rect.width - 28 if full_width else column_right
+                    crop = fitz.Rect(x0, max(30, caption_rect.y0 - 6), x1, min(page.rect.height - 28, caption_rect.y1 + 320))
                 caption = match.group(2).strip() or text
                 inferred = _infer_visual_metadata(caption, "table")
                 specs.append({
@@ -347,6 +374,24 @@ def _decode_asset(row: dict[str, Any]) -> dict[str, Any]:
             result[public] = {} if public == "variables" else []
     result["image_url"] = f"/api/visual-assets/{result['id']}/image"
     result["pdf_url"] = f"/api/papers/{result['paper_id']}/pdf#page={result['page_start']}"
+    review_fields: dict[str, Any] = {}
+    raw_review_fields = result.pop("review_fields_json", None)
+    if raw_review_fields:
+        try:
+            parsed = json.loads(str(raw_review_fields))
+            if isinstance(parsed, dict):
+                review_fields = parsed
+        except (json.JSONDecodeError, TypeError):
+            review_fields = {}
+    for field in VISUAL_EDITABLE_FIELDS:
+        result[f"original_{field}"] = result.get(field)
+        if field in review_fields:
+            result[field] = review_fields[field]
+    result["version_no"] = int(result.pop("visual_version_no", 0) or 0)
+    result["review_action"] = str(result.pop("visual_review_action", None) or "automatic")
+    result["reviewer"] = str(result.pop("visual_reviewer", None) or "")
+    result["review_note"] = str(result.pop("visual_review_note", None) or "")
+    result["reviewed_at"] = result.pop("visual_reviewed_at", None)
     return result
 
 
@@ -498,8 +543,13 @@ def list_visual_assets(db: EvidenceDB, *, asset_type: str | None = None, paper_i
     db.init()
     sql = (
         "SELECT a.*,p.title article_title,p.doi,p.year,p.first_author,p.corresponding_author,"
-        "(SELECT COUNT(*) FROM data_item_visual_links l WHERE l.asset_id=a.id) linked_item_count "
-        "FROM visual_assets a JOIN papers p ON p.id=a.paper_id WHERE 1=1"
+        "(SELECT COUNT(*) FROM data_item_visual_links l WHERE l.asset_id=a.id) linked_item_count,"
+        "vr.version_no visual_version_no,vr.review_action visual_review_action,"
+        "vr.fields_json review_fields_json,vr.reviewer visual_reviewer,vr.note visual_review_note,"
+        "vr.created_at visual_reviewed_at "
+        "FROM visual_assets a LEFT JOIN visual_asset_reviews vr ON vr.asset_id=a.id "
+        "AND vr.version_no=(SELECT MAX(vr2.version_no) FROM visual_asset_reviews vr2 WHERE vr2.asset_id=a.id) "
+        "JOIN papers p ON p.id=a.paper_id WHERE 1=1"
     )
     params: list[Any] = []
     if asset_type is not None:
@@ -520,6 +570,60 @@ def get_visual_asset(db: EvidenceDB, asset_id: int) -> dict[str, Any]:
     if not rows:
         raise KeyError(f"visual asset not found: {asset_id}")
     return rows[0]
+
+
+def _clean_visual_fields(fields: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    clean: dict[str, Any] = {}
+    for field in VISUAL_EDITABLE_FIELDS:
+        value = fields.get(field, current.get(field))
+        if field in {"physical_quantities", "materials", "tags"}:
+            if not isinstance(value, list):
+                raise ValueError(f"{field} must be a list")
+            clean[field] = [str(item).strip() for item in value if str(item).strip()]
+        elif field == "variables":
+            if not isinstance(value, dict):
+                raise ValueError("variables must be an object")
+            clean[field] = {
+                str(key).strip(): str(item).strip()
+                for key, item in value.items() if str(key).strip() and str(item).strip()
+            }
+        else:
+            clean[field] = str(value or "").strip()
+    if not clean["caption"]:
+        raise ValueError("图表标题不能为空")
+    return clean
+
+
+def review_visual_asset(db: EvidenceDB, asset_id: int, fields: dict[str, Any],
+                        decision: str, *, reviewer: str = "本地研究者", note: str = "") -> dict[str, Any]:
+    """Append a review decision while preserving the indexed screenshot and original metadata."""
+
+    if decision not in VISUAL_REVIEW_ACTIONS:
+        raise ValueError(f"unsupported visual review decision: {decision}")
+    current = get_visual_asset(db, asset_id)
+    clean = _clean_visual_fields(fields or {}, current)
+    immutable_original = {
+        field: current.get(f"original_{field}", current.get(field))
+        for field in VISUAL_EDITABLE_FIELDS
+    }
+    if decision == "confirmation" and clean != immutable_original:
+        decision = "correction"
+    if decision in {"ambiguous", "rejected"} and not str(note or "").strip():
+        raise ValueError("标记为存在歧义或不采用时，请填写原因")
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(version_no),0) version_no FROM visual_asset_reviews WHERE asset_id=?",
+            (asset_id,),
+        ).fetchone()
+        version_no = int(row["version_no"] or 0) + 1
+        conn.execute(
+            """INSERT INTO visual_asset_reviews(
+               asset_id,version_no,review_action,fields_json,reviewer,note,created_at
+               ) VALUES(?,?,?,?,?,?,?)""",
+            (asset_id, version_no, decision, _json(clean), str(reviewer or "本地研究者"),
+             str(note or "").strip(), now()),
+        )
+    return get_visual_asset(db, asset_id)
 
 
 def visual_asset_image_path(db: EvidenceDB, asset_id: int) -> Path:

@@ -24,6 +24,7 @@ EXPECTED_INDEXES = {
     "idx_visual_assets_paper_type",
     "idx_visual_assets_label",
     "idx_data_item_visual_asset",
+    "idx_visual_asset_reviews_current",
 }
 
 
@@ -42,7 +43,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
     for row in rows:
         for field in SIX_FIELDS:
             value = row.get(field)
-            if field == "unit":
+            if field in {"unit", "doi"}:
                 if value is None:
                     missing_fields.append({"item_id": row.get("item_id"), "field": field})
             elif not str(value or "").strip():
@@ -123,7 +124,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
     checks = [
         {
             "name": "schema_version",
-            "ok": schema_version >= 8,
+            "ok": schema_version >= 9,
             "detail": f"schema_version={schema_version_text or 'missing'}",
         },
         {
@@ -139,7 +140,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         {
             "name": "six_required_fields",
             "ok": not missing_fields,
-            "detail": "all current rows have the six required fields" if not missing_fields else f"{len(missing_fields)} required field values are missing",
+            "detail": "all current rows have required evidence fields (DOI/unit may be blank)" if not missing_fields else f"{len(missing_fields)} required field values are missing",
             "examples": missing_fields[:20],
         },
         {

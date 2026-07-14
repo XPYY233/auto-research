@@ -77,6 +77,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("resilient_boot_and_release", "apiOptional" in js and "runtimeWarnings" in js and "id=\"runtime-warning\"" in html and "id=\"release-badge\"" in html),
         ("physical_fact_clustering", all(token in js for token in ("fact_cluster_size", "evidence_occurrences", "data-source-member", "重复记录已合并"))),
         ("complete_visual_dialog", "id=\"visual-dialog\"" in html and "id=\"visual-image\"" in html and "openVisualAsset" in js and ".visual-dialog-layout" in css),
+        ("visual_review_objects", all(token in html for token in ('data-review-object="data"', 'data-review-object="table"', 'data-review-object="figure"', 'id="visual-review-workspace"')) and "/api/current-paper/visual-assets" in js and "/review" in js and "saveVisualReview" in js),
         ("table_result_collapsing", "table-result-group" in js and "同一原表" in js and "展开其余" in js),
         ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
         ("next_unreviewed_queue", "id=\"next-unreviewed\"" in html and "selectNextUnreviewed" in js and "scrollIntoView" in js),
@@ -164,7 +165,7 @@ def _requirement_summary(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         {
             "id": "six_required_columns",
             "ok": ok("six_editable_fields"),
-            "requirement": "每条数据至少包含具体数值、具体意义、单位、文章题目、DOI 和数据在文中的解释。",
+            "requirement": "每条数据至少包含具体数值、具体意义、单位、文章题目、DOI 字段和数据在文中的解释；没有 DOI 的论文允许该字段为空。",
             "evidence": details("six_editable_fields"),
         },
         {
@@ -254,7 +255,7 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
     for row in rows:
         for field in SIX_FIELDS:
             value = row.get(field)
-            if field == "unit":
+            if field in {"unit", "doi"}:
                 if value is None:
                     missing.append({"item_id": row.get("item_id"), "field": field})
             elif not str(value or "").strip():
@@ -263,7 +264,7 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
         checks,
         "six_editable_fields",
         not missing,
-        "每条数据均具备六个可编辑字段；unit 允许为空字符串但字段必须存在。"
+        "每条数据均具备六个可编辑字段；unit 和 DOI 允许为空字符串但字段必须存在。"
         if not missing else f"发现 {len(missing)} 个必需字段缺失。",
         missing=missing[:20],
     )
