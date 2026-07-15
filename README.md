@@ -642,3 +642,39 @@ pass for every incidental keyword category. A final coverage-gap audit receives
 the existing candidate inventory and is instructed to return only overlooked
 atomic evidence. If that optional audit fails, the run preserves verified data
 and records a retry task instead of discarding the whole result.
+
+## Cloud-assisted table and figure enhancement
+
+The stable visual layer contains 243 immutable source assets: 40 tables and 203
+figures across 30 papers. The cloud quality set is deliberately smaller and is
+fixed by `config/evidence_test_set_10.json`: exactly 10 papers and 91 visual
+assets. Do not use the 30-paper coverage count as the first cloud batch.
+
+The cloud pipeline is additive:
+
+- `legacy` displays only the verified local source screenshots and is the
+  default mode;
+- `shadow` keeps the same display result while generating MinerU structure and
+  DeepSeek semantic candidates for side-by-side review;
+- `hybrid` overlays only candidates that passed the ten-paper global quality
+  gate and were explicitly adopted for that individual visual asset.
+
+Configure MinerU once by double-clicking
+`/Users/USER/Zotero/配置MinerU云端解析.command`. The token is entered in a
+hidden prompt and stored in the macOS Keychain service
+`auto-research-mineru`; it is never written to this repository or database.
+After configuration, use `生成云端图表候选` in the table or figure review page.
+The page reports upload, queue, parsed-page, download and DeepSeek stages.
+
+Useful verification commands:
+
+```bash
+python3 scripts/verify_visual_baseline.py
+PYTHONPATH=src python3 -m auto_research.cli evidence-mineru-status
+PYTHONPATH=src python3 -m auto_research.cli evidence-cloud-visual-quality
+```
+
+MinerU failures never delete or replace stable assets. Cloud candidates are
+stored in separate tables, curve data points are forbidden, and the backend
+blocks `hybrid` until all mandatory quality thresholds pass. See
+`docs/cloud_visual_architecture.md` for the data model and release gates.

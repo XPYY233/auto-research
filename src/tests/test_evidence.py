@@ -694,7 +694,7 @@ class EvidenceDBTests(unittest.TestCase):
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_versions").fetchone()["count"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_version_orphans").fetchone()["count"], 1)
-            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "10")
+            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "11")
             self.assertEqual(list(conn.execute("PRAGMA foreign_key_check")), [])
         health = evidence_db_health(self.db, self.paper)
         self.assertTrue(health["ok"], health)
@@ -1358,8 +1358,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.15-local-stable.1")
-        self.assertEqual(RELEASE_INFO["evidence_schema"], 10)
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.15-cloud-shadow.1")
+        self.assertEqual(RELEASE_INFO["evidence_schema"], 11)
 
     def test_blank_search_and_paper_picker_counts_cover_all_papers(self):
         other = self.db.upsert_paper(title="Other irradiation paper", doi="10.1/search-all")
@@ -1730,6 +1730,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(is_read_only_public_get("/api/visual-search"))
         self.assertTrue(is_read_only_public_get("/api/visual-assets/3"))
         self.assertTrue(is_read_only_public_get("/api/visual-assets/3/image"))
+        self.assertTrue(is_read_only_public_get("/api/cloud-visual-sources/3/image"))
+        self.assertFalse(is_read_only_public_get("/api/current-paper/cloud-visual-candidates"))
         self.assertFalse(is_read_only_public_get("/api/current-paper"))
         self.assertFalse(is_read_only_public_get("/api/papers"))
         self.assertFalse(is_read_only_public_get("/api/uploads"))

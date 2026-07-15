@@ -2,6 +2,17 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
+## Cloud visual zero-regression contract
+
+- The immutable pre-cloud baseline is 243 visual assets (40 tables and 203 figures) across 30 papers. Do not confuse that corpus coverage with the fixed cloud quality set: cloud rollout is evaluated first on exactly 10 papers and 91 visual assets from `config/evidence_test_set_10.json`.
+- Preserve every existing `visual_assets` identity, legacy image file, stored hash, label, page locator and review history. MinerU and DeepSeek outputs are candidate versions; they never overwrite the stable row or image.
+- Supported modes are `legacy`, `shadow` and quality-gated `hybrid`. The default is `legacy`. There is no default or release path named `cloud-only`.
+- MinerU performs cloud PDF structure and visual extraction. DeepSeek may add scientific semantics from captions, nearby text and structured tables, but does not decide whether stable evidence is replaced.
+- MinerU credentials belong only in macOS Keychain service `auto-research-mineru`. Never write the token to Git, SQLite, environment examples, reports or logs.
+- Never create curve data points from a figure. Trends must be classified as `explicit_text` or `visual_interpretation`; unreviewed visual interpretations are not experimental conclusions.
+- `hybrid` may be enabled only after the fixed ten-paper evaluation passes all backend-enforced gates: recall not below legacy, new-candidate precision at least 95%, at least 100 sampled table cells with at least 95% exact agreement, applicable axes/legends at least 90%, and zero curve-point violations.
+- Network failure, timeouts, quotas, damaged cloud archives or rejected candidates must leave legacy search, screenshots, detail views, PDF jumps and read-only routes usable.
+
 ## Active local workspace
 
 - The only active project root is `/Users/USER/Zotero/auto-research`.

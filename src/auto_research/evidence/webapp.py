@@ -15,6 +15,19 @@ from xml.sax.saxutils import escape as xml_escape
 from auto_research.ai.deepseek import DeepSeekSettings
 
 from .article_navigation import annotate_navigation_tags
+from .cloud_visual import (
+    MinerUSettings,
+    cloud_candidate_image_path,
+    cloud_quality_report,
+    get_cloud_candidate,
+    get_cloud_visual_run,
+    get_visual_processing_mode,
+    list_cloud_candidates,
+    list_cloud_visual_runs,
+    review_cloud_candidate,
+    set_visual_processing_mode,
+    start_cloud_visual_run,
+)
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
 from .deepseek_extraction import DeepSeekEvidenceExtractor, latest_deepseek_run
@@ -60,9 +73,9 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.15-local-stable.1",
-    "label": "本地运行与图表证据稳定版 2026.07.15",
-    "evidence_schema": 10,
+    "version": "2026.07.15-cloud-shadow.1",
+    "label": "图表云端影子增强版 2026.07.15",
+    "evidence_schema": 11,
 }
 
 
@@ -102,6 +115,8 @@ def is_read_only_public_get(path: str) -> bool:
     if re.fullmatch(r"/api/visual-assets/\d+", path):
         return True
     if re.fullmatch(r"/api/visual-assets/\d+/image", path):
+        return True
+    if re.fullmatch(r"/api/cloud-visual-sources/\d+/image", path):
         return True
     return False
 
@@ -249,7 +264,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     "release": RELEASE_INFO,
                 })
             if parsed.path == "/api/ai/status":
-                return self.json_response(DeepSeekSettings.from_env().public_status())
+                deepseek_status = DeepSeekSettings.from_env().public_status()
+                return self.json_response({
+                    **deepseek_status,
+                    "deepseek": deepseek_status,
+                    "mineru": MinerUSettings.from_keychain().public_status(),
+                })
+            if parsed.path == "/api/visual-processing-mode":
+                return self.json_response({"mode": get_visual_processing_mode(self.db)})
             if parsed.path == "/api/uploads":
                 limit = int(parse_qs(parsed.query).get("limit", ["30"])[0])
                 return self.json_response(self.db.list_upload_events(min(max(limit, 1), 100)))
@@ -409,6 +431,34 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
                 return self.json_response(list_visual_assets(self.db, paper_id=paper_id))
+            if parsed.path == "/api/current-paper/cloud-visual-runs":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.json_response(list_cloud_visual_runs(self.db, paper_id))
+            if parsed.path == "/api/current-paper/cloud-visual-candidates":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.json_response(list_cloud_candidates(self.db, paper_id))
+            if parsed.path == "/api/current-paper/cloud-visual-quality":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.json_response(cloud_quality_report(self.db, paper_id))
+            match = re.fullmatch(r"/api/cloud-visual-runs/(\d+)", parsed.path)
+            if match:
+                return self.json_response(get_cloud_visual_run(self.db, int(match.group(1))))
+            match = re.fullmatch(r"/api/cloud-visual-sources/(\d+)", parsed.path)
+            if match:
+                return self.json_response(get_cloud_candidate(self.db, int(match.group(1))))
+            match = re.fullmatch(r"/api/cloud-visual-sources/(\d+)/image", parsed.path)
+            if match:
+                candidate = get_cloud_candidate(self.db, int(match.group(1)))
+                if self.read_only and not (
+                    candidate.get("quality_status") == "passed"
+                    and candidate.get("adoption_state") == "enhancement"
+                    and get_visual_processing_mode(self.db) == "hybrid"
+                ):
+                    return self.json_response({"error": "该云端候选尚未发布"}, HTTPStatus.FORBIDDEN)
+                return self.png_response(cloud_candidate_image_path(self.db, int(match.group(1))).read_bytes())
             match = re.fullmatch(r"/api/visual-assets/(\d+)", parsed.path)
             if match:
                 return self.json_response(get_visual_asset(self.db, int(match.group(1))))
@@ -517,6 +567,21 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     note=str(body.get("note") or ""),
                 )
                 return self.json_response(result)
+            match = re.fullmatch(r"/api/cloud-visual-sources/(\d+)/review", parsed.path)
+            if match:
+                return self.json_response(review_cloud_candidate(
+                    self.db, int(match.group(1)), str(body.get("decision") or ""),
+                    note=str(body.get("note") or ""),
+                ))
+            if parsed.path == "/api/current-paper/cloud-visual-run":
+                paper_id = int(body.get("paper_id") or get_current_paper_id(self.db))
+                return self.json_response(start_cloud_visual_run(
+                    self.db, paper_id, requested_mode=str(body.get("mode") or "shadow")
+                ), HTTPStatus.ACCEPTED)
+            if parsed.path == "/api/visual-processing-mode":
+                return self.json_response({
+                    "mode": set_visual_processing_mode(self.db, str(body.get("mode") or ""))
+                })
             if parsed.path == "/api/six-data/manual":
                 paper_id = int(body.get("paper_id") or get_current_paper_id(self.db))
                 result = add_manual_item(

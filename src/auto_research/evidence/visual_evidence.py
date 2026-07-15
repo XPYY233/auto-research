@@ -970,7 +970,55 @@ def list_visual_assets(db: EvidenceDB, *, asset_type: str | None = None, paper_i
         params.append(paper_id)
     sql += " ORDER BY p.id,a.asset_type,a.asset_number"
     with db.connect() as conn:
-        return [_decode_asset(dict(row)) for row in conn.execute(sql, params)]
+        assets = [_decode_asset(dict(row)) for row in conn.execute(sql, params)]
+
+    # Cloud candidates are a read-time overlay only. The stable rows and image
+    # hashes above are never rewritten, and legacy/shadow modes return exactly
+    # the pre-cloud representation.
+    from .cloud_visual import get_visual_processing_mode, list_cloud_candidates
+
+    if get_visual_processing_mode(db) != "hybrid" or not assets:
+        for asset in assets:
+            asset["effective_source"] = "legacy"
+            asset["stable_image_url"] = asset["image_url"]
+        return assets
+
+    paper_ids = sorted({int(asset["paper_id"]) for asset in assets})
+    adopted: dict[int, dict[str, Any]] = {}
+    for candidate_paper_id in paper_ids:
+        for candidate in list_cloud_candidates(db, candidate_paper_id):
+            linked_id = int(candidate.get("asset_id") or 0)
+            if not linked_id or linked_id in adopted:
+                continue
+            if candidate.get("quality_status") != "passed":
+                continue
+            if candidate.get("adoption_state") not in {"enhancement", "interpretation_only"}:
+                continue
+            adopted[linked_id] = candidate
+
+    semantic_fields = (
+        "display_name", "physical_quantities", "variables", "materials",
+        "conditions_text", "methods_text", "context_explanation", "tags",
+    )
+    for asset in assets:
+        asset["stable_image_url"] = asset["image_url"]
+        asset["effective_source"] = "legacy"
+        candidate = adopted.get(int(asset["id"]))
+        if not candidate:
+            continue
+        asset["cloud_candidate"] = candidate
+        if candidate.get("analysis_status") == "completed":
+            for field in semantic_fields:
+                value = candidate.get(field)
+                if value not in (None, "", [], {}):
+                    asset[field] = value
+            asset["trends"] = candidate.get("trends") or []
+        if candidate.get("adoption_state") == "enhancement" and candidate.get("image_url"):
+            asset["image_url"] = candidate["image_url"]
+            asset["effective_source"] = "hybrid_cloud_image_and_semantics"
+        else:
+            asset["effective_source"] = "hybrid_cloud_semantics"
+    return assets
 
 
 def get_visual_asset(db: EvidenceDB, asset_id: int) -> dict[str, Any]:

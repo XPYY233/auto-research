@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,11 @@ EXPECTED_INDEXES = {
     "idx_visual_assets_label",
     "idx_data_item_visual_asset",
     "idx_visual_asset_reviews_current",
+    "idx_cloud_visual_runs_paper",
+    "idx_cloud_visual_runs_status",
+    "idx_visual_source_versions_asset",
+    "idx_visual_source_versions_run",
+    "idx_cloud_visual_quality_decision",
 }
 
 
@@ -84,7 +90,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             "SELECT id,status,output_path,created_at FROM ai_extraction_runs"
         )]
         visual_assets = [dict(row) for row in conn.execute(
-            "SELECT id,paper_id,asset_type,label,image_path FROM visual_assets"
+            "SELECT id,paper_id,asset_type,label,image_path,image_sha256 FROM visual_assets"
             + (" WHERE paper_id=?" if paper_id is not None else ""),
             (() if paper_id is None else (paper_id,)),
         )]
@@ -113,6 +119,16 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         if not (Path(__file__).resolve().parents[3] / str(asset["image_path"])).is_file()
         and not Path(str(asset["image_path"])).is_file()
     ]
+    visual_hash_mismatches: list[int] = []
+    project_root = Path(__file__).resolve().parents[3]
+    for asset in visual_assets:
+        path = Path(str(asset["image_path"]))
+        resolved = path if path.is_absolute() else project_root / path
+        if not resolved.is_file():
+            continue
+        digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+        if digest != str(asset.get("image_sha256") or ""):
+            visual_hash_mismatches.append(int(asset["id"]))
 
     schema_version_text = schema_version_row["value"] if schema_version_row else ""
     try:
@@ -124,7 +140,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
     checks = [
         {
             "name": "schema_version",
-            "ok": schema_version >= 10,
+            "ok": schema_version >= 11,
             "detail": f"schema_version={schema_version_text or 'missing'}",
         },
         {
@@ -210,6 +226,13 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             "detail": f"visual assets={len(visual_assets)}; all rendered images exist"
             if not missing_visual_images else f"missing visual image ids={missing_visual_images}",
             "examples": missing_visual_images[:20],
+        },
+        {
+            "name": "visual_asset_hashes",
+            "ok": not visual_hash_mismatches,
+            "detail": f"visual assets={len(visual_assets)}; stored image hashes still match"
+            if not visual_hash_mismatches else f"hash mismatch ids={visual_hash_mismatches[:20]}",
+            "examples": visual_hash_mismatches[:20],
         },
     ]
     return {
