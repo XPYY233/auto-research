@@ -2,6 +2,13 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
+## Active local workspace
+
+- The only active project root is `/Users/USER/Zotero/auto-research`.
+- Do not run, edit, or generate new artifacts under the former iCloud Drive project path. That directory is retained only as a migration backup.
+- Editable and read-only services must derive paths from the active project root. Python bytecode and launcher logs belong in local cache directories, not iCloud Drive.
+- The user-facing one-click launchers are `/Users/USER/Zotero/打开本地编辑工作台.command` and `/Users/USER/Zotero/创建导师公网链接.command`.
+
 ## Current acquisition capability summary
 
 ### Paths that can directly yield article metadata + a real local PDF

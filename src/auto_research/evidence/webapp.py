@@ -60,8 +60,8 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.14-stable.4",
-    "label": "图表证据与十篇质量重提取稳定版 2026.07.14",
+    "version": "2026.07.15-local-stable.1",
+    "label": "本地运行与图表证据稳定版 2026.07.15",
     "evidence_schema": 10,
 }
 

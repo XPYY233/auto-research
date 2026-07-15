@@ -8,9 +8,19 @@ PORT="${AUTO_RESEARCH_READONLY_PORT:-8766}"
 URL="http://${HOST}:${PORT}"
 LOG_DIR="${PROJECT_ROOT}/tmp"
 SERVER_LOG="${LOG_DIR}/readonly-evidence-server.log"
+CACHE_ROOT="${HOME}/Library/Caches/AutoResearchEvidence"
+PYCACHE_DIR="${CACHE_ROOT}/pycache"
+PYTHON_BIN="${AUTO_RESEARCH_PYTHON:-$(command -v python3 || true)}"
 
 cd "${PROJECT_ROOT}"
-mkdir -p "${LOG_DIR}"
+mkdir -p "${LOG_DIR}" "${CACHE_ROOT}" "${PYCACHE_DIR}"
+
+if [[ -z "${PYTHON_BIN}" || ! -x "${PYTHON_BIN}" ]]; then
+  echo "未找到可用的 Python 3，无法启动只读分享服务。"
+  read -k 1 "?按任意键关闭窗口。"
+  echo
+  exit 1
+fi
 
 echo "Auto Research 只读公网分享"
 echo "项目目录: ${PROJECT_ROOT}"
@@ -69,7 +79,7 @@ if ! command -v npx >/dev/null 2>&1; then
 fi
 
 existing_public_url="$(
-  python3 - <<PY 2>/dev/null || true
+  "${PYTHON_BIN}" - <<PY 2>/dev/null || true
 import json
 import urllib.request
 
@@ -104,7 +114,9 @@ if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
   echo "检测到只读网页服务已在运行。"
 else
   echo "正在启动只读网页服务。"
-  PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host "${HOST}" --port "${PORT}" --read-only > "${SERVER_LOG}" 2>&1 &
+  env PYTHONPATH="${PROJECT_ROOT}/src" PYTHONPYCACHEPREFIX="${PYCACHE_DIR}" \
+    "${PYTHON_BIN}" -u -m auto_research.cli evidence-serve \
+    --host "${HOST}" --port "${PORT}" --read-only > "${SERVER_LOG}" 2>&1 &
   SERVER_PID=$!
   server_started_by_script=1
 fi
@@ -117,14 +129,22 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "正在检查只读模式。"
-for _ in {1..30}; do
-  if curl -fsS "${URL}/api/ui-mode" | grep -q '"read_only": true'; then
+for second in {1..90}; do
+  if curl --connect-timeout 1 --max-time 2 -fsS "${URL}/api/ui-mode" 2>/dev/null | grep -q '"read_only": true'; then
     break
+  fi
+  if [[ "${server_started_by_script}" == "1" ]] && ! kill -0 "${SERVER_PID}" >/dev/null 2>&1; then
+    echo "只读网页服务提前退出。日志位置：${SERVER_LOG}"
+    sed -n '1,160p' "${SERVER_LOG}" 2>/dev/null || true
+    exit 1
+  fi
+  if (( second % 5 == 0 )); then
+    echo "  已等待 ${second} 秒，服务仍在初始化……"
   fi
   sleep 1
 done
 
-if ! curl -fsS "${URL}/api/ui-mode" | grep -q '"read_only": true'; then
+if ! curl --connect-timeout 1 --max-time 2 -fsS "${URL}/api/ui-mode" 2>/dev/null | grep -q '"read_only": true'; then
   echo "只读网页服务未能通过检查。日志位置：${SERVER_LOG}"
   exit 1
 fi

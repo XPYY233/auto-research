@@ -2,8 +2,8 @@
 
 ## 版本身份
 
-- 版本：`2026.07.14-stable.4`
-- Git 标签：`evidence-demo-2026-07-14-visual-evidence-stable-4`
+- 版本：`2026.07.15-local-stable.1`
+- Git 标签：`evidence-demo-2026-07-15-local-runtime-stable-1`
 - 证据库结构：`v10`
 - 本地编辑端：`http://127.0.0.1:8765/`
 - 只读分享端：由 `scripts/start_readonly_ngrok.command` 生成临时公网地址
@@ -42,10 +42,11 @@
 
 ## 启动和恢复
 
-- 本地编辑端：双击 `scripts/start_evidence_ui.command`。
-- 只读公网链接：双击 `scripts/start_readonly_ngrok.command`。
-- 完整 Git 备份：`/Users/USER/Zotero/auto-research-git-backups/auto-research-20260714-visual-evidence-stable-4-full.bundle`
-- 恢复时可从 bundle 克隆项目，再使用标签 `evidence-demo-2026-07-14-visual-evidence-stable-4` 定位本版本。
+- 活动项目目录：`/Users/USER/Zotero/auto-research`；旧 iCloud 目录仅作备份。
+- 本地编辑端：双击 `/Users/USER/Zotero/打开本地编辑工作台.command`。
+- 只读公网链接：双击 `/Users/USER/Zotero/创建导师公网链接.command`。
+- 完整 Git 备份：`/Users/USER/Zotero/auto-research-git-backups/auto-research-20260715-local-runtime-stable-1-full.bundle`
+- 恢复时可从 bundle 克隆项目，再使用标签 `evidence-demo-2026-07-15-local-runtime-stable-1` 定位本版本。
 
 ## 重要边界
 

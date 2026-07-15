@@ -14,7 +14,7 @@ This document hands off the current Auto Research + Zotero workflow to a future 
 
 ## Current project path
 
-`/Users/USER/Library/Mobile Documents/com~apple~CloudDocs/paper_research_over_bug/auto-research`
+`/Users/USER/Zotero/auto-research`
 
 The new conversation should start from this directory.
 
@@ -30,7 +30,7 @@ Skill name:
 
 In the next conversation, ask Codex to use this skill explicitly, e.g.:
 
-> Use the `auto-research-zotero` skill. Continue from `/Users/USER/Library/Mobile Documents/com~apple~CloudDocs/paper_research_over_bug/auto-research` and extend the verified PDF-only Zotero corpus from 300 papers to 1000 papers.
+> Use the `auto-research-zotero` skill. Continue from `/Users/USER/Zotero/auto-research` and extend the verified PDF-only Zotero corpus from 300 papers to 1000 papers.
 
 ## Current Zotero state
 
@@ -192,7 +192,7 @@ Copy this into the next conversation:
 Use the `auto-research-zotero` skill.
 
 Continue from this project:
-/Users/USER/Library/Mobile Documents/com~apple~CloudDocs/paper_research_over_bug/auto-research
+/Users/USER/Zotero/auto-research
 
 Current state: Zotero has a clean verified parent collection `Auto Research PDF-only 300 CLEAN - Object+Method` with collection key `IJ4ZT63W`, containing 300 top-level items and 300 valid local PDFs. It has 30 child collections named by `ResearchObject + ResearchMethod`.
 
