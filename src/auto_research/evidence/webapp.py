@@ -73,8 +73,8 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.15-cloud-shadow.1",
-    "label": "图表云端影子增强版 2026.07.15",
+    "version": "2026.07.15-cloud-auto.1",
+    "label": "图表云端自动核验搜索版 2026.07.15",
     "evidence_schema": 11,
 }
 

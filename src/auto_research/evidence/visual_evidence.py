@@ -973,11 +973,14 @@ def list_visual_assets(db: EvidenceDB, *, asset_type: str | None = None, paper_i
         assets = [_decode_asset(dict(row)) for row in conn.execute(sql, params)]
 
     # Cloud candidates are a read-time overlay only. The stable rows and image
-    # hashes above are never rewritten, and legacy/shadow modes return exactly
-    # the pre-cloud representation.
+    # hashes above are never rewritten. Automatically verified semantics may
+    # improve search in every mode; cloud image bytes are used only in hybrid.
     from .cloud_visual import get_visual_processing_mode, list_cloud_candidates
 
-    if get_visual_processing_mode(db) != "hybrid" or not assets:
+    if not assets:
+        return assets
+    visual_mode = get_visual_processing_mode(db)
+    if visual_mode not in {"legacy", "shadow", "hybrid"}:
         for asset in assets:
             asset["effective_source"] = "legacy"
             asset["stable_image_url"] = asset["image_url"]
@@ -1013,10 +1016,15 @@ def list_visual_assets(db: EvidenceDB, *, asset_type: str | None = None, paper_i
                 if value not in (None, "", [], {}):
                     asset[field] = value
             asset["trends"] = candidate.get("trends") or []
-        if candidate.get("adoption_state") == "enhancement" and candidate.get("image_url"):
+            asset["effective_source"] = "auto_verified_cloud_semantics"
+        if (
+            visual_mode == "hybrid"
+            and candidate.get("adoption_state") == "enhancement"
+            and candidate.get("image_url")
+        ):
             asset["image_url"] = candidate["image_url"]
             asset["effective_source"] = "hybrid_cloud_image_and_semantics"
-        else:
+        elif visual_mode == "hybrid" and asset["effective_source"] != "legacy":
             asset["effective_source"] = "hybrid_cloud_semantics"
     return assets
 
@@ -1157,19 +1165,39 @@ def links_for_items(db: EvidenceDB, item_ids: list[int]) -> dict[int, list[dict[
     placeholders = ",".join("?" for _ in item_ids)
     with db.connect() as conn:
         rows = [dict(row) for row in conn.execute(
-            f"""SELECT l.item_id,l.relation_kind,l.cell_locator,a.id,a.asset_type,a.label,a.display_name,
-                       a.asset_number,a.page_start,a.caption,a.context_explanation,a.tags_json,a.image_path
-                FROM data_item_visual_links l JOIN visual_assets a ON a.id=l.asset_id
+            f"""SELECT l.item_id,l.relation_kind,l.cell_locator,l.asset_id
+                FROM data_item_visual_links l
                 WHERE l.item_id IN ({placeholders})
-                ORDER BY l.item_id,CASE l.relation_kind WHEN 'primary' THEN 0 ELSE 1 END,a.asset_number""",
+                ORDER BY l.item_id,CASE l.relation_kind WHEN 'primary' THEN 0 ELSE 1 END,l.asset_id""",
             item_ids,
         )]
+    linked_asset_ids = {int(row["asset_id"]) for row in rows}
+    effective_assets = {
+        int(asset["id"]): asset
+        for asset in list_visual_assets(db)
+        if int(asset["id"]) in linked_asset_ids
+    }
     output: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
-        row["image_url"] = f"/api/visual-assets/{row['id']}/image"
-        try:
-            row["tags"] = json.loads(str(row.pop("tags_json") or "[]"))
-        except (json.JSONDecodeError, TypeError):
-            row["tags"] = []
-        output.setdefault(int(row["item_id"]), []).append(row)
+        asset = effective_assets.get(int(row["asset_id"]))
+        if not asset:
+            continue
+        linked = {
+            "item_id": int(row["item_id"]),
+            "relation_kind": row["relation_kind"],
+            "cell_locator": row["cell_locator"],
+            "id": int(asset["id"]),
+            "asset_type": asset["asset_type"],
+            "label": asset["label"],
+            "display_name": asset.get("display_name"),
+            "asset_number": asset.get("asset_number"),
+            "page_start": asset.get("page_start"),
+            "caption": asset.get("caption"),
+            "context_explanation": asset.get("context_explanation"),
+            "tags": asset.get("tags") or [],
+            "image_url": asset.get("image_url"),
+            "stable_image_url": asset.get("stable_image_url"),
+            "effective_source": asset.get("effective_source", "legacy"),
+        }
+        output.setdefault(int(row["item_id"]), []).append(linked)
     return output

@@ -73,7 +73,7 @@ def build(db_path: Path, config_path: Path, output_dir: Path) -> dict:
         f"- 测试集：`{config['version']}`", f"- 论文：{len(rows)} 篇",
         f"- 稳定版图表：{payload['legacy_visual_count']} 个",
         f"- 云端候选：{payload['cloud_candidate_count']} 个",
-        "- 规则：先比较截图边界与图号，再核对表格单元格、坐标轴、图例和语义解释；未通过不进入混合版。", "",
+        "- 规则：语义需通过 DeepSeek 生成、独立 DeepSeek 核验和确定性证据门后自动进入搜索；云端截图仍需单独质量门。", "",
     ]
     for index, item in enumerate(rows, start=1):
         lines += [
@@ -81,7 +81,7 @@ def build(db_path: Path, config_path: Path, output_dir: Path) -> dict:
             f"- DOI：`{item['doi']}`", f"- 测试角色：{item['role']}",
             f"- 作者：{item.get('first_author') or '—'}；通讯：{item.get('corresponding_author') or '—'}",
             f"- 稳定版：表格 {item.get('legacy_tables', 0)}，图片 {item.get('legacy_figures', 0)}，合计 {item['legacy_count']}",
-            f"- 云端候选：表格 {item.get('cloud_tables', 0)}，图片 {item.get('cloud_figures', 0)}，已匹配 {item.get('cloud_matched', 0)}，已通过 {item.get('cloud_passed', 0)}",
+            f"- 云端候选：表格 {item.get('cloud_tables', 0)}，图片 {item.get('cloud_figures', 0)}，已匹配 {item.get('cloud_matched', 0)}，自动核验通过 {item.get('cloud_passed', 0)}",
             "- 校对重点：图号与页码；截图是否完整；表头/核心数据/末行/脚注；坐标轴与图例；趋势来源分类；不得出现曲线点。", "",
         ]
     md_path.write_text("\n".join(lines), encoding="utf-8")

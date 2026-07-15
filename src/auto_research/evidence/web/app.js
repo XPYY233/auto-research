@@ -1144,14 +1144,14 @@ function visualReviewCard(asset) {
     ${asset.review_action !== "automatic" ? '<button type="button" data-visual-decision="automatic">恢复待审核</button>' : ""}
   </div>`;
   const cloud = state.cloudCandidates.find(candidate => Number(candidate.asset_id) === Number(asset.id) && candidate.asset_type === asset.asset_type);
-  const cloudState = cloud ? ({ passed: "已通过", rejected: "已拒绝", ambiguous: "有歧义", pending: "云端候选" }[cloud.quality_status] || "云端候选") : "尚无候选";
+  const cloudState = cloud ? ({ passed: "自动核验通过 · 已进入搜索", rejected: "已拒绝", ambiguous: "有歧义", pending: "自动核验未通过" }[cloud.quality_status] || "云端候选") : "尚无候选";
   const cloudImage = cloud?.image_url
     ? `<button type="button" class="cloud-candidate-image" data-open-cloud-image="${cloud.id}"><img src="${esc(cloud.image_url)}" alt="${esc(cloud.label)}云端候选" loading="lazy"></button>`
     : `<div class="cloud-candidate-placeholder"><span>云端结构已返回</span><small>未提供独立图像，稳定截图继续保留</small></div>`;
   const cloudActions = !cloud || isReadOnly() ? "" : `<div class="cloud-candidate-actions" data-cloud-source="${cloud.id}">
     <button type="button" data-cloud-decision="keep_stable">保留稳定版</button>
-    <button type="button" class="cloud-adopt" data-cloud-decision="adopt_enhancement"${cloud.asset_id ? "" : " disabled"}>采用云端增强</button>
-    <button type="button" data-cloud-decision="adopt_interpretation"${cloud.asset_id ? "" : " disabled"}>仅采用云端解释</button>
+    <button type="button" class="cloud-adopt" data-cloud-decision="adopt_enhancement"${cloud.asset_id ? "" : " disabled"}>可选：使用云端截图</button>
+    <button type="button" data-cloud-decision="adopt_interpretation"${cloud.asset_id ? "" : " disabled"}>保留自动解释</button>
     <button type="button" class="cloud-error" data-cloud-decision="mark_error">标记云端错误</button>
   </div>`;
   const cloudPanel = cloud ? `<section class="cloud-candidate-panel ${esc(cloud.quality_status)}">
@@ -1195,7 +1195,7 @@ function renderVisualReview() {
   setText("visual-review-kicker", type === "table" ? "TABLE EVIDENCE REVIEW" : "FIGURE EVIDENCE REVIEW");
   setText("visual-review-title", `${typeName}校对`);
   const reviewed = assets.filter(asset => asset.review_action !== "automatic").length;
-  setText("visual-review-summary", `${reviewed}/${assets.length} 已审核。核对截图、图注与检索标签；图片曲线不会被自动转换为精确数值。`);
+  setText("visual-review-summary", `${reviewed}/${assets.length} 已人工审核；人工操作不是搜索前置条件。双重自动核验通过的语义会直接进入搜索，图片曲线不会被转换为精确数值。`);
   renderCloudVisualStatus();
   const grid = document.querySelector("#visual-review-grid");
   if (!assets.length && !unmatchedCloud.length) {
@@ -1248,7 +1248,7 @@ function renderCloudVisualStatus() {
     setText("cloud-visual-quality", "");
     return;
   }
-  const stageLabels = { queued: "准备任务", uploading: "上传 PDF", pending: "云端排队", running: "解析页面", downloading: "下载结果", analyzing: "DeepSeek 语义分析", completed: "候选已生成", failed: "云端任务失败" };
+  const stageLabels = { queued: "准备任务", uploading: "上传 PDF", pending: "云端排队", running: "解析页面", downloading: "下载结果", analyzing: "DeepSeek 生成与独立核验", completed: "自动核验已完成", failed: "云端任务失败" };
   setText("cloud-visual-stage", stageLabels[latest.status] || latest.progress_stage || "处理中");
   const pageProgress = latest.progress_total ? ` · ${latest.progress_current}/${latest.progress_total} 页` : "";
   const failure = latest.error_message ? ` · ${latest.error_message}` : "";
@@ -1256,7 +1256,7 @@ function renderCloudVisualStatus() {
   document.querySelector("#cloud-visual-progress-bar").style.width = `${Math.max(0, Math.min(100, latest.progress_percent || 0))}%`;
   const quality = state.cloudQuality;
   setText("cloud-visual-quality", quality
-    ? `候选 ${quality.candidate_count} 个 · 已匹配稳定图表 ${quality.matched_count} 个 · 已通过 ${quality.passed_count} 个 · 曲线点违规 ${quality.curve_point_violations} 个`
+    ? `候选 ${quality.candidate_count} 个 · 已匹配稳定图表 ${quality.matched_count} 个 · 自动核验通过并进入搜索 ${quality.passed_count} 个 · 曲线点违规 ${quality.curve_point_violations} 个`
     : "质量门尚未计算");
   if (!latest.terminal) scheduleCloudVisualPoll(latest.id);
 }
@@ -1275,7 +1275,7 @@ function scheduleCloudVisualPoll(runId) {
           api("/api/current-paper/visual-assets"),
         ]);
         renderReviewObject();
-        toast(run.status === "completed" ? "云端图表候选已生成，请逐图表比较。" : "云端增强未完成；稳定版图表仍可正常使用。", run.status !== "completed");
+        toast(run.status === "completed" ? "云端图表自动核验已完成；通过项已进入搜索。" : "云端增强未完成；稳定版图表仍可正常使用。", run.status !== "completed");
       }
     } catch (error) {
       toast(`云端进度读取失败：${error.message}`, true);
@@ -1798,12 +1798,12 @@ const searchModeCopy = {
   },
   table: {
     placeholder: "例如：三种材料 辐照前后 纳米硬度",
-    help: "以完整表格为单位检索物理量、材料、实验条件、方法、表题和正文解释。",
+    help: "以完整表格为单位检索物理量、材料、实验条件、方法、表题和正文解释；自动双重核验通过的云端语义会直接纳入。",
     suggestions: ["纳米硬度", "材料成分 EDS", "热力学参数"],
   },
   figure: {
     placeholder: "例如：位错环密度 随剂量变化 300°C",
-    help: "以完整图片为单位检索坐标变量、材料、条件、图注和正文结论；不会自动猜读曲线点。",
+    help: "以完整图片为单位检索坐标变量、材料、条件、图注和正文结论；自动核验语义可进入搜索，但不会猜读曲线点。",
     suggestions: ["位错环密度 随剂量", "SRIM 损伤深度", "纳米压痕 载荷 位移"],
   },
   finding: {
@@ -1955,7 +1955,9 @@ async function runSearch(event, options = {}) {
       if (requestId !== state.searchRequest) return;
       state.searchResults = assets;
       const label = state.searchMode === "table" ? "张原始表格" : "幅论文图片";
-      setText("search-summary", q ? `“${q}” · ${assets.length} ${label}` : `当前收录 ${assets.length} ${label}`);
+      const enhancedCount = assets.filter(asset => asset.effective_source && asset.effective_source !== "legacy").length;
+      const sourceSummary = enhancedCount ? ` · ${enhancedCount} 个已核验云端增强` : " · 稳定来源";
+      setText("search-summary", (q ? `“${q}” · ${assets.length} ${label}` : `当前收录 ${assets.length} ${label}`) + sourceSummary);
       renderVisualResults(assets);
     }
     if (options.remember ?? Boolean(event)) rememberSearch(q);
@@ -2114,6 +2116,13 @@ function renderResults(rows) {
   el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
 }
 
+function visualSourceLabel(asset) {
+  if (asset.effective_source === "hybrid_cloud_image_and_semantics") return "云端图像与解释";
+  if (asset.effective_source === "hybrid_cloud_semantics") return "云端解释 · 稳定截图";
+  if (asset.effective_source === "auto_verified_cloud_semantics") return "自动核验云端解释 · 稳定截图";
+  return "稳定来源";
+}
+
 function renderVisualResults(assets) {
   const el = document.querySelector("#search-results");
   if (!assets.length) {
@@ -2123,13 +2132,15 @@ function renderVisualResults(assets) {
   }
   el.innerHTML = assets.map(asset => {
     const typeLabel = asset.asset_type === "table" ? "完整表格" : "完整图片";
+    const cloudEnhanced = asset.effective_source && asset.effective_source !== "legacy";
+    const sourceBadge = `<span class="visual-source-badge${cloudEnhanced ? " cloud" : ""}">${esc(visualSourceLabel(asset))}</span>`;
     const tags = (asset.tags || []).slice(0, 7).map(value => `<span>${esc(value)}</span>`).join("");
     const materials = (asset.materials || []).join(" · ");
     const facts = [
       ["材料", materials], ["条件", asset.conditions_text], ["方法", asset.methods_text],
     ].filter(([, value]) => String(value || "").trim());
     const factHtml = facts.length ? `<dl>${facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${highlightSearchText(value)}</dd></div>`).join("")}</dl>` : "";
-    return `<article class="visual-result"><button class="visual-thumb visual-thumb-${esc(asset.asset_type)}" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(asset.display_name || asset.label)}"><img src="${esc(asset.image_url)}" alt="${esc(asset.display_name || asset.label)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${highlightSearchText(asset.display_name || asset.label)}</h3></div><div class="visual-quantity-list">${tags}</div><p>${highlightSearchText(asset.context_explanation || "待核对原文上下文。")}</p>${factHtml}<small>${esc(asset.article_title)} · ${esc(asset.doi || "无 DOI")}</small><button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></article>`;
+    return `<article class="visual-result"><button class="visual-thumb visual-thumb-${esc(asset.asset_type)}" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(asset.display_name || asset.label)}"><img src="${esc(asset.image_url)}" alt="${esc(asset.display_name || asset.label)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><div><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span>${sourceBadge}</div><h3>${highlightSearchText(asset.display_name || asset.label)}</h3></div><div class="visual-quantity-list">${tags}</div><p>${highlightSearchText(asset.context_explanation || "待核对原文上下文。")}</p>${factHtml}<small>${esc(asset.article_title)} · ${esc(asset.doi || "无 DOI")}</small><button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></article>`;
   }).join("");
   el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
 }
@@ -2158,6 +2169,7 @@ async function openVisualAsset(assetId) {
     setText("visual-caption", asset.caption);
     setText("visual-context", asset.context_explanation || "尚未生成结构化解释。");
     const details = [
+      ["当前来源", visualSourceLabel(asset)],
       ["物理量", (asset.physical_quantities || []).join("、")],
       ["变量/表头", formatVisualVariables(asset.variables)],
       ["材料/样品", (asset.materials || []).join("、")],

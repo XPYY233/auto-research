@@ -24,6 +24,7 @@ from auto_research.evidence.cloud_visual import (
 )
 from auto_research.evidence.db import EvidenceDB, now
 from auto_research.evidence.visual_evidence import list_visual_assets, visual_asset_image_path
+from auto_research.evidence.visual_evidence import links_for_items, search_visual_assets
 
 
 PNG = b"\x89PNG\r\n\x1a\ncloud-candidate"
@@ -32,8 +33,23 @@ PNG = b"\x89PNG\r\n\x1a\ncloud-candidate"
 class FakeDeepSeek:
     settings = DeepSeekSettings(api_key="test", analysis_model="deepseek-test")
 
+    def __init__(self, *, forbidden_points: bool = False):
+        self.forbidden_points = forbidden_points
+
     def request_json(self, messages, **kwargs):
-        return {
+        if "独立的科学图表语义核验器" in messages[0]["content"]:
+            return {
+                "approved": True,
+                "confidence": 0.93,
+                "issues": [],
+                "checks": {
+                    "identity_match": True,
+                    "semantic_grounded": True,
+                    "no_unsupported_numeric_claims": True,
+                    "structure_plausible": True,
+                },
+            }
+        result = {
             "display_name": "云端硬度对比",
             "physical_quantities": ["硬度"],
             "variables": {"columns": "specimen, hardness"},
@@ -42,13 +58,15 @@ class FakeDeepSeek:
             "methods_text": "nanoindentation",
             "context_explanation": "比较辐照前后的硬度。",
             "tags": ["硬度", "辐照"],
-            "curve_points": [{"x": 1, "y": 2}],
             "trends": [{
-                "statement": "硬度随剂量升高",
+                "statement": "硬度对比",
                 "provenance": "explicit_text",
-                "evidence_text": "这句并不存在于原文",
+                "evidence_text": "Hardness before and after irradiation",
             }],
         }
+        if self.forbidden_points:
+            result["curve_points"] = [{"x": 1, "y": 2}]
+        return result
 
 
 class FakeMinerU:
@@ -109,7 +127,7 @@ class CloudVisualTests(unittest.TestCase):
         self.stable_sha = self._sha(self.stable_image)
         stamp = now()
         with self.db.connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """INSERT INTO visual_assets(
                   paper_id,asset_type,label,display_name,asset_number,caption,page_start,page_end,bbox_json,
                   image_path,image_sha256,physical_quantities_json,variables_json,materials_json,
@@ -123,6 +141,16 @@ class CloudVisualTests(unittest.TestCase):
                     "irradiated", "nanoindentation", "稳定版说明", '["硬度"]', "source", "draft",
                     "pdf_layout", "deterministic", stamp, stamp,
                 ),
+            )
+            self.asset_id = int(cursor.lastrowid)
+            self.item_id = int(conn.execute(
+                "INSERT INTO data_items(paper_id,stable_key,origin_type,created_at) VALUES(?,?,'automatic',?)",
+                (self.paper_id, "cloud-linked-item", stamp),
+            ).lastrowid)
+            conn.execute(
+                """INSERT INTO data_item_visual_links(item_id,asset_id,relation_kind,created_at)
+                VALUES(?,?,'primary',?)""",
+                (self.item_id, self.asset_id, stamp),
             )
 
     def tearDown(self):
@@ -172,13 +200,16 @@ class CloudVisualTests(unittest.TestCase):
         FakeMinerU().download_artifact("memory://result", self.root / "result.zip")
         with zipfile.ZipFile(self.root / "result.zip") as archive:
             archive.extractall(artifact)
-        result = import_mineru_artifact(self.db, run_id, artifact, deepseek_client=FakeDeepSeek())
+        result = import_mineru_artifact(
+            self.db, run_id, artifact, deepseek_client=FakeDeepSeek(forbidden_points=True)
+        )
         self.assertEqual(result["candidate_count"], 2)
         candidates = list_cloud_candidates(self.db, self.paper_id)
         table = next(item for item in candidates if item["asset_type"] == "table")
         self.assertEqual(table["analysis_status"], "completed")
-        self.assertEqual(table["trends"][0]["provenance"], "visual_interpretation")
         self.assertIn("曲线点已拒绝", " ".join(table["provenance"]["warnings"]))
+        self.assertEqual(table["quality_status"], "pending")
+        self.assertEqual(search_visual_assets(self.db, "云端硬度对比", asset_type="table"), [])
         self.assertEqual(cloud_quality_report(self.db, self.paper_id)["curve_point_violations"], 0)
         with self.db.connect() as conn:
             raw_json = conn.execute(
@@ -186,10 +217,34 @@ class CloudVisualTests(unittest.TestCase):
             ).fetchone()["raw_json"]
         self.assertNotIn("curve_points", raw_json)
 
-    def test_hybrid_overlay_requires_explicit_per_asset_adoption(self):
+    def test_automatic_double_check_enters_visual_and_linked_item_search(self):
         with patch(
             "auto_research.evidence.cloud_visual.DeepSeekSettings.from_env",
-            return_value=DeepSeekSettings(api_key=None),
+            return_value=DeepSeekSettings(api_key="test"),
+        ), patch(
+            "auto_research.evidence.cloud_visual.DeepSeekClient",
+            return_value=FakeDeepSeek(),
+        ):
+            start_cloud_visual_run(self.db, self.paper_id, background=False, provider=FakeMinerU())
+        table = next(item for item in list_cloud_candidates(self.db, self.paper_id) if item["asset_type"] == "table")
+        self.assertEqual(table["quality_status"], "passed")
+        self.assertEqual(table["adoption_state"], "interpretation_only")
+        self.assertEqual(table["provenance"]["automatic_verification"]["confidence"], 0.93)
+        hits = search_visual_assets(self.db, "云端硬度对比", asset_type="table")
+        self.assertEqual([item["id"] for item in hits], [self.asset_id])
+        self.assertEqual(hits[0]["effective_source"], "auto_verified_cloud_semantics")
+        linked = links_for_items(self.db, [self.item_id])[self.item_id][0]
+        self.assertEqual(linked["display_name"], "云端硬度对比")
+        self.assertEqual(linked["effective_source"], "auto_verified_cloud_semantics")
+        self.assertEqual(visual_asset_image_path(self.db, self.asset_id).read_bytes(), self.stable_image.read_bytes())
+
+    def test_hybrid_cloud_image_still_requires_global_quality_gate(self):
+        with patch(
+            "auto_research.evidence.cloud_visual.DeepSeekSettings.from_env",
+            return_value=DeepSeekSettings(api_key="test"),
+        ), patch(
+            "auto_research.evidence.cloud_visual.DeepSeekClient",
+            return_value=FakeDeepSeek(),
         ):
             start_cloud_visual_run(self.db, self.paper_id, background=False, provider=FakeMinerU())
         table = next(item for item in list_cloud_candidates(self.db, self.paper_id) if item["asset_type"] == "table")
@@ -208,7 +263,7 @@ class CloudVisualTests(unittest.TestCase):
         )
         set_visual_processing_mode(self.db, "hybrid")
         before = list_visual_assets(self.db, paper_id=self.paper_id)[0]
-        self.assertEqual(before["effective_source"], "legacy")
+        self.assertEqual(before["effective_source"], "hybrid_cloud_semantics")
         review_cloud_candidate(self.db, table["id"], "adopt_enhancement", note="checked")
         after = list_visual_assets(self.db, paper_id=self.paper_id)[0]
         self.assertEqual(after["effective_source"], "hybrid_cloud_image_and_semantics")

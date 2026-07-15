@@ -652,12 +652,18 @@ assets. Do not use the 30-paper coverage count as the first cloud batch.
 
 The cloud pipeline is additive:
 
-- `legacy` displays only the verified local source screenshots and is the
-  default mode;
-- `shadow` keeps the same display result while generating MinerU structure and
-  DeepSeek semantic candidates for side-by-side review;
-- `hybrid` overlays only candidates that passed the ten-paper global quality
-  gate and were explicitly adopted for that individual visual asset.
+- `legacy` keeps verified local source screenshots and is the default image
+  mode; automatically verified cloud semantics may still improve search;
+- `shadow` keeps the stable screenshots while generating MinerU structure,
+  one DeepSeek semantic pass, and an independent DeepSeek grounding check;
+- `hybrid` may use cloud image bytes only after the ten-paper global quality
+  gate passes. Other assets continue to use stable screenshots.
+
+An automatically approved semantic candidate enters table search, figure
+search, and item-linked visual search immediately. It does not require a manual
+adoption click. Search cards show whether their metadata comes from the stable
+source or from automatically verified cloud semantics; manual actions remain
+available only for correction or forced rejection.
 
 Configure MinerU once by double-clicking
 `/Users/USER/Zotero/配置MinerU云端解析.command`. The token is entered in a
@@ -676,5 +682,5 @@ PYTHONPATH=src python3 -m auto_research.cli evidence-cloud-visual-quality
 
 MinerU failures never delete or replace stable assets. Cloud candidates are
 stored in separate tables, curve data points are forbidden, and the backend
-blocks `hybrid` until all mandatory quality thresholds pass. See
+blocks cloud-image `hybrid` until all mandatory quality thresholds pass. See
 `docs/cloud_visual_architecture.md` for the data model and release gates.

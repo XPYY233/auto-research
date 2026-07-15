@@ -391,7 +391,88 @@ def _sanitize_analysis(result: dict[str, Any], source: dict[str, Any]) -> tuple[
     return clean, warnings
 
 
-def _deepseek_analyze(db: EvidenceDB, source_id: int, source: dict[str, Any], client: DeepSeekClient) -> None:
+def _deepseek_verify(
+    source: dict[str, Any], clean: dict[str, Any], warnings: list[str], client: DeepSeekClient
+) -> dict[str, Any]:
+    """Use an independent second pass to check semantic grounding before search indexing."""
+
+    result = client.request_json(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "你是独立的科学图表语义核验器，不是上一轮分析器。逐项检查候选解释是否严格得到"
+                    "图注、邻近正文、MinerU表格HTML或结构描述支持。不得补充曲线点，不得把视觉估读数值"
+                    "当作原文事实。输出JSON字段：approved(boolean), confidence(0到1), issues(字符串数组),"
+                    "checks对象，必须含identity_match, semantic_grounded, no_unsupported_numeric_claims,"
+                    "structure_plausible。只有全部为true且没有实质问题才可approved。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps({
+                    "source_evidence": _analysis_payload(source, None),
+                    "candidate_semantics": clean,
+                    "sanitizer_warnings": warnings,
+                }, ensure_ascii=False),
+            },
+        ],
+        task="analysis",
+        max_tokens=2400,
+    )
+    checks = result.get("checks") if isinstance(result.get("checks"), dict) else {}
+    issues = result.get("issues") if isinstance(result.get("issues"), list) else []
+    try:
+        confidence = min(1.0, max(0.0, float(result.get("confidence") or 0.0)))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return {
+        "approved": bool(result.get("approved")),
+        "confidence": confidence,
+        "issues": [str(issue).strip() for issue in issues if str(issue).strip()][:20],
+        "checks": {
+            key: bool(checks.get(key))
+            for key in (
+                "identity_match", "semantic_grounded",
+                "no_unsupported_numeric_claims", "structure_plausible",
+            )
+        },
+    }
+
+
+def _automatic_semantic_gate(
+    source: dict[str, Any], clean: dict[str, Any], warnings: list[str], verification: dict[str, Any]
+) -> tuple[bool, dict[str, Any]]:
+    table_counter = _TableCounter()
+    if source.get("asset_type") == "table":
+        table_counter.feed(str(source.get("table_html") or ""))
+    checks = {
+        "matched_stable_asset": bool(source.get("asset_id")),
+        "match_confidence_at_least_0_8": float(source.get("match_confidence") or 0.0) >= 0.8,
+        "caption_present": bool(str(source.get("caption") or "").strip()),
+        "semantic_fields_complete": bool(
+            str(clean.get("display_name") or "").strip()
+            and str(clean.get("context_explanation") or "").strip()
+            and len(clean.get("tags") or []) >= 2
+        ),
+        "table_structure_present": (
+            source.get("asset_type") != "table" or table_counter.cells >= 2
+        ),
+        "no_forbidden_visual_values": not any(
+            marker in warning for warning in warnings
+            for marker in ("曲线点", "精确数值趋势")
+        ),
+        "independent_deepseek_approved": bool(verification.get("approved")),
+        "independent_confidence_at_least_0_85": float(verification.get("confidence") or 0.0) >= 0.85,
+        "independent_checks_passed": all((verification.get("checks") or {}).values()),
+        "independent_no_issues": not bool(verification.get("issues")),
+    }
+    return all(checks.values()), checks
+
+
+def _deepseek_analyze(
+    db: EvidenceDB, source_id: int, source: dict[str, Any], client: DeepSeekClient
+) -> dict[str, Any]:
     legacy = None
     if source.get("asset_id"):
         with db.connect() as conn:
@@ -416,6 +497,28 @@ def _deepseek_analyze(db: EvidenceDB, source_id: int, source: dict[str, Any], cl
         max_tokens=4000,
     )
     clean, warnings = _sanitize_analysis(result, source)
+    verification_error = ""
+    try:
+        verification = _deepseek_verify(source, clean, warnings, client)
+        verifier_called = True
+    except Exception as exc:
+        verification = {
+            "approved": False, "confidence": 0.0, "issues": ["独立核验调用失败"], "checks": {},
+        }
+        verification_error = str(exc)
+        verifier_called = False
+    auto_approved, automatic_checks = _automatic_semantic_gate(
+        source, clean, warnings, verification
+    )
+    provenance = {
+        "warnings": warnings,
+        "trend_policy": "no_curve_points",
+        "automatic_verification": verification,
+        "automatic_checks": automatic_checks,
+        "automatic_decision": "passed" if auto_approved else "pending",
+    }
+    if verification_error:
+        provenance["verification_error"] = verification_error
     stamp = now()
     with db.connect() as conn:
         conn.execute(
@@ -437,10 +540,30 @@ def _deepseek_analyze(db: EvidenceDB, source_id: int, source: dict[str, Any], cl
                 _json_text(clean["physical_quantities"]), _json_text(clean["variables"]),
                 _json_text(clean["materials"]), clean["conditions_text"], clean["methods_text"],
                 clean["context_explanation"], _json_text(clean["tags"]), _json_text(clean["trends"]),
-                _json_text({"warnings": warnings, "trend_policy": "no_curve_points"}),
+                _json_text(provenance),
                 _json_text(result), stamp, stamp,
             ),
         )
+        validation = dict(source.get("validation") or {})
+        validation.update({
+            "automatic_semantic_gate": automatic_checks,
+            "deepseek_verification": verification,
+            "automatic_decision_at": stamp,
+        })
+        conn.execute(
+            """UPDATE visual_source_versions SET quality_status=?,adoption_state=?,
+            validation_json=?,updated_at=? WHERE id=?""",
+            (
+                "passed" if auto_approved else "pending",
+                "interpretation_only" if auto_approved else "shadow",
+                _json_text(validation), stamp, source_id,
+            ),
+        )
+    return {
+        "analysis_calls": 1,
+        "verification_calls": 1 if verifier_called else 0,
+        "auto_approved": int(auto_approved),
+    }
 
 
 def import_mineru_artifact(
@@ -461,6 +584,10 @@ def import_mineru_artifact(
         raise CloudVisualError("MinerU content_list 不是列表")
     counters = {"table": 0, "figure": 0}
     inserted: list[dict[str, Any]] = []
+    deepseek_stats = {
+        "analysis_calls": 0, "verification_calls": 0,
+        "auto_approved": 0, "analysis_failed": 0,
+    }
     stamp = now()
     for raw in content:
         if not isinstance(raw, dict):
@@ -538,12 +665,16 @@ def import_mineru_artifact(
             "id": source_id, "asset_id": asset_id, "asset_type": asset_type, "label": label,
             "page_start": page, "caption": caption, "source_context": source_context,
             "table_html": table_html, "visual_content": visual_content,
+            "match_confidence": confidence, "validation": validation,
         }
         inserted.append(source)
         if deepseek_client:
             try:
-                _deepseek_analyze(db, source_id, source, deepseek_client)
+                outcome = _deepseek_analyze(db, source_id, source, deepseek_client)
+                for key in ("analysis_calls", "verification_calls", "auto_approved"):
+                    deepseek_stats[key] += int(outcome.get(key) or 0)
             except Exception as exc:
+                deepseek_stats["analysis_failed"] += 1
                 with db.connect() as conn:
                     conn.execute(
                         """INSERT INTO visual_analysis_candidates(
@@ -553,7 +684,10 @@ def import_mineru_artifact(
                           error_message=excluded.error_message,updated_at=excluded.updated_at""",
                         (source_id, "deepseek", deepseek_client.settings.analysis_model, str(exc), stamp, stamp),
                     )
-    return {"run_id": run_id, "candidate_count": len(inserted), "counts": counters, "content_list": str(content_path)}
+    return {
+        "run_id": run_id, "candidate_count": len(inserted), "counts": counters,
+        "content_list": str(content_path), "deepseek": deepseek_stats,
+    }
 
 
 def _update_run(db: EvidenceDB, run_id: int, **fields: Any) -> None:
@@ -622,6 +756,13 @@ def _run_pipeline(db_path: Path, run_id: int, provider: VisualCloudProvider | No
         message = f"已生成 {imported['candidate_count']} 个云端候选"
         if deepseek is None:
             message += "；DeepSeek 未配置，语义解释待补充"
+        else:
+            stats = imported.get("deepseek") or {}
+            message += (
+                f"；DeepSeek 分析 {int(stats.get('analysis_calls') or 0)} 次、独立核验 "
+                f"{int(stats.get('verification_calls') or 0)} 次，自动通过 "
+                f"{int(stats.get('auto_approved') or 0)} 个"
+            )
         _update_run(
             db, run_id, status="completed", progress_stage="completed",
             progress_current=int(result.get("total") or result.get("current") or 1),

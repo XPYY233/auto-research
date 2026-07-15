@@ -1358,7 +1358,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.15-cloud-shadow.1")
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.15-cloud-auto.1")
         self.assertEqual(RELEASE_INFO["evidence_schema"], 11)
 
     def test_blank_search_and_paper_picker_counts_cover_all_papers(self):
