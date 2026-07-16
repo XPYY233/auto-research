@@ -91,6 +91,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--chunk-pages", type=int, default=4)
     p.add_argument("--valid-limit", type=int, help="Stop after the first N content-valid PDFs")
     p.add_argument("--force-completed", action="store_true", help="Run papers already completed in this state file again")
+    p = sub.add_parser("evidence-quality-test-set", help="Resume adversarial DeepSeek quality testing of the fixed 10-paper set")
+    p.add_argument("--config", default="config/evidence_test_set_10.json")
+    p.add_argument("--state", help="Resumable JSON state path")
+    p.add_argument("--max-pages", type=int, help="Optional page cap; omit to process complete PDFs")
+    p.add_argument("--chunk-pages", type=int, default=4)
+    p.add_argument("--quality-threshold", type=float, default=85.0)
+    p.add_argument("--valid-limit", type=int)
+    p.add_argument("--force-completed", action="store_true")
     p = sub.add_parser("evidence-classify-experiment", help="Classify experimental types for one local evidence paper")
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p.add_argument("--max-pages", type=int, default=5)
@@ -371,6 +379,21 @@ def cmd_evidence(args) -> int:
             state_path=args.state,
             max_pages=args.max_pages,
             chunk_pages=args.chunk_pages,
+            force_completed=args.force_completed,
+            valid_limit=args.valid_limit,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-quality-test-set":
+        from .evidence.quality_test_set import run_quality_test_set
+
+        result = run_quality_test_set(
+            evidence_db,
+            config_path=args.config,
+            state_path=args.state,
+            max_pages=args.max_pages,
+            chunk_pages=args.chunk_pages,
+            threshold=args.quality_threshold,
             force_completed=args.force_completed,
             valid_limit=args.valid_limit,
         )
