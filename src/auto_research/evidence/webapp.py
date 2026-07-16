@@ -17,11 +17,17 @@ from auto_research.ai.deepseek import DeepSeekSettings
 from .article_navigation import annotate_navigation_tags
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
-from .deepseek_extraction import DeepSeekEvidenceExtractor, latest_deepseek_run
+from .deepseek_extraction import latest_deepseek_run
 from .experiment_types import classify_experiment_types
 from .exporter import EXPORT_COLUMNS
 from .learning import build_learning_report, learning_report_markdown
 from .prompts import build_prompt_packet
+from .quality_pipeline import (
+    AdversarialQualityPipeline,
+    latest_quality_run,
+    list_quality_candidates,
+    review_quality_candidate,
+)
 from .review_handoff import review_batch_payload
 from .six_column import (
     SIX_FIELDS,
@@ -60,9 +66,9 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.16-local-visual-stable.1",
-    "label": "本地图表稳定回归版 2026.07.16",
-    "evidence_schema": 10,
+    "version": "2026.07.16-adversarial-quality-gate.1",
+    "label": "DeepSeek 对抗式质量门稳定版 2026.07.16",
+    "evidence_schema": 11,
 }
 
 
@@ -180,12 +186,13 @@ def requires_rescan_confirmation(db: EvidenceDB, paper_id: int) -> bool:
 
 def search_export_rows(db: EvidenceDB, query: str, limit: int = 100000, *,
                        review_filter: str = "all", source_filter: str = "all",
+                       quality_filter: str = "all",
                        sort: str = "relevance") -> list[dict]:
     """Return the whole-database result set used by search-page exports."""
 
     return search_current_data(
         db, query, limit=limit, review_filter=review_filter,
-        source_filter=source_filter, sort=sort,
+        source_filter=source_filter, quality_filter=quality_filter, sort=sort,
     )
 
 
@@ -271,6 +278,15 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.json_response(get_six_extraction_status(self.db))
             if parsed.path == "/api/current-paper/deepseek-run":
                 return self.json_response(latest_deepseek_run(self.db, get_current_paper_id(self.db)))
+            if parsed.path == "/api/current-paper/quality-run":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                return self.json_response(latest_quality_run(self.db, paper_id))
+            if parsed.path == "/api/current-paper/quality-candidates":
+                params = parse_qs(parsed.query)
+                paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
+                status = params.get("status", [None])[0]
+                return self.json_response(list_quality_candidates(self.db, paper_id, status=status))
             if parsed.path == "/api/current-paper/evidence-audit":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
@@ -355,7 +371,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     all_rows = search_current_data(
                         self.db, query, limit=100000,
                         review_filter=review_filter,
-                        source_filter=source_filter, sort=sort,
+                        source_filter=source_filter,
+                        quality_filter=params.get("quality", ["all"])[0], sort=sort,
                     )
                     return self.json_response({
                         "rows": all_rows[:limit],
@@ -364,21 +381,33 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     })
                 return self.json_response(search_current_data(
                     self.db, query, review_filter=review_filter,
-                    source_filter=source_filter, sort=sort,
+                    source_filter=source_filter,
+                    quality_filter=params.get("quality", ["all"])[0], sort=sort,
                 ))
             if parsed.path == "/api/qualitative-search":
                 params = parse_qs(parsed.query)
                 query = params.get("q", [""])[0]
                 limit = min(max(int(params.get("limit", ["100"])[0]), 1), 500)
-                rows = search_qualitative_findings(self.db, query, limit=100000)
+                rows = search_qualitative_findings(
+                    self.db, query, limit=100000,
+                    quality_filter=params.get("quality", ["all"])[0],
+                )
                 return self.json_response({"rows": rows[:limit], "total": len(rows), "limit": limit})
             if parsed.path == "/api/qualitative-export.csv":
-                query = parse_qs(parsed.query).get("q", [""])[0]
-                rows = search_qualitative_findings(self.db, query, limit=100000)
+                params = parse_qs(parsed.query)
+                query = params.get("q", [""])[0]
+                rows = search_qualitative_findings(
+                    self.db, query, limit=100000,
+                    quality_filter=params.get("quality", ["all"])[0],
+                )
                 return self.qualitative_csv_response(rows)
             if parsed.path == "/api/qualitative-export.xlsx":
-                query = parse_qs(parsed.query).get("q", [""])[0]
-                rows = search_qualitative_findings(self.db, query, limit=100000)
+                params = parse_qs(parsed.query)
+                query = params.get("q", [""])[0]
+                rows = search_qualitative_findings(
+                    self.db, query, limit=100000,
+                    quality_filter=params.get("quality", ["all"])[0],
+                )
                 return self.qualitative_xlsx_response(rows)
             if parsed.path == "/api/six-export.csv":
                 params = parse_qs(parsed.query)
@@ -387,6 +416,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     self.db, query,
                     review_filter=params.get("review", ["all"])[0],
                     source_filter=params.get("source", ["all"])[0],
+                    quality_filter=params.get("quality", ["all"])[0],
                     sort=params.get("sort", ["relevance"])[0],
                 )
                 return self.six_csv_response(rows)
@@ -397,6 +427,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     self.db, query,
                     review_filter=params.get("review", ["all"])[0],
                     source_filter=params.get("source", ["all"])[0],
+                    quality_filter=params.get("quality", ["all"])[0],
                     sort=params.get("sort", ["relevance"])[0],
                 )
                 return self.six_xlsx_response(rows, "six-column-search-results.xlsx")
@@ -404,7 +435,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 query = params.get("q", [""])[0]
                 asset_type = params.get("type", ["figure"])[0]
-                return self.json_response(search_visual_assets(self.db, query, asset_type=asset_type))
+                quality_filter = params.get("quality", ["all"])[0]
+                return self.json_response(search_visual_assets(
+                    self.db, query, asset_type=asset_type, quality_filter=quality_filter
+                ))
             if parsed.path == "/api/current-paper/visual-assets":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
@@ -564,12 +598,41 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                         HTTPStatus.CONFLICT,
                     )
                 max_pages = int(body["max_pages"]) if body.get("max_pages") not in (None, "") else None
-                result = DeepSeekEvidenceExtractor(self.db).run(
+                result = AdversarialQualityPipeline(self.db).run(
                     paper_id,
-                    commit=bool(body.get("commit", False) or body.get("force_rescan", False)),
-                    merge_existing=bool(body.get("force_rescan", False)),
                     max_pages=max_pages,
                     chunk_pages=int(body.get("chunk_pages", 2)),
+                    threshold=float(body.get("quality_threshold", 85)),
+                )
+                return self.json_response(result)
+            if parsed.path == "/api/current-paper/quality-run":
+                paper_id = int(body.get("paper_id") or get_current_paper_id(self.db))
+                if requires_rescan_confirmation(self.db, paper_id) and not body.get("force_rescan"):
+                    return self.json_response(
+                        {
+                            "error": "这篇文章已经扫描过。若仍需重新执行双路质量检测，请先确认再次扫描。",
+                            "code": "already_scanned",
+                            "paper_id": paper_id,
+                        },
+                        HTTPStatus.CONFLICT,
+                    )
+                max_pages = int(body["max_pages"]) if body.get("max_pages") not in (None, "") else None
+                result = AdversarialQualityPipeline(self.db).run(
+                    paper_id,
+                    max_pages=max_pages,
+                    chunk_pages=int(body.get("chunk_pages", 2)),
+                    threshold=float(body.get("quality_threshold", 85)),
+                )
+                return self.json_response(result)
+            match = re.fullmatch(r"/api/quality-candidates/(\d+)/review", parsed.path)
+            if match:
+                result = review_quality_candidate(
+                    self.db,
+                    int(match.group(1)),
+                    decision=str(body.get("decision") or ""),
+                    fields=body.get("fields") or {},
+                    reviewer=str(body.get("reviewer") or "本地研究者"),
+                    note=str(body.get("note") or ""),
                 )
                 return self.json_response(result)
             if parsed.path == "/api/current-paper/extract":
@@ -679,6 +742,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         fieldnames = [
             *SIX_FIELDS, "first_author", "corresponding_author",
             "origin_type", "version_no", "source_page", "source_locator",
+            "quality_gate_status", "quality_score", "quality_candidate_id",
             "fact_id", "fact_cluster_size", "fact_member_ids", "evidence_count", "evidence_occurrences",
         ]
         writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
@@ -702,6 +766,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         fieldnames = [
             *SIX_FIELDS, "first_author", "corresponding_author",
             "origin_type", "version_no", "source_page", "source_locator",
+            "quality_gate_status", "quality_score", "quality_candidate_id",
             "fact_id", "fact_cluster_size", "fact_member_ids", "evidence_count", "evidence_occurrences",
         ]
         export_rows = []
@@ -724,6 +789,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             "finding_text", "meaning", "context_explanation", "article_title", "doi",
             "first_author", "corresponding_author", "source_page", "source_locator",
             "source_excerpt", "review_action", "finding_id", "finding_cluster_size",
+            "quality_gate_status", "quality_score", "quality_candidate_id",
             "finding_member_ids", "evidence_count", "evidence_occurrences",
         ]
         export_rows = []

@@ -101,7 +101,7 @@
           <div class="article-tools-body">
             <div class="article-tool-actions">
               <button type="button" id="run-current-extraction" data-write-action>自动提取/核验</button>
-              <button type="button" id="run-deepseek-preview" data-write-action>DeepSeek 补充抽取</button>
+              <button type="button" id="run-deepseek-preview" data-write-action>对抗式质量提取</button>
               <button type="button" id="save-current-snapshot" data-write-action>生成当前文章 CSV 备份</button>
               <a id="current-export-csv" href="/api/current-paper/export.csv">下载 CSV</a>
               <a id="current-export-xlsx" href="/api/current-paper/export.xlsx">下载 Excel</a>
@@ -117,6 +117,11 @@
               </div>
               <p id="paper-evidence-audit"></p>
               <p id="paper-deepseek-status"></p>
+              <div class="quality-gate-status" id="quality-gate-status">
+                <div><strong>自动质量门</strong><span id="quality-run-stage">尚未运行</span></div>
+                <p id="quality-run-summary">两路 DeepSeek 将独立抽取并互相对照；低分项再由第三路复核。</p>
+                <div class="quality-score-strip" id="quality-score-strip"></div>
+              </div>
               <div class="progress-panel" id="deepseek-progress" hidden>
                 <div class="progress-track"><span id="deepseek-progress-bar"></span></div>
                 <p id="deepseek-progress-text">等待任务开始</p>
@@ -178,6 +183,7 @@
           <button type="button" class="active" role="tab" aria-selected="true" data-review-object="data"><span>01</span><strong>数据条目</strong><small id="review-data-count">0 条</small></button>
           <button type="button" role="tab" aria-selected="false" data-review-object="table"><span>02</span><strong>原始表格</strong><small id="review-table-count">0 张</small></button>
           <button type="button" role="tab" aria-selected="false" data-review-object="figure"><span>03</span><strong>论文图片</strong><small id="review-figure-count">0 幅</small></button>
+          <button type="button" role="tab" aria-selected="false" data-review-object="quality"><span>04</span><strong>质量待审</strong><small id="review-quality-count">0 项</small></button>
         </div>
         <div id="data-review-workspace">
         <div class="review-progress-card" id="review-progress-card">
@@ -223,6 +229,13 @@
           </header>
           <div class="visual-review-grid" id="visual-review-grid"></div>
         </section>
+        <section class="quality-review-workspace" id="quality-review-workspace" hidden aria-live="polite">
+          <header>
+            <div><p class="eyebrow">QUALITY GATE REVIEW</p><h2>自动质量门未通过项</h2><p>这里只有第三次复核后仍低于阈值的候选。人工通过后才进入搜索；不采用会保留审核记录。</p></div>
+            <div class="quality-review-threshold"><span>自动发布阈值</span><strong>85 / 100</strong></div>
+          </header>
+          <div class="quality-review-grid" id="quality-review-grid"></div>
+        </section>
       </section>
 
       <section class="view" id="view-search">
@@ -262,6 +275,7 @@
           <div class="search-control-copy"><span>精确结果</span><small>筛选会同步应用到 CSV 和 Excel 导出</small></div>
           <label>核验状态<select id="search-review-filter"><option value="all">全部状态</option><option value="reviewed">仅人工核验</option><option value="pending">仅待审核</option></select></label>
           <label>证据来源<select id="search-source-filter"><option value="all">全部来源</option><option value="text">正文数据</option><option value="table">表格数据</option><option value="figure">图片关联</option><option value="manual">人工补录</option></select></label>
+          <label>质量来源<select id="search-quality-filter"><option value="all">全部已发布</option><option value="quality_passed">新质量门通过</option><option value="dual_pass">双路一致通过</option><option value="third_pass">第三次复核通过</option><option value="manual_approved">人工通过</option><option value="legacy_stable">历史稳定数据</option></select></label>
           <label>结果排序<select id="search-sort"><option value="relevance">相关度优先</option><option value="source_page">按文章与页码</option><option value="article">按文章归类</option></select></label>
           <button type="button" id="search-reset-filters">重置</button>
         </div>

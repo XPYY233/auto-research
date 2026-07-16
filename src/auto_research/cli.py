@@ -137,12 +137,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out-dir", help="Directory for JSON and Markdown audit reports")
     sub.add_parser("evidence-deepseek-status", help="Show redacted DeepSeek runtime configuration")
     sub.add_parser("evidence-deepseek-smoke-test", help="Send a minimal synthetic JSON connection check to DeepSeek")
-    p = sub.add_parser("evidence-deepseek-extract", help="Run evidence-grounded DeepSeek extraction for one paper selector")
+    p = sub.add_parser("evidence-deepseek-extract", help="Preview one DeepSeek extraction; --commit is routed through the quality gate")
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
-    p.add_argument("--commit", action="store_true", help="Import verified candidates only when the paper has no six-column rows")
+    p.add_argument("--commit", action="store_true", help="Publish only after the dual-extractor quality gate")
     p.add_argument("--max-pages", type=int)
     p.add_argument("--chunk-pages", type=int, default=2)
     p.add_argument("--force-rescan", action="store_true", help="Allow DeepSeek to run again for an already scanned paper")
+    p = sub.add_parser("evidence-quality-run", help="Run two independent DeepSeek extractors and the adversarial quality gate")
+    p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
+    p.add_argument("--max-pages", type=int)
+    p.add_argument("--chunk-pages", type=int, default=2)
+    p.add_argument("--quality-threshold", type=float, default=85.0)
+    p.add_argument("--force-rescan", action="store_true")
     p = sub.add_parser("evidence-deepseek-localize", help="Localize unreviewed automatic meaning/context fields into Chinese")
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p = sub.add_parser("evidence-benchmark", help="Compare a completed DeepSeek run with the current six-column review baseline")
@@ -310,6 +316,7 @@ def cmd_evidence(args) -> int:
         return 0
     if args.cmd == "evidence-deepseek-extract":
         from .evidence.deepseek_extraction import DeepSeekEvidenceExtractor
+        from .evidence.quality_pipeline import AdversarialQualityPipeline
         from .evidence.six_column import get_six_extraction_status, resolve_paper_selector
 
         paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key)
@@ -318,9 +325,17 @@ def cmd_evidence(args) -> int:
             raise SystemExit(
                 "当前文章已经扫描过；如确需再次调用 DeepSeek，请加 --force-rescan。"
             )
+        if args.commit:
+            result = AdversarialQualityPipeline(evidence_db).run(
+                paper_id,
+                max_pages=args.max_pages,
+                chunk_pages=args.chunk_pages,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
         result = DeepSeekEvidenceExtractor(evidence_db).run(
-            paper_id, commit=args.commit, max_pages=args.max_pages, chunk_pages=args.chunk_pages,
-            merge_existing=bool(args.commit and args.force_rescan),
+            paper_id, commit=False, max_pages=args.max_pages, chunk_pages=args.chunk_pages,
+            merge_existing=False,
         )
         summary = {key: result[key] for key in (
             "run_id", "paper", "provider", "model", "mode", "chunk_count",
@@ -328,6 +343,24 @@ def cmd_evidence(args) -> int:
             "experiment_profile", "comparison", "imported", "output_path",
         )}
         print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-quality-run":
+        from .evidence.quality_pipeline import AdversarialQualityPipeline
+        from .evidence.six_column import get_six_extraction_status, resolve_paper_selector
+
+        paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key)
+        status = get_six_extraction_status(evidence_db, paper_id)
+        if status.get("scanned") and not args.force_rescan:
+            raise SystemExit(
+                "当前文章已经扫描过；如确需再次运行双路质量检测，请加 --force-rescan。"
+            )
+        result = AdversarialQualityPipeline(evidence_db).run(
+            paper_id,
+            max_pages=args.max_pages,
+            chunk_pages=args.chunk_pages,
+            threshold=args.quality_threshold,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.cmd == "evidence-reextract-test-set":
         from .evidence.reextract_test_set import reextract_test_set

@@ -357,6 +357,60 @@ CREATE TABLE IF NOT EXISTS visual_asset_reviews (
 
 CREATE INDEX IF NOT EXISTS idx_visual_asset_reviews_current
   ON visual_asset_reviews(asset_id,version_no DESC);
+
+CREATE TABLE IF NOT EXISTS quality_pipeline_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  status TEXT NOT NULL
+    CHECK(status IN ('running','completed','failed')),
+  stage TEXT NOT NULL DEFAULT 'queued',
+  progress INTEGER NOT NULL DEFAULT 0 CHECK(progress BETWEEN 0 AND 100),
+  quality_threshold REAL NOT NULL DEFAULT 85.0,
+  extractor_a_run_id INTEGER REFERENCES ai_extraction_runs(id) ON DELETE SET NULL,
+  extractor_b_run_id INTEGER REFERENCES ai_extraction_runs(id) ON DELETE SET NULL,
+  summary_json TEXT NOT NULL DEFAULT '{}',
+  output_path TEXT,
+  error_message TEXT,
+  created_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_quality_pipeline_runs_paper
+  ON quality_pipeline_runs(paper_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS quality_candidates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pipeline_run_id INTEGER NOT NULL REFERENCES quality_pipeline_runs(id) ON DELETE CASCADE,
+  paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  entity_type TEXT NOT NULL CHECK(entity_type IN ('data','finding','table','figure')),
+  candidate_key TEXT NOT NULL,
+  chosen_source TEXT NOT NULL CHECK(chosen_source IN ('extractor_a','extractor_b','merged')),
+  candidate_json TEXT NOT NULL,
+  alternate_json TEXT,
+  agreement_score REAL NOT NULL DEFAULT 0,
+  factuality_score REAL NOT NULL DEFAULT 0,
+  completeness_score REAL NOT NULL DEFAULT 0,
+  evidence_score REAL NOT NULL DEFAULT 0,
+  overall_score REAL NOT NULL DEFAULT 0,
+  gate_status TEXT NOT NULL
+    CHECK(gate_status IN ('dual_pass','third_pass','manual_review','manual_approved','rejected')),
+  gate_reason TEXT NOT NULL DEFAULT '',
+  third_review_json TEXT,
+  published_item_id INTEGER REFERENCES data_items(id) ON DELETE SET NULL,
+  published_asset_id INTEGER REFERENCES visual_assets(id) ON DELETE SET NULL,
+  reviewer TEXT,
+  review_note TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(pipeline_run_id,candidate_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_quality_candidates_paper_status
+  ON quality_candidates(paper_id,gate_status,entity_type);
+CREATE INDEX IF NOT EXISTS idx_quality_candidates_item
+  ON quality_candidates(published_item_id,updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quality_candidates_asset
+  ON quality_candidates(published_asset_id,updated_at DESC);
 """
 
 
@@ -502,7 +556,7 @@ class EvidenceDB:
                     "ALTER TABLE visual_assets ADD COLUMN metadata_source TEXT NOT NULL DEFAULT 'deterministic'"
                 )
             conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('schema_version','10') "
+                "INSERT INTO schema_meta(key,value) VALUES('schema_version','11') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value "
                 "WHERE schema_meta.value IS NOT excluded.value"
             )

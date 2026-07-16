@@ -2,9 +2,9 @@
 
 ## 版本身份
 
-- 版本：`2026.07.16-local-visual-stable.1`
-- Git 标签：`evidence-demo-2026-07-16-local-visual-rollback-1`
-- 证据库结构：`v10`
+- 版本：`2026.07.16-adversarial-quality-gate.1`
+- Git 标签：`evidence-demo-2026-07-16-adversarial-quality-gate-1`
+- 证据库结构：`v11`
 - 本地编辑端：`http://127.0.0.1:8765/`
 - 只读分享端：由 `scripts/start_readonly_ngrok.command` 生成临时公网地址
 
@@ -24,6 +24,12 @@
 
 ## 本版重点修复
 
+- 新增 DeepSeek 对抗式质量门：完整性分支与精确性分支并行独立抽取数值、结论和图表语义，再按原文证据身份逐项匹配并评分。
+- 默认 85 分为自动发布阈值。双路一致的高分项直接进入搜索；低分或单路项由第三次独立 DeepSeek 复核；仍未通过的项进入“质量待审”，不会出现在搜索或导出中。
+- 校对页新增自动质量门进度、分阶段状态、各类通过数和质量待审卡片；人工可查看两路版本、分项得分、原文位置并最终采用或不采用。
+- 条目、实验结论、表格和图片搜索均可按“双路一致、第三次复核、人工通过、历史稳定数据”过滤，并显示质量来源与得分。
+- 旧单路提交入口已封口：网页兼容接口、文章自动工作流以及命令行带 `--commit` 的旧命令都会进入同一个对抗式质量门；不带提交参数的单路命令只生成诊断预览。
+- 既有 3,168 条历史记录和 243 个本地图表以 `legacy_stable` 继续可搜，不要求追溯重跑；新候选只有通过质量门才可发布。
 - 完整撤销未达质量要求的 MinerU 云端图表增强实验：移除活动数据库中的云端运行、候选和来源版本，移除界面入口、接口、搜索覆盖、缓存、配置入口与项目钥匙串凭据。
 - 恢复并固定此前稳定的本地图表链路：PyMuPDF 从真实 PDF 建立高分辨率截图，DeepSeek 只依据图注与相邻文字生成语义元数据，图表搜索继续直接使用本地稳定资产。
 - 云端实验只保留在旧 Git 标签和旧 bundle 中作为开发审计历史，不参与当前启动、数据库、检索、校对或只读分享。
@@ -36,7 +42,8 @@
 
 ## 验收结果
 
-- Python 自动测试：158/158 通过；前端 JavaScript 语法通过。
+- Python 自动测试：161/161 通过；前端 JavaScript 语法与 Python 编译通过。
+- 真实 DeepSeek 副本烟雾测试：一页生成 11 个候选，8 个双路通过、2 个第三次复核通过、1 个 84 分候选进入人工审核；正式数据库未写入测试候选。
 - SQLite 完整性、外键、必需索引、AI 运行产物和 243 个图表文件全部通过。
 - 十篇固定回归审计：10 篇可定位、10 篇 PDF 有效、10 篇数据可搜、10 篇图表可用；共 1,313 个独立事实、1,609 处数值证据、91 个图表，原文定位覆盖率 100%。
 - 目标论文自检：195 个独立事实，226/226 处自动数据证据可高亮定位；“辐照温度”和“硬度”搜索及 CSV/Excel 导出通过。
@@ -48,11 +55,13 @@
 - 活动项目目录：`/Users/USER/Zotero/auto-research`；旧 iCloud 目录仅作备份。
 - 本地编辑端：双击 `/Users/USER/Zotero/打开本地编辑工作台.command`。
 - 只读公网链接：双击 `/Users/USER/Zotero/创建导师公网链接.command`。
-- 完整 Git 备份：`/Users/USER/Zotero/auto-research-backups/auto-research-local-visual-rollback-2026-07-16.bundle`
-- 恢复时可从 bundle 克隆项目，再使用标签 `evidence-demo-2026-07-16-local-visual-rollback-1` 定位本版本。
+- 完整 Git 备份：`/Users/USER/Zotero/auto-research-backups/auto-research-adversarial-quality-gate-2026-07-16.bundle`
+- 数据库迁移前备份：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-before-quality-gate-2026-07-16.sqlite`
+- 恢复时可从 bundle 克隆项目，再使用标签 `evidence-demo-2026-07-16-adversarial-quality-gate-1` 定位本版本。
 
 ## 重要边界
 
 - “稳定版”表示程序、数据关系、证据截图和检索链路通过验收，不表示 DeepSeek 候选已获得物理学人工认可。
 - DeepSeek 当前读取 PDF 文字层生成候选与图表编目信息；图表像素由本地程序裁剪供人工核对，系统不自动读取或猜测曲线点。
+- 自动质量分衡量候选的双路一致性、原文支持、字段完整性和证据定位。即使达到 100 分，也不等于已经证明整篇论文绝无遗漏；科研结论仍可在校对页继续修正。
 - 默认数值界面只展示可报告数值事实；旧文字值保留在历史/隔离层，科学定性观察进入“实验结论”搜索。

@@ -42,6 +42,7 @@ SEARCH_FIELD_WEIGHTS = {
 }
 SEARCH_REVIEW_FILTERS = {"all", "reviewed", "pending"}
 SEARCH_SOURCE_FILTERS = {"all", "text", "table", "figure", "manual"}
+SEARCH_QUALITY_FILTERS = {"all", "quality_passed", "dual_pass", "third_pass", "manual_approved", "legacy_stable"}
 SEARCH_SORTS = {"relevance", "article", "source_page"}
 CURRENT_PAPER_META_KEY = "six_column_current_paper_id"
 SAVED_SCAN_META_PREFIX = "six_column_saved_snapshot_"
@@ -1041,10 +1042,21 @@ def list_current_data(db: EvidenceDB, paper_id: int | None = None) -> list[dict[
         rows = [dict(row) for row in conn.execute(sql, params)]
     # Visual assets are optional provenance. Import lazily to avoid coupling the
     # core six-column schema to PDF rendering during module import.
+    from .quality_pipeline import quality_for_items
     from .visual_evidence import links_for_items
 
-    links = links_for_items(db, [int(row["item_id"]) for row in rows])
+    item_ids = [int(row["item_id"]) for row in rows]
+    links = links_for_items(db, item_ids)
+    quality = quality_for_items(db, item_ids)
     for row in rows:
+        row.update(quality.get(int(row["item_id"]), {}))
+        if not row.get("quality_gate_status"):
+            if row.get("origin_type") == "manual":
+                row["quality_gate_status"] = "manual_approved"
+                row["quality_score"] = 100.0
+            else:
+                row["quality_gate_status"] = "legacy_stable"
+                row["quality_score"] = None
         row_links = links.get(int(row["item_id"]), [])
         row["visual_assets"] = row_links
         primary = next((asset for asset in row_links if asset["relation_kind"] == "primary"), None)
@@ -1309,11 +1321,18 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
                         include_excluded: bool = False,
                         review_filter: str = "all",
                         source_filter: str = "all",
+                        quality_filter: str = "all",
                         sort: str = "relevance") -> list[dict[str, Any]]:
     rows = list_current_facts(db)
     if not include_excluded:
         rows = [row for row in rows if row.get("review_action") not in {"rejected", "ambiguous"}]
     rows = _filter_search_rows(rows, review_filter=review_filter, source_filter=source_filter)
+    if quality_filter not in SEARCH_QUALITY_FILTERS:
+        raise ValueError(f"unsupported search quality filter: {quality_filter}")
+    if quality_filter == "quality_passed":
+        rows = [row for row in rows if row.get("quality_gate_status") in {"dual_pass", "third_pass", "manual_approved"}]
+    elif quality_filter != "all":
+        rows = [row for row in rows if row.get("quality_gate_status") == quality_filter]
     if sort not in SEARCH_SORTS:
         raise ValueError(f"unsupported search sort: {sort}")
     visual_label = re.fullmatch(r"\s*(table|figure|fig\.?)\s*(\d+)\s*", query, re.I)
@@ -1366,13 +1385,23 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
     return _sort_search_rows(output, sort)
 
 
-def search_qualitative_findings(db: EvidenceDB, query: str, limit: int = 100) -> list[dict[str, Any]]:
+def search_qualitative_findings(db: EvidenceDB, query: str, limit: int = 100, *,
+                                quality_filter: str = "all") -> list[dict[str, Any]]:
     """Search prose observations without mixing them into numeric data rows."""
 
     findings = [
         row for row in list_qualitative_findings(db)
         if row.get("review_action") not in {"rejected"}
     ]
+    if quality_filter not in SEARCH_QUALITY_FILTERS:
+        raise ValueError(f"unsupported search quality filter: {quality_filter}")
+    if quality_filter == "quality_passed":
+        findings = [
+            row for row in findings
+            if row.get("quality_gate_status") in {"dual_pass", "third_pass", "manual_approved"}
+        ]
+    elif quality_filter != "all":
+        findings = [row for row in findings if row.get("quality_gate_status") == quality_filter]
     term_groups = _query_terms(query)
     if not term_groups:
         return findings[:limit]

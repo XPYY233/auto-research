@@ -477,11 +477,18 @@ auto-research evidence-goal-audit "Irradiation effects in high entropy alloys an
 # review with original preserved, manual entry, fuzzy search/export, and the
 # human-review learning loop.
 
-# Only valid for a paper whose six-column table is still empty
+# Publish new automatic results through two independent DeepSeek extractors,
+# adversarial comparison, a third review for low scores, and the search gate.
+auto-research evidence-quality-run <paper-selector>
+
+# The legacy command remains useful as a non-publishing single-branch preview.
+# Adding --commit now routes to the same adversarial quality gate.
+auto-research evidence-deepseek-extract <paper-selector>
 auto-research evidence-deepseek-extract <paper-selector> --commit
 
 # Explicitly allow a repeat DeepSeek run for an already scanned paper
 auto-research evidence-deepseek-extract <paper-selector> --force-rescan
+auto-research evidence-quality-run <paper-selector> --force-rescan
 auto-research evidence-run-article <paper-selector> --force-rescan
 
 # Compare a saved DeepSeek run with the current six-column review baseline.
@@ -524,7 +531,9 @@ as unavailable and do not trigger the malformed-output page-splitting fallback.
 Run metadata is stored in `ai_extraction_runs`; evidence-only result artifacts
 are written to `data/evidence/deepseek_runs/`. Model output alone is never a
 publication gate: schema, page, numeric/table anchors, background/inference
-guards, independent verification, and human confirmation all remain required.
+guards and independent verification remain required. The two-branch adversarial
+gate may publish a candidate after `dual_pass` or `third_pass`; only candidates
+that still fail those automatic checks require explicit human approval.
 When human confirmations, corrections, manual additions, rejections, or ambiguity decisions exist, DeepSeek
 extraction includes a short learning-guidance block so later runs learn the
 preferred six-column field boundaries and Chinese wording style. Those examples

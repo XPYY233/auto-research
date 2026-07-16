@@ -970,7 +970,15 @@ def list_visual_assets(db: EvidenceDB, *, asset_type: str | None = None, paper_i
         params.append(paper_id)
     sql += " ORDER BY p.id,a.asset_type,a.asset_number"
     with db.connect() as conn:
-        return [_decode_asset(dict(row)) for row in conn.execute(sql, params)]
+        assets = [_decode_asset(dict(row)) for row in conn.execute(sql, params)]
+    from .quality_pipeline import quality_for_assets
+    quality = quality_for_assets(db, [int(asset["id"]) for asset in assets])
+    for asset in assets:
+        asset.update(quality.get(int(asset["id"]), {}))
+        if not asset.get("quality_gate_status"):
+            asset["quality_gate_status"] = "legacy_stable"
+            asset["quality_score"] = None
+    return assets
 
 
 def get_visual_asset(db: EvidenceDB, asset_id: int) -> dict[str, Any]:
@@ -1068,8 +1076,22 @@ def _score_term(term: str, text: str, weight: float) -> float:
     return weight * best if best >= 0.62 else 0.0
 
 
-def search_visual_assets(db: EvidenceDB, query: str, *, asset_type: str, limit: int = 100) -> list[dict[str, Any]]:
-    assets = list_visual_assets(db, asset_type=asset_type)
+def search_visual_assets(db: EvidenceDB, query: str, *, asset_type: str, limit: int = 100,
+                         quality_filter: str = "all") -> list[dict[str, Any]]:
+    assets = [
+        asset for asset in list_visual_assets(db, asset_type=asset_type)
+        if not (
+            asset.get("quality_is_new_asset")
+            and asset.get("quality_gate_status") not in {"dual_pass", "third_pass", "manual_approved"}
+        )
+    ]
+    allowed_filters = {"all", "quality_passed", "dual_pass", "third_pass", "manual_approved", "legacy_stable"}
+    if quality_filter not in allowed_filters:
+        raise ValueError(f"unsupported visual quality filter: {quality_filter}")
+    if quality_filter == "quality_passed":
+        assets = [asset for asset in assets if asset.get("quality_gate_status") in {"dual_pass", "third_pass", "manual_approved"}]
+    elif quality_filter != "all":
+        assets = [asset for asset in assets if asset.get("quality_gate_status") == quality_filter]
     groups = _query_groups(query)
     if not groups:
         return assets[:limit]

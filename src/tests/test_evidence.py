@@ -696,7 +696,7 @@ class EvidenceDBTests(unittest.TestCase):
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_versions").fetchone()["count"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_version_orphans").fetchone()["count"], 1)
-            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "10")
+            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "11")
             self.assertEqual(list(conn.execute("PRAGMA foreign_key_check")), [])
         health = evidence_db_health(self.db, self.paper)
         self.assertTrue(health["ok"], health)
@@ -778,6 +778,15 @@ class CorpusIntegrationTests(unittest.TestCase):
         report = validate_database(self.db)
         self.assertTrue(report["ok"], report["errors"])
         self.assertEqual(report["summary"]["review"], {"draft": 108})
+        with self.db.connect() as conn:
+            conn.execute("UPDATE papers SET material_focus='HEA' WHERE pilot_code='P01'")
+            conn.execute(
+                """UPDATE papers SET material_focus='RHEA' WHERE id=(
+                   SELECT id FROM papers WHERE pilot_code LIKE 'P%'
+                   AND material_focus='W-Refractory-Alloys' ORDER BY pilot_code LIMIT 1)"""
+            )
+        alias_report = validate_database(self.db)
+        self.assertTrue(alias_report["ok"], alias_report["errors"])
 
 
 class SixColumnWorkflowTests(unittest.TestCase):
@@ -1360,8 +1369,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.16-local-visual-stable.1")
-        self.assertEqual(RELEASE_INFO["evidence_schema"], 10)
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.16-adversarial-quality-gate.1")
+        self.assertEqual(RELEASE_INFO["evidence_schema"], 11)
 
     def test_rejected_cloud_visual_experiment_is_absent_from_active_ui(self):
         index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
@@ -1999,19 +2008,19 @@ class SixColumnWorkflowTests(unittest.TestCase):
             pdf_path=self.db.get_paper(self.paper_id)["pdf_path"],
         )
         fake_result = {
-            "run_id": 99, "candidate_count": 3, "verified_count": 2,
-            "rejected_count": 1, "duplicate_count": 0, "imported": {"inserted": 2},
+            "pipeline_run_id": 99,
+            "summary": {"dual_pass_count": 2, "third_pass_count": 0, "manual_review_count": 1},
         }
         with patch(
             "auto_research.evidence.six_column.DeepSeekSettings.from_env",
             return_value=DeepSeekSettings(api_key="fake"),
-        ), patch("auto_research.evidence.workflow.DeepSeekEvidenceExtractor") as extractor:
+        ), patch("auto_research.evidence.workflow.AdversarialQualityPipeline") as extractor:
             extractor.return_value.run.return_value = fake_result
             result = run_article_workflow(self.db, article_key="ALT0002", max_pages=2)
-        self.assertEqual(result["action"], "deepseek_extract")
+        self.assertEqual(result["action"], "quality_extract")
         self.assertEqual(result["paper"]["id"], other)
         extractor.return_value.run.assert_called_once_with(
-            other, commit=True, max_pages=2, chunk_pages=2
+            other, max_pages=2, chunk_pages=2
         )
 
     def test_run_article_workflow_requires_force_for_scanned_deepseek_paper(self):
@@ -2025,13 +2034,13 @@ class SixColumnWorkflowTests(unittest.TestCase):
             "context_explanation": "已有六列数据；用于验证重复扫描保护",
         })
         fake_result = {
-            "run_id": 100, "candidate_count": 1, "verified_count": 1,
-            "rejected_count": 0, "duplicate_count": 0, "imported": {"inserted": 0},
+            "pipeline_run_id": 100,
+            "summary": {"dual_pass_count": 1, "third_pass_count": 0, "manual_review_count": 0},
         }
         with patch(
             "auto_research.evidence.six_column.DeepSeekSettings.from_env",
             return_value=DeepSeekSettings(api_key="fake"),
-        ), patch("auto_research.evidence.workflow.DeepSeekEvidenceExtractor") as extractor:
+        ), patch("auto_research.evidence.workflow.AdversarialQualityPipeline") as extractor:
             with self.assertRaisesRegex(ValueError, "已经扫描过"):
                 run_article_workflow(self.db, article_key="ALT0003", max_pages=2)
             extractor.return_value.run.assert_not_called()
@@ -2040,9 +2049,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
             result = run_article_workflow(
                 self.db, article_key="ALT0003", max_pages=2, force_rescan=True
             )
-        self.assertEqual(result["action"], "deepseek_rescan")
+        self.assertEqual(result["action"], "quality_rescan")
         extractor.return_value.run.assert_called_once_with(
-            other, commit=True, merge_existing=True, max_pages=2, chunk_pages=2
+            other, max_pages=2, chunk_pages=2
         )
 
 

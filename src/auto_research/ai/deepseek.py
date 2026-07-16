@@ -103,7 +103,8 @@ class DeepSeekClient:
         self.session = session or requests
 
     def request_json(self, messages: list[dict[str, str]], *, task: str = "extraction",
-                     max_tokens: int = 16_000, thinking: bool | None = None) -> dict[str, Any]:
+                     max_tokens: int = 16_000, thinking: bool | None = None,
+                     temperature: float | None = None) -> dict[str, Any]:
         if not self.settings.api_key:
             raise DeepSeekNotConfigured(
                 "DeepSeek 尚未配置；请在本机环境变量 DEEPSEEK_API_KEY 中设置密钥"
@@ -121,6 +122,8 @@ class DeepSeekClient:
         }
         if thinking is not None:
             payload["thinking"] = {"type": "enabled" if thinking else "disabled"}
+        if temperature is not None:
+            payload["temperature"] = min(max(float(temperature), 0.0), 1.5)
         last_error: Exception | None = None
         for attempt in range(2):
             try:

@@ -357,7 +357,7 @@ matching.
 Use `evidence-index-visuals <paper-selector>` to create or refresh visual assets.
 The stable public routes are `/api/visual-search`,
 `/api/visual-assets/{id}`, and `/api/visual-assets/{id}/image`. Health checks
-must require schema version 9, the visual indexes, and the existence of every
+must require schema version 11, the visual and quality-gate indexes, and the existence of every
 recorded image file.
 
 The editable review page must expose data, table, and figure as three explicit
@@ -371,9 +371,10 @@ source crop. A table/figure may be opened directly from a linked numeric fact.
 Automatic article processing must run deterministic visual indexing before the
 DeepSeek text request. This guarantees that reviewable screenshots survive a
 network or model failure. The current DeepSeek adapter still receives text only;
-caption/context semantics are drafts, not proof that the model inspected image
-pixels. Full-page scanned/raster PDFs may use caption-led page-region crops when
-no separate embedded image object exists. Such crops remain pending human review.
+caption/context semantics are quality-gated candidates, not proof that the model
+inspected image pixels. Full-page scanned/raster PDFs may use caption-led
+page-region crops when no separate embedded image object exists. Such uncertain
+crops remain pending human review.
 
 DOI is portable and preferred when present, but it is not mandatory for older
 or otherwise valid local PDFs. Title plus the verified PDF fingerprint remains
@@ -714,7 +715,9 @@ Prose-only scientific observations belong in `list_qualitative_findings()` and
 the `实验结论` search mode, never in numeric facts. Methods, instruments,
 facilities, material labels and standalone conditions are context, not findings.
 The DeepSeek extraction contract must keep numeric `data`, prose `findings`, and
-`pending_tasks` separate, and all candidates remain pending human review.
+`pending_tasks` separate. New automatic candidates may become searchable only
+through the adversarial quality gate described below; candidates that still
+fail the third review remain outside search until a researcher approves them.
 A value with digits embedded in narrative prose is still non-reportable;
 compact ranges, inequalities, scientific notation, alloy formulas, units and
 explicit table markers remain valid. Database health must report raw rows,
@@ -758,6 +761,50 @@ search overlays, routes, controls, cache and credential, must remain absent from
 the active release. Do not reintroduce it without a new explicit user decision.
 DeepSeek may enrich a visual only from extracted caption and nearby text; it may
 not replace the authoritative local screenshot or claim image-pixel analysis.
+
+### Adversarial DeepSeek quality gate
+
+New automatic extraction uses two independent DeepSeek branches in parallel.
+Branch A is prompted as a completeness auditor; branch B is prompted as a
+precision auditor. They must not receive each other's candidate list. Each
+branch runs the existing page-focused extraction, coverage-gap pass, local
+evidence checks and independent verification. The local PDF visual index is run
+once before both branches; the branches never re-render or replace screenshots.
+
+Compare candidates by evidence identity, value/unit, meaning, conditions and
+source location. Store agreement, factuality, field completeness, evidence and
+overall scores from 0 to 100. The default automatic publication threshold is
+85. A score of 100 means the candidate has complete machine-checkable fields,
+strong local evidence and full agreement within the two independent scans; it
+is not a mathematical proof that no fact was omitted from the paper.
+
+- `dual_pass`: two branches agree and pass the threshold; publish immediately.
+- `third_pass`: a low or unmatched candidate is independently checked against
+  source-page text by a third DeepSeek call and passes the threshold; publish.
+- `manual_review`: third review fails, remains below threshold, or cannot run;
+  do not publish or expose it in search.
+- `manual_approved`: a researcher confirms a waiting candidate; publish it.
+- `rejected`: preserve for audit and do not publish.
+
+Do not restore any direct automatic commit path. The web compatibility route
+`/api/current-paper/deepseek-preview`, the normal article workflow and CLI
+`evidence-deepseek-extract --commit` must all route publication through
+`AdversarialQualityPipeline`. A single-branch CLI run without `--commit` is a
+diagnostic preview only. Manual JSON import is an explicit researcher action,
+not an automatic publication route.
+
+Search and export may filter `dual_pass`, `third_pass`, `manual_approved` and
+`legacy_stable`. Existing data and existing local visual assets predate this
+gate and remain searchable as `legacy_stable`; do not retroactively hide the
+validated baseline. A failed new semantic candidate for an existing visual must
+not hide its stable screenshot. A newly discovered visual with no passing
+candidate must remain hidden until the gate passes.
+
+The quality-review tab is for `manual_review` candidates only. Once a candidate
+has been approved or rejected, the same decision endpoint must refuse a second
+decision so published history cannot be silently overwritten. Preserve every
+pipeline run, both alternatives, third verdict, score dimensions, reason and
+published entity link in schema v11.
 
 Visual evidence uses three separate fields that must not be collapsed again:
 

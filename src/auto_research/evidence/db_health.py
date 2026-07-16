@@ -25,6 +25,10 @@ EXPECTED_INDEXES = {
     "idx_visual_assets_label",
     "idx_data_item_visual_asset",
     "idx_visual_asset_reviews_current",
+    "idx_quality_pipeline_runs_paper",
+    "idx_quality_candidates_paper_status",
+    "idx_quality_candidates_item",
+    "idx_quality_candidates_asset",
 }
 
 
@@ -88,6 +92,15 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             + (" WHERE paper_id=?" if paper_id is not None else ""),
             (() if paper_id is None else (paper_id,)),
         )]
+        quality_runs = [dict(row) for row in conn.execute(
+            "SELECT id,status,stage,progress,output_path,created_at FROM quality_pipeline_runs"
+        )]
+        unlinked_passed_candidates = [dict(row) for row in conn.execute(
+            """SELECT id,entity_type,gate_status FROM quality_candidates
+               WHERE gate_status IN ('dual_pass','third_pass','manual_approved')
+                 AND ((entity_type IN ('data','finding') AND published_item_id IS NULL)
+                   OR (entity_type IN ('table','figure') AND published_asset_id IS NULL))"""
+        )]
 
     now_utc = datetime.now(timezone.utc)
     stale_running_ids: list[int] = []
@@ -108,6 +121,23 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         and (not run.get("output_path") or not Path(str(run["output_path"])).is_file())
     ]
     failed_run_count = sum(run["status"] == "failed" for run in ai_runs)
+    stale_quality_run_ids: list[int] = []
+    for run in quality_runs:
+        if run["status"] != "running":
+            continue
+        try:
+            created = datetime.fromisoformat(str(run["created_at"]).replace("Z", "+00:00"))
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if (now_utc - created.astimezone(timezone.utc)).total_seconds() > 6 * 3600:
+                stale_quality_run_ids.append(int(run["id"]))
+        except (TypeError, ValueError):
+            stale_quality_run_ids.append(int(run["id"]))
+    missing_quality_artifacts = [
+        int(run["id"]) for run in quality_runs
+        if run["status"] == "completed"
+        and (not run.get("output_path") or not Path(str(run["output_path"])).is_file())
+    ]
     missing_visual_images = [
         int(asset["id"]) for asset in visual_assets
         if not (Path(__file__).resolve().parents[3] / str(asset["image_path"])).is_file()
@@ -124,7 +154,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
     checks = [
         {
             "name": "schema_version",
-            "ok": schema_version >= 10,
+            "ok": schema_version >= 11,
             "detail": f"schema_version={schema_version_text or 'missing'}",
         },
         {
@@ -193,6 +223,24 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             "detail": "all completed AI runs have readable artifacts"
             if not missing_run_artifacts else f"missing artifact ids={missing_run_artifacts}",
             "examples": missing_run_artifacts[:20],
+        },
+        {
+            "name": "quality_gate_runs",
+            "ok": not stale_quality_run_ids and not missing_quality_artifacts,
+            "detail": (
+                f"quality runs={len(quality_runs)}; no stale run or missing artifact"
+                if not stale_quality_run_ids and not missing_quality_artifacts
+                else f"stale={stale_quality_run_ids}; missing artifacts={missing_quality_artifacts}"
+            ),
+            "examples": (stale_quality_run_ids + missing_quality_artifacts)[:20],
+        },
+        {
+            "name": "quality_publication_gate",
+            "ok": not unlinked_passed_candidates,
+            "detail": "every quality-passed candidate is linked to its searchable entity"
+            if not unlinked_passed_candidates
+            else f"passed candidates without published entity={len(unlinked_passed_candidates)}",
+            "examples": unlinked_passed_candidates[:20],
         },
         {
             "name": "failed_ai_run_history",

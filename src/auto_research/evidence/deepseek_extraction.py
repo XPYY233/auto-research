@@ -9,7 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import fitz
 
@@ -916,7 +916,10 @@ class DeepSeekEvidenceExtractor:
 
     def run(self, paper_id: int, *, commit: bool = False, max_pages: int | None = None,
             chunk_pages: int = 2, merge_existing: bool = False,
-            parallel_focuses: bool = False) -> dict[str, Any]:
+            parallel_focuses: bool = False, prepare_visuals: bool = True,
+            enrich_visuals: bool = True, update_processing_job: bool = True,
+            prompt_instruction: str = "",
+            progress_callback: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
         paper = self.db.get_paper(paper_id)
         if not paper or not paper.get("pdf_path"):
             raise FileNotFoundError("Paper has no local PDF")
@@ -936,34 +939,47 @@ class DeepSeekEvidenceExtractor:
         )
         if run_id is None:
             raise RuntimeError("AI extraction run could not be created")
-        _execute_run_update(
-            self.db,
-            """UPDATE processing_jobs SET status='running',provider='deepseek',
-               message='正在建立图表证据并执行 DeepSeek 抽取',attempts=attempts+1,updated_at=?
-               WHERE id=(SELECT id FROM processing_jobs WHERE paper_id=? AND job_type='extract'
-                         ORDER BY id DESC LIMIT 1)""",
-            (now(), paper_id),
-        )
+        if progress_callback:
+            progress_callback({"run_id": run_id, "stage": "started", "progress": 0})
+        if update_processing_job:
+            _execute_run_update(
+                self.db,
+                """UPDATE processing_jobs SET status='running',provider='deepseek',
+                   message='正在建立图表证据并执行 DeepSeek 抽取',attempts=attempts+1,updated_at=?
+                   WHERE id=(SELECT id FROM processing_jobs WHERE paper_id=? AND job_type='extract'
+                             ORDER BY id DESC LIMIT 1)""",
+                (now(), paper_id),
+            )
         try:
             # Visual evidence is a local, deterministic PDF operation.  Run it
             # before the paid model request so screenshots remain available for
             # review even when the network/model stage later fails.
             visual_evidence: dict[str, Any]
             try:
-                from .visual_evidence import enrich_visual_metadata, index_visual_evidence
-                visual_evidence = index_visual_evidence(self.db, paper_id)
+                from .visual_evidence import enrich_visual_metadata, index_visual_evidence, list_visual_assets
+                if prepare_visuals:
+                    visual_evidence = index_visual_evidence(self.db, paper_id)
+                else:
+                    existing_assets = list_visual_assets(self.db, paper_id=paper_id)
+                    visual_evidence = {
+                        "asset_count": len(existing_assets),
+                        "table_count": sum(item["asset_type"] == "table" for item in existing_assets),
+                        "figure_count": sum(item["asset_type"] == "figure" for item in existing_assets),
+                        "assets": [],
+                    }
             except Exception as visual_exc:
                 visual_evidence = {
                     "asset_count": 0, "table_count": 0, "figure_count": 0,
                     "warning": str(visual_exc), "assets": [],
                 }
             else:
-                try:
-                    visual_evidence["metadata"] = enrich_visual_metadata(
-                        self.db, paper_id, client=self.client
-                    )
-                except Exception as metadata_exc:
-                    visual_evidence["metadata_warning"] = str(metadata_exc)
+                if enrich_visuals:
+                    try:
+                        visual_evidence["metadata"] = enrich_visual_metadata(
+                            self.db, paper_id, client=self.client
+                        )
+                    except Exception as metadata_exc:
+                        visual_evidence["metadata_warning"] = str(metadata_exc)
                 # The screenshots are available through their API URLs; avoid
                 # duplicating all visual metadata inside each extraction artifact.
                 visual_evidence["assets"] = []
@@ -971,8 +987,17 @@ class DeepSeekEvidenceExtractor:
             experiment_profile = classify_experiment_types(paper, pages=pages)
             extraction_foci = extraction_focuses_for_profile(experiment_profile) or BASE_EXTRACTION_FOCUSES
             chunks = _page_chunks(pages, chunk_pages)
+            if progress_callback:
+                progress_callback({
+                    "run_id": run_id, "stage": "extracting", "progress": 2,
+                    "completed_chunks": 0, "total_chunks": len(chunks),
+                })
             learning_payload = collect_learning_samples(self.db)
             learning_guidance = _learning_guidance(learning_payload)
+            if prompt_instruction.strip():
+                learning_guidance = "\n\n".join(
+                    part for part in (prompt_instruction.strip(), learning_guidance.strip()) if part
+                )
             all_candidates: list[dict[str, Any]] = []
             schema_rejected: list[dict[str, Any]] = []
             all_findings: list[dict[str, Any]] = []
@@ -1126,6 +1151,14 @@ class DeepSeekEvidenceExtractor:
                         interim_rejected, interim_duplicates, run_id,
                     ),
                 )
+                if progress_callback:
+                    progress_callback({
+                        "run_id": run_id,
+                        "stage": "extracting",
+                        "progress": round(90 * chunk_index / max(len(chunks), 1), 1),
+                        "completed_chunks": chunk_index,
+                        "total_chunks": len(chunks),
+                    })
             verified_raw = [
                 item for item in all_candidates
                 if item["local_evidence"]["passed"]
@@ -1232,19 +1265,25 @@ class DeepSeekEvidenceExtractor:
                     now(), run_id,
                 ),
             )
-            _execute_run_update(
-                self.db,
-                """UPDATE processing_jobs SET status='completed',provider='deepseek',
-                   message=?,updated_at=?
-                   WHERE id=(SELECT id FROM processing_jobs WHERE paper_id=? AND job_type='extract'
-                             ORDER BY id DESC LIMIT 1)""",
-                (
-                    f"抽取完成：入库 {int(imported.get('inserted', 0)) + int(qualitative_imported.get('inserted', 0))} 条；"
-                    f"图表 {int(visual_evidence.get('table_count', 0))} 张表 / {int(visual_evidence.get('figure_count', 0))} 幅图",
-                    now(), paper_id,
-                ),
-            )
+            if update_processing_job:
+                _execute_run_update(
+                    self.db,
+                    """UPDATE processing_jobs SET status='completed',provider='deepseek',
+                       message=?,updated_at=?
+                       WHERE id=(SELECT id FROM processing_jobs WHERE paper_id=? AND job_type='extract'
+                                 ORDER BY id DESC LIMIT 1)""",
+                    (
+                        f"抽取完成：入库 {int(imported.get('inserted', 0)) + int(qualitative_imported.get('inserted', 0))} 条；"
+                        f"图表 {int(visual_evidence.get('table_count', 0))} 张表 / {int(visual_evidence.get('figure_count', 0))} 幅图",
+                        now(), paper_id,
+                    ),
+                )
             result["output_path"] = str(output_path)
+            if progress_callback:
+                progress_callback({
+                    "run_id": run_id, "stage": "completed", "progress": 100,
+                    "completed_chunks": len(chunks), "total_chunks": len(chunks),
+                })
             return result
         except BaseException as exc:
             try:
@@ -1257,16 +1296,17 @@ class DeepSeekEvidenceExtractor:
                 # Preserve the extraction exception even if the audit write
                 # remains unavailable after bounded retries.
                 pass
-            try:
-                _execute_run_update(
-                    self.db,
-                    """UPDATE processing_jobs SET status='failed',provider='deepseek',message=?,updated_at=?
-                       WHERE id=(SELECT id FROM processing_jobs WHERE paper_id=? AND job_type='extract'
-                                 ORDER BY id DESC LIMIT 1)""",
-                    (f"DeepSeek 处理失败：{str(exc)[:700]}", now(), paper_id),
-                )
-            except sqlite3.OperationalError:
-                pass
+            if update_processing_job:
+                try:
+                    _execute_run_update(
+                        self.db,
+                        """UPDATE processing_jobs SET status='failed',provider='deepseek',message=?,updated_at=?
+                           WHERE id=(SELECT id FROM processing_jobs WHERE paper_id=? AND job_type='extract'
+                                     ORDER BY id DESC LIMIT 1)""",
+                        (f"DeepSeek 处理失败：{str(exc)[:700]}", now(), paper_id),
+                    )
+                except sqlite3.OperationalError:
+                    pass
             raise
 
 

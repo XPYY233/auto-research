@@ -11,11 +11,22 @@ def validate_database(db: EvidenceDB) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
     with db.connect() as conn:
-        groups = {r["material_focus"]: r["n"] for r in conn.execute(
+        raw_groups = {r["material_focus"]: r["n"] for r in conn.execute(
             "SELECT material_focus,COUNT(*) n FROM papers WHERE pilot_code LIKE 'P%' GROUP BY material_focus"
         )}
+        groups: dict[str, int] = {}
+        for label, count in raw_groups.items():
+            # The first pilot manifest used HEA/RHEA as short labels. In that
+            # fixed 15+15 corpus, HEA belongs to the HEA/CCA half and RHEA is
+            # the W-based refractory-alloy half. Preserve that migration rule
+            # instead of reporting a false imbalance after metadata refreshes.
+            normalized = {
+                "HEA": "HEA-RHEA-CCA",
+                "RHEA": "W-Refractory-Alloys",
+            }.get(label, label)
+            groups[normalized] = groups.get(normalized, 0) + int(count)
         if groups != {"HEA-RHEA-CCA": 15, "W-Refractory-Alloys": 15}:
-            errors.append(f"Pilot is not balanced 15/15: {groups}")
+            errors.append(f"Pilot is not balanced 15/15: normalized={groups}; raw={raw_groups}")
         for row in conn.execute("SELECT id,pdf_path FROM papers WHERE pilot_code LIKE 'P%'"):
             if not row["pdf_path"] or not Path(row["pdf_path"]).is_file():
                 errors.append(f"Pilot paper {row['id']} has no readable local PDF")
@@ -48,4 +59,3 @@ def validate_database(db: EvidenceDB) -> dict[str, Any]:
         if missing_locator:
             warnings.append(f"{missing_locator} draft measurements need a page or table/figure locator")
     return {"ok": not errors, "errors": errors, "warnings": warnings, "summary": db.summary()}
-
