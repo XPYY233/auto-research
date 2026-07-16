@@ -219,25 +219,8 @@
         <section class="visual-review-workspace" id="visual-review-workspace" hidden aria-live="polite">
           <header>
             <div><p class="eyebrow" id="visual-review-kicker">TABLE EVIDENCE REVIEW</p><h2 id="visual-review-title">原始表格校对</h2><p id="visual-review-summary">核对截图、图注和上下文标签；不会自动读取曲线点。</p></div>
-            <div class="visual-review-head-tools">
-              <div class="visual-review-legend"><span><i class="pending"></i>待审核</span><span><i class="confirmed"></i>已确认/修正</span><span><i class="attention"></i>歧义/不采用</span></div>
-              <div class="cloud-mode-controls" data-write-action>
-                <label>图表数据源
-                  <select id="visual-processing-mode">
-                    <option value="legacy">稳定版</option>
-                    <option value="shadow">影子对比</option>
-                    <option value="hybrid">已核验混合版</option>
-                  </select>
-                </label>
-                <button type="button" id="run-cloud-visual">生成云端图表候选</button>
-              </div>
-            </div>
+            <div class="visual-review-legend"><span><i class="pending"></i>待审核</span><span><i class="confirmed"></i>已确认/修正</span><span><i class="attention"></i>歧义/不采用</span></div>
           </header>
-          <div class="cloud-visual-status" id="cloud-visual-status" hidden>
-            <div><strong id="cloud-visual-stage">等待云端任务</strong><span id="cloud-visual-message"></span></div>
-            <div class="progress-track"><span id="cloud-visual-progress-bar"></span></div>
-            <small id="cloud-visual-quality"></small>
-          </div>
           <div class="visual-review-grid" id="visual-review-grid"></div>
         </section>
       </section>

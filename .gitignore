@@ -14,12 +14,3 @@ data/browser-profile/
 *.sqlite-wal
 *.sqlite-shm
 *.log
-
-# MinerU may return a full PDF copy and the original result archive. Keep them
-# locally for reproducibility, but never duplicate whole papers in Git/bundles.
-data/evidence/cloud_visual/**/mineru-result.zip
-data/evidence/cloud_visual/**/artifact/*_origin.pdf
-data/evidence/cloud_visual/**/artifact/full.md
-data/evidence/cloud_visual/**/artifact/*_content_list*.json
-data/evidence/cloud_visual/**/artifact/*_model.json
-data/evidence/cloud_visual/**/artifact/layout.json

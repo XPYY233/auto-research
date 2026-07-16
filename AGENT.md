@@ -2,17 +2,6 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
-## Cloud visual zero-regression contract
-
-- The immutable pre-cloud baseline is 243 visual assets (40 tables and 203 figures) across 30 papers. Do not confuse that corpus coverage with the fixed cloud quality set: cloud rollout is evaluated first on exactly 10 papers and 91 visual assets from `config/evidence_test_set_10.json`.
-- Preserve every existing `visual_assets` identity, legacy image file, stored hash, label, page locator and review history. MinerU and DeepSeek outputs are candidate versions; they never overwrite the stable row or image.
-- Supported modes are `legacy`, `shadow` and quality-gated `hybrid`. The default is `legacy`. There is no default or release path named `cloud-only`.
-- MinerU performs cloud PDF structure and visual extraction. DeepSeek first generates scientific semantics from captions, nearby text and structured tables, then a separate DeepSeek verification pass checks grounding before automatic search indexing.
-- MinerU credentials belong only in macOS Keychain service `auto-research-mineru`. Never write the token to Git, SQLite, environment examples, reports or logs.
-- Never create curve data points from a figure. Trends must be classified as `explicit_text` or `visual_interpretation`; unreviewed visual interpretations are not experimental conclusions.
-- Automatically verified semantics enter table search, figure search and linked item search without requiring a per-asset adoption click. Manual actions are optional overrides. Stable screenshots remain the default image; `hybrid` cloud-image display may be enabled only after the fixed ten-paper evaluation passes all backend-enforced gates: recall not below legacy, new-candidate precision at least 95%, at least 100 sampled table cells with at least 95% exact agreement, applicable axes/legends at least 90%, and zero curve-point violations.
-- Network failure, timeouts, quotas, damaged cloud archives or rejected candidates must leave legacy search, screenshots, detail views, PDF jumps and read-only routes usable.
-
 ## Active local workspace
 
 - The only active project root is `/Users/USER/Zotero/auto-research`.
@@ -762,6 +751,13 @@ does not receive figure pixels. Never claim that DeepSeek or GPT visually read,
 cropped or digitized these screenshots. Do not infer curve points. Every fixed
 full-corpus test-set member with a valid PDF must have at least one visual asset, and the audit
 must report per-paper figure/table counts and the generation method.
+
+The active product intentionally uses this local stable visual-evidence path.
+The rejected MinerU/cloud-visual experiment, including its candidate tables,
+search overlays, routes, controls, cache and credential, must remain absent from
+the active release. Do not reintroduce it without a new explicit user decision.
+DeepSeek may enrich a visual only from extracted caption and nearby text; it may
+not replace the authoritative local screenshot or claim image-pixel analysis.
 
 Visual evidence uses three separate fields that must not be collapsed again:
 

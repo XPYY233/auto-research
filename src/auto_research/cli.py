@@ -17,7 +17,7 @@ from .zotero.client import ZoteroClient
 from .browser.handoff import open_for_handoff
 from .browser.playwright_acquirer import BrowserAcquirer
 from .models import PaperState
-from .paths import ensure_dirs, DB_PATH, DATA_DIR, ROOT
+from .paths import ensure_dirs, DB_PATH, DATA_DIR
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -137,17 +137,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out-dir", help="Directory for JSON and Markdown audit reports")
     sub.add_parser("evidence-deepseek-status", help="Show redacted DeepSeek runtime configuration")
     sub.add_parser("evidence-deepseek-smoke-test", help="Send a minimal synthetic JSON connection check to DeepSeek")
-    sub.add_parser("evidence-mineru-status", help="Show redacted MinerU cloud parser configuration")
-    sub.add_parser("evidence-mineru-store-token", help="Securely store a MinerU Token in the macOS Keychain")
-    p = sub.add_parser("evidence-cloud-visual-run", help="Create MinerU + DeepSeek visual candidates without replacing stable assets")
-    p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, or paper id")
-    p.add_argument("--wait", action="store_true", help="Wait for the cloud run instead of returning immediately")
-    p = sub.add_parser("evidence-cloud-visual-quality", help="Show cloud visual candidate quality-gate status")
-    p.add_argument("article_key", nargs="?", help="Optional paper selector; omit for the whole evidence database")
-    p = sub.add_parser("evidence-cloud-visual-evaluate", help="Record fixed ten-paper quality metrics and compute hybrid eligibility")
-    p.add_argument("metrics_json", help="JSON file containing the required quality-gate metrics")
-    p.add_argument("--reviewer", default="本地研究者")
-    p.add_argument("--note", default="")
     p = sub.add_parser("evidence-deepseek-extract", help="Run evidence-grounded DeepSeek extraction for one paper selector")
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p.add_argument("--commit", action="store_true", help="Import verified candidates only when the paper has no six-column rows")
@@ -313,40 +302,6 @@ def cmd_evidence(args) -> int:
     from .evidence.prompts import build_prompt_packet, prepare_pilot_packets
 
     evidence_db = EvidenceDB()
-    if args.cmd == "evidence-mineru-status":
-        from .evidence.cloud_visual import MinerUSettings
-        print(json.dumps(MinerUSettings.from_keychain().public_status(), ensure_ascii=False, indent=2))
-        return 0
-    if args.cmd == "evidence-mineru-store-token":
-        import getpass
-        from .evidence.cloud_visual import store_mineru_token
-        token = getpass.getpass("请输入 MinerU Token（输入不会显示）：")
-        store_mineru_token(token)
-        print("MinerU Token 已安全保存到 macOS 钥匙串 auto-research-mineru。")
-        return 0
-    if args.cmd == "evidence-cloud-visual-run":
-        from .evidence.cloud_visual import start_cloud_visual_run
-        from .evidence.six_column import resolve_paper_selector
-        paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key)
-        result = start_cloud_visual_run(evidence_db, paper_id, background=not args.wait)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0 if result.get("status") != "failed" else 2
-    if args.cmd == "evidence-cloud-visual-quality":
-        from .evidence.cloud_visual import cloud_quality_report
-        from .evidence.six_column import resolve_paper_selector
-        paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key) if args.article_key else None
-        print(json.dumps(cloud_quality_report(evidence_db, paper_id), ensure_ascii=False, indent=2))
-        return 0
-    if args.cmd == "evidence-cloud-visual-evaluate":
-        from .evidence.cloud_visual import record_cloud_quality_evaluation
-        baseline = json.loads((ROOT / "data/evidence/baselines/visual-baseline-2026-07-15-pre-mineru.json").read_text(encoding="utf-8"))
-        metrics = json.loads(Path(args.metrics_json).expanduser().read_text(encoding="utf-8"))
-        result = record_cloud_quality_evaluation(
-            evidence_db, metrics, test_set_version="content-valid-10-v1",
-            baseline_manifest_sha256=baseline["manifest_sha256"], reviewer=args.reviewer, note=args.note,
-        )
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0 if result["decision"] == "approved" else 2
     if args.cmd == "evidence-deepseek-status":
         print(json.dumps(DeepSeekSettings.from_env().public_status(), ensure_ascii=False, indent=2))
         return 0

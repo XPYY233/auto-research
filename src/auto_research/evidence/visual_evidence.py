@@ -970,63 +970,7 @@ def list_visual_assets(db: EvidenceDB, *, asset_type: str | None = None, paper_i
         params.append(paper_id)
     sql += " ORDER BY p.id,a.asset_type,a.asset_number"
     with db.connect() as conn:
-        assets = [_decode_asset(dict(row)) for row in conn.execute(sql, params)]
-
-    # Cloud candidates are a read-time overlay only. The stable rows and image
-    # hashes above are never rewritten. Automatically verified semantics may
-    # improve search in every mode; cloud image bytes are used only in hybrid.
-    from .cloud_visual import get_visual_processing_mode, list_cloud_candidates
-
-    if not assets:
-        return assets
-    visual_mode = get_visual_processing_mode(db)
-    if visual_mode not in {"legacy", "shadow", "hybrid"}:
-        for asset in assets:
-            asset["effective_source"] = "legacy"
-            asset["stable_image_url"] = asset["image_url"]
-        return assets
-
-    paper_ids = sorted({int(asset["paper_id"]) for asset in assets})
-    adopted: dict[int, dict[str, Any]] = {}
-    for candidate_paper_id in paper_ids:
-        for candidate in list_cloud_candidates(db, candidate_paper_id):
-            linked_id = int(candidate.get("asset_id") or 0)
-            if not linked_id or linked_id in adopted:
-                continue
-            if candidate.get("quality_status") != "passed":
-                continue
-            if candidate.get("adoption_state") not in {"enhancement", "interpretation_only"}:
-                continue
-            adopted[linked_id] = candidate
-
-    semantic_fields = (
-        "display_name", "physical_quantities", "variables", "materials",
-        "conditions_text", "methods_text", "context_explanation", "tags",
-    )
-    for asset in assets:
-        asset["stable_image_url"] = asset["image_url"]
-        asset["effective_source"] = "legacy"
-        candidate = adopted.get(int(asset["id"]))
-        if not candidate:
-            continue
-        asset["cloud_candidate"] = candidate
-        if candidate.get("analysis_status") == "completed":
-            for field in semantic_fields:
-                value = candidate.get(field)
-                if value not in (None, "", [], {}):
-                    asset[field] = value
-            asset["trends"] = candidate.get("trends") or []
-            asset["effective_source"] = "auto_verified_cloud_semantics"
-        if (
-            visual_mode == "hybrid"
-            and candidate.get("adoption_state") == "enhancement"
-            and candidate.get("image_url")
-        ):
-            asset["image_url"] = candidate["image_url"]
-            asset["effective_source"] = "hybrid_cloud_image_and_semantics"
-        elif visual_mode == "hybrid" and asset["effective_source"] != "legacy":
-            asset["effective_source"] = "hybrid_cloud_semantics"
-    return assets
+        return [_decode_asset(dict(row)) for row in conn.execute(sql, params)]
 
 
 def get_visual_asset(db: EvidenceDB, asset_id: int) -> dict[str, Any]:
@@ -1165,39 +1109,19 @@ def links_for_items(db: EvidenceDB, item_ids: list[int]) -> dict[int, list[dict[
     placeholders = ",".join("?" for _ in item_ids)
     with db.connect() as conn:
         rows = [dict(row) for row in conn.execute(
-            f"""SELECT l.item_id,l.relation_kind,l.cell_locator,l.asset_id
-                FROM data_item_visual_links l
+            f"""SELECT l.item_id,l.relation_kind,l.cell_locator,a.id,a.asset_type,a.label,a.display_name,
+                       a.asset_number,a.page_start,a.caption,a.context_explanation,a.tags_json,a.image_path
+                FROM data_item_visual_links l JOIN visual_assets a ON a.id=l.asset_id
                 WHERE l.item_id IN ({placeholders})
-                ORDER BY l.item_id,CASE l.relation_kind WHEN 'primary' THEN 0 ELSE 1 END,l.asset_id""",
+                ORDER BY l.item_id,CASE l.relation_kind WHEN 'primary' THEN 0 ELSE 1 END,a.asset_number""",
             item_ids,
         )]
-    linked_asset_ids = {int(row["asset_id"]) for row in rows}
-    effective_assets = {
-        int(asset["id"]): asset
-        for asset in list_visual_assets(db)
-        if int(asset["id"]) in linked_asset_ids
-    }
     output: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
-        asset = effective_assets.get(int(row["asset_id"]))
-        if not asset:
-            continue
-        linked = {
-            "item_id": int(row["item_id"]),
-            "relation_kind": row["relation_kind"],
-            "cell_locator": row["cell_locator"],
-            "id": int(asset["id"]),
-            "asset_type": asset["asset_type"],
-            "label": asset["label"],
-            "display_name": asset.get("display_name"),
-            "asset_number": asset.get("asset_number"),
-            "page_start": asset.get("page_start"),
-            "caption": asset.get("caption"),
-            "context_explanation": asset.get("context_explanation"),
-            "tags": asset.get("tags") or [],
-            "image_url": asset.get("image_url"),
-            "stable_image_url": asset.get("stable_image_url"),
-            "effective_source": asset.get("effective_source", "legacy"),
-        }
-        output.setdefault(int(row["item_id"]), []).append(linked)
+        row["image_url"] = f"/api/visual-assets/{row['id']}/image"
+        try:
+            row["tags"] = json.loads(str(row.pop("tags_json") or "[]"))
+        except (json.JSONDecodeError, TypeError):
+            row["tags"] = []
+        output.setdefault(int(row["item_id"]), []).append(row)
     return output

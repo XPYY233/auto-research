@@ -13,6 +13,7 @@ from unittest.mock import patch
 import fitz
 import auto_research.evidence.prompts as prompt_module
 import auto_research.evidence.six_column as six_column_module
+import auto_research.evidence.webapp as webapp_module
 from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.article_navigation import navigation_tags
 from auto_research.evidence.db import EvidenceDB
@@ -52,6 +53,7 @@ from auto_research.evidence.values import normalize_value, parse_value
 from auto_research.evidence.webapp import (
     EvidenceHandler,
     RELEASE_INFO,
+    WEB_DIR,
     _startup_document_index,
     current_experiment_profile,
     is_read_only_public_get,
@@ -694,7 +696,7 @@ class EvidenceDBTests(unittest.TestCase):
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_versions").fetchone()["count"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_version_orphans").fetchone()["count"], 1)
-            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "11")
+            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "10")
             self.assertEqual(list(conn.execute("PRAGMA foreign_key_check")), [])
         health = evidence_db_health(self.db, self.paper)
         self.assertTrue(health["ok"], health)
@@ -1358,8 +1360,22 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.15-cloud-auto.1")
-        self.assertEqual(RELEASE_INFO["evidence_schema"], 11)
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.16-local-visual-stable.1")
+        self.assertEqual(RELEASE_INFO["evidence_schema"], 10)
+
+    def test_rejected_cloud_visual_experiment_is_absent_from_active_ui(self):
+        index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+        server_source = Path(webapp_module.__file__).read_text(encoding="utf-8")
+        active_source = "\n".join((index_html, app_js, server_source))
+        for marker in (
+            "run-cloud-visual",
+            "visual-processing-mode",
+            "/api/current-paper/cloud-visual",
+            "auto_verified_cloud_semantics",
+        ):
+            self.assertNotIn(marker, active_source)
+        self.assertIn("/api/visual-search", active_source)
 
     def test_blank_search_and_paper_picker_counts_cover_all_papers(self):
         other = self.db.upsert_paper(title="Other irradiation paper", doi="10.1/search-all")
@@ -1730,8 +1746,6 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(is_read_only_public_get("/api/visual-search"))
         self.assertTrue(is_read_only_public_get("/api/visual-assets/3"))
         self.assertTrue(is_read_only_public_get("/api/visual-assets/3/image"))
-        self.assertTrue(is_read_only_public_get("/api/cloud-visual-sources/3/image"))
-        self.assertFalse(is_read_only_public_get("/api/current-paper/cloud-visual-candidates"))
         self.assertFalse(is_read_only_public_get("/api/current-paper"))
         self.assertFalse(is_read_only_public_get("/api/papers"))
         self.assertFalse(is_read_only_public_get("/api/uploads"))

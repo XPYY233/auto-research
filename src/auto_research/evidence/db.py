@@ -357,118 +357,6 @@ CREATE TABLE IF NOT EXISTS visual_asset_reviews (
 
 CREATE INDEX IF NOT EXISTS idx_visual_asset_reviews_current
   ON visual_asset_reviews(asset_id,version_no DESC);
-
-CREATE TABLE IF NOT EXISTS cloud_visual_runs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
-  document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
-  provider TEXT NOT NULL DEFAULT 'mineru',
-  requested_mode TEXT NOT NULL DEFAULT 'shadow'
-    CHECK(requested_mode IN ('shadow','hybrid')),
-  model_version TEXT NOT NULL DEFAULT 'vlm',
-  status TEXT NOT NULL DEFAULT 'queued'
-    CHECK(status IN ('queued','uploading','pending','running','downloading','analyzing','completed','failed','cancelled')),
-  progress_stage TEXT NOT NULL DEFAULT 'queued',
-  progress_current INTEGER NOT NULL DEFAULT 0,
-  progress_total INTEGER NOT NULL DEFAULT 0,
-  message TEXT NOT NULL DEFAULT '',
-  remote_task_id TEXT,
-  source_pdf_sha256 TEXT NOT NULL,
-  artifact_dir TEXT,
-  manifest_path TEXT,
-  error_message TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  finished_at TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_cloud_visual_runs_paper
-  ON cloud_visual_runs(paper_id,created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_cloud_visual_runs_status
-  ON cloud_visual_runs(status,updated_at DESC);
-
-CREATE TABLE IF NOT EXISTS visual_source_versions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id INTEGER NOT NULL REFERENCES cloud_visual_runs(id) ON DELETE CASCADE,
-  asset_id INTEGER REFERENCES visual_assets(id) ON DELETE SET NULL,
-  source_kind TEXT NOT NULL DEFAULT 'mineru'
-    CHECK(source_kind IN ('mineru','manual')),
-  asset_type TEXT NOT NULL CHECK(asset_type IN ('table','figure')),
-  label TEXT NOT NULL,
-  page_start INTEGER NOT NULL,
-  page_end INTEGER NOT NULL,
-  bbox_json TEXT NOT NULL DEFAULT '[]',
-  caption TEXT NOT NULL DEFAULT '',
-  source_context TEXT NOT NULL DEFAULT '',
-  image_path TEXT,
-  image_sha256 TEXT,
-  match_confidence REAL NOT NULL DEFAULT 0.0,
-  quality_status TEXT NOT NULL DEFAULT 'pending'
-    CHECK(quality_status IN ('pending','passed','rejected','ambiguous')),
-  adoption_state TEXT NOT NULL DEFAULT 'shadow'
-    CHECK(adoption_state IN ('shadow','enhancement','interpretation_only','ignored')),
-  validation_json TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  UNIQUE(run_id,asset_type,label,page_start)
-);
-
-CREATE INDEX IF NOT EXISTS idx_visual_source_versions_asset
-  ON visual_source_versions(asset_id,created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_visual_source_versions_run
-  ON visual_source_versions(run_id,asset_type,page_start);
-
-CREATE TABLE IF NOT EXISTS table_structure_candidates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source_version_id INTEGER NOT NULL UNIQUE
-    REFERENCES visual_source_versions(id) ON DELETE CASCADE,
-  html_content TEXT NOT NULL DEFAULT '',
-  structure_json TEXT NOT NULL DEFAULT '{}',
-  cell_count INTEGER NOT NULL DEFAULT 0,
-  header_row_count INTEGER NOT NULL DEFAULT 0,
-  has_footnotes INTEGER NOT NULL DEFAULT 0 CHECK(has_footnotes IN (0,1)),
-  exact_cell_count INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS visual_analysis_candidates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source_version_id INTEGER NOT NULL UNIQUE
-    REFERENCES visual_source_versions(id) ON DELETE CASCADE,
-  provider TEXT NOT NULL DEFAULT 'deepseek',
-  model TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending'
-    CHECK(status IN ('pending','completed','failed')),
-  display_name TEXT NOT NULL DEFAULT '',
-  physical_quantities_json TEXT NOT NULL DEFAULT '[]',
-  variables_json TEXT NOT NULL DEFAULT '{}',
-  materials_json TEXT NOT NULL DEFAULT '[]',
-  conditions_text TEXT NOT NULL DEFAULT '',
-  methods_text TEXT NOT NULL DEFAULT '',
-  context_explanation TEXT NOT NULL DEFAULT '',
-  tags_json TEXT NOT NULL DEFAULT '[]',
-  trends_json TEXT NOT NULL DEFAULT '[]',
-  provenance_json TEXT NOT NULL DEFAULT '{}',
-  raw_json TEXT NOT NULL DEFAULT '{}',
-  error_message TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS cloud_visual_quality_evaluations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  test_set_version TEXT NOT NULL,
-  baseline_manifest_sha256 TEXT NOT NULL,
-  metrics_json TEXT NOT NULL,
-  decision TEXT NOT NULL CHECK(decision IN ('experimental','approved','rejected')),
-  reviewer TEXT NOT NULL,
-  note TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_cloud_visual_quality_decision
-  ON cloud_visual_quality_evaluations(decision,created_at DESC);
 """
 
 
@@ -614,13 +502,9 @@ class EvidenceDB:
                     "ALTER TABLE visual_assets ADD COLUMN metadata_source TEXT NOT NULL DEFAULT 'deterministic'"
                 )
             conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('schema_version','11') "
+                "INSERT INTO schema_meta(key,value) VALUES('schema_version','10') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value "
                 "WHERE schema_meta.value IS NOT excluded.value"
-            )
-            conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('visual_processing_mode','legacy') "
-                "ON CONFLICT(key) DO NOTHING"
             )
 
     def get_meta(self, key: str, default: str | None = None) -> str | None:
