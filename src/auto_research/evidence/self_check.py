@@ -49,8 +49,8 @@ def _web_ui_contract() -> dict[str, Any]:
         ("editable_table", "class=\"edit-table\"" in html and "id=\"edit-rows\"" in html),
         ("six_columns_visible", all(label in html for label in ("具体数值", "具体意义", "单位", "文章题目", "DOI", "数据在文中的解释"))),
         ("original_right_pane", "id=\"original-pane\"" in html and "IMMUTABLE ORIGINAL" in js and "original_" in js),
-        ("confirm_before_save", "确认当前内容" in js and "/confirm" in js and "confirmRow" in js),
-        ("confirm_and_next", "确认并下一条" in js and "data-confirm-next" in js and "goNext" in js),
+        ("confirm_before_save", "保存当前修正" in js and "/confirm" in js and "confirmRow" in js),
+        ("confirm_and_next", "保存并下一条" in js and "data-confirm-next" in js and "goNext" in js),
         ("review_keyboard_shortcuts", "快捷键" in html and "handleReviewKeyboard" in js and "confirmSelectedRow" in js and "openSelectedSource" in js),
         ("review_progress_card", "id=\"review-progress-card\"" in html and "renderReviewProgressCard" in js and "review-progress-bar" in js),
         ("review_negative_decisions", "id=\"review-decision-dialog\"" in html and "存在歧义" in js and "不采用" in js and "/decision" in js and "恢复待审核" in js),
@@ -69,8 +69,10 @@ def _web_ui_contract() -> dict[str, Any]:
         ("manual_entry", "id=\"manual-form\"" in html and "id=\"manual-paper-select\"" in html and "/api/six-data/manual" in js),
         ("manual_no_original", "人工补录数据" in js and "没有不可变的原始版本" in js),
         ("learning_guidance_preview", "id=\"learning-guidance-card\"" in html and "renderLearningGuidanceCard" in js and "/api/current-paper/learning-report" in js),
-        ("search_engine", "id=\"search-form\"" in html and "/api/six-search" in js and "整个证据数据库" in html),
-        ("search_filters_and_export", all(item in html for item in ("search-review-filter", "search-source-filter", "search-sort")) and "itemSearchParams" in js and "search-active-filters" in html),
+        ("search_engine", "id=\"search-form\"" in html and "/api/six-search" in js and 'data-search-scope="all"' in html),
+        ("search_filters_and_export", all(item in html for item in ("search-source-filter", "search-quality-filter", "search-sort")) and "itemSearchParams" in js and "search-active-filters" in html),
+        ("multi_paper_search_scope", 'data-search-scope="selected"' in html and "/api/search-papers" in js and "selectedSearchPaperParam" in js),
+        ("automatic_quality_gate", "/api/current-paper/quality-run" in js and all(label in js for label in ("双路一致通过", "第三次复核通过", "自动拦截")) and "data-quality-decision" not in js),
         ("search_guidance_and_shortcut", "search-suggestions" in html and "renderSearchSuggestions" in js and "focusSearchShortcut" in js and "recentSearches" in js),
         ("four_mode_evidence_search", all(mode in html for mode in ("数据条目", "原始表格", "论文图片", "实验结论")) and "/api/visual-search" in js and "/api/qualitative-search" in js and "setSearchMode" in js),
         ("qualitative_result_export", "/api/qualitative-export.csv" in js and "/api/qualitative-export.xlsx" in js and '["item", "finding"]' in js),
@@ -88,7 +90,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("resumable_calibration_review", "calibrationStoragePrefix" in js and "restoreCalibrationBatch" in js and "继续本轮校准" in js and "saveCalibrationBatch" in js),
         ("review_all_download", "id=\"current-review-all\"" in html and "下载全部待审核" in js and "updateReviewBatchLinks" in js),
         ("experiment_profile_card", "experiment-profile-card" in html and "renderExperimentProfile" in js and "/api/current-paper/experiment-profile" in js),
-        ("paper_status_overview", "id=\"paper-status-summary\"" in html and "renderPaperStatusSummary" in js and "six_workflow_label" in js),
+        ("paper_status_overview", "id=\"paper-status-summary\"" in html and "renderPaperStatusSummary" in js and "paperAutomaticStatus" in js),
         ("full_corpus_test_set_picker", "/api/test-set" in js and "全库测试集" in js and "testOrder" in js),
         ("article_navigation_filters", all(item in html for item in ("paper-picker-query", "paper-author-filter", "data-paper-topic", "paper-status-filter", "paper-filter-summary")) and "paperMatchesFilters" in js and "navigation_method_tags" in js and "first_author" in js and "最近访问" in html and "筛选不会切换文章或重新扫描" in html),
         ("article_scope_presets", "文章集合（点击后清除其他筛选）" in html and "applyPaperScopePreset" in js and 'applyPaperScopePreset(button.dataset.paperScope)' in js),
@@ -97,7 +99,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("readonly_search_only_mode", "renderPublicSearchOnlyMode" in js and 'name !== "search"' in js and 'body[data-readonly="true"] .nav:not([data-view="search"])' in css),
         ("search_source_evidence_button", "data-source-search" in js and "原文证据" in js and "openSourceViewer(itemId" in js),
         ("readonly_source_direct", "function openSourceViewer(id, rowHint = null)" in js and "rows.find(row => Number(row.item_id) === itemId)" in js and "await api(`/api/six-data/${id}`)" not in source_viewer_js),
-        ("search_review_state", "search-review-state" in js and "待审核" in js and "已确认" in js and "已修正" in js),
+        ("search_review_state", "search-review-state" in js and "自动收录" in js and "历史确认" in js and "历史修正" in js),
         ("dense_review_rows", "autoSizeReviewCell" in js and "grid-template-columns:repeat(3,minmax(0,1fr))" in css and ".edit-table{min-width:1380px;font-size:14px}" in css),
     ]
     failed = [name for name, ok in expectations if not ok]
@@ -187,10 +189,10 @@ def _requirement_summary(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "evidence": details("fuzzy_search", "csv_export", "excel_export"),
         },
         {
-            "id": "review_learning_loop",
-            "ok": ok("learning_channel", "web_ui_contract") and ui_ok("learning_guidance_preview", "review_negative_decisions"),
-            "requirement": "人工确认、修正、补录、歧义和不采用决定可进入学习样本通道，并能预览它们如何约束后续抽取。",
-            "evidence": details("learning_channel"),
+            "id": "automatic_quality_gate",
+            "ok": ok("web_ui_contract") and ui_ok("automatic_quality_gate", "multi_paper_search_scope"),
+            "requirement": "双路 DeepSeek 对抗抽取与第三次低分复核决定自动收录；低分候选自动隔离，不依赖人工批准。",
+            "evidence": details("web_ui_contract"),
         },
     ]
 
@@ -361,9 +363,9 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
         "web_ui_contract",
         ui_contract["ok"],
         (
-            "网页校对契约存在：左侧六列表编辑、右侧原始版本、确认后保存、人工补录、全库搜索和原文高亮入口均可定位。"
+            "网页工作流契约存在：自动质量门、可选修正、原始证据、多文章搜索、导出和原文高亮入口均可定位。"
             if ui_contract["ok"]
-            else f"网页校对契约缺失：{', '.join(ui_contract['failed'])}"
+            else f"网页工作流契约缺失：{', '.join(ui_contract['failed'])}"
         ),
         web_ui=ui_contract,
     )

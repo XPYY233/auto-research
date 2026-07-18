@@ -59,8 +59,10 @@ from auto_research.evidence.webapp import (
     is_read_only_public_get,
     is_read_only_mutation,
     make_xlsx,
+    parse_search_paper_ids,
     requires_rescan_confirmation,
     search_export_rows,
+    search_paper_catalog,
 )
 from auto_research.evidence.workflow import run_article_workflow
 from auto_research.evidence.six_column import (
@@ -106,6 +108,7 @@ from auto_research.evidence.visual_evidence import (
     _complete_caption,
     _connected_table_rules,
     _nearest_detected_table,
+    _visual_metadata_messages,
     _visual_index_kinds,
     enrich_visual_metadata,
     get_visual_asset,
@@ -1309,6 +1312,41 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn(other, paper_ids)
         self.assertIn(other_row["item_id"], {row["item_id"] for row in results})
 
+    def test_multi_paper_scope_is_shared_by_data_findings_visuals_and_exports(self):
+        other = self.db.upsert_paper(title="Scoped irradiation paper", doi="10.1/scoped-other")
+        other_row = add_manual_item(self.db, other, {
+            "value_text": "777", "meaning": "范围测试温度", "unit": "°C",
+            "article_title": "Scoped irradiation paper", "doi": "10.1/scoped-other",
+            "context_explanation": "多文章检索范围验证",
+        })
+        other_finding = add_qualitative_item(self.db, other, {
+            "finding_text": "范围测试未观察到空洞", "meaning": "范围测试结论",
+            "context_explanation": "多文章检索范围验证", "source_page": 1,
+            "source_locator": "Results", "source_excerpt": "no voids were observed",
+        })
+        scoped_rows = search_current_data(self.db, "", limit=1000, paper_ids={other})
+        self.assertEqual({row["paper_id"] for row in scoped_rows}, {other})
+        self.assertIn(other_row["item_id"], {row["item_id"] for row in scoped_rows})
+        self.assertEqual(
+            {row["item_id"] for row in search_export_rows(self.db, "", paper_ids={other})},
+            {row["item_id"] for row in scoped_rows},
+        )
+        scoped_findings = search_qualitative_findings(self.db, "范围测试", paper_ids={other})
+        self.assertEqual([row["item_id"] for row in scoped_findings], [other_finding["item_id"]])
+        index_visual_evidence(self.db, self.paper_id)
+        self.assertTrue(search_visual_assets(self.db, "", asset_type="table", paper_ids={self.paper_id}))
+        self.assertFalse(search_visual_assets(self.db, "", asset_type="table", paper_ids={other}))
+
+    def test_search_scope_parser_and_public_catalog_are_safe(self):
+        self.assertIsNone(parse_search_paper_ids({}))
+        self.assertEqual(parse_search_paper_ids({"paper_ids": ["2, 3", "3"]}), {2, 3})
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            parse_search_paper_ids({"paper_ids": ["2,nope"]})
+        catalog = search_paper_catalog(self.db)
+        self.assertTrue(catalog)
+        self.assertNotIn("pdf_path", catalog[0])
+        self.assertNotIn("local_article_key", catalog[0])
+
     def test_search_expands_element_names_to_symbols(self):
         other = self.db.upsert_paper(title="Tungsten alloy paper", doi="10.1/search-w")
         other_row = add_manual_item(self.db, other, {
@@ -1385,6 +1423,26 @@ class SixColumnWorkflowTests(unittest.TestCase):
         ):
             self.assertNotIn(marker, active_source)
         self.assertIn("/api/visual-search", active_source)
+
+    def test_search_ui_has_scientific_typesetting_and_independent_paper_scope(self):
+        index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+        app_css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
+        self.assertIn('data-search-scope="selected"', index_html)
+        self.assertIn("selectedSearchPaperParam", app_js)
+        self.assertIn("scientificQuantityHtml", app_js)
+        self.assertIn("visualTitleParts", app_js)
+        self.assertIn('font-family:"Times New Roman"', app_css)
+        self.assertNotIn('id="search-review-filter"', index_html)
+
+    def test_future_visual_metadata_prompt_requires_material_and_comparison_context(self):
+        prompt = _visual_metadata_messages(
+            {"title": "Example", "doi": "10.1/example"},
+            [{"id": 1, "asset_type": "table", "label": "Table 1", "caption": "Nominal and measured composition", "source_context": "W alloy composition"}],
+        )[0]["content"]
+        self.assertIn("研究对象或材料", prompt)
+        self.assertIn("比较双方", prompt)
+        self.assertIn("缺少研究对象", prompt)
 
     def test_blank_search_and_paper_picker_counts_cover_all_papers(self):
         other = self.db.upsert_paper(title="Other irradiation paper", doi="10.1/search-all")
@@ -1645,6 +1703,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("manual_entry", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("learning_guidance_preview", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("confirm_and_next", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("automatic_quality_gate", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("multi_paper_search_scope", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_keyboard_shortcuts", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_progress_card", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("review_negative_decisions", by_name["web_ui_contract"]["web_ui"]["checked"])
@@ -1684,7 +1744,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(requirements["editable_review_preserves_original"]["ok"])
         self.assertTrue(requirements["manual_entry_without_original"]["ok"])
         self.assertTrue(requirements["free_text_fuzzy_search_and_export"]["ok"])
-        self.assertTrue(requirements["review_learning_loop"]["ok"])
+        self.assertTrue(requirements["automatic_quality_gate"]["ok"])
 
     def test_db_health_checks_current_view_indexes_and_required_fields(self):
         report = evidence_db_health(self.db, paper_id=self.paper_id)
@@ -1744,6 +1804,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
     def test_read_only_public_get_allowlist_is_search_only(self):
         self.assertTrue(is_read_only_public_get("/"))
         self.assertTrue(is_read_only_public_get("/api/six-search"))
+        self.assertTrue(is_read_only_public_get("/api/search-papers"))
         self.assertTrue(is_read_only_public_get("/api/qualitative-search"))
         self.assertTrue(is_read_only_public_get("/api/qualitative-export.csv"))
         self.assertTrue(is_read_only_public_get("/api/qualitative-export.xlsx"))
@@ -1760,7 +1821,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertFalse(is_read_only_public_get("/api/uploads"))
         self.assertFalse(is_read_only_public_get("/api/current-paper/learning-samples"))
 
-    def test_review_handoff_markdown_summarizes_human_review_next_step(self):
+    def test_review_handoff_markdown_summarizes_automatic_quality_next_step(self):
         out = Path(self.tmp.name) / "handoff.md"
         result = generate_review_handoff(
             self.db,
@@ -1770,11 +1831,11 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertTrue(out.is_file())
         text = out.read_text(encoding="utf-8")
-        self.assertIn("目标文章人工核验交接摘要", text)
-        self.assertIn("待审核", text)
-        self.assertIn("Alt+S", text)
-        self.assertIn("确认并下一条", text)
-        self.assertIn("人工核验剩余数据", text)
+        self.assertIn("目标文章自动质量与证据检查摘要", text)
+        self.assertIn("对抗式质量提取", text)
+        self.assertIn("自动拦截", text)
+        self.assertIn("原文证据", text)
+        self.assertIn("不需要逐条人工批准", text)
 
     def test_review_batch_markdown_lists_next_unreviewed_rows(self):
         out = Path(self.tmp.name) / "batch.md"
@@ -1827,7 +1888,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported review batch strategy"):
             review_batch_payload(self.db, self.paper_id, limit=3, strategy="random")
 
-    def test_goal_audit_distinguishes_review_ready_from_goal_complete(self):
+    def test_goal_audit_treats_automatic_quality_as_completion_gate(self):
         out = Path(self.tmp.name) / "goal_audit.md"
         bundle_dir = Path(self.tmp.name) / "bundles"
         bundle_dir.mkdir()
@@ -1838,14 +1899,14 @@ class SixColumnWorkflowTests(unittest.TestCase):
             out=out,
             bundle_dir=bundle_dir,
         )
-        self.assertTrue(result["ready_for_human_review"], result)
-        self.assertFalse(result["goal_complete"], result)
+        self.assertTrue(result["automatic_ready"], result)
+        self.assertTrue(result["goal_complete"], result)
         self.assertGreater(result["review_progress"]["unreviewed"], 0)
         self.assertTrue(out.is_file())
         text = out.read_text(encoding="utf-8")
         self.assertIn("自动化实验数据提取目标审计", text)
-        self.assertIn("最终目标完成：否", text)
-        self.assertIn("继续人工核验", text)
+        self.assertIn("最终目标完成：是", text)
+        self.assertIn("自动提取、质量门、证据检查和检索链路已就绪", text)
 
     def test_self_check_fails_when_article_has_no_extracted_rows(self):
         other = self.db.upsert_paper(

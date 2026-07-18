@@ -1,7 +1,7 @@
-const state = { paper: null, papers: [], testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
-  review: { kicker: "EVIDENCE REVIEW", title: "校对实验数据", subtitle: "逐条核对抽取结果，并随时返回原文证据。" },
+  review: { kicker: "EVIDENCE CHECK", title: "检查自动提取结果", subtitle: "自动质量门决定是否收录；本页用于检查证据和修正少量异常。" },
   search: { kicker: "DATABASE SEARCH", title: "搜索实验数据与证据", subtitle: "在数值事实、原始表格、论文图片和定性结论之间切换。" },
   upload: { kicker: "PDF INTAKE", title: "导入实验文献", subtitle: "验证真实 PDF、识别重复论文，并加入待处理队列。" },
   manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "为自动抽取未覆盖的实验结果补充六列记录。" },
@@ -164,6 +164,13 @@ function paperLabel(paper) {
   return details.length ? `${title} · ${details.join(" · ")}` : title;
 }
 
+function paperAutomaticStatus(paper) {
+  const count = Number(paper?.six_row_count || 0);
+  if (count) return `已自动收录 ${count} 条`;
+  if (Number(paper?.completed_ai_run_count || 0) > 0) return "已扫描，无可报告数据";
+  return "未扫描";
+}
+
 function calibrationStorageKey(paperId) {
   return `${calibrationStoragePrefix}${Number(paperId)}`;
 }
@@ -222,6 +229,8 @@ function renderOriginalPlaceholder() {
 async function load() {
   state.uiMode = await api("/api/ui-mode");
   applyUiMode();
+  state.searchPapers = await apiOptional("/api/search-papers", [], "检索文章目录");
+  renderSearchScope();
   if (isReadOnly()) {
     renderPublicSearchOnlyMode();
     switchView("search");
@@ -252,7 +261,7 @@ async function loadCurrentPaper() {
     apiOptional("/api/learning-report", null, "全库学习报告"),
     apiOptional("/api/current-paper/deepseek-run", null, "DeepSeek 运行记录"),
     apiOptional("/api/current-paper/quality-run", null, "自动质量门状态"),
-    apiOptional("/api/current-paper/quality-candidates?status=manual_review", [], "质量待审队列"),
+    apiOptional("/api/current-paper/quality-candidates?status=manual_review", [], "自动拦截队列"),
   ]);
   state.audit = null;
   state.reviewVisibleLimit = reviewPageSize;
@@ -384,7 +393,7 @@ function paperOptionHtml(papers, testOrder, includeGroups = true) {
   const testTotal = testOrder.size;
   const optionFor = paper => {
     const rows = Number(paper.six_row_count || paper.row_count || 0);
-    const scan = paper.six_workflow_label || (rows ? `${rows}条数据` : "未扫描");
+    const scan = paperAutomaticStatus(paper);
     const folded = Number(paper.six_semantic_duplicate_count || 0);
     const order = testOrder.get(Number(paper.id));
     const prefix = order ? `【测试集 ${order}/${testTotal}】` : "";
@@ -485,11 +494,10 @@ function renderPaperStatusSummary() {
   if (!el) return;
   const total = state.papers.length;
   const scanned = state.papers.filter(p => (Number(p.six_row_count || 0) > 0) || Number(p.completed_ai_run_count || 0) > 0).length;
-  const pending = state.papers.filter(p => p.six_workflow_state === "pending_review").length;
-  const reviewed = state.papers.filter(p => p.six_workflow_state === "reviewed").length;
   const testSetCount = Number(state.testSet?.paper_count || 0);
-  el.textContent = `文章处理总览：共 ${total} 篇；全库测试集 ${testSetCount} 篇；已扫描 ${scanned} 篇；待人工审核 ${pending} 篇；已完成 ${reviewed} 篇。`;
-  el.className = pending ? "ready" : reviewed ? "supported" : "";
+  const collected = state.papers.reduce((sum, paper) => sum + Number(paper.six_row_count || 0), 0);
+  el.textContent = `文章处理总览：共 ${total} 篇；全库测试集 ${testSetCount} 篇；已扫描 ${scanned} 篇；自动收录 ${collected} 个独立事实。`;
+  el.className = scanned ? "supported" : "";
 }
 
 function renderPaper() {
@@ -500,8 +508,8 @@ function renderPaper() {
   setText("paper-key", authorYear);
   setText("paper-title", paper.title);
   setText("paper-doi", paper.doi || "—");
-  setText("paper-process-status", paperStatus.six_workflow_label || "未扫描");
-  setText("paper-compact-status", `${paperStatus.six_workflow_label || "未扫描"} · ${state.rows.length} 个独立事实`);
+  setText("paper-process-status", paperAutomaticStatus(paperStatus));
+  setText("paper-compact-status", `${paperAutomaticStatus(paperStatus)} · ${state.rows.length} 个独立事实`);
   setText("focus-paper-title", paper.title || "当前文章");
   setText("mini-title", paper.title);
   setText("mini-doi", paper.doi || "—");
@@ -633,13 +641,13 @@ function renderDeepSeekRun() {
   button.textContent = state.rows.length ? "重新运行对抗式质量提取" : "对抗式质量提取";
   button.disabled = !state.ai?.configured || !state.paper?.pdf_path;
   if (!state.ai?.configured) {
-    el.textContent = "DeepSeek 未配置：上传、去重、检索和人工校对仍可使用。";
+    el.textContent = "DeepSeek 未配置：已保存数据仍可浏览、检索和修正，但新文章无法运行自动质量提取。";
     el.className = "unsupported";
     return;
   }
   if (!state.deepseekRun) {
     el.textContent = state.rows.length
-      ? "当前文章已有入库数据；新提取结果必须通过双路对照、第三次复核或人工审核后才进入搜索。"
+      ? "当前文章已有入库数据；新提取结果必须通过双路对照或第三次复核后才进入搜索。"
       : "尚无 DeepSeek 抽取记录；系统将运行两套独立抽取并执行质量评分。";
     el.className = "ready";
     return;
@@ -655,11 +663,11 @@ function renderDeepSeekRun() {
   const figureCount = state.visualAssets.filter(asset => asset.asset_type === "figure").length;
   const visualText = tableCount || figureCount ? ` · 图表证据 ${tableCount} 张表 / ${figureCount} 幅图` : " · 未定位到可截图图表";
   if (run.status === "failed" && state.rows.length) {
-    el.innerHTML = `最近一次 DeepSeek 运行在后处理阶段失败，但此前已保存的 ${state.rows.length} 条数据和${visualText.replace(/^ · /, "")}仍可校对。失败原因：${esc(run.error_message || "未记录")}${link}`;
+    el.innerHTML = `最近一次 DeepSeek 运行在后处理阶段失败，但此前已保存的 ${state.rows.length} 条数据和${visualText.replace(/^ · /, "")}仍可检查。失败原因：${esc(run.error_message || "未记录")}${link}`;
     el.className = "unsupported";
     return;
   }
-  el.innerHTML = `最近一次 DeepSeek 运行：${esc(run.status)} · 数值候选 ${esc(run.candidate_count)} 条 · 证据验证通过 ${esc(run.verified_count)} 条${findingText}${visualText} · 重复 ${esc(run.duplicate_count || 0)} 条 · 拒绝/歧义 ${esc(run.rejected_count)} 条 · 候选结果已保存，须在校对页人工确认${link}`;
+  el.innerHTML = `最近一次 DeepSeek 运行：${esc(run.status)} · 数值候选 ${esc(run.candidate_count)} 条 · 证据验证通过 ${esc(run.verified_count)} 条${findingText}${visualText} · 重复 ${esc(run.duplicate_count || 0)} 条 · 拒绝/歧义 ${esc(run.rejected_count)} 条 · 通过自动质量门的候选已进入搜索${link}`;
   el.className = run.status === "completed" ? "supported" : run.status === "failed" ? "unsupported" : "ready";
 }
 
@@ -667,8 +675,8 @@ function qualityGateLabel(status) {
   return {
     dual_pass: "双路一致通过",
     third_pass: "第三次复核通过",
-    manual_review: "等待人工审核",
-    manual_approved: "人工审核通过",
+    manual_review: "自动拦截",
+    manual_approved: "历史人工通过",
     rejected: "不采用",
     legacy_stable: "历史稳定数据",
   }[status] || "质量状态未记录";
@@ -709,11 +717,11 @@ function renderQualityStatus() {
       ? (run.summary?.branch_progress
         ? `完整性分支 ${Math.round(Number(run.summary.branch_progress.completeness || 0))}% · 精确性分支 ${Math.round(Number(run.summary.branch_progress.precision || 0))}%`
         : "系统正在并行运行两套独立抽取，并将低分项送入第三次复核。")
-      : `共评估 ${run.summary?.candidate_count || passed + manual} 项；已发布 ${passed} 项，等待人工审核 ${manual} 项。`;
+      : `共评估 ${run.summary?.candidate_count || passed + manual} 项；已发布 ${passed} 项，自动拦截 ${manual} 项。`;
   strip.innerHTML = [
     ["双路通过", counts.dual_pass || 0, "pass"],
     ["第三次通过", counts.third_pass || 0, "third"],
-    ["人工待审", counts.manual_review || 0, "manual"],
+    ["自动拦截", counts.manual_review || 0, "manual"],
     ["不采用", counts.rejected || 0, "reject"],
   ].map(([label, value, kind]) => `<span class="${kind}"><b>${esc(value)}</b>${label}</span>`).join("");
 }
@@ -818,8 +826,8 @@ async function runDeepSeekPreview() {
     state.progressTimer = null;
     await loadCurrentPaper();
     const summary = result.summary || {};
-    finishProgress(`完成：双路通过 ${summary.dual_pass_count || 0}，第三次复核通过 ${summary.third_pass_count || 0}，人工待审 ${summary.manual_review_count || 0}。`);
-    toast(`质量检测完成：已自动发布 ${Number(summary.dual_pass_count || 0) + Number(summary.third_pass_count || 0)} 项；${summary.manual_review_count || 0} 项进入人工审核。`);
+    finishProgress(`完成：双路通过 ${summary.dual_pass_count || 0}，第三次复核通过 ${summary.third_pass_count || 0}，自动拦截 ${summary.manual_review_count || 0}。`);
+    toast(`质量检测完成：已自动发布 ${Number(summary.dual_pass_count || 0) + Number(summary.third_pass_count || 0)} 项；自动拦截 ${summary.manual_review_count || 0} 项。`);
   } catch (error) {
     clearInterval(state.progressTimer);
     state.progressTimer = null;
@@ -1049,8 +1057,8 @@ function renderTable() {
   const visibleNote = rows.length < allRows.length ? ` · 当前显示 ${rows.length}/${allRows.length} 条` : "";
   const sortNote = state.reviewSort === "original" ? "" : ` · ${document.querySelector("#review-sort")?.selectedOptions?.[0]?.textContent || "已排序"}`;
   const dirtyNote = hasUnsavedEdits() ? `，${state.dirtyRows.size} 行未确认` : "";
-  const breakdown = `确认 ${progress.confirmed}、修正 ${progress.corrected}、歧义 ${progress.ambiguous}、不采用 ${progress.rejected}、人工 ${progress.manual}`;
-  setText("row-count", `${progress.reviewed}/${progress.total} 个事实已审核（${breakdown}），${progress.unreviewed} 个待审核${dirtyNote}${filterNote}${visibleNote}${sortNote}`);
+  const correctionNote = progress.reviewed ? ` · 历史检查/修正 ${progress.reviewed} 条` : "";
+  setText("row-count", `已自动收录 ${progress.total} 个物理事实${correctionNote}${dirtyNote}${filterNote}${visibleNote}${sortNote}`);
   const loadMore = document.querySelector("#review-load-more");
   if (loadMore) {
     loadMore.hidden = rows.length >= allRows.length;
@@ -1074,11 +1082,11 @@ function renderTable() {
     const cls = [state.selected === row.item_id ? "selected" : "", state.dirtyRows.has(Number(row.item_id)) ? "dirty" : "", row.review_action === "confirmation" ? "confirmed" : "", row.review_action === "correction" ? "revised" : "", row.review_action === "rejected" ? "rejected" : "", row.review_action === "ambiguous" ? "ambiguous" : "", row.origin_type === "manual" ? "manual" : "", priorityClass].filter(Boolean).join(" ");
     const readonly = isReadOnly() ? " readonly" : "";
     const cells = fields.map(field => `<td><textarea class="cell ${field === "context_explanation" ? "context" : ""}" data-field="${field}" aria-label="${fieldLabels[field]}"${readonly}>${esc(row[field])}</textarea></td>`).join("");
-    const badge = row.origin_type === "manual" ? "人工" : row.review_action === "confirmation" ? `已确认 v${row.version_no}` : row.review_action === "correction" ? `已修正 v${row.version_no}` : row.review_action === "rejected" ? `不采用 v${row.version_no}` : row.review_action === "ambiguous" ? `存在歧义 v${row.version_no}` : "未审核";
+    const badge = row.origin_type === "manual" ? "人工补录" : row.review_action === "confirmation" ? `历史确认 v${row.version_no}` : row.review_action === "correction" ? `历史修正 v${row.version_no}` : row.review_action === "rejected" ? `已排除 v${row.version_no}` : row.review_action === "ambiguous" ? `证据歧义 v${row.version_no}` : "自动收录";
     const sourceDisabled = row.origin_type === "manual" ? " disabled" : "";
     const reviewButtons = isReadOnly()
       ? ""
-      : `<button class="confirm" data-confirm="${row.item_id}">确认当前内容</button><button class="confirm-next" data-confirm-next="${row.item_id}">确认并下一条</button>`;
+      : `<button class="confirm" data-confirm="${row.item_id}">保存当前修正</button><button class="confirm-next" data-confirm-next="${row.item_id}">保存并下一条</button>`;
     const priorityBadge = isUnreviewedRow(row) && row.review_priority_level !== "normal"
       ? `<span class="review-priority ${esc(row.review_priority_level)}" title="${esc((row.review_priority_reasons || []).join("；"))}">${esc(row.review_priority_label)}</span>`
       : "";
@@ -1171,12 +1179,12 @@ function parseVisualVariables(value) {
 
 function visualReviewLabel(asset) {
   return {
-    automatic: "待审核",
-    confirmation: `已确认 v${asset.version_no}`,
-    correction: `已修正 v${asset.version_no}`,
+    automatic: "自动元数据",
+    confirmation: `历史确认 v${asset.version_no}`,
+    correction: `历史修正 v${asset.version_no}`,
     ambiguous: `存在歧义 v${asset.version_no}`,
     rejected: `不采用 v${asset.version_no}`,
-  }[asset.review_action] || "待审核";
+  }[asset.review_action] || "自动元数据";
 }
 
 function setReviewObject(mode) {
@@ -1209,35 +1217,11 @@ function renderReviewObject() {
   else if (!dataMode) renderVisualReview();
 }
 
-function qualityCandidateForm(candidate) {
-  const entity = candidate.entity_type;
-  if (["table", "figure"].includes(entity)) {
-    return `<label>检索名称<input name="display_name" value="${esc(candidate.display_name || candidate.label || "")}"></label>
-      <label class="span-2">文中解释<textarea name="context_explanation">${esc(candidate.context_explanation || "")}</textarea></label>
-      <label class="span-2">标签（顿号或换行分隔）<textarea name="tags">${esc(visualListText(candidate.tags || []))}</textarea></label>`;
-  }
-  if (entity === "finding") {
-    return `<label class="span-2">实验结论<textarea name="finding_text">${esc(candidate.finding_text || "")}</textarea></label>
-      <label>具体意义<input name="meaning" value="${esc(candidate.meaning || "")}"></label>
-      <label class="span-2">文中解释<textarea name="context_explanation">${esc(candidate.context_explanation || "")}</textarea></label>`;
-  }
-  return `<label>具体数值<input name="value_text" value="${esc(candidate.value_text || "")}"></label>
-    <label>单位<input name="unit" value="${esc(candidate.unit || "")}"></label>
-    <label class="span-2">具体意义<input name="meaning" value="${esc(candidate.meaning || "")}"></label>
-    <label class="span-2">文中解释<textarea name="context_explanation">${esc(candidate.context_explanation || "")}</textarea></label>`;
-}
-
-function qualityFieldsFromForm(form, entityType) {
-  const values = Object.fromEntries(new FormData(form).entries());
-  if (["table", "figure"].includes(entityType)) values.tags = parseVisualList(values.tags);
-  return values;
-}
-
 function qualityReviewCard(record) {
   const candidate = record.candidate || {};
   const page = candidate.source_page || candidate.page_start;
   const typeLabel = { data: "数据", finding: "实验结论", table: "表格", figure: "图片" }[record.entity_type] || record.entity_type;
-  const title = candidate.meaning || candidate.display_name || candidate.label || candidate.finding_text || "待审核候选";
+  const title = candidate.meaning || candidate.display_name || candidate.label || candidate.finding_text || "自动拦截候选";
   const sourceAction = ["table", "figure"].includes(record.entity_type)
     ? `<button type="button" data-quality-visual="${esc(candidate.asset_id)}">查看原始截图</button>`
     : `<a href="/api/papers/${esc(state.paper?.id)}/pdf#page=${esc(page || 1)}" target="_blank" rel="noopener">打开原文页</a>`;
@@ -1246,9 +1230,8 @@ function qualityReviewCard(record) {
     <div class="quality-dimensions"><span>一致性 <b>${esc(record.agreement_score)}</b></span><span>事实性 <b>${esc(record.factuality_score)}</b></span><span>完整度 <b>${esc(record.completeness_score)}</b></span><span>证据 <b>${esc(record.evidence_score)}</b></span></div>
     <p class="quality-reason">${esc(record.gate_reason)}</p>
     ${candidate.source_excerpt ? `<blockquote><span>原文证据 · PDF 第 ${esc(page)} 页</span>${esc(brief(candidate.source_excerpt, 420))}</blockquote>` : ""}
-    <form>${qualityCandidateForm(candidate)}<label class="span-2">人工审核说明（可选）<textarea name="review_note" placeholder="记录通过或不采用的原因"></textarea></label>
-      <div class="quality-review-actions">${sourceAction}<button type="button" data-quality-decision="reject">不采用</button><button type="button" class="primary" data-quality-decision="approve">确认并发布到搜索</button></div>
-    </form>
+    <div class="quality-quarantine-note"><strong>未进入搜索</strong><span>第三次自动复核后仍低于阈值。需要更新时，请重新运行本篇自动提取，由质量门重新评估。</span></div>
+    <div class="quality-review-actions">${sourceAction}</div>
   </article>`;
 }
 
@@ -1256,37 +1239,11 @@ function renderQualityReview() {
   const grid = document.querySelector("#quality-review-grid");
   if (!grid) return;
   if (!state.qualityCandidates.length) {
-    grid.innerHTML = `<div class="blank"><span>✓</span><h3>没有等待人工审核的质量候选</h3><p>双路一致或第三次复核通过的结果已自动发布；未运行时可点击“对抗式质量提取”。</p></div>`;
+    grid.innerHTML = `<div class="blank"><span>✓</span><h3>没有被自动拦截的候选</h3><p>双路一致或第三次复核通过的结果已自动发布；未运行时可点击“对抗式质量提取”。</p></div>`;
     return;
   }
   grid.innerHTML = state.qualityCandidates.map(qualityReviewCard).join("");
   grid.querySelectorAll("[data-quality-visual]").forEach(button => button.addEventListener("click", () => openVisualAsset(Number(button.dataset.qualityVisual))));
-  grid.querySelectorAll("[data-quality-decision]").forEach(button => button.addEventListener("click", async () => {
-    const card = button.closest("[data-quality-candidate]");
-    const record = state.qualityCandidates.find(item => Number(item.id) === Number(card.dataset.qualityCandidate));
-    const form = card.querySelector("form");
-    const decision = button.dataset.qualityDecision;
-    button.disabled = true;
-    try {
-      await api(`/api/quality-candidates/${record.id}/review`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          decision,
-          fields: qualityFieldsFromForm(form, record.entity_type),
-          reviewer: "本地研究者",
-          note: String(new FormData(form).get("review_note") || "").trim(),
-        }),
-      });
-      await loadCurrentPaper();
-      state.reviewObject = "quality";
-      renderReviewObject();
-      toast(decision === "approve" ? "人工审核已通过，结果已进入搜索。" : "该候选已标记为不采用。");
-    } catch (error) {
-      button.disabled = false;
-      toast(error.message, true);
-    }
-  }));
 }
 
 function visualReviewCard(asset) {
@@ -1299,7 +1256,7 @@ function visualReviewCard(asset) {
     <button type="button" class="visual-confirm" data-visual-decision="confirmation">确认当前信息</button>
     <button type="button" data-visual-decision="ambiguous">存在歧义</button>
     <button type="button" data-visual-decision="rejected">不采用</button>
-    ${asset.review_action !== "automatic" ? '<button type="button" data-visual-decision="automatic">恢复待审核</button>' : ""}
+    ${asset.review_action !== "automatic" ? '<button type="button" data-visual-decision="automatic">恢复自动版本</button>' : ""}
   </div>`;
   return `<article class="visual-review-card ${statusClass}" data-visual-review="${asset.id}">
     <div class="visual-review-proof">
@@ -1309,7 +1266,7 @@ function visualReviewCard(asset) {
       <p><strong>原始图注</strong>${esc(asset.original_caption || asset.caption)}</p>
     </div>
     <form class="visual-review-form">
-      <header><div><small>${typeName.toUpperCase()} METADATA</small><h3>${esc(asset.label)} 的检索信息</h3></div><span>截图与原图注保持不变</span></header>
+      <header><div><small>${typeName.toUpperCase()} METADATA</small><h3 class="visual-review-rich-title">${visualTitleHtml(asset, { highlight: false })}</h3></div><span>${esc(asset.label)} · 截图与原图注保持不变</span></header>
       <label class="span-2">简短中文名称<input name="display_name" maxlength="60"${readonly} value="${esc(asset.display_name || asset.label)}" placeholder="例如：辐照前后纳米硬度对比"></label>
       <label>展示的物理量<textarea name="physical_quantities"${readonly} placeholder="用顿号或换行分隔">${esc(visualListText(asset.physical_quantities))}</textarea></label>
       <label>变量或表头<textarea name="variables"${readonly} placeholder="例如 x：Dose；y：Hardness">${esc(visualVariablesText(asset.variables))}</textarea></label>
@@ -1328,10 +1285,10 @@ function renderVisualReview() {
   const type = state.reviewObject;
   const assets = state.visualAssets.filter(asset => asset.asset_type === type);
   const typeName = type === "table" ? "原始表格" : "论文图片";
-  setText("visual-review-kicker", type === "table" ? "TABLE EVIDENCE REVIEW" : "FIGURE EVIDENCE REVIEW");
-  setText("visual-review-title", `${typeName}校对`);
+  setText("visual-review-kicker", type === "table" ? "TABLE EVIDENCE CHECK" : "FIGURE EVIDENCE CHECK");
+  setText("visual-review-title", `${typeName}检查`);
   const reviewed = assets.filter(asset => asset.review_action !== "automatic").length;
-  setText("visual-review-summary", `${reviewed}/${assets.length} 已审核。核对截图、图注与检索标签；图片曲线不会被自动转换为精确数值。`);
+  setText("visual-review-summary", `共 ${assets.length} 项，历史修正 ${reviewed} 项。可检查截图、图注与检索标签；图片曲线不会被自动转换为精确数值。`);
   const grid = document.querySelector("#visual-review-grid");
   if (!assets.length) {
     grid.innerHTML = `<div class="blank visual-review-empty"><span>▧</span><h3>当前文章尚未建立${typeName}</h3><p>运行“自动提取/核验”后，系统会先从本地 PDF 建立高分辨率图表截图；识别不到的扫描件将保留为待处理任务。</p></div>`;
@@ -1376,7 +1333,7 @@ async function saveVisualReview(assetId, decision, form) {
     });
     state.visualAssets = state.visualAssets.map(asset => Number(asset.id) === assetId ? result : asset);
     renderReviewObject();
-    toast(decision === "automatic" ? "该图表已恢复为待审核。" : `图表核验已保存：${visualReviewLabel(result)}。`);
+    toast(decision === "automatic" ? "该图表已恢复为自动提取版本。" : `图表修正已保存：${visualReviewLabel(result)}。`);
   } catch (error) {
     toast(error.message, true);
     if (button) button.disabled = false;
@@ -1809,14 +1766,67 @@ const searchModeCopy = {
   },
 };
 
+function selectedSearchPaperParam() {
+  if (state.searchScope !== "selected") return "";
+  return [...state.selectedPaperIds].sort((a, b) => a - b).join(",");
+}
+
+function searchPaperMatches(paper) {
+  const query = state.searchPaperQuery.trim().toLocaleLowerCase("zh-CN");
+  if (!query) return true;
+  return [paper.title, paper.doi, paper.first_author, paper.corresponding_author, paper.year]
+    .filter(Boolean).join(" ").toLocaleLowerCase("zh-CN").includes(query);
+}
+
+function renderSearchScope() {
+  const panel = document.querySelector("#search-paper-panel");
+  if (!panel) return;
+  const selectedMode = state.searchScope === "selected";
+  panel.hidden = !selectedMode;
+  document.querySelectorAll("[data-search-scope]").forEach(button => {
+    const active = button.dataset.searchScope === state.searchScope;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  const selectedCount = state.selectedPaperIds.size;
+  setText("search-scope-heading", selectedMode ? `指定 ${selectedCount} 篇文章` : "全部文章");
+  setText("search-scope-caption", selectedMode ? "所有检索模式与导出保持同一范围" : "不受当前检查文章影响");
+  setText("search-paper-count", selectedMode ? `已选择 ${selectedCount} 篇` : `全库 ${state.searchPapers.length || 0} 篇文章`);
+  const papers = state.searchPapers.filter(searchPaperMatches);
+  const list = document.querySelector("#search-paper-list");
+  list.innerHTML = papers.length ? papers.map(paper => {
+    const checked = state.selectedPaperIds.has(Number(paper.id));
+    const meta = [paper.first_author, paper.year, paper.doi].filter(Boolean).join(" · ");
+    return `<label class="search-paper-option${checked ? " selected" : ""}"><input type="checkbox" value="${esc(paper.id)}"${checked ? " checked" : ""}><span><strong>${esc(paper.title || "未命名文章")}</strong><small>${esc(meta || "暂无 DOI/作者信息")} · ${esc(paper.six_row_count || 0)} 条数据</small></span></label>`;
+  }).join("") : `<div class="search-paper-empty">没有匹配的文章</div>`;
+  list.querySelectorAll('input[type="checkbox"]').forEach(input => input.addEventListener("change", () => {
+    const paperId = Number(input.value);
+    if (input.checked) state.selectedPaperIds.add(paperId);
+    else state.selectedPaperIds.delete(paperId);
+    renderSearchScope();
+    runSearch(null, { remember: false });
+  }));
+  renderActiveFilters();
+}
+
+function setSearchScope(mode) {
+  if (!["all", "selected"].includes(mode)) return;
+  state.searchScope = mode;
+  renderSearchScope();
+  runSearch(null, { remember: false });
+}
+
 function itemSearchParams(q) {
-  return new URLSearchParams({
+  const params = new URLSearchParams({
     q,
     review: state.searchFilters.review,
     source: state.searchFilters.source,
     quality: state.searchFilters.quality,
     sort: state.searchFilters.sort,
-  }).toString();
+  });
+  const paperIds = selectedSearchPaperParam();
+  if (paperIds) params.set("paper_ids", paperIds);
+  return params.toString();
 }
 
 function setSearchBusy(busy) {
@@ -1869,11 +1879,10 @@ function renderRecentSearches() {
 
 function activeFilterLabels() {
   const labels = [];
-  if (state.searchFilters.review === "reviewed") labels.push("仅人工核验");
-  if (state.searchFilters.review === "pending") labels.push("仅待审核");
+  if (state.searchScope === "selected") labels.push(`指定 ${state.selectedPaperIds.size} 篇文章`);
   const sourceLabels = { text: "正文数据", table: "表格数据", figure: "图片关联", manual: "人工补录" };
   if (sourceLabels[state.searchFilters.source]) labels.push(sourceLabels[state.searchFilters.source]);
-  const qualityLabels = { quality_passed: "新质量门通过", dual_pass: "双路一致通过", third_pass: "第三次复核通过", manual_approved: "人工通过", legacy_stable: "历史稳定数据" };
+  const qualityLabels = { quality_passed: "自动质量门通过", dual_pass: "双路一致通过", third_pass: "第三次复核通过", legacy_stable: "历史稳定数据" };
   if (qualityLabels[state.searchFilters.quality]) labels.push(qualityLabels[state.searchFilters.quality]);
   const sortLabels = { source_page: "按文章与页码", article: "按文章归类" };
   if (sortLabels[state.searchFilters.sort]) labels.push(sortLabels[state.searchFilters.sort]);
@@ -1884,13 +1893,12 @@ function renderActiveFilters() {
   const container = document.querySelector("#search-active-filters");
   const labels = state.searchMode === "item"
     ? activeFilterLabels()
-    : (state.searchFilters.quality === "all" ? [] : activeFilterLabels().filter(label => label.includes("通过") || label === "历史稳定数据"));
+    : activeFilterLabels().filter(label => label.startsWith("指定 ") || label.includes("通过") || label === "历史稳定数据");
   container.innerHTML = labels.map(label => `<span>${esc(label)}</span>`).join("");
 }
 
 function resetSearchWorkspace() {
   state.searchFilters = { review: "all", source: "all", quality: "all", sort: "relevance" };
-  document.querySelector("#search-review-filter").value = "all";
   document.querySelector("#search-source-filter").value = "all";
   document.querySelector("#search-quality-filter").value = "all";
   document.querySelector("#search-sort").value = "relevance";
@@ -1924,6 +1932,13 @@ async function runSearch(event, options = {}) {
   const requestId = ++state.searchRequest;
   state.search = q;
   document.querySelector("#search-clear").hidden = !q;
+  if (state.searchScope === "selected" && !state.selectedPaperIds.size) {
+    state.searchResults = [];
+    setText("search-summary", "请先选择至少一篇文章");
+    document.querySelector("#search-results").classList.remove("is-loading");
+    document.querySelector("#search-results").innerHTML = `<div class="blank search-empty"><span>＋</span><h3>尚未选择检索文章</h3><p>在上方勾选一篇或多篇文章后，四种检索模式和导出会使用同一范围。</p></div>`;
+    return;
+  }
   setSearchBusy(true);
   renderActiveFilters();
   try {
@@ -1942,7 +1957,9 @@ async function runSearch(event, options = {}) {
       renderResults(rows);
     } else if (state.searchMode === "finding") {
       const quality = encodeURIComponent(state.searchFilters.quality);
-      const result = await api(`/api/qualitative-search?q=${encodeURIComponent(q)}&quality=${quality}&limit=100`);
+      const paperScope = selectedSearchPaperParam();
+      const paperQuery = paperScope ? `&paper_ids=${encodeURIComponent(paperScope)}` : "";
+      const result = await api(`/api/qualitative-search?q=${encodeURIComponent(q)}&quality=${quality}&limit=100${paperQuery}`);
       if (requestId !== state.searchRequest) return;
       const rows = result.rows || [];
       state.searchResults = rows;
@@ -1950,11 +1967,13 @@ async function runSearch(event, options = {}) {
         ? `显示前 ${rows.length} 条，共 ${result.total} 条`
         : `${rows.length} 条结论`;
       setText("search-summary", q ? `“${q}” · ${countText}` : `当前收录 · ${countText}`);
-      document.querySelector("#search-export").href = `/api/qualitative-export.csv?q=${encodeURIComponent(q)}&quality=${quality}`;
-      document.querySelector("#search-export-xlsx").href = `/api/qualitative-export.xlsx?q=${encodeURIComponent(q)}&quality=${quality}`;
+      document.querySelector("#search-export").href = `/api/qualitative-export.csv?q=${encodeURIComponent(q)}&quality=${quality}${paperQuery}`;
+      document.querySelector("#search-export-xlsx").href = `/api/qualitative-export.xlsx?q=${encodeURIComponent(q)}&quality=${quality}${paperQuery}`;
       renderQualitativeResults(rows);
     } else {
-      const assets = await api(`/api/visual-search?type=${encodeURIComponent(state.searchMode)}&q=${encodeURIComponent(q)}&quality=${encodeURIComponent(state.searchFilters.quality)}`);
+      const paperScope = selectedSearchPaperParam();
+      const paperQuery = paperScope ? `&paper_ids=${encodeURIComponent(paperScope)}` : "";
+      const assets = await api(`/api/visual-search?type=${encodeURIComponent(state.searchMode)}&q=${encodeURIComponent(q)}&quality=${encodeURIComponent(state.searchFilters.quality)}${paperQuery}`);
       if (requestId !== state.searchRequest) return;
       state.searchResults = assets;
       const label = state.searchMode === "table" ? "张原始表格" : "幅论文图片";
@@ -1984,7 +2003,7 @@ function setSearchMode(mode, options = {}) {
   setText("search-help", searchModeCopy[mode].help);
   document.querySelector("#search-exports").hidden = !["item", "finding"].includes(mode);
   document.querySelector("#search-filter-bar").hidden = false;
-  ["search-review-filter", "search-source-filter", "search-sort"].forEach(id => {
+  ["search-source-filter", "search-sort"].forEach(id => {
     document.querySelector(`#${id}`)?.closest("label")?.toggleAttribute("hidden", mode !== "item");
   });
   renderSearchSuggestions();
@@ -1995,10 +2014,10 @@ function setSearchMode(mode, options = {}) {
 function searchReviewLabel(row) {
   if (row.origin_type === "manual") return "人工补录";
   return {
-    confirmation: "已确认",
-    correction: "已修正",
-    automatic: "待审核",
-  }[row.review_action] || "待审核";
+    confirmation: "历史确认",
+    correction: "历史修正",
+    automatic: "自动收录",
+  }[row.review_action] || "自动收录";
 }
 
 function qualityBadge(row) {
@@ -2031,10 +2050,43 @@ function highlightSearchText(value) {
   return text.split(pattern).map(part => terms.some(term => part.toLocaleLowerCase() === term.toLocaleLowerCase()) ? `<mark>${esc(part)}</mark>` : esc(part)).join("");
 }
 
+function scientificHtml(value) {
+  const normalized = String(value ?? "")
+    .replace(/\$/g, "")
+    .replace(/\\times\b/g, "×")
+    .replace(/\\cdot\b/g, "·")
+    .replace(/\\pm\b/g, "±")
+    .replace(/\\mu\b/g, "μ")
+    .replace(/\*\s*10\s*\^/g, "× 10^");
+  return esc(normalized)
+    .replace(/\^\{([+\-−]?\d+)\}/g, "<sup>$1</sup>")
+    .replace(/\^([+\-−]?\d+)/g, "<sup>$1</sup>");
+}
+
+function scientificQuantityHtml(value, unit) {
+  const raw = [value, unit].filter(Boolean).join(" ");
+  return `<span class="science-value">${scientificHtml(value)}</span>${String(unit || "").trim() ? `<span class="science-unit">${scientificHtml(unit)}</span>` : ""}<span class="visually-hidden">${esc(raw)}</span>`;
+}
+
+function visualTitleParts(asset) {
+  let focus = String(asset.display_name || asset.label || "图表证据").trim();
+  if (/名义.*实测.*成分/.test(focus) && !/对比/.test(focus)) focus = focus.replace(/名义\s*(?:与|和|—|-)\s*实测/, "名义—实测").replace(/成分$/, "成分对比");
+  const materials = [...new Set((asset.materials || []).map(value => String(value).trim()).filter(Boolean))]
+    .filter(material => !focus.toLocaleLowerCase("zh-CN").includes(material.toLocaleLowerCase("zh-CN")));
+  const subject = materials.length > 3 ? `${materials.slice(0, 2).join(" · ")} 等${materials.length}种材料` : materials.join(" · ");
+  return { subject, focus, full: [subject, focus].filter(Boolean).join("｜") };
+}
+
+function visualTitleHtml(asset, { highlight = true } = {}) {
+  const title = visualTitleParts(asset);
+  const render = highlight ? highlightSearchText : esc;
+  return `${title.subject ? `<span class="visual-title-subject">${render(title.subject)}</span>` : ""}<span class="visual-title-focus">${render(title.focus)}</span>`;
+}
+
 function itemResultHtml(row) {
   const authors = [row.first_author ? `一作：${row.first_author}` : "", row.corresponding_author ? `通讯：${row.corresponding_author}` : ""].filter(Boolean).join(" · ");
   const reviewLabel = searchReviewLabel(row);
-  const reviewButton = isReadOnly() ? "" : `<button class="row-link" data-jump="${row.item_id}">去校对</button>`;
+  const reviewButton = isReadOnly() ? "" : `<button class="row-link" data-jump="${row.item_id}">检查/修正</button>`;
   const sourceButton = `<button class="row-link source-link" data-source-search="${row.item_id}">原文证据</button>`;
   const linked = row.primary_visual_asset || (row.visual_assets || []).find(asset => asset.asset_type === "figure");
   const visualButton = linked
@@ -2047,7 +2099,7 @@ function itemResultHtml(row) {
     ? `<span class="fact-cluster-badge" title="${esc((row.fact_member_ids || []).join("、"))}">${esc(row.fact_cluster_size)} 条重复记录已合并 · ${esc(row.evidence_count || 1)} 处证据</span>`
     : `<span class="fact-cluster-badge single">${esc(row.evidence_count || 1)} 处证据</span>`;
   return `<article class="result" data-item-result="${row.item_id}">
-    <div class="result-value-block"><small>报告值</small><div class="value">${highlightSearchText(row.value_text)}<span>${esc(row.unit)}</span></div><span class="source-kind ${esc(row.source_kind)}">${esc(sourceLabel(row))}</span></div>
+    <div class="result-value-block"><small>报告值</small><div class="value" aria-label="${esc([row.value_text, row.unit].filter(Boolean).join(" "))}">${scientificQuantityHtml(row.value_text, row.unit)}</div><span class="source-kind ${esc(row.source_kind)}">${esc(sourceLabel(row))}</span></div>
     <div class="result-content">
       <div class="result-heading"><div><small>具体意义</small><h3>${highlightSearchText(row.meaning)}</h3>${clusterBadge}${qualityBadge(row)}</div><em class="search-review-state ${esc(row.review_action || row.origin_type)}"${scoreTitle}>${esc(reviewLabel)}</em></div>
       <div class="result-context"><small>实验条件与文章语境</small><p>${highlightSearchText(row.context_explanation)}</p></div>
@@ -2115,7 +2167,7 @@ function renderResults(rows) {
     const group = tableGroups.get(assetId);
     const visible = group.rows.slice(0, 3);
     const hidden = group.rows.slice(3);
-    html.push(`<section class="table-result-group"><header><div><span>${esc(group.asset.label)} · 同一原表</span><h3>${highlightSearchText(group.asset.display_name || group.asset.label)} · ${group.rows.length} 条匹配数据</h3><p>${highlightSearchText(group.asset.context_explanation || group.asset.caption || "表格来源数据")}</p></div><button type="button" data-visual-open="${group.asset.id}">查看完整原表</button></header><div class="table-group-visible">${visible.map(itemResultHtml).join("")}</div>${hidden.length ? `<details><summary>展开其余 ${hidden.length} 条数据</summary><div>${hidden.map(itemResultHtml).join("")}</div></details>` : ""}</section>`);
+    html.push(`<section class="table-result-group"><header><div><span>${esc(group.asset.label)} · 同一原表</span><h3 class="rich-visual-title">${visualTitleHtml(group.asset)}<small>${group.rows.length} 条匹配数据</small></h3><p>${highlightSearchText(group.asset.context_explanation || group.asset.caption || "表格来源数据")}</p></div><button type="button" data-visual-open="${group.asset.id}">查看完整原表</button></header><div class="table-group-visible">${visible.map(itemResultHtml).join("")}</div>${hidden.length ? `<details><summary>展开其余 ${hidden.length} 条数据</summary><div>${hidden.map(itemResultHtml).join("")}</div></details>` : ""}</section>`);
   });
   el.innerHTML = html.join("");
   el.querySelectorAll("[data-jump]").forEach(btn => btn.addEventListener("click", () => jumpToRow(Number(btn.dataset.jump))));
@@ -2141,7 +2193,8 @@ function renderVisualResults(assets) {
       ["材料", materials], ["条件", asset.conditions_text], ["方法", asset.methods_text],
     ].filter(([, value]) => String(value || "").trim());
     const factHtml = facts.length ? `<dl>${facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${highlightSearchText(value)}</dd></div>`).join("")}</dl>` : "";
-    return `<article class="visual-result"><button class="visual-thumb visual-thumb-${esc(asset.asset_type)}" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(asset.display_name || asset.label)}"><img src="${esc(asset.image_url)}" alt="${esc(asset.display_name || asset.label)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${highlightSearchText(asset.display_name || asset.label)}</h3>${qualityBadge(asset)}</div><div class="visual-quantity-list">${tags}</div><p>${highlightSearchText(asset.context_explanation || "待核对原文上下文。")}</p>${factHtml}<small>${esc(asset.article_title)} · ${esc(asset.doi || "无 DOI")}</small><button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></article>`;
+    const title = visualTitleParts(asset);
+    return `<article class="visual-result"><button class="visual-thumb visual-thumb-${esc(asset.asset_type)}" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(title.full)}"><img src="${esc(asset.image_url)}" alt="${esc(title.full)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${visualTitleHtml(asset)}</h3>${qualityBadge(asset)}</div><div class="visual-quantity-list">${tags}</div><p>${highlightSearchText(asset.context_explanation || "待核对原文上下文。")}</p>${factHtml}<small>${esc(asset.article_title)} · ${esc(asset.doi || "无 DOI")}</small><button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></article>`;
   }).join("");
   el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
 }
@@ -2163,10 +2216,11 @@ async function openVisualAsset(assetId) {
     const asset = await api(`/api/visual-assets/${assetId}`);
     state.visualAsset = asset;
     setText("visual-dialog-type", asset.asset_type === "table" ? "ORIGINAL TABLE" : "ORIGINAL FIGURE");
-    setText("visual-dialog-title", `${asset.display_name || asset.label} · ${asset.label} · PDF第 ${asset.page_start} 页`);
+    const title = visualTitleParts(asset);
+    setText("visual-dialog-title", `${title.full} · ${asset.label} · PDF第 ${asset.page_start} 页`);
     const image = document.querySelector("#visual-image");
     image.src = `${asset.image_url}?ts=${Date.now()}`;
-    image.alt = `${asset.display_name || asset.label}高分辨率原文截图`;
+    image.alt = `${title.full}高分辨率原文截图`;
     setText("visual-caption", asset.caption);
     setText("visual-context", asset.context_explanation || "尚未生成结构化解释。");
     const details = [
@@ -2201,9 +2255,9 @@ function showVisualRelatedItems() {
   const asset = state.visualAsset;
   if (!asset) return;
   closeVisualAsset();
-  state.searchFilters = { review: "all", source: "all", sort: "relevance" };
-  document.querySelector("#search-review-filter").value = "all";
+  state.searchFilters = { review: "all", source: "all", quality: "all", sort: "relevance" };
   document.querySelector("#search-source-filter").value = "all";
+  document.querySelector("#search-quality-filter").value = "all";
   document.querySelector("#search-sort").value = "relevance";
   document.querySelector("#search-query").value = asset.label;
   setSearchMode("item", { run: false });
@@ -2422,8 +2476,12 @@ async function uploadPdf(event) {
       body: file,
     });
     renderUploadResult(result);
-    state.papers = await api("/api/papers");
+    [state.papers, state.searchPapers] = await Promise.all([
+      api("/api/papers"),
+      api("/api/search-papers"),
+    ]);
     renderPaperOptions();
+    renderSearchScope();
     await refreshUploadWorkspace();
     toast(result.message, result.outcome === "rejected");
   } catch (error) {
@@ -2487,8 +2545,8 @@ async function runCurrentExtraction() {
       toast(`当前文章已切换，抽取包已生成：${result.action_result?.packet_path || "默认目录"}。`);
     } else if (result.action === "quality_extract" || result.action === "quality_rescan") {
       const summary = result.action_result?.summary || {};
-      finishProgress(`完成：双路通过 ${summary.dual_pass_count || 0}，第三次复核通过 ${summary.third_pass_count || 0}，人工待审 ${summary.manual_review_count || 0}。`);
-      toast(`对抗式质量检测完成：自动发布 ${Number(summary.dual_pass_count || 0) + Number(summary.third_pass_count || 0)} 项，${summary.manual_review_count || 0} 项等待人工审核。`);
+      finishProgress(`完成：双路通过 ${summary.dual_pass_count || 0}，第三次复核通过 ${summary.third_pass_count || 0}，自动拦截 ${summary.manual_review_count || 0}。`);
+      toast(`对抗式质量检测完成：自动发布 ${Number(summary.dual_pass_count || 0) + Number(summary.third_pass_count || 0)} 项，自动拦截 ${summary.manual_review_count || 0} 项。`);
     } else if (result.action === "deepseek_extract" || result.action === "deepseek_preview") {
       const visuals = result.visual_evidence || result.action_result?.visual_evidence || {};
       finishProgress(`完成：证据核验通过 ${result.action_result?.verified_count ?? 0} 条；图表 ${visuals.table_count || 0} 张表 / ${visuals.figure_count || 0} 幅图。`);
@@ -2638,17 +2696,30 @@ document.querySelector("#search-clear").addEventListener("click", () => {
   document.querySelector("#search-query").focus();
   runSearch(null, { remember: false });
 });
-document.querySelector("#search-review-filter").addEventListener("change", event => { state.searchFilters.review = event.target.value; runSearch(null, { remember: false }); });
 document.querySelector("#search-source-filter").addEventListener("change", event => { state.searchFilters.source = event.target.value; runSearch(null, { remember: false }); });
 document.querySelector("#search-quality-filter").addEventListener("change", event => { state.searchFilters.quality = event.target.value; runSearch(null, { remember: false }); });
 document.querySelector("#search-sort").addEventListener("change", event => { state.searchFilters.sort = event.target.value; runSearch(null, { remember: false }); });
 document.querySelector("#search-reset-filters").addEventListener("click", () => {
   state.searchFilters = { review: "all", source: "all", quality: "all", sort: "relevance" };
-  document.querySelector("#search-review-filter").value = "all";
   document.querySelector("#search-source-filter").value = "all";
   document.querySelector("#search-quality-filter").value = "all";
   document.querySelector("#search-sort").value = "relevance";
   renderActiveFilters();
+  runSearch(null, { remember: false });
+});
+document.querySelectorAll("[data-search-scope]").forEach(button => button.addEventListener("click", () => setSearchScope(button.dataset.searchScope)));
+document.querySelector("#search-paper-query").addEventListener("input", event => {
+  state.searchPaperQuery = event.target.value;
+  renderSearchScope();
+});
+document.querySelector("#search-paper-select-visible").addEventListener("click", () => {
+  state.searchPapers.filter(searchPaperMatches).forEach(paper => state.selectedPaperIds.add(Number(paper.id)));
+  renderSearchScope();
+  runSearch(null, { remember: false });
+});
+document.querySelector("#search-paper-clear").addEventListener("click", () => {
+  state.selectedPaperIds.clear();
+  renderSearchScope();
   runSearch(null, { remember: false });
 });
 document.addEventListener("keydown", focusSearchShortcut);

@@ -86,6 +86,7 @@ def is_read_only_public_get(path: str) -> bool:
         "/index.html",
         "/readonly",
         "/api/ui-mode",
+        "/api/search-papers",
         "/api/six-search",
         "/api/six-export.csv",
         "/api/six-export.xlsx",
@@ -184,15 +185,44 @@ def requires_rescan_confirmation(db: EvidenceDB, paper_id: int) -> bool:
     return bool(status.get("scanned"))
 
 
+def parse_search_paper_ids(params: dict[str, list[str]]) -> set[int] | None:
+    """Parse the optional paper scope shared by every search and export route."""
+
+    raw_values = params.get("paper_ids", [])
+    if not raw_values:
+        return None
+    tokens = [token.strip() for raw in raw_values for token in str(raw).split(",") if token.strip()]
+    if not tokens:
+        return None
+    if len(tokens) > 200 or any(not token.isdigit() or int(token) <= 0 for token in tokens):
+        raise ValueError("paper_ids must contain at most 200 positive integer ids")
+    return {int(token) for token in tokens}
+
+
+def search_paper_catalog(db: EvidenceDB) -> list[dict]:
+    """Return public-safe metadata for the multi-paper search selector."""
+
+    allowed = {
+        "id", "title", "doi", "year", "first_author", "corresponding_author",
+        "material_focus", "six_row_count", "six_workflow_state", "six_workflow_label",
+    }
+    return [
+        {key: paper.get(key) for key in allowed}
+        for paper in annotate_navigation_tags(list_paper_workflow_summaries(db))
+    ]
+
+
 def search_export_rows(db: EvidenceDB, query: str, limit: int = 100000, *,
                        review_filter: str = "all", source_filter: str = "all",
                        quality_filter: str = "all",
-                       sort: str = "relevance") -> list[dict]:
+                       sort: str = "relevance",
+                       paper_ids: set[int] | None = None) -> list[dict]:
     """Return the whole-database result set used by search-page exports."""
 
     return search_current_data(
         db, query, limit=limit, review_filter=review_filter,
         source_filter=source_filter, quality_filter=quality_filter, sort=sort,
+        paper_ids=paper_ids,
     )
 
 
@@ -255,6 +285,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     "label": "只读模式" if self.read_only else "本地编辑模式",
                     "release": RELEASE_INFO,
                 })
+            if parsed.path == "/api/search-papers":
+                return self.json_response(search_paper_catalog(self.db))
             if parsed.path == "/api/ai/status":
                 return self.json_response(DeepSeekSettings.from_env().public_status())
             if parsed.path == "/api/uploads":
@@ -362,6 +394,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.png_response(render_source_snippet_png(self.db, int(match.group(1))))
             if parsed.path == "/api/six-search":
                 params = parse_qs(parsed.query)
+                paper_ids = parse_search_paper_ids(params)
                 query = params.get("q", [""])[0]
                 review_filter = params.get("review", ["all"])[0]
                 source_filter = params.get("source", ["all"])[0]
@@ -373,6 +406,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                         review_filter=review_filter,
                         source_filter=source_filter,
                         quality_filter=params.get("quality", ["all"])[0], sort=sort,
+                        paper_ids=paper_ids,
                     )
                     return self.json_response({
                         "rows": all_rows[:limit],
@@ -383,6 +417,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     self.db, query, review_filter=review_filter,
                     source_filter=source_filter,
                     quality_filter=params.get("quality", ["all"])[0], sort=sort,
+                    paper_ids=paper_ids,
                 ))
             if parsed.path == "/api/qualitative-search":
                 params = parse_qs(parsed.query)
@@ -391,6 +426,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 rows = search_qualitative_findings(
                     self.db, query, limit=100000,
                     quality_filter=params.get("quality", ["all"])[0],
+                    paper_ids=parse_search_paper_ids(params),
                 )
                 return self.json_response({"rows": rows[:limit], "total": len(rows), "limit": limit})
             if parsed.path == "/api/qualitative-export.csv":
@@ -399,6 +435,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 rows = search_qualitative_findings(
                     self.db, query, limit=100000,
                     quality_filter=params.get("quality", ["all"])[0],
+                    paper_ids=parse_search_paper_ids(params),
                 )
                 return self.qualitative_csv_response(rows)
             if parsed.path == "/api/qualitative-export.xlsx":
@@ -407,6 +444,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 rows = search_qualitative_findings(
                     self.db, query, limit=100000,
                     quality_filter=params.get("quality", ["all"])[0],
+                    paper_ids=parse_search_paper_ids(params),
                 )
                 return self.qualitative_xlsx_response(rows)
             if parsed.path == "/api/six-export.csv":
@@ -418,6 +456,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     source_filter=params.get("source", ["all"])[0],
                     quality_filter=params.get("quality", ["all"])[0],
                     sort=params.get("sort", ["relevance"])[0],
+                    paper_ids=parse_search_paper_ids(params),
                 )
                 return self.six_csv_response(rows)
             if parsed.path == "/api/six-export.xlsx":
@@ -429,6 +468,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     source_filter=params.get("source", ["all"])[0],
                     quality_filter=params.get("quality", ["all"])[0],
                     sort=params.get("sort", ["relevance"])[0],
+                    paper_ids=parse_search_paper_ids(params),
                 )
                 return self.six_xlsx_response(rows, "six-column-search-results.xlsx")
             if parsed.path == "/api/visual-search":
@@ -437,7 +477,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 asset_type = params.get("type", ["figure"])[0]
                 quality_filter = params.get("quality", ["all"])[0]
                 return self.json_response(search_visual_assets(
-                    self.db, query, asset_type=asset_type, quality_filter=quality_filter
+                    self.db, query, asset_type=asset_type, quality_filter=quality_filter,
+                    paper_ids=parse_search_paper_ids(params),
                 ))
             if parsed.path == "/api/current-paper/visual-assets":
                 params = parse_qs(parsed.query)

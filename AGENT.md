@@ -253,11 +253,11 @@ Use the read-only self-check before claiming the six-column workflow is ready fo
 PYTHONPATH=src python3 -m auto_research.cli evidence-self-check "10.1016/j.jnucmat.2018.08.031" --query 温度 --query 硬度 --min-rows 100 --min-highlight-ratio 0.8
 ```
 
-The self-check must not call DeepSeek, switch the current paper, save snapshots, or modify rows. It verifies selector resolution, local PDF presence, experiment-type detection, six editable fields, PDF highlight coverage, fuzzy search, CSV/Excel export generation, learning-sample channel availability, and the core web review UI contract: editable left table, immutable original pane, confirm-before-save behavior, manual entry, whole-database search, and source-highlight entry points.
+The self-check must not call DeepSeek, switch the current paper, save snapshots, or modify rows. It verifies selector resolution, local PDF presence, experiment-type detection, six editable fields, PDF highlight coverage, fuzzy search, CSV/Excel export generation, and the core web workflow contract: adversarial automatic quality gate, optional corrections with immutable originals, manual entry, multi-paper/whole-database search, export, and source-highlight entry points.
 
-The self-check JSON must include a `requirements` array that restates the user-facing acceptance criteria in plain language: article selector to experiment type and extracted rows, six required columns, editable review preserving the original, manual entry without a fabricated original, free-text fuzzy search/export, and the review-learning loop. Do not claim the goal is ready unless both low-level `checks` and user-facing `requirements` are all `ok`.
+The self-check JSON must include a `requirements` array that restates the user-facing acceptance criteria in plain language: article selector to experiment type and extracted rows, six required columns, optional correction preserving the original, manual entry without a fabricated original, free-text fuzzy search/export, multi-paper scope, and the automatic quality gate. Do not claim the goal is ready unless both low-level `checks` and user-facing `requirements` are all `ok`.
 
-Use `evidence-goal-audit <paper-selector>` when judging progress against the user's persistent end-to-end objective. It must distinguish `ready_for_human_review` from `goal_complete`: the target article can be ready for review while still not complete because unreviewed automatic rows remain. Do not mark the persistent goal complete until the audit proves the target data has been human-reviewed and all goal requirements are satisfied.
+Use `evidence-goal-audit <paper-selector>` when judging progress against the user's persistent end-to-end objective. `goal_complete` depends on the automatic extraction, quality gate, evidence, search/export, launcher and backup contracts; it does not depend on every row receiving a human decision. Keep `ready_for_human_review` only as a compatibility alias for older consumers. Human correction remains optional.
 
 The web paper-switch form is intentionally read-only with respect to AI extraction: submitting a paper selector must call `/api/current-paper` only, load saved local rows, and never trigger DeepSeek or `/api/current-paper/run-workflow`. AI extraction in the web UI must require an explicit click on the separate current-article extraction button.
 
@@ -267,7 +267,7 @@ Scanned article data must be visibly saveable from the web UI. The save action w
 
 For a non-target article with a readable PDF and configured DeepSeek runtime, run the evidence-grounded DeepSeek extractor. Commit verified candidates only when that paper has no six-column rows; otherwise create a preview. If DeepSeek is unavailable, prepare a constrained prompt packet. For an article without a readable PDF, stop and report the missing local source.
 
-### Review and learning rules
+### Optional correction and learning rules
 
 - Version `0` is the immutable automatic extraction for an automatic row.
 - `confirmation` means the researcher reviewed the current content without changing it.
@@ -276,7 +276,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - `ambiguous` means the evidence or sample/condition relation cannot yet be resolved. It is a reviewed negative sample, remains fully traceable, and is excluded from ordinary search.
 - `rejected` means the researcher decided that an automatic candidate must not be used as article data. It is a reviewed negative sample, remains fully traceable, and is excluded from ordinary search.
 - Ambiguous and rejected decisions must record a reason and may be reversed to `automatic` (pending review) by appending a new version; never delete or overwrite their history.
-- Typing in a cell is temporary. Only `确认当前内容` may create a new version.
+- Typing in a cell is temporary. Only `保存当前修正` may create a new version.
 - Temporary cell edits must be visibly marked and must trigger a discard warning before switching papers, importing, re-running extraction, or leaving the page.
 - The right pane must always retain the immutable automatic original for automatic rows.
 - Learning export must include confirmations, corrections, manual additions, rejections, and ambiguities as distinct sample types. Rejections teach DeepSeek to avoid a candidate pattern; ambiguities teach it to route unresolved relations to a pending task rather than guessing.
@@ -294,7 +294,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - CSV and Excel export must reuse the current query and filters. The browser may
   render only the first 100 matches for responsiveness, but it must state the
   full count and clearly label exports as containing all matches.
-- Ordinary search and export must exclude rows whose current review action is `rejected` or `ambiguous`. Pending automatic candidates remain searchable but must be visibly labelled `待审核`; confirmed, corrected, and manual rows must also expose their review state.
+- Ordinary search and export must exclude rows whose current review action is `rejected` or `ambiguous`. New candidates enter search only as `dual_pass` or `third_pass`; quality failures remain quarantined. Historical stable automatic rows remain searchable and are labelled `自动收录`; optional prior decisions appear as `历史确认` or `历史修正`.
 - The review page paper switcher must be a selectable list of registered papers and should appear only on the review page. The visible option text should be paper title plus helpful bibliographic context such as first author, year/DOI, and saved-row count; do not make Zotero/storage codes the displayed selector. Use the internal paper id for switching.
 - Article-picker research-object and method tags are deterministic, conservative, non-exclusive navigation aids. Do not write them back as scientific truth or use them to override the extraction classifier. Filtering must never switch the current article or trigger DeepSeek.
 - Search first and corresponding authors only when those fields exist in the evidence database. Show missing author metadata instead of guessing it from filenames or titles.
@@ -306,9 +306,9 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - Preserve an unfinished in-page calibration batch per paper in browser-local storage. A refresh, temporary exit, or paper switch must offer to continue the same item IDs instead of silently replacing the sample. Store only paper/item identifiers, never row contents or credentials; completing the batch must clear the saved marker. Resume behavior must not confirm, edit, or otherwise mutate database rows.
 - Every review state on an automatic row must be reversible. `confirmation`, `correction`, `rejected`, and `ambiguous` rows must be able to return to `automatic`/pending through an explicit confirmation. Reopening appends a version, preserves the immutable version-0 extraction and every review-history version, and removes the row from current learning guidance until the researcher reviews it again. Manual rows are not eligible.
 - Keep reviewer rationale separate from the six scientific data fields. The optional note beside the immutable source is transient until confirmation, must participate in the unsaved-edit guard, and must be stored only as the new version's `edit_note`. Include a bounded rationale in learning guidance for confirmations and corrections, under the same rule that historical values or claims cannot become evidence for another PDF.
-- The review page should keep the human-review progress visible near the table, including reviewed/unreviewed totals and confirmation/correction/manual/rejected/ambiguous counts. This is a review aid only and must not mutate extracted rows.
+- Historical review progress may remain available to maintenance reports, but the normal page must not present it as a required completion meter. Data checking and correction are optional and must not mutate extracted rows until the user explicitly saves a correction.
 - Each automatic row should expose a direct row-level source-evidence button that calls the existing highlighted source viewer. Manual rows should not pretend to have automatic source evidence.
-- `/api/papers` should expose per-paper six-column workflow state and label so the review article picker can act as a work queue. Use `not_scanned`, `scanned_empty`, `pending_review`, and `reviewed`; labels should be reader-facing Chinese such as `未扫描` or `待审核 112/114`.
+- `/api/papers` should expose per-paper automatic processing state so the article picker can distinguish `未扫描`, `扫描无数据` and `已自动收录 N 条`. Historical review fields may remain in the API for compatibility but must not define the normal article workflow.
 - After any confirmation, correction, rejection, ambiguity decision, restoration, or manual entry, the web UI should refresh paper workflow labels, current/all learning reports, evidence audit, and extraction status so the researcher can immediately see how the human review sample changes the next extraction guidance.
 
 ### Visual evidence search contract
@@ -733,8 +733,9 @@ the `实验结论` search mode, never in numeric facts. Methods, instruments,
 facilities, material labels and standalone conditions are context, not findings.
 The DeepSeek extraction contract must keep numeric `data`, prose `findings`, and
 `pending_tasks` separate. New automatic candidates may become searchable only
-through the adversarial quality gate described below; candidates that still
-fail the third review remain outside search until a researcher approves them.
+through the adversarial quality gate described below. Candidates that still
+fail the third review remain in an automatic quarantine and outside search;
+manual correction is optional and is not a publication prerequisite.
 A value with digits embedded in narrative prose is still non-reportable;
 compact ranges, inequalities, scientific notation, alloy formulas, units and
 explicit table markers remain valid. Database health must report raw rows,
@@ -799,8 +800,12 @@ is not a mathematical proof that no fact was omitted from the paper.
 - `third_pass`: a low or unmatched candidate is independently checked against
   source-page text by a third DeepSeek call and passes the threshold; publish.
 - `manual_review`: third review fails, remains below threshold, or cannot run;
-  do not publish or expose it in search.
-- `manual_approved`: a researcher confirms a waiting candidate; publish it.
+  treat this state as automatic quarantine and do not publish or expose it in
+  search. The historical database status name is retained for compatibility;
+  the product must not present it as a required human queue.
+- `manual_approved`: a researcher explicitly corrects and confirms a quarantined
+  historical candidate; preserve and publish the correction, but never require
+  this action for the normal upload-to-search workflow.
 - `rejected`: preserve for audit and do not publish.
 
 Do not restore any direct automatic commit path. The web compatibility route
@@ -817,11 +822,24 @@ validated baseline. A failed new semantic candidate for an existing visual must
 not hide its stable screenshot. A newly discovered visual with no passing
 candidate must remain hidden until the gate passes.
 
-The quality-review tab is for `manual_review` candidates only. Once a candidate
-has been approved or rejected, the same decision endpoint must refuse a second
-decision so published history cannot be silently overwritten. Preserve every
-pipeline run, both alternatives, third verdict, score dimensions, reason and
-published entity link in schema v11.
+The automatic-quality tab explains `manual_review` quarantine candidates and
+their failure reasons. It is diagnostic, not a mandatory approval queue. Once a
+historical candidate has been approved or rejected, the same decision endpoint
+must refuse a second decision so published history cannot be silently
+overwritten. Preserve every pipeline run, both alternatives, third verdict,
+score dimensions, reason and published entity link in schema v11.
+
+Search scope is independent from the single-paper review selector. The default
+scope is the complete database; the user may switch to an explicit multi-paper
+set selected by title, DOI or first/corresponding author. The same `paper_ids`
+scope must constrain numeric facts, qualitative findings, tables, figures and
+their CSV/XLSX exports. Public read-only mode may expose only a safe paper
+catalog without local paths or device-specific Zotero keys.
+
+Scientific quantities in search cards are presentation-only typography. Render
+numeric expressions and units with a Times/STIX/Cambria Math stack, real
+superscripts and equal visual size for the value and unit. Never mutate the
+stored `value_text` or `unit` merely to improve typography.
 
 Visual evidence uses three separate fields that must not be collapsed again:
 
@@ -845,6 +863,12 @@ Chinese is the working language for visual search metadata. Every automatically
 published table or figure must pass the shared visual metadata cleaner: a
 context-grounded Chinese `display_name`, a one-to-three sentence Chinese
 `context_explanation`, and at least two visual-specific tags are mandatory.
+New `display_name` values should normally be 8–32 Chinese characters and follow
+“research object or material + key condition/comparison + physical quantity or
+visual type”. When the source supports a material or both sides of a comparison,
+include them explicitly. Avoid vague titles such as “名义与实测成分” or “辐照前后
+衍射花样”. The frontend may display an existing title as a two-level
+“material/object + focus” heading without rewriting historical database rows.
 Physical quantities, variables, materials, conditions and methods may remain
 empty when the caption and nearby text do not support them; never invent them
 to improve a completeness score. The adversarial quality pipeline and the

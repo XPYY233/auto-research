@@ -828,7 +828,10 @@ def _visual_metadata_messages(paper: dict[str, Any], assets: list[dict[str, Any]
             "content": (
                 "你是科学论文图表证据编目助手。只能依据给出的原始图注和相邻原文，"
                 "不得读取曲线点、猜测数值、补写原文没有的材料或实验条件。输出严格 JSON。"
-                "为每个图表生成：display_name（4至24字的简短中文名称，保留 W、TEM、SRIM、dpa 等必要符号）；"
+                "为每个图表生成：display_name（8至32字的简短中文名称，作为科研检索标题；保留 W、TEM、SRIM、dpa 等必要符号）。"
+                "标题按‘研究对象或材料 + 关键条件或比较关系 + 物理量或图表类型’组织；"
+                "若证据明确给出材料，标题必须包含材料或样品简称；若是名义值与实测值、辐照前后、不同温度等比较，"
+                "必须写出比较双方。禁止只写‘名义与实测成分’‘辐照前后衍射花样’这类缺少研究对象的泛化标题；"
                 "context_explanation（1至3句中文，说明图表在本文中的作用与比较关系）；"
                 "physical_quantities（中文数组）；variables（对象）；materials（材料或样品数组）；"
                 "conditions_text（中文）；methods_text（中文）；tags（2至7个针对该图表的具体检索标签）。"
@@ -1094,7 +1097,8 @@ def _score_term(term: str, text: str, weight: float) -> float:
 
 
 def search_visual_assets(db: EvidenceDB, query: str, *, asset_type: str, limit: int = 100,
-                         quality_filter: str = "all") -> list[dict[str, Any]]:
+                         quality_filter: str = "all",
+                         paper_ids: set[int] | list[int] | tuple[int, ...] | None = None) -> list[dict[str, Any]]:
     assets = [
         asset for asset in list_visual_assets(db, asset_type=asset_type)
         if not (
@@ -1102,6 +1106,9 @@ def search_visual_assets(db: EvidenceDB, query: str, *, asset_type: str, limit: 
             and asset.get("quality_gate_status") not in {"dual_pass", "third_pass", "manual_approved"}
         )
     ]
+    if paper_ids is not None:
+        selected_papers = {int(paper_id) for paper_id in paper_ids}
+        assets = [asset for asset in assets if int(asset["paper_id"]) in selected_papers]
     allowed_filters = {"all", "quality_passed", "dual_pass", "third_pass", "manual_approved", "legacy_stable"}
     if quality_filter not in allowed_filters:
         raise ValueError(f"unsupported visual quality filter: {quality_filter}")
@@ -1149,7 +1156,7 @@ def links_for_items(db: EvidenceDB, item_ids: list[int]) -> dict[int, list[dict[
     with db.connect() as conn:
         rows = [dict(row) for row in conn.execute(
             f"""SELECT l.item_id,l.relation_kind,l.cell_locator,a.id,a.asset_type,a.label,a.display_name,
-                       a.asset_number,a.page_start,a.caption,a.context_explanation,a.tags_json,a.image_path
+                       a.asset_number,a.page_start,a.caption,a.context_explanation,a.tags_json,a.materials_json,a.image_path
                 FROM data_item_visual_links l JOIN visual_assets a ON a.id=l.asset_id
                 WHERE l.item_id IN ({placeholders})
                 ORDER BY l.item_id,CASE l.relation_kind WHEN 'primary' THEN 0 ELSE 1 END,a.asset_number""",
@@ -1162,5 +1169,9 @@ def links_for_items(db: EvidenceDB, item_ids: list[int]) -> dict[int, list[dict[
             row["tags"] = json.loads(str(row.pop("tags_json") or "[]"))
         except (json.JSONDecodeError, TypeError):
             row["tags"] = []
+        try:
+            row["materials"] = json.loads(str(row.pop("materials_json") or "[]"))
+        except (json.JSONDecodeError, TypeError):
+            row["materials"] = []
         output.setdefault(int(row["item_id"]), []).append(row)
     return output

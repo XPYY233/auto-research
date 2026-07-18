@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>实验数据校对台</title>
+  <title>实验数据工作台</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body data-view="review">
   <a class="skip-link" href="#main">跳到主要内容</a>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand"><span class="beam">→</span><div><strong>实验数据校对台</strong><small>ARTICLE → DATA → REVIEW</small></div></div>
+      <div class="brand"><span class="beam">→</span><div><strong>实验数据工作台</strong><small>ARTICLE → DATA → EVIDENCE</small></div></div>
       <nav aria-label="工作区">
-        <button class="nav active" data-view="review">校对数据 <b id="nav-count">0</b></button>
+        <button class="nav active" data-view="review">数据检查 <b id="nav-count">0</b></button>
         <button class="nav" data-view="search">搜索数据</button>
         <button class="nav" data-view="upload">上传文献</button>
         <button class="nav" data-view="manual">人工补录</button>
@@ -30,8 +30,8 @@
       <header class="topbar">
         <div class="topbar-copy">
           <p class="eyebrow" id="workspace-kicker">EVIDENCE REVIEW</p>
-          <h1 id="workspace-title">校对实验数据</h1>
-          <p class="workspace-subtitle" id="workspace-subtitle">逐条核对抽取结果，并随时返回原文证据。</p>
+          <h1 id="workspace-title">检查自动提取结果</h1>
+          <p class="workspace-subtitle" id="workspace-subtitle">自动质量门决定是否收录；本页用于检查证据和修正少量异常。</p>
         </div>
         <div class="topbar-status">
           <div class="runtime-warning" id="runtime-warning" hidden></div>
@@ -43,7 +43,7 @@
       <section class="article-picker">
         <div class="article-picker-main">
           <div class="article-picker-copy">
-            <small>当前校对文章</small>
+            <small>当前检查文章</small>
             <strong>快速定位论文并读取已保存数据</strong>
             <p>筛选不会切换文章或重新扫描。</p>
           </div>
@@ -59,8 +59,6 @@
               <label>处理状态
                 <select id="paper-status-filter">
                   <option value="all">全部处理状态</option>
-                  <option value="pending_review">待人工审核</option>
-                  <option value="reviewed">已完成审核</option>
                   <option value="scanned">已有抽取数据</option>
                   <option value="not_scanned">尚未扫描</option>
                 </select>
@@ -141,10 +139,10 @@
 
       <section class="view active" id="view-review">
         <div class="view-head">
-          <div><p class="eyebrow">REVIEW WORKBENCH</p><h2>结构化数据校对</h2></div>
+          <div><p class="eyebrow">EVIDENCE WORKBENCH</p><h2>自动提取结果检查</h2></div>
           <div class="view-actions">
             <label class="compact-search">筛选当前表<input id="table-filter" placeholder="item_id、材料、硬度、300°C…"></label>
-            <label class="compact-search">审核状态
+            <label class="compact-search" hidden>检查状态
               <select id="review-filter">
                 <option value="all">全部</option>
                 <option value="calibration">本轮分层校准</option>
@@ -160,18 +158,18 @@
             <label class="compact-search">显示顺序
               <select id="review-sort">
                 <option value="original">抽取顺序</option>
-                <option value="review_priority" selected>核验优先级（高到低）</option>
+                <option value="review_priority" selected>证据检查优先级（高到低）</option>
                 <option value="source_asc">原文页码升序</option>
                 <option value="source_desc">原文页码降序</option>
-                <option value="unreviewed_source">未审核优先，按页码</option>
+                <option value="unreviewed_source">未检查项优先，按页码</option>
               </select>
             </label>
-            <button type="button" class="secondary-action" id="next-unreviewed">下一条未审核</button>
+            <button type="button" class="secondary-action" id="next-unreviewed" hidden>下一条未检查</button>
             <button type="button" class="secondary-action" id="review-load-more" hidden>显示更多</button>
-            <button type="button" class="secondary-action focus-action" id="focus-review" aria-pressed="false">专注校对</button>
-            <a class="secondary-action calibration-action" id="current-review-calibration" href="/api/current-paper/review-batch.md?limit=20&amp;strategy=calibration">下载分层校准集</a>
-            <a class="secondary-action" id="current-review-batch" href="/api/current-paper/review-batch.md?limit=20">下载待审核清单</a>
-            <a class="secondary-action" id="current-review-all" href="/api/current-paper/review-batch.md?limit=200">下载全部待审核</a>
+            <button type="button" class="secondary-action focus-action" id="focus-review" aria-pressed="false">专注检查</button>
+            <a class="secondary-action calibration-action" id="current-review-calibration" href="/api/current-paper/review-batch.md?limit=20&amp;strategy=calibration" hidden>下载分层校准集</a>
+            <a class="secondary-action" id="current-review-batch" href="/api/current-paper/review-batch.md?limit=20" hidden>下载待审核清单</a>
+            <a class="secondary-action" id="current-review-all" href="/api/current-paper/review-batch.md?limit=200" hidden>下载全部待审核</a>
             <details class="shortcut-help">
               <summary>快捷键</summary>
               <div>Ctrl/⌘+Enter 确认<br>Shift+Ctrl/⌘+Enter 确认并下一条<br>Alt+N 下一条<br>Alt+S 原文证据</div>
@@ -179,14 +177,14 @@
             <span id="row-count">0 条</span>
           </div>
         </div>
-        <div class="review-object-switch" id="review-object-switch" role="tablist" aria-label="校对对象">
+        <div class="review-object-switch" id="review-object-switch" role="tablist" aria-label="检查对象">
           <button type="button" class="active" role="tab" aria-selected="true" data-review-object="data"><span>01</span><strong>数据条目</strong><small id="review-data-count">0 条</small></button>
           <button type="button" role="tab" aria-selected="false" data-review-object="table"><span>02</span><strong>原始表格</strong><small id="review-table-count">0 张</small></button>
           <button type="button" role="tab" aria-selected="false" data-review-object="figure"><span>03</span><strong>论文图片</strong><small id="review-figure-count">0 幅</small></button>
-          <button type="button" role="tab" aria-selected="false" data-review-object="quality"><span>04</span><strong>质量待审</strong><small id="review-quality-count">0 项</small></button>
+          <button type="button" role="tab" aria-selected="false" data-review-object="quality"><span>04</span><strong>自动拦截</strong><small id="review-quality-count">0 项</small></button>
         </div>
         <div id="data-review-workspace">
-        <div class="review-progress-card" id="review-progress-card">
+        <div class="review-progress-card" id="review-progress-card" hidden>
           <div class="review-progress-copy">
             <span>人工核验进度</span>
             <strong id="review-progress-title">0/0 已审核</strong>
@@ -204,7 +202,7 @@
           </dl>
         </div>
         <div class="focus-review-bar" id="focus-review-bar" hidden>
-          <div><small>专注校对</small><strong id="focus-paper-title">当前文章</strong></div>
+          <div><small>专注检查</small><strong id="focus-paper-title">当前文章</strong></div>
           <span id="focus-review-progress">0/0 已审核</span>
           <button type="button" id="exit-focus-review">退出专注模式</button>
         </div>
@@ -224,14 +222,14 @@
         </div>
         <section class="visual-review-workspace" id="visual-review-workspace" hidden aria-live="polite">
           <header>
-            <div><p class="eyebrow" id="visual-review-kicker">TABLE EVIDENCE REVIEW</p><h2 id="visual-review-title">原始表格校对</h2><p id="visual-review-summary">核对截图、图注和上下文标签；不会自动读取曲线点。</p></div>
-            <div class="visual-review-legend"><span><i class="pending"></i>待审核</span><span><i class="confirmed"></i>已确认/修正</span><span><i class="attention"></i>歧义/不采用</span></div>
+            <div><p class="eyebrow" id="visual-review-kicker">TABLE EVIDENCE CHECK</p><h2 id="visual-review-title">原始表格检查</h2><p id="visual-review-summary">检查截图、图注和上下文标签；系统不会自动读取曲线点。</p></div>
+            <div class="visual-review-legend"><span><i class="pending"></i>自动元数据</span><span><i class="confirmed"></i>历史修正</span><span><i class="attention"></i>已排除</span></div>
           </header>
           <div class="visual-review-grid" id="visual-review-grid"></div>
         </section>
         <section class="quality-review-workspace" id="quality-review-workspace" hidden aria-live="polite">
           <header>
-            <div><p class="eyebrow">QUALITY GATE REVIEW</p><h2>自动质量门未通过项</h2><p>这里只有第三次复核后仍低于阈值的候选。人工通过后才进入搜索；不采用会保留审核记录。</p></div>
+            <div><p class="eyebrow">QUALITY GATE QUARANTINE</p><h2>自动质量门拦截项</h2><p>这里仅展示第三次复核后仍低于阈值的候选。它们不会进入搜索；可重新运行整篇自动提取以再次评估。</p></div>
             <div class="quality-review-threshold"><span>自动发布阈值</span><strong>85 / 100</strong></div>
           </header>
           <div class="quality-review-grid" id="quality-review-grid"></div>
@@ -246,7 +244,23 @@
               <h2>从实验条件出发，找到可追溯的数据</h2>
               <p>输入材料、物理量和实验条件的任意组合。系统会同时理解文章语境、元素名称与符号。</p>
             </div>
-            <div class="search-scope"><span>检索范围</span><strong>整个证据数据库</strong><small>不受当前校对文章影响</small></div>
+            <div class="search-scope"><span>当前检索范围</span><strong id="search-scope-heading">全部文章</strong><small id="search-scope-caption">不受当前检查文章影响</small></div>
+          </div>
+          <div class="search-scope-selector" aria-label="检索文章范围">
+            <div class="search-scope-switch" role="group" aria-label="检索范围">
+              <button type="button" class="active" data-search-scope="all" aria-pressed="true">全部文章</button>
+              <button type="button" data-search-scope="selected" aria-pressed="false">指定多篇文章</button>
+            </div>
+            <strong id="search-paper-count">全库文章</strong>
+          </div>
+          <div class="search-paper-panel" id="search-paper-panel" hidden>
+            <div class="search-paper-toolbar">
+              <label>按题目、作者或 DOI 筛选文章
+                <input id="search-paper-query" type="search" placeholder="例如：tungsten、El-Atwani、10.1016…" autocomplete="off">
+              </label>
+              <div><button type="button" id="search-paper-select-visible">选择当前结果</button><button type="button" id="search-paper-clear">清空选择</button></div>
+            </div>
+            <div class="search-paper-list" id="search-paper-list" aria-live="polite"></div>
           </div>
           <div class="search-mode-switch" id="search-mode-switch" role="tablist" aria-label="检索对象">
             <button type="button" class="active" role="tab" aria-selected="true" data-search-mode="item"><i>01</i><span>数据条目</span><small>查数值、性质与条件</small></button>
@@ -273,9 +287,8 @@
         </div>
         <div class="search-controls" id="search-filter-bar">
           <div class="search-control-copy"><span>精确结果</span><small>筛选会同步应用到 CSV 和 Excel 导出</small></div>
-          <label>核验状态<select id="search-review-filter"><option value="all">全部状态</option><option value="reviewed">仅人工核验</option><option value="pending">仅待审核</option></select></label>
           <label>证据来源<select id="search-source-filter"><option value="all">全部来源</option><option value="text">正文数据</option><option value="table">表格数据</option><option value="figure">图片关联</option><option value="manual">人工补录</option></select></label>
-          <label>质量来源<select id="search-quality-filter"><option value="all">全部已发布</option><option value="quality_passed">新质量门通过</option><option value="dual_pass">双路一致通过</option><option value="third_pass">第三次复核通过</option><option value="manual_approved">人工通过</option><option value="legacy_stable">历史稳定数据</option></select></label>
+          <label>质量来源<select id="search-quality-filter"><option value="all">全部已收录</option><option value="quality_passed">自动质量门通过</option><option value="dual_pass">双路一致通过</option><option value="third_pass">第三次复核通过</option><option value="legacy_stable">历史稳定数据</option></select></label>
           <label>结果排序<select id="search-sort"><option value="relevance">相关度优先</option><option value="source_page">按文章与页码</option><option value="article">按文章归类</option></select></label>
           <button type="button" id="search-reset-filters">重置</button>
         </div>
@@ -324,13 +337,13 @@
           <label class="span-2">文章题目<input name="article_title" required></label>
           <label class="span-2">DOI<input name="doi" required></label>
           <label class="span-2 context-manual">数据在文中的解释<textarea name="context_explanation" required placeholder="尽量写清材料、实验类型、控制变量、环境条件、样品状态和测量方法等，便于以后搜索。"></textarea></label>
-          <div class="manual-note"><i>i</i><span>人工补录直接写入所选文章的六列数据库，不切换当前校对文章，也不会调用 DeepSeek。</span></div>
+          <div class="manual-note"><i>i</i><span>人工补录直接写入所选文章的六列数据库，不切换当前检查文章，也不会调用 DeepSeek。</span></div>
           <button class="primary" type="submit">保存人工数据</button>
         </form>
         <form class="manual-card import-card" id="import-json-form">
-          <label class="span-2">导入抽取结果 JSON<textarea id="import-json-text" name="json_text" placeholder='把受约束的 JSON 结果粘贴到这里；导入后会自动回填为六列表格待校对。'></textarea></label>
+          <label class="span-2">导入抽取结果 JSON<textarea id="import-json-text" name="json_text" placeholder='把受约束的 JSON 结果粘贴到这里；导入后会自动回填为六列表格供检查。'></textarea></label>
           <div class="manual-note"><i>i</i><span>适合“准备当前文章抽取包”之后的下一步：将结构化抽取结果直接回填为可编辑六列表格，同时保留原始证据页码、定位和片段。</span></div>
-          <button class="primary" type="submit">导入为待校对六列表格</button>
+          <button class="primary" type="submit">导入六列表格</button>
         </form>
       </section>
 

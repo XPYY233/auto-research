@@ -92,7 +92,7 @@ def _markdown(report: dict[str, Any]) -> str:
         "",
         "## 结论",
         "",
-        f"- 可开始人工核验：{'是' if report['ready_for_human_review'] else '否'}",
+        f"- 自动工作流可用：{'是' if report['automatic_ready'] else '否'}",
         f"- 最终目标完成：{'是' if report['goal_complete'] else '否'}",
         f"- 当前主要剩余工作：{report['next_step']}",
         "",
@@ -102,7 +102,7 @@ def _markdown(report: dict[str, Any]) -> str:
         f"- DOI：{paper.get('doi')}",
         f"- 本地 PDF：`{paper.get('pdf_path')}`",
         f"- 六列数据：{report['summary'].get('row_count')} 条",
-        f"- 审核进度：{progress['reviewed']}/{progress['total']} 条；待审核 {progress['unreviewed']} 条",
+        f"- 历史人工修正：{progress['reviewed']}/{progress['total']} 条（不作为自动收录前置条件）",
         "",
         "## 逐条需求审计",
         "",
@@ -126,15 +126,15 @@ def _markdown(report: dict[str, Any]) -> str:
         "## 推荐下一步",
         "",
         "1. 双击 `scripts/start_evidence_ui.command` 或打开 `http://127.0.0.1:8765`。",
-        "2. 在“校对数据”页点击“下一条未审核”。",
-        "3. 每条数据用右侧原始记录和 `Alt+S` 高亮原文核对。",
-        "4. 确认、修正或人工补录；这些人工样本会进入后续 DeepSeek 抽取优化。",
+        "2. 上传新 PDF 后运行“对抗式质量提取”，等待双路抽取与第三次低分复核完成。",
+        "3. 在“搜索数据”页确认通过质量门的数值、表格、图片和实验结论可检索。",
+        "4. 只有发现明显异常时才进入“数据检查”修正；低分候选由系统自动拦截。",
         "",
         "## 机器可读摘要",
         "",
         "```json",
         json.dumps({
-            "ready_for_human_review": report["ready_for_human_review"],
+            "automatic_ready": report["automatic_ready"],
             "goal_complete": report["goal_complete"],
             "row_count": report["summary"].get("row_count"),
             "unreviewed": progress["unreviewed"],
@@ -168,15 +168,12 @@ def generate_goal_audit(db: EvidenceDB, selector: str, *,
     progress = workflow["summary"]["review_progress"]
     launcher_ok = bool(launcher["exists"] and launcher["executable"])
     git_backup_ok = bool(git["is_git_repo"] and git["head"] and git["latest_bundle"])
-    human_review_complete = progress["total"] > 0 and progress["unreviewed"] == 0
-    ready_for_human_review = bool(workflow["ok"] and launcher_ok and git_backup_ok)
-    goal_complete = bool(ready_for_human_review and human_review_complete)
+    automatic_ready = bool(workflow["ok"] and launcher_ok and git_backup_ok)
+    goal_complete = automatic_ready
     next_step = (
-        "目标文章全部数据已人工核验，可进入下一轮跨文章自动化验证。"
+        "自动提取、质量门、证据检查和检索链路已就绪；下一步可上传一篇新 PDF 做端到端验收。"
         if goal_complete
-        else f"继续人工核验剩余 {progress['unreviewed']} 条自动抽取数据，并把确认/修正样本用于优化抽取。"
-        if ready_for_human_review
-        else "先修复审计报告中未通过的功能项，再开始集中人工核验。"
+        else "先修复审计报告中未通过的功能项，再测试新文章自动流程。"
     )
     requirements = [
         _requirement(
@@ -192,12 +189,12 @@ def generate_goal_audit(db: EvidenceDB, selector: str, *,
         ),
         _requirement(
             all(item["ok"] for item in workflow["requirements"]),
-            "六列编辑、原始保留、人工补录、自由关键词搜索和学习闭环符合用户目标。",
+            "六列编辑、原始保留、自动质量门、多文章搜索和导出符合用户目标。",
             [f"{item['id']}：{'通过' if item['ok'] else '未通过'}" for item in workflow["requirements"]],
         ),
         _requirement(
             launcher_ok,
-            "用户可以自行打开本地网页进行人工核验。",
+            "用户可以自行打开本地网页检查自动结果并进行搜索。",
             [
                 f"网页地址：{launcher['url']}",
                 f"启动脚本存在：{launcher['exists']}",
@@ -214,18 +211,18 @@ def generate_goal_audit(db: EvidenceDB, selector: str, *,
             ],
         ),
         _requirement(
-            human_review_complete,
-            "目标文章候选数据已经完成用户人工核验。",
+            any(item["id"] == "automatic_quality_gate" and item["ok"] for item in workflow["requirements"]),
+            "自动质量门替代逐条人工批准，未通过候选不会进入搜索。",
             [
-                f"已审核：{progress['reviewed']}/{progress['total']}",
-                f"待审核：{progress['unreviewed']}",
-                "这是最终自动化优化前的必要人工反馈，不应由程序替代。",
+                "两路 DeepSeek 独立抽取并比较。",
+                "低分项进入第三次独立复核。",
+                "仍低于阈值的候选自动拦截；人工修正仅为可选纠错路径。",
             ],
-            status="pending_user_review" if not human_review_complete else "satisfied",
         ),
     ]
     result = {
-        "ready_for_human_review": ready_for_human_review,
+        "automatic_ready": automatic_ready,
+        "ready_for_human_review": automatic_ready,
         "goal_complete": goal_complete,
         "next_step": next_step,
         "selector": selector,

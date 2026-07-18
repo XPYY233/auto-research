@@ -1322,8 +1322,12 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
                         review_filter: str = "all",
                         source_filter: str = "all",
                         quality_filter: str = "all",
-                        sort: str = "relevance") -> list[dict[str, Any]]:
+                        sort: str = "relevance",
+                        paper_ids: set[int] | list[int] | tuple[int, ...] | None = None) -> list[dict[str, Any]]:
     rows = list_current_facts(db)
+    if paper_ids is not None:
+        selected_papers = {int(paper_id) for paper_id in paper_ids}
+        rows = [row for row in rows if int(row["paper_id"]) in selected_papers]
     if not include_excluded:
         rows = [row for row in rows if row.get("review_action") not in {"rejected", "ambiguous"}]
     rows = _filter_search_rows(rows, review_filter=review_filter, source_filter=source_filter)
@@ -1386,13 +1390,17 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
 
 
 def search_qualitative_findings(db: EvidenceDB, query: str, limit: int = 100, *,
-                                quality_filter: str = "all") -> list[dict[str, Any]]:
+                                quality_filter: str = "all",
+                                paper_ids: set[int] | list[int] | tuple[int, ...] | None = None) -> list[dict[str, Any]]:
     """Search prose observations without mixing them into numeric data rows."""
 
     findings = [
         row for row in list_qualitative_findings(db)
         if row.get("review_action") not in {"rejected"}
     ]
+    if paper_ids is not None:
+        selected_papers = {int(paper_id) for paper_id in paper_ids}
+        findings = [row for row in findings if int(row["paper_id"]) in selected_papers]
     if quality_filter not in SEARCH_QUALITY_FILTERS:
         raise ValueError(f"unsupported search quality filter: {quality_filter}")
     if quality_filter == "quality_passed":

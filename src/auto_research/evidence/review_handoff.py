@@ -38,7 +38,7 @@ def _markdown(report: dict[str, Any]) -> str:
     title = paper.get("title") or "未命名文章"
     pdf_path = paper.get("pdf_path") or "未登记 PDF"
     lines = [
-        "# 目标文章人工核验交接摘要",
+        "# 目标文章自动质量与证据检查摘要",
         "",
         "## 当前结论",
         "",
@@ -51,15 +51,15 @@ def _markdown(report: dict[str, Any]) -> str:
         f"- 原文高亮定位：{summary.get('highlighted_rows')}/{summary.get('automatic_rows')} 条",
         f"- 强定位：{summary.get('strong_rows')} 条",
         "",
-        "## 人工核验进度",
+        "## 历史人工修正（非发布前置条件）",
         "",
         f"- 已审核：{progress['reviewed']}/{progress['total']} 条（{progress['reviewed_ratio']:.2%}）",
-        f"- 待审核：{progress['unreviewed']} 条",
+        f"- 保持自动版本：{progress['unreviewed']} 条",
         f"- 已确认：{progress['confirmed']} 条",
         f"- 已修正：{progress['corrected']} 条",
         f"- 人工补录：{progress['manual']} 条",
         "",
-        "## 推荐核验流程",
+        "## 推荐自动流程",
         "",
         "1. 启动本地网页：",
         "",
@@ -67,11 +67,10 @@ def _markdown(report: dict[str, Any]) -> str:
         "   PYTHONPATH=src python3 -m auto_research.cli evidence-serve",
         "   ```",
         "",
-        "2. 打开 `http://127.0.0.1:8765`，进入“校对数据”。",
-        "3. 选择“只看未审核”，或点击“下一条未审核”。",
-        "4. 对每条数据先看右侧原始抽取值，再用 `Alt+S` 打开高亮原文证据。",
-        "5. 若无需修改，用 `Shift+Ctrl/⌘+Enter` 确认并跳到下一条；若需要修改，先编辑左侧六列，再确认。",
-        "6. 自动抽取漏掉的数据进入“人工补录”，选择所属文章后手动添加。",
+        "2. 打开 `http://127.0.0.1:8765`，上传 PDF 并运行“对抗式质量提取”。",
+        "3. 双路一致或第三次复核通过的结果自动进入搜索；其余候选自动拦截。",
+        "4. 在“搜索数据”中检查数值、表格、图片和实验结论，并用“原文证据”查看高亮位置。",
+        "5. 仅在发现明确异常时进入“数据检查”保存修正；不需要逐条人工批准。",
         "",
         "## 六列字段",
         "",
@@ -82,11 +81,11 @@ def _markdown(report: dict[str, Any]) -> str:
         "- DOI",
         "- 数据在文中的解释",
         "",
-        "## 快捷键",
+        "## 可选证据检查快捷键",
         "",
-        "- `Ctrl/⌘+Enter`：确认当前行",
-        "- `Shift+Ctrl/⌘+Enter`：确认并下一条",
-        "- `Alt+N`：跳到下一条未审核",
+        "- `Ctrl/⌘+Enter`：保存当前修正",
+        "- `Shift+Ctrl/⌘+Enter`：保存并下一条",
+        "- `Alt+N`：跳到下一条检查项",
         "- `Alt+S`：打开当前行原文高亮证据",
         "",
         "## 学习样本与导出",
@@ -108,7 +107,7 @@ def _markdown(report: dict[str, Any]) -> str:
         for item in failed_requirements:
             lines.append(f"- 需求 `{item.get('id')}` 未通过：{item.get('requirement')}")
     else:
-        lines.extend(["", "## 当前阻塞", "", "- 无代码侧阻塞；下一步主要是人工核验剩余数据。"])
+        lines.extend(["", "## 当前阻塞", "", "- 无代码侧阻塞；下一步可上传新 PDF 验证自动提取—质量门—搜索链路。"])
     lines.extend([
         "",
         "## 复查命令",
