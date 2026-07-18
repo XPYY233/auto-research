@@ -383,14 +383,31 @@ imports, visual indexing, review, search, or database health checks.
 
 ### Current verified baseline
 
-As of 2026-07-13:
+As of the 2026-07-18 phase audit:
 
-- Target article rows: 114
-- Rows with PDF highlight localization: 114/114
-- Indexed visual evidence: 4 tables and 10 figures from PDF pages 2-9
-- Sentence or fragment-level strong localization: 109/114
-- Test command: `PYTHONPATH=src python3 -m unittest src/tests/test_evidence.py`
-- The 114-row target baseline remains article-specific and human review is still incomplete. B2 can now process other readable PDFs through DeepSeek, but do not claim general scientific accuracy until the benchmark and human-review metrics support it.
+- Evidence schema: v11; registered papers: 35; content-valid local PDFs: 30.
+- Raw six-column history: 4,754 rows; reportable numeric occurrences: 3,710;
+  independent numeric facts: 2,484; quarantined prose/history: 1,044.
+- Stable visual evidence: 243 assets (40 tables and 203 figures). Their database
+  identities, stored SHA-256 values and files all match the frozen pre-cloud
+  baseline. The rejected MinerU path remains absent.
+- The fixed 10-paper functional regression set passes for PDF identity, numeric
+  facts, search, evidence localization and visuals: 1,668 facts, 2,731 source
+  occurrences and 91 visuals. All 91 have Chinese display names, Chinese context
+  explanations and visual-specific tags.
+- The adversarial full-text batch completed for 8 of these 10 papers. Two runs
+  failed on the external DeepSeek network and continue to use existing stable
+  evidence; do not describe this batch as 10/10 completed.
+- The full 35-paper corpus audit is intentionally not a release pass yet: 17
+  papers are data-ready, 13 valid PDFs still need extraction, and 5 registered
+  files are download/verification placeholders that need real PDFs.
+- Target DOI `10.1016/j.jnucmat.2018.08.031` currently exposes 225 independent
+  facts and 339/339 localizable numeric occurrences, plus 4 tables and 10
+  figures. Its two older review learning samples remain, but the regenerated
+  current fact layer is 0/225 human-reviewed.
+- The current fact layer is 0/2,484 human-reviewed. Never present automatic
+  quality scores as physical-science confirmation.
+- Test command: `PYTHONPATH=src python3 -m unittest discover -s src/tests -p 'test_*.py'`.
 
 ### Git checkpoint protocol
 
