@@ -851,6 +851,10 @@ def _clean_model_visual_metadata(item: dict[str, Any]) -> dict[str, Any]:
     display_name = str(item.get("display_name") or "").strip()
     if not display_name or len(display_name) > 60:
         raise ValueError("invalid display_name")
+    if not re.search(r"[\u3400-\u9fff]", display_name):
+        raise ValueError("display_name must be a Chinese search title")
+    if re.fullmatch(r"(?i)(?:figure|fig\.?|table|image|图|表)\s*\d*[a-z]?", display_name):
+        raise ValueError("display_name cannot repeat only the source label")
 
     def string_list(name: str, limit: int = 12) -> list[str]:
         value = item.get(name, [])
@@ -873,14 +877,27 @@ def _clean_model_visual_metadata(item: dict[str, Any]) -> dict[str, Any]:
     context_explanation = str(item.get("context_explanation") or "").strip()
     if not context_explanation:
         raise ValueError("context_explanation cannot be empty")
-    generic_tags = {"材料", "方法", "图片", "表格", "原文图片", "原文表格"}
-    tags = [tag for tag in string_list("tags", limit=7) if tag not in generic_tags]
+    if not re.search(r"[\u3400-\u9fff]", context_explanation):
+        raise ValueError("context_explanation must be written in Chinese")
+    generic_tags = {
+        "材料", "方法", "图片", "图", "表", "表格", "原文图片", "原文表格",
+        "figure", "fig", "table", "image", "material", "method",
+    }
+    tags = [
+        tag for tag in string_list("tags", limit=7)
+        if tag.casefold() not in generic_tags
+    ]
+    tags = [tag for tag in tags if not re.fullmatch(
+        r"(?i)(?:figure|fig\.?|table|image)\s*\d*[a-z]?", tag
+    )]
     if len(tags) < 2:
         tags = list(dict.fromkeys([
             *tags, display_name, *physical_quantities, *materials,
         ]))[:7]
     if len(tags) < 2:
         raise ValueError("at least two specific tags are required")
+    if not any(re.search(r"[\u3400-\u9fff]", tag) for tag in tags):
+        tags = list(dict.fromkeys([display_name, *tags]))[:7]
     return {
         "display_name": display_name,
         "physical_quantities": physical_quantities,

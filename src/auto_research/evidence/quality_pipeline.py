@@ -21,6 +21,8 @@ from .six_column import (
     import_ai_result_to_six_column,
 )
 from .visual_evidence import (
+    _clean_model_visual_metadata,
+    _visual_metadata_messages,
     index_visual_evidence,
     link_data_items_to_visuals,
     list_visual_assets,
@@ -203,40 +205,24 @@ def _make_record(
 
 
 def _visual_prompt(assets: list[dict[str, Any]]) -> list[dict[str, str]]:
-    compact = [
-        {
-            "asset_id": int(asset["id"]),
-            "asset_type": asset["asset_type"],
-            "label": asset["label"],
-            "page": asset["page_start"],
-            "caption": asset.get("caption") or "",
-            "nearby_text": str(asset.get("source_context") or "")[:3500],
-        }
-        for asset in assets
-    ]
-    return [
-        {
-            "role": "system",
-            "content": (
-                "你只依据图表编号、图注和相邻正文，独立生成可检索的科学语义元数据。"
-                "你没有看到图片像素，不得声称进行了视觉识别，不得从曲线猜测数据点。"
-                "返回 JSON：{visuals:[{asset_id,display_name,physical_quantities,variables,materials,"
-                "conditions_text,methods_text,context_explanation,tags}]}。"
-            ),
-        },
-        {"role": "user", "content": _json(compact)},
-    ]
+    # Reuse the long-standing visual cataloguing contract instead of maintaining
+    # a second, weaker prompt inside the adversarial pipeline.
+    paper = {
+        "title": assets[0].get("article_title") if assets else "",
+        "doi": assets[0].get("doi") if assets else "",
+    }
+    return _visual_metadata_messages(paper, assets)
 
 
 def _extract_visual_semantics(client: ProfiledDeepSeekClient,
                               assets: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     output: dict[int, dict[str, Any]] = {}
-    for start in range(0, len(assets), 16):
-        batch = assets[start:start + 16]
+    for start in range(0, len(assets), 10):
+        batch = assets[start:start + 10]
         payload = client.request_json(
-            _visual_prompt(batch), task="analysis", max_tokens=6000, thinking=False
+            _visual_prompt(batch), task="analysis", max_tokens=8000, thinking=False
         )
-        for item in payload.get("visuals", []):
+        for item in payload.get("assets", payload.get("visuals", [])):
             if not isinstance(item, dict):
                 continue
             try:
@@ -245,7 +231,11 @@ def _extract_visual_semantics(client: ProfiledDeepSeekClient,
                 continue
             if asset_id not in {int(asset["id"]) for asset in batch}:
                 continue
-            output[asset_id] = item
+            try:
+                clean = _clean_model_visual_metadata(item)
+            except (TypeError, ValueError):
+                continue
+            output[asset_id] = {"asset_id": asset_id, **clean}
     return output
 
 
@@ -281,12 +271,12 @@ def _make_visual_record(asset: dict[str, Any], left: dict[str, Any] | None,
     left = dict(left or {})
     right = dict(right or {})
     agreement = _similarity(_visual_text(left), _visual_text(right)) if left and right else 0.0
-    left_complete = _field_completeness(
-        left, ("display_name", "context_explanation", "tags")
-    )
-    right_complete = _field_completeness(
-        right, ("display_name", "context_explanation", "tags")
-    )
+    # AGENT.md and the established visual cleaner require these three search
+    # fields. Other semantic fields must remain empty when the caption/context
+    # does not support them; absence is not itself a quality defect.
+    semantic_fields = ("display_name", "context_explanation", "tags")
+    left_complete = _field_completeness(left, semantic_fields)
+    right_complete = _field_completeness(right, semantic_fields)
     base = {
         "asset_id": int(asset["id"]),
         "asset_type": asset["asset_type"],
@@ -349,8 +339,13 @@ def _third_review_messages(records: list[dict[str, Any]], pages: dict[int, str])
             "content": (
                 "你是第三位独立质量裁判。逐项核对候选与原文，只能批准原文明确支持且字段关系完整的候选。"
                 "表格/图片对象只能依据图注和相邻文字评价语义，不能假装看到图片像素。"
+                "对表格/图片，必须选择或给出满足既有中文编目规范的结果：中文短标题、1至3句中文上下文解释、"
+                "中文物理量名称和2至7个图表专属标签；保留 W、TEM、SRIM、dpa 等符号。"
+                "如果两路候选都不完全符合，可在 corrected_candidate 返回依据原文修正后的完整图表元数据。"
+                "一旦给出 corrected_candidate，所有评分与 approved 必须针对修正后的版本，而不是继续给原候选打分；"
+                "修正后字段完整且原文明确支持时应批准修正版。"
                 "返回 JSON：{verdicts:[{candidate_key,approved,preferred_source,"
-                "factuality_score,completeness_score,evidence_score,overall_score,reason}]}。"
+                "factuality_score,completeness_score,evidence_score,overall_score,reason,corrected_candidate}]}。"
                 "所有分数为0至100；overall_score>=85且approved=true才可自动发布。"
             ),
         },
@@ -385,17 +380,67 @@ def _apply_third_review(client: DeepSeekClient, records: list[dict[str, Any]],
             if preferred == "extractor_b" and record.get("alternate"):
                 record["candidate"], record["alternate"] = record["alternate"], record["candidate"]
                 record["chosen_source"] = "extractor_b"
+            if record["entity_type"] in {"table", "figure"}:
+                corrected = verdict.get("corrected_candidate")
+                corrected_applied = False
+                if isinstance(corrected, dict):
+                    try:
+                        clean = _clean_model_visual_metadata(corrected)
+                    except (TypeError, ValueError):
+                        clean = None
+                    if clean:
+                        base = {
+                            key: record["candidate"].get(key)
+                            for key in (
+                                "asset_id", "asset_type", "label", "page_start", "caption",
+                                "is_new_asset",
+                            )
+                        }
+                        record["candidate"] = {**base, **clean}
+                        record["chosen_source"] = "merged"
+                        corrected_applied = True
+                        record["completeness_score"] = _field_completeness(
+                            clean, ("display_name", "context_explanation", "tags")
+                        )
             for field in ("factuality_score", "completeness_score", "evidence_score", "overall_score"):
                 try:
                     record[field] = min(max(float(verdict.get(field, record[field])), 0), 100)
                 except (TypeError, ValueError):
                     pass
-            if bool(verdict.get("approved")) and record["overall_score"] >= threshold:
+            semantic_valid = True
+            if record["entity_type"] in {"table", "figure"}:
+                try:
+                    _clean_model_visual_metadata(record["candidate"])
+                except (TypeError, ValueError):
+                    semantic_valid = False
+            if record["entity_type"] in {"table", "figure"} and corrected_applied:
+                # The third reviewer has supplied a new source-grounded candidate.
+                # Recalculate its score from the existing deterministic dimensions;
+                # do not retain a score that described the superseded candidate.
+                record["completeness_score"] = _field_completeness(
+                    record["candidate"], ("display_name", "context_explanation", "tags")
+                )
+                record["overall_score"] = round(
+                    0.40 * record["factuality_score"]
+                    + 0.30 * record["evidence_score"]
+                    + 0.30 * record["completeness_score"],
+                    2,
+                )
+            third_approved = bool(verdict.get("approved")) or bool(
+                record["entity_type"] in {"table", "figure"}
+                and corrected_applied
+                and record["factuality_score"] >= 95
+                and record["evidence_score"] >= 95
+            )
+            if third_approved and record["overall_score"] >= threshold and semantic_valid:
                 record["gate_status"] = "third_pass"
                 record["gate_reason"] = str(verdict.get("reason") or "第三次独立复核通过")
             else:
                 record["gate_status"] = "manual_review"
-                record["gate_reason"] = str(verdict.get("reason") or "第三次复核后仍低于阈值")
+                record["gate_reason"] = str(verdict.get("reason") or (
+                    "图表中文语义字段未通过既有编目规范"
+                    if not semantic_valid else "第三次复核后仍低于阈值"
+                ))
 
 
 def _measurement_payload(candidate: dict[str, Any]) -> dict[str, Any]:
@@ -418,21 +463,26 @@ def _measurement_payload(candidate: dict[str, Any]) -> dict[str, Any]:
 
 def _apply_visual_semantics(db: EvidenceDB, candidate: dict[str, Any]) -> int:
     asset_id = int(candidate["asset_id"])
-    display_name = str(candidate.get("display_name") or candidate.get("label") or "").strip()
+    clean = _clean_model_visual_metadata(candidate)
     with db.connect() as conn:
+        current = conn.execute(
+            "SELECT metadata_source FROM visual_assets WHERE id=?", (asset_id,)
+        ).fetchone()
+        if current and str(current["metadata_source"] or "") == "manual":
+            return asset_id
         conn.execute(
             """UPDATE visual_assets SET display_name=?,physical_quantities_json=?,variables_json=?,
                materials_json=?,conditions_text=?,methods_text=?,context_explanation=?,tags_json=?,
                metadata_source='deepseek',updated_at=? WHERE id=?""",
             (
-                display_name,
-                _json(candidate.get("physical_quantities") or []),
-                _json(candidate.get("variables") or {}),
-                _json(candidate.get("materials") or []),
-                str(candidate.get("conditions_text") or ""),
-                str(candidate.get("methods_text") or ""),
-                str(candidate.get("context_explanation") or ""),
-                _json(candidate.get("tags") or []),
+                clean["display_name"],
+                _json(clean["physical_quantities"]),
+                _json(clean["variables"]),
+                _json(clean["materials"]),
+                clean["conditions_text"],
+                clean["methods_text"],
+                clean["context_explanation"],
+                _json(clean["tags"]),
                 now(), asset_id,
             ),
         )
@@ -619,6 +669,127 @@ class AdversarialQualityPipeline:
                 """UPDATE quality_pipeline_runs SET stage=?,progress=?,summary_json=? WHERE id=?""",
                 (stage, progress, _json(summary or {}), run_id),
             )
+
+    def refresh_visual_semantics(self, paper_id: int, *,
+                                 threshold: float = DEFAULT_THRESHOLD) -> dict[str, Any]:
+        """Rebuild only searchable visual semantics; never re-render source screenshots."""
+
+        paper = self.db.get_paper(paper_id)
+        if not paper or not paper.get("pdf_path") or not Path(paper["pdf_path"]).is_file():
+            raise FileNotFoundError("当前文章没有可读取的本地 PDF")
+        if not self.settings.api_key:
+            raise ValueError("DeepSeek 尚未配置，无法重建图表中文语义")
+        assets = list_visual_assets(self.db, paper_id=paper_id)
+        if not assets:
+            raise ValueError("当前文章尚无稳定图表资产，请先建立本地图表索引")
+        with self.db.connect() as conn:
+            cur = conn.execute(
+                """INSERT INTO quality_pipeline_runs(
+                   paper_id,status,stage,progress,quality_threshold,created_at
+                   ) VALUES(?,'running','visual_semantics_dual',10,?,?)""",
+                (paper_id, threshold, now()),
+            )
+            pipeline_run_id = int(cur.lastrowid)
+        try:
+            profile_a = ProfiledDeepSeekClient(
+                DeepSeekClient(self.settings), ROLE_A, 0.1
+            )
+            profile_b = ProfiledDeepSeekClient(
+                DeepSeekClient(self.settings), ROLE_B, 0.45
+            )
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                future_a = executor.submit(_extract_visual_semantics, profile_a, assets)
+                future_b = executor.submit(_extract_visual_semantics, profile_b, assets)
+                visual_a = future_a.result()
+                visual_b = future_b.result()
+            self._update(pipeline_run_id, stage="visual_semantics_compare", progress=55)
+            records = [
+                _make_visual_record(
+                    asset,
+                    visual_a.get(int(asset["id"])),
+                    visual_b.get(int(asset["id"])),
+                    is_new=False,
+                    threshold=threshold,
+                )
+                for asset in assets
+            ]
+            pages = {
+                int(page["page"]): str(page.get("text") or "")
+                for page in _read_pages(Path(paper["pdf_path"]))
+            }
+            self._update(pipeline_run_id, stage="visual_semantics_third_review", progress=70)
+            low_records = [record for record in records if record["gate_status"] == "manual_review"]
+            _apply_third_review(DeepSeekClient(self.settings), low_records, pages, threshold)
+
+            self._update(pipeline_run_id, stage="visual_semantics_publish", progress=88)
+            published = 0
+            candidate_ids: list[int] = []
+            for record in records:
+                asset_id = int(record["asset_id"])
+                with self.db.connect() as conn:
+                    cur = conn.execute(
+                        """INSERT INTO quality_candidates(
+                           pipeline_run_id,paper_id,entity_type,candidate_key,chosen_source,
+                           candidate_json,alternate_json,agreement_score,factuality_score,
+                           completeness_score,evidence_score,overall_score,gate_status,gate_reason,
+                           third_review_json,published_asset_id,created_at,updated_at
+                           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            pipeline_run_id, paper_id, record["entity_type"], record["candidate_key"],
+                            record["chosen_source"], _json(record["candidate"]),
+                            _json(record["alternate"]) if record.get("alternate") else None,
+                            record["agreement_score"], record["factuality_score"],
+                            record["completeness_score"], record["evidence_score"],
+                            record["overall_score"], record["gate_status"], record["gate_reason"],
+                            _json(record.get("third_review")) if record.get("third_review") else None,
+                            asset_id, now(), now(),
+                        ),
+                    )
+                    candidate_ids.append(int(cur.lastrowid))
+                if record["gate_status"] in PUBLISHABLE_STATUSES:
+                    _apply_visual_semantics(self.db, record["candidate"])
+                    published += 1
+            gate_counts: dict[str, int] = {}
+            for record in records:
+                gate_counts[record["gate_status"]] = gate_counts.get(record["gate_status"], 0) + 1
+            summary = {
+                "mode": "visual_semantics_refresh",
+                "candidate_count": len(records),
+                "published_visual_count": published,
+                "manual_review_count": gate_counts.get("manual_review", 0),
+                "table_count": sum(asset["asset_type"] == "table" for asset in assets),
+                "figure_count": sum(asset["asset_type"] == "figure" for asset in assets),
+                "quality_threshold": threshold,
+                "gate_counts": gate_counts,
+            }
+            result = {
+                "pipeline_run_id": pipeline_run_id,
+                "paper": {"id": paper_id, "title": paper["title"], "doi": paper.get("doi")},
+                "summary": summary,
+                "candidate_ids": candidate_ids,
+                "created_at": now(),
+            }
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = self.output_dir / (
+                f"paper_{paper_id:03d}_visual_quality_{pipeline_run_id:04d}.json"
+            )
+            output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+            with self.db.connect() as conn:
+                conn.execute(
+                    """UPDATE quality_pipeline_runs SET status='completed',stage='completed',progress=100,
+                       summary_json=?,output_path=?,finished_at=? WHERE id=?""",
+                    (_json(summary), str(output_path), now(), pipeline_run_id),
+                )
+            result["output_path"] = str(output_path)
+            return result
+        except BaseException as exc:
+            with self.db.connect() as conn:
+                conn.execute(
+                    """UPDATE quality_pipeline_runs SET status='failed',stage='failed',progress=100,
+                       error_message=?,finished_at=? WHERE id=?""",
+                    (str(exc)[:1200], now(), pipeline_run_id),
+                )
+            raise
 
     def _branch(self, paper_id: int, role: str, temperature: float,
                 max_pages: int | None, chunk_pages: int,

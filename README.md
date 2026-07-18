@@ -481,6 +481,12 @@ auto-research evidence-goal-audit "Irradiation effects in high entropy alloys an
 # adversarial comparison, a third review for low scores, and the search gate.
 auto-research evidence-quality-run <paper-selector>
 
+# Rebuild only the searchable visual semantics for existing stable screenshots.
+# Two DeepSeek branches and the third-review gate generate Chinese titles,
+# Chinese context explanations and visual-specific tags. This does not re-crop
+# the PDF, replace the original caption or alter manual visual-review history.
+auto-research evidence-quality-visuals <paper-selector>
+
 # The legacy command remains useful as a non-publishing single-branch preview.
 # Adding --commit now routes to the same adversarial quality gate.
 auto-research evidence-deepseek-extract <paper-selector>

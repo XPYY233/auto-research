@@ -10,6 +10,9 @@ import fitz
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.quality_pipeline import (
     AdversarialQualityPipeline,
+    _apply_third_review,
+    _make_visual_record,
+    _visual_prompt,
     latest_quality_run,
     list_quality_candidates,
     review_quality_candidate,
@@ -70,6 +73,123 @@ class AdversarialQualityPipelineTests(unittest.TestCase):
         self.assertEqual(version, "11")
         self.assertIn("quality_pipeline_runs", tables)
         self.assertIn("quality_candidates", tables)
+
+    def test_visual_quality_reuses_chinese_cataloguing_contract(self):
+        messages = _visual_prompt([{
+            "id": 7,
+            "asset_type": "figure",
+            "label": "Figure 3",
+            "caption": "Void swelling as a function of dose.",
+            "source_context": "The swelling increases with dose in NiCoFeCr.",
+            "article_title": "Test paper",
+            "doi": "10.1000/quality-test",
+        }])
+        prompt = messages[0]["content"]
+        self.assertIn("简短中文名称", prompt)
+        self.assertIn("1至3句中文", prompt)
+        self.assertIn("针对该图表的具体检索标签", prompt)
+        self.assertIn("不得读取曲线点", prompt)
+
+    def test_english_or_label_only_visual_semantics_cannot_dual_pass(self):
+        asset = {
+            "id": 7,
+            "asset_type": "figure",
+            "label": "Figure 3",
+            "page_start": 1,
+            "caption": "Void swelling as a function of dose.",
+            "image_path": str(self.pdf),
+            "image_sha256": "abc",
+            "bbox_json": "[1,2,3,4]",
+        }
+        bad = {
+            "asset_id": 7,
+            "display_name": "Figure 3",
+            "context_explanation": "Void swelling as a function of dose.",
+            "tags": ["figure", "material"],
+        }
+        record = _make_visual_record(
+            asset, {}, {}, is_new=False, threshold=85.0,
+        )
+        self.assertEqual(record["gate_status"], "manual_review")
+
+        from auto_research.evidence.visual_evidence import _clean_model_visual_metadata
+        with self.assertRaisesRegex(ValueError, "Chinese search title"):
+            _clean_model_visual_metadata(bad)
+
+    def test_context_grounded_chinese_visual_semantics_can_be_scored(self):
+        image_path = Path(self.tmp.name) / "visual.png"
+        image_path.write_bytes(b"x" * 2000)
+        asset = {
+            "id": 8,
+            "asset_type": "figure",
+            "label": "Figure 4",
+            "page_start": 1,
+            "caption": "Void swelling as a function of dose.",
+            "image_path": str(image_path),
+            "image_sha256": "abc",
+            "bbox_json": "[1,2,3,4]",
+        }
+        semantic = {
+            "asset_id": 8,
+            "display_name": "NiCoFeCr空洞肿胀的剂量依赖",
+            "physical_quantities": ["空洞肿胀率", "辐照剂量"],
+            "variables": {"横轴": "辐照剂量", "纵轴": "空洞肿胀率"},
+            "materials": ["NiCoFeCr"],
+            "conditions_text": "离子辐照条件",
+            "methods_text": "TEM表征",
+            "context_explanation": "该图比较NiCoFeCr在不同辐照剂量下的空洞肿胀，用于说明剂量依赖关系。",
+            "tags": ["空洞肿胀", "剂量依赖", "NiCoFeCr", "TEM"],
+        }
+        record = _make_visual_record(
+            asset, semantic, dict(semantic), is_new=False, threshold=85.0,
+        )
+        self.assertEqual(record["gate_status"], "dual_pass")
+
+    def test_third_reviewer_corrected_chinese_visual_is_rescored(self):
+        record = {
+            "entity_type": "figure",
+            "candidate_key": "figure_asset_8",
+            "chosen_source": "extractor_a",
+            "candidate": {
+                "asset_id": 8, "asset_type": "figure", "label": "Figure 4",
+                "page_start": 1, "caption": "Void swelling as a function of dose.",
+                "is_new_asset": False,
+            },
+            "alternate": None,
+            "agreement_score": 0.0,
+            "factuality_score": 100.0,
+            "completeness_score": 0.0,
+            "evidence_score": 100.0,
+            "overall_score": 70.0,
+            "gate_status": "manual_review",
+            "gate_reason": "needs third review",
+        }
+        corrected = {
+            "display_name": "NiCoFeCr空洞肿胀剂量依赖",
+            "physical_quantities": ["空洞肿胀率"],
+            "variables": {"横轴": "辐照剂量"},
+            "materials": ["NiCoFeCr"],
+            "conditions_text": "离子辐照",
+            "methods_text": "TEM",
+            "context_explanation": "该图比较NiCoFeCr在不同剂量下的空洞肿胀，用于说明剂量依赖关系。",
+            "tags": ["空洞肿胀", "剂量依赖", "NiCoFeCr"],
+        }
+        client = Mock()
+        client.request_json.return_value = {"verdicts": [{
+            "candidate_key": "figure_asset_8",
+            "approved": False,
+            "preferred_source": "corrected_candidate",
+            "factuality_score": 100,
+            "completeness_score": 85,
+            "evidence_score": 100,
+            "overall_score": 82,
+            "reason": "修正版由原文支持",
+            "corrected_candidate": corrected,
+        }]}
+        _apply_third_review(client, [record], {1: "source"}, 85.0)
+        self.assertEqual(record["gate_status"], "third_pass")
+        self.assertEqual(record["chosen_source"], "merged")
+        self.assertEqual(record["overall_score"], 100.0)
 
     def test_dual_pass_publishes_and_unmatched_waits_for_manual_review(self):
         branch_a = {

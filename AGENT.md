@@ -809,7 +809,7 @@ published entity link in schema v11.
 Visual evidence uses three separate fields that must not be collapsed again:
 
 - `label` is the immutable source locator (`Figure 8`, `Table 3`).
-- `display_name` is a short, preferably Chinese, search name grounded in the
+- `display_name` is a short Chinese search name grounded in the
   caption and nearby text. Keep formulas, element symbols and established
   acronyms such as W, TEM, SRIM and dpa unchanged.
 - `caption` is the original publisher caption. It is evidence, not an editable
@@ -823,6 +823,16 @@ DeepSeek metadata when the source caption is unchanged. If a corrected detector
 replaces the underlying caption, invalidate stale DeepSeek metadata and enrich
 the corrected evidence again. Require at least two visual-specific tags; reject empty boilerplate
 such as `材料`, `方法`, `原文图片` and `原文表格`.
+
+Chinese is the working language for visual search metadata. Every automatically
+published table or figure must pass the shared visual metadata cleaner: a
+context-grounded Chinese `display_name`, a one-to-three sentence Chinese
+`context_explanation`, and at least two visual-specific tags are mandatory.
+Physical quantities, variables, materials, conditions and methods may remain
+empty when the caption and nearby text do not support them; never invent them
+to improve a completeness score. The adversarial quality pipeline and the
+standalone visual enrichment path must reuse the same prompt and cleaner so a
+weaker English-only metadata path cannot reappear.
 
 Caption detection must reject inline panel references such as `Fig. 8(b)` and
 join publisher captions split into consecutive line blocks. Same-page adjacent

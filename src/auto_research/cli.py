@@ -157,6 +157,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--chunk-pages", type=int, default=2)
     p.add_argument("--quality-threshold", type=float, default=85.0)
     p.add_argument("--force-rescan", action="store_true")
+    p = sub.add_parser(
+        "evidence-quality-visuals",
+        help="Rebuild Chinese visual titles, explanations and tags through the adversarial gate",
+    )
+    p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
+    p.add_argument("--quality-threshold", type=float, default=85.0)
     p = sub.add_parser("evidence-deepseek-localize", help="Localize unreviewed automatic meaning/context fields into Chinese")
     p.add_argument("article_key", help="Paper selector: DOI, title, title fragment, paper id, or legacy local/Zotero key")
     p = sub.add_parser("evidence-benchmark", help="Compare a completed DeepSeek run with the current six-column review baseline")
@@ -367,6 +373,16 @@ def cmd_evidence(args) -> int:
             max_pages=args.max_pages,
             chunk_pages=args.chunk_pages,
             threshold=args.quality_threshold,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-quality-visuals":
+        from .evidence.quality_pipeline import AdversarialQualityPipeline
+        from .evidence.six_column import resolve_paper_selector
+
+        paper_id = resolve_paper_selector(evidence_db, article_key=args.article_key)
+        result = AdversarialQualityPipeline(evidence_db).refresh_visual_semantics(
+            paper_id, threshold=args.quality_threshold,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
