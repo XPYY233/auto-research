@@ -100,6 +100,17 @@ def _web_ui_contract() -> dict[str, Any]:
         ("search_source_evidence_button", "data-source-search" in js and "原文证据" in js and "openSourceViewer(itemId" in js),
         ("readonly_source_direct", "function openSourceViewer(id, rowHint = null)" in js and "rows.find(row => Number(row.item_id) === itemId)" in js and "await api(`/api/six-data/${id}`)" not in source_viewer_js),
         ("search_review_state", "search-review-state" in js and "自动收录" in js and "历史确认" in js and "历史修正" in js),
+        (
+            "evidence_scoped_ai_chat",
+            'id="context-chat"' in html
+            and 'id="context-chat-form"' in html
+            and "说明这个数据本身的含义，并总结该数据在文章中的具体含义" in html
+            and "/api/context-chat" in js
+            and "data-context-chat-item" in js
+            and "data-context-chat-visual" in js
+            and "isReadOnly" in js
+            and ".context-chat{" in css,
+        ),
         ("dense_review_rows", "autoSizeReviewCell" in js and "grid-template-columns:repeat(3,minmax(0,1fr))" in css and ".edit-table{min-width:1380px;font-size:14px}" in css),
     ]
     failed = [name for name, ok in expectations if not ok]

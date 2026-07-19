@@ -363,6 +363,26 @@
     </main>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
+  <aside class="context-chat" id="context-chat" aria-label="当前证据 AI 对话" aria-hidden="true">
+    <header class="context-chat-head">
+      <div><p class="eyebrow">DEEPSEEK · EVIDENCE CHAT</p><h2>当前证据 AI 解读</h2></div>
+      <div><button type="button" id="context-chat-reset" title="清空当前对话">新对话</button><button type="button" id="context-chat-close" aria-label="关闭 AI 对话">关闭</button></div>
+    </header>
+    <section class="context-chat-target">
+      <span>本轮讨论对象</span>
+      <strong id="context-chat-entity">尚未选择数据或图表</strong>
+      <small id="context-chat-paper">选择搜索结果中的“AI 解读”后开始</small>
+    </section>
+    <div class="context-chat-disclosure"><i>i</i><span>DeepSeek 接收当前条目和原始 PDF 的相关页面文字，不接收整份数据库；回答不会写回科学数据。</span></div>
+    <div class="context-chat-messages" id="context-chat-messages" aria-live="polite">
+      <div class="context-chat-empty"><span>AI</span><p>默认问题已填入下方输入框。你可以直接发送、修改或清空后提出自己的问题。</p></div>
+    </div>
+    <form class="context-chat-form" id="context-chat-form">
+      <label for="context-chat-input">向 DeepSeek 提问</label>
+      <textarea id="context-chat-input" maxlength="2000">说明这个数据本身的含义，并总结该数据在文章中的具体含义</textarea>
+      <div><small id="context-chat-status">基于当前条目与 PDF 相关页回答</small><button type="submit" id="context-chat-send">发送</button></div>
+    </form>
+  </aside>
   <dialog class="source-dialog" id="source-dialog">
     <div class="source-dialog-card">
       <header class="source-dialog-head">
@@ -409,6 +429,7 @@
           <section><span>文章信息</span><p id="visual-paper"></p></section>
           <div class="visual-tags" id="visual-tags"></div>
           <div class="visual-dialog-actions">
+            <button type="button" id="visual-ai-chat">AI 解读此图表</button>
             <button type="button" id="visual-related-items">查看相关数据条目</button>
             <a id="visual-open-pdf" target="_blank" rel="noopener">打开 PDF 原页</a>
           </div>

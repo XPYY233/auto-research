@@ -12,9 +12,15 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from xml.sax.saxutils import escape as xml_escape
 
-from auto_research.ai.deepseek import DeepSeekSettings
+from auto_research.ai.deepseek import (
+    DeepSeekNotConfigured,
+    DeepSeekResponseError,
+    DeepSeekSettings,
+    DeepSeekUnavailableError,
+)
 
 from .article_navigation import annotate_navigation_tags
+from .context_chat import answer_context_chat
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
 from .deepseek_extraction import latest_deepseek_run
@@ -565,6 +571,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 status = HTTPStatus.CREATED if result["outcome"] == "accepted" else HTTPStatus.OK
                 return self.json_response(result, status)
             body = self.read_json()
+            if parsed.path == "/api/context-chat":
+                return self.json_response(answer_context_chat(
+                    self.db,
+                    entity_type=str(body.get("entity_type") or ""),
+                    entity_id=int(body.get("entity_id") or 0),
+                    question=str(body.get("question") or ""),
+                    history=body.get("history") or [],
+                ))
             match = re.fullmatch(r"/api/six-data/(\d+)/confirm", parsed.path)
             if match:
                 result = confirm_correction(
@@ -720,6 +734,21 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 out = build_prompt_packet(self.db, int(match.group(1)), int(body.get("max_pages", 8)))
                 return self.json_response({"ok": True, "path": str(out)})
             self.send_error(HTTPStatus.NOT_FOUND)
+        except DeepSeekNotConfigured as exc:
+            self.json_response(
+                {"error": str(exc), "code": "deepseek_not_configured"},
+                HTTPStatus.SERVICE_UNAVAILABLE,
+            )
+        except DeepSeekUnavailableError as exc:
+            self.json_response(
+                {"error": str(exc), "code": "deepseek_unavailable"},
+                HTTPStatus.BAD_GATEWAY,
+            )
+        except DeepSeekResponseError as exc:
+            self.json_response(
+                {"error": str(exc), "code": "deepseek_response_error"},
+                HTTPStatus.BAD_GATEWAY,
+            )
         except (ValueError, KeyError, FileNotFoundError, json.JSONDecodeError) as exc:
             self.json_response({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except (BrokenPipeError, ConnectionResetError):

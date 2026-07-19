@@ -16,6 +16,7 @@ import auto_research.evidence.six_column as six_column_module
 import auto_research.evidence.webapp as webapp_module
 from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.article_navigation import navigation_tags
+from auto_research.evidence.context_chat import DEFAULT_CONTEXT_QUESTION, answer_context_chat
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.db_health import evidence_db_health
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
@@ -817,6 +818,59 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(hardness["source_page"], 5)
         self.assertIn("Al0.3CoCrFeNi", hardness["context_explanation"])
 
+    def test_context_chat_reads_anchor_pdf_pages_without_writing_data(self):
+        pdf_path = Path(self.tmp.name) / "context.pdf"
+        document = fitz.open()
+        for page_no in range(1, 7):
+            page = document.new_page()
+            text = (
+                "Methods and background for the irradiation experiment."
+                if page_no != 5
+                else "The samples were irradiated at 300 degrees C. Table 3 reports irradiation hardness."
+            )
+            page.insert_text((72, 72), f"Page {page_no}. {text}")
+        document.save(pdf_path)
+        document.close()
+        with self.db.connect() as conn:
+            conn.execute("UPDATE papers SET pdf_path=? WHERE id=?", (str(pdf_path), self.paper_id))
+        item = next(row for row in list_current_data(self.db, self.paper_id) if row["source_page"] == 5)
+        version_count_before = len(get_data_item(self.db, item["item_id"])["history"])
+
+        class FakeClient:
+            settings = DeepSeekSettings(api_key="fake", analysis_model="deepseek-test")
+
+            def __init__(self):
+                self.messages = []
+
+            def request_json(self, messages, **kwargs):
+                self.messages = messages
+                return {
+                    "answer": "该数据表示辐照实验温度，并用于界定表3硬度结果的实验条件。[PDF第5页]",
+                    "evidence_pages": [5, 99],
+                    "evidence_notes": ["第5页明确给出辐照温度。"],
+                    "limitations": ["未提供其他温度下的对照。"],
+                }
+
+        client = FakeClient()
+        result = answer_context_chat(
+            self.db, entity_type="item", entity_id=item["item_id"],
+            question=DEFAULT_CONTEXT_QUESTION, history=[], client=client,
+        )
+        self.assertIn("辐照实验温度", result["answer"])
+        self.assertEqual(result["evidence_pages"], [5])
+        self.assertIn(5, result["context_pages"])
+        prompt = "\n".join(message["content"] for message in client.messages)
+        self.assertIn("[PDF第5页]", prompt)
+        self.assertIn(DEFAULT_CONTEXT_QUESTION, prompt)
+        self.assertEqual(len(get_data_item(self.db, item["item_id"])["history"]), version_count_before)
+
+    def test_context_chat_rejects_unknown_entity_type(self):
+        with self.assertRaisesRegex(ValueError, "entity_type"):
+            answer_context_chat(
+                self.db, entity_type="paper", entity_id=self.paper_id,
+                question="解释", client=object(),
+            )
+
     def test_user_facing_rows_exclude_legacy_text_values_without_deleting_history(self):
         raw_rows = list_current_data(self.db, self.paper_id)
         reportable_rows = list_reportable_current_data(self.db, self.paper_id)
@@ -1434,6 +1488,14 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("visualTitleParts", app_js)
         self.assertIn('font-family:"Times New Roman"', app_css)
         self.assertNotIn('id="search-review-filter"', index_html)
+        self.assertIn('id="context-chat"', index_html)
+        self.assertIn(DEFAULT_CONTEXT_QUESTION, index_html)
+        self.assertIn("data-context-chat-item", app_js)
+        self.assertIn("data-context-chat-visual", app_js)
+        self.assertIn("/api/context-chat", app_js)
+        server_source = Path(webapp_module.__file__).read_text(encoding="utf-8")
+        self.assertIn("answer_context_chat", server_source)
+        self.assertFalse(is_read_only_public_get("/api/context-chat"))
 
     def test_future_visual_metadata_prompt_requires_material_and_comparison_context(self):
         prompt = _visual_metadata_messages(

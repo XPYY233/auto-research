@@ -1,4 +1,6 @@
 const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const contextChat = { entity: null, conversations: new Map(), busy: false };
+const defaultContextQuestion = "说明这个数据本身的含义，并总结该数据在文章中的具体含义";
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
   review: { kicker: "EVIDENCE CHECK", title: "检查自动提取结果", subtitle: "自动质量门决定是否收录；本页用于检查证据和修正少量异常。" },
@@ -2083,11 +2085,123 @@ function visualTitleHtml(asset, { highlight = true } = {}) {
   return `${title.subject ? `<span class="visual-title-subject">${render(title.subject)}</span>` : ""}<span class="visual-title-focus">${render(title.focus)}</span>`;
 }
 
+function contextChatKey(entity) {
+  return `${entity.type}:${entity.id}`;
+}
+
+function currentContextConversation() {
+  if (!contextChat.entity) return null;
+  const key = contextChatKey(contextChat.entity);
+  if (!contextChat.conversations.has(key)) contextChat.conversations.set(key, []);
+  return contextChat.conversations.get(key);
+}
+
+function renderContextChatMessages() {
+  const container = document.querySelector("#context-chat-messages");
+  const messages = currentContextConversation() || [];
+  if (!messages.length) {
+    container.innerHTML = `<div class="context-chat-empty"><span>AI</span><p>默认问题已填入下方输入框。你可以直接发送、修改或清空后提出自己的问题。</p></div>`;
+    return;
+  }
+  container.innerHTML = messages.map(message => {
+    const evidence = message.role === "assistant" && message.meta
+      ? `<div class="context-chat-evidence">${(message.meta.evidence_pages || []).map(page => `<span>PDF第${esc(page)}页</span>`).join("")}${(message.meta.evidence_notes || []).map(value => `<small class="evidence-note">证据：${esc(value)}</small>`).join("")}${(message.meta.limitations || []).map(value => `<small class="limitation">边界：${esc(value)}</small>`).join("")}</div>`
+      : "";
+    return `<article class="context-chat-message ${esc(message.role)}"><small>${message.role === "user" ? "你" : "DeepSeek"}</small><p>${esc(message.content)}</p>${evidence}</article>`;
+  }).join("");
+  container.scrollTop = container.scrollHeight;
+}
+
+function openContextChat(type, id, hint = null) {
+  if (isReadOnly()) {
+    toast("AI 证据对话当前只在本地编辑端开放，以保护 DeepSeek 密钥和 PDF 内容。", true);
+    return;
+  }
+  const entity = {
+    type,
+    id: Number(id),
+    summary: hint?.summary || (type === "visual" ? "当前图表" : "当前数据"),
+    paper: hint?.paper || "",
+  };
+  const changed = !contextChat.entity || contextChatKey(contextChat.entity) !== contextChatKey(entity);
+  contextChat.entity = entity;
+  document.querySelector("#context-chat").classList.add("open");
+  document.querySelector("#context-chat").setAttribute("aria-hidden", "false");
+  document.body.dataset.chatOpen = "true";
+  setText("context-chat-entity", entity.summary);
+  setText("context-chat-paper", entity.paper || "将读取所属论文的相关 PDF 页面");
+  if (changed || !document.querySelector("#context-chat-input").value.trim()) {
+    document.querySelector("#context-chat-input").value = defaultContextQuestion;
+  }
+  renderContextChatMessages();
+  window.setTimeout(() => document.querySelector("#context-chat-input").focus(), 120);
+}
+
+function closeContextChat() {
+  document.querySelector("#context-chat").classList.remove("open");
+  document.querySelector("#context-chat").setAttribute("aria-hidden", "true");
+  document.body.dataset.chatOpen = "false";
+}
+
+function resetContextChat() {
+  if (!contextChat.entity || contextChat.busy) return;
+  contextChat.conversations.set(contextChatKey(contextChat.entity), []);
+  document.querySelector("#context-chat-input").value = defaultContextQuestion;
+  setText("context-chat-status", "已开始新对话 · 基于当前条目与 PDF 相关页回答");
+  renderContextChatMessages();
+}
+
+async function submitContextChat(event) {
+  event.preventDefault();
+  if (!contextChat.entity || contextChat.busy) return;
+  const input = document.querySelector("#context-chat-input");
+  const question = input.value.trim();
+  if (!question) {
+    toast("请输入问题，或保留默认问题后发送。", true);
+    return;
+  }
+  const conversation = currentContextConversation();
+  const history = conversation.map(message => ({ role: message.role, content: message.content }));
+  conversation.push({ role: "user", content: question });
+  input.value = "";
+  contextChat.busy = true;
+  document.querySelector("#context-chat-send").disabled = true;
+  setText("context-chat-status", "DeepSeek 正在阅读当前证据与 PDF 相关页…");
+  renderContextChatMessages();
+  try {
+    const result = await api("/api/context-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entity_type: contextChat.entity.type,
+        entity_id: contextChat.entity.id,
+        question,
+        history,
+      }),
+    });
+    conversation.push({
+      role: "assistant",
+      content: result.answer,
+      meta: { evidence_pages: result.evidence_pages || [], evidence_notes: result.evidence_notes || [], limitations: result.limitations || [] },
+    });
+    setText("context-chat-status", `回答完成 · 参考 PDF 第 ${(result.context_pages || []).join("、") || "相关"} 页`);
+  } catch (error) {
+    conversation.push({ role: "assistant", content: `本次回答失败：${error.message}`, meta: { limitations: ["未写入任何科学数据"] } });
+    setText("context-chat-status", "回答失败，可修改问题后重试");
+  } finally {
+    contextChat.busy = false;
+    document.querySelector("#context-chat-send").disabled = false;
+    renderContextChatMessages();
+    input.focus();
+  }
+}
+
 function itemResultHtml(row) {
   const authors = [row.first_author ? `一作：${row.first_author}` : "", row.corresponding_author ? `通讯：${row.corresponding_author}` : ""].filter(Boolean).join(" · ");
   const reviewLabel = searchReviewLabel(row);
   const reviewButton = isReadOnly() ? "" : `<button class="row-link" data-jump="${row.item_id}">检查/修正</button>`;
   const sourceButton = `<button class="row-link source-link" data-source-search="${row.item_id}">原文证据</button>`;
+  const aiButton = isReadOnly() ? "" : `<button class="row-link context-ai-link" data-context-chat-item="${row.item_id}">AI 解读</button>`;
   const linked = row.primary_visual_asset || (row.visual_assets || []).find(asset => asset.asset_type === "figure");
   const visualButton = linked
     ? `<button class="row-link visual-link" data-visual-open="${linked.id}">${linked.asset_type === "table" ? "查看原始表格" : "查看相关图片"}</button>`
@@ -2104,7 +2218,7 @@ function itemResultHtml(row) {
       <div class="result-heading"><div><small>具体意义</small><h3>${highlightSearchText(row.meaning)}</h3>${clusterBadge}${qualityBadge(row)}</div><em class="search-review-state ${esc(row.review_action || row.origin_type)}"${scoreTitle}>${esc(reviewLabel)}</em></div>
       <div class="result-context"><small>实验条件与文章语境</small><p>${highlightSearchText(row.context_explanation)}</p></div>
       ${excerpt ? `<blockquote><span>原文证据</span><p>${highlightSearchText(excerpt)}</p></blockquote>` : ""}
-      <footer><div class="result-paper"><strong>${highlightSearchText(row.article_title)}</strong><span>${[row.doi, authors, page ? `PDF 第 ${page} 页` : ""].filter(Boolean).map(esc).join(" · ")}</span></div><div class="result-actions">${visualButton}${sourceButton}${reviewButton}</div></footer>
+      <footer><div class="result-paper"><strong>${highlightSearchText(row.article_title)}</strong><span>${[row.doi, authors, page ? `PDF 第 ${page} 页` : ""].filter(Boolean).map(esc).join(" · ")}</span></div><div class="result-actions">${aiButton}${visualButton}${sourceButton}${reviewButton}</div></footer>
     </div>
   </article>`;
 }
@@ -2176,6 +2290,13 @@ function renderResults(rows) {
     openSourceViewer(itemId, rows.find(row => Number(row.item_id) === itemId) || null);
   }));
   el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
+  el.querySelectorAll("[data-context-chat-item]").forEach(btn => btn.addEventListener("click", () => {
+    const row = rows.find(value => Number(value.item_id) === Number(btn.dataset.contextChatItem));
+    openContextChat("item", Number(btn.dataset.contextChatItem), {
+      summary: row ? `${row.meaning}：${row.value_text} ${row.unit || ""}`.trim() : "当前数据",
+      paper: row?.article_title || "",
+    });
+  }));
 }
 
 function renderVisualResults(assets) {
@@ -2194,9 +2315,15 @@ function renderVisualResults(assets) {
     ].filter(([, value]) => String(value || "").trim());
     const factHtml = facts.length ? `<dl>${facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${highlightSearchText(value)}</dd></div>`).join("")}</dl>` : "";
     const title = visualTitleParts(asset);
-    return `<article class="visual-result"><button class="visual-thumb visual-thumb-${esc(asset.asset_type)}" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(title.full)}"><img src="${esc(asset.image_url)}" alt="${esc(title.full)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${visualTitleHtml(asset)}</h3>${qualityBadge(asset)}</div><div class="visual-quantity-list">${tags}</div><p>${highlightSearchText(asset.context_explanation || "待核对原文上下文。")}</p>${factHtml}<small>${esc(asset.article_title)} · ${esc(asset.doi || "无 DOI")}</small><button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></article>`;
+    const aiButton = isReadOnly() ? "" : `<button class="open-visual context-ai-link" type="button" data-context-chat-visual="${asset.id}">AI 解读</button>`;
+    return `<article class="visual-result"><button class="visual-thumb visual-thumb-${esc(asset.asset_type)}" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(title.full)}"><img src="${esc(asset.image_url)}" alt="${esc(title.full)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${visualTitleHtml(asset)}</h3>${qualityBadge(asset)}</div><div class="visual-quantity-list">${tags}</div><p>${highlightSearchText(asset.context_explanation || "待核对原文上下文。")}</p>${factHtml}<small>${esc(asset.article_title)} · ${esc(asset.doi || "无 DOI")}</small><div class="visual-result-actions">${aiButton}<button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></div></article>`;
   }).join("");
   el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
+  el.querySelectorAll("[data-context-chat-visual]").forEach(btn => btn.addEventListener("click", () => {
+    const asset = assets.find(value => Number(value.id) === Number(btn.dataset.contextChatVisual));
+    const title = asset ? visualTitleParts(asset).full : "当前图表";
+    openContextChat("visual", Number(btn.dataset.contextChatVisual), { summary: title, paper: asset?.article_title || "" });
+  }));
 }
 
 function formatVisualVariables(variables) {
@@ -2249,6 +2376,14 @@ async function openVisualAsset(assetId) {
 function closeVisualAsset() {
   state.visualAsset = null;
   document.querySelector("#visual-dialog")?.close();
+}
+
+function openCurrentVisualChat() {
+  const asset = state.visualAsset;
+  if (!asset) return;
+  const title = visualTitleParts(asset).full;
+  closeVisualAsset();
+  openContextChat("visual", Number(asset.id), { summary: title, paper: asset.article_title || "" });
 }
 
 function showVisualRelatedItems() {
@@ -2753,6 +2888,16 @@ document.querySelector("#visual-dialog")?.addEventListener("click", event => {
 });
 document.querySelector("#visual-dialog")?.addEventListener("close", () => { state.visualAsset = null; });
 document.querySelector("#visual-related-items")?.addEventListener("click", showVisualRelatedItems);
+document.querySelector("#visual-ai-chat")?.addEventListener("click", openCurrentVisualChat);
+document.querySelector("#context-chat-form")?.addEventListener("submit", submitContextChat);
+document.querySelector("#context-chat-close")?.addEventListener("click", closeContextChat);
+document.querySelector("#context-chat-reset")?.addEventListener("click", resetContextChat);
+document.querySelector("#context-chat-input")?.addEventListener("keydown", event => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    document.querySelector("#context-chat-form")?.requestSubmit();
+  }
+});
 window.addEventListener("beforeunload", event => {
   if (!hasUnsavedEdits()) return;
   event.preventDefault();

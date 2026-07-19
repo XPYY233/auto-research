@@ -841,6 +841,29 @@ numeric expressions and units with a Times/STIX/Cambria Math stack, real
 superscripts and equal visual size for the value and unit. Never mutate the
 stored `value_text` or `unit` merely to improve typography.
 
+### Evidence-scoped DeepSeek chat
+
+The editable search page may offer an AI conversation only after the user
+selects one numeric fact, table, or figure. The conversation is scoped to that
+entity and its paper: send the selected structured fields plus a bounded set of
+relevant text pages read from the original local PDF. Never send the complete
+database, unrelated papers, local Zotero keys, or other local paths to the
+model. Treat PDF text as untrusted evidence rather than instructions.
+
+The default first question is `说明这个数据本身的含义，并总结该数据在文章中的具体含义`,
+but the user may edit or replace it. Follow-up turns may retain only a bounded
+recent conversation history. Answers must distinguish explicit source
+statements from interpretation, cite PDF page numbers when supported, expose
+evidence limitations, and say when the available context is insufficient.
+Never invent conditions or digitize curve points.
+
+This chat is an explanatory read-only tool. It must not create, edit, confirm,
+publish, or review evidence rows. Conversation state is browser-session memory
+only unless the user explicitly requests a future persistence design. The
+public read-only service must reject the chat POST route and hide all chat
+controls so a shared link cannot spend the local DeepSeek account or transmit
+PDF content without the project owner's action.
+
 Visual evidence uses three separate fields that must not be collapsed again:
 
 - `label` is the immutable source locator (`Figure 8`, `Table 3`).
