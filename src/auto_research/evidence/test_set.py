@@ -24,7 +24,7 @@ from .visual_evidence import list_visual_assets
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_CONFIG = PROJECT_ROOT / "config" / "evidence_test_set_35.json"
+DEFAULT_CONFIG = PROJECT_ROOT / "config" / "evidence_test_set_50.json"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "evidence" / "test_sets"
 
 
@@ -188,7 +188,7 @@ def audit_test_set(
     config = load_test_set(config_path)
     calibration_limit = int(config.get("calibration_limit_per_paper") or 20)
     paper_reports: list[dict[str, Any]] = []
-    search_cache: dict[str, list[dict[str, Any]]] = {}
+    search_cache: dict[tuple[int, str], list[dict[str, Any]]] = {}
 
     for spec in config["papers"]:
         paper_id = resolve_paper_selector(db, article_key=_paper_selector(spec))
@@ -209,9 +209,18 @@ def audit_test_set(
         progress = review_progress(db, paper_id)
         query_results = []
         for query in spec["queries"]:
-            if query not in search_cache:
-                search_cache[query] = search_current_data(db, query, limit=100000)
-            matches = [row for row in search_cache[query] if int(row["paper_id"]) == paper_id]
+            # Acceptance queries are paper-scoped by definition.  Searching the
+            # whole database and filtering afterwards multiplied fuzzy-ranking
+            # work by the corpus size and could make a 50-paper audit take
+            # minutes.  Use the same public search engine with an explicit paper
+            # scope, so correctness is unchanged while unrelated rows are never
+            # scored.
+            cache_key = (paper_id, query)
+            if cache_key not in search_cache:
+                search_cache[cache_key] = search_current_data(
+                    db, query, limit=100000, paper_ids={paper_id}
+                )
+            matches = search_cache[cache_key]
             query_results.append({
                 "query": query,
                 "count": len(matches),

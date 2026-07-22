@@ -3,6 +3,7 @@ from __future__ import annotations
 import difflib
 import re
 import unicodedata
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,14 @@ import fitz
 
 from .db import EvidenceDB
 from .six_column import get_data_item
+
+
+# A paper audit can locate hundreds of evidence rows on the same PDF page.  The
+# page geometry is immutable for the lifetime of that file, so rebuilding the
+# same line windows for every row wastes most of the audit time.  Keep a small
+# bounded cache of plain text/rectangle values (not live Document objects).
+_PAGE_WINDOW_CACHE: OrderedDict[tuple[Any, ...], list[tuple[str, fitz.Rect]]] = OrderedDict()
+_PAGE_WINDOW_CACHE_LIMIT = 256
 
 
 @dataclass(frozen=True)
@@ -139,7 +148,33 @@ def _is_structured_locator(locator: str) -> bool:
     return value.startswith("table") or value.startswith("fig") or value.startswith("figure")
 
 
+def _page_window_cache_key(page: fitz.Page) -> tuple[Any, ...]:
+    document = page.parent
+    name = str(getattr(document, "name", "") or "")
+    if name:
+        path = Path(name)
+        try:
+            stat = path.stat()
+            identity: tuple[Any, ...] = (str(path.resolve()), stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            identity = (name,)
+    else:
+        identity = ("memory", id(document))
+    return (*identity, int(page.number), int(page.xref))
+
+
+def clear_source_highlight_cache() -> None:
+    """Clear derived PDF layout state; useful after replacing a source PDF."""
+
+    _PAGE_WINDOW_CACHE.clear()
+
+
 def _page_line_windows(page: fitz.Page) -> list[tuple[str, fitz.Rect]]:
+    cache_key = _page_window_cache_key(page)
+    cached = _PAGE_WINDOW_CACHE.get(cache_key)
+    if cached is not None:
+        _PAGE_WINDOW_CACHE.move_to_end(cache_key)
+        return cached
     words = page.get_text("words")
     if not words:
         return []
@@ -164,6 +199,10 @@ def _page_line_windows(page: fitz.Page) -> list[tuple[str, fitz.Rect]]:
             text_parts.append(lines[end][0])
             rects.append(lines[end][1])
             windows.append((" ".join(text_parts).strip(), _rect_union(rects)))
+    _PAGE_WINDOW_CACHE[cache_key] = windows
+    _PAGE_WINDOW_CACHE.move_to_end(cache_key)
+    while len(_PAGE_WINDOW_CACHE) > _PAGE_WINDOW_CACHE_LIMIT:
+        _PAGE_WINDOW_CACHE.popitem(last=False)
     return windows
 
 
@@ -183,13 +222,20 @@ def _best_window_match(page: fitz.Page, excerpt: str, locator: str,
         window_norm = _normalize_text(text)
         if not window_norm:
             continue
-        ratio = difflib.SequenceMatcher(None, target_norm, window_norm).ratio()
         window_tokens = set(_tokenize(text))
         overlap = len(target_tokens & window_tokens) / len(target_tokens) if target_tokens else 0.0
+        has_value = any(signal and signal in window_norm for signal in value_signals)
+        has_locator = any(signal and signal in window_norm for signal in locator_signals)
+        # With no shared token, value or locator, SequenceMatcher cannot lift a
+        # candidate above the acceptance threshold.  Skipping it avoids a
+        # quadratic comparison against every unrelated line window.
+        if not overlap and not has_value and not has_locator:
+            continue
+        ratio = difflib.SequenceMatcher(None, target_norm, window_norm).ratio()
         score = ratio * 0.6 + overlap * 0.4
-        if any(signal and signal in window_norm for signal in value_signals):
+        if has_value:
             score += 0.12
-        if any(signal and signal in window_norm for signal in locator_signals):
+        if has_locator:
             score += 0.10
         if score > best_score:
             best_score = score

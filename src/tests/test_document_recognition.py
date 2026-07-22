@@ -82,6 +82,14 @@ class DocumentRecognitionTests(unittest.TestCase):
         self.assertEqual(profile["paper_mode"], "computational_modeling")
         self.assertFalse(profile["is_experimental"])
 
+    def test_machine_learned_interatomic_potential_is_computational(self):
+        profile = classify_experiment_types(
+            {"title": "Utilizing a machine-learned potential to explore radiation tolerance"},
+            pages=[{"page": 1, "text": "The interatomic potential was trained and used in atomistic simulation."}],
+        )
+        self.assertEqual(profile["paper_mode"], "computational_modeling")
+        self.assertFalse(profile["is_experimental"])
+
     def test_computational_method_in_body_overrides_domain_words(self):
         profile = classify_experiment_types(
             {"title": "Effect of local order on irradiation-induced defect evolution"},

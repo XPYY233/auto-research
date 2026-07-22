@@ -13,8 +13,8 @@ from .six_column import resolve_paper_selector
 from .test_set import _pdf_status, load_test_set
 
 
-DEFAULT_CONFIG = Path("config/evidence_test_set_10.json")
-DEFAULT_STATE = DATA_DIR / "evidence" / "quality_runs" / "content-valid-10-v1_batch_state.json"
+DEFAULT_CONFIG = Path("config/evidence_test_set_50.json")
+DEFAULT_STATE = DATA_DIR / "evidence" / "quality_runs" / "full-corpus-50-v1_batch_state.json"
 
 
 def _write_state(path: Path, payload: dict[str, Any]) -> None:

@@ -11,7 +11,7 @@ from .six_column import resolve_paper_selector
 from .test_set import DEFAULT_CONFIG, DEFAULT_OUTPUT_DIR, _pdf_status, load_test_set
 
 
-DEFAULT_STATE = DEFAULT_OUTPUT_DIR / "full-corpus-35-v1_reextract.json"
+DEFAULT_STATE = DEFAULT_OUTPUT_DIR / "full-corpus-50-v1_reextract.json"
 
 
 def _write_state(path: Path, payload: dict[str, Any]) -> None:

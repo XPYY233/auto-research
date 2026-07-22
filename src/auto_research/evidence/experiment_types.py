@@ -125,6 +125,8 @@ COMPUTATIONAL_MODE_KEYWORDS = (
     ("molecular dynamics", 9), ("phase-field", 9), ("phase field", 9),
     ("kinetic monte carlo", 9), ("monte carlo", 7),
     ("machine learning potential", 9), ("neural network potential", 9),
+    ("machine-learned potential", 9), ("machine learned potential", 9),
+    ("interatomic potential", 7),
     ("multiscale modeling", 8), ("modelling capabilities", 8),
     ("modeling capabilities", 8), ("numerical simulation", 8),
     ("computer simulation", 8), ("atomistic simulation", 8),

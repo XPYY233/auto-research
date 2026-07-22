@@ -8,6 +8,7 @@ import math
 import re
 import uuid
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -1256,7 +1257,8 @@ def _chemical_symbol_score(term: str, text: str, weight: float) -> float:
     return 0.0
 
 
-def _field_score(term: str, text: str, weight: float) -> float:
+@lru_cache(maxsize=32768)
+def _field_score(term: str, text: str, weight: float, allow_fuzzy: bool = True) -> float:
     raw_text = text or ""
     candidate = raw_text.lower()
     if not candidate:
@@ -1268,6 +1270,8 @@ def _field_score(term: str, text: str, weight: float) -> float:
         return 0.0
     if term in candidate:
         return weight * (3.0 if candidate == term else 2.0)
+    if not allow_fuzzy:
+        return 0.0
     # Short scientific/search tokens create excessive fuzzy collisions (for
     # example "less" matching "stress" or "half" matching Hf contexts).
     # Keep them exact; reserve typo tolerance for longer, distinctive terms.
@@ -1324,9 +1328,17 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
                         quality_filter: str = "all",
                         sort: str = "relevance",
                         paper_ids: set[int] | list[int] | tuple[int, ...] | None = None) -> list[dict[str, Any]]:
-    rows = list_current_facts(db)
+    selected_papers = {int(paper_id) for paper_id in paper_ids} if paper_ids is not None else None
+    # The common review/audit path searches one paper.  Build its fact model
+    # directly instead of clustering the full database and discarding every
+    # unrelated paper afterwards.
+    rows = (
+        list_current_facts(db, next(iter(selected_papers)))
+        if selected_papers is not None and len(selected_papers) == 1
+        else list_current_facts(db)
+    )
     if paper_ids is not None:
-        selected_papers = {int(paper_id) for paper_id in paper_ids}
+        assert selected_papers is not None
         rows = [row for row in rows if int(row["paper_id"]) in selected_papers]
     if not include_excluded:
         rows = [row for row in rows if row.get("review_action") not in {"rejected", "ambiguous"}]
@@ -1363,15 +1375,15 @@ def search_current_data(db: EvidenceDB, query: str, limit: int = 100, *,
             score = max(
                 max(_field_score(term, row["meaning"], SEARCH_FIELD_WEIGHTS["meaning"]) for term in term_group),
                 max(_field_score(term, row["context_explanation"], SEARCH_FIELD_WEIGHTS["context_explanation"]) for term in term_group),
-                max(_field_score(term, row["value_text"], SEARCH_FIELD_WEIGHTS["value_text"]) for term in term_group),
-                max(_field_score(term, row["unit"], SEARCH_FIELD_WEIGHTS["unit"]) for term in term_group),
+                max(_field_score(term, row["value_text"], SEARCH_FIELD_WEIGHTS["value_text"], False) for term in term_group),
+                max(_field_score(term, row["unit"], SEARCH_FIELD_WEIGHTS["unit"], False) for term in term_group),
                 max(_field_score(term, row["article_title"], SEARCH_FIELD_WEIGHTS["article_title"]) for term in term_group),
-                max(_field_score(term, row["doi"], SEARCH_FIELD_WEIGHTS["doi"]) for term in term_group),
+                max(_field_score(term, row["doi"], SEARCH_FIELD_WEIGHTS["doi"], False) for term in term_group),
                 max(_field_score(term, row.get("first_author"), SEARCH_FIELD_WEIGHTS["first_author"]) for term in term_group),
                 max(_field_score(term, row.get("corresponding_author"), SEARCH_FIELD_WEIGHTS["corresponding_author"]) for term in term_group),
-                max(_field_score(term, row["source_excerpt"], SEARCH_FIELD_WEIGHTS["source_excerpt"]) for term in term_group),
-                max(_field_score(term, row["source_locator"], SEARCH_FIELD_WEIGHTS["source_locator"]) for term in term_group),
-                max(_field_score(term, row.get("search_text"), SEARCH_FIELD_WEIGHTS["source_excerpt"]) for term in term_group),
+                max(_field_score(term, row["source_excerpt"], SEARCH_FIELD_WEIGHTS["source_excerpt"], False) for term in term_group),
+                max(_field_score(term, row["source_locator"], SEARCH_FIELD_WEIGHTS["source_locator"], False) for term in term_group),
+                max(_field_score(term, row.get("search_text"), SEARCH_FIELD_WEIGHTS["source_excerpt"], False) for term in term_group),
             )
             if score:
                 matched_terms += 1
@@ -1422,9 +1434,9 @@ def search_qualitative_findings(db: EvidenceDB, query: str, limit: int = 100, *,
                 max(_field_score(term, row.get("finding_text"), 6.0) for term in group),
                 max(_field_score(term, row.get("meaning"), 5.5) for term in group),
                 max(_field_score(term, row.get("context_explanation"), 4.5) for term in group),
-                max(_field_score(term, row.get("search_text"), 2.0) for term in group),
+                max(_field_score(term, row.get("search_text"), 2.0, False) for term in group),
                 max(_field_score(term, row.get("article_title"), 1.0) for term in group),
-                max(_field_score(term, row.get("doi"), 1.0) for term in group),
+                max(_field_score(term, row.get("doi"), 1.0, False) for term in group),
             )
             if score:
                 matched += 1

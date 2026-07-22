@@ -2106,16 +2106,16 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertEqual(completed_status["completed_ai_run_count"], 1)
         self.assertTrue(requires_rescan_confirmation(self.db, empty))
 
-    def test_default_full_corpus_test_set_has_35_unique_selectors_and_queries(self):
+    def test_default_full_corpus_test_set_has_50_unique_selectors_and_queries(self):
         payload = load_test_set(DEFAULT_CONFIG)
-        self.assertEqual(payload["version"], "full-corpus-35-v1")
-        self.assertEqual(payload["expected_paper_count"], 35)
-        self.assertEqual(len(payload["papers"]), 35)
+        self.assertEqual(payload["version"], "full-corpus-50-v1")
+        self.assertEqual(payload["expected_paper_count"], 50)
+        self.assertEqual(len(payload["papers"]), 50)
         selectors = {
             ("doi", item["doi"].lower()) if item.get("doi") else ("title", item["title"].casefold())
             for item in payload["papers"]
         }
-        self.assertEqual(len(selectors), 35)
+        self.assertEqual(len(selectors), 50)
         self.assertTrue(all(item["queries"] for item in payload["papers"]))
 
     def test_fixed_test_set_rejects_duplicate_selectors(self):

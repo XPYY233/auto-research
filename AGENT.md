@@ -298,7 +298,7 @@ For a non-target article with a readable PDF and configured DeepSeek runtime, ru
 - The review page paper switcher must be a selectable list of registered papers and should appear only on the review page. The visible option text should be paper title plus helpful bibliographic context such as first author, year/DOI, and saved-row count; do not make Zotero/storage codes the displayed selector. Use the internal paper id for switching.
 - Article-picker research-object and method tags are deterministic, conservative, non-exclusive navigation aids. Do not write them back as scientific truth or use them to override the extraction classifier. Filtering must never switch the current article or trigger DeepSeek.
 - Search first and corresponding authors only when those fields exist in the evidence database. Show missing author metadata instead of guessing it from filenames or titles.
-- Keep the fixed 35-paper full-corpus validation set in `config/evidence_test_set_35.json`. Every member must resolve through a portable DOI or title selector to a registered paper. The audit must independently validate the local PDF fingerprint and content; keep invalid PDF members in the report as explicit blockers until a real paper is re-associated. Run `evidence-test-set-audit` after changes to extraction, search, source evidence, article navigation, calibration review, visual evidence, or PDF association, and keep its reports under `data/evidence/test_sets/`. A valid paper with no current facts must be reported as `pending_extraction`; never fabricate rows to make the audit pass.
+- Keep the active 50-paper authenticity and function set in `config/evidence_test_set_50.json`. It contains the 30 members of the former 35-paper set that passed the PDF-content and identity gates plus 20 newly verified local PDFs. The five historical download/verification placeholders remain documented in `config/evidence_test_set_35.json` and its audit, but they are not real-PDF successes and must not be counted in the 50. Every active member must resolve through a portable DOI or title selector. The audit must independently validate fingerprint, readable content, DOI/title identity, research mode, search, evidence and visuals. Run `evidence-test-set-audit` after changes to extraction, search, source evidence, article navigation, calibration review, visual evidence, or PDF association, and keep reports under `data/evidence/test_sets/`. A valid paper with no current facts must be reported as `pending_extraction`; never fabricate rows to make the audit pass.
 - The search page must search the whole six-column database by default, independent of the currently selected paper. Empty search/export from the search page must also use the whole database.
 - The review page should provide direct downloads for both the next unreviewed Markdown checklist and all remaining unreviewed rows via `/api/current-paper/review-batch.md`. These are read-only manual-review aids and must not call DeepSeek or write database rows.
 - The same review-batch endpoint accepts `strategy=calibration`. Calibration selection must deterministically spread a small batch across source kinds, locator forms, value shapes, provisional candidate roles, semantic families, pages, and review priorities. These facets are sampling hints only: they must never mutate six-column data or be presented as a human-confirmed evidence classification. Keep the ordinary priority-ordered batch available separately.
@@ -383,14 +383,17 @@ imports, visual indexing, review, search, or database health checks.
 
 ### Current verified baseline
 
-As of the 2026-07-18 phase audit:
+As of the 2026-07-22 50-paper corpus registration checkpoint:
 
-- Evidence schema: v11; registered papers: 35; content-valid local PDFs: 30.
-- Raw six-column history: 4,754 rows; reportable numeric occurrences: 3,710;
-  independent numeric facts: 2,484; quarantined prose/history: 1,044.
-- Stable visual evidence: 243 assets (40 tables and 203 figures). Their database
-  identities, stored SHA-256 values and files all match the frozen pre-cloud
-  baseline. The rejected MinerU path remains absent.
+- Evidence schema: v11; registered papers: 57; content-valid local PDFs: 52. The active fixed set is 50/50 identity-verified PDFs; seven additional database records remain outside that set, including five historical placeholders and two local uploads.
+- Raw six-column history: 5,198 rows; reportable numeric occurrences: 4,084;
+  independent numeric facts: 2,752; qualitative findings: 819; quarantined
+  prose/history: 1,114.
+- The database contains 273 visual assets and every recorded image exists. The
+  original frozen pre-cloud baseline remains 243 assets (40 tables and 203
+  figures); its database identities, stored SHA-256 values and files remain
+  unchanged. The additional 30 assets belong to later local papers. The
+  rejected MinerU path remains absent.
 - The fixed 10-paper functional regression set passes for PDF identity, numeric
   facts, search, evidence localization and visuals: 1,668 facts, 2,731 source
   occurrences and 91 visuals. All 91 have Chinese display names, Chinese context
@@ -398,14 +401,16 @@ As of the 2026-07-18 phase audit:
 - The adversarial full-text batch completed for 8 of these 10 papers. Two runs
   failed on the external DeepSeek network and continue to use existing stable
   evidence; do not describe this batch as 10/10 completed.
-- The full 35-paper corpus audit is intentionally not a release pass yet: 17
-  papers are data-ready, 13 valid PDFs still need extraction, and 5 registered
-  files are download/verification placeholders that need real PDFs.
+- The active 50-paper audit has corpus integrity 50/50: every selected PDF is
+  content-valid and DOI/title identity-verified. It is intentionally not a
+  functional release pass yet: 17 papers are data-ready, 30 are visual-ready,
+  and 33 still need full extraction. The five historical placeholder records
+  remain outside the active set for regression evidence.
 - Target DOI `10.1016/j.jnucmat.2018.08.031` currently exposes 225 independent
   facts and 339/339 localizable numeric occurrences, plus 4 tables and 10
   figures. Its two older review learning samples remain, but the regenerated
   current fact layer is 0/225 human-reviewed.
-- The current fact layer is 0/2,484 human-reviewed. Never present automatic
+- The current fact layer is 0/2,752 human-reviewed. Never present automatic
   quality scores as physical-science confirmation.
 - Test command: `PYTHONPATH=src python3 -m unittest discover -s src/tests -p 'test_*.py'`.
 
