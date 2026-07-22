@@ -12,7 +12,7 @@
 
 2026-07-19 新增的条目级 DeepSeek 证据对话同样作为维护检查点，不提升上述语料稳定版版本号。当时它只在本地编辑端开放，读取当前条目与原始 PDF 的相关文字页，不改写数据库；该限制已由下述 2026-07-22 检查点替代。历史检查点标签为 `evidence-demo-2026-07-19-context-chat-checkpoint-1`，bundle 为 `/Users/USER/Zotero/auto-research-backups/auto-research-context-chat-2026-07-19.bundle`。
 
-2026-07-22 的维护检查点将条目级对话升级为统一证据工作区，并开放给只读分享端：用户打开数值、表格或图片后，左侧显示 DeepSeek Pro 对话，右侧显示当前对象的完整详情。对话仍不写数据库；只读端除 `/api/context-chat` 外继续拒绝全部写入接口。本次还修复上传论文 `10.1088/1361-648x/ac519a` 漏识别 Figure 3 的规则缺陷，并将多子图、跨行图注和正文引用区分固化为回归测试。35 篇冻结语料仍含既有 5 篇无效 PDF 与 13 篇待抽取，因此继续作为维护检查点而不虚假提升基础语料版本号。
+2026-07-22 的维护检查点将条目级对话升级为统一证据工作区，并开放给只读分享端：用户打开数值、表格或图片后，左侧显示 DeepSeek Pro 对话，右侧显示当前对象的完整详情。对话仍不写数据库；只读端除 `/api/context-chat` 外继续拒绝全部写入接口。本次还修复上传论文 `10.1088/1361-648x/ac519a` 漏识别 Figure 3 的规则缺陷，并将多子图、跨行图注和正文引用区分固化为回归测试。35 篇冻结语料仍含既有 5 篇无效 PDF 与 13 篇待抽取，因此继续作为维护检查点而不虚假提升基础语料版本号。检查点标签为 `evidence-demo-2026-07-22-pro-evidence-studio-checkpoint-1`，bundle 为 `/Users/USER/Zotero/auto-research-backups/auto-research-pro-evidence-studio-2026-07-22.bundle`。
 
 ## 当前数据快照
 
@@ -81,6 +81,8 @@
 - 本地编辑端：双击 `/Users/USER/Zotero/打开本地编辑工作台.command`。
 - 只读公网链接：双击 `/Users/USER/Zotero/创建导师公网链接.command`。
 - 完整 Git 备份：`/Users/USER/Zotero/auto-research-backups/auto-research-chinese-visual-semantics-2026-07-18.bundle`
+- 2026-07-22 维护检查点 bundle：`/Users/USER/Zotero/auto-research-backups/auto-research-pro-evidence-studio-2026-07-22.bundle`
+- 2026-07-22 数据库快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-pro-evidence-studio-2026-07-22.sqlite`
 - 图表语义修复前数据库备份：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-before-chinese-visual-repair-2026-07-18.sqlite`
 - 恢复时可从 bundle 克隆项目，再使用标签 `evidence-demo-2026-07-18-chinese-visual-semantics-1` 定位本版本。
 

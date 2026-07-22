@@ -13,6 +13,7 @@
 - 页面增加轻量动效、证据工作区入场、检索光带和响应式双栏布局；尊重 `prefers-reduced-motion`，不让动效影响科研内容阅读。
 - 完整自动测试 174 项通过；数据库健康检查为 37 篇、5,198 条原始记录、2,752 个独立事实、819 条定性结论和 273 个图表文件。论文 53 为 5 个表格、8 幅图片，Figure 3 可用 `U3Si2 Xe Cs 溶解能` 检索。
 - 35 篇冻结语料审计仍如实报告 30 个有效 PDF、17 篇数据就绪、30 篇图表就绪；5 个无效 PDF 与 13 篇待抽取使全语料完成门不通过，因此本次仅发布维护检查点，不虚假提升基础稳定版身份。
+- Git 检查点：`evidence-demo-2026-07-22-pro-evidence-studio-checkpoint-1`；完整 bundle：`/Users/USER/Zotero/auto-research-backups/auto-research-pro-evidence-studio-2026-07-22.bundle`；SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-pro-evidence-studio-2026-07-22.sqlite`。
 
 ## 2026-07-19
 
