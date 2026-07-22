@@ -376,6 +376,14 @@ inspected image pixels. Full-page scanned/raster PDFs may use caption-led
 page-region crops when no separate embedded image object exists. Such uncertain
 crops remain pending human review.
 
+The adversarial quality gate has exactly two concurrent provider streams: the
+completeness branch and the precision branch. Stages inside each branch are
+sequential. Do not re-enable nested focus/verification thread pools inside both
+branches: that silently expands two reviewers into six concurrent API requests
+and has caused real full-paper connection failures. Production DeepSeek calls
+use bounded exponential retry; interrupted runs must be marked failed rather
+than left as active work.
+
 DOI is portable and preferred when present, but it is not mandatory for older
 or otherwise valid local PDFs. Title plus the verified PDF fingerprint remains
 the minimum paper identity. Empty DOI must not abort numeric or qualitative

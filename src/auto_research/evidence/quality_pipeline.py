@@ -803,7 +803,13 @@ class AdversarialQualityPipeline:
             max_pages=max_pages,
             chunk_pages=chunk_pages,
             merge_existing=True,
-            parallel_focuses=True,
+            # The two adversarial branches already run concurrently.  Starting
+            # three additional focus/verification workers inside each branch
+            # produced bursts of up to six provider requests and made real
+            # full-paper runs vulnerable to rate limits and connection resets.
+            # Keep exactly two independent streams: A and B remain parallel,
+            # while the stages inside each stream are sequential and auditable.
+            parallel_focuses=False,
             prepare_visuals=False,
             enrich_visuals=False,
             update_processing_job=False,

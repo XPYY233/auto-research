@@ -4,6 +4,7 @@ import json
 import os
 import getpass
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -61,6 +62,8 @@ class DeepSeekSettings:
     extraction_model: str = "deepseek-v4-pro"
     analysis_model: str = "deepseek-v4-pro"
     timeout_seconds: int = 180
+    max_attempts: int = 2
+    retry_base_seconds: int = 0
     credential_source: str | None = None
 
     @classmethod
@@ -77,6 +80,12 @@ class DeepSeekSettings:
             timeout_seconds=_env_int(
                 "DEEPSEEK_TIMEOUT_SECONDS", 180, minimum=10, maximum=1800
             ),
+            max_attempts=_env_int(
+                "DEEPSEEK_MAX_ATTEMPTS", 4, minimum=2, maximum=8
+            ),
+            retry_base_seconds=_env_int(
+                "DEEPSEEK_RETRY_BASE_SECONDS", 2, minimum=0, maximum=30
+            ),
             credential_source=(
                 "DEEPSEEK_API_KEY" if environment_key
                 else f"macOS Keychain:{keychain_service}" if keychain_key
@@ -91,6 +100,8 @@ class DeepSeekSettings:
             "base_url": self.base_url,
             "extraction_model": self.extraction_model,
             "analysis_model": self.analysis_model,
+            "timeout_seconds": self.timeout_seconds,
+            "max_attempts": self.max_attempts,
             "credential_source": self.credential_source,
         }
 
@@ -125,7 +136,14 @@ class DeepSeekClient:
         if temperature is not None:
             payload["temperature"] = min(max(float(temperature), 0.0), 1.5)
         last_error: Exception | None = None
-        for attempt in range(2):
+        def wait_before_retry(attempt: int) -> None:
+            delay = min(
+                self.settings.retry_base_seconds * (2 ** attempt), 30
+            )
+            if delay > 0:
+                time.sleep(delay)
+
+        for attempt in range(self.settings.max_attempts):
             try:
                 response = self.session.post(
                     f"{self.settings.base_url}/chat/completions",
@@ -134,18 +152,25 @@ class DeepSeekClient:
                         "Content-Type": "application/json",
                     },
                     json=payload,
-                    timeout=self.settings.timeout_seconds,
+                    timeout=(20, self.settings.timeout_seconds),
                 )
             except requests.RequestException as exc:
                 last_error = exc
-                if attempt == 0:
+                if attempt + 1 < self.settings.max_attempts:
+                    wait_before_retry(attempt)
                     continue
-                raise DeepSeekUnavailableError("DeepSeek API 网络请求连续两次失败") from exc
+                raise DeepSeekUnavailableError(
+                    f"DeepSeek API 网络请求失败（{self.settings.max_attempts} 次；{type(exc).__name__}）"
+                ) from exc
             if not response.ok:
-                if attempt == 0 and (response.status_code == 429 or response.status_code >= 500):
+                if (
+                    attempt + 1 < self.settings.max_attempts
+                    and (response.status_code == 429 or response.status_code >= 500)
+                ):
                     last_error = DeepSeekResponseError(
                         f"transient HTTP {response.status_code}"
                     )
+                    wait_before_retry(attempt)
                     continue
                 error_type = (
                     DeepSeekUnavailableError
@@ -166,9 +191,12 @@ class DeepSeekClient:
                     return json.loads(content, strict=False)
             except (KeyError, IndexError, TypeError, json.JSONDecodeError, DeepSeekResponseError) as exc:
                 last_error = exc
-                if attempt == 0:
+                if attempt + 1 < self.settings.max_attempts:
+                    wait_before_retry(attempt)
                     continue
-        raise DeepSeekResponseError("DeepSeek 连续两次返回不可用的 JSON") from last_error
+        raise DeepSeekResponseError(
+            f"DeepSeek 连续 {self.settings.max_attempts} 次返回不可用的 JSON"
+        ) from last_error
 
     def smoke_test(self) -> dict[str, Any]:
         result = self.request_json(
