@@ -503,6 +503,24 @@ evidence. Incidental low-score terms must not create separate DeepSeek scans. A
 gap-audit API failure becomes a pending retry task and must not invalidate the
 already verified candidates.
 
+Document recognition is a two-stage gate, not a single keyword label. First,
+verify that the local PDF belongs to the registered paper: the file must be a
+real openable PDF with a registered fingerprint, and the DOI on its first pages
+or the normalized title must agree with the database identity. An openable
+download/captcha page or an unrelated PDF is invalid even when its filename
+looks correct. Keep DOI/title match scores and reasons in corpus audit reports.
+Second, classify the paper mode as `experimental`,
+`mixed_experiment_computation`, `computational_modeling`, `review_report`, or
+`unknown`. Domain words such as irradiation, ion, neutron, TEM or dpa do not by
+themselves prove an experiment. Give explicit procedure language and title
+methods more weight; recognize first-principles, DFT, molecular dynamics,
+multiscale modeling, Phy-X and SRIM-program studies as computational when no
+experimental procedure is supported. Distinguish ion/scattering measurements
+from irradiation-damage experiments. For pure computational or review papers,
+the local gate must reject model candidates labeled as direct `measured`
+values; calculated/derived evidence remains allowed with exact provenance.
+Mixed papers must preserve the measured/calculated distinction row by row.
+
 Do not automatically treat the latest completed run as the best run: DeepSeek
 recall varies between otherwise identical previews. `evidence-ensemble-preview`
 may retain an explicitly chosen primary run and add only candidates carrying the

@@ -76,7 +76,8 @@ def navigation_tags(paper: dict[str, Any]) -> dict[str, list[str]]:
             "molecular dynamics", "monte carlo", "density functional", " dft ",
             "first-principles", "first principles", "phy-x", "srim program",
             "srim simulation", "computer simulation", "numerical simulation",
-            "multiscale simulation", "kinetic monte carlo",
+            "multiscale simulation", "multiscale modeling", "modeling capabilities",
+            "modelling capabilities", "kinetic monte carlo",
         ),
     )
     irradiation_signal = _contains_any(

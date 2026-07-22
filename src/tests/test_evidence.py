@@ -1668,7 +1668,14 @@ class SixColumnWorkflowTests(unittest.TestCase):
                     instruction == "Extract only explicitly reported irradiation experiments and observations."
                     for instruction in packet_payload["instructions"]
                 ))
-                self.assertTrue(any("scientific experimental data" in instruction for instruction in packet_payload["instructions"]))
+                self.assertTrue(any(
+                    "experiment_profile.paper_mode" in instruction
+                    for instruction in packet_payload["instructions"]
+                ))
+                self.assertTrue(any(
+                    "computational papers" in instruction
+                    for instruction in packet_payload["instructions"]
+                ))
                 refreshed = get_six_extraction_status(self.db, other)
                 self.assertTrue(refreshed["packet_ready"])
         finally:

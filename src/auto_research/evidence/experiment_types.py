@@ -8,6 +8,19 @@ import fitz
 
 
 EXPERIMENT_TYPE_RULES: dict[str, dict[str, Any]] = {
+    "scattering_beam_measurement": {
+        "label": "散射/束流测量实验",
+        "description": "关注微分截面、散射角、背散射、束流能量、靶材和探测几何。",
+        "keywords": [
+            ("large-angle scattering", 7), ("large angle scattering", 7),
+            ("light ion scattering", 6),
+            ("differential cross section", 6), ("cross-section ratio", 6),
+            ("rutherford scattering", 6), ("rutherford backscattering", 6),
+            ("ion scattering", 5), ("backscattering", 5),
+            ("scattering angle", 5), ("angular distribution", 5),
+            ("scattering experiment", 5),
+        ],
+    },
     "irradiation_experiment": {
         "label": "辐照/离子束/中子实验",
         "description": "关注粒子、能量、剂量、注量、通量、温度、辐照设施和辐照后表征。",
@@ -98,6 +111,112 @@ NON_EXPERIMENTAL_KEYWORDS = (
     "phase-field simulation", "monte carlo", "machine learning potential", "calculation",
 )
 
+DOCUMENT_MODE_LABELS = {
+    "experimental": "实验研究",
+    "mixed_experiment_computation": "实验与计算联合研究",
+    "computational_modeling": "计算模拟/理论研究",
+    "review_report": "综述/报告",
+    "unknown": "研究类型不明确",
+}
+
+COMPUTATIONAL_MODE_KEYWORDS = (
+    ("first-principles", 10), ("first principles", 10),
+    ("density functional", 10), ("ab initio", 9),
+    ("molecular dynamics", 9), ("phase-field", 9), ("phase field", 9),
+    ("kinetic monte carlo", 9), ("monte carlo", 7),
+    ("machine learning potential", 9), ("neural network potential", 9),
+    ("multiscale modeling", 8), ("modelling capabilities", 8),
+    ("modeling capabilities", 8), ("numerical simulation", 8),
+    ("computer simulation", 8), ("atomistic simulation", 8),
+    ("phy-x", 10), ("srim programs", 9),
+    ("calculated using", 4), ("theoretical calculation", 7),
+)
+
+EXPERIMENTAL_PROCEDURE_KEYWORDS = (
+    ("experimental methods", 10), ("materials and methods", 9),
+    ("experimental procedure", 9), ("experimental details", 9),
+    ("experiments were performed", 8), ("experiment was performed", 8),
+    ("was measured", 7), ("were measured", 7), ("we measured", 7),
+    ("irradiation was performed", 8), ("were irradiated", 7),
+    ("samples were prepared", 7), ("specimens were prepared", 7),
+    ("samples were characterized", 7), ("specimens were characterized", 7),
+    ("microscopy was performed", 6), ("nanoindentation was performed", 7),
+    ("experimental results", 5), ("measured experimentally", 7),
+)
+
+EXPERIMENTAL_TITLE_KEYWORDS = (
+    ("experimental", 8), ("measurement", 6), ("measured", 6),
+    ("in situ", 4), ("in-situ", 4), ("irradiated", 5),
+    ("irradiation effects", 5), ("characterization", 5),
+    ("nanoindentation", 6), ("microscopy study", 5),
+)
+
+REVIEW_TITLE_KEYWORDS = (
+    ("review", 10), ("perspective", 10), ("roadmap", 9),
+    ("state of the art", 9), ("recent progress", 8), ("an overview", 9),
+)
+
+
+def _mode_score(text: str, weighted_keywords: tuple[tuple[str, int], ...], multiplier: int = 1) -> tuple[int, list[dict[str, Any]]]:
+    matches: list[dict[str, Any]] = []
+    score = 0
+    for keyword, weight in weighted_keywords:
+        if _contains(text, keyword):
+            points = int(weight) * multiplier
+            score += points
+            matches.append({"keyword": keyword, "weight": points})
+    return score, matches
+
+
+def _document_mode(title_text: str, body_text: str, scored_types: list[dict[str, Any]]) -> dict[str, Any]:
+    comp_title, comp_title_matches = _mode_score(title_text, COMPUTATIONAL_MODE_KEYWORDS, 3)
+    comp_body, comp_body_matches = _mode_score(body_text, COMPUTATIONAL_MODE_KEYWORDS)
+    exp_title, exp_title_matches = _mode_score(title_text, EXPERIMENTAL_TITLE_KEYWORDS, 3)
+    exp_body, exp_body_matches = _mode_score(body_text, EXPERIMENTAL_PROCEDURE_KEYWORDS)
+    review_title, review_matches = _mode_score(title_text, REVIEW_TITLE_KEYWORDS, 3)
+    top_type_score = int(scored_types[0]["score"]) if scored_types else 0
+    computational_score = comp_title + comp_body
+    experimental_score = exp_title + exp_body
+
+    if review_title >= 24 and experimental_score < 14:
+        mode = "review_report"
+    elif comp_title >= 24 and experimental_score < 14:
+        mode = "computational_modeling"
+    elif computational_score >= 16 and experimental_score < 8:
+        mode = "computational_modeling"
+    elif computational_score >= 18 and experimental_score >= 14:
+        mode = "mixed_experiment_computation"
+    elif experimental_score >= 8 or (top_type_score >= 8 and comp_title < 18):
+        mode = "experimental"
+    elif computational_score >= 8:
+        mode = "computational_modeling"
+    else:
+        mode = "unknown"
+
+    ranked = sorted(
+        ((experimental_score, "experimental"), (computational_score, "computational_modeling"), (review_title, "review_report")),
+        reverse=True,
+    )
+    lead, runner_up = ranked[0][0], ranked[1][0]
+    confidence = 0.0 if lead <= 0 else min(0.99, round((lead + max(lead - runner_up, 0)) / (lead + 16), 3))
+    return {
+        "paper_mode": mode,
+        "paper_mode_label": DOCUMENT_MODE_LABELS[mode],
+        "mode_confidence": confidence,
+        "mode_scores": {
+            "experimental": experimental_score,
+            "computational_modeling": computational_score,
+            "review_report": review_title,
+        },
+        "mode_signals": {
+            "experimental_title": exp_title_matches,
+            "experimental_procedure": exp_body_matches,
+            "computational_title": comp_title_matches,
+            "computational_body": comp_body_matches,
+            "review_title": review_matches,
+        },
+    }
+
 
 def _read_pdf_text(pdf_path: Path, max_pages: int = 5) -> list[dict[str, Any]]:
     pages: list[dict[str, Any]] = []
@@ -157,6 +276,7 @@ def classify_experiment_types(paper: dict[str, Any], *,
         keyword for keyword in NON_EXPERIMENTAL_KEYWORDS
         if keyword in title_text or keyword in body_text
     ]
+    mode = _document_mode(title_text, body_text, scored)
     top_score = scored[0]["score"] if scored else 0
     focus_threshold = max(8, round(top_score * 0.35)) if top_score else 0
     selected_types = [
@@ -165,7 +285,25 @@ def classify_experiment_types(paper: dict[str, Any], *,
         or any(match.get("source") == "title" for match in item.get("matches", []))
     ]
     confidence = min(0.98, round(top_score / max(top_score + 8, 1), 3)) if top_score else 0.0
-    if not scored:
+    if mode["paper_mode"] == "computational_modeling":
+        primary = {
+            "type_id": "computational_modeling",
+            "label": DOCUMENT_MODE_LABELS["computational_modeling"],
+            "description": "以第一性原理、分子动力学、数值模拟或其他计算模型为主要证据来源。",
+            "score": mode["mode_scores"]["computational_modeling"],
+            "matches": mode["mode_signals"]["computational_title"] + mode["mode_signals"]["computational_body"],
+        }
+        selected_types = []
+    elif mode["paper_mode"] == "review_report":
+        primary = {
+            "type_id": "review_report",
+            "label": DOCUMENT_MODE_LABELS["review_report"],
+            "description": "以文献综合或报告总结为主，不把被引用论文的数据当作本文直接测量。",
+            "score": mode["mode_scores"]["review_report"],
+            "matches": mode["mode_signals"]["review_title"],
+        }
+        selected_types = []
+    elif not scored:
         primary = {
             "type_id": "non_experimental_or_unknown",
             "label": "非实验或实验类型不明确",
@@ -175,9 +313,7 @@ def classify_experiment_types(paper: dict[str, Any], *,
         }
     else:
         primary = scored[0]
-    is_experimental = bool(scored) and not (
-        primary["score"] < 5 and len(non_experimental_matches) >= 2
-    )
+    is_experimental = mode["paper_mode"] in {"experimental", "mixed_experiment_computation"}
     return {
         "primary_type": primary["type_id"],
         "primary_label": primary["label"],
@@ -188,10 +324,23 @@ def classify_experiment_types(paper: dict[str, Any], *,
         "focus_threshold": focus_threshold,
         "non_experimental_signals": non_experimental_matches,
         "pages_used": [page.get("page") for page in pages],
+        **mode,
     }
 
 
 def extraction_focuses_for_profile(profile: dict[str, Any]) -> tuple[str, ...]:
+    mode = profile.get("paper_mode")
+    if mode == "computational_modeling":
+        return (
+            "Focus on model identity, calculation method, input structure, boundary conditions, convergence settings, and explicitly reported numerical outputs.",
+            "Classify outputs as calculated or derived, never as direct experimental measurements. Preserve the source equation, table, or exact text locator.",
+            "Do not import measurements quoted from references as results of this paper, and do not infer curve points from figures.",
+        )
+    if mode == "review_report":
+        return (
+            "Focus on the review scope, comparison framework, and explicit synthesis conclusions.",
+            "Do not publish values attributed to cited studies as direct measurements of this paper; retain them only as clearly attributed secondary evidence.",
+        )
     selected = profile.get("selected_types") or profile.get("types", [])
     type_ids = {item.get("type_id") for item in selected}
     foci = [
@@ -222,6 +371,10 @@ def extraction_focuses_for_profile(profile: dict[str, Any]) -> tuple[str, ...]:
         targeted.append("electrochemical/corrosion data: electrolyte, potential/current, scan rate, impedance, polarization, corrosion rate, and cycling")
     if "magnetic_measurement" in type_ids:
         targeted.append("magnetic data: magnetization, coercivity, hysteresis, transitions, applied field, and temperature")
+    if "scattering_beam_measurement" in type_ids:
+        targeted.append("scattering and beam data: projectile/target species, beam energy, scattering angle, detector geometry, differential cross section, and uncertainty")
     if targeted:
         foci.append("Targeted experiment-specific pass. Focus on " + "; ".join(targeted) + ".")
+    if mode == "mixed_experiment_computation":
+        foci.append("Mixed-method paper: explicitly separate measured results from calculated/derived outputs and preserve the evidence source for each.")
     return tuple(foci)

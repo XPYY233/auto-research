@@ -608,17 +608,22 @@ function renderExperimentProfile() {
     card.classList.add("warn");
     return;
   }
-  const confidence = Math.round((profile.confidence || 0) * 100);
-  card.classList.toggle("warn", !profile.is_experimental);
-  summary.textContent = profile.is_experimental
-    ? `主类型：${profile.primary_label}；置信度 ${confidence}%。系统会按该类型选择抽取重点，再生成六列数据。`
-    : `暂未稳定识别为实验论文；建议先人工检查 PDF 文本或扩大识别页数。`;
+  const modeConfidence = Math.round((profile.mode_confidence || profile.confidence || 0) * 100);
+  const mode = profile.paper_mode || (profile.is_experimental ? "experimental" : "unknown");
+  card.classList.toggle("warn", mode === "unknown");
+  if (mode === "experimental" || mode === "mixed_experiment_computation") {
+    summary.textContent = `研究模式：${profile.paper_mode_label || "实验研究"}；主类型：${profile.primary_label}；识别置信度 ${modeConfidence}%。系统将按该边界选择抽取重点。`;
+  } else if (mode === "computational_modeling" || mode === "review_report") {
+    summary.textContent = `研究模式：${profile.paper_mode_label}；识别置信度 ${modeConfidence}%。系统会限制证据类型，避免将计算量或引文数据标成直接测量。`;
+  } else {
+    summary.textContent = "研究类型尚不明确；自动抽取将保持保守并提示人工检查。";
+  }
   const typeTags = (profile.types || []).slice(0, 5).map((item, index) => (
     `<span class="${index === 0 ? "primary" : ""}">${esc(item.label)} · ${esc(item.score)}</span>`
   ));
   tags.innerHTML = typeTags.length
     ? typeTags.join("")
-    : `<span>未识别到稳定实验类型</span>`;
+    : `<span>${esc(profile.paper_mode_label || "未识别到稳定研究类型")}</span>`;
 }
 
 function renderEvidenceAudit() {

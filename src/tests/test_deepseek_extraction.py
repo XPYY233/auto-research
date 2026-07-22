@@ -17,7 +17,8 @@ from auto_research.ai.deepseek import (
 )
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.deepseek_extraction import (
-    DeepSeekEvidenceExtractor, _coverage_gap_messages, _coverage_quantity_anchors,
+    DeepSeekEvidenceExtractor, _apply_document_mode_guard,
+    _coverage_gap_messages, _coverage_quantity_anchors,
     _deduplicate, _evidence_check, _execute_run_update, _extract_focus_payload,
     _is_reference_dominant, _learning_guidance, _localize_candidates, _numbers,
     _validated_findings, _verification_batches,
@@ -74,6 +75,26 @@ class FakeDeepSeekClient:
 
 
 class DeepSeekExtractionTests(unittest.TestCase):
+    def test_document_mode_guard_rejects_measured_values_from_computational_paper(self):
+        candidates = [
+            {"candidate_id": "m1", "evidence_type": "measured", "value_text": "1.2"},
+            {"candidate_id": "c1", "evidence_type": "calculated", "value_text": "2.4"},
+        ]
+        accepted, rejected = _apply_document_mode_guard(
+            candidates, {"paper_mode": "computational_modeling"}
+        )
+        self.assertEqual([item["candidate_id"] for item in accepted], ["c1"])
+        self.assertEqual([item["candidate_id"] for item in rejected], ["m1"])
+        self.assertTrue(rejected[0]["document_mode_rejected"])
+
+    def test_document_mode_guard_keeps_measured_values_from_experiment(self):
+        candidates = [{"candidate_id": "m1", "evidence_type": "measured", "value_text": "1.2"}]
+        accepted, rejected = _apply_document_mode_guard(
+            candidates, {"paper_mode": "experimental"}
+        )
+        self.assertEqual(accepted, candidates)
+        self.assertEqual(rejected, [])
+
     def test_qualitative_findings_have_a_separate_evidence_gate(self):
         chunk = [{"page": 1, "text": "TEM examination showed that no voids were observed after irradiation."}]
         accepted, rejected = _validated_findings({

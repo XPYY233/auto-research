@@ -11,6 +11,7 @@ import fitz
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
 from .experiment_types import classify_experiment_types
+from .document_recognition import recognize_pdf_identity
 from .review_handoff import review_batch_payload
 from .six_column import (
     SIX_FIELDS,
@@ -114,6 +115,8 @@ def _pdf_status(db: EvidenceDB, paper: dict[str, Any]) -> dict[str, Any]:
         "sha256": None,
         "fingerprint_matches": False,
         "fingerprint_source": None,
+        "identity": None,
+        "identity_valid": False,
     }
     if not result["exists"]:
         return result
@@ -156,6 +159,9 @@ def _pdf_status(db: EvidenceDB, paper: dict[str, Any]) -> dict[str, Any]:
                 and not result["placeholder_detected"]
                 and (result["file_size"] >= 10_000 or result["text_char_count"] >= 1_000)
             )
+            if result["content_valid"]:
+                result["identity"] = recognize_pdf_identity(paper, path)
+                result["identity_valid"] = bool(result["identity"].get("valid"))
     except Exception:
         result["openable"] = False
     return result
@@ -223,17 +229,18 @@ def audit_test_set(
             "verified_local_pdf": (
                 paper.get("authenticity_status") == "verified_pdf"
                 and pdf["exists"] and pdf["openable"] and pdf["content_valid"]
-                and pdf["fingerprint_matches"]
+                and pdf["fingerprint_matches"] and pdf["identity_valid"]
             ),
+            "pdf_identity_match": bool(pdf.get("identity_valid")),
             "minimum_rows": len(rows) >= int(spec.get("min_rows") or 1),
             "six_columns_complete": not missing,
             "source_highlight": bool(rows) and evidence.get("coverage_ratio", 0) >= 0.95,
-            "experiment_classified": bool(experiment.get("primary_type")),
+            "experiment_classified": experiment.get("paper_mode") != "unknown",
             "paper_scoped_queries": all(item["count"] > 0 for item in query_results),
             "calibration_batch_ready": calibration["batch_count"] == min(calibration_limit, progress["unreviewed"]),
             "visual_assets_ready": bool(visual_assets),
         }
-        corpus_checks = ("registered_identity", "verified_local_pdf", "experiment_classified")
+        corpus_checks = ("registered_identity", "verified_local_pdf", "pdf_identity_match", "experiment_classified")
         data_checks = (
             "minimum_rows", "six_columns_complete", "source_highlight",
             "paper_scoped_queries", "calibration_batch_ready",
@@ -268,6 +275,10 @@ def audit_test_set(
                 "primary_label": experiment.get("primary_label"),
                 "confidence": experiment.get("confidence"),
                 "selected_types": [item.get("label") for item in experiment.get("selected_types", [])],
+                "paper_mode": experiment.get("paper_mode"),
+                "paper_mode_label": experiment.get("paper_mode_label"),
+                "mode_confidence": experiment.get("mode_confidence"),
+                "mode_scores": experiment.get("mode_scores"),
             },
             "rows": {
                 "total": len(rows),
