@@ -363,26 +363,6 @@
     </main>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
-  <aside class="context-chat" id="context-chat" aria-label="当前证据 AI 对话" aria-hidden="true">
-    <header class="context-chat-head">
-      <div><p class="eyebrow">DEEPSEEK · EVIDENCE CHAT</p><h2>当前证据 AI 解读</h2></div>
-      <div><button type="button" id="context-chat-reset" title="清空当前对话">新对话</button><button type="button" id="context-chat-close" aria-label="关闭 AI 对话">关闭</button></div>
-    </header>
-    <section class="context-chat-target">
-      <span>本轮讨论对象</span>
-      <strong id="context-chat-entity">尚未选择数据或图表</strong>
-      <small id="context-chat-paper">选择搜索结果中的“AI 解读”后开始</small>
-    </section>
-    <div class="context-chat-disclosure"><i>i</i><span>DeepSeek 接收当前条目和原始 PDF 的相关页面文字，不接收整份数据库；回答不会写回科学数据。</span></div>
-    <div class="context-chat-messages" id="context-chat-messages" aria-live="polite">
-      <div class="context-chat-empty"><span>AI</span><p>默认问题已填入下方输入框。你可以直接发送、修改或清空后提出自己的问题。</p></div>
-    </div>
-    <form class="context-chat-form" id="context-chat-form">
-      <label for="context-chat-input">向 DeepSeek 提问</label>
-      <textarea id="context-chat-input" maxlength="2000">说明这个数据本身的含义，并总结该数据在文章中的具体含义</textarea>
-      <div><small id="context-chat-status">基于当前条目与 PDF 相关页回答</small><button type="submit" id="context-chat-send">发送</button></div>
-    </form>
-  </aside>
   <dialog class="source-dialog" id="source-dialog">
     <div class="source-dialog-card">
       <header class="source-dialog-head">
@@ -408,33 +388,78 @@
       </div>
     </div>
   </dialog>
-  <dialog class="visual-dialog" id="visual-dialog">
-    <div class="visual-dialog-card">
-      <header class="visual-dialog-head">
-        <div>
-          <p class="eyebrow" id="visual-dialog-type">VISUAL EVIDENCE</p>
-          <h3 id="visual-dialog-title">完整图表</h3>
+  <dialog class="visual-dialog evidence-workspace" id="visual-dialog">
+    <div class="visual-dialog-card evidence-workspace-card">
+      <aside class="context-chat" id="context-chat" aria-label="当前证据 AI 对话" aria-hidden="false">
+        <header class="context-chat-head">
+          <div><p class="eyebrow">DEEPSEEK PRO · EVIDENCE CHAT</p><h2>围绕当前证据提问</h2></div>
+          <button type="button" id="context-chat-reset" title="清空当前对话">新对话</button>
+        </header>
+        <section class="context-chat-target">
+          <span>本轮讨论对象</span>
+          <strong id="context-chat-entity">尚未选择数据或图表</strong>
+          <small id="context-chat-paper">打开一个条目后开始</small>
+        </section>
+        <div class="context-chat-disclosure"><i>i</i><span>DeepSeek Pro 读取右侧条目和原始 PDF 的相关页面文字；回答不会写回科学数据。</span></div>
+        <div class="context-chat-messages" id="context-chat-messages" aria-live="polite">
+          <div class="context-chat-empty"><span>AI</span><p>默认问题已填入下方输入框。你可以直接发送，也可以修改后继续追问。</p></div>
         </div>
-        <button class="dialog-close" type="button" data-close-visual>关闭</button>
-      </header>
-      <div class="visual-dialog-layout">
-        <figure class="visual-dialog-image">
-          <img id="visual-image" alt="论文中的完整图表原始截图">
-          <figcaption id="visual-caption"></figcaption>
-        </figure>
-        <aside class="visual-dialog-info">
-          <section class="visual-info-primary"><span>图表说明</span><p id="visual-context"></p></section>
-          <dl id="visual-details"></dl>
-          <section><span>原文依据</span><p id="visual-source-context"></p></section>
-          <section><span>文章信息</span><p id="visual-paper"></p></section>
-          <div class="visual-tags" id="visual-tags"></div>
-          <div class="visual-dialog-actions">
-            <button type="button" id="visual-ai-chat">AI 解读此图表</button>
-            <button type="button" id="visual-related-items">查看相关数据条目</button>
-            <a id="visual-open-pdf" target="_blank" rel="noopener">打开 PDF 原页</a>
+        <form class="context-chat-form" id="context-chat-form">
+          <label for="context-chat-input">向 DeepSeek Pro 提问</label>
+          <textarea id="context-chat-input" maxlength="2000">说明这个数据本身的含义，并总结该数据在文章中的具体含义</textarea>
+          <div><small id="context-chat-status">基于右侧条目与 PDF 相关页回答</small><button type="submit" id="context-chat-send">发送</button></div>
+        </form>
+      </aside>
+
+      <section class="evidence-detail">
+        <header class="visual-dialog-head evidence-detail-head">
+          <div>
+            <p class="eyebrow" id="visual-dialog-type">EVIDENCE DETAIL</p>
+            <h3 id="visual-dialog-title">证据详情</h3>
+            <span id="evidence-detail-model">DeepSeek Pro · 只读解释</span>
           </div>
-        </aside>
-      </div>
+          <button class="dialog-close" type="button" data-close-visual>关闭</button>
+        </header>
+
+        <div class="item-detail-panel" id="item-detail-panel" hidden>
+          <div class="item-detail-hero">
+            <div><small>报告值</small><strong id="item-detail-value"></strong></div>
+            <div><small>具体意义</small><h4 id="item-detail-meaning"></h4><div id="item-detail-badges"></div></div>
+          </div>
+          <div class="item-detail-grid">
+            <section class="item-detail-primary"><span>实验条件与文章语境</span><p id="item-detail-context"></p></section>
+            <section><span>原文证据</span><blockquote id="item-detail-excerpt"></blockquote></section>
+            <section><span>文章信息</span><p id="item-detail-paper"></p></section>
+            <section><span>证据位置</span><p id="item-detail-location"></p></section>
+          </div>
+          <div class="item-detail-actions">
+            <button type="button" id="item-detail-linked-visual" hidden>查看关联图表</button>
+            <button type="button" id="item-detail-open-source">查看高亮原文</button>
+            <button type="button" id="item-detail-edit">前往数据检查</button>
+            <a id="item-detail-open-pdf" target="_blank" rel="noopener">打开 PDF 原页</a>
+          </div>
+        </div>
+
+        <div class="visual-detail-panel" id="visual-detail-panel" hidden>
+          <div class="visual-dialog-layout">
+            <figure class="visual-dialog-image">
+              <img id="visual-image" alt="论文中的完整图表原始截图">
+              <figcaption id="visual-caption"></figcaption>
+            </figure>
+            <aside class="visual-dialog-info">
+              <section class="visual-info-primary"><span>图表说明</span><p id="visual-context"></p></section>
+              <dl id="visual-details"></dl>
+              <section><span>原文依据</span><p id="visual-source-context"></p></section>
+              <section><span>文章信息</span><p id="visual-paper"></p></section>
+              <div class="visual-tags" id="visual-tags"></div>
+              <div class="visual-dialog-actions">
+                <button type="button" id="visual-related-items">查看相关数据条目</button>
+                <a id="visual-open-pdf" target="_blank" rel="noopener">打开 PDF 原页</a>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
     </div>
   </dialog>
   <dialog class="review-decision-dialog" id="review-decision-dialog">

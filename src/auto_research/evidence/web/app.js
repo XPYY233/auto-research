@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const contextChat = { entity: null, conversations: new Map(), busy: false };
 const defaultContextQuestion = "说明这个数据本身的含义，并总结该数据在文章中的具体含义";
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
@@ -95,7 +95,7 @@ function renderPublicSearchOnlyMode() {
   document.querySelector(".brand strong").textContent = "实验数据检索库";
   document.querySelector(".brand small").textContent = "READ-ONLY SEARCH";
   const searchSummary = document.querySelector("#search-summary");
-  if (searchSummary) searchSummary.textContent = "只读模式：仅支持搜索、原文证据查看和导出";
+  if (searchSummary) searchSummary.textContent = "只读模式：支持搜索、条目级 DeepSeek Pro 解读、原文证据和导出";
 }
 
 function renderViewHeader(name) {
@@ -105,7 +105,7 @@ function renderViewHeader(name) {
   setText(
     "workspace-subtitle",
     isReadOnly() && name === "search"
-      ? "只读浏览已提取数据；支持原文证据查看和结果导出。"
+      ? "浏览已提取数据；打开条目后可在右侧核对详情，并在左侧使用 DeepSeek Pro 追问。"
       : copy.subtitle,
   );
 }
@@ -2113,10 +2113,6 @@ function renderContextChatMessages() {
 }
 
 function openContextChat(type, id, hint = null) {
-  if (isReadOnly()) {
-    toast("AI 证据对话当前只在本地编辑端开放，以保护 DeepSeek 密钥和 PDF 内容。", true);
-    return;
-  }
   const entity = {
     type,
     id: Number(id),
@@ -2125,9 +2121,6 @@ function openContextChat(type, id, hint = null) {
   };
   const changed = !contextChat.entity || contextChatKey(contextChat.entity) !== contextChatKey(entity);
   contextChat.entity = entity;
-  document.querySelector("#context-chat").classList.add("open");
-  document.querySelector("#context-chat").setAttribute("aria-hidden", "false");
-  document.body.dataset.chatOpen = "true";
   setText("context-chat-entity", entity.summary);
   setText("context-chat-paper", entity.paper || "将读取所属论文的相关 PDF 页面");
   if (changed || !document.querySelector("#context-chat-input").value.trim()) {
@@ -2138,9 +2131,7 @@ function openContextChat(type, id, hint = null) {
 }
 
 function closeContextChat() {
-  document.querySelector("#context-chat").classList.remove("open");
-  document.querySelector("#context-chat").setAttribute("aria-hidden", "true");
-  document.body.dataset.chatOpen = "false";
+  closeVisualAsset();
 }
 
 function resetContextChat() {
@@ -2166,6 +2157,7 @@ async function submitContextChat(event) {
   input.value = "";
   contextChat.busy = true;
   document.querySelector("#context-chat-send").disabled = true;
+  document.querySelector("#context-chat").classList.add("thinking");
   setText("context-chat-status", "DeepSeek 正在阅读当前证据与 PDF 相关页…");
   renderContextChatMessages();
   try {
@@ -2184,16 +2176,71 @@ async function submitContextChat(event) {
       content: result.answer,
       meta: { evidence_pages: result.evidence_pages || [], evidence_notes: result.evidence_notes || [], limitations: result.limitations || [] },
     });
-    setText("context-chat-status", `回答完成 · 参考 PDF 第 ${(result.context_pages || []).join("、") || "相关"} 页`);
+    setText("context-chat-status", `${result.model || "DeepSeek Pro"} · 参考 PDF 第 ${(result.context_pages || []).join("、") || "相关"} 页`);
   } catch (error) {
     conversation.push({ role: "assistant", content: `本次回答失败：${error.message}`, meta: { limitations: ["未写入任何科学数据"] } });
     setText("context-chat-status", "回答失败，可修改问题后重试");
   } finally {
     contextChat.busy = false;
     document.querySelector("#context-chat-send").disabled = false;
+    document.querySelector("#context-chat").classList.remove("thinking");
     renderContextChatMessages();
     input.focus();
   }
+}
+
+function showEvidenceWorkspace() {
+  const dialog = document.querySelector("#visual-dialog");
+  if (typeof dialog.showModal === "function") {
+    if (!dialog.open) dialog.showModal();
+  } else {
+    dialog.setAttribute("open", "open");
+  }
+}
+
+function openItemDetail(row, { qualitative = false } = {}) {
+  if (!row) return;
+  state.detailItem = row;
+  state.visualAsset = null;
+  document.querySelector("#item-detail-panel").hidden = false;
+  document.querySelector("#visual-detail-panel").hidden = true;
+  showEvidenceWorkspace();
+
+  const valueText = qualitative ? (row.finding_text || row.value_text || "定性结论") : row.value_text;
+  const unit = qualitative ? "" : row.unit;
+  document.querySelector("#item-detail-value").innerHTML = qualitative
+    ? `<span class="finding-detail-value">实验结论</span>`
+    : scientificQuantityHtml(valueText, unit);
+  setText("item-detail-meaning", row.meaning || (qualitative ? "论文报告的实验结论" : "数据条目"));
+  document.querySelector("#item-detail-badges").innerHTML = `${qualityBadge(row)}<span class="detail-source-badge">${esc(sourceLabel(row))}</span>`;
+  setText("item-detail-context", row.context_explanation || "原文未提供更多结构化语境。");
+  setText("item-detail-excerpt", row.source_excerpt || row.original_source_excerpt || "当前条目没有可显示的原文片段。");
+  const authors = [row.first_author ? `一作：${row.first_author}` : "", row.corresponding_author ? `通讯：${row.corresponding_author}` : ""].filter(Boolean).join(" · ");
+  setText("item-detail-paper", [row.article_title, row.doi || "无 DOI", authors].filter(Boolean).join("\n"));
+  const page = row.source_page || row.original_source_page;
+  setText("item-detail-location", [page ? `PDF 第 ${page} 页` : "页码未记录", row.source_locator || row.original_source_locator].filter(Boolean).join(" · "));
+  setText("visual-dialog-type", qualitative ? "QUALITATIVE EVIDENCE" : "DATA EVIDENCE");
+  setText("visual-dialog-title", `${row.meaning || "数据条目"} · ${qualitative ? "实验结论" : [row.value_text, row.unit].filter(Boolean).join(" ")}`);
+
+  const linked = row.primary_visual_asset || (row.visual_assets || [])[0];
+  const linkedButton = document.querySelector("#item-detail-linked-visual");
+  linkedButton.hidden = !linked;
+  linkedButton.dataset.visualId = linked ? String(linked.id) : "";
+  linkedButton.textContent = linked ? `查看关联${linked.asset_type === "table" ? "表格" : "图片"} · ${linked.label}` : "查看关联图表";
+  const sourceButton = document.querySelector("#item-detail-open-source");
+  sourceButton.disabled = !row.item_id;
+  const editButton = document.querySelector("#item-detail-edit");
+  editButton.hidden = isReadOnly();
+  editButton.disabled = !row.item_id;
+  const pdfLink = document.querySelector("#item-detail-open-pdf");
+  pdfLink.href = row.paper_id ? `/api/papers/${row.paper_id}/pdf${page ? `#page=${page}` : ""}` : "#";
+
+  openContextChat("item", Number(row.item_id), {
+    summary: qualitative
+      ? `${row.meaning || "实验结论"}：${valueText}`
+      : `${row.meaning || "数据"}：${row.value_text} ${row.unit || ""}`.trim(),
+    paper: row.article_title || "",
+  });
 }
 
 function itemResultHtml(row) {
@@ -2201,7 +2248,7 @@ function itemResultHtml(row) {
   const reviewLabel = searchReviewLabel(row);
   const reviewButton = isReadOnly() ? "" : `<button class="row-link" data-jump="${row.item_id}">检查/修正</button>`;
   const sourceButton = `<button class="row-link source-link" data-source-search="${row.item_id}">原文证据</button>`;
-  const aiButton = isReadOnly() ? "" : `<button class="row-link context-ai-link" data-context-chat-item="${row.item_id}">AI 解读</button>`;
+  const detailButton = `<button class="row-link detail-link" data-item-detail="${row.item_id}">打开条目</button>`;
   const linked = row.primary_visual_asset || (row.visual_assets || []).find(asset => asset.asset_type === "figure");
   const visualButton = linked
     ? `<button class="row-link visual-link" data-visual-open="${linked.id}">${linked.asset_type === "table" ? "查看原始表格" : "查看相关图片"}</button>`
@@ -2218,7 +2265,7 @@ function itemResultHtml(row) {
       <div class="result-heading"><div><small>具体意义</small><h3>${highlightSearchText(row.meaning)}</h3>${clusterBadge}${qualityBadge(row)}</div><em class="search-review-state ${esc(row.review_action || row.origin_type)}"${scoreTitle}>${esc(reviewLabel)}</em></div>
       <div class="result-context"><small>实验条件与文章语境</small><p>${highlightSearchText(row.context_explanation)}</p></div>
       ${excerpt ? `<blockquote><span>原文证据</span><p>${highlightSearchText(excerpt)}</p></blockquote>` : ""}
-      <footer><div class="result-paper"><strong>${highlightSearchText(row.article_title)}</strong><span>${[row.doi, authors, page ? `PDF 第 ${page} 页` : ""].filter(Boolean).map(esc).join(" · ")}</span></div><div class="result-actions">${aiButton}${visualButton}${sourceButton}${reviewButton}</div></footer>
+      <footer><div class="result-paper"><strong>${highlightSearchText(row.article_title)}</strong><span>${[row.doi, authors, page ? `PDF 第 ${page} 页` : ""].filter(Boolean).map(esc).join(" · ")}</span></div><div class="result-actions">${detailButton}${visualButton}${sourceButton}${reviewButton}</div></footer>
     </div>
   </article>`;
 }
@@ -2243,13 +2290,17 @@ function renderQualitativeResults(rows) {
         <div class="finding-text"><small>论文报告的结论</small><p>${highlightSearchText(row.finding_text)}</p></div>
         <div class="result-context"><small>实验条件与文章语境</small><p>${highlightSearchText(row.context_explanation)}</p></div>
         ${evidence ? `<blockquote><span>原文证据</span><p>${highlightSearchText(evidence)}</p></blockquote>` : ""}
-        <footer><div class="result-paper"><strong>${highlightSearchText(row.article_title)}</strong><span>${[row.doi, page ? `PDF 第 ${page} 页` : ""].filter(Boolean).map(esc).join(" · ")}</span></div><div class="result-actions"><button class="row-link source-link" data-source-finding="${row.item_id}">原文证据</button></div></footer>
+        <footer><div class="result-paper"><strong>${highlightSearchText(row.article_title)}</strong><span>${[row.doi, page ? `PDF 第 ${page} 页` : ""].filter(Boolean).map(esc).join(" · ")}</span></div><div class="result-actions"><button class="row-link detail-link" data-finding-detail="${row.item_id}">打开条目</button><button class="row-link source-link" data-source-finding="${row.item_id}">原文证据</button></div></footer>
       </div>
     </article>`;
   }).join("");
   el.querySelectorAll("[data-source-finding]").forEach(button => button.addEventListener("click", () => {
     const itemId = Number(button.dataset.sourceFinding);
     openSourceViewer(itemId, rows.find(row => Number(row.item_id) === itemId) || null);
+  }));
+  el.querySelectorAll("[data-finding-detail]").forEach(button => button.addEventListener("click", () => {
+    const itemId = Number(button.dataset.findingDetail);
+    openItemDetail(rows.find(row => Number(row.item_id) === itemId), { qualitative: true });
   }));
 }
 
@@ -2290,12 +2341,9 @@ function renderResults(rows) {
     openSourceViewer(itemId, rows.find(row => Number(row.item_id) === itemId) || null);
   }));
   el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
-  el.querySelectorAll("[data-context-chat-item]").forEach(btn => btn.addEventListener("click", () => {
-    const row = rows.find(value => Number(value.item_id) === Number(btn.dataset.contextChatItem));
-    openContextChat("item", Number(btn.dataset.contextChatItem), {
-      summary: row ? `${row.meaning}：${row.value_text} ${row.unit || ""}`.trim() : "当前数据",
-      paper: row?.article_title || "",
-    });
+  el.querySelectorAll("[data-item-detail]").forEach(btn => btn.addEventListener("click", () => {
+    const row = rows.find(value => Number(value.item_id) === Number(btn.dataset.itemDetail));
+    openItemDetail(row);
   }));
 }
 
@@ -2315,15 +2363,9 @@ function renderVisualResults(assets) {
     ].filter(([, value]) => String(value || "").trim());
     const factHtml = facts.length ? `<dl>${facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${highlightSearchText(value)}</dd></div>`).join("")}</dl>` : "";
     const title = visualTitleParts(asset);
-    const aiButton = isReadOnly() ? "" : `<button class="open-visual context-ai-link" type="button" data-context-chat-visual="${asset.id}">AI 解读</button>`;
-    return `<article class="visual-result"><button class="visual-thumb visual-thumb-${esc(asset.asset_type)}" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(title.full)}"><img src="${esc(asset.image_url)}" alt="${esc(title.full)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${visualTitleHtml(asset)}</h3>${qualityBadge(asset)}</div><div class="visual-quantity-list">${tags}</div><p>${highlightSearchText(asset.context_explanation || "待核对原文上下文。")}</p>${factHtml}<small>${esc(asset.article_title)} · ${esc(asset.doi || "无 DOI")}</small><div class="visual-result-actions">${aiButton}<button class="open-visual" type="button" data-visual-open="${asset.id}">查看完整${asset.asset_type === "table" ? "表格" : "图片"}</button></div></div></article>`;
+    return `<article class="visual-result"><button class="visual-thumb visual-thumb-${esc(asset.asset_type)}" type="button" data-visual-open="${asset.id}" aria-label="查看${esc(title.full)}"><img src="${esc(asset.image_url)}" alt="${esc(title.full)}原文截图" loading="lazy"><span>${esc(typeLabel)}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(asset.label)} · PDF第 ${esc(asset.page_start)} 页</span><h3>${visualTitleHtml(asset)}</h3>${qualityBadge(asset)}</div><div class="visual-quantity-list">${tags}</div><p>${highlightSearchText(asset.context_explanation || "待核对原文上下文。")}</p>${factHtml}<small>${esc(asset.article_title)} · ${esc(asset.doi || "无 DOI")}</small><div class="visual-result-actions"><button class="open-visual detail-link" type="button" data-visual-open="${asset.id}">打开详情与 AI 解读</button></div></div></article>`;
   }).join("");
   el.querySelectorAll("[data-visual-open]").forEach(btn => btn.addEventListener("click", () => openVisualAsset(Number(btn.dataset.visualOpen))));
-  el.querySelectorAll("[data-context-chat-visual]").forEach(btn => btn.addEventListener("click", () => {
-    const asset = assets.find(value => Number(value.id) === Number(btn.dataset.contextChatVisual));
-    const title = asset ? visualTitleParts(asset).full : "当前图表";
-    openContextChat("visual", Number(btn.dataset.contextChatVisual), { summary: title, paper: asset?.article_title || "" });
-  }));
 }
 
 function formatVisualVariables(variables) {
@@ -2331,14 +2373,12 @@ function formatVisualVariables(variables) {
 }
 
 async function openVisualAsset(assetId) {
-  const dialog = document.querySelector("#visual-dialog");
+  state.detailItem = null;
+  document.querySelector("#item-detail-panel").hidden = true;
+  document.querySelector("#visual-detail-panel").hidden = false;
   setText("visual-dialog-title", "正在读取完整图表…");
   document.querySelector("#visual-image").removeAttribute("src");
-  if (typeof dialog.showModal === "function") {
-    if (!dialog.open) dialog.showModal();
-  } else {
-    dialog.setAttribute("open", "open");
-  }
+  showEvidenceWorkspace();
   try {
     const asset = await api(`/api/visual-assets/${assetId}`);
     state.visualAsset = asset;
@@ -2366,6 +2406,10 @@ async function openVisualAsset(assetId) {
     const related = document.querySelector("#visual-related-items");
     related.textContent = `查看相关数据条目（${asset.linked_item_count || 0}）`;
     related.disabled = !asset.linked_item_count;
+    openContextChat("visual", Number(asset.id), {
+      summary: title.full,
+      paper: asset.article_title || "",
+    });
   } catch (error) {
     setText("visual-dialog-title", "图表加载失败");
     setText("visual-context", error.message);
@@ -2375,15 +2419,9 @@ async function openVisualAsset(assetId) {
 
 function closeVisualAsset() {
   state.visualAsset = null;
+  state.detailItem = null;
+  contextChat.entity = null;
   document.querySelector("#visual-dialog")?.close();
-}
-
-function openCurrentVisualChat() {
-  const asset = state.visualAsset;
-  if (!asset) return;
-  const title = visualTitleParts(asset).full;
-  closeVisualAsset();
-  openContextChat("visual", Number(asset.id), { summary: title, paper: asset.article_title || "" });
 }
 
 function showVisualRelatedItems() {
@@ -2886,9 +2924,29 @@ document.querySelectorAll("[data-close-visual]").forEach(button => button.addEve
 document.querySelector("#visual-dialog")?.addEventListener("click", event => {
   if (event.target === event.currentTarget) closeVisualAsset();
 });
-document.querySelector("#visual-dialog")?.addEventListener("close", () => { state.visualAsset = null; });
+document.querySelector("#visual-dialog")?.addEventListener("close", () => {
+  state.visualAsset = null;
+  state.detailItem = null;
+  contextChat.entity = null;
+  document.querySelector("#context-chat")?.classList.remove("thinking");
+});
 document.querySelector("#visual-related-items")?.addEventListener("click", showVisualRelatedItems);
-document.querySelector("#visual-ai-chat")?.addEventListener("click", openCurrentVisualChat);
+document.querySelector("#item-detail-linked-visual")?.addEventListener("click", event => {
+  const visualId = Number(event.currentTarget.dataset.visualId);
+  if (visualId) openVisualAsset(visualId);
+});
+document.querySelector("#item-detail-open-source")?.addEventListener("click", () => {
+  const row = state.detailItem;
+  if (!row?.item_id) return;
+  closeVisualAsset();
+  openSourceViewer(Number(row.item_id), row);
+});
+document.querySelector("#item-detail-edit")?.addEventListener("click", () => {
+  const itemId = Number(state.detailItem?.item_id);
+  if (!itemId || isReadOnly()) return;
+  closeVisualAsset();
+  jumpToRow(itemId);
+});
 document.querySelector("#context-chat-form")?.addEventListener("submit", submitContextChat);
 document.querySelector("#context-chat-close")?.addEventListener("click", closeContextChat);
 document.querySelector("#context-chat-reset")?.addEventListener("click", resetContextChat);

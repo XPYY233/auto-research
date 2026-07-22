@@ -40,13 +40,39 @@ VISUAL_EDITABLE_FIELDS = (
 VISUAL_REVIEW_ACTIONS = {"automatic", "confirmation", "correction", "ambiguous", "rejected"}
 
 
-def _caption_body_is_reference(body: str) -> bool:
-    """Reject prose references such as 'Table 1 lists...' as visual titles."""
+_PANEL_LEADIN_RE = re.compile(
+    r"^(?:\([a-z0-9]+(?:\s*[,\-–]\s*[a-z0-9]+)*\)|"
+    r"\[[a-z0-9]+(?:\s*[,\-–]\s*[a-z0-9]+)*\])\s*",
+    re.IGNORECASE,
+)
 
-    return not body or bool(re.match(
-        r"^(?:[()\[\],;:]|shows?\b|lists?\b|summari[sz]es?\b|is\b|are\b|presents?\b|"
-        r"reports?\b|depicts?\b|illustrates?\b|demonstrates?\b)",
-        body,
+
+def _caption_body_is_reference(body: str) -> bool:
+    """Reject prose references while keeping formal multi-panel captions.
+
+    Publisher captions may start with ``(a)`` either after a delimiter or
+    immediately after the figure number.  The panel marker itself is not
+    evidence that the text is a caption: ``Fig. 3(a) shows ...`` remains an
+    inline reference, whereas ``Figure 3(a) Solution energies ...`` is a
+    formal caption.  Strip one or more leading panel markers and classify the
+    remaining language instead of deciding from punctuation alone.
+    """
+
+    remainder = str(body or "").strip()
+    if not remainder:
+        return True
+    while True:
+        match = _PANEL_LEADIN_RE.match(remainder)
+        if not match:
+            break
+        remainder = remainder[match.end():].strip()
+    if not remainder:
+        return True
+    return bool(re.match(
+        r"^(?:[()\[\],;:]|and\b|see\b|shows?\b|lists?\b|summari[sz]es?\b|"
+        r"is\b|are\b|presents?\b|reports?\b|depicts?\b|illustrates?\b|"
+        r"demonstrates?\b|compares?\b)",
+        remainder,
         re.IGNORECASE,
     ))
 
@@ -310,9 +336,11 @@ def _infer_visual_metadata(caption: str, asset_type: str) -> dict[str, Any]:
 
 
 _FIGURE_CAPTION_RE = re.compile(
-    # Reject inline panel references such as Fig. 9a, Fig. 9(a), or Figure 9[b].
-    # A real whole-figure caption continues after the figure number delimiter.
-    r"^(?:fig(?:ure)?\.?)\s*(\d+)(?!\s*(?:[\[(]|[a-z](?:\b|[.)])))\s*(?:[.|:]\s*)?(.*)$",
+    # A bare alphabetic suffix (``Fig. 9a``) is an inline panel reference and
+    # cannot identify a whole asset. Bracketed panel markers are captured in
+    # the body and classified by ``_caption_body_is_reference`` so formal
+    # captions such as ``Figure 9(a) TEM images ...`` remain discoverable.
+    r"^(?:fig(?:ure)?\.?)\s*(\d+)(?![a-z])\s*(?:[.|:]\s*)?(.*)$",
     re.I,
 )
 _TABLE_CAPTION_RE = re.compile(r"^table\s*(\d+)\s*(?:[.|:]\s*)?(.*)$", re.I)
@@ -493,9 +521,9 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
                 match = _FIGURE_CAPTION_RE.match(text)
                 if match and "figure" not in index_kinds:
                     caption_body = match.group(2).strip(" |")
-                    if _caption_body_is_reference(caption_body):
-                        continue
                     caption, caption_rect = _complete_caption(blocks, block_index, caption_body)
+                    if _caption_body_is_reference(caption):
+                        continue
                     above = [
                         rect for rect in image_rects
                         if rect.y1 <= caption_rect.y0 + 12
@@ -556,14 +584,14 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
                 if not match or "table" in index_kinds:
                     continue
                 caption_body = match.group(2).strip(" |")
-                if _caption_body_is_reference(caption_body):
-                    continue
                 initial_caption_rect = fitz.Rect(*block[:4])
                 detected_table = _nearest_detected_table(detected_tables, initial_caption_rect)
                 caption, caption_rect = _complete_caption(
                     blocks, block_index, caption_body,
                     stop_y=detected_table.y0 if detected_table is not None else None,
                 )
+                if _caption_body_is_reference(caption):
+                    continue
                 horizontal = _connected_table_rules(drawings, caption_rect, page.rect.height)
                 if detected_table is not None:
                     crop = fitz.Rect(
@@ -918,7 +946,8 @@ def _clean_model_visual_metadata(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def enrich_visual_metadata(
-    db: EvidenceDB, paper_id: int, *, client: Any | None = None, batch_size: int = 10
+    db: EvidenceDB, paper_id: int, *, client: Any | None = None, batch_size: int = 10,
+    asset_ids: set[int] | None = None,
 ) -> dict[str, Any]:
     """Ground visual search metadata in captions/context while preserving original evidence."""
 
@@ -928,7 +957,12 @@ def enrich_visual_metadata(
     paper = db.get_paper(paper_id)
     if not paper:
         raise KeyError(f"paper not found: {paper_id}")
-    assets = list_visual_assets(db, paper_id=paper_id)
+    all_assets = list_visual_assets(db, paper_id=paper_id)
+    selected_asset_ids = None if asset_ids is None else {int(value) for value in asset_ids}
+    assets = [
+        asset for asset in all_assets
+        if selected_asset_ids is None or int(asset["id"]) in selected_asset_ids
+    ]
     updated = 0
     rejected: list[dict[str, Any]] = []
     for offset in range(0, len(assets), max(1, batch_size)):
@@ -964,7 +998,13 @@ def enrich_visual_metadata(
                     ),
                 )
             updated += 1
-    return {"paper_id": paper_id, "asset_count": len(assets), "updated": updated, "rejected": rejected}
+    return {
+        "paper_id": paper_id,
+        "asset_count": len(assets),
+        "paper_asset_count": len(all_assets),
+        "updated": updated,
+        "rejected": rejected,
+    }
 
 
 def list_visual_assets(db: EvidenceDB, *, asset_type: str | None = None, paper_id: int | None = None) -> list[dict[str, Any]]:

@@ -59,7 +59,7 @@ class DeepSeekSettings:
     api_key: str | None
     base_url: str = "https://api.deepseek.com"
     extraction_model: str = "deepseek-v4-pro"
-    analysis_model: str = "deepseek-v4-flash"
+    analysis_model: str = "deepseek-v4-pro"
     timeout_seconds: int = 180
     credential_source: str | None = None
 
@@ -73,7 +73,7 @@ class DeepSeekSettings:
             api_key=api_key,
             base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/"),
             extraction_model=os.environ.get("DEEPSEEK_EXTRACTION_MODEL", "deepseek-v4-pro"),
-            analysis_model=os.environ.get("DEEPSEEK_ANALYSIS_MODEL", "deepseek-v4-flash"),
+            analysis_model=os.environ.get("DEEPSEEK_ANALYSIS_MODEL", "deepseek-v4-pro"),
             timeout_seconds=_env_int(
                 "DEEPSEEK_TIMEOUT_SECONDS", 180, minimum=10, maximum=1800
             ),

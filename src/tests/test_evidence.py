@@ -108,6 +108,7 @@ from auto_research.evidence.visual_evidence import (
     _caption_body_is_reference,
     _complete_caption,
     _connected_table_rules,
+    _generic_specs,
     _nearest_detected_table,
     _visual_metadata_messages,
     _visual_index_kinds,
@@ -125,7 +126,14 @@ class ValueTests(unittest.TestCase):
     def test_visual_caption_rules_reject_panel_references_and_page_order_wrap(self):
         self.assertIsNotNone(_FIGURE_CAPTION_RE.match("Fig. 9. TEM microstructure"))
         self.assertIsNone(_FIGURE_CAPTION_RE.match("Fig. 9a and Fig. 10a show the results"))
-        self.assertIsNone(_FIGURE_CAPTION_RE.match("Fig. 9(a) shows the results"))
+        panel_reference = _FIGURE_CAPTION_RE.match("Fig. 9(a) shows the results")
+        self.assertIsNotNone(panel_reference)
+        self.assertTrue(_caption_body_is_reference(panel_reference.group(2)))
+        compact_caption = _FIGURE_CAPTION_RE.match(
+            "Figure 9(a) TEM images before irradiation and (b) after irradiation."
+        )
+        self.assertIsNotNone(compact_caption)
+        self.assertFalse(_caption_body_is_reference(compact_caption.group(2)))
         blocks = [
             (37.0, 723.0, 557.0, 744.0, "Fig. 9. TEM microstructure"),
             (37.0, 33.0, 500.0, 44.0, "Running page header"),
@@ -136,6 +144,58 @@ class ValueTests(unittest.TestCase):
         self.assertIsNotNone(_TABLE_CAPTION_RE.match("Table 1. Summary of specimen builds"))
         self.assertTrue(_caption_body_is_reference("lists all specimen builds"))
         self.assertFalse(_caption_body_is_reference("Summary of specimen builds"))
+        self.assertFalse(_caption_body_is_reference(
+            "(a) Solution energies of Xe and Cs as a function of chemical potential."
+        ))
+        self.assertFalse(_caption_body_is_reference(
+            "(a-b) Solution energies and [c] relaxed defect structures."
+        ))
+        self.assertTrue(_caption_body_is_reference("(a) shows the results in Fig. 8"))
+        self.assertTrue(_caption_body_is_reference("[b] compares the irradiated specimens"))
+        self.assertTrue(_caption_body_is_reference("(a)"))
+
+    def test_caption_completion_classifies_split_caption_after_joining(self):
+        blocks = [
+            (52.0, 420.0, 145.0, 434.0, "Figure 7."),
+            (52.0, 434.5, 510.0, 449.0, "(a) Defect energies before irradiation and"),
+            (52.0, 449.5, 510.0, 464.0, "(b) defect energies after irradiation."),
+        ]
+        match = _FIGURE_CAPTION_RE.match(blocks[0][4])
+        self.assertIsNotNone(match)
+        caption, rect = _complete_caption(blocks, 0, match.group(2))
+        self.assertFalse(_caption_body_is_reference(caption))
+        self.assertIn("(a) Defect energies", caption)
+        self.assertIn("(b) defect energies", caption)
+        self.assertGreater(rect.y1, 460)
+
+        prose_blocks = [
+            (52.0, 420.0, 145.0, 434.0, "Fig. 7."),
+            (52.0, 434.5, 510.0, 449.0, "(a) shows the calculated values in the next section."),
+        ]
+        match = _FIGURE_CAPTION_RE.match(prose_blocks[0][4])
+        caption, _ = _complete_caption(prose_blocks, 0, match.group(2))
+        self.assertTrue(_caption_body_is_reference(caption))
+
+    def test_multi_panel_caption_after_delimiter_is_indexed_as_complete_figure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf_path = Path(tmp) / "multi-panel-caption.pdf"
+            document = fitz.open()
+            page = document.new_page()
+            page.draw_rect(fitz.Rect(80, 90, 500, 410), color=(0.1, 0.2, 0.3), width=2)
+            page.draw_line((110, 350), (450, 150), color=(0.8, 0.2, 0.1), width=2)
+            page.insert_textbox(
+                fitz.Rect(70, 430, 525, 500),
+                "Figure 3. (a) Solution energies of Xe and Cs as a function of chemical potential. "
+                "(b) Solution energies at four interstitial sites.",
+                fontsize=10,
+            )
+            document.save(pdf_path)
+            document.close()
+            specs = _generic_specs(pdf_path)
+        figure = next(spec for spec in specs if spec["asset_type"] == "figure" and spec["number"] == 3)
+        self.assertIn("Solution energies", figure["caption"])
+        self.assertLess(figure["bbox"][1], 120)
+        self.assertGreater(figure["bbox"][3], 440)
 
     def test_table_rule_group_stops_before_distant_footer(self):
         caption = fitz.Rect(39, 466, 295, 505)
@@ -841,9 +901,11 @@ class SixColumnWorkflowTests(unittest.TestCase):
 
             def __init__(self):
                 self.messages = []
+                self.kwargs = {}
 
             def request_json(self, messages, **kwargs):
                 self.messages = messages
+                self.kwargs = kwargs
                 return {
                     "answer": "该数据表示辐照实验温度，并用于界定表3硬度结果的实验条件。[PDF第5页]",
                     "evidence_pages": [5, 99],
@@ -862,6 +924,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
         prompt = "\n".join(message["content"] for message in client.messages)
         self.assertIn("[PDF第5页]", prompt)
         self.assertIn(DEFAULT_CONTEXT_QUESTION, prompt)
+        self.assertEqual(client.messages[-1]["content"], DEFAULT_CONTEXT_QUESTION)
+        self.assertEqual(client.kwargs["task"], "extraction")
+        self.assertEqual(result["model"], "deepseek-v4-pro")
         self.assertEqual(len(get_data_item(self.db, item["item_id"])["history"]), version_count_before)
 
     def test_context_chat_rejects_unknown_entity_type(self):
@@ -1490,8 +1555,10 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertNotIn('id="search-review-filter"', index_html)
         self.assertIn('id="context-chat"', index_html)
         self.assertIn(DEFAULT_CONTEXT_QUESTION, index_html)
-        self.assertIn("data-context-chat-item", app_js)
-        self.assertIn("data-context-chat-visual", app_js)
+        self.assertIn('id="item-detail-panel"', index_html)
+        self.assertIn('id="visual-detail-panel"', index_html)
+        self.assertIn("data-item-detail", app_js)
+        self.assertNotIn("data-context-chat-item", app_js)
         self.assertIn("/api/context-chat", app_js)
         server_source = Path(webapp_module.__file__).read_text(encoding="utf-8")
         self.assertIn("answer_context_chat", server_source)
@@ -1860,6 +1927,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
     def test_read_only_mode_classifies_post_requests_as_mutating(self):
         self.assertFalse(is_read_only_mutation("GET", "/api/six-search"))
         self.assertFalse(is_read_only_mutation("HEAD", "/"))
+        self.assertFalse(is_read_only_mutation("POST", "/api/context-chat"))
         self.assertTrue(is_read_only_mutation("POST", "/api/current-paper/deepseek-preview"))
         self.assertTrue(is_read_only_mutation("POST", "/api/uploads/pdf"))
 

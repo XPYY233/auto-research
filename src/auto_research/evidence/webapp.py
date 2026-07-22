@@ -81,6 +81,8 @@ RELEASE_INFO = {
 def is_read_only_mutation(method: str, path: str) -> bool:
     """Return whether a request would mutate the evidence database or local files."""
 
+    if method.upper() == "POST" and path == "/api/context-chat":
+        return False
     return method.upper() not in {"GET", "HEAD", "OPTIONS"}
 
 
@@ -549,7 +551,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         if self.read_only and is_read_only_mutation("POST", parsed.path):
             return self.json_response(
                 {
-                    "error": "当前为只读模式，不允许修改数据、上传文献或重新调用模型。",
+                    "error": "当前为只读模式，不允许修改数据、上传文献或启动自动抽取；证据对话仍可使用。",
                     "code": "read_only",
                 },
                 HTTPStatus.FORBIDDEN,

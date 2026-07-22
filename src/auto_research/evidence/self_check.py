@@ -104,12 +104,15 @@ def _web_ui_contract() -> dict[str, Any]:
             "evidence_scoped_ai_chat",
             'id="context-chat"' in html
             and 'id="context-chat-form"' in html
+            and 'id="item-detail-panel"' in html
+            and 'id="visual-detail-panel"' in html
             and "说明这个数据本身的含义，并总结该数据在文章中的具体含义" in html
             and "/api/context-chat" in js
-            and "data-context-chat-item" in js
-            and "data-context-chat-visual" in js
-            and "isReadOnly" in js
-            and ".context-chat{" in css,
+            and "data-item-detail" in js
+            and "openItemDetail" in js
+            and "openVisualAsset" in js
+            and "data-context-chat-item" not in js
+            and ".evidence-workspace-card" in css,
         ),
         ("dense_review_rows", "autoSizeReviewCell" in js and "grid-template-columns:repeat(3,minmax(0,1fr))" in css and ".edit-table{min-width:1380px;font-size:14px}" in css),
     ]

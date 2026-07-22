@@ -216,7 +216,7 @@ def answer_context_chat(db: EvidenceDB, *, entity_type: str, entity_id: int,
     ]
     runtime_client = client or DeepSeekClient()
     result = runtime_client.request_json(
-        messages, task="analysis", max_tokens=2_400, thinking=False, temperature=0.2
+        messages, task="extraction", max_tokens=2_400, thinking=False, temperature=0.2
     )
     answer = str(result.get("answer") or "").strip()
     if not answer:
@@ -242,5 +242,5 @@ def answer_context_chat(db: EvidenceDB, *, entity_type: str, entity_id: int,
             "paper_title": paper.get("title"),
             "doi": paper.get("doi"),
         },
-        "model": runtime_client.settings.analysis_model,
+        "model": runtime_client.settings.extraction_model,
     }

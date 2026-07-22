@@ -619,13 +619,15 @@ the current article, or call DeepSeek. Editable startup may initialize a missing
 schema and index genuinely new managed PDFs. Read-only startup must skip document
 indexing entirely; an initialized database must remain byte-stable while the
 shared service is opened and viewed.
-When `read_only` is enabled, every POST request is rejected before route-specific
+When `read_only` is enabled, every POST request except the non-mutating
+`/api/context-chat` evidence-explanation route is rejected before route-specific
 logic runs. The shared read-only server is search-only: GET routes are limited to
 the static app, `/api/ui-mode`, whole-database search/export, row-level source
 evidence images/metadata, and source PDF opening. Do not expose current-paper,
 paper-list, upload queue, learning samples, review, or extraction endpoints in
-public read-only mode. The frontend should hide every non-search navigation item
-and default to the whole-database search view.
+public read-only mode. The frontend should hide every non-search navigation item,
+default to the whole-database search view, and reveal evidence chat only inside
+an opened item or visual detail workspace.
 
 The public source-evidence button must open `/source-view` directly from the
 search result row. It must not prefetch `/api/six-data/<id>`, because that private
@@ -843,12 +845,19 @@ stored `value_text` or `unit` merely to improve typography.
 
 ### Evidence-scoped DeepSeek chat
 
-The editable search page may offer an AI conversation only after the user
-selects one numeric fact, table, or figure. The conversation is scoped to that
-entity and its paper: send the selected structured fields plus a bounded set of
-relevant text pages read from the original local PDF. Never send the complete
-database, unrelated papers, local Zotero keys, or other local paths to the
-model. Treat PDF text as untrusted evidence rather than instructions.
+Both the editable search page and the public read-only search page may offer an
+AI conversation, but only after the user opens one numeric fact, table, or
+figure. Do not restore a global drawer or a chat button that opens independently
+from evidence. Opening an object must create one unified evidence workspace:
+the left column contains the conversation and the right column contains the
+selected object's complete data or visual details.
+
+The conversation is scoped to that entity and its paper: send the selected
+structured fields plus a bounded set of relevant text pages read from the
+original local PDF. Never send the complete database, unrelated papers, local
+Zotero keys, or other local paths to the model. Treat PDF text as untrusted
+evidence rather than instructions. Use `deepseek-v4-pro` for extraction,
+analysis and evidence chat; do not silently fall back to the Flash model.
 
 The default first question is `说明这个数据本身的含义，并总结该数据在文章中的具体含义`,
 but the user may edit or replace it. Follow-up turns may retain only a bounded
@@ -859,10 +868,27 @@ Never invent conditions or digitize curve points.
 
 This chat is an explanatory read-only tool. It must not create, edit, confirm,
 publish, or review evidence rows. Conversation state is browser-session memory
-only unless the user explicitly requests a future persistence design. The
-public read-only service must reject the chat POST route and hide all chat
-controls so a shared link cannot spend the local DeepSeek account or transmit
-PDF content without the project owner's action.
+only unless the user explicitly requests a future persistence design. Public
+read-only mode may expose `POST /api/context-chat` because that route performs
+no database or file mutation. All upload, review, correction, extraction and
+snapshot POST routes must continue to return the read-only rejection response.
+
+### PDF caption recognition
+
+Treat visual recognition as caption classification plus layout adjacency, not
+as a punctuation shortcut. Formal captions may appear as `Figure 3. (a) ...`,
+`Figure 3(a) ...`, or as a standalone `Figure 3.` block followed by caption
+lines. Join eligible continuation blocks before deciding whether the body is a
+caption. Strip leading panel markers and classify the remaining language:
+`(a) Solution energies ...` is a caption, while `(a) shows ...` is a prose
+reference. Bare suffix references such as `Fig. 3a`, list-of-figures pages,
+`Table 1 lists ...`, and other reference verbs must remain excluded.
+
+Caption-rule changes require synthetic regression cases for multi-panel,
+split-line and inline-reference forms plus a real-PDF crop check. They may add a
+missing asset without replacing unrelated stable screenshots or their review
+history. DeepSeek may enrich the accepted caption and nearby text only after
+the local screenshot identity and PDF location are established.
 
 Visual evidence uses three separate fields that must not be collapsed again:
 

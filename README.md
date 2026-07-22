@@ -169,6 +169,15 @@ Use this launcher for the editable local workbench. Use
 `/Users/USER/Zotero/创建导师公网链接.command` only for the search-only public
 link.
 
+The editable and public search pages share the same evidence-detail interface.
+After a user opens one numeric fact, table, or figure, the page presents a
+two-column workspace: DeepSeek Pro evidence chat on the left and the selected
+object's complete details on the right. The default question can be edited or
+replaced. Chat receives only that object's structured fields and bounded text
+pages from its source PDF, never the complete database, and it does not write
+review or scientific-data state. Public mode still rejects uploads, corrections
+and automatic extraction.
+
 For external sharing, use the read-only ngrok launcher. This is the recommended
 free-account path for a live preview because it gives a temporary HTTPS link
 while keeping the editable workbench private:
