@@ -13,7 +13,7 @@ from .self_check import check_evidence_workflow
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 GOAL_AUDIT_DIR = DATA_DIR / "evidence" / "goal_audits"
-DEFAULT_BUNDLE_DIR = Path("/Users/USER/Zotero/auto-research-git-backups")
+DEFAULT_BUNDLE_DIR = Path("/Users/USER/Zotero/auto-research-backups")
 DEFAULT_CORPUS_AUDIT = PROJECT_ROOT / "data" / "evidence" / "test_sets" / "full-corpus-50-v1_audit.json"
 INITIAL_COMPLETED_PAPER_TARGET = 30
 
