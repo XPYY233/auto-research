@@ -137,6 +137,20 @@ def run_quality_test_set(
                 "chunk_pages": chunk_pages, "quality_threshold": threshold,
                 "error": str(exc)[:1500], "updated_at": now(),
             }
+        except BaseException as exc:
+            interrupted_at = now()
+            message = str(exc).strip() or type(exc).__name__
+            state["papers"][key] = {
+                **base, "status": "interrupted", "max_pages": max_pages,
+                "chunk_pages": chunk_pages, "quality_threshold": threshold,
+                "error": message[:1500], "updated_at": interrupted_at,
+            }
+            state["status"] = "interrupted"
+            state["finished_at"] = interrupted_at
+            state["updated_at"] = interrupted_at
+            state["state_path"] = str(state_file)
+            _write_state(state_file, state)
+            raise
         else:
             summary = result["summary"]
             print(

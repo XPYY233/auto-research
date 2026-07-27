@@ -382,7 +382,10 @@ sequential. Do not re-enable nested focus/verification thread pools inside both
 branches: that silently expands two reviewers into six concurrent API requests
 and has caused real full-paper connection failures. Production DeepSeek calls
 use bounded exponential retry; interrupted runs must be marked failed rather
-than left as active work.
+than left as active work. Before a release audit, run
+`evidence-reconcile-runs --older-than-hours 6`; this command may only settle
+abandoned audit/job metadata and clear obsolete success errors. It must never
+change evidence rows, visual assets, review history, or output artifacts.
 
 DOI is portable and preferred when present, but it is not mandatory for older
 or otherwise valid local PDFs. Title plus the verified PDF fingerprint remains
@@ -391,13 +394,16 @@ imports, visual indexing, review, search, or database health checks.
 
 ### Current verified baseline
 
-As of the 2026-07-22 50-paper corpus registration checkpoint:
+As of the 2026-07-27 project-health checkpoint:
 
-- Evidence schema: v11; registered papers: 57; content-valid local PDFs: 52. The active fixed set is 50/50 identity-verified PDFs; seven additional database records remain outside that set, including five historical placeholders and two local uploads.
-- Raw six-column history: 5,198 rows; reportable numeric occurrences: 4,084;
-  independent numeric facts: 2,752; qualitative findings: 819; quarantined
-  prose/history: 1,114.
-- The database contains 273 visual assets and every recorded image exists. The
+- Evidence schema: v11; registered papers and documents: 60. The active fixed
+  set is 50/50 content-valid and identity-verified PDFs; records outside the
+  fixed set are preserved as historical or user-uploaded material and must not
+  silently alter the fixed corpus.
+- Raw six-column history: 6,501 rows; reportable numeric occurrences: 5,048;
+  independent numeric facts: 3,142; qualitative findings: 937; quarantined
+  prose/history: 1,453.
+- The database contains 291 visual assets (59 tables and 232 figures), and every recorded image exists. The
   original frozen pre-cloud baseline remains 243 assets (40 tables and 203
   figures); its database identities, stored SHA-256 values and files remain
   unchanged. The additional 30 assets belong to later local papers. The
@@ -414,11 +420,11 @@ As of the 2026-07-22 50-paper corpus registration checkpoint:
   functional release pass yet: 17 papers are data-ready, 30 are visual-ready,
   and 33 still need full extraction. The five historical placeholder records
   remain outside the active set for regression evidence.
-- Target DOI `10.1016/j.jnucmat.2018.08.031` currently exposes 225 independent
-  facts and 339/339 localizable numeric occurrences, plus 4 tables and 10
+- Target DOI `10.1016/j.jnucmat.2018.08.031` currently exposes 231 independent
+  facts and 403/403 localizable automatic occurrences, plus 4 tables and 10
   figures. Its two older review learning samples remain, but the regenerated
-  current fact layer is 0/225 human-reviewed.
-- The current fact layer is 0/2,752 human-reviewed. Never present automatic
+  current fact layer is 0/231 human-reviewed.
+- The current fact layer is 0/3,142 human-reviewed. Never present automatic
   quality scores as physical-science confirmation.
 - Test command: `PYTHONPATH=src python3 -m unittest discover -s src/tests -p 'test_*.py'`.
 
@@ -427,16 +433,18 @@ As of the 2026-07-22 50-paper corpus registration checkpoint:
 After each meaningful implementation or verified data-review milestone:
 
 1. Run the evidence tests and relevant live workflow checks.
-2. Commit the whole project state, including `db/experimental_evidence.sqlite` and tracked extraction outputs.
-3. Create a descriptive local milestone tag using the `evidence-demo-YYYY-MM-DD-<slug>` pattern.
-4. Create and verify a complete Git bundle outside the repository:
+2. Stop mutable servers/batches, snapshot SQLite, reconcile abandoned run
+   metadata, then repeat database health. Do not back up a live WAL state.
+3. Commit the whole project state, including `db/experimental_evidence.sqlite` and tracked extraction outputs.
+4. Create a descriptive local milestone tag using the `evidence-demo-YYYY-MM-DD-<slug>` pattern.
+5. Create and verify a complete Git bundle outside the repository:
 
 ```bash
 git bundle create /Users/USER/Zotero/auto-research-git-backups/auto-research-YYYYMMDD-<commit>.bundle --all
 git bundle verify /Users/USER/Zotero/auto-research-git-backups/auto-research-YYYYMMDD-<commit>.bundle
 ```
 
-5. Confirm `git status --short` is empty after the final checkpoint. Do not copy Zotero PDF storage into Git; the evidence database stores the authoritative absolute PDF path and fingerprint.
+6. Confirm `git status --short` is empty after the final checkpoint. Do not copy Zotero PDF storage into Git; the evidence database stores the authoritative absolute PDF path and fingerprint.
 
 ### B1 PDF intake and duplicate control
 
@@ -727,7 +735,7 @@ device-specific Zotero key as legacy internal metadata only.
 Treat `all`, `test_set`, and `recent` as article-collection presets, not ordinary
 stackable filters. Selecting any collection must clear title, author, topic and
 workflow-status filters before rendering the picker. The fixed full-corpus preset
-must therefore show exactly 35 papers whenever its configuration resolves;
+must therefore show exactly 50 papers whenever its configuration resolves;
 `all` must show every registered paper. Label the topic reset as "全部方向" so it
 cannot be mistaken for the all-articles preset.
 

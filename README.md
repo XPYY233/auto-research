@@ -116,7 +116,9 @@ The review matrices include authenticity columns, and the gap summary only promo
 
 The evidence database is deliberately separate from Zotero and from `db/research.sqlite`.
 Zotero remains the source of papers/PDFs; every publishable value must retain a
-page or table/figure locator and pass human review.
+page or table/figure locator and pass the automatic adversarial quality gate.
+Human checking remains an optional correction and calibration path, not a
+mandatory per-row publication step.
 
 The active stable visual pipeline uses the original local PDF screenshots and
 search index. DeepSeek enriches captions and nearby extracted text only. The
@@ -168,6 +170,21 @@ On this Mac, a convenience launcher is available at:
 Use this launcher for the editable local workbench. Use
 `/Users/USER/Zotero/创建导师公网链接.command` only for the search-only public
 link.
+
+## Maintenance and release audit
+
+Before a stable checkpoint, stop extraction batches and run:
+
+```bash
+auto-research evidence-reconcile-runs --older-than-hours 6
+auto-research evidence-db-health
+auto-research evidence-self-check 10.1016/j.jnucmat.2018.08.031 --query 温度 --query 硬度 --query 钨 --min-rows 100
+auto-research evidence-test-set-audit --config config/evidence_test_set_50.json
+```
+
+The first command only closes abandoned run metadata; it never edits evidence
+or graph/table files. See `MAINTENANCE_WORKFLOW.md` for the full release and
+backup checklist.
 
 The editable and public search pages share the same evidence-detail interface.
 After a user opens one numeric fact, table, or figure, the page presents a

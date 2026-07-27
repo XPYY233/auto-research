@@ -1294,7 +1294,8 @@ class DeepSeekEvidenceExtractor:
             _execute_run_update(
                 self.db,
                 """UPDATE ai_extraction_runs SET status='completed',output_path=?,chunk_count=?,candidate_count=?,
-                verified_count=?,rejected_count=?,duplicate_count=?,imported_count=?,finished_at=? WHERE id=?""",
+                verified_count=?,rejected_count=?,duplicate_count=?,imported_count=?,error_message=NULL,
+                finished_at=? WHERE id=?""",
                 (
                     str(output_path), len(chunks), result["candidate_count"], len(verified),
                     result["rejected_count"], duplicate_count,

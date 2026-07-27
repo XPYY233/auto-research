@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -298,6 +299,30 @@ class AdversarialQualityPipelineTests(unittest.TestCase):
         self.assertEqual(first["summary"]["manual_review"], 1)
         self.assertEqual(second["status"], "completed")
         runner.run.assert_called_once()
+
+    def test_quality_test_set_records_keyboard_interrupt(self):
+        state_path = Path(self.tmp.name) / "quality-interrupted.json"
+        config = {
+            "version": "test-interrupt-v1",
+            "config_path": str(Path(self.tmp.name) / "config.json"),
+            "expected_paper_count": 1,
+            "papers": [{"doi": "10.1000/quality-test", "role": "smoke"}],
+        }
+        runner = Mock()
+        runner.run.side_effect = KeyboardInterrupt()
+        with (
+            patch("auto_research.evidence.quality_test_set.load_test_set", return_value=config),
+            patch("auto_research.evidence.quality_test_set._pdf_status", return_value={
+                "content_valid": True, "sha256": "pdf-hash",
+            }),
+            patch("auto_research.evidence.quality_test_set.AdversarialQualityPipeline", return_value=runner),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            run_quality_test_set(self.db, state_path=state_path)
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertEqual(state["status"], "interrupted")
+        self.assertEqual(state["papers"][str(self.paper_id)]["status"], "interrupted")
+        self.assertIn("finished_at", state)
 
 
 if __name__ == "__main__":

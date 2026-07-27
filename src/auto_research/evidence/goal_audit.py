@@ -14,6 +14,8 @@ from .self_check import check_evidence_workflow
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 GOAL_AUDIT_DIR = DATA_DIR / "evidence" / "goal_audits"
 DEFAULT_BUNDLE_DIR = Path("/Users/USER/Zotero/auto-research-git-backups")
+DEFAULT_CORPUS_AUDIT = PROJECT_ROOT / "data" / "evidence" / "test_sets" / "full-corpus-50-v1_audit.json"
+INITIAL_COMPLETED_PAPER_TARGET = 30
 
 
 def _slug(text: str, limit: int = 72) -> str:
@@ -72,6 +74,25 @@ def _launcher_snapshot(project_root: Path) -> dict[str, Any]:
     }
 
 
+def _corpus_snapshot(path: Path | None) -> dict[str, Any] | None:
+    if path is None or not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return {
+        "path": str(path),
+        "version": payload.get("version"),
+        "paper_count": int(payload.get("paper_count") or 0),
+        "verified_pdf_count": int(payload.get("verified_pdf_count") or 0),
+        "ready_paper_count": int(payload.get("ready_paper_count") or 0),
+        "pending_extraction_count": int(payload.get("pending_extraction_count") or 0),
+        "visual_ready_count": int(payload.get("visual_ready_count") or 0),
+        "corpus_integrity_ok": bool(payload.get("corpus_integrity_ok")),
+    }
+
+
 def _requirement(ok: bool, requirement: str, evidence: list[str],
                  *, status: str | None = None) -> dict[str, Any]:
     return {
@@ -107,6 +128,12 @@ def _markdown(report: dict[str, Any]) -> str:
         "## 逐条需求审计",
         "",
     ]
+    corpus = report.get("corpus")
+    if corpus:
+        lines[7:7] = [
+            f"- 固定语料数据就绪：{corpus['ready_paper_count']}/{corpus['paper_count']} 篇",
+            f"- 初始批量验收目标：至少 {INITIAL_COMPLETED_PAPER_TARGET} 篇完成处理",
+        ]
     for item in report["goal_requirements"]:
         mark = "通过" if item["ok"] else "未完成"
         lines.append(f"### {mark} · {item['requirement']}")
@@ -140,6 +167,8 @@ def _markdown(report: dict[str, Any]) -> str:
             "unreviewed": progress["unreviewed"],
             "head": git.get("head"),
             "latest_bundle": git.get("latest_bundle"),
+            "corpus_ready_papers": corpus.get("ready_paper_count") if corpus else None,
+            "initial_completed_paper_target": INITIAL_COMPLETED_PAPER_TARGET,
         }, ensure_ascii=False, indent=2),
         "```",
         "",
@@ -153,7 +182,8 @@ def generate_goal_audit(db: EvidenceDB, selector: str, *,
                         min_rows: int = 100,
                         min_highlight_ratio: float = 0.8,
                         project_root: Path = PROJECT_ROOT,
-                        bundle_dir: Path = DEFAULT_BUNDLE_DIR) -> dict[str, Any]:
+                        bundle_dir: Path = DEFAULT_BUNDLE_DIR,
+                        corpus_audit_path: Path | None = DEFAULT_CORPUS_AUDIT) -> dict[str, Any]:
     """Generate a user-objective audit without calling AI or mutating data."""
 
     workflow = check_evidence_workflow(
@@ -165,15 +195,25 @@ def generate_goal_audit(db: EvidenceDB, selector: str, *,
     )
     git = _git_snapshot(project_root, bundle_dir)
     launcher = _launcher_snapshot(project_root)
+    corpus = _corpus_snapshot(corpus_audit_path)
     progress = workflow["summary"]["review_progress"]
     launcher_ok = bool(launcher["exists"] and launcher["executable"])
     git_backup_ok = bool(git["is_git_repo"] and git["head"] and git["latest_bundle"])
     automatic_ready = bool(workflow["ok"] and launcher_ok and git_backup_ok)
-    goal_complete = automatic_ready
+    corpus_target_met = bool(
+        corpus
+        and corpus["corpus_integrity_ok"]
+        and corpus["ready_paper_count"] >= INITIAL_COMPLETED_PAPER_TARGET
+    )
+    goal_complete = automatic_ready and corpus_target_met
     next_step = (
-        "自动提取、质量门、证据检查和检索链路已就绪；下一步可上传一篇新 PDF 做端到端验收。"
+        "自动工作流与至少 30 篇批量语料验收均已通过。"
         if goal_complete
-        else "先修复审计报告中未通过的功能项，再测试新文章自动流程。"
+        else (
+            f"自动工作流可用，但固定语料仅 {corpus['ready_paper_count'] if corpus else 0}/"
+            f"{corpus['paper_count'] if corpus else 0} 篇数据就绪；需完成至少 "
+            f"{INITIAL_COMPLETED_PAPER_TARGET} 篇并建立独立金标准。"
+        )
     )
     requirements = [
         _requirement(
@@ -186,6 +226,18 @@ def generate_goal_audit(db: EvidenceDB, selector: str, *,
                 f"六列数据：{workflow['summary'].get('row_count')} 条",
                 f"原文高亮：{workflow['summary'].get('highlighted_rows')} 条",
             ],
+        ),
+        _requirement(
+            corpus_target_met,
+            f"至少 {INITIAL_COMPLETED_PAPER_TARGET} 篇真实 PDF 完成数据、证据定位、搜索与图表验收。",
+            ([
+                f"固定语料：{corpus['paper_count']} 篇",
+                f"真实且身份匹配的 PDF：{corpus['verified_pdf_count']} 篇",
+                f"数据就绪：{corpus['ready_paper_count']} 篇",
+                f"待提取：{corpus['pending_extraction_count']} 篇",
+                f"图表就绪：{corpus['visual_ready_count']} 篇",
+                f"审计文件：{corpus['path']}",
+            ] if corpus else ["未找到固定语料审计文件；不能宣称批量目标完成。"]),
         ),
         _requirement(
             all(item["ok"] for item in workflow["requirements"]),
@@ -234,6 +286,7 @@ def generate_goal_audit(db: EvidenceDB, selector: str, *,
         "goal_requirements": requirements,
         "launcher": launcher,
         "git": git,
+        "corpus": corpus,
     }
     target = out
     if target is None:

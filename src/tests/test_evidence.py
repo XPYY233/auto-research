@@ -19,6 +19,7 @@ from auto_research.evidence.article_navigation import navigation_tags
 from auto_research.evidence.context_chat import DEFAULT_CONTEXT_QUESTION, answer_context_chat
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.db_health import evidence_db_health
+from auto_research.evidence.maintenance import reconcile_stale_runs
 from auto_research.evidence.evidence_audit import audit_six_column_evidence
 from auto_research.evidence.experiment_types import classify_experiment_types, extraction_focuses_for_profile
 from auto_research.evidence.deepseek_extraction import (
@@ -1526,7 +1527,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.18-chinese-visual-semantics.1")
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.27-project-health-stable.1")
         self.assertEqual(RELEASE_INFO["evidence_schema"], 11)
 
     def test_rejected_cloud_visual_experiment_is_absent_from_active_ui(self):
@@ -1931,6 +1932,51 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertFalse(checks["completed_run_artifacts"]["ok"])
         self.assertTrue(checks["completed_run_artifacts"]["examples"])
 
+    def test_reconcile_stale_runs_only_updates_audit_metadata(self):
+        before_rows = len(list_current_data(self.db, self.paper_id))
+        with self.db.connect() as conn:
+            ai_id = conn.execute(
+                """INSERT INTO ai_extraction_runs
+                   (paper_id,provider,model,mode,status,pdf_sha256,created_at)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (self.paper_id, "deepseek", "test", "preview", "running", "sha", "2020-01-01T00:00:00Z"),
+            ).lastrowid
+            quality_id = conn.execute(
+                """INSERT INTO quality_pipeline_runs
+                   (paper_id,status,stage,progress,created_at)
+                   VALUES(?,?,?,?,?)""",
+                (self.paper_id, "running", "extracting", 40, "2020-01-01T00:00:00Z"),
+            ).lastrowid
+            job_id = conn.execute(
+                """INSERT INTO processing_jobs
+                   (paper_id,job_type,status,provider,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?)""",
+                (self.paper_id, "extract", "running", "deepseek", "2020-01-01T00:00:00Z", "2020-01-01T00:00:00Z"),
+            ).lastrowid
+            completed_id = conn.execute(
+                """INSERT INTO ai_extraction_runs
+                   (paper_id,provider,model,mode,status,pdf_sha256,error_message,created_at,finished_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                (self.paper_id, "deepseek", "test", "preview", "completed", "sha", "old warning", "2020-01-01T00:00:00Z", "2020-01-01T00:01:00Z"),
+            ).lastrowid
+        report = reconcile_stale_runs(self.db, older_than_hours=1)
+        self.assertEqual(report["ai_run_ids"], [ai_id])
+        self.assertEqual(report["quality_run_ids"], [quality_id])
+        self.assertEqual(report["processing_job_ids"], [job_id])
+        self.assertEqual(report["completed_errors_cleared"]["ai"], 1)
+        self.assertEqual(len(list_current_data(self.db, self.paper_id)), before_rows)
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute(
+                "SELECT status FROM ai_extraction_runs WHERE id=?", (ai_id,)
+            ).fetchone()["status"], "failed")
+            quality = conn.execute(
+                "SELECT status,progress FROM quality_pipeline_runs WHERE id=?", (quality_id,)
+            ).fetchone()
+            self.assertEqual((quality["status"], quality["progress"]), ("failed", 100))
+            self.assertIsNone(conn.execute(
+                "SELECT error_message FROM ai_extraction_runs WHERE id=?", (completed_id,)
+            ).fetchone()["error_message"])
+
     def test_read_only_mode_classifies_post_requests_as_mutating(self):
         self.assertFalse(is_read_only_mutation("GET", "/api/six-search"))
         self.assertFalse(is_read_only_mutation("HEAD", "/"))
@@ -2035,15 +2081,16 @@ class SixColumnWorkflowTests(unittest.TestCase):
             "Irradiation effects in high entropy alloys and 316H stainless steel at 300 C",
             out=out,
             bundle_dir=bundle_dir,
+            corpus_audit_path=None,
         )
         self.assertTrue(result["automatic_ready"], result)
-        self.assertTrue(result["goal_complete"], result)
+        self.assertFalse(result["goal_complete"], result)
         self.assertGreater(result["review_progress"]["unreviewed"], 0)
         self.assertTrue(out.is_file())
         text = out.read_text(encoding="utf-8")
         self.assertIn("自动化实验数据提取目标审计", text)
-        self.assertIn("最终目标完成：是", text)
-        self.assertIn("自动提取、质量门、证据检查和检索链路已就绪", text)
+        self.assertIn("最终目标完成：否", text)
+        self.assertIn("不能宣称批量目标完成", text)
 
     def test_self_check_fails_when_article_has_no_extracted_rows(self):
         other = self.db.upsert_paper(

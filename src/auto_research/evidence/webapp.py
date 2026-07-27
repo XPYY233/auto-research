@@ -72,8 +72,8 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.18-chinese-visual-semantics.1",
-    "label": "中文图表语义稳定版 2026.07.18",
+    "version": "2026.07.27-project-health-stable.1",
+    "label": "证据库健康稳定版 2026.07.27",
     "evidence_schema": 11,
 }
 

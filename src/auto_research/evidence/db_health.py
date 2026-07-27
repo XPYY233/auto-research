@@ -85,7 +85,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         ).fetchone()["count"]
         integrity_result = conn.execute("PRAGMA integrity_check").fetchone()[0]
         ai_runs = [dict(row) for row in conn.execute(
-            "SELECT id,status,output_path,created_at FROM ai_extraction_runs"
+            "SELECT id,status,output_path,error_message,created_at FROM ai_extraction_runs"
         )]
         visual_assets = [dict(row) for row in conn.execute(
             "SELECT id,paper_id,asset_type,label,image_path FROM visual_assets"
@@ -93,7 +93,7 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             (() if paper_id is None else (paper_id,)),
         )]
         quality_runs = [dict(row) for row in conn.execute(
-            "SELECT id,status,stage,progress,output_path,created_at FROM quality_pipeline_runs"
+            "SELECT id,status,stage,progress,output_path,error_message,created_at FROM quality_pipeline_runs"
         )]
         unlinked_passed_candidates = [dict(row) for row in conn.execute(
             """SELECT id,entity_type,gate_status FROM quality_candidates
@@ -121,6 +121,10 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         and (not run.get("output_path") or not Path(str(run["output_path"])).is_file())
     ]
     failed_run_count = sum(run["status"] == "failed" for run in ai_runs)
+    completed_with_error_ids = [
+        int(run["id"]) for run in ai_runs
+        if run["status"] == "completed" and str(run.get("error_message") or "").strip()
+    ]
     stale_quality_run_ids: list[int] = []
     for run in quality_runs:
         if run["status"] != "running":
@@ -137,6 +141,10 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
         int(run["id"]) for run in quality_runs
         if run["status"] == "completed"
         and (not run.get("output_path") or not Path(str(run["output_path"])).is_file())
+    ]
+    completed_quality_with_error_ids = [
+        int(run["id"]) for run in quality_runs
+        if run["status"] == "completed" and str(run.get("error_message") or "").strip()
     ]
     missing_visual_images = [
         int(asset["id"]) for asset in visual_assets
@@ -223,6 +231,17 @@ def evidence_db_health(db: EvidenceDB, paper_id: int | None = None) -> dict[str,
             "detail": "all completed AI runs have readable artifacts"
             if not missing_run_artifacts else f"missing artifact ids={missing_run_artifacts}",
             "examples": missing_run_artifacts[:20],
+        },
+        {
+            "name": "completed_run_status_consistency",
+            "ok": not completed_with_error_ids and not completed_quality_with_error_ids,
+            "detail": "completed runs do not retain obsolete error messages"
+            if not completed_with_error_ids and not completed_quality_with_error_ids
+            else (
+                f"completed AI runs with errors={completed_with_error_ids}; "
+                f"completed quality runs with errors={completed_quality_with_error_ids}"
+            ),
+            "examples": (completed_with_error_ids + completed_quality_with_error_ids)[:20],
         },
         {
             "name": "quality_gate_runs",

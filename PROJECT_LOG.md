@@ -1,5 +1,19 @@
 # Auto Research Evidence 项目日志
 
+## 2026-07-27
+
+### 全项目健康检查与稳定发布收口
+
+- 冻结所有后台服务后完成 SQLite、固定语料、目标论文、编辑端、只读端、代码、启动脚本、依赖、Git 对象和凭据边界体检；187 项自动测试通过，本地编辑端与只读端真实检索通过，只读写请求返回 403，调用前后数据库 SHA-256 一致。
+- 修复批量质量任务中断后状态残留：`Ctrl+C` 会将当前论文和批次写为 `interrupted`；新增 `evidence-reconcile-runs --older-than-hours 6`，用于结束硬中断留下的抽取/质量/处理运行元数据。该命令不修改六列数据、图表、证据或校对历史。
+- 成功的 DeepSeek/质量运行现在清除旧 `error_message`，维护命令同步清理历史“已完成但残留错误”记录；本次收口修正 2 条已完成运行的旧错误文字。
+- 修复目标审计的口径错误：单篇工作流通过只代表自动功能可用；项目最终目标还必须达到至少 30 篇真实 PDF 的数据、证据、搜索与图表验收。当前真实状态为固定 50 篇 PDF 身份 50/50，通过完整数据门 17 篇、图表就绪 30 篇、待提取 33 篇，因此初始语料目标尚未完成。
+- 当前数据库健康快照：60 篇论文、60 个文档、6,501 条原始记录、5,048 处可报告数值来源、3,142 个独立事实、937 条定性结论和 291 个图表（59 表、232 图）；完整性、外键、必需索引、发布关系和图表文件均通过。
+- 目标 DOI `10.1016/j.jnucmat.2018.08.031` 当前为 231 个事实、403/403 处自动证据可高亮、4 表和 10 图；`温度`、`硬度`、`钨`、作者检索与 CSV/Excel 通过。
+- 新增 `MAINTENANCE_WORKFLOW.md` 与 `STAGE_AUDIT_2026-07-27.md`，重写当前稳定版和教师展示说明，更新 `AGENT.md` 的 50 篇固定集、运行收口和发布规范。网页发布身份更新为 `2026.07.27-project-health-stable.1`。
+- GitHub 预审确认当前仓库约 379 MB、Git 对象约 149 MB，且包含生产 SQLite 与论文图表截图；本轮不擅自上传。推荐先选择“私有完整开发仓库”或“公开代码 + 脱敏演示数据”后再配置远端。
+- 最终 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-project-health-stable-2026-07-27.sqlite`，SHA-256 为 `02ea16c62239690bc9db890d3ee52e4634ffff55d13948105d6392b044d2527c`；稳定标签为 `evidence-demo-2026-07-27-project-health-stable-1`，完整 bundle 为 `/Users/USER/Zotero/auto-research-backups/auto-research-project-health-stable-2026-07-27.bundle`。
+
 ## 2026-07-22
 
 ### 50 篇真实性测试集与识别/检索规则基线

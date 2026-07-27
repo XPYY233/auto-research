@@ -777,7 +777,7 @@ class AdversarialQualityPipeline:
             with self.db.connect() as conn:
                 conn.execute(
                     """UPDATE quality_pipeline_runs SET status='completed',stage='completed',progress=100,
-                       summary_json=?,output_path=?,finished_at=? WHERE id=?""",
+                       summary_json=?,output_path=?,error_message=NULL,finished_at=? WHERE id=?""",
                     (_json(summary), str(output_path), now(), pipeline_run_id),
                 )
             result["output_path"] = str(output_path)
@@ -1010,7 +1010,7 @@ class AdversarialQualityPipeline:
             with self.db.connect() as conn:
                 conn.execute(
                     """UPDATE quality_pipeline_runs SET status='completed',stage='completed',progress=100,
-                       summary_json=?,output_path=?,finished_at=? WHERE id=?""",
+                       summary_json=?,output_path=?,error_message=NULL,finished_at=? WHERE id=?""",
                     (_json(summary), str(output_path), now(), pipeline_run_id),
                 )
             result["output_path"] = str(output_path)

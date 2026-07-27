@@ -115,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("evidence-summary", help="Show evidence database counts")
     p = sub.add_parser("evidence-db-health", help="Check six-column evidence DB views, indexes, and required fields")
     p.add_argument("--paper-id", type=int, help="Optionally limit row checks to one paper id")
+    p = sub.add_parser("evidence-reconcile-runs", help="Close abandoned extraction and quality-run audit rows")
+    p.add_argument("--older-than-hours", type=float, default=6.0)
     sub.add_parser("evidence-validate", help="Validate pilot balance and evidence publication gates")
     sub.add_parser("evidence-seed-target", help="Seed the six-column demo for the single target irradiation article")
     p = sub.add_parser("evidence-self-check", help="Read-only acceptance check for one six-column evidence article")
@@ -549,6 +551,13 @@ def cmd_evidence(args) -> int:
         report = evidence_db_health(evidence_db, paper_id=args.paper_id)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if report["ok"] else 2
+    if args.cmd == "evidence-reconcile-runs":
+        from .evidence.maintenance import reconcile_stale_runs
+        result = reconcile_stale_runs(
+            evidence_db, older_than_hours=args.older_than_hours,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
     if args.cmd == "evidence-validate":
         from .evidence.validation import validate_database
         report = validate_database(evidence_db)
