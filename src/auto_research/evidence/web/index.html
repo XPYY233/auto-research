@@ -262,6 +262,26 @@
             </div>
             <div class="search-paper-list" id="search-paper-list" aria-live="polite"></div>
           </div>
+          <div class="search-experience-switch" role="tablist" aria-label="检索方式">
+            <button type="button" class="active" role="tab" aria-selected="true" data-search-experience="agent"><span>推荐</span><strong>问图书管理员</strong><small>直接描述问题，由 AI 组织检索</small></button>
+            <button type="button" role="tab" aria-selected="false" data-search-experience="precise"><span>进阶</span><strong>精确检索</strong><small>自行组合字段、类型与筛选条件</small></button>
+          </div>
+          <section class="librarian-workspace" id="librarian-workspace" aria-label="图书管理员 Agent">
+            <div class="librarian-intro">
+              <div class="librarian-avatar" aria-hidden="true">馆</div>
+              <div><p class="eyebrow">DEEPSEEK · LIBRARIAN AGENT</p><h3>告诉我你想了解什么，不必先想关键词</h3><p>我会拆解材料、实验条件和物理量，再从数据、表格、图片与实验结论中寻找可追溯证据。</p></div>
+              <button type="button" id="librarian-reset">新问题</button>
+            </div>
+            <div class="librarian-messages" id="librarian-messages" aria-live="polite">
+              <div class="librarian-welcome"><strong>可以这样问：</strong><button type="button" data-librarian-suggestion="高熵合金在中子辐照后，硬度和缺陷结构有哪些变化？">高熵合金中子辐照后的硬度与缺陷</button><button type="button" data-librarian-suggestion="钨及钨合金在高温离子辐照下报告了哪些空洞或气泡结果？">钨合金高温辐照下的空洞与气泡</button></div>
+            </div>
+            <form id="librarian-form" class="librarian-form">
+              <label class="visually-hidden" for="librarian-input">向图书管理员描述问题</label>
+              <textarea id="librarian-input" maxlength="2000" rows="3" placeholder="例如：帮我找高熵合金在中子辐照后硬度如何变化，并给出对应论文和原文证据"></textarea>
+              <div><small id="librarian-status">默认检索全部文章；可在上方限定多篇论文</small><button type="submit" id="librarian-send">交给图书管理员</button></div>
+            </form>
+          </section>
+          <div id="precise-search-workspace" hidden>
           <div class="search-mode-switch" id="search-mode-switch" role="tablist" aria-label="检索对象">
             <button type="button" class="active" role="tab" aria-selected="true" data-search-mode="item"><i>01</i><span>数据条目</span><small>查数值、性质与条件</small></button>
             <button type="button" role="tab" aria-selected="false" data-search-mode="table"><i>02</i><span>原始表格</span><small>查完整表格及上下文</small></button>
@@ -284,6 +304,7 @@
             <div class="recent-searches" id="recent-searches" hidden><span>最近搜索</span><div id="recent-search-items"></div></div>
           </div>
           <p id="search-help">检索六列数据及原文证据；同一原表的命中数据会集中显示，并支持展开全部。</p>
+          </div>
         </div>
         <div class="search-controls" id="search-filter-bar">
           <div class="search-control-copy"><span>精确结果</span><small>筛选会同步应用到 CSV 和 Excel 导出</small></div>

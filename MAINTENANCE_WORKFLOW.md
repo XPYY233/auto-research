@@ -20,6 +20,7 @@ PYTHONPATH=src python3 -m auto_research.cli evidence-reconcile-runs --older-than
 
 ```bash
 PYTHONPATH=src python3 -m auto_research.cli evidence-db-health
+PYTHONPATH=src python3 -m auto_research.cli evidence-search-benchmark
 PYTHONPATH=src python3 -m auto_research.cli evidence-self-check \
   10.1016/j.jnucmat.2018.08.031 \
   --query 温度 --query 硬度 --query 钨 --query 'Wei-Ying Chen' \
@@ -35,7 +36,7 @@ PYTHONPATH=src python3 -m auto_research.cli evidence-test-set-audit \
 - 运行 `src/tests` 全部测试。
 - 编译全部 Python 文件并检查 `src/auto_research/evidence/web/app.js` 语法。
 - 检查所有 `.command` 的 zsh 语法、Python 依赖和 Git 对象完整性。
-- 启动编辑端和只读端，实测数据搜索、图表搜索与原文证据。
+- 启动编辑端和只读端，实测图书管理员、精确数据搜索、图表搜索与原文证据；两端必须服务同一套前端文件。
 - 对只读端发送一个写入请求，必须返回 403；操作前后 SQLite SHA-256 必须相同。
 
 ## 5. 文档与版本一致性

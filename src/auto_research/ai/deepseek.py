@@ -198,6 +198,84 @@ class DeepSeekClient:
             f"DeepSeek 连续 {self.settings.max_attempts} 次返回不可用的 JSON"
         ) from last_error
 
+    def request_tool_message(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        task: str = "analysis",
+        max_tokens: int = 3_200,
+        temperature: float = 0.1,
+    ) -> dict[str, Any]:
+        """Return one OpenAI-compatible assistant message with optional tool calls."""
+
+        if not self.settings.api_key:
+            raise DeepSeekNotConfigured(
+                "DeepSeek 尚未配置；请在本机环境变量 DEEPSEEK_API_KEY 中设置密钥"
+            )
+        model = self.settings.extraction_model if task in {"extraction", "verification"} else self.settings.analysis_model
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": min(max(float(temperature), 0.0), 1.5),
+            "stream": False,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        last_error: Exception | None = None
+        for attempt in range(self.settings.max_attempts):
+            try:
+                response = self.session.post(
+                    f"{self.settings.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.settings.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=(20, self.settings.timeout_seconds),
+                )
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt + 1 < self.settings.max_attempts:
+                    delay = min(self.settings.retry_base_seconds * (2 ** attempt), 30)
+                    if delay:
+                        time.sleep(delay)
+                    continue
+                raise DeepSeekUnavailableError(
+                    f"DeepSeek API 网络请求失败（{self.settings.max_attempts} 次；{type(exc).__name__}）"
+                ) from exc
+            if not response.ok:
+                if attempt + 1 < self.settings.max_attempts and (response.status_code == 429 or response.status_code >= 500):
+                    last_error = DeepSeekResponseError(f"transient HTTP {response.status_code}")
+                    delay = min(self.settings.retry_base_seconds * (2 ** attempt), 30)
+                    if delay:
+                        time.sleep(delay)
+                    continue
+                error_type = DeepSeekUnavailableError if response.status_code == 429 or response.status_code >= 500 else DeepSeekResponseError
+                raise error_type(f"DeepSeek API 请求失败：HTTP {response.status_code}")
+            try:
+                message = response.json()["choices"][0]["message"]
+                if not isinstance(message, dict):
+                    raise TypeError("assistant message is not an object")
+                content = message.get("content")
+                tool_calls = message.get("tool_calls") or []
+                if not str(content or "").strip() and not tool_calls:
+                    raise DeepSeekResponseError("DeepSeek 返回了空内容")
+                return {
+                    "role": "assistant",
+                    "content": content or "",
+                    "tool_calls": tool_calls,
+                }
+            except (KeyError, IndexError, TypeError, ValueError, DeepSeekResponseError) as exc:
+                last_error = exc
+                if attempt + 1 < self.settings.max_attempts:
+                    continue
+        raise DeepSeekResponseError(
+            f"DeepSeek 连续 {self.settings.max_attempts} 次返回不可用的工具调用消息"
+        ) from last_error
+
     def smoke_test(self) -> dict[str, Any]:
         result = self.request_json(
             [

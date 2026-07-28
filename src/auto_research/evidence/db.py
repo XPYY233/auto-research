@@ -27,6 +27,39 @@ CREATE TABLE IF NOT EXISTS schema_meta (
   value TEXT NOT NULL
 );
 
+-- Search V2 stores a denormalized, disposable projection of the four public
+-- evidence types. Scientific records remain authoritative in their existing
+-- tables; this table may be rebuilt at any time without data loss.
+CREATE TABLE IF NOT EXISTS search_index_documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL CHECK(entity_type IN ('item','table','figure','finding')),
+  entity_id INTEGER NOT NULL,
+  paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  article_title TEXT NOT NULL DEFAULT '',
+  display_title TEXT NOT NULL DEFAULT '',
+  meaning_text TEXT NOT NULL DEFAULT '',
+  context_text TEXT NOT NULL DEFAULT '',
+  evidence_text TEXT NOT NULL DEFAULT '',
+  metadata_text TEXT NOT NULL DEFAULT '',
+  quality_gate_status TEXT NOT NULL DEFAULT '',
+  source_kind TEXT NOT NULL DEFAULT '',
+  review_action TEXT NOT NULL DEFAULT '',
+  source_page INTEGER,
+  payload_json TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(entity_type, entity_id)
+);
+
+CREATE TABLE IF NOT EXISTS search_index_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_documents_type ON search_index_documents(entity_type);
+CREATE INDEX IF NOT EXISTS idx_search_documents_paper ON search_index_documents(paper_id,entity_type);
+CREATE INDEX IF NOT EXISTS idx_search_documents_quality ON search_index_documents(quality_gate_status,entity_type);
+
 CREATE TABLE IF NOT EXISTS papers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   pilot_code TEXT UNIQUE,
@@ -556,7 +589,7 @@ class EvidenceDB:
                     "ALTER TABLE visual_assets ADD COLUMN metadata_source TEXT NOT NULL DEFAULT 'deterministic'"
                 )
             conn.execute(
-                "INSERT INTO schema_meta(key,value) VALUES('schema_version','11') "
+                "INSERT INTO schema_meta(key,value) VALUES('schema_version','12') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value "
                 "WHERE schema_meta.value IS NOT excluded.value"
             )

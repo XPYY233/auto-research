@@ -2,13 +2,22 @@
 
 ## 版本身份
 
-- 版本：`2026.07.27-project-health-stable.1`
-- 证据库结构：`v11`
+- 版本：`2026.07.28-librarian-search-stable.1`
+- 证据库结构：`v12`
 - 固定验收语料：`config/evidence_test_set_50.json`
 - 本地编辑端：`http://127.0.0.1:8765/`
 - 只读分享端：由 `scripts/start_readonly_ngrok.command` 生成临时公网地址
 
-本版是一次全项目健康检查与流程收口。它保留既有数据、图表、原文定位、质量门、DeepSeek 证据对话和校对历史，没有重新生成稳定截图或猜测图中曲线点。
+本版在上一项目健康稳定版上增加高速检索与图书管理员 Agent。它保留既有数据、图表、原文定位、质量门、DeepSeek 证据对话和校对历史，没有重新生成稳定截图或猜测图中曲线点。
+
+## 图书管理员与 Search V2
+
+- 搜索页默认邀请用户向“图书管理员”描述自然语言问题；精确检索保留为进阶入口。
+- 图书管理员使用既有 DeepSeek 项目配置，只能调用数据条目、原始表格、论文图片和实验结论四类只读工具，不建立第五套结果模型。
+- Search V2 使用可随时重建的 SQLite FTS 投影；科学事实仍以原六列、图表和证据表为唯一权威来源。
+- 代表性查询从约 1 秒降至约 0.018–0.064 秒。论文新增或修正后只刷新发生变化的论文索引。
+- Agent 回答以 `[R编号]` 连接实际搜索结果；模型网络失败时，精确检索、详情、原文证据和导出不受影响。
+- 本地编辑端与公网只读端共用完全相同的前端、数据库和 Agent 接口；公网端仅通过权限层禁用写入功能。
 
 ## 当前数据库
 
@@ -25,7 +34,7 @@
 
 ## 本次体检和修复
 
-- 187 项自动测试全部通过；其中新增“中断状态收口”和“维护命令不改证据”回归测试。
+- 当前 191 项自动测试全部通过；其中包含上一阶段的运行状态收口测试，以及本版新增的自然语言规划、短中文词、四类 Agent 结果和论文级增量刷新测试。
 - 新增 `evidence-reconcile-runs`：自动结束超过期限且后台已不存在的抽取、质量和处理任务；只修改运行审计状态，不改变数据、图表或校对历史。
 - 批量质量任务收到 `Ctrl+C` 时会把当前论文和批次明确写为“已中断”，不再残留假运行状态。
 - DeepSeek 或质量流程成功完成时会清除旧错误文本，避免“已完成但仍显示失败原因”。
@@ -59,6 +68,7 @@
 - 阶段审计：`STAGE_AUDIT_2026-07-27.md`。
 - 固定语料审计：`data/evidence/test_sets/full-corpus-50-v1_audit.md`。
 
-- 稳定标签：`evidence-demo-2026-07-27-project-health-stable-1`。
-- SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-project-health-stable-2026-07-27.sqlite`（SHA-256 `02ea16c62239690bc9db890d3ee52e4634ffff55d13948105d6392b044d2527c`）。
-- Git bundle：`/Users/USER/Zotero/auto-research-backups/auto-research-project-health-stable-2026-07-27.bundle`。
+- 预改造保护标签：`evidence-demo-2026-07-28-pre-search-agent-baseline-1`。
+- 预改造 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-search-agent-2026-07-28-v1.sqlite`。
+- 最终 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-search-stable-2026-07-28-v1.sqlite`，SHA-256 为 `c9d63be31ad660294e52a7d093d37d7c4bbbfb22b3c2e5138005070f6f3b5038`。
+- 最终稳定标签和 Git bundle 使用 `librarian-search-stable-2026-07-28` 命名；bundle 校验值记录在发布交付说明中。

@@ -20,6 +20,7 @@ from auto_research.ai.deepseek import (
 )
 
 from .article_navigation import annotate_navigation_tags
+from .agent_runtime import AgentRateLimiter, LibrarianAgentRuntime, build_agent_catalog
 from .context_chat import answer_context_chat
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
@@ -59,6 +60,7 @@ from .six_column import (
     set_row_review_decision,
 )
 from .source_highlight import get_source_view, render_source_highlight_png, render_source_snippet_png
+from .search_index import EvidenceSearchIndex
 from .visual_evidence import (
     get_visual_asset,
     list_visual_assets,
@@ -72,16 +74,16 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.27-project-health-stable.1",
-    "label": "证据库健康稳定版 2026.07.27",
-    "evidence_schema": 11,
+    "version": "2026.07.28-librarian-search-stable.1",
+    "label": "图书管理员与高速检索稳定版 2026.07.28",
+    "evidence_schema": 12,
 }
 
 
 def is_read_only_mutation(method: str, path: str) -> bool:
     """Return whether a request would mutate the evidence database or local files."""
 
-    if method.upper() == "POST" and path == "/api/context-chat":
+    if method.upper() == "POST" and path in {"/api/context-chat", "/api/agents/librarian/chat"}:
         return False
     return method.upper() not in {"GET", "HEAD", "OPTIONS"}
 
@@ -102,6 +104,9 @@ def is_read_only_public_get(path: str) -> bool:
         "/api/qualitative-export.csv",
         "/api/qualitative-export.xlsx",
         "/api/visual-search",
+        "/api/search-v2",
+        "/api/search-v2/status",
+        "/api/agents",
     }:
         return True
     if path.startswith("/static/"):
@@ -257,6 +262,7 @@ def _startup_document_index(upload_service: UploadService, *, read_only: bool) -
 
 
 class EvidenceHandler(BaseHTTPRequestHandler):
+    agent_rate_limiter = AgentRateLimiter()
     db: EvidenceDB
     upload_service: UploadService
     read_only: bool = False
@@ -295,6 +301,26 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 })
             if parsed.path == "/api/search-papers":
                 return self.json_response(search_paper_catalog(self.db))
+            if parsed.path == "/api/agents":
+                return self.json_response({"agents": build_agent_catalog(self.db)})
+            if parsed.path == "/api/search-v2/status":
+                return self.json_response(EvidenceSearchIndex(self.db).status())
+            if parsed.path == "/api/search-v2":
+                params = parse_qs(parsed.query)
+                raw_types = params.get("types", ["item,table,figure,finding"])[0]
+                entity_types = {value.strip() for value in raw_types.split(",") if value.strip()}
+                page = EvidenceSearchIndex(self.db).search(
+                    params.get("q", [""])[0],
+                    entity_types=entity_types,
+                    paper_ids=parse_search_paper_ids(params),
+                    quality_filter=params.get("quality", ["all"])[0],
+                    source_filter=params.get("source", ["all"])[0],
+                    review_filter=params.get("review", ["all"])[0],
+                    sort=params.get("sort", ["relevance"])[0],
+                    limit=min(max(int(params.get("limit", ["100"])[0]), 1), 500),
+                    offset=max(int(params.get("offset", ["0"])[0]), 0),
+                )
+                return self.json_response(page.as_dict())
             if parsed.path == "/api/ai/status":
                 return self.json_response(DeepSeekSettings.from_env().public_status())
             if parsed.path == "/api/uploads":
@@ -407,36 +433,24 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 review_filter = params.get("review", ["all"])[0]
                 source_filter = params.get("source", ["all"])[0]
                 sort = params.get("sort", ["relevance"])[0]
-                if params.get("meta", ["0"])[0] in {"1", "true"}:
-                    limit = min(max(int(params.get("limit", ["100"])[0]), 1), 500)
-                    all_rows = search_current_data(
-                        self.db, query, limit=100000,
-                        review_filter=review_filter,
-                        source_filter=source_filter,
-                        quality_filter=params.get("quality", ["all"])[0], sort=sort,
-                        paper_ids=paper_ids,
-                    )
-                    return self.json_response({
-                        "rows": all_rows[:limit],
-                        "total": len(all_rows),
-                        "limit": limit,
-                    })
-                return self.json_response(search_current_data(
-                    self.db, query, review_filter=review_filter,
+                limit = min(max(int(params.get("limit", ["100"])[0]), 1), 500)
+                page = EvidenceSearchIndex(self.db).search(
+                    query, entity_types={"item"}, review_filter=review_filter,
                     source_filter=source_filter,
-                    quality_filter=params.get("quality", ["all"])[0], sort=sort,
-                    paper_ids=paper_ids,
-                ))
+                    quality_filter=params.get("quality", ["all"])[0],
+                    sort=sort, paper_ids=paper_ids, limit=limit,
+                )
+                return self.json_response(page.as_dict() if params.get("meta", ["0"])[0] in {"1", "true"} else page.rows)
             if parsed.path == "/api/qualitative-search":
                 params = parse_qs(parsed.query)
                 query = params.get("q", [""])[0]
                 limit = min(max(int(params.get("limit", ["100"])[0]), 1), 500)
-                rows = search_qualitative_findings(
-                    self.db, query, limit=100000,
+                page = EvidenceSearchIndex(self.db).search(
+                    query, entity_types={"finding"}, limit=limit,
                     quality_filter=params.get("quality", ["all"])[0],
                     paper_ids=parse_search_paper_ids(params),
                 )
-                return self.json_response({"rows": rows[:limit], "total": len(rows), "limit": limit})
+                return self.json_response(page.as_dict())
             if parsed.path == "/api/qualitative-export.csv":
                 params = parse_qs(parsed.query)
                 query = params.get("q", [""])[0]
@@ -484,10 +498,11 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 query = params.get("q", [""])[0]
                 asset_type = params.get("type", ["figure"])[0]
                 quality_filter = params.get("quality", ["all"])[0]
-                return self.json_response(search_visual_assets(
-                    self.db, query, asset_type=asset_type, quality_filter=quality_filter,
-                    paper_ids=parse_search_paper_ids(params),
-                ))
+                page = EvidenceSearchIndex(self.db).search(
+                    query, entity_types={asset_type}, quality_filter=quality_filter,
+                    paper_ids=parse_search_paper_ids(params), limit=100,
+                )
+                return self.json_response(page.rows)
             if parsed.path == "/api/current-paper/visual-assets":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
@@ -581,6 +596,22 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     question=str(body.get("question") or ""),
                     history=body.get("history") or [],
                 ))
+            if parsed.path == "/api/agents/librarian/chat":
+                client_key = str(self.client_address[0] if self.client_address else "local")
+                if not self.agent_rate_limiter.allow(client_key):
+                    return self.json_response(
+                        {"error": "请求较频繁，请稍后再试", "code": "rate_limited"},
+                        HTTPStatus.TOO_MANY_REQUESTS,
+                    )
+                raw_paper_ids = body.get("paper_ids") or []
+                if not isinstance(raw_paper_ids, list):
+                    raise ValueError("paper_ids must be a list")
+                result = LibrarianAgentRuntime(self.db).run(
+                    str(body.get("question") or ""),
+                    history=body.get("history") or [],
+                    paper_ids=[int(value) for value in raw_paper_ids],
+                )
+                return self.json_response(result)
             match = re.fullmatch(r"/api/six-data/(\d+)/confirm", parsed.path)
             if match:
                 result = confirm_correction(
@@ -990,6 +1021,7 @@ def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 876
     evidence_db.init()
     upload_service = UploadService(evidence_db)
     index_result = _startup_document_index(upload_service, read_only=read_only)
+    search_index_result = EvidenceSearchIndex(evidence_db).ensure_fresh()
     handler = type(
         "BoundEvidenceHandler", (EvidenceHandler,),
         {"db": evidence_db, "upload_service": upload_service, "read_only": read_only},
@@ -1001,6 +1033,10 @@ def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 876
         print("PDF 文档索引: 只读模式下禁用，启动不会登记新文档。")
     else:
         print(f"PDF 文档索引: 新增 {index_result['indexed']}，跳过 {index_result['skipped']}")
+    print(
+        f"证据搜索索引: {search_index_result.get('documents', 0)} 条"
+        f"（{'已更新' if search_index_result.get('rebuilt') else '已就绪'}）"
+    )
     if read_only:
         print("只读模式会拒绝上传、校对确认、重新抽取和快照保存等写入操作。")
     print("按 Ctrl+C 停止。数据库仅绑定指定地址。")

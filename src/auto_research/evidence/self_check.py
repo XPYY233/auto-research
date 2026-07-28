@@ -75,6 +75,8 @@ def _web_ui_contract() -> dict[str, Any]:
         ("automatic_quality_gate", "/api/current-paper/quality-run" in js and all(label in js for label in ("双路一致通过", "第三次复核通过", "自动拦截")) and "data-quality-decision" not in js),
         ("search_guidance_and_shortcut", "search-suggestions" in html and "renderSearchSuggestions" in js and "focusSearchShortcut" in js and "recentSearches" in js),
         ("four_mode_evidence_search", all(mode in html for mode in ("数据条目", "原始表格", "论文图片", "实验结论")) and "/api/visual-search" in js and "/api/qualitative-search" in js and "setSearchMode" in js),
+        ("librarian_agent_primary", 'data-search-experience="agent"' in html and "问图书管理员" in html and "/api/agents/librarian/chat" in js and "setSearchExperience('agent')" in js),
+        ("precise_search_fallback", 'data-search-experience="precise"' in html and 'id="precise-search-workspace"' in html and "runSearch" in js),
         ("qualitative_result_export", "/api/qualitative-export.csv" in js and "/api/qualitative-export.xlsx" in js and '["item", "finding"]' in js),
         ("resilient_boot_and_release", "apiOptional" in js and "runtimeWarnings" in js and "id=\"runtime-warning\"" in html and "id=\"release-badge\"" in html),
         ("physical_fact_clustering", all(token in js for token in ("fact_cluster_size", "evidence_occurrences", "data-source-member", "重复记录已合并"))),

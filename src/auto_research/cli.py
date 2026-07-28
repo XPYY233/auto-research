@@ -115,6 +115,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("evidence-summary", help="Show evidence database counts")
     p = sub.add_parser("evidence-db-health", help="Check six-column evidence DB views, indexes, and required fields")
     p.add_argument("--paper-id", type=int, help="Optionally limit row checks to one paper id")
+    sub.add_parser("evidence-search-reindex", help="Rebuild the disposable four-type evidence search index")
+    p = sub.add_parser("evidence-search-benchmark", help="Benchmark Search V2 with representative Chinese queries")
+    p.add_argument("--query", action="append", help="Query to benchmark; may be repeated")
     p = sub.add_parser("evidence-reconcile-runs", help="Close abandoned extraction and quality-run audit rows")
     p.add_argument("--older-than-hours", type=float, default=6.0)
     sub.add_parser("evidence-validate", help="Validate pilot balance and evidence publication gates")
@@ -551,6 +554,31 @@ def cmd_evidence(args) -> int:
         report = evidence_db_health(evidence_db, paper_id=args.paper_id)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if report["ok"] else 2
+    if args.cmd == "evidence-search-reindex":
+        from .evidence.search_index import EvidenceSearchIndex
+        print(json.dumps(EvidenceSearchIndex(evidence_db).rebuild(), ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "evidence-search-benchmark":
+        import time
+        from .evidence.search_index import EvidenceSearchIndex
+        queries = args.query or [
+            "高熵合金在中子辐照后硬度如何变化",
+            "钨合金 高温 离子辐照 空洞",
+            "硬度",
+            "钨",
+        ]
+        index = EvidenceSearchIndex(evidence_db)
+        rows = []
+        for query in queries:
+            started = time.perf_counter()
+            page = index.search(query, limit=100)
+            rows.append({
+                "query": query, "total": page.total, "returned": len(page.rows),
+                "query_terms": page.terms,
+                "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+            })
+        print(json.dumps({"engine": "search-v2", "results": rows}, ensure_ascii=False, indent=2))
+        return 0
     if args.cmd == "evidence-reconcile-runs":
         from .evidence.maintenance import reconcile_stale_runs
         result = reconcile_stale_runs(

@@ -71,7 +71,7 @@ class AdversarialQualityPipelineTests(unittest.TestCase):
                     "SELECT name FROM sqlite_master WHERE type='table'"
                 )
             }
-        self.assertEqual(version, "11")
+        self.assertEqual(version, "12")
         self.assertIn("quality_pipeline_runs", tables)
         self.assertIn("quality_candidates", tables)
 

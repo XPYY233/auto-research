@@ -761,7 +761,7 @@ class EvidenceDBTests(unittest.TestCase):
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_versions").fetchone()["count"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) count FROM data_version_orphans").fetchone()["count"], 1)
-            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "11")
+            self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()["value"], "12")
             self.assertEqual(list(conn.execute("PRAGMA foreign_key_check")), [])
         health = evidence_db_health(self.db, self.paper)
         self.assertTrue(health["ok"], health)
@@ -1527,8 +1527,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.27-project-health-stable.1")
-        self.assertEqual(RELEASE_INFO["evidence_schema"], 11)
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.28-librarian-search-stable.1")
+        self.assertEqual(RELEASE_INFO["evidence_schema"], 12)
 
     def test_rejected_cloud_visual_experiment_is_absent_from_active_ui(self):
         index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
@@ -1564,6 +1564,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         server_source = Path(webapp_module.__file__).read_text(encoding="utf-8")
         self.assertIn("answer_context_chat", server_source)
         self.assertFalse(is_read_only_public_get("/api/context-chat"))
+        self.assertIn('parsed.path in {"/", "/index.html", "/readonly"}', server_source)
+        self.assertFalse((WEB_DIR / "readonly.html").exists())
 
     def test_future_visual_metadata_prompt_requires_material_and_comparison_context(self):
         prompt = _visual_metadata_messages(
@@ -1981,6 +1983,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertFalse(is_read_only_mutation("GET", "/api/six-search"))
         self.assertFalse(is_read_only_mutation("HEAD", "/"))
         self.assertFalse(is_read_only_mutation("POST", "/api/context-chat"))
+        self.assertFalse(is_read_only_mutation("POST", "/api/agents/librarian/chat"))
         self.assertTrue(is_read_only_mutation("POST", "/api/current-paper/deepseek-preview"))
         self.assertTrue(is_read_only_mutation("POST", "/api/uploads/pdf"))
 
@@ -1997,6 +2000,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(is_read_only_public_get("/api/six-data/335/source-snippet.png"))
         self.assertTrue(is_read_only_public_get("/api/papers/2/pdf"))
         self.assertTrue(is_read_only_public_get("/api/visual-search"))
+        self.assertTrue(is_read_only_public_get("/api/search-v2"))
+        self.assertTrue(is_read_only_public_get("/api/search-v2/status"))
+        self.assertTrue(is_read_only_public_get("/api/agents"))
         self.assertTrue(is_read_only_public_get("/api/visual-assets/3"))
         self.assertTrue(is_read_only_public_get("/api/visual-assets/3/image"))
         self.assertFalse(is_read_only_public_get("/api/current-paper"))

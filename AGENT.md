@@ -2,6 +2,19 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
+## Search V2 and in-product agents (2026-07-28)
+
+- The search page defaults to the DeepSeek-backed `librarian` agent. Precise four-mode search remains a required fallback and must work without DeepSeek.
+- The librarian may return only the existing `item`, `table`, `figure`, and `finding` result contracts. Do not introduce a fifth AI-owned evidence type or a parallel scientific database.
+- `search_index_documents` and `search_index_fts` are disposable projections. Never treat them as evidence authority or write their content back into six-column/visual records.
+- Preserve `AgentRegistry` and `ToolRegistry` as the extension boundary for future agents. New agents should reuse registered read-only tools before adding code or routes.
+- General agents are read-only. Any future write-capable agent requires a separate user-confirmation, permission and audit design.
+- Increment `INDEX_FORMAT_VERSION` whenever indexed field construction or alias semantics change. Normal evidence edits should refresh only changed papers; release maintenance may use `evidence-search-reindex`.
+- Local editable and public read-only modes must serve the same `web/index.html`, `app.js`, `app.css`, Search V2 and librarian endpoint. Never create a second public frontend. Differences belong only in authorization and hidden write controls.
+- Agent answers must retain `[R#]` links to actually returned records. All referenced records must be included in the response; do not truncate below the highest possible reference.
+- Do not log API keys, full prompts containing sensitive data, or entire PDFs. Reuse the project DeepSeek Keychain/env configuration.
+- Architecture and implementation details: `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` and `docs/logs/AGENT_IMPLEMENTATION_LOG_2026-07-28.md`.
+
 ## Active local workspace
 
 - The only active project root is `/Users/USER/Zotero/auto-research`.

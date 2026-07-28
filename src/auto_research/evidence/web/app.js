@@ -1,10 +1,10 @@
-const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchExperience: "agent", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, librarianMessages: [], librarianResults: [], librarianBusy: false, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const contextChat = { entity: null, conversations: new Map(), busy: false };
 const defaultContextQuestion = "说明这个数据本身的含义，并总结该数据在文章中的具体含义";
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
   review: { kicker: "EVIDENCE CHECK", title: "检查自动提取结果", subtitle: "自动质量门决定是否收录；本页用于检查证据和修正少量异常。" },
-  search: { kicker: "DATABASE SEARCH", title: "搜索实验数据与证据", subtitle: "在数值事实、原始表格、论文图片和定性结论之间切换。" },
+  search: { kicker: "LIBRARIAN SEARCH", title: "向图书管理员描述研究问题", subtitle: "由 DeepSeek 组织检索，并返回数据、表格、图片和实验结论中的可追溯证据。" },
   upload: { kicker: "PDF INTAKE", title: "导入实验文献", subtitle: "验证真实 PDF、识别重复论文，并加入待处理队列。" },
   manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "为自动抽取未覆盖的实验结果补充六列记录。" },
   history: { kicker: "REVISION HISTORY", title: "查看修正记录", subtitle: "复查人工确认、修正和补录留下的版本记录。" },
@@ -1814,13 +1814,17 @@ function renderSearchScope() {
     runSearch(null, { remember: false });
   }));
   renderActiveFilters();
+  if (state.searchExperience === 'agent') {
+    setText('librarian-status', selectedMode ? `限定 ${selectedCount} 篇文章` : '默认检索全部文章；可在上方限定多篇论文');
+  }
 }
 
 function setSearchScope(mode) {
   if (!["all", "selected"].includes(mode)) return;
   state.searchScope = mode;
   renderSearchScope();
-  runSearch(null, { remember: false });
+  if (state.searchExperience === 'precise') runSearch(null, { remember: false });
+  else setText('librarian-status', mode === 'selected' ? `限定 ${state.selectedPaperIds.size} 篇文章` : '默认检索全部文章；可在上方限定多篇论文');
 }
 
 function itemSearchParams(q) {
@@ -1935,6 +1939,7 @@ function focusSearchShortcut(event) {
 
 async function runSearch(event, options = {}) {
   event?.preventDefault();
+  if (state.searchExperience !== "precise") return;
   const q = document.querySelector("#search-query").value.trim();
   const requestId = ++state.searchRequest;
   state.search = q;
@@ -1994,6 +1999,130 @@ async function runSearch(event, options = {}) {
     toast(error.message, true);
   } finally {
     if (requestId === state.searchRequest) document.querySelector("#search-results").classList.remove("is-loading");
+  }
+}
+
+function setSearchExperience(mode) {
+  if (!['agent', 'precise'].includes(mode)) return;
+  state.searchExperience = mode;
+  document.querySelectorAll('[data-search-experience]').forEach(button => {
+    const active = button.dataset.searchExperience === mode;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelector('#librarian-workspace').hidden = mode !== 'agent';
+  document.querySelector('#precise-search-workspace').hidden = mode !== 'precise';
+  document.querySelector('#search-filter-bar').hidden = mode !== 'precise';
+  document.querySelector('.search-toolbar').hidden = mode !== 'precise';
+  if (mode === 'agent') {
+    renderLibrarianResults(state.librarianResults);
+    window.requestAnimationFrame(() => document.querySelector('#librarian-input')?.focus());
+  } else {
+    runSearch(null, { remember: false });
+    window.requestAnimationFrame(() => document.querySelector('#search-query')?.focus());
+  }
+}
+
+function resetLibrarian() {
+  state.librarianMessages = [];
+  state.librarianResults = [];
+  document.querySelector('#librarian-input').value = '';
+  document.querySelector('#librarian-messages').innerHTML = `<div class="librarian-welcome"><strong>可以这样问：</strong><button type="button" data-librarian-suggestion="高熵合金在中子辐照后，硬度和缺陷结构有哪些变化？">高熵合金中子辐照后的硬度与缺陷</button><button type="button" data-librarian-suggestion="钨及钨合金在高温离子辐照下报告了哪些空洞或气泡结果？">钨合金高温辐照下的空洞与气泡</button></div>`;
+  bindLibrarianSuggestions();
+  renderLibrarianResults([]);
+  setText('librarian-status', state.searchScope === 'selected' ? `限定 ${state.selectedPaperIds.size} 篇文章` : '默认检索全部文章；可在上方限定多篇论文');
+}
+
+function bindLibrarianSuggestions() {
+  document.querySelectorAll('[data-librarian-suggestion]').forEach(button => button.addEventListener('click', () => {
+    document.querySelector('#librarian-input').value = button.dataset.librarianSuggestion;
+    document.querySelector('#librarian-form').requestSubmit();
+  }));
+}
+
+function librarianMessageHtml(role, content) {
+  return `<article class="librarian-message ${esc(role)}"><span>${role === 'user' ? '你' : '馆'}</span><p>${esc(content).replace(/\n/g, '<br>')}</p></article>`;
+}
+
+function renderLibrarianConversation() {
+  const el = document.querySelector('#librarian-messages');
+  if (!state.librarianMessages.length) return;
+  el.innerHTML = state.librarianMessages.map(message => librarianMessageHtml(message.role, message.content)).join('') + (state.librarianBusy ? `<article class="librarian-message assistant thinking"><span>馆</span><p>正在拆解问题并检索四类证据…</p></article>` : '');
+  el.scrollTop = el.scrollHeight;
+}
+
+function renderLibrarianResults(rows) {
+  const el = document.querySelector('#search-results');
+  if (state.searchExperience !== 'agent') return;
+  if (!rows.length) {
+    el.innerHTML = `<div class="blank search-empty librarian-empty"><span>⌕</span><h3>等待你的研究问题</h3><p>图书管理员会返回现有四类证据，不会生成数据库中不存在的论文或数据。</p></div>`;
+    return;
+  }
+  const groups = { item: [], table: [], figure: [], finding: [] };
+  rows.forEach(row => (groups[row.agent_entity_type] || groups.item).push(row));
+  const labels = { item: '数据条目', table: '原始表格', figure: '论文图片', finding: '实验结论' };
+  const sections = [];
+  Object.entries(groups).forEach(([type, values]) => {
+    if (!values.length) return;
+    const cards = values.map(row => {
+      const ref = `<b class="agent-result-ref">[${esc(row.agent_ref)}]</b>`;
+      if (type === 'item') return itemResultHtml(row).replace('<article class="result"', `<article class="result agent-result"`).replace('<div class="result-value-block">', `${ref}<div class="result-value-block">`);
+      if (type === 'finding') return `<article class="result qualitative-result agent-result" data-item-result="${esc(row.item_id)}">${ref}<div class="finding-mark"><small>QUALITATIVE</small><span>实验结论</span></div><div class="result-content"><div class="result-heading"><div><small>具体意义</small><h3>${esc(row.meaning || '实验结论')}</h3></div></div><div class="finding-text"><p>${esc(row.finding_text || row.value_text)}</p></div><div class="result-context"><small>实验条件与文章语境</small><p>${esc(row.context_explanation || '')}</p></div><footer><div class="result-paper"><strong>${esc(row.article_title)}</strong><span>${esc(row.doi || '')} · PDF 第 ${esc(row.source_page || '?')} 页</span></div><div class="result-actions"><button class="row-link detail-link" data-agent-finding="${esc(row.item_id)}">打开条目</button><button class="row-link source-link" data-source-finding="${esc(row.item_id)}">原文证据</button></div></footer></div></article>`;
+      return `<article class="visual-result agent-result">${ref}<button class="visual-thumb visual-thumb-${esc(type)}" type="button" data-visual-open="${esc(row.id)}"><img src="${esc(row.image_url)}" alt="${esc(row.display_name || row.label)}原文截图" loading="lazy"><span>${type === 'table' ? '完整表格' : '完整图片'}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(row.label)} · PDF第 ${esc(row.page_start)} 页</span><h3>${esc(row.display_name || row.label)}</h3></div><p>${esc(row.context_explanation || row.caption || '')}</p><small>${esc(row.article_title)} · ${esc(row.doi || '无 DOI')}</small><div class="visual-result-actions"><button class="open-visual detail-link" type="button" data-visual-open="${esc(row.id)}">打开详情与 AI 解读</button></div></div></article>`;
+    }).join('');
+    sections.push(`<section class="agent-result-group"><header><span>${esc(labels[type])}</span><strong>${values.length} 项</strong></header>${cards}</section>`);
+  });
+  el.innerHTML = sections.join('');
+  el.querySelectorAll('[data-visual-open]').forEach(button => button.addEventListener('click', () => openVisualAsset(Number(button.dataset.visualOpen))));
+  el.querySelectorAll('[data-source-search]').forEach(button => button.addEventListener('click', () => {
+    const itemId = Number(button.dataset.sourceSearch);
+    openSourceViewer(itemId, rows.find(row => Number(row.item_id) === itemId) || null);
+  }));
+  el.querySelectorAll('[data-item-detail]').forEach(button => button.addEventListener('click', () => {
+    const row = rows.find(value => Number(value.item_id) === Number(button.dataset.itemDetail));
+    openItemDetail(row);
+  }));
+  el.querySelectorAll('[data-agent-finding]').forEach(button => button.addEventListener('click', () => {
+    const row = rows.find(value => Number(value.item_id) === Number(button.dataset.agentFinding));
+    openItemDetail(row, { qualitative: true });
+  }));
+  el.querySelectorAll('[data-source-finding]').forEach(button => button.addEventListener('click', () => {
+    const itemId = Number(button.dataset.sourceFinding);
+    openSourceViewer(itemId, rows.find(row => Number(row.item_id) === itemId) || null);
+  }));
+}
+
+async function submitLibrarian(event) {
+  event.preventDefault();
+  if (state.librarianBusy) return;
+  const input = document.querySelector('#librarian-input');
+  const question = input.value.trim();
+  if (!question) return toast('请先描述你想查找的问题。', true);
+  if (state.searchScope === 'selected' && !state.selectedPaperIds.size) return toast('请先选择至少一篇文章。', true);
+  const history = state.librarianMessages.map(message => ({ role: message.role, content: message.content }));
+  state.librarianMessages.push({ role: 'user', content: question });
+  state.librarianBusy = true;
+  input.value = '';
+  document.querySelector('#librarian-send').disabled = true;
+  setText('librarian-status', '正在拆解问题并调用证据检索工具…');
+  renderLibrarianConversation();
+  try {
+    const result = await api('/api/agents/librarian/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, history, paper_ids: state.searchScope === 'selected' ? [...state.selectedPaperIds] : [] }),
+    });
+    state.librarianMessages.push({ role: 'assistant', content: result.answer });
+    state.librarianResults = result.results || [];
+    setText('librarian-status', `${result.model} · ${result.tool_calls} 次检索调用 · 返回 ${state.librarianResults.length} 项证据`);
+    renderLibrarianResults(state.librarianResults);
+  } catch (error) {
+    state.librarianMessages.push({ role: 'assistant', content: `本次检索未完成：${error.message}。你仍可切换到精确检索。` });
+    setText('librarian-status', '图书管理员暂时不可用；精确检索仍可正常使用');
+    toast(error.message, true);
+  } finally {
+    state.librarianBusy = false;
+    document.querySelector('#librarian-send').disabled = false;
+    renderLibrarianConversation();
   }
 }
 
@@ -2864,6 +2993,15 @@ document.querySelector("#focus-review").addEventListener("click", () => setFocus
 document.querySelector("#exit-focus-review").addEventListener("click", () => setFocusReview(false));
 document.addEventListener("keydown", handleReviewKeyboard);
 document.querySelector("#search-form").addEventListener("submit", runSearch);
+document.querySelectorAll('[data-search-experience]').forEach(button => button.addEventListener('click', () => setSearchExperience(button.dataset.searchExperience)));
+document.querySelector('#librarian-form').addEventListener('submit', submitLibrarian);
+document.querySelector('#librarian-reset').addEventListener('click', resetLibrarian);
+document.querySelector('#librarian-input').addEventListener('keydown', event => {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault();
+    document.querySelector('#librarian-form').requestSubmit();
+  }
+});
 document.querySelectorAll("[data-search-mode]").forEach(button => button.addEventListener("click", () => setSearchMode(button.dataset.searchMode)));
 document.querySelector("#search-query").addEventListener("input", scheduleSearchFromInput);
 document.querySelector("#search-query").addEventListener("compositionstart", () => { state.searchComposing = true; });
@@ -2968,6 +3106,8 @@ window.addEventListener("beforeunload", event => {
 });
 renderSearchSuggestions();
 renderActiveFilters();
+bindLibrarianSuggestions();
+setSearchExperience('agent');
 load().catch(error => {
   state.runtimeWarnings.set("核心服务", `核心服务：${error.message}`);
   renderRuntimeWarnings();
