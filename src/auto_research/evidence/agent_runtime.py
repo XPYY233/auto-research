@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -16,6 +17,65 @@ MAX_AGENT_QUESTION_CHARS = 2_000
 MAX_AGENT_HISTORY_MESSAGES = 8
 MAX_AGENT_TOOL_CALLS = 6
 MAX_AGENT_RESULTS = MAX_AGENT_TOOL_CALLS * 12
+
+
+_DSML_MARKER = "DSML"
+
+
+def _dsml_tool_calls(content: Any) -> list[dict[str, Any]]:
+    """Recover DeepSeek tool calls occasionally emitted as DSML text.
+
+    Some DeepSeek gateways serialize an otherwise valid tool call into the
+    assistant content field instead of the OpenAI-compatible ``tool_calls``
+    field.  The DSML block is an internal protocol and must never become a
+    user-facing answer.
+    """
+
+    raw = str(content or "")
+    if _DSML_MARKER not in raw:
+        return []
+    normalized = raw.replace("｜", "|")
+    invokes = re.findall(
+        r'<\|\|DSML\|\|invoke\s+name="([^"]+)">(.*?)</\|\|DSML\|\|invoke>',
+        normalized,
+        flags=re.DOTALL,
+    )
+    calls: list[dict[str, Any]] = []
+    for index, (name, body) in enumerate(invokes, start=1):
+        arguments: dict[str, Any] = {}
+        for param_name, string_flag, value in re.findall(
+            r'<\|\|DSML\|\|parameter\s+name="([^"]+)"(?:\s+string="([^"]+)")?>(.*?)</\|\|DSML\|\|parameter>',
+            body,
+            flags=re.DOTALL,
+        ):
+            value = value.strip()
+            if string_flag.lower() == "true":
+                parsed: Any = value
+            else:
+                try:
+                    parsed = json.loads(value)
+                except (TypeError, ValueError):
+                    parsed = value
+            arguments[param_name] = parsed
+        calls.append({
+            "id": f"dsml-call-{index}",
+            "type": "function",
+            "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)},
+        })
+    return calls
+
+
+def _is_internal_protocol(content: Any) -> bool:
+    return _DSML_MARKER in str(content or "")
+
+
+def _cited_refs(answer: str) -> set[str]:
+    refs = {f"R{value}" for value in re.findall(r"\bR(\d+)\b", answer or "")}
+    for start, end in re.findall(r"\bR(\d+)\s*[\-–—]\s*R?(\d+)\b", answer or ""):
+        first, last = int(start), int(end)
+        if first <= last and last - first <= MAX_AGENT_RESULTS:
+            refs.update(f"R{value}" for value in range(first, last + 1))
+    return refs
 
 
 @dataclass(frozen=True)
@@ -162,6 +222,7 @@ class LibrarianAgentRuntime:
                 "问题较宽时可分两到三次换关键词检索，但总工具调用不超过6次。优先返回直接相关且有原文页码的结果。"
                 "不得编造数据库外论文、数值或曲线点，不得把visual interpretation写成直接测量。"
                 "最终用中文给出简洁结论，引用工具结果编号如[R1]；明确说明检索范围和证据不足。"
+                "不要引用或列出已经判断为无关、仅用于排除的候选结果。"
             ),
         ))
 
@@ -176,7 +237,6 @@ class LibrarianAgentRuntime:
                     "entity_types": {
                         "type": "array", "items": {"type": "string", "enum": ["item", "table", "figure", "finding"]},
                     },
-                    "paper_ids": {"type": "array", "items": {"type": "integer"}},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 12},
                 },
                 "required": ["query", "entity_types"],
@@ -206,9 +266,8 @@ class LibrarianAgentRuntime:
         entity_types = {str(value) for value in arguments.get("entity_types") or []}
         if not entity_types or entity_types - ENTITY_TYPES:
             raise ValueError("entity_types must use the four registered evidence types")
-        paper_ids = arguments.get("paper_ids") or []
         limit = min(max(int(arguments.get("limit") or 8), 1), 12)
-        page = self.index.search(query, entity_types=entity_types, paper_ids=paper_ids, limit=limit)
+        page = self.index.search(query, entity_types=entity_types, limit=limit)
         compact: list[dict[str, Any]] = []
         for row in page.rows:
             entity_type = "item" if "fact_id" in row else "finding" if "finding_id" in row else str(row.get("asset_type"))
@@ -243,20 +302,18 @@ class LibrarianAgentRuntime:
             if not isinstance(raw, dict) or raw.get("role") not in {"user", "assistant"}:
                 continue
             content = str(raw.get("content") or "").strip()[:3_000]
-            if content:
+            if content and not _is_internal_protocol(content):
                 output.append({"role": str(raw["role"]), "content": content})
         return output
 
-    def run(self, question: str, *, history: Any = None, paper_ids: list[int] | None = None) -> dict[str, Any]:
+    def run(self, question: str, *, history: Any = None) -> dict[str, Any]:
         prompt = str(question or "").strip()[:MAX_AGENT_QUESTION_CHARS]
         if not prompt:
             raise ValueError("问题不能为空")
         agent = self.agents.get("librarian")
         self._collected = []
-        scope = sorted({int(value) for value in paper_ids or []})
-        scope_text = f"当前只允许检索论文ID：{scope}。" if scope else "当前检索范围为全部文章。"
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": f"{agent.system_prompt}\n{scope_text}"},
+            {"role": "system", "content": f"{agent.system_prompt}\n当前检索范围固定为全部文章，不接受论文范围限制。"},
             *self._history(history),
             {"role": "user", "content": prompt},
         ]
@@ -267,6 +324,29 @@ class LibrarianAgentRuntime:
             message = self.client.request_tool_message(messages, schemas, task="analysis")
             calls = message.get("tool_calls") or []
             if not calls:
+                calls = _dsml_tool_calls(message.get("content"))
+                if calls:
+                    message = {"role": "assistant", "content": "", "tool_calls": calls}
+            if not calls:
+                if tool_count == 0:
+                    # A history-aware model may try to answer from earlier text
+                    # without touching the current database.  Run one bounded
+                    # full-library search so every response has fresh evidence.
+                    result = self._search_tool({
+                        "query": prompt,
+                        "entity_types": ["item", "table", "figure", "finding"],
+                        "limit": 12,
+                    })
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "你刚才没有调用检索工具。系统已为本轮执行一次完整文献库检索。"
+                            "必须仅根据以下结果生成中文回答并引用真实编号；不得沿用历史回答中的旧编号：\n"
+                            + json.dumps(result, ensure_ascii=False, default=str)[:24_000]
+                        ),
+                    })
+                    tool_count = 1
+                    continue
                 answer = str(message.get("content") or "").strip()
                 break
             messages.append(message)
@@ -277,8 +357,6 @@ class LibrarianAgentRuntime:
                 name = str(function.get("name") or "")
                 try:
                     arguments = json.loads(function.get("arguments") or "{}")
-                    if name == "search_evidence" and scope:
-                        arguments["paper_ids"] = scope
                     result = self.tools.get(name).handler(arguments)
                 except Exception as exc:
                     result = {"error": str(exc)}
@@ -289,16 +367,57 @@ class LibrarianAgentRuntime:
                 })
                 tool_count += 1
         if not answer:
-            messages.append({
-                "role": "system",
-                "content": "工具调用已达到上限。请立即基于已有结果给出中文总结，不再调用工具。",
-            })
-            message = self.client.request_tool_message(messages, [], task="analysis")
-            answer = str(message.get("content") or "").strip()
+            evidence = [
+                _compact_result(item["entity_type"], item["payload"], item["ref"])
+                for item in self._collected[:MAX_AGENT_RESULTS]
+            ]
+            try:
+                summary = self.client.request_json(
+                    [
+                        {
+                            "role": "system",
+                            "content": (
+                                "你是实验文献证据库的中文图书管理员。只根据给定候选证据回答问题。"
+                                "输出JSON对象，且只能包含answer字符串。answer须概括直接相关证据并用[R1]格式引用；"
+                                "必须严格满足问题中明确限定的材料、粒子、温度和实验类型；不满足条件的候选不得用于回答。"
+                                "不引用无关候选，不编造数值、论文或曲线点；没有直接证据时必须明确回答证据不足。"
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"研究问题：{prompt}\n候选证据："
+                                + json.dumps(evidence, ensure_ascii=False, default=str)[:48_000]
+                            ),
+                        },
+                    ],
+                    task="analysis",
+                    max_tokens=3_200,
+                    thinking=False,
+                    temperature=0.1,
+                )
+                answer = str(summary.get("answer") or "").strip()
+            except Exception:
+                answer = ""
+        if _is_internal_protocol(answer):
+            answer = ""
+        if not answer and self._collected:
+            counts = {
+                entity_type: sum(1 for item in self._collected if item["entity_type"] == entity_type)
+                for entity_type in ("item", "table", "figure", "finding")
+            }
+            answer = (
+                f"已从完整文献库检索到{len(self._collected)}项候选证据："
+                f"数据条目{counts['item']}项、表格{counts['table']}张、图片{counts['figure']}幅、"
+                f"实验结论{counts['finding']}项。模型本次未生成可靠的中文综述，内部检索指令已隐藏；"
+                "请通过下方分类结果核对原文证据，或重新发送问题。"
+            )
         if not answer:
             raise ValueError("图书管理员没有返回可展示的回答")
+        cited = _cited_refs(answer)
+        selected_results = [item for item in self._collected if not cited or item["ref"] in cited]
         public_results: list[dict[str, Any]] = []
-        for item in self._collected[:MAX_AGENT_RESULTS]:
+        for item in selected_results[:MAX_AGENT_RESULTS]:
             row = dict(item["payload"])
             row["agent_ref"] = item["ref"]
             row["agent_entity_type"] = item["entity_type"]
@@ -308,7 +427,7 @@ class LibrarianAgentRuntime:
             "answer": answer,
             "results": public_results,
             "tool_calls": tool_count,
-            "scope": {"paper_ids": scope, "mode": "selected" if scope else "all"},
+            "scope": {"paper_ids": [], "mode": "all"},
             "model": self.client.settings.analysis_model,
         }
 

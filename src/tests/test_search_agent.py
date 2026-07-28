@@ -15,9 +15,11 @@ class FakeToolClient:
     def __init__(self):
         self.settings = DeepSeekSettings(api_key="test", analysis_model="deepseek-test")
         self.calls = 0
+        self.tool_schemas = []
 
     def request_tool_message(self, messages, tools, **kwargs):
         self.calls += 1
+        self.tool_schemas = tools
         if self.calls == 1:
             return {
                 "role": "assistant",
@@ -36,6 +38,34 @@ class FakeToolClient:
                 }],
             }
         return {"role": "assistant", "content": "发现一条可追溯硬度数据[R1]。", "tool_calls": []}
+
+
+class FakeDsmlToolClient(FakeToolClient):
+    def request_tool_message(self, messages, tools, **kwargs):
+        self.calls += 1
+        self.tool_schemas = tools
+        if self.calls == 1:
+            return {
+                "role": "assistant",
+                "content": (
+                    '<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="search_evidence">'
+                    '<｜｜DSML｜｜parameter name="limit" string="false">8</｜｜DSML｜｜parameter>'
+                    '<｜｜DSML｜｜parameter name="query" string="true">高熵合金 中子辐照 硬度</｜｜DSML｜｜parameter>'
+                    '<｜｜DSML｜｜parameter name="entity_types" string="false">["item"]</｜｜DSML｜｜parameter>'
+                    '</｜｜DSML｜｜invoke></｜｜DSML｜｜tool_calls>'
+                ),
+                "tool_calls": [],
+            }
+        return {"role": "assistant", "content": "已找到硬度证据[R1]。", "tool_calls": []}
+
+
+class FakeNoToolClient(FakeToolClient):
+    def request_tool_message(self, messages, tools, **kwargs):
+        self.calls += 1
+        self.tool_schemas = tools
+        if self.calls == 1:
+            return {"role": "assistant", "content": "沿用旧回答[R99]。", "tool_calls": []}
+        return {"role": "assistant", "content": "已根据本轮数据库检索确认硬度证据[R1]。", "tool_calls": []}
 
 
 class SearchAgentTests(unittest.TestCase):
@@ -91,6 +121,29 @@ class SearchAgentTests(unittest.TestCase):
         self.assertEqual(result["results"][0]["agent_entity_type"], "item")
         self.assertEqual(result["results"][0]["meaning"], "辐照后硬度")
         self.assertIn("[R1]", result["answer"])
+        self.assertEqual(result["scope"], {"paper_ids": [], "mode": "all"})
+        search_schema = next(tool for tool in client.tool_schemas if tool["function"]["name"] == "search_evidence")
+        self.assertNotIn("paper_ids", search_schema["function"]["parameters"]["properties"])
+
+    def test_librarian_recovers_dsml_tool_calls_without_leaking_protocol(self):
+        client = FakeDsmlToolClient()
+        result = LibrarianAgentRuntime(self.db, client=client).run(
+            "高熵合金中子辐照后的硬度如何变化？"
+        )
+        self.assertEqual(result["tool_calls"], 1)
+        self.assertEqual(result["results"][0]["meaning"], "辐照后硬度")
+        self.assertNotIn("DSML", result["answer"])
+        self.assertEqual(result["answer"], "已找到硬度证据[R1]。")
+
+    def test_librarian_forces_fresh_search_when_model_skips_tools(self):
+        result = LibrarianAgentRuntime(self.db, client=FakeNoToolClient()).run(
+            "高熵合金中子辐照后的硬度如何变化？",
+            history=[{"role": "assistant", "content": "旧答案[R99]"}],
+        )
+        self.assertEqual(result["tool_calls"], 1)
+        self.assertEqual(len(result["results"]), 1)
+        self.assertIn("[R1]", result["answer"])
+        self.assertNotIn("R99", result["answer"])
 
     def test_changed_paper_refreshes_incrementally(self):
         index = EvidenceSearchIndex(self.db)

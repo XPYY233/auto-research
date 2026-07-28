@@ -5,6 +5,7 @@ This project is a local literature automation workflow for fusion materials, rad
 ## Search V2 and in-product agents (2026-07-28)
 
 - The search page defaults to the DeepSeek-backed `librarian` agent. Precise four-mode search remains a required fallback and must work without DeepSeek.
+- Librarian scope is always the complete evidence library. Paper-title/DOI/author scope controls belong only to precise search; do not add partial-corpus controls back to Agent mode.
 - The librarian may return only the existing `item`, `table`, `figure`, and `finding` result contracts. Do not introduce a fifth AI-owned evidence type or a parallel scientific database.
 - `search_index_documents` and `search_index_fts` are disposable projections. Never treat them as evidence authority or write their content back into six-column/visual records.
 - Preserve `AgentRegistry` and `ToolRegistry` as the extension boundary for future agents. New agents should reuse registered read-only tools before adding code or routes.
@@ -12,6 +13,11 @@ This project is a local literature automation workflow for fusion materials, rad
 - Increment `INDEX_FORMAT_VERSION` whenever indexed field construction or alias semantics change. Normal evidence edits should refresh only changed papers; release maintenance may use `evidence-search-reindex`.
 - Local editable and public read-only modes must serve the same `web/index.html`, `app.js`, `app.css`, Search V2 and librarian endpoint. Never create a second public frontend. Differences belong only in authorization and hidden write controls.
 - Agent answers must retain `[R#]` links to actually returned records. All referenced records must be included in the response; do not truncate below the highest possible reference.
+- Every Librarian turn must perform at least one fresh evidence search. Never accept a history-only answer with orphan `[R#]` references. Only records cited by the final answer should be returned when citations are available.
+- DeepSeek may emit tool calls as DSML text. `agent_runtime.py` must recover supported DSML calls, exclude DSML from conversation history, and use the separate JSON summary path after the tool loop. Internal protocol text must never reach the user.
+- Frontend history is browser-local convenience state, not scientific evidence or server authority. Reopening a saved conversation must not call DeepSeek; the next new turn sends only bounded recent history and still performs a fresh search.
+- Librarian answer Markdown is rendered only after HTML escaping. Preserve the protocol/orphan-reference guards when changing chat rendering.
+- The progress scene uses the locally installed Codex working-pet strip `web/codex-pet-working.webp`; do not replace it with an ad-hoc mascot. Before any public GitHub release, explicitly review whether this local product asset may be distributed or substitute a project-owned mascot.
 - Do not log API keys, full prompts containing sensitive data, or entire PDFs. Reuse the project DeepSeek Keychain/env configuration.
 - Architecture and implementation details: `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` and `docs/logs/AGENT_IMPLEMENTATION_LOG_2026-07-28.md`.
 

@@ -171,6 +171,15 @@ Use this launcher for the editable local workbench. Use
 `/Users/USER/Zotero/创建导师公网链接.command` only for the search-only public
 link.
 
+The search page opens with the DeepSeek Librarian. It always searches the full
+evidence library and returns the existing four result types: numeric items,
+tables, figures and qualitative findings. Use precise search when a query must
+be limited by paper title, DOI or author. Librarian conversations are saved only
+in the current browser with bounded history; reopening one does not call the
+model, while every new turn still performs a fresh database search. Internal
+DeepSeek tool protocols are never shown as answers, and cited `[R#]` records
+remain openable through the normal evidence-detail interface.
+
 ## Maintenance and release audit
 
 Before a stable checkpoint, stop extraction batches and run:

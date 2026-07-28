@@ -74,8 +74,8 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.28-librarian-search-stable.1",
-    "label": "图书管理员与高速检索稳定版 2026.07.28",
+    "version": "2026.07.28-librarian-workspace-stable.1",
+    "label": "图书管理员工作台稳定版 2026.07.28",
     "evidence_schema": 12,
 }
 
@@ -603,13 +603,9 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                         {"error": "请求较频繁，请稍后再试", "code": "rate_limited"},
                         HTTPStatus.TOO_MANY_REQUESTS,
                     )
-                raw_paper_ids = body.get("paper_ids") or []
-                if not isinstance(raw_paper_ids, list):
-                    raise ValueError("paper_ids must be a list")
                 result = LibrarianAgentRuntime(self.db).run(
                     str(body.get("question") or ""),
                     history=body.get("history") or [],
-                    paper_ids=[int(value) for value in raw_paper_ids],
                 )
                 return self.json_response(result)
             match = re.fullmatch(r"/api/six-data/(\d+)/confirm", parsed.path)

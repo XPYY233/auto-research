@@ -238,19 +238,46 @@
 
       <section class="view" id="view-search">
         <div class="search-hero">
-          <div class="search-hero-heading">
-            <div>
-              <p class="eyebrow">EVIDENCE SEARCH</p>
-              <h2>从实验条件出发，找到可追溯的数据</h2>
-              <p>输入材料、物理量和实验条件的任意组合。系统会同时理解文章语境、元素名称与符号。</p>
+          <div class="search-experience-layout">
+            <div class="search-experience-switch" role="tablist" aria-label="检索方式">
+              <button type="button" class="active" role="tab" aria-selected="true" data-search-experience="agent"><span>推荐</span><strong>问图书管理员</strong><small>用自然语言检索整个证据库</small></button>
+              <button type="button" role="tab" aria-selected="false" data-search-experience="precise"><span>进阶</span><strong>精确检索</strong><small>自行组合类型、字段与文章范围</small></button>
             </div>
-            <div class="search-scope"><span>当前检索范围</span><strong id="search-scope-heading">全部文章</strong><small id="search-scope-caption">不受当前检查文章影响</small></div>
+            <aside class="search-experience-guide" id="search-experience-guide"><strong>直接描述研究问题</strong><p>图书管理员默认检索完整文献库。需要限制论文范围或逐字段筛选时，再切换到精确检索。</p></aside>
           </div>
+          <section class="librarian-workspace" id="librarian-workspace" aria-label="图书管理员 Agent">
+            <aside class="librarian-history" aria-label="图书管理员对话历史">
+              <div class="librarian-history-head"><div><span>LIBRARY LOG</span><strong>对话记录</strong></div><button type="button" id="librarian-reset">＋ 新对话</button></div>
+              <label class="librarian-history-search"><span class="visually-hidden">搜索历史对话</span><input id="librarian-history-query" type="search" placeholder="搜索过去的问题" autocomplete="off"></label>
+              <div class="librarian-history-list" id="librarian-history-list"></div>
+              <small>记录仅保存在当前浏览器；打开旧对话不会再次调用模型。</small>
+            </aside>
+            <div class="librarian-main">
+              <div class="librarian-intro">
+                <div class="librarian-avatar" aria-hidden="true">馆</div>
+                <div><p class="eyebrow">DEEPSEEK · LIBRARIAN AGENT</p><h3>描述问题，我来查证据</h3><p>自动拆解材料、条件和物理量，并返回可以继续打开核对的数据库记录。</p></div>
+              </div>
+              <div class="librarian-messages" id="librarian-messages" aria-live="polite">
+                <div class="librarian-welcome"><strong>可以这样问：</strong><button type="button" data-librarian-suggestion="高熵合金在中子辐照后，硬度和缺陷结构有哪些变化？">高熵合金中子辐照后的硬度与缺陷</button><button type="button" data-librarian-suggestion="钨及钨合金在高温离子辐照下报告了哪些空洞或气泡结果？">钨合金高温辐照下的空洞与气泡</button></div>
+              </div>
+              <div class="librarian-progress" id="librarian-progress" hidden role="status" aria-live="polite">
+                <div class="library-scene" aria-hidden="true"><i class="shelf shelf-a"></i><i class="shelf shelf-b"></i><div class="codex-pet-librarian"><i></i></div></div>
+                <div class="librarian-progress-copy"><div><strong id="librarian-progress-stage">正在理解研究问题</strong><span id="librarian-progress-time">0 秒</span></div><div class="librarian-progress-track"><i id="librarian-progress-bar"></i></div><small>处理时间取决于问题复杂度；页面仍在工作，无需重复提交。</small></div>
+              </div>
+              <form id="librarian-form" class="librarian-form">
+                <label class="visually-hidden" for="librarian-input">向图书管理员描述问题</label>
+                <textarea id="librarian-input" maxlength="2000" rows="3" placeholder="例如：帮我找高熵合金在中子辐照后硬度如何变化，并给出对应论文和原文证据"></textarea>
+                <div><small id="librarian-status">检索范围：整个文献库</small><button type="submit" id="librarian-send">交给图书管理员</button></div>
+              </form>
+            </div>
+          </section>
+          <div id="precise-search-workspace" hidden>
           <div class="search-scope-selector" aria-label="检索文章范围">
             <div class="search-scope-switch" role="group" aria-label="检索范围">
               <button type="button" class="active" data-search-scope="all" aria-pressed="true">全部文章</button>
               <button type="button" data-search-scope="selected" aria-pressed="false">指定多篇文章</button>
             </div>
+            <div class="search-scope"><span>当前检索范围</span><strong id="search-scope-heading">全部文章</strong><small id="search-scope-caption">不受当前检查文章影响</small></div>
             <strong id="search-paper-count">全库文章</strong>
           </div>
           <div class="search-paper-panel" id="search-paper-panel" hidden>
@@ -262,26 +289,6 @@
             </div>
             <div class="search-paper-list" id="search-paper-list" aria-live="polite"></div>
           </div>
-          <div class="search-experience-switch" role="tablist" aria-label="检索方式">
-            <button type="button" class="active" role="tab" aria-selected="true" data-search-experience="agent"><span>推荐</span><strong>问图书管理员</strong><small>直接描述问题，由 AI 组织检索</small></button>
-            <button type="button" role="tab" aria-selected="false" data-search-experience="precise"><span>进阶</span><strong>精确检索</strong><small>自行组合字段、类型与筛选条件</small></button>
-          </div>
-          <section class="librarian-workspace" id="librarian-workspace" aria-label="图书管理员 Agent">
-            <div class="librarian-intro">
-              <div class="librarian-avatar" aria-hidden="true">馆</div>
-              <div><p class="eyebrow">DEEPSEEK · LIBRARIAN AGENT</p><h3>告诉我你想了解什么，不必先想关键词</h3><p>我会拆解材料、实验条件和物理量，再从数据、表格、图片与实验结论中寻找可追溯证据。</p></div>
-              <button type="button" id="librarian-reset">新问题</button>
-            </div>
-            <div class="librarian-messages" id="librarian-messages" aria-live="polite">
-              <div class="librarian-welcome"><strong>可以这样问：</strong><button type="button" data-librarian-suggestion="高熵合金在中子辐照后，硬度和缺陷结构有哪些变化？">高熵合金中子辐照后的硬度与缺陷</button><button type="button" data-librarian-suggestion="钨及钨合金在高温离子辐照下报告了哪些空洞或气泡结果？">钨合金高温辐照下的空洞与气泡</button></div>
-            </div>
-            <form id="librarian-form" class="librarian-form">
-              <label class="visually-hidden" for="librarian-input">向图书管理员描述问题</label>
-              <textarea id="librarian-input" maxlength="2000" rows="3" placeholder="例如：帮我找高熵合金在中子辐照后硬度如何变化，并给出对应论文和原文证据"></textarea>
-              <div><small id="librarian-status">默认检索全部文章；可在上方限定多篇论文</small><button type="submit" id="librarian-send">交给图书管理员</button></div>
-            </form>
-          </section>
-          <div id="precise-search-workspace" hidden>
           <div class="search-mode-switch" id="search-mode-switch" role="tablist" aria-label="检索对象">
             <button type="button" class="active" role="tab" aria-selected="true" data-search-mode="item"><i>01</i><span>数据条目</span><small>查数值、性质与条件</small></button>
             <button type="button" role="tab" aria-selected="false" data-search-mode="table"><i>02</i><span>原始表格</span><small>查完整表格及上下文</small></button>
@@ -306,6 +313,13 @@
           <p id="search-help">检索六列数据及原文证据；同一原表的命中数据会集中显示，并支持展开全部。</p>
           </div>
         </div>
+        <nav class="librarian-result-tabs" id="librarian-result-tabs" aria-label="图书管理员结果类型" hidden>
+          <span>本次检索证据</span>
+          <button type="button" class="active" data-librarian-result-type="item">条目 <b id="librarian-count-item">0</b></button>
+          <button type="button" data-librarian-result-type="table">表格 <b id="librarian-count-table">0</b></button>
+          <button type="button" data-librarian-result-type="figure">图片 <b id="librarian-count-figure">0</b></button>
+          <button type="button" data-librarian-result-type="finding">结论 <b id="librarian-count-finding">0</b></button>
+        </nav>
         <div class="search-controls" id="search-filter-bar">
           <div class="search-control-copy"><span>精确结果</span><small>筛选会同步应用到 CSV 和 Excel 导出</small></div>
           <label>证据来源<select id="search-source-filter"><option value="all">全部来源</option><option value="text">正文数据</option><option value="table">表格数据</option><option value="figure">图片关联</option><option value="manual">人工补录</option></select></label>

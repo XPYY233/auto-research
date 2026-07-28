@@ -1527,7 +1527,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.28-librarian-search-stable.1")
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.28-librarian-workspace-stable.1")
         self.assertEqual(RELEASE_INFO["evidence_schema"], 12)
 
     def test_rejected_cloud_visual_experiment_is_absent_from_active_ui(self):
@@ -1561,6 +1561,17 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("data-item-detail", app_js)
         self.assertNotIn("data-context-chat-item", app_js)
         self.assertIn("/api/context-chat", app_js)
+        self.assertIn('id="librarian-progress"', index_html)
+        self.assertIn('id="librarian-history-list"', index_html)
+        self.assertIn('class="codex-pet-librarian"', index_html)
+        self.assertIn('data-librarian-result-type="item"', index_html)
+        self.assertIn('data-librarian-result-type="table"', index_html)
+        self.assertIn('data-librarian-result-type="figure"', index_html)
+        self.assertIn('data-librarian-result-type="finding"', index_html)
+        self.assertIn("librarianMarkdown", app_js)
+        self.assertIn("codex-pet-working.webp", app_css)
+        self.assertIn("librarianHistoryStorageKey", app_js)
+        self.assertIn("paper_ids: []", app_js)
         server_source = Path(webapp_module.__file__).read_text(encoding="utf-8")
         self.assertIn("answer_context_chat", server_source)
         self.assertFalse(is_read_only_public_get("/api/context-chat"))
