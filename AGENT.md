@@ -2,7 +2,7 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
-## Search V2 and in-product agents (2026-07-28)
+## Search V2 and in-product agents (2026-07-29)
 
 - The search page defaults to the DeepSeek-backed `librarian` agent. Precise four-mode search remains a required fallback and must work without DeepSeek.
 - Librarian scope is always the complete evidence library. Paper-title/DOI/author scope controls belong only to precise search; do not add partial-corpus controls back to Agent mode.
@@ -13,13 +13,16 @@ This project is a local literature automation workflow for fusion materials, rad
 - Increment `INDEX_FORMAT_VERSION` whenever indexed field construction or alias semantics change. Normal evidence edits should refresh only changed papers; release maintenance may use `evidence-search-reindex`.
 - Local editable and public read-only modes must serve the same `web/index.html`, `app.js`, `app.css`, Search V2 and librarian endpoint. Never create a second public frontend. Differences belong only in authorization and hidden write controls.
 - Agent answers must retain `[R#]` links to actually returned records. All referenced records must be included in the response; do not truncate below the highest possible reference.
-- Every Librarian turn must perform at least one fresh evidence search. Never accept a history-only answer with orphan `[R#]` references. Only records cited by the final answer should be returned when citations are available.
-- DeepSeek may emit tool calls as DSML text. `agent_runtime.py` must recover supported DSML calls, exclude DSML from conversation history, and use the separate JSON summary path after the tool loop. Internal protocol text must never reach the user.
+- Every Librarian turn uses the fixed three-stage path: DeepSeek query planning, local coverage recall over all four evidence types, then DeepSeek JSON selection/synthesis. The local fallback plan must still run when model planning fails. Do not return to an unconstrained model-driven tool loop.
+- Coverage recall returns a bounded candidate set, not only the records cited in the prose answer. Preserve `agent_cited` and `agent_match_queries`, keep cited records first, and label the rest as expansion candidates. This prevents a two-result tab from being mistaken for the whole search.
+- Complex questions must be decomposed into joint and facet queries. Preserve the agent-only concept expansions for broad defect/mechanical terms, the global 80-result cap and per-type caps; the synthesizer must distinguish direct evidence satisfying all hard constraints from partially related evidence.
+- The primary JSON synthesizer may fall back to a clean no-tool text request and then to a deterministic cited digest. DSML/internal protocol text must be rejected at every stage and by the frontend history guard.
+- Identical questions with identical bounded history may reuse an in-process response cache for one hour, keyed by the database search-source fingerprint. Evidence changes therefore invalidate the cache automatically. Preserve `cache_hit` in the response/UI; do not use cached answers after the indexed scientific source changes.
 - Frontend history is browser-local convenience state, not scientific evidence or server authority. Reopening a saved conversation must not call DeepSeek; the next new turn sends only bounded recent history and still performs a fresh search.
 - Librarian answer Markdown is rendered only after HTML escaping. Preserve the protocol/orphan-reference guards when changing chat rendering.
 - The progress scene uses the locally installed Codex working-pet strip `web/codex-pet-working.webp`; do not replace it with an ad-hoc mascot. Before any public GitHub release, explicitly review whether this local product asset may be distributed or substitute a project-owned mascot.
 - Do not log API keys, full prompts containing sensitive data, or entire PDFs. Reuse the project DeepSeek Keychain/env configuration.
-- Architecture and implementation details: `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` and `docs/logs/AGENT_IMPLEMENTATION_LOG_2026-07-28.md`.
+- Architecture and implementation details: `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` and `docs/logs/AGENT_IMPLEMENTATION_LOG_2026-07-29.md`.
 
 ## Active local workspace
 

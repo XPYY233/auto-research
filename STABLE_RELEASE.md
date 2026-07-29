@@ -2,7 +2,7 @@
 
 ## 版本身份
 
-- 版本：`2026.07.28-librarian-workspace-stable.1`
+- 版本：`2026.07.29-librarian-recall-stable.1`
 - 证据库结构：`v12`
 - 固定验收语料：`config/evidence_test_set_50.json`
 - 本地编辑端：`http://127.0.0.1:8765/`
@@ -16,10 +16,12 @@
 - 图书管理员使用既有 DeepSeek 项目配置，只能调用数据条目、原始表格、论文图片和实验结论四类只读工具，不建立第五套结果模型。
 - Search V2 使用可随时重建的 SQLite FTS 投影；科学事实仍以原六列、图表和证据表为唯一权威来源。
 - 代表性查询从约 1 秒降至约 0.018–0.064 秒。论文新增或修正后只刷新发生变化的论文索引。
-- Agent 回答以 `[R编号]` 连接实际搜索结果；模型网络失败时，精确检索、详情、原文证据和导出不受影响。
+- Agent 使用“DeepSeek规划—本地覆盖召回—DeepSeek筛选总结”三段流程；回答以 `[R编号]` 连接实际搜索结果，模型网络失败时精确检索、详情、原文证据和导出不受影响。
 - 图书管理员固定检索整个证据库；论文范围选择只出现在精确检索。浏览器本地保存有限历史，恢复旧对话不会调用模型。
 - 结果按“条目、表格、图片、结论”横向切换；加载时展示阶段、真实秒数和 Codex 宠物动画。
-- 已兼容 DeepSeek 的 DSML 工具协议异常：内部代码不会进入回答；每轮至少重新检索一次，孤立 `[R编号]` 会被拦截。最终中文总结走独立 JSON 通道。
+- 长问题会拆成严格组合和若干分面检索式，四类证据分别召回并受类型上限保护；页面同时公开候选总数与回答引用数，不再把单个标签中的少量记录误认为全部结果。
+- 最终中文总结走独立 JSON 通道并区分直接证据与相关证据；失败时依次降级到干净文本总结和确定性引用摘要。内部协议、孤立 `[R编号]` 和无证据历史回答仍会被拦截。
+- 相同数据库版本、问题和有限历史会在服务进程内复用一小时的完整稳定结果；页面明确显示复用状态，数据库证据变化会自动使缓存失效。
 - 本地编辑端与公网只读端共用完全相同的前端、数据库和 Agent 接口；公网端仅通过权限层禁用写入功能。
 
 ## 当前数据库
@@ -37,7 +39,7 @@
 
 ## 本次体检和修复
 
-- 当前 193 项自动测试全部通过；其中包含上一阶段的运行状态收口测试，以及本版新增的自然语言规划、短中文词、四类 Agent 结果、DSML 兼容、强制新检索和论文级增量刷新测试。
+- 当前 196 项自动测试全部通过；其中包含自然语言分解、覆盖召回、四类结果、未引用候选保留、稳定结果缓存、协议拦截、强制新检索和论文级增量刷新测试。
 - 新增 `evidence-reconcile-runs`：自动结束超过期限且后台已不存在的抽取、质量和处理任务；只修改运行审计状态，不改变数据、图表或校对历史。
 - 批量质量任务收到 `Ctrl+C` 时会把当前论文和批次明确写为“已中断”，不再残留假运行状态。
 - DeepSeek 或质量流程成功完成时会清除旧错误文本，避免“已完成但仍显示失败原因”。
@@ -71,8 +73,8 @@
 - 阶段审计：`STAGE_AUDIT_2026-07-27.md`。
 - 固定语料审计：`data/evidence/test_sets/full-corpus-50-v1_audit.md`。
 
-- 本轮界面改造前保护标签：`evidence-demo-2026-07-28-pre-librarian-ux-1`。
-- 本轮界面改造前 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-librarian-ux-2026-07-28-v1.sqlite`。
-- 最终 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-workspace-stable-2026-07-28-v1.sqlite`，SHA-256 为 `b1c9703f46577e6caac1246ca79a89f02ac4817a5ff93cbfae52b35680d264ee`。
-- 最终稳定标签：`evidence-demo-2026-07-28-librarian-workspace-stable-1`。
-- 最终 Git bundle：`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-workspace-stable-2026-07-28-v1.bundle`；校验值记录在发布交付说明中。
+- 本轮改造前保护标签：`evidence-demo-2026-07-29-pre-librarian-recall-fix-1`。
+- 本轮改造前 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-librarian-recall-fix-2026-07-29-v1.sqlite`。
+- 最终 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-recall-stable-2026-07-29-v1.sqlite`，SHA-256 为 `c9d63be31ad660294e52a7d093d37d7c4bbbfb22b3c2e5138005070f6f3b5038`。
+- 最终稳定标签：`evidence-demo-2026-07-29-librarian-recall-stable-1`。
+- 最终 Git bundle：`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-recall-stable-2026-07-29-v1.bundle`；校验值记录在发布交付说明中。

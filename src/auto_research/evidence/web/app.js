@@ -2185,13 +2185,19 @@ function renderLibrarianHistory() {
   el.querySelectorAll('[data-librarian-session-delete]').forEach(button => button.addEventListener('click', () => deleteLibrarianSession(button.dataset.librarianSessionDelete)));
 }
 
+function withLibrarianCitationFlags(results, messages) {
+  const latestAnswer = [...(messages || [])].reverse().find(message => message.role === 'assistant')?.content || '';
+  const cited = new Set([...String(latestAnswer).matchAll(/\[R(\d+)/g)].map(match => `R${match[1]}`));
+  return (results || []).map(row => row.agent_cited == null ? { ...row, agent_cited: cited.has(row.agent_ref) } : row);
+}
+
 function restoreLibrarianSession(sessionId, options = {}) {
   if (state.librarianBusy) return toast('图书管理员仍在检索，请等待本次任务完成。', true);
   const session = state.librarianSessions.find(value => value.id === sessionId);
   if (!session) return;
   state.librarianSessionId = session.id;
   state.librarianMessages = session.messages || [];
-  state.librarianResults = session.results || [];
+  state.librarianResults = withLibrarianCitationFlags(session.results, state.librarianMessages);
   state.librarianMeta = session.meta || {};
   state.librarianResultType = session.result_type || 'item';
   document.querySelector('#librarian-input').value = '';
@@ -2199,7 +2205,9 @@ function restoreLibrarianSession(sessionId, options = {}) {
   renderLibrarianResults(state.librarianResults);
   renderLibrarianHistory();
   const meta = state.librarianMeta;
-  setText('librarian-status', meta.model ? `${meta.model} · ${meta.tool_calls || 0} 次检索调用 · 已恢复历史结果` : '已恢复历史对话；未重新调用模型');
+  setText('librarian-status', meta.model
+    ? `${meta.model} · ${meta.recall_queries || meta.tool_calls || 0} 组检索方案 · ${meta.candidate_count ?? state.librarianResults.length} 项候选 · 回答引用 ${meta.cited_count || 0} 项 · 已恢复历史结果`
+    : '已恢复历史对话；未重新调用模型');
   if (options.focus !== false) window.requestAnimationFrame(() => document.querySelector('#librarian-input')?.focus());
 }
 
@@ -2216,7 +2224,18 @@ function deleteLibrarianSession(sessionId) {
 function librarianResultGroups(rows) {
   const groups = { item: [], table: [], figure: [], finding: [] };
   rows.forEach(row => (groups[row.agent_entity_type] || groups.item).push(row));
+  Object.values(groups).forEach(values => values.sort((left, right) => Number(Boolean(right.agent_cited)) - Number(Boolean(left.agent_cited))));
   return groups;
+}
+
+function preferredLibrarianResultType(groups) {
+  const priority = ['item', 'finding', 'table', 'figure'];
+  const cited = priority
+    .map(type => ({ type, count: groups[type].filter(row => row.agent_cited).length }))
+    .filter(value => value.count)
+    .sort((left, right) => right.count - left.count);
+  if (cited.length) return cited[0].type;
+  return priority.find(type => groups[type].length) || 'item';
 }
 
 function renderLibrarianResults(rows) {
@@ -2233,6 +2252,8 @@ function renderLibrarianResults(rows) {
   const available = Object.keys(groups).filter(type => groups[type].length);
   if (!available.includes(state.librarianResultType)) state.librarianResultType = available[0] || 'item';
   tabs.hidden = false;
+  const citedTotal = rows.filter(row => row.agent_cited).length;
+  setText('librarian-result-overview', `共召回 ${rows.length} 项 · 回答引用 ${citedTotal} 项`);
   document.querySelectorAll('[data-librarian-result-type]').forEach(button => {
     const type = button.dataset.librarianResultType;
     const active = type === state.librarianResultType;
@@ -2244,7 +2265,8 @@ function renderLibrarianResults(rows) {
   const type = state.librarianResultType;
   const values = groups[type];
   const cards = values.map(row => {
-      const ref = `<b class="agent-result-ref">[${esc(row.agent_ref)}]</b>`;
+      const cited = Boolean(row.agent_cited);
+      const ref = `<b class="agent-result-ref${cited ? ' cited' : ' candidate'}">[${esc(row.agent_ref)}] · ${cited ? '回答引用' : '扩展候选'}</b>`;
       if (type === 'item') return itemResultHtml(row).replace('<article class="result"', `<article class="result agent-result"`).replace('<div class="result-value-block">', `${ref}<div class="result-value-block">`);
       if (type === 'finding') return `<article class="result qualitative-result agent-result" data-item-result="${esc(row.item_id)}">${ref}<div class="finding-mark"><small>QUALITATIVE</small><span>实验结论</span></div><div class="result-content"><div class="result-heading"><div><small>具体意义</small><h3>${esc(row.meaning || '实验结论')}</h3></div></div><div class="finding-text"><p>${esc(row.finding_text || row.value_text)}</p></div><div class="result-context"><small>实验条件与文章语境</small><p>${esc(row.context_explanation || '')}</p></div><footer><div class="result-paper"><strong>${esc(row.article_title)}</strong><span>${esc(row.doi || '')} · PDF 第 ${esc(row.source_page || '?')} 页</span></div><div class="result-actions"><button class="row-link detail-link" data-agent-finding="${esc(row.item_id)}">打开条目</button><button class="row-link source-link" data-source-finding="${esc(row.item_id)}">原文证据</button></div></footer></div></article>`;
       return `<article class="visual-result agent-result">${ref}<button class="visual-thumb visual-thumb-${esc(type)}" type="button" data-visual-open="${esc(row.id)}"><img src="${esc(row.image_url)}" alt="${esc(row.display_name || row.label)}原文截图" loading="lazy"><span>${type === 'table' ? '完整表格' : '完整图片'}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(row.label)} · PDF第 ${esc(row.page_start)} 页</span><h3>${esc(row.display_name || row.label)}</h3></div><p>${esc(row.context_explanation || row.caption || '')}</p><small>${esc(row.article_title)} · ${esc(row.doi || '无 DOI')}</small><div class="visual-result-actions"><button class="open-visual detail-link" type="button" data-visual-open="${esc(row.id)}">打开详情与 AI 解读</button></div></div></article>`;
@@ -2339,10 +2361,24 @@ async function submitLibrarian(event) {
     });
     state.librarianMessages.push({ role: 'assistant', content: result.answer });
     state.librarianResults = result.results || [];
-    state.librarianMeta = { model: result.model, tool_calls: result.tool_calls, scope: 'all' };
+    state.librarianMeta = {
+      model: result.model,
+      tool_calls: result.tool_calls,
+      recall_queries: (result.recall_queries || []).length,
+      candidate_count: result.candidate_count ?? state.librarianResults.length,
+      cited_count: result.cited_count ?? state.librarianResults.filter(row => row.agent_cited).length,
+      summary_mode: result.summary_mode,
+      cache_hit: Boolean(result.cache_hit),
+      scope: 'all',
+    };
     const groups = librarianResultGroups(state.librarianResults);
-    state.librarianResultType = ['item', 'table', 'figure', 'finding'].find(type => groups[type].length) || 'item';
-    setText('librarian-status', `${result.model} · ${result.tool_calls} 次检索调用 · 返回 ${state.librarianResults.length} 项证据`);
+    state.librarianResultType = preferredLibrarianResultType(groups);
+    const summaryLabel = result.cache_hit
+      ? '已复用相同证据版本的稳定结果'
+      : result.summary_mode === 'deterministic_fallback'
+        ? '总结已降级，候选仍可核对'
+        : 'DeepSeek 已完成筛选总结';
+    setText('librarian-status', `${result.model} · ${(result.recall_queries || []).length} 组检索方案 · 召回 ${state.librarianResults.length} 项 · 引用 ${result.cited_count || 0} 项 · ${summaryLabel}`);
     renderLibrarianResults(state.librarianResults);
     success = true;
   } catch (error) {

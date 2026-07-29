@@ -74,8 +74,8 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.28-librarian-workspace-stable.1",
-    "label": "图书管理员工作台稳定版 2026.07.28",
+    "version": "2026.07.29-librarian-recall-stable.1",
+    "label": "图书管理员覆盖检索稳定版 2026.07.29",
     "evidence_schema": 12,
 }
 

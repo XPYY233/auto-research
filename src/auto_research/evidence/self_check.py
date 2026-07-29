@@ -81,6 +81,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("librarian_typed_results", all(f'data-librarian-result-type="{kind}"' in html for kind in ("item", "table", "figure", "finding")) and "setLibrarianResultType" in js),
         ("librarian_local_history", 'id="librarian-history-list"' in html and "librarianHistoryStorageKey" in js and "restoreLibrarianSession" in js),
         ("librarian_protocol_guard", "DSML" in js and "librarianMarkdown" in js),
+        ("librarian_coverage_recall", "_fallback_recall_queries" in Path(__file__).with_name("agent_runtime.py").read_text(encoding="utf-8") and "candidate_count" in Path(__file__).with_name("agent_runtime.py").read_text(encoding="utf-8") and "preferredLibrarianResultType" in js and "agent_cited" in js and 'id="librarian-result-overview"' in html),
         ("precise_search_fallback", 'data-search-experience="precise"' in html and 'id="precise-search-workspace"' in html and "runSearch" in js),
         ("qualitative_result_export", "/api/qualitative-export.csv" in js and "/api/qualitative-export.xlsx" in js and '["item", "finding"]' in js),
         ("resilient_boot_and_release", "apiOptional" in js and "runtimeWarnings" in js and "id=\"runtime-warning\"" in html and "id=\"release-badge\"" in html),

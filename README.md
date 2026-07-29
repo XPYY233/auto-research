@@ -176,9 +176,15 @@ evidence library and returns the existing four result types: numeric items,
 tables, figures and qualitative findings. Use precise search when a query must
 be limited by paper title, DOI or author. Librarian conversations are saved only
 in the current browser with bounded history; reopening one does not call the
-model, while every new turn still performs a fresh database search. Internal
-DeepSeek tool protocols are never shown as answers, and cited `[R#]` records
-remain openable through the normal evidence-detail interface.
+model. Every new turn uses DeepSeek to plan several short queries, runs a
+coverage search over all four evidence types, and then asks DeepSeek to separate
+direct evidence from partially related evidence. The page reports both the
+total recalled candidates and the smaller set cited by the answer; cited cards
+are shown first and remain openable through the normal evidence-detail
+interface. Internal DeepSeek tool protocols are never shown as answers.
+An identical question with identical bounded history reuses the complete answer
+and candidate set for one hour while the database source fingerprint remains
+unchanged. The UI labels this reuse; any evidence change invalidates it.
 
 ## Maintenance and release audit
 
