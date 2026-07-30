@@ -22,6 +22,8 @@ const recentPapersStorageKey = "evidence-recent-papers-v1";
 const librarianHistoryStorageKey = "evidence-librarian-history-v1";
 const librarianHistoryLimit = 16;
 const librarianHistoryByteLimit = 2_500_000;
+const librarianResultTypes = ["item", "finding", "table", "figure"];
+const librarianMatchOrder = { direct: 0, adjacent: 1, expansion: 2 };
 const reviewPageSize = 80;
 
 async function api(url, options = {}) {
@@ -2097,13 +2099,23 @@ function bindLibrarianSuggestions() {
   }));
 }
 
-function librarianInlineMarkdown(text) {
-  return esc(text)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\[R(\d+)\]/g, '<span class="librarian-citation">[R$1]</span>');
+function librarianReferenceHtml(ref, interactiveRefs = new Set()) {
+  const normalized = String(ref || '').replace(/^\[/, '').replace(/\]$/, '');
+  if (!/^R\d+$/.test(normalized)) return esc(ref);
+  if (interactiveRefs.has(normalized)) {
+    return `<button type="button" class="librarian-citation is-clickable" data-librarian-reference="${esc(normalized)}" aria-label="查看 ${esc(normalized)} 对应的证据卡">[${esc(normalized)}]</button>`;
+  }
+  return `<span class="librarian-citation historical" title="仅最新一轮回答的引用可跳转">[${esc(normalized)}]</span>`;
 }
 
-function librarianMarkdown(content) {
+function librarianInlineMarkdown(text, options = {}) {
+  const interactiveRefs = options.interactiveRefs || new Set();
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[R(\d+)\]/g, (_, number) => librarianReferenceHtml(`R${number}`, interactiveRefs));
+}
+
+function librarianMarkdown(content, options = {}) {
   const lines = String(content || '').replace(/\r/g, '').split('\n');
   const html = [];
   let list = null;
@@ -2115,7 +2127,7 @@ function librarianMarkdown(content) {
     const filtered = rows.filter(row => !row.every(cell => /^:?-{3,}:?$/.test(cell)));
     if (filtered.length) {
       html.push('<div class="librarian-answer-table"><table>');
-      filtered.forEach((row, index) => html.push(`<tr>${row.map(cell => `<${index === 0 ? 'th' : 'td'}>${librarianInlineMarkdown(cell)}</${index === 0 ? 'th' : 'td'}>`).join('')}</tr>`));
+      filtered.forEach((row, index) => html.push(`<tr>${row.map(cell => `<${index === 0 ? 'th' : 'td'}>${librarianInlineMarkdown(cell, options)}</${index === 0 ? 'th' : 'td'}>`).join('')}</tr>`));
       html.push('</table></div>');
     }
     table = [];
@@ -2127,32 +2139,133 @@ function librarianMarkdown(content) {
     if (!line) { closeList(); return; }
     if (/^-{3,}$/.test(line)) { closeList(); html.push('<hr>'); return; }
     const heading = line.match(/^(#{2,4})\s+(.+)$/);
-    if (heading) { closeList(); const level = Math.min(heading[1].length + 1, 5); html.push(`<h${level}>${librarianInlineMarkdown(heading[2])}</h${level}>`); return; }
+    if (heading) { closeList(); const level = Math.min(heading[1].length + 1, 5); html.push(`<h${level}>${librarianInlineMarkdown(heading[2], options)}</h${level}>`); return; }
     const bullet = line.match(/^[-*]\s+(.+)$/);
-    if (bullet) { if (list !== 'ul') { closeList(); list = 'ul'; html.push('<ul>'); } html.push(`<li>${librarianInlineMarkdown(bullet[1])}</li>`); return; }
+    if (bullet) { if (list !== 'ul') { closeList(); list = 'ul'; html.push('<ul>'); } html.push(`<li>${librarianInlineMarkdown(bullet[1], options)}</li>`); return; }
     const numbered = line.match(/^\d+[.)]\s+(.+)$/);
-    if (numbered) { if (list !== 'ol') { closeList(); list = 'ol'; html.push('<ol>'); } html.push(`<li>${librarianInlineMarkdown(numbered[1])}</li>`); return; }
+    if (numbered) { if (list !== 'ol') { closeList(); list = 'ol'; html.push('<ol>'); } html.push(`<li>${librarianInlineMarkdown(numbered[1], options)}</li>`); return; }
     closeList();
-    html.push(`<p>${librarianInlineMarkdown(line)}</p>`);
+    html.push(`<p>${librarianInlineMarkdown(line, options)}</p>`);
   });
   flushTable();
   closeList();
   return html.join('');
 }
 
-function librarianMessageHtml(role, content) {
+function librarianQueryChipsHtml(queryAnalysis) {
+  const constraints = queryAnalysis?.constraints;
+  if (!constraints || typeof constraints !== 'object') return '';
+  const chips = [];
+  Object.values(constraints).forEach(group => {
+    const values = Array.isArray(group?.values) ? group.values : [];
+    values.forEach(value => chips.push(`<span><b>${esc(group?.label || '条件')}</b>${esc(value)}</span>`));
+  });
+  if (!chips.length) return '';
+  return `<div class="librarian-query-chips" aria-label="本轮已识别的检索条件">${chips.join('')}</div>`;
+}
+
+function librarianReportRefsHtml(refs, interactiveRefs) {
+  return (Array.isArray(refs) ? refs : [])
+    .filter(ref => /^R\d+$/.test(String(ref || '')))
+    .map(ref => librarianReferenceHtml(ref, interactiveRefs))
+    .join(' ');
+}
+
+function librarianReportHtml(report, queryAnalysis, interactiveRefs) {
+  if (!report || typeof report !== 'object' || !report.direct_conclusion) return '';
+  const conclusion = report.direct_conclusion || {};
+  const status = ['found', 'not_found', 'clarification'].includes(conclusion.status) ? conclusion.status : 'unknown';
+  const statusLabel = { found: '找到直接证据', not_found: '未找到直接证据', clarification: '需要补充条件', unknown: '结论待核对' }[status];
+  const matrix = Array.isArray(report.evidence_matrix) ? report.evidence_matrix : [];
+  const related = Array.isArray(report.related_evidence) ? report.related_evidence : [];
+  const gaps = Array.isArray(report.database_gaps) ? report.database_gaps : [];
+  const followups = (Array.isArray(report.suggested_followups) ? report.suggested_followups : []).slice(0, 3);
+  const focus = String(queryAnalysis?.focus || '').trim();
+  const conclusionTextRefs = new Set([...String(conclusion.text || '').matchAll(/\[R(\d+)\]/g)].map(match => `R${match[1]}`));
+  const conclusionExtraRefs = (Array.isArray(conclusion.refs) ? conclusion.refs : []).filter(ref => !conclusionTextRefs.has(String(ref)));
+  const focusHtml = focus || librarianQueryChipsHtml(queryAnalysis)
+    ? `<header class="librarian-report-focus"><span>本轮问题理解</span>${focus ? `<strong>${esc(focus)}</strong>` : ''}${librarianQueryChipsHtml(queryAnalysis)}</header>`
+    : '';
+  const matrixRows = matrix.map(row => {
+    const page = row?.source_page ? `PDF 第 ${esc(row.source_page)} 页` : '页码见证据卡';
+    const paper = [row?.article_title || '未命名文章', row?.doi, page].filter(Boolean).map(esc).join(' · ');
+    return `<tr><td>${esc(row?.material || '—')}</td><td>${esc(row?.conditions || '—')}</td><td>${esc(row?.property || '—')}</td><td>${esc(row?.result || '见原文证据')}</td><td><span class="librarian-matrix-paper">${paper}</span>${librarianReportRefsHtml(row?.refs, interactiveRefs)}</td></tr>`;
+  }).join('');
+  const relatedHtml = related.length
+    ? related.map(row => {
+        const relaxed = Array.isArray(row?.relaxed_constraints) ? row.relaxed_constraints.filter(Boolean) : [];
+        return `<article class="librarian-related-row"><div><strong>${esc(row?.summary || '相关证据')}</strong><span>${esc(row?.article_title || '未命名文章')}${row?.bundle_id ? ` · 证据组 ${esc(row.bundle_id)}` : ''}</span></div><div class="librarian-relaxed"><b>放宽条件</b>${esc(relaxed.join('、') || '一个硬条件')}</div><div class="librarian-related-refs">${librarianReportRefsHtml(row?.refs, interactiveRefs)}</div></article>`;
+      }).join('')
+    : '<p class="librarian-report-empty">暂无只放宽一个硬条件即可成立的相关证据。</p>';
+  const gapHtml = gaps.length
+    ? `<ul>${gaps.map(value => `<li>${esc(value)}</li>`).join('')}</ul>`
+    : '<p class="librarian-report-empty">本轮没有额外数据库空白说明。</p>';
+  const followupHtml = followups.length
+    ? `<div class="librarian-followups">${followups.map(value => `<button type="button" data-librarian-followup="${esc(value)}">${esc(value)}</button>`).join('')}</div>`
+    : '<p class="librarian-report-empty">可继续补充材料、实验条件或目标物理量后追问。</p>';
+  return `<div class="librarian-answer librarian-research-report">
+    ${focusHtml}
+    <section class="librarian-report-section report-direct status-${esc(status)}"><header><i>01</i><div><span>DIRECT CONCLUSION</span><h3>直接结论</h3></div><b>${esc(statusLabel)}</b></header><div class="librarian-report-body">${librarianMarkdown(conclusion.text || '未形成直接结论。', { interactiveRefs })}${librarianReportRefsHtml(conclusionExtraRefs, interactiveRefs)}</div></section>
+    <section class="librarian-report-section report-matrix"><header><i>02</i><div><span>EVIDENCE MATRIX</span><h3>证据矩阵</h3></div><b>${matrix.length} 组</b></header>${matrix.length ? `<div class="librarian-report-table"><table><thead><tr><th>材料</th><th>辐照/实验条件</th><th>性质</th><th>结果</th><th>论文证据</th></tr></thead><tbody>${matrixRows}</tbody></table></div>` : '<p class="librarian-report-empty">当前没有满足全部硬条件、可进入证据矩阵的记录。</p>'}</section>
+    <section class="librarian-report-section report-related"><header><i>03</i><div><span>RELATED EVIDENCE</span><h3>相关证据</h3></div><b>${related.length} 项</b></header><div class="librarian-related-list">${relatedHtml}</div></section>
+    <section class="librarian-report-section report-gaps"><header><i>04</i><div><span>DATABASE GAPS</span><h3>数据库空白</h3></div><b>${gaps.length} 项</b></header><div class="librarian-report-body">${gapHtml}</div></section>
+    <section class="librarian-report-section report-followups"><header><i>05</i><div><span>NEXT QUESTIONS</span><h3>建议追问</h3></div><b>${followups.length} 项</b></header>${followupHtml}</section>
+  </div>`;
+}
+
+function librarianMessageHtml(message, index, activeAssistantIndex) {
+  const role = message?.role || 'assistant';
+  const content = message?.content || '';
+  const active = role === 'assistant' && index === activeAssistantIndex;
+  const report = message?.report || (active ? state.librarianMeta?.report : null);
+  const queryAnalysis = message?.query_analysis || (active ? state.librarianMeta?.query_analysis : null);
+  const currentRefs = new Set((state.librarianResults || []).map(row => String(row.agent_ref || '')).filter(Boolean));
+  const answerRefs = new Set([
+    ...[...String(content || '').matchAll(/\[R(\d+)\]/g)].map(match => `R${match[1]}`),
+    ...[...JSON.stringify(report || {}).matchAll(/"R(\d+)"/g)].map(match => `R${match[1]}`),
+  ]);
   const protocolLeak = role === 'assistant' && /DSML|tool_calls|<\|\|.*invoke/i.test(String(content || ''));
-  const orphanReferences = role === 'assistant' && !state.librarianResults.length && /\[R\d+/i.test(String(content || ''));
+  const orphanReferences = active && answerRefs.size > 0 && [...answerRefs].some(ref => !currentRefs.has(ref));
   const guarded = protocolLeak || orphanReferences;
   const visibleContent = protocolLeak
     ? '这次回答因模型工具协议异常而未完成，内部检索指令已隐藏。请重新发送问题以生成中文总结。'
     : orphanReferences
       ? '这条历史回答没有绑定可核对的数据库证据，已停止展示。请重新发送问题；新回答将强制执行本轮检索。'
       : content;
-  const body = role === 'assistant' && !guarded
-    ? `<div class="librarian-answer">${librarianMarkdown(visibleContent)}</div>`
-    : `<p>${esc(visibleContent).replace(/\n/g, '<br>')}</p>`;
-  return `<article class="librarian-message ${esc(role)}${guarded ? ' protocol-guard' : ''}"><span>${role === 'user' ? '你' : '馆'}</span>${body}</article>`;
+  const interactiveRefs = active && !guarded ? currentRefs : new Set();
+  const structured = role === 'assistant' && !guarded ? librarianReportHtml(report, queryAnalysis, interactiveRefs) : '';
+  const answerBody = structured || (role === 'assistant' && !guarded
+    ? `<div class="librarian-answer">${librarianMarkdown(visibleContent, { interactiveRefs })}</div>`
+    : `<p>${esc(visibleContent).replace(/\n/g, '<br>')}</p>`);
+  const historyNote = role === 'assistant' && !active && !guarded && answerRefs.size
+    ? '<div class="librarian-history-answer-note">历史回答 · 引用仅作记录，不与当前一轮证据卡联动</div>'
+    : '';
+  const body = `${historyNote}${answerBody}`;
+  return `<article class="librarian-message ${esc(role)}${guarded ? ' protocol-guard' : ''}${active ? ' active-answer' : ''}"><span>${role === 'user' ? '你' : '馆'}</span><div class="librarian-message-body">${body}</div></article>`;
+}
+
+function focusLibrarianReference(ref) {
+  const row = state.librarianResults.find(value => String(value.agent_ref) === String(ref));
+  if (!row) return toast('这条引用不属于当前一轮结果，请重新发送该问题。', true);
+  setLibrarianResultType(row.agent_entity_type);
+  window.requestAnimationFrame(() => {
+    const card = document.querySelector(`[data-agent-result-ref="${String(ref).replace(/[^R0-9]/g, '')}"]`);
+    if (!card) return;
+    card.classList.add('citation-target');
+    card.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+    setTimeout(() => card.classList.remove('citation-target'), 1800);
+  });
+}
+
+function bindLibrarianConversationActions() {
+  document.querySelectorAll('[data-librarian-reference]').forEach(button => button.addEventListener('click', () => focusLibrarianReference(button.dataset.librarianReference)));
+  document.querySelectorAll('[data-librarian-followup]').forEach(button => button.addEventListener('click', () => {
+    const input = document.querySelector('#librarian-input');
+    input.value = button.dataset.librarianFollowup || '';
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    document.querySelector('#librarian-form').requestSubmit();
+  }));
 }
 
 function renderLibrarianConversation() {
@@ -2162,7 +2275,10 @@ function renderLibrarianConversation() {
     bindLibrarianSuggestions();
     return;
   }
-  el.innerHTML = state.librarianMessages.map(message => librarianMessageHtml(message.role, message.content)).join('');
+  const lastIndex = state.librarianMessages.length - 1;
+  const activeAssistantIndex = !state.librarianBusy && state.librarianMessages[lastIndex]?.role === 'assistant' ? lastIndex : -1;
+  el.innerHTML = state.librarianMessages.map((message, index) => librarianMessageHtml(message, index, activeAssistantIndex)).join('');
+  bindLibrarianConversationActions();
   el.scrollTop = el.scrollHeight;
 }
 
@@ -2186,8 +2302,11 @@ function renderLibrarianHistory() {
 }
 
 function withLibrarianCitationFlags(results, messages) {
-  const latestAnswer = [...(messages || [])].reverse().find(message => message.role === 'assistant')?.content || '';
-  const cited = new Set([...String(latestAnswer).matchAll(/\[R(\d+)/g)].map(match => `R${match[1]}`));
+  const latestAnswer = [...(messages || [])].reverse().find(message => message.role === 'assistant') || {};
+  const cited = new Set([
+    ...[...String(latestAnswer.content || '').matchAll(/\[R(\d+)/g)].map(match => `R${match[1]}`),
+    ...[...JSON.stringify(latestAnswer.report || {}).matchAll(/"R(\d+)"/g)].map(match => `R${match[1]}`),
+  ]);
   return (results || []).map(row => row.agent_cited == null ? { ...row, agent_cited: cited.has(row.agent_ref) } : row);
 }
 
@@ -2198,15 +2317,21 @@ function restoreLibrarianSession(sessionId, options = {}) {
   state.librarianSessionId = session.id;
   state.librarianMessages = session.messages || [];
   state.librarianResults = withLibrarianCitationFlags(session.results, state.librarianMessages);
-  state.librarianMeta = session.meta || {};
+  state.librarianMeta = session.meta?.pending
+    ? { error: '上一次请求在完成前中断，未保留旧证据卡。', scope: 'all' }
+    : (session.meta || {});
   state.librarianResultType = session.result_type || 'item';
   document.querySelector('#librarian-input').value = '';
   renderLibrarianConversation();
   renderLibrarianResults(state.librarianResults);
   renderLibrarianHistory();
   const meta = state.librarianMeta;
+  const counts = meta.match_counts || {};
+  const evidenceSummary = Number.isFinite(Number(counts.direct))
+    ? `直接 ${Number(counts.direct) || 0} · 相关 ${Number(counts.adjacent) || 0} · 扩展 ${Number(counts.expansion) || 0}`
+    : `${meta.candidate_count ?? state.librarianResults.length} 项候选 · 回答引用 ${meta.cited_count || 0} 项`;
   setText('librarian-status', meta.model
-    ? `${meta.model} · ${meta.recall_queries || meta.tool_calls || 0} 组检索方案 · ${meta.candidate_count ?? state.librarianResults.length} 项候选 · 回答引用 ${meta.cited_count || 0} 项 · 已恢复历史结果`
+    ? `${meta.model} · ${evidenceSummary} · 已恢复历史结果，未重新调用模型`
     : '已恢复历史对话；未重新调用模型');
   if (options.focus !== false) window.requestAnimationFrame(() => document.querySelector('#librarian-input')?.focus());
 }
@@ -2224,18 +2349,44 @@ function deleteLibrarianSession(sessionId) {
 function librarianResultGroups(rows) {
   const groups = { item: [], table: [], figure: [], finding: [] };
   rows.forEach(row => (groups[row.agent_entity_type] || groups.item).push(row));
-  Object.values(groups).forEach(values => values.sort((left, right) => Number(Boolean(right.agent_cited)) - Number(Boolean(left.agent_cited))));
+  Object.values(groups).forEach(values => values.sort((left, right) => {
+    const leftClass = librarianMatchOrder[left.agent_match_class] ?? 9;
+    const rightClass = librarianMatchOrder[right.agent_match_class] ?? 9;
+    return leftClass - rightClass || Number(Boolean(right.agent_cited)) - Number(Boolean(left.agent_cited));
+  }));
   return groups;
 }
 
 function preferredLibrarianResultType(groups) {
-  const priority = ['item', 'finding', 'table', 'figure'];
-  const cited = priority
-    .map(type => ({ type, count: groups[type].filter(row => row.agent_cited).length }))
-    .filter(value => value.count)
-    .sort((left, right) => right.count - left.count);
-  if (cited.length) return cited[0].type;
-  return priority.find(type => groups[type].length) || 'item';
+  const ranked = librarianResultTypes.map((type, priority) => ({
+    type,
+    priority,
+    directCited: groups[type].filter(row => row.agent_match_class === 'direct' && row.agent_cited).length,
+    direct: groups[type].filter(row => row.agent_match_class === 'direct').length,
+    adjacentCited: groups[type].filter(row => row.agent_match_class === 'adjacent' && row.agent_cited).length,
+    adjacent: groups[type].filter(row => row.agent_match_class === 'adjacent').length,
+    cited: groups[type].filter(row => row.agent_cited).length,
+    total: groups[type].length,
+  })).filter(value => value.total);
+  ranked.sort((left, right) => right.directCited - left.directCited || right.direct - left.direct || right.adjacentCited - left.adjacentCited || right.cited - left.cited || right.adjacent - left.adjacent || left.priority - right.priority);
+  return ranked[0]?.type || 'item';
+}
+
+function librarianResultBadge(row) {
+  const cited = Boolean(row.agent_cited);
+  const matchClass = row.agent_match_class;
+  const bundle = String(row.agent_bundle_id || '').trim();
+  const relaxed = String(row.agent_relaxed_condition || '').trim();
+  let label = cited ? '回答引用' : '扩展候选';
+  if (matchClass === 'direct') label = cited ? '直接证据 · 报告引用' : '直接候选';
+  else if (matchClass === 'adjacent') label = `相关证据${relaxed ? ` · 放宽${relaxed}` : ''}`;
+  else if (matchClass === 'expansion') label = '扩展候选';
+  if (bundle) label += ` · 证据组 ${bundle}`;
+  const roleClass = ['direct', 'adjacent', 'expansion'].includes(matchClass) ? matchClass : (cited ? 'legacy-cited' : 'expansion');
+  return {
+    roleClass,
+    html: `<b class="agent-result-ref ${esc(roleClass)}${cited ? ' cited' : ' candidate'}">[${esc(row.agent_ref)}] · ${esc(label)}</b>`,
+  };
 }
 
 function renderLibrarianResults(rows) {
@@ -2244,32 +2395,53 @@ function renderLibrarianResults(rows) {
   const tabs = document.querySelector('#librarian-result-tabs');
   if (!rows.length) {
     tabs.hidden = true;
-    el.innerHTML = `<div class="blank search-empty librarian-empty"><span>⌕</span><h3>等待你的研究问题</h3><p>图书管理员会返回现有四类证据，不会生成数据库中不存在的论文或数据。</p></div>`;
+    const meta = state.librarianMeta || {};
+    const empty = meta.pending
+      ? ['⌛', '正在准备本轮证据', '旧结果已清空；新回答完成前不会把上一轮卡片挂到当前问题下。']
+      : meta.clarification_required
+        ? ['?', '需要先补充问题条件', '图书管理员尚未执行证据检索；请选择建议追问或明确材料、实验条件与物理量。']
+        : meta.error
+          ? ['!', '本次检索未完成', '没有沿用上一轮证据。你可以修改问题重试，或切换到精确检索。']
+          : meta.report || meta.summary_mode === 'no_results'
+            ? ['∅', '本轮没有可核对的候选证据', '回答中的数据库空白说明保留在上方；系统不会生成不存在的论文或数据。']
+            : ['⌕', '等待你的研究问题', '图书管理员会返回现有四类证据，不会生成数据库中不存在的论文或数据。'];
+    el.innerHTML = `<div class="blank search-empty librarian-empty"><span>${empty[0]}</span><h3>${empty[1]}</h3><p>${empty[2]}</p></div>`;
     return;
   }
   const groups = librarianResultGroups(rows);
   const labels = { item: '数据条目', table: '原始表格', figure: '论文图片', finding: '实验结论' };
-  const available = Object.keys(groups).filter(type => groups[type].length);
+  const available = librarianResultTypes.filter(type => groups[type].length);
   if (!available.includes(state.librarianResultType)) state.librarianResultType = available[0] || 'item';
   tabs.hidden = false;
   const citedTotal = rows.filter(row => row.agent_cited).length;
-  setText('librarian-result-overview', `共召回 ${rows.length} 项 · 回答引用 ${citedTotal} 项`);
+  const hasReasoningRoles = rows.some(row => ['direct', 'adjacent', 'expansion'].includes(row.agent_match_class));
+  const counts = hasReasoningRoles ? {
+    direct: rows.filter(row => row.agent_match_class === 'direct').length,
+    adjacent: rows.filter(row => row.agent_match_class === 'adjacent').length,
+    expansion: rows.filter(row => row.agent_match_class === 'expansion').length,
+  } : null;
+  setText('librarian-result-overview', counts
+    ? `共 ${rows.length} 项 · 直接 ${counts.direct} · 相关 ${counts.adjacent} · 扩展 ${counts.expansion} · 报告引用 ${citedTotal}`
+    : `共召回 ${rows.length} 项 · 回答引用 ${citedTotal} 项`);
   document.querySelectorAll('[data-librarian-result-type]').forEach(button => {
     const type = button.dataset.librarianResultType;
     const active = type === state.librarianResultType;
     button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
     button.disabled = groups[type].length === 0;
+    const directCount = groups[type].filter(row => row.agent_match_class === 'direct').length;
+    const relatedCount = groups[type].filter(row => row.agent_match_class === 'adjacent').length;
+    button.setAttribute('aria-label', `${labels[type]} ${groups[type].length} 项${hasReasoningRoles ? `，直接 ${directCount}，相关 ${relatedCount}` : ''}`);
     setText(`librarian-count-${type}`, groups[type].length);
   });
   const type = state.librarianResultType;
   const values = groups[type];
   const cards = values.map(row => {
-      const cited = Boolean(row.agent_cited);
-      const ref = `<b class="agent-result-ref${cited ? ' cited' : ' candidate'}">[${esc(row.agent_ref)}] · ${cited ? '回答引用' : '扩展候选'}</b>`;
-      if (type === 'item') return itemResultHtml(row).replace('<article class="result"', `<article class="result agent-result"`).replace('<div class="result-value-block">', `${ref}<div class="result-value-block">`);
-      if (type === 'finding') return `<article class="result qualitative-result agent-result" data-item-result="${esc(row.item_id)}">${ref}<div class="finding-mark"><small>QUALITATIVE</small><span>实验结论</span></div><div class="result-content"><div class="result-heading"><div><small>具体意义</small><h3>${esc(row.meaning || '实验结论')}</h3></div></div><div class="finding-text"><p>${esc(row.finding_text || row.value_text)}</p></div><div class="result-context"><small>实验条件与文章语境</small><p>${esc(row.context_explanation || '')}</p></div><footer><div class="result-paper"><strong>${esc(row.article_title)}</strong><span>${esc(row.doi || '')} · PDF 第 ${esc(row.source_page || '?')} 页</span></div><div class="result-actions"><button class="row-link detail-link" data-agent-finding="${esc(row.item_id)}">打开条目</button><button class="row-link source-link" data-source-finding="${esc(row.item_id)}">原文证据</button></div></footer></div></article>`;
-      return `<article class="visual-result agent-result">${ref}<button class="visual-thumb visual-thumb-${esc(type)}" type="button" data-visual-open="${esc(row.id)}"><img src="${esc(row.image_url)}" alt="${esc(row.display_name || row.label)}原文截图" loading="lazy"><span>${type === 'table' ? '完整表格' : '完整图片'}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(row.label)} · PDF第 ${esc(row.page_start)} 页</span><h3>${esc(row.display_name || row.label)}</h3></div><p>${esc(row.context_explanation || row.caption || '')}</p><small>${esc(row.article_title)} · ${esc(row.doi || '无 DOI')}</small><div class="visual-result-actions"><button class="open-visual detail-link" type="button" data-visual-open="${esc(row.id)}">打开详情与 AI 解读</button></div></div></article>`;
+      const badge = librarianResultBadge(row);
+      const cardAttributes = `data-agent-result-ref="${esc(row.agent_ref)}"`;
+      if (type === 'item') return itemResultHtml(row).replace('<article class="result"', `<article class="result agent-result match-${esc(badge.roleClass)}" ${cardAttributes}`).replace('<div class="result-value-block">', `${badge.html}<div class="result-value-block">`);
+      if (type === 'finding') return `<article class="result qualitative-result agent-result match-${esc(badge.roleClass)}" ${cardAttributes} data-item-result="${esc(row.item_id)}">${badge.html}<div class="finding-mark"><small>QUALITATIVE</small><span>实验结论</span></div><div class="result-content"><div class="result-heading"><div><small>具体意义</small><h3>${esc(row.meaning || '实验结论')}</h3></div></div><div class="finding-text"><p>${esc(row.finding_text || row.value_text)}</p></div><div class="result-context"><small>实验条件与文章语境</small><p>${esc(row.context_explanation || '')}</p></div><footer><div class="result-paper"><strong>${esc(row.article_title)}</strong><span>${esc(row.doi || '')} · PDF 第 ${esc(row.source_page || '?')} 页</span></div><div class="result-actions"><button class="row-link detail-link" data-agent-finding="${esc(row.item_id)}">打开条目</button><button class="row-link source-link" data-source-finding="${esc(row.item_id)}">原文证据</button></div></footer></div></article>`;
+      return `<article class="visual-result agent-result match-${esc(badge.roleClass)}" ${cardAttributes}>${badge.html}<button class="visual-thumb visual-thumb-${esc(type)}" type="button" data-visual-open="${esc(row.id)}"><img src="${esc(row.image_url)}" alt="${esc(row.display_name || row.label)}原文截图" loading="lazy"><span>${type === 'table' ? '完整表格' : '完整图片'}</span></button><div class="visual-result-copy"><div class="visual-result-title"><span>${esc(row.label)} · PDF第 ${esc(row.page_start)} 页</span><h3>${esc(row.display_name || row.label)}</h3></div><p>${esc(row.context_explanation || row.caption || '')}</p><small>${esc(row.article_title)} · ${esc(row.doi || '无 DOI')}</small><div class="visual-result-actions"><button class="open-visual detail-link" type="button" data-visual-open="${esc(row.id)}">打开详情与 AI 解读</button></div></div></article>`;
     }).join('');
   el.innerHTML = `<section class="agent-result-group" aria-label="${esc(labels[type])}">${cards}</section>`;
   el.querySelectorAll('[data-visual-open]').forEach(button => button.addEventListener('click', () => openVisualAsset(Number(button.dataset.visualOpen))));
@@ -2292,7 +2464,7 @@ function renderLibrarianResults(rows) {
 }
 
 function setLibrarianResultType(type) {
-  if (!['item', 'table', 'figure', 'finding'].includes(type)) return;
+  if (!librarianResultTypes.includes(type)) return;
   state.librarianResultType = type;
   renderLibrarianResults(state.librarianResults);
   saveLibrarianSession();
@@ -2301,16 +2473,23 @@ function setLibrarianResultType(type) {
 function updateLibrarianProgress() {
   const elapsed = Math.max(0, (Date.now() - state.librarianProgressStarted) / 1000);
   const stages = [
-    [0, '正在理解研究问题'],
-    [3, '正在整理材料、条件与物理量'],
-    [8, '正在穿梭全库书架检索四类证据'],
-    [16, '正在核对候选记录与原文位置'],
-    [28, '正在组织回答与证据引用'],
+    [0, '预计：正在理解研究问题'],
+    [3, '预计：正在整理材料、条件与物理量'],
+    [8, '预计：正在穿梭全库书架检索四类证据'],
+    [16, '预计：正在核对候选记录与原文位置'],
+    [28, '预计：正在组织回答与证据引用'],
   ];
   const stage = [...stages].reverse().find(([second]) => elapsed >= second)?.[1] || stages[0][1];
   const percent = Math.min(94, Math.round(8 + 88 * (1 - Math.exp(-elapsed / 18))));
-  setText('librarian-progress-stage', stage);
-  setText('librarian-progress-time', `${Math.floor(elapsed)} 秒`);
+  if (state.librarianProgressStage !== stage) {
+    state.librarianProgressStage = stage;
+    setText('librarian-progress-stage', stage);
+  }
+  const wholeSeconds = Math.floor(elapsed);
+  if (state.librarianProgressSecond !== wholeSeconds) {
+    state.librarianProgressSecond = wholeSeconds;
+    setText('librarian-progress-time', `${wholeSeconds} 秒`);
+  }
   document.querySelector('#librarian-progress-bar').style.width = `${percent}%`;
 }
 
@@ -2318,20 +2497,22 @@ function startLibrarianProgress() {
   const el = document.querySelector('#librarian-progress');
   clearInterval(state.librarianProgressTimer);
   state.librarianProgressStarted = Date.now();
+  state.librarianProgressStage = '';
+  state.librarianProgressSecond = -1;
   el.hidden = false;
   el.classList.remove('done', 'failed');
   document.querySelector('#librarian-progress-bar').style.width = '8%';
   updateLibrarianProgress();
-  state.librarianProgressTimer = setInterval(updateLibrarianProgress, 250);
+  state.librarianProgressTimer = setInterval(updateLibrarianProgress, 1000);
 }
 
-function finishLibrarianProgress(success) {
+function finishLibrarianProgress(success, label = '') {
   clearInterval(state.librarianProgressTimer);
   state.librarianProgressTimer = null;
   const started = state.librarianProgressStarted;
   const el = document.querySelector('#librarian-progress');
   el.classList.add(success ? 'done' : 'failed');
-  setText('librarian-progress-stage', success ? '检索完成，正在展示证据' : '本次检索未完成');
+  setText('librarian-progress-stage', label || (success ? '回答与证据已就绪' : '本次检索未完成'));
   document.querySelector('#librarian-progress-bar').style.width = '100%';
   setTimeout(() => {
     if (state.librarianProgressStarted === started && !state.librarianBusy) el.hidden = true;
@@ -2346,11 +2527,15 @@ async function submitLibrarian(event) {
   if (!question) return toast('请先描述你想查找的问题。', true);
   const history = state.librarianMessages.slice(-8).map(message => ({ role: message.role, content: message.content }));
   state.librarianMessages.push({ role: 'user', content: question });
+  state.librarianResults = [];
+  state.librarianMeta = { pending: true, scope: 'all' };
+  state.librarianResultType = 'item';
   state.librarianBusy = true;
   input.value = '';
   document.querySelector('#librarian-send').disabled = true;
   setText('librarian-status', '全库检索已开始 · 正在调用证据工具');
   renderLibrarianConversation();
+  renderLibrarianResults([]);
   saveLibrarianSession();
   startLibrarianProgress();
   let success = false;
@@ -2359,7 +2544,12 @@ async function submitLibrarian(event) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, history, paper_ids: [] }),
     });
-    state.librarianMessages.push({ role: 'assistant', content: result.answer });
+    state.librarianMessages.push({
+      role: 'assistant',
+      content: result.answer,
+      report: result.report || null,
+      query_analysis: result.query_analysis || null,
+    });
     state.librarianResults = result.results || [];
     state.librarianMeta = {
       model: result.model,
@@ -2369,28 +2559,45 @@ async function submitLibrarian(event) {
       cited_count: result.cited_count ?? state.librarianResults.filter(row => row.agent_cited).length,
       summary_mode: result.summary_mode,
       cache_hit: Boolean(result.cache_hit),
+      report: result.report || null,
+      query_analysis: result.query_analysis || null,
+      evidence_bundles: result.evidence_bundles || [],
+      match_counts: result.match_counts || null,
+      bundle_count: result.bundle_count || 0,
+      clarification_required: Boolean(result.clarification_required),
+      response_format: result.response_format || result.report?.schema_version || 'legacy',
       scope: 'all',
     };
     const groups = librarianResultGroups(state.librarianResults);
     state.librarianResultType = preferredLibrarianResultType(groups);
-    const summaryLabel = result.cache_hit
-      ? '已复用相同证据版本的稳定结果'
-      : result.summary_mode === 'deterministic_fallback'
-        ? '总结已降级，候选仍可核对'
-        : 'DeepSeek 已完成筛选总结';
-    setText('librarian-status', `${result.model} · ${(result.recall_queries || []).length} 组检索方案 · 召回 ${state.librarianResults.length} 项 · 引用 ${result.cited_count || 0} 项 · ${summaryLabel}`);
+    const summaryLabel = result.clarification_required
+      ? '需要补充条件，尚未执行证据检索'
+      : result.cache_hit
+        ? '已复用相同证据版本的稳定结果'
+        : result.summary_mode === 'deterministic_fallback'
+          ? '总结已降级，候选仍可核对'
+          : 'DeepSeek 已完成筛选总结';
+    const matchCounts = result.match_counts || {};
+    const matchSummary = Number.isFinite(Number(matchCounts.direct))
+      ? `直接 ${Number(matchCounts.direct) || 0} · 相关 ${Number(matchCounts.adjacent) || 0} · 扩展 ${Number(matchCounts.expansion) || 0}`
+      : `召回 ${state.librarianResults.length} 项 · 引用 ${result.cited_count || 0} 项`;
+    setText('librarian-status', `${result.model} · ${matchSummary} · ${summaryLabel}`);
+    setText('librarian-progress-stage', '已收到结果，正在组织回答与证据卡片');
+    document.querySelector('#librarian-progress-bar').style.width = '96%';
     renderLibrarianResults(state.librarianResults);
     success = true;
   } catch (error) {
     state.librarianMessages.push({ role: 'assistant', content: `本次检索未完成：${error.message}。你仍可切换到精确检索。` });
     state.librarianMeta = { error: error.message };
+    state.librarianResults = [];
     setText('librarian-status', '图书管理员暂时不可用；精确检索仍可正常使用');
+    renderLibrarianResults([]);
     toast(error.message, true);
   } finally {
     state.librarianBusy = false;
     document.querySelector('#librarian-send').disabled = false;
     renderLibrarianConversation();
-    finishLibrarianProgress(success);
+    finishLibrarianProgress(success, success && state.librarianMeta.clarification_required ? '需要补充问题条件' : '');
     saveLibrarianSession();
   }
 }

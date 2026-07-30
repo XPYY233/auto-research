@@ -16,6 +16,8 @@ ln -s /Users/USER/Zotero/auto-research/skills/auto-research-evidence-maintainer 
 
 The older `auto-research-zotero` skill remains specific to lawful PDF acquisition and Zotero corpus maintenance; use the new evidence-maintainer skill for the browser product, extraction database, quality gate, visuals, search, Librarian, release, and handoff work.
 
+Current evidence-product checkpoint: `2026.07.30-librarian-reasoning-stable.1`, schema v12, tag `evidence-demo-2026-07-30-librarian-reasoning-stable-1`. The release passed 226 automated tests. Its fixed corpus is still 17/50 data-ready; the database has 291 visual assets, while 243 is the preserved historical pre-cloud freeze rather than the current total.
+
 It prioritizes open/official sources and your lawful local access path. It does **not** bypass paywalls, crack captchas, use proxy pools, or impersonate institutional access.
 
 ## Quick start
@@ -191,11 +193,22 @@ tables, figures and qualitative findings. Use precise search when a query must
 be limited by paper title, DOI or author. Librarian conversations are saved only
 in the current browser with bounded history; reopening one does not call the
 model. Every new turn uses DeepSeek to plan several short queries, runs a
-coverage search over all four evidence types, and then asks DeepSeek to separate
-direct evidence from partially related evidence. The page reports both the
-total recalled candidates and the smaller set cited by the answer; cited cards
-are shown first and remain openable through the normal evidence-detail
+coverage search over all four evidence types, and then applies deterministic
+hard-condition matching for material, irradiation, particle, temperature,
+dose/fluence, property and specimen state. DeepSeek plans queries, selects
+bounded evidence and explains it in Chinese; it cannot create or rewrite hard
+conditions or promote partially matching records to direct evidence. Scientific
+notation and equivalent fluence units retain their exponent semantics, while
+energy/temperature and particle/material roles remain distinct. Candidates are
+classified locally as `direct`, `adjacent` or `expansion` and grouped into
+paper/material/condition evidence bundles. The answer is shown as a five-part research report: direct conclusion,
+evidence matrix, related evidence with the relaxed condition, database gaps and
+two-to-three clickable follow-up questions. The page reports both the total
+recalled candidates and the smaller set cited by the report; cited cards and
+their evidence bundles remain openable through the normal evidence-detail
 interface. Internal DeepSeek tool protocols are never shown as answers.
+Search V2, visual detail and Librarian routes use one public DTO projection that
+omits local filesystem paths, Zotero/local keys, reviewer identities and internal notes.
 An identical question with identical bounded history reuses the complete answer
 and candidate set for one hour while the database source fingerprint remains
 unchanged. The UI labels this reuse; any evidence change invalidates it.

@@ -2,10 +2,9 @@
 
 > 交班快照：2026-07-30  
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
-> 稳定提交：`8c57825`  
-> 稳定标签：`evidence-demo-2026-07-29-librarian-recall-stable-1`  
-> 交班文档标签：`evidence-demo-2026-07-30-project-handoff-skill-1`  
-> 证据库版本：`2026.07.29-librarian-recall-stable.1` / schema v12
+> 改造前保护提交：`17e6f60`
+> 稳定标签：`evidence-demo-2026-07-30-librarian-reasoning-stable-1`
+> 证据库版本：`2026.07.30-librarian-reasoning-stable.1` / schema v12
 
 本文面向下一位 Codex Agent、工程维护者和未来的项目负责人。它说明项目为何存在、过去完成了什么、当前真正能做什么、日常工作流、禁止触碰的边界、验证与发布方法，以及尚未完成的目标。
 
@@ -120,8 +119,12 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 - Search V2 使用 SQLite FTS 可重建投影，不改变科学事实表；
 - 搜索覆盖条目、表格、图片、结论，支持题目、DOI、一作/通讯作者、材料、实验条件和中英文元素别名；
 - “具体意义”的搜索权重高于“数据在文中的解释”；
-- 图书管理员采用固定三段式：DeepSeek 查询规划、本地四类覆盖召回、DeepSeek 条件核验与中文总结；
-- 页面显示候选总数和回答引用数，保留所有有界候选；
+- 图书管理员在既有固定链路内运行：DeepSeek 查询规划、本地确定性硬条件解析与四类覆盖召回、DeepSeek 有界证据选择/解释、本地完整性门；
+- 材料、辐照类型、粒子、温度、剂量/注量、物理量和样品状态是本地硬条件。DeepSeek 不能创建、跨字段注入或改写硬条件，同义词和元素别名只做软扩展；
+- 本地将候选固定分成 `direct`、`adjacent`、`expansion`，并按论文、实际材料和完整实验条件建立 evidence bundle；只允许在同一兼容 bundle 内做定量前后比较；
+- 科学计数法注量保持指数语义并支持等价单位比较；能区分 `300 keV` 与 `300 K`，以及 `Ni/He` 是粒子还是材料；
+- 回答固定为直接结论、证据矩阵、相关证据、数据库空白和建议追问五段；页面显示候选总数和报告引用数，保留所有有界候选；
+- Search V2、图表详情和图书管理员共用公开 DTO，不向只读响应暴露本地路径、Zotero key、本机文章 key、审核者或内部备注；
 - 相同数据库证据版本、问题和有限历史可复用一小时完整结果；
 - 图书管理员固定搜索全库，精确检索才允许限制论文范围；
 - 详情 AI 对话只读取当前选中条目和有限 PDF 相关页，不能写数据库。
@@ -135,7 +138,7 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 
 ## 5. 当前真实状态
 
-以2026-07-29稳定版为准：
+以2026-07-30稳定版为准：
 
 | 对象 | 数量/状态 |
 |---|---:|
@@ -145,11 +148,11 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 | 独立物理事实 | 3,142 |
 | 定性实验结论 | 937 |
 | 隔离旧文字值 | 1,453 |
-| 图表资产 | 291（59表格、232图片） |
+| 图表资产 | 291（59表格、232图片；243 是历史冻结基线，不是当前总数） |
 | 固定验收 PDF | 50/50 身份与内容有效 |
 | 数据就绪论文 | 17/50 |
 | 图表就绪论文 | 30/50 |
-| 自动测试 | 196 项通过 |
+| 自动测试 | 226 项通过 |
 
 重点 DOI `10.1016/j.jnucmat.2018.08.031` 当前有231个独立事实，403/403处自动记录可回到 PDF 定位。
 
@@ -337,7 +340,7 @@ git fsck --full
 | 数据库/六列 | `AGENT.md`、`docs/irradiation_evidence_database.md` | `evidence/db.py`、`six_column.py`、`fact_model.py` |
 | DeepSeek抽取 | `docs/adversarial_quality_gate.md` | `deepseek_extraction.py`、`quality_pipeline.py`、`prompts.py` |
 | 图表 | `AGENT.md`图表章节 | `visual_evidence.py` |
-| 搜索/Agent | `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` | `search_index.py`、`agent_runtime.py` |
+| 搜索/Agent | `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` | `search_index.py`、`agent_runtime.py`、`librarian_reasoning.py`、`public_dto.py` |
 | 详情AI对话 | `AGENT.md`证据对话章节 | `context_chat.py` |
 | 网页 | `STABLE_RELEASE.md` | `webapp.py`、`web/index.html`、`web/app.js`、`web/app.css` |
 | 上传/去重 | `README.md`证据上传章节 | `uploads.py`、`document_recognition.py` |
@@ -363,18 +366,19 @@ git fsck --full
 9. 记录 SQLite 和 bundle SHA-256；
 10. 确保 `git status --short` 为空。
 
-最近稳定恢复点：
+当前稳定恢复点：
 
-- Git标签：`evidence-demo-2026-07-29-librarian-recall-stable-1`
-- SQLite快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-recall-stable-2026-07-29-v1.sqlite`
-- Git bundle：`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-recall-stable-2026-07-29-v1.bundle`
+- Git标签：`evidence-demo-2026-07-30-librarian-reasoning-stable-1`
+- SQLite快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`；SHA-256 `bfded1930856019c3413096fc20dee9b7f6b33e3310960b9913b94ee1dd2220e`
+- Git bundle：`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-reasoning-stable-2026-07-30-v1.bundle`；SHA-256 见相邻 `.sha256`
+- 独立 Skill 压缩包：`/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v2.zip`；SHA-256 见相邻 `.sha256`
 
-本次交班额外封存：
+本轮改造前保护点：
 
-- 交班时 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-project-handoff-skill-2026-07-30-v1.sqlite`
-- 快照 SHA-256：`b1c9703f46577e6caac1246ca79a89f02ac4817a5ff93cbfae52b35680d264ee`
-- 独立 Skill 压缩包：`/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v1.zip`
-- Skill 压缩包 SHA-256：`ea3198cf0b9d85e880e85c1bccc632c346e8bc8ea6e7d3d4a12e77ad22f5e747`
+- 提交：`17e6f60`
+- 标签：`evidence-demo-2026-07-30-pre-librarian-reasoning-presentation-1`
+- SQLite快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-librarian-reasoning-presentation-2026-07-30-v1.sqlite`
+- 快照 SHA-256：`c9d63be31ad660294e52a7d093d37d7c4bbbfb22b3c2e5138005070f6f3b5038`
 
 不要使用破坏性 Git 命令回滚用户工作树。需要恢复时优先新建目录验证 bundle 或快照，再由用户确认切换。
 
@@ -394,7 +398,7 @@ git fsck --full
 
 1. 建立30–50个图书管理员问题的人工金标准和自动回归指标；
 2. 每批3–5篇补齐13篇数据就绪论文，使17/50达到至少30/50；
-3. 为材料、粒子、温度、剂量和物理量增加确定性硬条件解析；
+3. 为材料、粒子、温度、剂量/注量和物理量建立人工金标准词表与边界回归集，重点覆盖科学计数法、单位等价、粒子/材料角色和跨轮继承；
 4. 建立轻量用户反馈，区分漏检、错引和条件理解错误；
 5. 证明需要后再评估向量检索；
 6. 完成私有GitHub或代码+脱敏演示库的发布范围设计；
@@ -418,7 +422,7 @@ ln -s /Users/USER/Zotero/auto-research/skills/auto-research-evidence-maintainer 
 
 ```bash
 mkdir -p ~/.codex/skills
-unzip /Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v1.zip \
+unzip /Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v2.zip \
   -d ~/.codex/skills
 ```
 

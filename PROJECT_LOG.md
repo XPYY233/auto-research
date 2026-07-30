@@ -2,6 +2,24 @@
 
 ## 2026-07-30
 
+### 图书管理员第三阶段推理升级与第四阶段回答呈现
+
+- 在原“DeepSeek规划—Search V2四类召回—DeepSeek总结”稳定链路内增量加入确定性科研条件层，没有新建第五类结果、向量数据库或另一套科学数据。
+- 将材料、辐照类型、粒子、温度、剂量/注量、物理量和样品状态解析为硬条件；同义词、中英文元素名称/符号只用于软召回。当前轮显式条件覆盖历史，并修复上一轮“中子”被错误继承到本轮“离子辐照”的跨轮混合。
+- 硬条件只由本地确定性解析器与有界历史继承产生；DeepSeek 仅负责规划检索、选择有界证据和解释，不能创建或跨字段注入硬条件。补齐科学计数法注量及等价单位、`300 keV`/`300 K`、`Ni/He` 粒子与材料角色、`W` 功率单位与钨材料等边界回归。
+- 候选按本地规则分为 `direct`、`adjacent` 和 `expansion`；相关证据只能缺一个硬条件并显示被放宽的条件。证据按论文、记录中的实际材料和完整实验条件成组，跨材料/温度/剂量/状态的数值不会自动组成前后比较。
+- 后端输出固定五段式科研报告：直接结论、证据矩阵、相关证据、数据库空白和二至三个建议追问；保留旧 `answer/results` 字段兼容既有前端与历史。
+- 页面新增硬条件标签、证据矩阵、放宽条件提示、建议追问按钮和最新轮 `[R#]` 到四类证据卡的跳转；历史轮引用只作记录。新问题提交时立即清空旧证据卡，避免把上一轮结果挂到新问题下。
+- 条目、结论、表格、图片继续横向切换；卡片明确显示直接/相关/扩展、报告引用和证据组。预计进度与真实耗时分开，降低高频无障碍播报。
+- 修复 Search V2 指纹长期引用不存在的 `visual_asset_versions` 问题；图表校对、质量候选和数据—图表关联变化现在能使索引及 Agent 缓存失效。索引格式升级为 v3。
+- 新增统一公开 DTO，Search V2、精确条目/结论搜索、图表搜索/详情和图书管理员均不再返回本地路径、Zotero key、本机文章 key、审核者或内部备注。
+- 增加模型完整性门：拒绝孤儿引用、把相关证据写成直接结论、证据中不存在的数值以及跨不兼容证据组的定量比较；模型上下文按四类轮转保底，不再因前排条目过长挤掉表格或图片。
+- 真实 `deepseek-v4-pro` 查询在当前库召回四类共71项，分为4条直接、9条相关和58条扩展；生成3行证据矩阵、6项相关证据及3个建议追问。浏览器验证五段报告、引用跳转、四类切换和表格截图均正常。
+- 本轮未重新提取论文、未修改六列科学事实、图表截图或校对历史。固定50篇仍为17/50数据就绪、30/50图表就绪；程序升级不改变语料完成度。
+- 全量自动测试增至226项并通过；当前数据库仍为 schema v12、291个图表资产，其中243个是历史冻结基线而非当前总数。
+- 改造前保护提交/标签为 `17e6f60` / `evidence-demo-2026-07-30-pre-librarian-reasoning-presentation-1`；保护 SQLite 为 `/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-librarian-reasoning-presentation-2026-07-30-v1.sqlite`，SHA-256 为 `c9d63be31ad660294e52a7d093d37d7c4bbbfb22b3c2e5138005070f6f3b5038`。
+- 发布身份为 `2026.07.30-librarian-reasoning-stable.1`，标签 `evidence-demo-2026-07-30-librarian-reasoning-stable-1`。最终 SQLite、Git bundle 和独立 Skill 分别为 `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`、`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-reasoning-stable-2026-07-30-v1.bundle`、`/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v2.zip`；各自 SHA-256 见相邻 `.sha256`。
+
 ### 阶段性交班与项目 Skill
 
 - 新增 `PROJECT_HANDOFF.md`，将历史 Zotero/PDF 语料工作流与当前实验数据证据库工作流明确分开，并记录项目目标、阶段历史、当前数据边界、六列模型、证据分类、DeepSeek 对抗式质量门、本地图表链路、Search V2、图书管理员、只读分享、凭据、发布和回滚规则。

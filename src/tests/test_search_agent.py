@@ -5,9 +5,23 @@ import unittest
 from pathlib import Path
 
 from auto_research.ai.deepseek import DeepSeekSettings
-from auto_research.evidence.agent_runtime import LibrarianAgentRuntime, _fallback_recall_queries
+from auto_research.evidence.agent_runtime import (
+    LibrarianAgentRuntime,
+    _bounded_json_list,
+    _fallback_recall_queries,
+)
 from auto_research.evidence.db import EvidenceDB, now
+from auto_research.evidence.librarian_reasoning import (
+    build_evidence_bundles,
+    build_query_analysis,
+    build_research_report,
+    reason_candidates,
+    report_references,
+)
 from auto_research.evidence.search_index import EvidenceSearchIndex, plan_query
+from auto_research.evidence.public_dto import public_evidence_dto
+from auto_research.evidence.visual_evidence import review_visual_asset
+import json
 
 
 class FakePlannedClient:
@@ -37,6 +51,22 @@ class FakeBrokenSummaryClient(FakePlannedClient):
             "content": '<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="search_evidence"></｜｜DSML｜｜invoke>',
             "tool_calls": [],
         }
+
+
+class FakeOrphanReferenceClient(FakePlannedClient):
+    def request_json(self, messages, **kwargs):
+        self.json_calls += 1
+        if self.json_calls == 1:
+            return {"queries": ["高熵合金 中子辐照 硬度"], "focus": "检索硬度"}
+        return {"answer": "发现硬度证据[R1]，另有不存在的证据[R999]。", "selected_refs": ["R1", "R999"]}
+
+
+class FakeInventedNumberClient(FakePlannedClient):
+    def request_json(self, messages, **kwargs):
+        self.json_calls += 1
+        if self.json_calls == 1:
+            return {"queries": ["高熵合金 中子辐照 硬度"], "focus": "检索硬度"}
+        return {"answer": "辐照后硬度达到99.9 GPa[R1]。", "selected_refs": ["R1"]}
 
 
 class SearchAgentTests(unittest.TestCase):
@@ -82,11 +112,279 @@ class SearchAgentTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["meaning"], "辐照后硬度")
 
+    def test_temperature_unit_does_not_create_a_false_carbon_alias(self):
+        index = EvidenceSearchIndex(self.db)
+        index.rebuild()
+        self.assertEqual(index.search("碳", entity_types={"item"}).total, 0)
+
+    def test_model_context_keeps_all_available_evidence_types(self):
+        values = [
+            {"entity_type": entity_type, "ref": f"R{index}", "context": "x" * 2_000}
+            for index, entity_type in enumerate(("item", "item", "finding", "table", "figure"), start=1)
+        ]
+        encoded = _bounded_json_list(values, 12_000)
+        decoded = json.loads(encoded)
+        self.assertEqual({row["entity_type"] for row in decoded}, {"item", "finding", "table", "figure"})
+
     def test_agent_recall_decomposes_multi_constraint_question(self):
         queries = _fallback_recall_queries("高熵合金在中子辐照后，硬度和缺陷结构有哪些变化？")
         self.assertIn("高熵合金 硬度", queries)
         self.assertIn("中子辐照 硬度", queries)
         self.assertTrue(any("位错环" in query for query in queries))
+
+    def test_deterministic_query_analysis_separates_hard_constraints_and_soft_aliases(self):
+        analysis = build_query_analysis(
+            "CoCrFeMnNi高熵合金在300°C、1 dpa中子辐照后，硬度和缺陷结构有哪些变化？"
+        )
+        constraints = analysis.constraints
+        self.assertIn("高熵合金", constraints["material"])
+        self.assertIn("CoCrFeMnNi", constraints["material"])
+        self.assertEqual(constraints["temperature"], ("300°C",))
+        self.assertEqual(constraints["dose"], ("1 dpa",))
+        self.assertIn("硬度", constraints["property"])
+        self.assertIn("缺陷结构", constraints["property"])
+        self.assertIn("high entropy alloy", analysis.soft_expansions["material"])
+        self.assertNotIn("high entropy alloy", constraints["material"])
+
+    def test_short_material_abbreviations_require_token_boundaries(self):
+        heat = build_query_analysis("heat-treated steel after neutron irradiation hardness")
+        wheat = build_query_analysis("wheat alloy hardness")
+        hea = build_query_analysis("HEA after neutron irradiation hardness")
+        self.assertNotIn("高熵合金", heat.constraints["material"])
+        self.assertNotIn("高熵合金", wheat.constraints["material"])
+        self.assertIn("钢", heat.constraints["material"])
+        self.assertIn("高熵合金", hea.constraints["material"])
+
+    def test_power_unit_w_is_not_a_tungsten_material_constraint(self):
+        power = build_query_analysis("材料在300 W激光功率下的硬度")
+        tungsten = build_query_analysis("W在离子辐照后的硬度")
+        self.assertNotIn("钨及钨合金", power.constraints["material"])
+        self.assertNotIn("W", power.constraints["material"])
+        self.assertIn("W", tungsten.constraints["material"])
+
+    def test_model_number_cannot_cross_inject_temperature_and_dose_fields(self):
+        temperature = build_query_analysis(
+            "高熵合金在300°C下的硬度",
+            model_payload={"constraints": {"dose": ["300 dpa"]}},
+        )
+        dose = build_query_analysis(
+            "高熵合金在1 dpa后的硬度",
+            model_payload={"constraints": {"temperature": ["1°C"]}},
+        )
+        self.assertEqual(temperature.constraints["dose"], ())
+        self.assertEqual(dose.constraints["temperature"], ())
+
+    def test_model_particle_token_cannot_become_a_material_hard_condition(self):
+        nickel_ion = build_query_analysis(
+            "高熵合金经5e16 Ni ions/cm2辐照后的硬度",
+            model_payload={"constraints": {"material": ["Ni"]}},
+        )
+        helium_ion = build_query_analysis(
+            "纯镍经He离子辐照后的硬度",
+            model_payload={"constraints": {"material": ["He"]}},
+        )
+        self.assertNotIn("Ni", nickel_ion.constraints["material"])
+        self.assertNotIn("He", helium_ion.constraints["material"])
+
+    def test_energy_unit_is_not_misread_as_kelvin(self):
+        analysis = build_query_analysis("300 keV Ni离子辐照后的硬度")
+        self.assertEqual(analysis.constraints["temperature"], ())
+        self.assertIn("Ni离子", analysis.constraints["particle"])
+
+    def test_common_scientific_fluence_notations_are_hard_conditions(self):
+        for notation in (
+            "1e15 ions/cm2", "2E16 ions cm^-2", "5×10¹⁶ cm⁻²",
+            "5×10^16 He ions/cm2", "5e16 He+/cm2",
+            "5e16 helium ions/cm2", "5e16 Ni ions/cm2",
+        ):
+            with self.subTest(notation=notation):
+                analysis = build_query_analysis(f"高熵合金在{notation}离子辐照后的硬度")
+                self.assertEqual(len(analysis.constraints["dose"]), 1)
+
+    def test_fluence_particle_units_create_separate_hard_beam_constraints(self):
+        neutron = build_query_analysis("高熵合金在1e15 n/cm2辐照后的硬度")
+        helium = build_query_analysis("高熵合金在5e16 He+/cm2辐照后的硬度")
+        nickel = build_query_analysis("高熵合金在5e16 Ni ions/cm2辐照后的硬度")
+        self.assertIn("中子辐照", neutron.constraints["irradiation"])
+        self.assertIn("中子", neutron.constraints["particle"])
+        self.assertIn("氦离子辐照", helium.constraints["irradiation"])
+        self.assertIn("氦离子", helium.constraints["particle"])
+        self.assertIn("离子辐照", nickel.constraints["irradiation"])
+        self.assertIn("Ni离子", nickel.constraints["particle"])
+        rows = reason_candidates([{
+            "ref": "R1", "entity_type": "item", "entity_id": 1,
+            "paper_id": 1, "title": "硬度", "value": "4.2", "unit": "GPa",
+            "context": "CoCrFeMnNi高熵合金；1e15 ions/cm2；离子辐照；辐照后",
+        }], neutron)
+        self.assertNotEqual(rows[0]["match_class"], "direct")
+
+    def test_evidence_bundles_never_merge_different_e_notation_fluences(self):
+        analysis = build_query_analysis("高熵合金离子辐照后的硬度")
+        candidates = [
+            {
+                "ref": "R1", "entity_type": "item", "entity_id": 1, "paper_id": 1,
+                "article_title": "Paper", "title": "硬度", "materials": ["CoCrFeMnNi"],
+                "context": "CoCrFeMnNi高熵合金；离子辐照；1e15 ions/cm2；辐照后",
+            },
+            {
+                "ref": "R2", "entity_type": "item", "entity_id": 2, "paper_id": 1,
+                "article_title": "Paper", "title": "硬度", "materials": ["CoCrFeMnNi"],
+                "context": "CoCrFeMnNi高熵合金；离子辐照；2e16 ions/cm2；辐照后",
+            },
+        ]
+        bundles = build_evidence_bundles(candidates, analysis)
+        self.assertEqual(len(bundles), 2)
+        self.assertNotEqual(candidates[0]["bundle_id"], candidates[1]["bundle_id"])
+
+    def test_equivalent_fluence_notations_remain_direct_evidence(self):
+        equivalents = (
+            ("1e15 ions/cm2", "1 × 10^15 ions cm^-2"),
+            ("5×10¹⁶ cm⁻²", "5e16 cm^-2"),
+            ("1e15 cm^-2", "1e19 m^-2"),
+            ("高于1e15 ions/cm2", "2e15 ions/cm2"),
+            ("不高于1e15 ions/cm2", "5e14 ions/cm2"),
+        )
+        for requested, reported in equivalents:
+            with self.subTest(requested=requested, reported=reported):
+                analysis = build_query_analysis(
+                    f"高熵合金在{requested}离子辐照后的硬度"
+                )
+                rows = reason_candidates([{
+                    "ref": "R1", "entity_type": "item", "entity_id": 1,
+                    "paper_id": 1, "title": "硬度", "value": "4.2", "unit": "GPa",
+                    "context": f"CoCrFeMnNi高熵合金；{reported}；离子辐照；辐照后",
+                }], analysis)
+                self.assertEqual(rows[0]["match_class"], "direct")
+
+    def test_plain_fluence_integer_is_not_misread_as_a_power_of_ten(self):
+        analysis = build_query_analysis("高熵合金在1015 ions/cm2离子辐照后的硬度")
+        self.assertEqual(analysis.constraints["dose"], ("1015 ions/cm2",))
+        rows = reason_candidates([{
+            "ref": "R1", "entity_type": "item", "entity_id": 1,
+            "paper_id": 1, "title": "硬度", "value": "4.2", "unit": "GPa",
+            "context": "CoCrFeMnNi高熵合金；1e15 ions/cm2；离子辐照；辐照后",
+        }], analysis)
+        self.assertNotEqual(rows[0]["match_class"], "direct")
+
+    def test_followup_inherits_omitted_hard_context_but_replaces_property(self):
+        analysis = build_query_analysis(
+            "那缺陷结构呢？",
+            history=[{"role": "user", "content": "高熵合金在中子辐照后的硬度如何变化？"}],
+        )
+        self.assertEqual(analysis.constraints["material"], ("高熵合金",))
+        self.assertEqual(analysis.constraints["irradiation"], ("中子辐照",))
+        self.assertEqual(analysis.constraints["property"], ("缺陷结构",))
+        self.assertFalse(analysis.needs_clarification)
+
+    def test_explicit_current_condition_blocks_conflicting_history_condition(self):
+        analysis = build_query_analysis(
+            "CoCrFeMnNi在300°C离子辐照后的硬度如何变化？",
+            model_payload={
+                "constraints": {
+                    "irradiation": ["中子辐照", "离子辐照"],
+                    "temperature": ["300°C"],
+                },
+            },
+            history=[{"role": "user", "content": "高熵合金在中子辐照后的硬度如何变化？"}],
+        )
+        self.assertEqual(analysis.constraints["irradiation"], ("离子辐照",))
+        self.assertEqual(analysis.constraints["particle"], ())
+        self.assertEqual(analysis.constraints["temperature"], ("300°C",))
+
+    def test_critical_ambiguity_requests_clarification_before_search(self):
+        analysis = build_query_analysis("比较一下它们")
+        self.assertTrue(analysis.needs_clarification)
+        self.assertTrue(analysis.clarification_question)
+        self.assertGreaterEqual(len(analysis.clarification_options), 2)
+
+    def test_reasoning_allows_only_one_missing_hard_condition_as_adjacent(self):
+        analysis = build_query_analysis("高熵合金在300°C、1 dpa中子辐照后硬度如何变化？")
+        base = {
+            "entity_type": "item", "entity_id": 1, "paper_id": 1, "article_title": "Paper",
+            "doi": "10.1/reason", "title": "辐照后硬度", "value": "4.2", "unit": "GPa",
+            "evidence": "hardness after neutron irradiation was 4.2 GPa", "source_page": 4,
+        }
+        direct = {**base, "ref": "R1", "context": "CoCrFeMnNi高熵合金；300°C；1 dpa；中子辐照；辐照后"}
+        adjacent = {**base, "ref": "R2", "entity_id": 2, "context": "CoCrFeMnNi高熵合金；1 dpa；中子辐照；辐照后"}
+        expansion = {**base, "ref": "R3", "entity_id": 3, "context": "CoCrFeMnNi高熵合金；离子辐照；辐照后"}
+        rows = reason_candidates([direct, adjacent, expansion], analysis)
+        by_ref = {row["ref"]: row for row in rows}
+        self.assertEqual(by_ref["R1"]["match_class"], "direct")
+        self.assertEqual(by_ref["R2"]["match_class"], "adjacent")
+        self.assertEqual(by_ref["R2"]["missing_constraints"][0]["label"], "温度")
+        self.assertEqual(by_ref["R3"]["match_class"], "expansion")
+
+    def test_evidence_bundles_do_not_merge_different_materials_or_conditions(self):
+        analysis = build_query_analysis("高熵合金辐照后硬度")
+        rows = reason_candidates([
+            {
+                "ref": "R1", "entity_type": "item", "entity_id": 1, "paper_id": 1,
+                "article_title": "Paper", "title": "辐照前硬度", "value": "3.1", "unit": "GPa",
+                "context": "CoCrFeMnNi高熵合金；300°C；中子辐照；辐照后", "evidence": "3.1 GPa",
+            },
+            {
+                "ref": "R2", "entity_type": "item", "entity_id": 2, "paper_id": 1,
+                "article_title": "Paper", "title": "辐照后硬度", "value": "4.6", "unit": "GPa",
+                "context": "Al0.3CoCrFeNi高熵合金；500°C；中子辐照；辐照后", "evidence": "4.6 GPa",
+            },
+        ], analysis)
+        bundles = build_evidence_bundles(rows, analysis)
+        self.assertEqual(len(bundles), 2)
+        self.assertNotEqual(rows[0]["bundle_id"], rows[1]["bundle_id"])
+
+    def test_fractional_ceramic_formulas_and_gold_fluences_form_distinct_bundles(self):
+        analysis = build_query_analysis("辐照后硬度")
+        candidates = []
+        for index, (material, fluence) in enumerate((
+            ("(Hf1/3Ta1/3Zr1/3)B2", "1×10^14 Au cm^-2"),
+            ("(Hf1/3Ta1/3Ti1/3)B2", "1×10^14 Au cm^-2"),
+            ("(Hf1/3Ta1/3Zr1/3)B2", "5×10^14 Au cm^-2"),
+        ), 1):
+            candidates.append({
+                "ref": f"R{index}", "entity_type": "item", "entity_id": index,
+                "paper_id": 12, "title": "硬度",
+                "context": f"{material}；注量{fluence}；辐照后",
+            })
+        bundles = build_evidence_bundles(candidates, analysis)
+        self.assertEqual(len(bundles), 3)
+        self.assertEqual({bundle["material"] for bundle in bundles}, {
+            "(Hf1/3Ta1/3Zr1/3)B2", "(Hf1/3Ta1/3Ti1/3)B2",
+        })
+        self.assertTrue(any("Au" in bundle["conditions"] for bundle in bundles))
+
+    def test_unknown_material_and_condition_records_are_not_merged(self):
+        analysis = build_query_analysis("硬度")
+        candidates = [
+            {"ref": "R1", "entity_type": "item", "entity_id": 1, "paper_id": 1, "title": "硬度"},
+            {"ref": "R2", "entity_type": "item", "entity_id": 2, "paper_id": 1, "title": "硬度"},
+        ]
+        self.assertEqual(len(build_evidence_bundles(candidates, analysis)), 2)
+
+    def test_structured_report_has_five_sections_and_traceable_matrix(self):
+        analysis = build_query_analysis("高熵合金在300°C中子辐照后硬度如何变化？")
+        rows = reason_candidates([
+            {
+                "ref": "R1", "entity_type": "item", "entity_id": 1, "paper_id": 1,
+                "article_title": "Paper", "doi": "10.1/report", "source_page": 4,
+                "title": "辐照后硬度", "value": "4.2", "unit": "GPa",
+                "context": "CoCrFeMnNi高熵合金；300°C；中子辐照；辐照后", "evidence": "4.2 GPa",
+            },
+            {
+                "ref": "R2", "entity_type": "item", "entity_id": 2, "paper_id": 1,
+                "article_title": "Paper", "doi": "10.1/report", "source_page": 5,
+                "title": "辐照后硬度", "value": "4.0", "unit": "GPa",
+                "context": "CoCrFeMnNi高熵合金；中子辐照；辐照后", "evidence": "4.0 GPa",
+            },
+        ], analysis)
+        build_evidence_bundles(rows, analysis)
+        report = build_research_report(analysis, rows, direct_refs=["R1"], related_refs=["R2"])
+        self.assertEqual(report["direct_conclusion"]["status"], "found")
+        self.assertEqual(report["evidence_matrix"][0]["refs"], ["R1"])
+        self.assertEqual(report["related_evidence"][0]["relaxed_constraints"], ["温度"])
+        self.assertTrue(report["database_gaps"])
+        self.assertGreaterEqual(len(report["suggested_followups"]), 2)
+        self.assertLessEqual(len(report["suggested_followups"]), 3)
+        self.assertEqual(report_references(report), {"R1", "R2"})
 
     def test_librarian_reuses_four_type_search_and_returns_source_payload(self):
         client = FakePlannedClient()
@@ -103,6 +401,14 @@ class SearchAgentTests(unittest.TestCase):
         self.assertEqual(result["scope"], {"paper_ids": [], "mode": "all"})
         self.assertEqual(result["summary_mode"], "deepseek_json")
 
+    def test_search_v2_public_projection_preserves_four_type_identity(self):
+        index = EvidenceSearchIndex(self.db)
+        index.rebuild()
+        row = index.search("硬度", entity_types={"item"}, limit=1).rows[0]
+        public = public_evidence_dto(row)
+        self.assertEqual(public["entity_type"], "item")
+        self.assertEqual(public["entity_id"], row["item_id"])
+
     def test_librarian_never_exposes_protocol_when_both_model_stages_fail(self):
         client = FakeBrokenSummaryClient()
         result = LibrarianAgentRuntime(self.db, client=client).run(
@@ -112,6 +418,29 @@ class SearchAgentTests(unittest.TestCase):
         self.assertNotIn("DSML", result["answer"])
         self.assertIn("[R1]", result["answer"])
         self.assertEqual(result["summary_mode"], "deterministic_fallback")
+
+    def test_related_evidence_rejects_model_numbers_absent_from_its_reference(self):
+        candidates = [{
+            "ref": "R1", "entity_type": "item", "entity_id": 1,
+            "paper_id": 1, "title": "硬度", "value": "4.2", "unit": "GPa",
+            "evidence": "hardness was 4.2 GPa", "match_class": "adjacent",
+        }]
+        notes = LibrarianAgentRuntime._related_notes(
+            {"related_notes": [{"ref": "R1", "summary": "硬度为99.9 GPa"}]},
+            candidates,
+        )
+        self.assertEqual(notes, {})
+
+    def test_single_numeric_delta_cannot_compare_different_evidence_bundles(self):
+        candidates = [
+            {"ref": "R1", "bundle_id": "B1"},
+            {"ref": "R2", "bundle_id": "B2"},
+        ]
+        self.assertTrue(LibrarianAgentRuntime._unsafe_cross_bundle_comparison(
+            "相比提高1.1 GPa[R1][R2]",
+            {"R1", "R2"},
+            candidates,
+        ))
 
     def test_librarian_keeps_uncited_recall_candidates_visible(self):
         stamp = now()
@@ -136,8 +465,47 @@ class SearchAgentTests(unittest.TestCase):
             "高熵合金中子辐照后的硬度如何变化？"
         )
         self.assertGreaterEqual(len(result["results"]), 2)
-        self.assertEqual(sum(1 for row in result["results"] if row["agent_cited"]), 1)
-        self.assertEqual(result["cited_count"], 1)
+        self.assertEqual(sum(1 for row in result["results"] if row["agent_cited"]), 2)
+        self.assertEqual(result["cited_count"], 2)
+        self.assertEqual({row["agent_match_class"] for row in result["results"]}, {"direct", "adjacent"})
+        self.assertEqual(len(result["report"]["related_evidence"]), 1)
+
+    def test_orphan_model_reference_is_removed_from_structured_answer(self):
+        result = LibrarianAgentRuntime(self.db, client=FakeOrphanReferenceClient()).run(
+            "高熵合金中子辐照后的硬度如何变化？"
+        )
+        self.assertNotIn("R999", result["answer"])
+        self.assertEqual(result["report"]["direct_conclusion"]["refs"], ["R1"])
+
+    def test_model_number_absent_from_cited_evidence_is_removed(self):
+        result = LibrarianAgentRuntime(self.db, client=FakeInventedNumberClient()).run(
+            "高熵合金中子辐照后的硬度如何变化？"
+        )
+        self.assertNotIn("99.9", result["answer"])
+        self.assertIn("4.2", result["results"][0]["value_text"])
+
+    def test_agent_public_payload_does_not_expose_local_identifiers_or_paths(self):
+        result = LibrarianAgentRuntime(self.db, client=FakePlannedClient()).run(
+            "高熵合金中子辐照后的硬度如何变化？"
+        )
+        forbidden = {"image_path", "pdf_path", "zotero_key", "local_article_key", "editor", "edit_note"}
+        self.assertFalse(forbidden.intersection(result["results"][0]))
+
+    def test_shared_public_projection_removes_local_and_review_metadata(self):
+        public = public_evidence_dto({
+            "id": 7,
+            "display_name": "图表",
+            "image_url": "/api/visual-assets/7/image",
+            "pdf_url": "/api/papers/1/pdf#page=2",
+            "image_path": "/Users/example/private.png",
+            "zotero_key": "LOCALKEY",
+            "reviewer": "private-user",
+            "review_note": "internal note",
+        })
+        self.assertEqual(public["id"], 7)
+        self.assertIn("image_url", public)
+        self.assertIn("pdf_url", public)
+        self.assertFalse({"image_path", "zotero_key", "reviewer", "review_note"}.intersection(public))
 
     def test_identical_question_reuses_stable_cached_response(self):
         client = FakePlannedClient()
@@ -186,6 +554,36 @@ class SearchAgentTests(unittest.TestCase):
         self.assertTrue(status["incremental"])
         self.assertEqual(status["papers"], [self.paper_id])
         self.assertEqual(index.search("辐照剂量", entity_types={"item"}).total, 1)
+
+    def test_visual_review_changes_index_fingerprint_and_refreshes_title(self):
+        stamp = now()
+        with self.db.connect() as conn:
+            asset_id = conn.execute(
+                """INSERT INTO visual_assets(
+                paper_id,asset_type,label,display_name,asset_number,caption,page_start,page_end,
+                bbox_json,image_path,image_sha256,physical_quantities_json,variables_json,
+                materials_json,conditions_text,methods_text,context_explanation,tags_json,
+                source_context,review_status,extraction_method,metadata_source,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    self.paper_id, "table", "Table 1", "旧表格标题", 1, "hardness table", 2, 2,
+                    "[0,0,1,1]", "/tmp/not-public.png", "hash", '["硬度"]', '{}',
+                    '["CoCrFeMnNi"]', "300°C", "纳米压痕", "硬度结果", '["硬度","高熵合金"]',
+                    "Table 1 hardness", "draft", "pdf_layout", "deterministic", stamp, stamp,
+                ),
+            ).lastrowid
+        index = EvidenceSearchIndex(self.db)
+        index.rebuild()
+        before = index.source_fingerprint()
+        review_visual_asset(
+            self.db, asset_id, {"display_name": "高熵合金辐照硬度表"}, "correction",
+            reviewer="test", note="修正标题",
+        )
+        self.assertNotEqual(before, index.source_fingerprint())
+        status = index.ensure_fresh()
+        self.assertTrue(status["rebuilt"])
+        rows = index.search("高熵合金辐照硬度表", entity_types={"table"}).rows
+        self.assertEqual(rows[0]["display_name"], "高熵合金辐照硬度表")
 
 
 if __name__ == "__main__":

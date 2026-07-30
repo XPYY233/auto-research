@@ -35,6 +35,7 @@ from .quality_pipeline import (
     list_quality_candidates,
     review_quality_candidate,
 )
+from .public_dto import public_evidence_dto, public_search_page
 from .review_handoff import review_batch_payload
 from .six_column import (
     SIX_FIELDS,
@@ -74,8 +75,8 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.29-librarian-recall-stable.1",
-    "label": "图书管理员覆盖检索稳定版 2026.07.29",
+    "version": "2026.07.30-librarian-reasoning-stable.1",
+    "label": "图书管理员推理与科研报告稳定版 2026.07.30",
     "evidence_schema": 12,
 }
 
@@ -320,7 +321,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     limit=min(max(int(params.get("limit", ["100"])[0]), 1), 500),
                     offset=max(int(params.get("offset", ["0"])[0]), 0),
                 )
-                return self.json_response(page.as_dict())
+                return self.json_response(public_search_page(page.as_dict()))
             if parsed.path == "/api/ai/status":
                 return self.json_response(DeepSeekSettings.from_env().public_status())
             if parsed.path == "/api/uploads":
@@ -440,7 +441,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     quality_filter=params.get("quality", ["all"])[0],
                     sort=sort, paper_ids=paper_ids, limit=limit,
                 )
-                return self.json_response(page.as_dict() if params.get("meta", ["0"])[0] in {"1", "true"} else page.rows)
+                public_page = public_search_page(page.as_dict())
+                return self.json_response(public_page if params.get("meta", ["0"])[0] in {"1", "true"} else public_page["rows"])
             if parsed.path == "/api/qualitative-search":
                 params = parse_qs(parsed.query)
                 query = params.get("q", [""])[0]
@@ -450,7 +452,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     quality_filter=params.get("quality", ["all"])[0],
                     paper_ids=parse_search_paper_ids(params),
                 )
-                return self.json_response(page.as_dict())
+                return self.json_response(public_search_page(page.as_dict()))
             if parsed.path == "/api/qualitative-export.csv":
                 params = parse_qs(parsed.query)
                 query = params.get("q", [""])[0]
@@ -502,14 +504,14 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     query, entity_types={asset_type}, quality_filter=quality_filter,
                     paper_ids=parse_search_paper_ids(params), limit=100,
                 )
-                return self.json_response(page.rows)
+                return self.json_response([public_evidence_dto(row) for row in page.rows])
             if parsed.path == "/api/current-paper/visual-assets":
                 params = parse_qs(parsed.query)
                 paper_id = int(params["paper_id"][0]) if params.get("paper_id") else get_current_paper_id(self.db)
                 return self.json_response(list_visual_assets(self.db, paper_id=paper_id))
             match = re.fullmatch(r"/api/visual-assets/(\d+)", parsed.path)
             if match:
-                return self.json_response(get_visual_asset(self.db, int(match.group(1))))
+                return self.json_response(public_evidence_dto(get_visual_asset(self.db, int(match.group(1)))))
             match = re.fullmatch(r"/api/visual-assets/(\d+)/image", parsed.path)
             if match:
                 return self.png_response(visual_asset_image_path(self.db, int(match.group(1))).read_bytes())

@@ -38,6 +38,10 @@ The test set expanded to 50 real identity-matched PDFs. The health audit separat
 
 SQLite FTS replaced slow broad scans. The Librarian became the primary search invitation while exact search remained available. A first free model tool loop exposed protocol text and too few cards; it was replaced by deterministic three-stage orchestration and complete candidate visibility.
 
+### Librarian reasoning and research-report presentation
+
+The stable three-stage orchestration gained a deterministic scientific-condition layer rather than a new Agent database. Material, irradiation, particle, temperature, dose/fluence, property and state are hard dimensions; aliases remain soft recall. The local parser plus bounded history is the sole hard-condition authority: DeepSeek plans queries, selects bounded evidence and explains it, but cannot create or rewrite hard conditions. Local code assigns direct/adjacent/expansion classes and evidence bundles, while the user-facing answer is a fixed five-section report with traceable matrix rows, explicit relaxed conditions, database gaps and clickable follow-ups. Scientific-notation fluence and equivalent units preserve their numeric meaning; particle/material and energy/temperature roles are disambiguated. Current-turn conditions override history, and incompatible experiments may not be joined into quantitative comparisons. Search V2, visual detail and Librarian routes share one public DTO projection that excludes local paths, local/Zotero keys, reviewer identity and internal notes.
+
 ## Decisions that remain active
 
 - Preserve the six-column user model; improve indexing instead of adding a column.
@@ -46,6 +50,11 @@ SQLite FTS replaced slow broad scans. The Librarian became the primary search in
 - Prefer DOI/title over Zotero key across devices.
 - Keep public result types fixed to item/finding/table/figure.
 - Preserve all cited and expansion candidates in Librarian responses.
+- Treat `agent_cited` as a reference anywhere in the final fixed report; preserve match class, missing constraints and evidence bundle separately.
+- Keep the five-part report and direct/adjacent/expansion rules deterministic. Do not delegate these publication semantics to DeepSeek.
+- Keep hard-condition creation local and deterministic. DeepSeek is limited to query planning, bounded evidence selection and explanation.
+- Preserve scientific-notation and equivalent-unit matching, and keep particle/material and energy/temperature roles distinct in parsing and bundle identity.
+- Clarify critical unresolved objects before recall instead of guessing. This is the bounded exception to the normal fresh-search rule.
 - Cache identical complete Librarian results only under an unchanged database fingerprint.
 - Keep runtime AI DeepSeek-only.
 - Keep visual pixels local and semantics text-grounded.
@@ -53,9 +62,8 @@ SQLite FTS replaced slow broad scans. The Librarian became the primary search in
 
 ## Deferred work
 
-- Build a 30-50-question human gold-standard Librarian suite.
+- Build a 30-50-question human gold-standard Librarian suite, including a curated condition vocabulary and boundary-regression cases for scientific notation, unit equivalence, particle/material roles and history inheritance.
 - Process at least 13 more fixed papers to reach the original 30-paper line.
-- Add deterministic hard-condition parsing for material, particle, temperature, dose, and property.
 - Add user feedback for missed/wrong evidence without mutating scientific records.
 - Decide private GitHub vs public code plus sanitized demo data.
 - Consider vector search only after the gold standard demonstrates lexical recall failures.

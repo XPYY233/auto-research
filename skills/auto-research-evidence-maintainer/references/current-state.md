@@ -5,10 +5,9 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 ## Identity
 
 - Active root: `/Users/USER/Zotero/auto-research`
-- Stable commit before handoff: `8c57825`
-- Stable tag: `evidence-demo-2026-07-29-librarian-recall-stable-1`
-- Handoff documentation tag: `evidence-demo-2026-07-30-project-handoff-skill-1`
-- Release: `2026.07.29-librarian-recall-stable.1`
+- Pre-change protection commit: `17e6f60`
+- Stable tag: `evidence-demo-2026-07-30-librarian-reasoning-stable-1`
+- Release: `2026.07.30-librarian-reasoning-stable.1`
 - Evidence schema: v12
 - Fixed evidence corpus: `config/evidence_test_set_50.json`
 - Evidence DB: `db/experimental_evidence.sqlite`
@@ -28,7 +27,7 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 | fixed PDFs valid and identity-matched | 50/50 |
 | data-ready fixed papers | 17/50 |
 | visual-ready fixed papers | 30/50 |
-| automated tests at checkpoint | 196 |
+| automated tests at checkpoint | 226 |
 
 Target DOI `10.1016/j.jnucmat.2018.08.031` has 231 independent facts and 403/403 source-localizable automatic records at this checkpoint.
 
@@ -39,15 +38,21 @@ Target DOI `10.1016/j.jnucmat.2018.08.031` has 231 independent facts and 403/403
 - Adversarial DeepSeek agreement is not independent scientific accuracy. A human gold standard remains missing.
 - Persistent group hosting is not implemented; public sharing depends on the local Mac and a temporary ngrok URL.
 - GitHub is not configured. `origin` points to a local historical bundle.
+- Librarian reasoning now has deterministic hard-condition parsing, direct/adjacent/expansion classification, evidence bundles and a five-section research report. This did not change scientific evidence or corpus readiness.
+- The local deterministic parser plus bounded history is the only hard-condition authority. DeepSeek plans queries, selects bounded evidence and explains it; it cannot create or rewrite hard conditions. Scientific-notation fluence, equivalent units and particle/material role boundaries are covered by regression tests.
+- The 291 current visuals include the unchanged 243-asset historical pre-cloud freeze; 243 is not the current total.
 
-## Recovery artifacts
+## Pre-change protection point
 
-- SQLite: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-recall-stable-2026-07-29-v1.sqlite`
+- Commit: `17e6f60`
+- Tag: `evidence-demo-2026-07-30-pre-librarian-reasoning-presentation-1`
+- SQLite: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-librarian-reasoning-presentation-2026-07-30-v1.sqlite`
 - SQLite SHA-256: `c9d63be31ad660294e52a7d093d37d7c4bbbfb22b3c2e5138005070f6f3b5038`
-- Git bundle: `/Users/USER/Zotero/auto-research-backups/auto-research-librarian-recall-stable-2026-07-29-v1.bundle`
-- Bundle SHA-256: `903f8e95c72727f8e92bc2c6f1357bb554f6051f0313bfeb619066feda88f9b4`
-- Handoff SQLite copy: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-project-handoff-skill-2026-07-30-v1.sqlite`
-- Handoff SQLite SHA-256: `b1c9703f46577e6caac1246ca79a89f02ac4817a5ff93cbfae52b35680d264ee`
-- Standalone skill archive: `/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v1.zip`
+
+## Stable recovery artifacts
+
+- SQLite: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`; SHA-256: `bfded1930856019c3413096fc20dee9b7f6b33e3310960b9913b94ee1dd2220e`.
+- Git bundle: `/Users/USER/Zotero/auto-research-backups/auto-research-librarian-reasoning-stable-2026-07-30-v1.bundle`; SHA-256: 见相邻 `.sha256`.
+- Standalone skill archive: `/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v2.zip`; SHA-256: 见相邻 `.sha256`.
 
 Do not restore over the live tree. Verify a snapshot in a separate location before asking the user to switch.

@@ -6,10 +6,10 @@ This project is a local literature automation workflow for fusion materials, rad
 
 - A new account or agent must read `PROJECT_HANDOFF.md` before modifying this repository, then use this file as the durable policy authority.
 - The canonical portable project skill is `skills/auto-research-evidence-maintainer/`; its current-account installation is a symlink under `~/.codex/skills/auto-research-evidence-maintainer`.
-- The handoff separates the historical Zotero/PDF corpus workflow from the experimental-evidence product. Never infer that the 300-PDF Zotero checkpoint means 300 evidence papers are extracted; the fixed evidence corpus remains 17/50 data-ready at the 2026-07-29 checkpoint.
+- The handoff separates the historical Zotero/PDF corpus workflow from the experimental-evidence product. Never infer that the 300-PDF Zotero checkpoint means 300 evidence papers are extracted; the fixed evidence corpus remains 17/50 data-ready at the 2026-07-30 checkpoint.
 - Project-local handoff and Git-tracked skill files override stale account memory. Update them whenever a later stable release changes paths, data counts, architecture boundaries, rejected approaches, or release/rollback instructions.
 
-## Search V2 and in-product agents (2026-07-29)
+## Search V2 and in-product agents (2026-07-30)
 
 - The search page defaults to the DeepSeek-backed `librarian` agent. Precise four-mode search remains a required fallback and must work without DeepSeek.
 - Librarian scope is always the complete evidence library. Paper-title/DOI/author scope controls belong only to precise search; do not add partial-corpus controls back to Agent mode.
@@ -20,16 +20,25 @@ This project is a local literature automation workflow for fusion materials, rad
 - Increment `INDEX_FORMAT_VERSION` whenever indexed field construction or alias semantics change. Normal evidence edits should refresh only changed papers; release maintenance may use `evidence-search-reindex`.
 - Local editable and public read-only modes must serve the same `web/index.html`, `app.js`, `app.css`, Search V2 and librarian endpoint. Never create a second public frontend. Differences belong only in authorization and hidden write controls.
 - Agent answers must retain `[R#]` links to actually returned records. All referenced records must be included in the response; do not truncate below the highest possible reference.
-- Every Librarian turn uses the fixed three-stage path: DeepSeek query planning, local coverage recall over all four evidence types, then DeepSeek JSON selection/synthesis. The local fallback plan must still run when model planning fails. Do not return to an unconstrained model-driven tool loop.
-- Coverage recall returns a bounded candidate set, not only the records cited in the prose answer. Preserve `agent_cited` and `agent_match_queries`, keep cited records first, and label the rest as expansion candidates. This prevents a two-result tab from being mistaken for the whole search.
+- Every non-clarification Librarian turn uses the fixed three-stage path: DeepSeek query planning, local coverage recall over all four evidence types, then DeepSeek JSON selection/synthesis. The local fallback plan must still run when model planning fails. Do not return to an unconstrained model-driven tool loop.
+- Before recall, deterministically parse the user's hard constraints into material, irradiation type, particle, temperature, dose/fluence, physical property and specimen state. Synonyms and element-name expansions are recall aids only; they never become additional hard constraints. DeepSeek may plan queries, select bounded evidence and explain it, but it must never create, cross-inject or rewrite hard conditions.
+- Preserve scientific-notation fluence semantics and equivalent-area conversions when matching and bundling. Keep energy distinct from temperature (`300 keV` is not `300 K`) and disambiguate element roles (`Ni`/`He` particle tokens must not become material constraints; `W` as a power unit must not become tungsten).
+- Classify candidates locally: `direct` satisfies every active hard-condition dimension, `adjacent` misses exactly one dimension, and `expansion` misses two or more. Only adjacent evidence may appear as related evidence, and its relaxed condition must be visible. Do not let DeepSeek change this classification.
+- Explicit conditions in the current user turn override history. In particular, changing irradiation type or particle clears the paired historical beam condition, preventing hybrids such as “ion irradiation + neutron particle”. Omitted dimensions may inherit from recent user turns.
+- Group evidence by paper plus the material and complete experimental-condition signature found in each record. Quantitative before/after comparison is allowed only inside one compatible bundle; do not pair numbers across materials, temperatures, doses or states.
+- The structured answer contract has five fixed sections: direct conclusion, evidence matrix, related evidence, database gaps and two-to-three suggested follow-up questions. Preserve the legacy Markdown `answer` field for compatibility, but use `report` as the presentation authority.
+- A critically ambiguous question may return a clarification report without evidence recall. This is the only exception to the normal fresh-recall rule and must expose zero result cards rather than guessing the user's objects.
+- Coverage recall returns a bounded candidate set, not only the records cited in the report. `agent_cited` means referenced anywhere in the final fixed report; preserve `agent_match_queries`, `agent_match_class`, missing/matched constraints and bundle identity. This prevents a two-result tab from being mistaken for the whole search.
 - Complex questions must be decomposed into joint and facet queries. Preserve the agent-only concept expansions for broad defect/mechanical terms, the global 80-result cap and per-type caps; the synthesizer must distinguish direct evidence satisfying all hard constraints from partially related evidence.
-- The primary JSON synthesizer may fall back to a clean no-tool text request and then to a deterministic cited digest. DSML/internal protocol text must be rejected at every stage and by the frontend history guard.
+- The primary JSON synthesizer may fall back to a clean no-tool text request and then to a deterministic five-section report. DSML/internal protocol text must be rejected at every stage and by the frontend history guard.
 - Identical questions with identical bounded history may reuse an in-process response cache for one hour, keyed by the database search-source fingerprint. Evidence changes therefore invalidate the cache automatically. Preserve `cache_hit` in the response/UI; do not use cached answers after the indexed scientific source changes.
 - Frontend history is browser-local convenience state, not scientific evidence or server authority. Reopening a saved conversation must not call DeepSeek; the next new turn sends only bounded recent history and still performs a fresh search.
 - Librarian answer Markdown is rendered only after HTML escaping. Preserve the protocol/orphan-reference guards when changing chat rendering.
+- Reject model conclusions that contain orphan `[R#]` references, cite non-direct evidence as a direct conclusion, introduce quantitative tokens absent from the cited evidence, or compare numbers across incompatible bundles.
+- Search V2, visual detail and Librarian responses share the same public evidence projection. Never return local filesystem paths, Zotero keys, local article keys, reviewer identities or internal edit notes through public search routes.
 - The progress scene uses the locally installed Codex working-pet strip `web/codex-pet-working.webp`; do not replace it with an ad-hoc mascot. Before any public GitHub release, explicitly review whether this local product asset may be distributed or substitute a project-owned mascot.
 - Do not log API keys, full prompts containing sensitive data, or entire PDFs. Reuse the project DeepSeek Keychain/env configuration.
-- Architecture and implementation details: `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` and `docs/logs/AGENT_IMPLEMENTATION_LOG_2026-07-29.md`.
+- Architecture and implementation details: `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` and `docs/logs/AGENT_IMPLEMENTATION_LOG_2026-07-30.md`.
 
 ## Active local workspace
 
@@ -423,9 +432,9 @@ imports, visual indexing, review, search, or database health checks.
 
 ### Current verified baseline
 
-As of the 2026-07-27 project-health checkpoint:
+As of the `2026.07.30-librarian-reasoning-stable.1` checkpoint (schema v12):
 
-- Evidence schema: v11; registered papers and documents: 60. The active fixed
+- Evidence schema: v12; registered papers and documents: 60. The active fixed
   set is 50/50 content-valid and identity-verified PDFs; records outside the
   fixed set are preserved as historical or user-uploaded material and must not
   silently alter the fixed corpus.
@@ -435,7 +444,7 @@ As of the 2026-07-27 project-health checkpoint:
 - The database contains 291 visual assets (59 tables and 232 figures), and every recorded image exists. The
   original frozen pre-cloud baseline remains 243 assets (40 tables and 203
   figures); its database identities, stored SHA-256 values and files remain
-  unchanged. The additional 30 assets belong to later local papers. The
+  unchanged. The additional 48 assets belong to later local papers. The
   rejected MinerU path remains absent.
 - The fixed 10-paper functional regression set passes for PDF identity, numeric
   facts, search, evidence localization and visuals: 1,668 facts, 2,731 source
@@ -455,6 +464,7 @@ As of the 2026-07-27 project-health checkpoint:
   current fact layer is 0/231 human-reviewed.
 - The current fact layer is 0/3,142 human-reviewed. Never present automatic
   quality scores as physical-science confirmation.
+- The frozen third/fourth-stage release passed 226/226 automated tests.
 - Test command: `PYTHONPATH=src python3 -m unittest discover -s src/tests -p 'test_*.py'`.
 
 ### Git checkpoint protocol
@@ -897,7 +907,8 @@ their failure reasons. It is diagnostic, not a mandatory approval queue. Once a
 historical candidate has been approved or rejected, the same decision endpoint
 must refuse a second decision so published history cannot be silently
 overwritten. Preserve every pipeline run, both alternatives, third verdict,
-score dimensions, reason and published entity link in schema v11.
+score dimensions, reason and published entity link in the current schema
+(quality tables were introduced in v11; the active release is schema v12).
 
 Search scope is independent from the single-paper review selector. The default
 scope is the complete database; the user may switch to an explicit multi-paper

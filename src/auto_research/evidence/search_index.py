@@ -19,7 +19,7 @@ from .visual_evidence import list_visual_assets
 ENTITY_TYPES = {"item", "table", "figure", "finding"}
 QUALITY_PASSED = {"dual_pass", "third_pass", "manual_approved"}
 QUALITY_FILTERS = {"all", "quality_passed", "dual_pass", "third_pass", "manual_approved", "legacy_stable"}
-INDEX_FORMAT_VERSION = "2"
+INDEX_FORMAT_VERSION = "3"
 
 # This is intentionally a small query lexicon, not a second scientific data
 # model. It only separates common Chinese natural-language questions into
@@ -66,7 +66,13 @@ def _alias_text(text: str) -> str:
         for value in group:
             if any("\u3400" <= char <= "\u9fff" for char in value):
                 matched = value in text
-            elif len(value) <= 2 and value.isalpha():
+            elif len(value) == 1 and value.isalpha():
+                # A bare element symbol is too ambiguous in a whole-document
+                # index: C, V and W also occur in °C, volts and watts.  Chinese
+                # element names and full English names still expand to their
+                # symbols, while an actual formula remains searchable as-is.
+                matched = False
+            elif len(value) == 2 and value.isalpha():
                 matched = bool(re.search(rf"(?<![a-z]){re.escape(value)}(?=$|[^a-z]|[A-Z0-9])", text))
             else:
                 matched = value.casefold() in lowered
@@ -156,8 +162,9 @@ class EvidenceSearchIndex:
         tables = (
             ("data_versions", "id"),
             ("visual_assets", "updated_at"),
-            ("visual_asset_versions", "id"),
-            ("quality_candidates", "id"),
+            ("visual_asset_reviews", "id"),
+            ("quality_candidates", "updated_at"),
+            ("data_item_visual_links", "created_at"),
             ("papers", "updated_at"),
         )
         parts: list[str] = []
@@ -198,9 +205,9 @@ class EvidenceSearchIndex:
                         (paper_id,),
                     ).fetchone()
                     parts.append(f"visuals:{count}:{maximum}")
-                if "visual_asset_versions" in existing:
+                if "visual_asset_reviews" in existing:
                     count, maximum = conn.execute(
-                        "SELECT COUNT(*),COALESCE(MAX(v.id),0) FROM visual_asset_versions v "
+                        "SELECT COUNT(*),COALESCE(MAX(v.id),0) FROM visual_asset_reviews v "
                         "JOIN visual_assets a ON a.id=v.asset_id WHERE a.paper_id=?", (paper_id,),
                     ).fetchone()
                     parts.append(f"visual_versions:{count}:{maximum}")
@@ -211,6 +218,13 @@ class EvidenceSearchIndex:
                         (paper_id,),
                     ).fetchone()
                     parts.append(f"quality:{count}:{maximum}:{updated_at}")
+                if "data_item_visual_links" in existing:
+                    count, maximum = conn.execute(
+                        "SELECT COUNT(*),COALESCE(MAX(l.created_at),'') FROM data_item_visual_links l "
+                        "JOIN data_items i ON i.id=l.item_id WHERE i.paper_id=?",
+                        (paper_id,),
+                    ).fetchone()
+                    parts.append(f"visual_links:{count}:{maximum}")
                 output[paper_id] = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
         return output
 
@@ -401,8 +415,10 @@ class EvidenceSearchIndex:
         sort: str = "relevance",
         limit: int = 100,
         offset: int = 0,
+        refresh: bool = True,
     ) -> SearchPage:
-        self.ensure_fresh()
+        if refresh:
+            self.ensure_fresh()
         started = time.perf_counter()
         types = set(entity_types or ENTITY_TYPES)
         invalid = types - ENTITY_TYPES
@@ -506,6 +522,12 @@ class EvidenceSearchIndex:
         rows: list[dict[str, Any]] = []
         for score, record in selected_records:
             payload = json.loads(record["payload_json"])
+            # The payload originates from one of four existing evidence
+            # projections, none of which carries the shared Search V2 type.
+            # Add the disposable index identity at the boundary so callers can
+            # route the record without guessing from its fields.
+            payload["entity_type"] = str(record["entity_type"])
+            payload["entity_id"] = int(record["entity_id"])
             payload["search_score"] = round(float(score), 3)
             rows.append(payload)
         if sort in {"article", "source_page"} and terms:
@@ -547,4 +569,7 @@ class EvidenceSearchIndex:
             ).fetchone()
         if not row:
             raise KeyError(f"search entity not found: {entity_type}/{entity_id}")
-        return json.loads(row["payload_json"])
+        payload = json.loads(row["payload_json"])
+        payload["entity_type"] = entity_type
+        payload["entity_id"] = int(entity_id)
+        return payload

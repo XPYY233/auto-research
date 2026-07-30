@@ -1527,7 +1527,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.29-librarian-recall-stable.1")
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.30-librarian-reasoning-stable.1")
         self.assertEqual(RELEASE_INFO["evidence_schema"], 12)
 
     def test_rejected_cloud_visual_experiment_is_absent_from_active_ui(self):
@@ -1580,6 +1580,42 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertFalse(is_read_only_public_get("/api/context-chat"))
         self.assertIn('parsed.path in {"/", "/index.html", "/readonly"}', server_source)
         self.assertFalse((WEB_DIR / "readonly.html").exists())
+
+    def test_librarian_stage_four_report_is_progressively_enhanced(self):
+        index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+        app_css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
+
+        self.assertIn("function librarianReportHtml", app_js)
+        self.assertIn("report.direct_conclusion", app_js)
+        self.assertIn("report.evidence_matrix", app_js)
+        self.assertIn("report.related_evidence", app_js)
+        self.assertIn("report.database_gaps", app_js)
+        self.assertIn("report.suggested_followups", app_js)
+        self.assertIn("query_analysis", app_js)
+        self.assertIn("agent_match_class", app_js)
+        self.assertIn("agent_bundle_id", app_js)
+        self.assertIn("data-librarian-reference", app_js)
+        self.assertIn("data-agent-result-ref", app_js)
+        self.assertIn("setInterval(updateLibrarianProgress, 1000)", app_js)
+        submit_at = app_js.index("async function submitLibrarian")
+        clear_at = app_js.index("state.librarianResults = [];", submit_at)
+        request_at = app_js.index("await api('/api/agents/librarian/chat'", submit_at)
+        self.assertLess(clear_at, request_at)
+
+        tab_order = [
+            index_html.index('data-librarian-result-type="item"'),
+            index_html.index('data-librarian-result-type="finding"'),
+            index_html.index('data-librarian-result-type="table"'),
+            index_html.index('data-librarian-result-type="figure"'),
+        ]
+        self.assertEqual(tab_order, sorted(tab_order))
+        self.assertIn('id="librarian-progress-time" aria-hidden="true"', index_html)
+        self.assertIn("阶段是预计提示", index_html)
+        self.assertIn(".librarian-research-report", app_css)
+        self.assertIn(".librarian-query-chips", app_css)
+        self.assertIn(".librarian-related-row", app_css)
+        self.assertIn(".agent-result-ref.direct", app_css)
 
     def test_future_visual_metadata_prompt_requires_material_and_comparison_context(self):
         prompt = _visual_metadata_messages(

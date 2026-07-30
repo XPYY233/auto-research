@@ -262,7 +262,7 @@
               </div>
               <div class="librarian-progress" id="librarian-progress" hidden role="status" aria-live="polite">
                 <div class="library-scene" aria-hidden="true"><i class="shelf shelf-a"></i><i class="shelf shelf-b"></i><div class="codex-pet-librarian"><i></i></div></div>
-                <div class="librarian-progress-copy"><div><strong id="librarian-progress-stage">正在理解研究问题</strong><span id="librarian-progress-time">0 秒</span></div><div class="librarian-progress-track"><i id="librarian-progress-bar"></i></div><small>处理时间取决于问题复杂度；页面仍在工作，无需重复提交。</small></div>
+                <div class="librarian-progress-copy"><div><strong id="librarian-progress-stage">预计：正在理解研究问题</strong><span id="librarian-progress-time" aria-hidden="true">0 秒</span></div><div class="librarian-progress-track"><i id="librarian-progress-bar"></i></div><small>阶段是预计提示，秒数是真实耗时；页面仍在工作，无需重复提交。</small></div>
               </div>
               <form id="librarian-form" class="librarian-form">
                 <label class="visually-hidden" for="librarian-input">向图书管理员描述问题</label>
@@ -313,12 +313,12 @@
           <p id="search-help">检索六列数据及原文证据；同一原表的命中数据会集中显示，并支持展开全部。</p>
           </div>
         </div>
-        <nav class="librarian-result-tabs" id="librarian-result-tabs" aria-label="图书管理员结果类型" hidden>
+        <nav class="librarian-result-tabs" id="librarian-result-tabs" role="tablist" aria-label="图书管理员结果类型" hidden>
           <span id="librarian-result-overview">本次检索证据</span>
-          <button type="button" class="active" data-librarian-result-type="item">条目 <b id="librarian-count-item">0</b></button>
-          <button type="button" data-librarian-result-type="table">表格 <b id="librarian-count-table">0</b></button>
-          <button type="button" data-librarian-result-type="figure">图片 <b id="librarian-count-figure">0</b></button>
-          <button type="button" data-librarian-result-type="finding">结论 <b id="librarian-count-finding">0</b></button>
+          <button type="button" class="active" role="tab" aria-selected="true" aria-controls="search-results" data-librarian-result-type="item">条目 <b id="librarian-count-item">0</b></button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" data-librarian-result-type="finding">结论 <b id="librarian-count-finding">0</b></button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" data-librarian-result-type="table">表格 <b id="librarian-count-table">0</b></button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" data-librarian-result-type="figure">图片 <b id="librarian-count-figure">0</b></button>
         </nav>
         <div class="search-controls" id="search-filter-bar">
           <div class="search-control-copy"><span>精确结果</span><small>筛选会同步应用到 CSV 和 Excel 导出</small></div>
