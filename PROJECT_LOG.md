@@ -18,7 +18,7 @@
 - 本轮未重新提取论文、未修改六列科学事实、图表截图或校对历史。固定50篇仍为17/50数据就绪、30/50图表就绪；程序升级不改变语料完成度。
 - 全量自动测试增至226项并通过；当前数据库仍为 schema v12、291个图表资产，其中243个是历史冻结基线而非当前总数。
 - 改造前保护提交/标签为 `17e6f60` / `evidence-demo-2026-07-30-pre-librarian-reasoning-presentation-1`；保护 SQLite 为 `/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-librarian-reasoning-presentation-2026-07-30-v1.sqlite`，SHA-256 为 `c9d63be31ad660294e52a7d093d37d7c4bbbfb22b3c2e5138005070f6f3b5038`。
-- 发布身份为 `2026.07.30-librarian-reasoning-stable.1`，标签 `evidence-demo-2026-07-30-librarian-reasoning-stable-1`。最终 SQLite、Git bundle 和独立 Skill 分别为 `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`、`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-reasoning-stable-2026-07-30-v1.bundle`、`/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v2.zip`；各自 SHA-256 见相邻 `.sha256`。
+- 发布身份为 `2026.07.30-librarian-reasoning-stable.1`，功能实现提交 `8e9c4c1`，标签 `evidence-demo-2026-07-30-librarian-reasoning-stable-1`。最终 SQLite、Git bundle 和独立 Skill 分别为 `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`、`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-reasoning-stable-2026-07-30-v1.bundle`、`/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v2.zip`；各自 SHA-256 见相邻 `.sha256`。
 
 ### 阶段性交班与项目 Skill
 

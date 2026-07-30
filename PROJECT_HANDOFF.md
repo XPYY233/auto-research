@@ -3,6 +3,7 @@
 > 交班快照：2026-07-30  
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
 > 改造前保护提交：`17e6f60`
+> 第三、四阶段功能提交：`8e9c4c1`
 > 稳定标签：`evidence-demo-2026-07-30-librarian-reasoning-stable-1`
 > 证据库版本：`2026.07.30-librarian-reasoning-stable.1` / schema v12
 

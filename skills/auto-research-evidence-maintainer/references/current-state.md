@@ -6,6 +6,7 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 
 - Active root: `/Users/USER/Zotero/auto-research`
 - Pre-change protection commit: `17e6f60`
+- Librarian reasoning/presentation implementation commit: `8e9c4c1`
 - Stable tag: `evidence-demo-2026-07-30-librarian-reasoning-stable-1`
 - Release: `2026.07.30-librarian-reasoning-stable.1`
 - Evidence schema: v12

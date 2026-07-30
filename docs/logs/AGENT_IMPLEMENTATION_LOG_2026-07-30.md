@@ -67,7 +67,7 @@ Canonical root: `/Users/USER/Zotero/auto-research`
 - Full Python suite at release checkpoint: 226 tests passed.
 - Real DeepSeek query with bounded history:
   - 71 candidates across item/finding/table/figure;
-  - direct 4, adjacent 9, expansion 58;
+  - direct 4, adjacent 8, expansion 59;
   - three evidence-matrix rows, six related rows and three suggested follow-ups;
   - no forbidden local fields.
 - Critical ambiguity query returned clarification with zero search operations and zero result cards.
@@ -92,6 +92,7 @@ Canonical root: `/Users/USER/Zotero/auto-research`
 ## Stable release artifacts
 
 - Release: `2026.07.30-librarian-reasoning-stable.1`; schema v12.
+- Feature implementation commit: `8e9c4c1`.
 - Stable tag: `evidence-demo-2026-07-30-librarian-reasoning-stable-1`.
 - Final SQLite: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`; SHA-256: `bfded1930856019c3413096fc20dee9b7f6b33e3310960b9913b94ee1dd2220e`.
 - Final Git bundle: `/Users/USER/Zotero/auto-research-backups/auto-research-librarian-reasoning-stable-2026-07-30-v1.bundle`; SHA-256: 见相邻 `.sha256`.

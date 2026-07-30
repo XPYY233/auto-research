@@ -3,6 +3,7 @@
 ## 版本身份
 
 - 版本：`2026.07.30-librarian-reasoning-stable.1`
+- 功能实现提交：`8e9c4c1`
 - 稳定标签：`evidence-demo-2026-07-30-librarian-reasoning-stable-1`
 - 证据库结构：`v12`
 - 固定验收语料：`config/evidence_test_set_50.json`
