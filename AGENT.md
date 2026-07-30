@@ -2,6 +2,13 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
+## Handoff entry point (2026-07-30)
+
+- A new account or agent must read `PROJECT_HANDOFF.md` before modifying this repository, then use this file as the durable policy authority.
+- The canonical portable project skill is `skills/auto-research-evidence-maintainer/`; its current-account installation is a symlink under `~/.codex/skills/auto-research-evidence-maintainer`.
+- The handoff separates the historical Zotero/PDF corpus workflow from the experimental-evidence product. Never infer that the 300-PDF Zotero checkpoint means 300 evidence papers are extracted; the fixed evidence corpus remains 17/50 data-ready at the 2026-07-29 checkpoint.
+- Project-local handoff and Git-tracked skill files override stale account memory. Update them whenever a later stable release changes paths, data counts, architecture boundaries, rejected approaches, or release/rollback instructions.
+
 ## Search V2 and in-product agents (2026-07-29)
 
 - The search page defaults to the DeepSeek-backed `librarian` agent. Precise four-mode search remains a required fallback and must work without DeepSeek.

@@ -1,5 +1,17 @@
 # Auto Research Evidence 项目日志
 
+## 2026-07-30
+
+### 阶段性交班与项目 Skill
+
+- 新增 `PROJECT_HANDOFF.md`，将历史 Zotero/PDF 语料工作流与当前实验数据证据库工作流明确分开，并记录项目目标、阶段历史、当前数据边界、六列模型、证据分类、DeepSeek 对抗式质量门、本地图表链路、Search V2、图书管理员、只读分享、凭据、发布和回滚规则。
+- 新增项目内可移植 Skill `skills/auto-research-evidence-maintainer/`。Skill 采用渐进加载：入口只保留任务路由和核心不变量，当前状态、工作流、禁止事项、运维发布、历史决策分别放入按需读取的 references，降低新账号恢复项目时的上下文消耗。
+- Skill 已通过官方 `quick_validate.py` 校验，并通过软链接安装到当前账户的 `~/.codex/skills/auto-research-evidence-maintainer`；项目内 Git 跟踪副本是权威来源。
+- 生成独立 Skill 压缩包 `/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v1.zip`，SHA-256 为 `ea3198cf0b9d85e880e85c1bccc632c346e8bc8ea6e7d3d4a12e77ad22f5e747`；压缩包以技能目录为根，可直接解压到新账户的 `~/.codex/skills`。
+- 生成交班时 SQLite 快照 `/Users/USER/Zotero/auto-research-backups/experimental_evidence-project-handoff-skill-2026-07-30-v1.sqlite`，SHA-256 为 `b1c9703f46577e6caac1246ca79a89f02ac4817a5ff93cbfae52b35680d264ee`。
+- 在 `AGENT.md` 和 `README.md` 增加交班入口，明确300篇 Zotero PDF 检查点不等于证据库已经处理300篇；当前固定50篇仍为17篇数据就绪、30篇图表就绪。
+- 本轮只增加文档和 Skill，不重新提取论文、不修改科学证据、不重建图表，也不改变数据库结构。
+
 ## 2026-07-29
 
 ### 图书管理员覆盖召回与回答稳定性修复

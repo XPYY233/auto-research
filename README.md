@@ -2,6 +2,20 @@
 
 Local, resumable literature automation for fusion materials, radiation damage, cascade simulations, MLIP, and HEA/RHEA research.
 
+## Project handoff and project skill
+
+Before continuing this repository from a new Codex account or a new engineering session, read [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md). The project-local, portable Codex skill is [`skills/auto-research-evidence-maintainer`](skills/auto-research-evidence-maintainer/SKILL.md); it records the task routing, scientific guardrails, current state, workflows, operations, recovery points, and rejected paths without depending on prior conversation memory.
+
+Install or link the skill for the current macOS account with:
+
+```bash
+mkdir -p ~/.codex/skills
+ln -s /Users/USER/Zotero/auto-research/skills/auto-research-evidence-maintainer \
+  ~/.codex/skills/auto-research-evidence-maintainer
+```
+
+The older `auto-research-zotero` skill remains specific to lawful PDF acquisition and Zotero corpus maintenance; use the new evidence-maintainer skill for the browser product, extraction database, quality gate, visuals, search, Librarian, release, and handoff work.
+
 It prioritizes open/official sources and your lawful local access path. It does **not** bypass paywalls, crack captchas, use proxy pools, or impersonate institutional access.
 
 ## Quick start
