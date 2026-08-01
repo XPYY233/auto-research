@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import tempfile
 import unittest
 from collections import Counter
@@ -17,6 +18,7 @@ from auto_research.product.evidence_package import (
 from auto_research.product.official_package_store import (
     import_official_evidence_package,
     open_active_official_repository,
+    rollback_official_evidence_package,
 )
 from auto_research.product.portable_repository import (
     DATABASE_CONTRACT,
@@ -31,6 +33,10 @@ from auto_research.product.portable_repository import (
     provenance_for_papers,
     stable_paper_uid,
 )
+from auto_research.product.trusted_publishers import (
+    TrustedPublisher,
+    TrustedPublisherPolicy,
+)
 
 
 class OfficialPackageStoreTests(unittest.TestCase):
@@ -43,6 +49,8 @@ class OfficialPackageStoreTests(unittest.TestCase):
             format=serialization.PublicFormat.Raw,
         )
         self.trusted = {"internal-test-key": public}
+        self.policy = self.make_policy(public)
+        self.package_counter = 0
         self.paper = {
             "doi": "10.1000/internal.1",
             "title": "Internal package test",
@@ -75,15 +83,47 @@ class OfficialPackageStoreTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def build_package(self) -> Path:
+    @staticmethod
+    def make_policy(
+        public_key: bytes,
+        *,
+        allowed_package_ids: tuple[str, ...] = ("auto-research-internal-evidence",),
+        publisher_name: str = "Auto Research internal preview",
+        redistribution: str = "internal-preview-only",
+    ) -> TrustedPublisherPolicy:
+        return TrustedPublisherPolicy(
+            channel="internal-preview",
+            publishers=(
+                TrustedPublisher(
+                    key_id="internal-test-key",
+                    display_name="Synthetic internal preview",
+                    manifest_publisher_name=publisher_name,
+                    public_key_base64=base64.b64encode(public_key).decode("ascii"),
+                    channel="internal-preview",
+                    allowed_package_ids=allowed_package_ids,
+                    required_rights_redistribution=redistribution,
+                ),
+            ),
+        )
+
+    def build_package(
+        self,
+        *,
+        package_id: str = "auto-research-internal-evidence",
+        version: str = "0.1.0-preview.1",
+        publisher_name: str = "Auto Research internal preview",
+        redistribution: str = "internal-preview-only",
+    ) -> Path:
+        self.package_counter += 1
+        suffix = self.package_counter
         plan = PortableExportPlan(papers=(self.paper,), entities=(self.entity,))
         repository = materialize_portable_repository(
             plan,
-            self.root / "repository",
-            package_id="official-internal-test",
-            package_version="0.1.0-preview.1",
+            self.root / f"repository-{suffix}",
+            package_id=package_id,
+            package_version=version,
             release_policy=ReleasePolicy(
-                distribution_scope="internal-test-only",
+                distribution_scope=redistribution,
                 allowed_paper_uids=frozenset({self.paper_uid}),
                 allow_structured_evidence=True,
                 allow_short_excerpts=True,
@@ -91,7 +131,7 @@ class OfficialPackageStoreTests(unittest.TestCase):
                 maximum_excerpt_chars_per_paper=2000,
                 maximum_excerpt_chars_total=2000,
             ),
-            provenance=provenance_for_papers((self.paper,), publisher="Internal test"),
+            provenance=provenance_for_papers((self.paper,), publisher=publisher_name),
         )
         counts = Counter(document["entity_type"] for document in self._documents(repository.root))
         manifest = {
@@ -100,7 +140,7 @@ class OfficialPackageStoreTests(unittest.TestCase):
             "package_id": repository.package_id,
             "package_version": repository.package_version,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "publisher": {"name": "Auto Research Internal Test"},
+            "publisher": {"name": publisher_name},
             "evidence_schema": DISTRIBUTION_SCHEMA_VERSION,
             "database_contract": DATABASE_CONTRACT,
             "identity_version": IDENTITY_VERSION,
@@ -119,7 +159,7 @@ class OfficialPackageStoreTests(unittest.TestCase):
             "provenance_path": PROVENANCE_PATH,
         }
         return build_evidence_package(
-            self.root / "official.aresearch",
+            self.root / f"official-{suffix}.aresearch",
             manifest=manifest,
             payload_files={
                 DATABASE_PATH: repository.database_path,
@@ -143,6 +183,7 @@ class OfficialPackageStoreTests(unittest.TestCase):
             data_root=self.root / "app-data",
             trusted_public_keys=self.trusted,
             current_app_version="0.3.0-preview.1",
+            publisher_policy=self.policy,
         )
         self.assertTrue(imported.content_fingerprint)
         self.assertEqual(
@@ -153,6 +194,7 @@ class OfficialPackageStoreTests(unittest.TestCase):
             data_root=self.root / "app-data",
             trusted_public_keys=self.trusted,
             current_app_version="0.3.0-preview.1",
+            publisher_policy=self.policy,
         )
         self.assertEqual(active.content_fingerprint, imported.content_fingerprint)
         self.assertEqual(len(list(repository.iter_search_documents())), 1)
@@ -179,6 +221,7 @@ class OfficialPackageStoreTests(unittest.TestCase):
             data_root=self.root / "app-data-tamper",
             trusted_public_keys=self.trusted,
             current_app_version="0.3.0-preview.1",
+            publisher_policy=self.policy,
         )
         with imported.install_path.joinpath(DATABASE_PATH).open("ab") as handle:
             handle.write(b"tamper")
@@ -187,7 +230,107 @@ class OfficialPackageStoreTests(unittest.TestCase):
                 data_root=self.root / "app-data-tamper",
                 trusted_public_keys=self.trusted,
                 current_app_version="0.3.0-preview.1",
+                publisher_policy=self.policy,
             )
+
+    def test_plain_public_key_mapping_cannot_bypass_bundled_policy(self) -> None:
+        package = self.build_package()
+        with self.assertRaises(EvidencePackageError) as raised:
+            import_official_evidence_package(
+                package,
+                data_root=self.root / "mapping-only",
+                trusted_public_keys=self.trusted,
+                current_app_version="0.3.0-preview.1",
+            )
+        self.assertEqual(raised.exception.code, "trusted_key_policy_mismatch")
+
+    def test_import_rejects_identity_and_rights_outside_policy(self) -> None:
+        cases = (
+            (
+                {"package_id": "another-internal-package"},
+                "untrusted_package_identity",
+            ),
+            (
+                {"publisher_name": "Unapproved publisher"},
+                "untrusted_package_identity",
+            ),
+            ({"redistribution": "public"}, "untrusted_rights_scope"),
+        )
+        for index, (overrides, expected_code) in enumerate(cases):
+            with self.subTest(expected_code=expected_code, index=index):
+                package = self.build_package(**overrides)
+                data_root = self.root / f"rejected-{index}"
+                with self.assertRaises(EvidencePackageError) as raised:
+                    import_official_evidence_package(
+                        package,
+                        data_root=data_root,
+                        trusted_public_keys=self.trusted,
+                        current_app_version="0.3.0-preview.1",
+                        publisher_policy=self.policy,
+                    )
+                self.assertEqual(raised.exception.code, expected_code)
+                self.assertFalse(
+                    (data_root / "official-packages" / "active.json").exists()
+                )
+
+    def test_open_and_rollback_reapply_same_publisher_policy(self) -> None:
+        first = self.build_package(version="0.1.0-preview.1")
+        second = self.build_package(version="0.2.0-preview.1")
+        data_root = self.root / "policy-recheck"
+        for package in (first, second):
+            import_official_evidence_package(
+                package,
+                data_root=data_root,
+                trusted_public_keys=self.trusted,
+                current_app_version="0.3.0-preview.1",
+                publisher_policy=self.policy,
+            )
+
+        public_key = next(iter(self.trusted.values()))
+        wrong_rights_policy = self.make_policy(
+            public_key, redistribution="public"
+        )
+        with self.assertRaises(EvidencePackageError) as opened:
+            open_active_official_repository(
+                data_root=data_root,
+                trusted_public_keys=self.trusted,
+                current_app_version="0.3.0-preview.1",
+                publisher_policy=wrong_rights_policy,
+            )
+        self.assertEqual(opened.exception.code, "untrusted_rights_scope")
+
+        wrong_identity_policy = self.make_policy(
+            public_key, allowed_package_ids=("different-package",)
+        )
+        with self.assertRaises(EvidencePackageError) as rolled_back:
+            rollback_official_evidence_package(
+                data_root=data_root,
+                package_id="auto-research-internal-evidence",
+                target_version="0.1.0-preview.1",
+                trusted_public_keys=self.trusted,
+                current_app_version="0.3.0-preview.1",
+                publisher_policy=wrong_identity_policy,
+            )
+        self.assertEqual(
+            rolled_back.exception.code, "untrusted_package_identity"
+        )
+
+        active, _ = open_active_official_repository(
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="0.3.0-preview.1",
+            publisher_policy=self.policy,
+        )
+        self.assertEqual(active.package_version, "0.2.0-preview.1")
+        restored = rollback_official_evidence_package(
+            data_root=data_root,
+            package_id="auto-research-internal-evidence",
+            target_version="0.1.0-preview.1",
+            trusted_public_keys=self.trusted,
+            current_app_version="0.3.0-preview.1",
+            publisher_policy=self.policy,
+        )
+        self.assertEqual(restored.package_version, "0.1.0-preview.1")
 
 
 if __name__ == "__main__":

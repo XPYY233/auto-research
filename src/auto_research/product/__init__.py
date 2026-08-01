@@ -36,7 +36,10 @@ from .portable_repository import (
 from .trusted_publishers import (
     TRUSTED_PUBLISHER_REGISTRY_VERSION,
     TrustedPublisher,
+    TrustedPublisherPolicy,
+    TrustedPublisherPolicyError,
     assert_trusted_package_identity,
+    trusted_publisher_policy,
     trusted_public_keys,
     trusted_publishers,
 )
@@ -71,7 +74,10 @@ __all__ = [
     "rollback_official_evidence_package",
     "TRUSTED_PUBLISHER_REGISTRY_VERSION",
     "TrustedPublisher",
+    "TrustedPublisherPolicy",
+    "TrustedPublisherPolicyError",
     "assert_trusted_package_identity",
+    "trusted_publisher_policy",
     "trusted_public_keys",
     "trusted_publishers",
 ]

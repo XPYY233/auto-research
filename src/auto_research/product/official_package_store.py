@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -23,10 +24,16 @@ from .portable_repository import (
     RIGHTS_PATH,
     OfficialEvidenceRepository,
 )
+from .trusted_publishers import (
+    TrustedPublisherPolicy,
+    TrustedPublisherPolicyError,
+    trusted_publisher_policy,
+)
 
 
 EXPECTED_DISTRIBUTION_SCHEMA = DISTRIBUTION_SCHEMA_VERSION
 ACTIVE_SELECTOR_RELATIVE_PATH = Path("official-packages") / "active.json"
+DEFAULT_OFFICIAL_CHANNEL = "internal-preview"
 
 
 @dataclass(frozen=True)
@@ -46,6 +53,79 @@ class ActiveOfficialPackage:
 
 def default_active_state_path(data_root: Path | str) -> Path:
     return Path(data_root).expanduser().resolve() / ACTIVE_SELECTOR_RELATIVE_PATH
+
+
+def _resolve_publisher_policy(
+    supplied_keys: Mapping[str, bytes | Ed25519PublicKey] | None,
+    publisher_policy: TrustedPublisherPolicy | None,
+) -> tuple[TrustedPublisherPolicy, Mapping[str, bytes]]:
+    policy = publisher_policy or trusted_publisher_policy(
+        channel=DEFAULT_OFFICIAL_CHANNEL
+    )
+    if supplied_keys is not None:
+        try:
+            policy.assert_public_keys_match(supplied_keys)
+        except TrustedPublisherPolicyError as exc:
+            raise EvidencePackageError(exc.code, str(exc)) from exc
+    return policy, policy.public_keys()
+
+
+def _read_trust_json(path: Path, *, label: str, maximum: int) -> dict[str, Any]:
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > maximum:
+            raise EvidencePackageError(
+                "invalid_install", f"已安装资料包{label}缺失或不安全"
+            )
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except EvidencePackageError:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise EvidencePackageError(
+            "invalid_install", f"已安装资料包{label}损坏"
+        ) from exc
+    if not isinstance(value, dict):
+        raise EvidencePackageError("invalid_install", f"已安装资料包{label}格式无效")
+    return value
+
+
+def _assert_official_package_trust(
+    install_root: Path,
+    manifest: Mapping[str, Any],
+    policy: TrustedPublisherPolicy,
+) -> None:
+    """Bind the verified installed signer to identity, channel and rights."""
+
+    install_marker = _read_trust_json(
+        install_root / "install.json", label="安装记录", maximum=64 * 1024
+    )
+    rights = _read_trust_json(
+        install_root / RIGHTS_PATH, label="权利清单", maximum=8 * 1024 * 1024
+    )
+    publisher = manifest.get("publisher")
+    publisher_name = (
+        str(publisher.get("name") or "") if isinstance(publisher, Mapping) else ""
+    )
+    try:
+        policy.assert_package_identity(
+            key_id=str(install_marker.get("signer_key_id") or ""),
+            package_id=str(manifest.get("package_id") or ""),
+            publisher_name=publisher_name,
+            rights_redistribution=str(rights.get("redistribution") or ""),
+        )
+    except TrustedPublisherPolicyError as exc:
+        raise EvidencePackageError(exc.code, str(exc)) from exc
+
+
+def _official_repository_validator(
+    policy: TrustedPublisherPolicy,
+):
+    def validate(
+        install_root: Path, manifest: Mapping[str, Any]
+    ) -> OfficialEvidenceRepository:
+        _assert_official_package_trust(install_root, manifest, policy)
+        return _validate_official_repository(install_root, manifest)
+
+    return validate
 
 
 def _validate_official_repository(
@@ -123,17 +203,21 @@ def import_official_evidence_package(
     package_path: Path | str,
     *,
     data_root: Path | str,
-    trusted_public_keys: Mapping[str, bytes | Ed25519PublicKey],
     current_app_version: str,
+    trusted_public_keys: Mapping[str, bytes | Ed25519PublicKey] | None = None,
+    publisher_policy: TrustedPublisherPolicy | None = None,
     active_state_path: Path | str | None = None,
 ) -> ImportedEvidencePackage:
+    policy, policy_keys = _resolve_publisher_policy(
+        trusted_public_keys, publisher_policy
+    )
     return import_evidence_package(
         package_path,
         data_root=data_root,
-        trusted_public_keys=trusted_public_keys,
+        trusted_public_keys=policy_keys,
         current_app_version=current_app_version,
         expected_evidence_schema=EXPECTED_DISTRIBUTION_SCHEMA,
-        repository_validator=_validate_official_repository,
+        repository_validator=_official_repository_validator(policy),
         active_state_path=active_state_path,
     )
 
@@ -143,18 +227,22 @@ def rollback_official_evidence_package(
     data_root: Path | str,
     package_id: str,
     target_version: str,
-    trusted_public_keys: Mapping[str, bytes | Ed25519PublicKey],
     current_app_version: str,
+    trusted_public_keys: Mapping[str, bytes | Ed25519PublicKey] | None = None,
+    publisher_policy: TrustedPublisherPolicy | None = None,
     active_state_path: Path | str | None = None,
 ) -> ImportedEvidencePackage:
+    policy, policy_keys = _resolve_publisher_policy(
+        trusted_public_keys, publisher_policy
+    )
     return rollback_evidence_package(
         data_root=data_root,
         package_id=package_id,
         target_version=target_version,
-        trusted_public_keys=trusted_public_keys,
+        trusted_public_keys=policy_keys,
         current_app_version=current_app_version,
         expected_evidence_schema=EXPECTED_DISTRIBUTION_SCHEMA,
-        repository_validator=_validate_official_repository,
+        repository_validator=_official_repository_validator(policy),
         active_state_path=active_state_path,
     )
 
@@ -162,10 +250,14 @@ def rollback_official_evidence_package(
 def open_active_official_repository(
     *,
     data_root: Path | str,
-    trusted_public_keys: Mapping[str, bytes | Ed25519PublicKey],
     current_app_version: str,
+    trusted_public_keys: Mapping[str, bytes | Ed25519PublicKey] | None = None,
+    publisher_policy: TrustedPublisherPolicy | None = None,
     active_state_path: Path | str | None = None,
 ) -> tuple[ActiveOfficialPackage, OfficialEvidenceRepository]:
+    policy, policy_keys = _resolve_publisher_policy(
+        trusted_public_keys, publisher_policy
+    )
     root = Path(data_root).expanduser().resolve()
     selector_path = (
         Path(active_state_path).expanduser().resolve()
@@ -180,14 +272,14 @@ def open_active_official_repository(
     install_root = root / "official-packages" / package_id / package_version
     manifest = _validate_installed_tree(
         install_root,
-        trusted_public_keys=trusted_public_keys,
+        trusted_public_keys=policy_keys,
         current_app_version=current_app_version,
         expected_evidence_schema=EXPECTED_DISTRIBUTION_SCHEMA,
         expected_package_id=package_id,
         expected_package_version=package_version,
         expected_manifest_sha256=str(state["manifest_sha256"]),
     )
-    repository = _validate_official_repository(install_root, manifest)
+    repository = _official_repository_validator(policy)(install_root, manifest)
     if repository.content_fingerprint != str(state["content_fingerprint"]):
         raise EvidencePackageError("invalid_active_state", "活动资料包内容指纹不一致")
     return (
