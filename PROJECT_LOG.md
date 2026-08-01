@@ -1,6 +1,41 @@
 # Auto Research Evidence 项目日志
 
+## 2026-08-01：桌面产品方向与低负载联合收口
+
+- 产品入口正式收敛为个人桌面工作台：当前先交付 macOS 本机开发预览，正式用户端预计为 Windows。导师只读网页、独立浏览器工作台、8765/8766、ngrok 和浏览器启动器退役；既有 HTML/JavaScript、loopback webapp 与权限模式继续作为 App 内部实现和回归保护。
+- 稳定 App 不应要求用户输入 Auto Research 编辑密码；意外系统凭据授权窗口被列为发布阻断。当前 macOS 使用 Keychain，后续 Windows 使用 Credential Manager，二者通过统一安全凭据接口承载。
+- 正式发行采用“桌面 App + 独立 `.aresearch` 证据包”：用户导入经过版本、哈希与签名校验的数据包后即可离线检索；官方包、用户私人库和 App 安装彼此分离。默认不含受限 PDF、本机路径、Zotero key、私人对话或开发者凭据，导入失败必须可回退。
+- 新文献 DeepSeek 抽取和图书管理员 Agent 均采用 BYOK。用户可粘贴专门提供给他的 key 或使用自己的 key；首次 AI 调用需说明服务方、可能费用和数据外发范围，密钥只进操作系统凭据库，不进数据库、数据包、日志或 Git。
+- 共享核心沿用最后完成的 253/253 自动测试与生产 SQLite SHA-256 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`。为降低电脑发热，本次只做文档、差异与单文件语法轻量收口；最终由桌面任务顺序执行一次联合全测、一次 macOS 构建和一次实机验收。
+- 共享核心提交不创建稳定标签、不修改 `desktop/macos/**`、不纳入未跟踪数据库；最终桌面提交、标签、安装包和回退包由桌面任务统一生成。
+
 ## 2026-07-30
+
+### 图书管理员研究简报稳定版
+
+#### 人类工程师摘要
+
+- 新增“导出研究简报”：只有当前服务进程 HMAC 签名、不是澄清回答、至少有一条实际引用且通过一致性门的五段回答可以转换为 `librarian-research-brief.md`。
+- 聊天响应顶层加入 `research_brief` 信封：`snapshot_token`、`answered_at`、`evidence_fingerprint`、`eligible`、`ineligible_reason`；签名快照使用 `answered_at` 与 `evidence_version`。导出 POST 只接受当前进程签发的 `{snapshot, snapshot_token}`。
+- 简报只收录规范 R# 唯一映射的 `agent_cited=true` 四类证据；澄清、零引用、孤儿/重复/无效引用、计数不一致或失效/篡改 token 都不会生成文件。它不是第五类结果，也不创建或修改科学记录。
+- HMAC 只绑定规范化公开响应快照，不建立服务器端历史，不重新调用 DeepSeek，不重查 Search V2、SQLite 或 PDF。
+- Markdown 固定包含研究问题、硬条件、五段报告、引用证据附录、模型/召回统计、引用完整性检查和明确限制。
+- 导出采用公开字段白名单；本地路径/URL、Zotero 或设备 key、审核者、内部备注、桌面历史标识、PDF/图片载荷和模型协议不会进入文件。缺失题目、DOI、页码或原文片段保持为空，将状态设为 warning，并在文件中按 R# 展示缺失字段。
+- 共享前端同时加入安全历史模式适配：Apple Silicon macOS 桌面产品层用 Keychain 管理密钥并以 AES-GCM 持久化；普通本地浏览器保留有限本地历史；公网只读端固定 `readonly-none`，不访问桌面历史或图书管理员 `localStorage`。任何模式都不写科学库。
+- history schema 和保存策略完全不变；`research_brief` 授权只在瞬态 `state.librarianBriefAuth` 中存在，不进入 session meta/messages、`localStorage` 或桌面加密历史。重启或只恢复历史都必须重新检索后才能导出。
+- 桌面产品层仍是独立打包边界；本轮核心提交只包含共享前端适配契约，不能表述为 `desktop/macos/**` 源码已随核心发布。
+- 本轮核心回归最终为 253/253 项自动测试通过；只读 HTTP 仅对签名、合格、非澄清且有引用的回答下载 Markdown，其他写入接口仍返回 403。发布前对抗检查新增覆盖旧会话授权复活、科学计数法前缀误判、Unicode/HTML 单位绕过、模型协议混淆、跨 evidence bundle 比较、危险链接/本机路径清洗和 HMAC 类型碰撞。
+- 独立只读浏览器验收中，“钨”问题召回 65 项（0 direct / 5 adjacent / 60 expansion），报告引用 5 项，研究简报 POST 返回 200，控制台无错误；刷新后历史为 0、导出禁用且无运行告警，证明 `readonly-none` 和瞬态授权没有持久化。
+- 生产 SQLite 和稳定备份 SHA-256 均为 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`。健康口径保持 6,501 条原始记录、5,048 处可报告数值来源、3,142 个独立物理事实、937 条定性结论和 291 个图表资产。
+- 固定语料仍为 17/50 data-ready、30/50 visual-ready；研究简报稳定不代表语料达到30篇，也不代表模型解释完成独立人工科学验收。
+- 发布身份为 `2026.07.30-librarian-brief-stable.1`、schema v12；计划标签 `evidence-demo-2026-07-30-librarian-brief-stable-1` 在发布收口时创建。
+- 稳定 SQLite 为 `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-brief-stable-2026-07-30-v1.sqlite`；计划 Git bundle 为 `/Users/USER/Zotero/auto-research-backups/auto-research-librarian-brief-stable-2026-07-30-v1.bundle`，在本轮提交与标签完成后生成并补录 SHA-256。
+- 面向项目负责人的独立摘要见 `docs/logs/HUMAN_ENGINEERING_LOG_2026-07-30.md`。
+
+#### Agent 实现细节
+
+- 当前进程 HMAC、资格门、R#/`agent_cited` 一致性、确定性排序、字段白名单、来源 warning、只读 HTTP 和历史后端适配的逐项实现/回归记录见 `docs/logs/AGENT_IMPLEMENTATION_LOG_2026-07-30.md`。
+- 完整产品契约、输入结构、隐私/科学边界和验收清单见 `docs/LIBRARIAN_RESEARCH_BRIEF.md`。
 
 ### 图书管理员第三阶段推理升级与第四阶段回答呈现
 
@@ -14,7 +49,7 @@
 - 修复 Search V2 指纹长期引用不存在的 `visual_asset_versions` 问题；图表校对、质量候选和数据—图表关联变化现在能使索引及 Agent 缓存失效。索引格式升级为 v3。
 - 新增统一公开 DTO，Search V2、精确条目/结论搜索、图表搜索/详情和图书管理员均不再返回本地路径、Zotero key、本机文章 key、审核者或内部备注。
 - 增加模型完整性门：拒绝孤儿引用、把相关证据写成直接结论、证据中不存在的数值以及跨不兼容证据组的定量比较；模型上下文按四类轮转保底，不再因前排条目过长挤掉表格或图片。
-- 真实 `deepseek-v4-pro` 查询在当前库召回四类共71项，分为4条直接、9条相关和58条扩展；生成3行证据矩阵、6项相关证据及3个建议追问。浏览器验证五段报告、引用跳转、四类切换和表格截图均正常。
+- 真实 `deepseek-v4-pro` 查询在当前库召回四类共71项，分为4条直接、8条相关和59条扩展；生成3行证据矩阵、6项相关证据及3个建议追问。浏览器验证五段报告、引用跳转、四类切换和表格截图均正常。
 - 本轮未重新提取论文、未修改六列科学事实、图表截图或校对历史。固定50篇仍为17/50数据就绪、30/50图表就绪；程序升级不改变语料完成度。
 - 全量自动测试增至226项并通过；当前数据库仍为 schema v12、291个图表资产，其中243个是历史冻结基线而非当前总数。
 - 改造前保护提交/标签为 `17e6f60` / `evidence-demo-2026-07-30-pre-librarian-reasoning-presentation-1`；保护 SQLite 为 `/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-librarian-reasoning-presentation-2026-07-30-v1.sqlite`，SHA-256 为 `c9d63be31ad660294e52a7d093d37d7c4bbbfb22b3c2e5138005070f6f3b5038`。

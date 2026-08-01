@@ -42,16 +42,33 @@ SQLite FTS replaced slow broad scans. The Librarian became the primary search in
 
 The stable three-stage orchestration gained a deterministic scientific-condition layer rather than a new Agent database. Material, irradiation, particle, temperature, dose/fluence, property and state are hard dimensions; aliases remain soft recall. The local parser plus bounded history is the sole hard-condition authority: DeepSeek plans queries, selects bounded evidence and explains it, but cannot create or rewrite hard conditions. Local code assigns direct/adjacent/expansion classes and evidence bundles, while the user-facing answer is a fixed five-section report with traceable matrix rows, explicit relaxed conditions, database gaps and clickable follow-ups. Scientific-notation fluence and equivalent units preserve their numeric meaning; particle/material and energy/temperature roles are disambiguated. Current-turn conditions override history, and incompatible experiments may not be joined into quantitative comparisons. Search V2, visual detail and Librarian routes share one public DTO projection that excludes local paths, local/Zotero keys, reviewer identity and internal notes.
 
+### Librarian research brief and secure history adaptation
+
+The next stable increment added a deterministic Markdown derivative of the latest current-process HMAC-signed structured Librarian response. Eligible output must be non-clarification, contain at least one canonical citation, and pass an exact R#-to-`agent_cited` consistency gate. The chat response carries a top-level opaque `research_brief` envelope; export accepts only `{snapshot, snapshot_token}` from that process, not an arbitrary snapshot, session id, raw SQLite or PDF. HMAC binds only the canonical public snapshot and does not invoke DeepSeek, query Search V2/database/PDF, read curves, infer missing provenance or create cross-bundle quantitative comparisons. Missing public provenance stays empty, produces a visible warning and is listed by R#.
+
+The shared frontend also gained mode-aware Librarian history. The Apple Silicon macOS product layer persists through AES-GCM with a key managed by macOS Keychain; a browser without the desktop bridge uses bounded local history; public read-only uses `readonly-none` and does not access desktop history or Librarian `localStorage`. History never enters the scientific database. Brief authorization exists only in transient `state.librarianBriefAuth` and does not enter session meta/messages, `localStorage`, or desktop encrypted history. A restart or history-only restore therefore requires a new query before export. The desktop product layer remains a separate packaging boundary, so a core frontend adapter does not imply that `desktop/macos/**` source was shipped in the core release.
+
+### Desktop-only product decision (2026-08-01)
+
+The formal product is now a personal desktop workbench. The current development preview is macOS, while the expected end-user target is Windows. The mentor read-only page, standalone browser workbench, ports 8765/8766, ngrok and browser launchers are retired. The App may continue to embed the same HTML/JavaScript and loopback webapp internally; permission modes stay covered by regression tests, but they are not independently released. Future distribution separates a signed App from reviewed portable evidence packages rather than depending on the developer Mac staying online. Users import a package for offline search and may add their own PDFs. DeepSeek extraction and Librarian calls are BYOK: a user may paste a key supplied to them or use their own, but the key is stored only in the platform credential store—Keychain on macOS and Credential Manager on Windows—and never in evidence data, packages, logs or Git. The App must not require a project edit password; unexpected credential prompts block release.
+
 ## Decisions that remain active
 
 - Preserve the six-column user model; improve indexing instead of adding a column.
 - Search `meaning` above `context_explanation`.
-- Keep local and public modes on one frontend.
+- Keep one internal frontend for the App; retain historical permission modes only as compatibility tests.
 - Prefer DOI/title over Zotero key across devices.
 - Keep public result types fixed to item/finding/table/figure.
 - Preserve all cited and expansion candidates in Librarian responses.
 - Treat `agent_cited` as a reference anywhere in the final fixed report; preserve match class, missing constraints and evidence bundle separately.
 - Keep the five-part report and direct/adjacent/expansion rules deterministic. Do not delegate these publication semantics to DeepSeek.
+- Keep the research brief a derived read-only export of the latest current-process-signed, non-clarification response with at least one actual citation. It is not a fifth evidence type, session backup, model call or scientific record.
+- Accept only `{snapshot, snapshot_token}` issued with the response, never an arbitrary snapshot, session id, original database/PDF or filesystem path. Do not resolve or re-sign desktop/browser history inside the exporter.
+- Export only canonical R# evidence that maps uniquely to `agent_cited=true` records from the four public types with exact counts. Reject clarification, zero-reference and inconsistent inputs.
+- Keep the HMAC process-local and bind only the canonical public snapshot. Restart invalidates old tokens; users must re-run the query before exporting restored history.
+- Preserve the field whitelist. Missing title/DOI/page/excerpt stays empty, sets a warning and must appear by R# in the Markdown.
+- Do not let brief export call DeepSeek/Search V2, open the database/PDF, digitize curves or create quantitative comparisons across evidence bundles.
+- Keep public Librarian history at `readonly-none`; desktop Keychain/AES-GCM persistence belongs to the separate product layer, and no history mode may write the scientific database.
 - Keep hard-condition creation local and deterministic. DeepSeek is limited to query planning, bounded evidence selection and explanation.
 - Preserve scientific-notation and equivalent-unit matching, and keep particle/material and energy/temperature roles distinct in parsing and bundle identity.
 - Clarify critical unresolved objects before recall instead of guessing. This is the bounded exception to the normal fresh-search rule.

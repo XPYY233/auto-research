@@ -27,17 +27,24 @@ This project is a local literature automation workflow for fusion materials, rad
 - Explicit conditions in the current user turn override history. In particular, changing irradiation type or particle clears the paired historical beam condition, preventing hybrids such as “ion irradiation + neutron particle”. Omitted dimensions may inherit from recent user turns.
 - Group evidence by paper plus the material and complete experimental-condition signature found in each record. Quantitative before/after comparison is allowed only inside one compatible bundle; do not pair numbers across materials, temperatures, doses or states.
 - The structured answer contract has five fixed sections: direct conclusion, evidence matrix, related evidence, database gaps and two-to-three suggested follow-up questions. Preserve the legacy Markdown `answer` field for compatibility, but use `report` as the presentation authority.
+- A Librarian research brief is a deterministic, read-only derivative of the latest current-process-signed public structured response. Export only a non-clarification answer with at least one actual citation. A clarification or zero-reference answer is ineligible. The brief is not a fifth evidence type, another Agent run, a scientific record, or a session backup.
+- Every eligible chat response carries `research_brief.snapshot_token`, `answered_at`, `evidence_fingerprint`, `eligible`, and `ineligible_reason`. The signed snapshot contains `answered_at` and `evidence_version`, with `evidence_version` equal to the fingerprint. `POST /api/agents/librarian/research-brief.md` accepts only `{snapshot, snapshot_token}` from that response, never an arbitrary snapshot, session id, raw database, PDF, filesystem path, or instruction to re-run retrieval.
+- Use a process-local secret HMAC over the canonical public snapshot and constant-time verification. The token does not create server-side history, write SQLite, re-query Search V2/PDF, or call DeepSeek. Process restart invalidates old tokens; restored history must be re-queried before export rather than being silently re-signed.
+- The consistency gate must require every canonical R# to map uniquely to an `agent_cited=true` public result, exact citation counts, a complete five-section report, at least one included reference, and only `item/finding/table/figure`. Reject export on orphan/duplicate/invalid/omitted references or count mismatch.
+- Preserve the brief field whitelist and Markdown integrity report. Local paths/URLs, Zotero or local keys, reviewer identity, internal notes, desktop-history identifiers, PDF/image payloads and model protocol text must not enter the export. Missing title/DOI/page/excerpt stays empty, sets `integrity.status=warning`, and must be displayed by R# in the downloaded file rather than being silently repaired.
+- `POST /api/agents/librarian/research-brief.md` remains allowed in the historical read-only permission mode only because it verifies a current-process token and transforms the bound public snapshot into a no-store Markdown attachment without database or file mutation. This is an App-internal/compatibility contract, not a public webpage. Keep the detailed contract in `docs/LIBRARIAN_RESEARCH_BRIEF.md`.
 - A critically ambiguous question may return a clarification report without evidence recall. This is the only exception to the normal fresh-recall rule and must expose zero result cards rather than guessing the user's objects.
 - Coverage recall returns a bounded candidate set, not only the records cited in the report. `agent_cited` means referenced anywhere in the final fixed report; preserve `agent_match_queries`, `agent_match_class`, missing/matched constraints and bundle identity. This prevents a two-result tab from being mistaken for the whole search.
 - Complex questions must be decomposed into joint and facet queries. Preserve the agent-only concept expansions for broad defect/mechanical terms, the global 80-result cap and per-type caps; the synthesizer must distinguish direct evidence satisfying all hard constraints from partially related evidence.
 - The primary JSON synthesizer may fall back to a clean no-tool text request and then to a deterministic five-section report. DSML/internal protocol text must be rejected at every stage and by the frontend history guard.
 - Identical questions with identical bounded history may reuse an in-process response cache for one hour, keyed by the database search-source fingerprint. Evidence changes therefore invalidate the cache automatically. Preserve `cache_hit` in the response/UI; do not use cached answers after the indexed scientific source changes.
-- Frontend history is browser-local convenience state, not scientific evidence or server authority. Reopening a saved conversation must not call DeepSeek; the next new turn sends only bounded recent history and still performs a fresh search.
+- Librarian history is convenience state, not scientific evidence or server authority. The desktop product may persist it only with AES-GCM and an OS-managed credential: macOS Keychain in the current preview and Windows Credential Manager in the intended Windows build. `browser-local` and `readonly-none` remain historical compatibility/test adapters, not user modes. No mode writes history to the scientific database. Keep the history schema and persistence policy unchanged: `research_brief` authorization lives only in transient `state.librarianBriefAuth` and must not enter session meta/messages, browser storage, desktop encrypted history or packages. Reopening a saved conversation must not call DeepSeek, but it cannot export that old answer until the user performs a fresh search. A stable App must not ask the user for an Auto Research edit password; an unexpected credential authorization dialog is a release blocker.
+- The shared frontend may implement the desktop-history adapter, but the desktop package remains a separate release boundary. Do not claim that `desktop/macos/**` source was shipped merely because the core shared frontend supports the secure bridge.
 - Librarian answer Markdown is rendered only after HTML escaping. Preserve the protocol/orphan-reference guards when changing chat rendering.
 - Reject model conclusions that contain orphan `[R#]` references, cite non-direct evidence as a direct conclusion, introduce quantitative tokens absent from the cited evidence, or compare numbers across incompatible bundles.
 - Search V2, visual detail and Librarian responses share the same public evidence projection. Never return local filesystem paths, Zotero keys, local article keys, reviewer identities or internal edit notes through public search routes.
 - The progress scene uses the locally installed Codex working-pet strip `web/codex-pet-working.webp`; do not replace it with an ad-hoc mascot. Before any public GitHub release, explicitly review whether this local product asset may be distributed or substitute a project-owned mascot.
-- Do not log API keys, full prompts containing sensitive data, or entire PDFs. Reuse the project DeepSeek Keychain/env configuration.
+- Do not log API keys, full prompts containing sensitive data, or entire PDFs. End-user AI is BYOK through the platform credential store; project Keychain/env configuration is maintainer-only.
 - Architecture and implementation details: `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` and `docs/logs/AGENT_IMPLEMENTATION_LOG_2026-07-30.md`.
 
 ## Active local workspace
@@ -45,7 +52,9 @@ This project is a local literature automation workflow for fusion materials, rad
 - The only active project root is `/Users/USER/Zotero/auto-research`.
 - Do not run, edit, or generate new artifacts under the former iCloud Drive project path. That directory is retained only as a migration backup.
 - Editable and read-only services must derive paths from the active project root. Python bytecode and launcher logs belong in local cache directories, not iCloud Drive.
-- The user-facing one-click launchers are `/Users/USER/Zotero/打开本地编辑工作台.command` and `/Users/USER/Zotero/创建导师公网链接.command`.
+- The only user-facing shape is the personal desktop workbench. Auto Research.app is the current macOS development preview; Windows is the intended end-user target. The old `/Users/USER/Zotero/打开本地编辑工作台.command` and `/Users/USER/Zotero/创建导师公网链接.command` names are retained only as migration notices and must not silently start browser services or tunnels.
+- The product distribution model is a signed desktop App plus separately delivered, versioned evidence packages. Import must verify package version and hash, keep official packages separate from the user's private library, and provide rollback on failure. Packages exclude restricted PDFs, local paths, Zotero keys, private conversations and developer credentials by default.
+- DeepSeek extraction and Librarian calls are BYOK. A user may paste a key supplied to them or use their own, but the key must be stored only in the platform credential store and never in SQLite, evidence packages, logs, prompts shown in diagnostics or Git. The first AI action must explain in plain language what the key is, which DeepSeek service receives requests, possible cost, and whether bounded paper text or structured evidence leaves the computer.
 
 ## Current acquisition capability summary
 
@@ -257,8 +266,8 @@ Maintain `PROJECT_LOG.md` as the user-facing project change log. `AGENT.md` reco
 - DOI: `10.1016/j.jnucmat.2018.08.031`
 - Authoritative PDF: `/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf`
 - Evidence database: `db/experimental_evidence.sqlite`
-- Local review UI: `http://127.0.0.1:8765`
-- macOS launcher: `scripts/start_evidence_ui.command`
+- Internal App review service: loopback only; never present its URL as the product
+- User launcher: Auto Research.app
 
 Do not substitute the accepted manuscript, a handbook, or a metadata record for this final published PDF. Do not modify the Zotero database for the evidence demo.
 
@@ -395,8 +404,9 @@ matching.
 Use `evidence-index-visuals <paper-selector>` to create or refresh visual assets.
 The stable public routes are `/api/visual-search`,
 `/api/visual-assets/{id}`, and `/api/visual-assets/{id}/image`. Health checks
-must require schema version 11, the visual and quality-gate indexes, and the existence of every
-recorded image file.
+must require the active schema version (currently v12), the visual and
+quality-gate indexes introduced in v11, and the existence of every recorded
+image file.
 
 The editable review page must expose data, table, and figure as three explicit
 review objects for the current paper. Visual review decisions are append-only in
@@ -432,7 +442,7 @@ imports, visual indexing, review, search, or database health checks.
 
 ### Current verified baseline
 
-As of the `2026.07.30-librarian-reasoning-stable.1` checkpoint (schema v12):
+As of the `2026.07.30-librarian-brief-stable.1` checkpoint (schema v12):
 
 - Evidence schema: v12; registered papers and documents: 60. The active fixed
   set is 50/50 content-valid and identity-verified PDFs; records outside the
@@ -464,7 +474,9 @@ As of the `2026.07.30-librarian-reasoning-stable.1` checkpoint (schema v12):
   current fact layer is 0/231 human-reviewed.
 - The current fact layer is 0/3,142 human-reviewed. Never present automatic
   quality scores as physical-science confirmation.
-- The frozen third/fourth-stage release passed 226/226 automated tests.
+- The latest completed shared-core validation passed 253/253 automated tests. Its
+  read-only brief export left the production SQLite SHA-256 unchanged at
+  `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`.
 - Test command: `PYTHONPATH=src python3 -m unittest discover -s src/tests -p 'test_*.py'`.
 
 ### Git checkpoint protocol
@@ -498,9 +510,9 @@ Deduplication runs in this order:
 
 An exact file is not saved twice. A non-identical PDF that matches an existing paper is stored as an `alternate` document and creates a blocked `duplicate_review` job; it must not create another extraction job. A genuinely new readable PDF creates one `extract` job. A text-poor but readable PDF creates an `ocr` job. Upload attempts are audited in `upload_events`.
 
-Runtime AI in the released project is DeepSeek-only. Codex is for project development, not an application dependency. Configuration comes only from environment variables documented in `.env.example`; never store or display a real API key. Until `DEEPSEEK_API_KEY` is configured, B1 upload, validation, deduplication, queueing, review, and search must continue to work, while DeepSeek jobs remain queued.
+Runtime AI in the released project is DeepSeek-only. Codex is for project development, not an application dependency. End users configure their own key through the App; macOS stores it in Keychain and Windows stores it in Credential Manager. Environment variables documented in `.env.example` are maintainer-only fallback. Until a user key is configured, B1 upload, validation, deduplication, queueing, review, package import and search must continue to work, while DeepSeek jobs remain queued.
 
-On this Mac, the project-specific credential may instead be stored in macOS Keychain under service `auto-research-deepseek` and the current macOS account. `DeepSeekSettings` checks `DEEPSEEK_API_KEY` first and this project Keychain entry second. Never print the credential, return it through `/api/ai/status`, reuse it in another project, or place it in a Git-tracked file.
+On this Mac, the development preview may read service `auto-research-deepseek`; this is not an end-user distribution mechanism. Never print a credential, return it through `/api/ai/status`, reuse the developer key for another user, package it, or place it in a Git-tracked file.
 
 Treat DeepSeek as an unreliable external dependency. The runtime may retry one
 transient network error, HTTP 429, or 5xx response once, but must not include the
@@ -679,9 +691,9 @@ must follow the active view through `renderViewHeader()` so users can tell
 whether they are reviewing, searching, uploading, manually entering, or
 inspecting history.
 
-### Read-only public sharing
+### Historical read-only compatibility (not a product entry)
 
-The project now supports a share-safe read-only UI mode via:
+The code retains a read-only UI mode for permission regression and rollback:
 
 ```bash
 PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --port 8766 --read-only
@@ -697,15 +709,23 @@ the current article, or call DeepSeek. Editable startup may initialize a missing
 schema and index genuinely new managed PDFs. Read-only startup must skip document
 indexing entirely; an initialized database must remain byte-stable while the
 shared service is opened and viewed.
-When `read_only` is enabled, every POST request except the non-mutating
-`/api/context-chat` evidence-explanation route is rejected before route-specific
-logic runs. The shared read-only server is search-only: GET routes are limited to
+When `read_only` is enabled, only the non-mutating
+`/api/context-chat`, `/api/agents/librarian/chat`, and
+`/api/agents/librarian/research-brief.md` POST routes are allowed; every
+write-capable POST is rejected before route-specific logic runs. The research
+brief route may transform only `{snapshot, snapshot_token}` issued by the
+current process for an eligible non-clarification answer with actual citations.
+It must reject arbitrary/expired/tampered snapshots, session ids, databases and
+PDFs. The shared read-only server is
+search-only: GET routes are limited to
 the static app, `/api/ui-mode`, whole-database search/export, row-level source
 evidence images/metadata, and source PDF opening. Do not expose current-paper,
 paper-list, upload queue, learning samples, review, or extraction endpoints in
 public read-only mode. The frontend should hide every non-search navigation item,
 default to the whole-database search view, and reveal evidence chat only inside
-an opened item or visual detail workspace.
+an opened item or visual detail workspace. Public Librarian history is
+`readonly-none`; it must not probe the desktop history bridge or use
+`localStorage` for Librarian sessions.
 
 The public source-evidence button must open `/source-view` directly from the
 search result row. It must not prefetch `/api/six-data/<id>`, because that private
@@ -717,38 +737,12 @@ artificially stretches every data row. Keep data text at a readable size, auto-f
 textarea height to content within a bounded range, and arrange routine actions in
 a compact multi-column rail so row height is driven primarily by evidence text.
 
-Use this mode for any public tunnel or external preview URL. Do not expose the
-editable `8765` workbench through a public tunnel. The current recommended
-free-account sharing path is:
-
-```bash
-./scripts/start_readonly_ngrok.command
-```
-
-The script reads `NGROK_AUTHTOKEN` from the environment or from the local
-`.env.ngrok` file, including the user's convenience location
-`/Users/USER/Zotero/.env.ngrok`. `.env.ngrok` is ignored by Git and must
-never be committed. Export the token only through the child-process environment;
-never pass it as an `--authtoken` command argument where it can appear in the
-system process list. The script must verify `/api/ui-mode` before starting ngrok
-so a public URL is never pointed at the editable workbench by accident. It
-should also reuse/report an already-running ngrok tunnel for port `8766` instead
-of starting a duplicate tunnel.
-
-Temporary no-account/no-domain fallbacks may be tried if ngrok is unavailable,
-but they have already proven unreliable on the current network:
-
-```bash
-npx --yes localtunnel --port 8766 --local-host 127.0.0.1
-cloudflared tunnel --url http://127.0.0.1:8766
-```
-
-The tunnel URL is suitable for a short external review session while the local Mac
-and both terminal processes remain running. For persistent group deployment,
-prefer a GitHub Pages static read-only snapshot, a named Cloudflare Tunnel, or a
-proper hosted read-only deployment after the user explicitly approves that next
-step. GitHub Pages must be treated as a static export target only: do not expect
-it to run DeepSeek extraction, upload PDFs, or mutate SQLite.
+Do not expose this mode through ngrok, localtunnel, Cloudflare or a shared
+localhost URL. The former browser workbench, mentor read-only page and ports
+8765/8766 were retired on 2026-08-01. Keep the internal route and permission
+tests because the macOS App embeds the same webapp, but do not restore the old
+launchers as working user entry points. Future sharing must use a signed App and
+separately reviewed portable evidence packages, not a tunnel to the developer Mac.
 
 ### Maintenance acceptance
 

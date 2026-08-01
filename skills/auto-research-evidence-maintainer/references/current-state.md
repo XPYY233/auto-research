@@ -5,10 +5,12 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 ## Identity
 
 - Active root: `/Users/USER/Zotero/auto-research`
-- Pre-change protection commit: `17e6f60`
-- Librarian reasoning/presentation implementation commit: `8e9c4c1`
-- Stable tag: `evidence-demo-2026-07-30-librarian-reasoning-stable-1`
-- Release: `2026.07.30-librarian-reasoning-stable.1`
+- Research-brief pre-change protection commit: `6ce9536`
+- Research-brief pre-change tag: `evidence-demo-2026-07-30-pre-research-brief-1`
+- Previous Librarian reasoning/presentation implementation commit: `8e9c4c1`
+- Research-brief implementation/documentation commit: use the current shared-core `git log -1`; this file does not self-reference its commit hash
+- Final stable tag: create only after the macOS App joint validation; the shared-core checkpoint does not tag independently
+- Release: `2026.07.30-librarian-brief-stable.1`
 - Evidence schema: v12
 - Fixed evidence corpus: `config/evidence_test_set_50.json`
 - Evidence DB: `db/experimental_evidence.sqlite`
@@ -28,32 +30,43 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 | fixed PDFs valid and identity-matched | 50/50 |
 | data-ready fixed papers | 17/50 |
 | visual-ready fixed papers | 30/50 |
-| automated tests at checkpoint | 226 |
+| latest completed shared-core tests | 253 |
 
 Target DOI `10.1016/j.jnucmat.2018.08.031` has 231 independent facts and 403/403 source-localizable automatic records at this checkpoint.
+
+Independent read-only browser acceptance: a tungsten question returned 65 candidates (0 direct, 5 adjacent, 60 expansion), with 5 report citations and a 200 brief export. The console was clean; reload showed 0 history, disabled export and no runtime warnings.
 
 ## Honest completion boundary
 
 - The application and currently published evidence are stable for demonstration.
 - The original at-least-30-processed-paper goal is incomplete: 13 more papers are needed to move from 17 to 30; 33/50 remain not data-ready.
 - Adversarial DeepSeek agreement is not independent scientific accuracy. A human gold standard remains missing.
-- Persistent group hosting is not implemented; public sharing depends on the local Mac and a temporary ngrok URL.
+- The only supported product shape is a personal desktop workbench. The current preview is Auto Research.app on macOS; intended end users are expected to use Windows. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
 - GitHub is not configured. `origin` points to a local historical bundle.
 - Librarian reasoning now has deterministic hard-condition parsing, direct/adjacent/expansion classification, evidence bundles and a five-section research report. This did not change scientific evidence or corpus readiness.
 - The local deterministic parser plus bounded history is the only hard-condition authority. DeepSeek plans queries, selects bounded evidence and explains it; it cannot create or rewrite hard conditions. Scientific-notation fluence, equivalent units and particle/material role boundaries are covered by regression tests.
+- The research brief is a deterministic read-only derivative of the latest current-process HMAC-signed, non-clarification Librarian answer with at least one actual citation. It is not a fifth evidence type.
+- The chat response carries top-level `research_brief.snapshot_token`, `answered_at`, `evidence_fingerprint`, `eligible` and `ineligible_reason`; the signed snapshot uses `answered_at` and `evidence_version`. Export accepts only `{snapshot, snapshot_token}` from that response, not an arbitrary snapshot, session id, raw SQLite or PDF.
+- Every canonical R# must map uniquely to an `agent_cited=true` `item/finding/table/figure`, with exact counts. Clarification, zero-reference, inconsistent and expired/tampered inputs are rejected.
+- The process-local HMAC binds only the public snapshot. It does not create server history, call DeepSeek, re-query Search V2/database/PDF, read curve pixels or add cross-bundle quantitative comparisons. Restart invalidates old history tokens; re-run the query before export.
+- Brief authorization exists only in transient `state.librarianBriefAuth`; it never enters session meta/messages, `localStorage`, or desktop encrypted history. The history schema and persistence policy remain unchanged.
+- The brief uses a public-field whitelist. Missing title/DOI/page/excerpt stays empty, sets `integrity.status=warning`, and is displayed by R# in the Markdown.
+- Librarian history uses the platform secure credential store: Keychain in the macOS preview and Windows Credential Manager in the intended Windows build. `browser-local` and `readonly-none` remain compatibility/test adapters only. No history is written to the evidence DB, and a stable App must not prompt for an Auto Research edit password.
+- The intended distribution model is a signed desktop App plus separately delivered, versioned evidence packages. Users import a package for immediate offline search and may add their own PDFs. Any DeepSeek extraction or Librarian use is BYOK: the user's key goes to the OS credential store only, never the database, package, logs or Git. Package implementation follows the stable macOS preview.
+- The desktop package is a separate release boundary. Shared-frontend adapter support does not mean `desktop/macos/**` source is part of the core release commit.
 - The 291 current visuals include the unchanged 243-asset historical pre-cloud freeze; 243 is not the current total.
 
 ## Pre-change protection point
 
-- Commit: `17e6f60`
-- Tag: `evidence-demo-2026-07-30-pre-librarian-reasoning-presentation-1`
-- SQLite: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-librarian-reasoning-presentation-2026-07-30-v1.sqlite`
-- SQLite SHA-256: `c9d63be31ad660294e52a7d093d37d7c4bbbfb22b3c2e5138005070f6f3b5038`
+- Commit: `6ce9536`
+- Tag: `evidence-demo-2026-07-30-pre-research-brief-1`
+- This commit is also the previous Librarian reasoning/presentation release commit; the protection tag is not the new stable tag.
 
 ## Stable recovery artifacts
 
-- SQLite: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`; SHA-256: `bfded1930856019c3413096fc20dee9b7f6b33e3310960b9913b94ee1dd2220e`.
-- Git bundle: `/Users/USER/Zotero/auto-research-backups/auto-research-librarian-reasoning-stable-2026-07-30-v1.bundle`; SHA-256: 见相邻 `.sha256`.
-- Standalone skill archive: `/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v2.zip`; SHA-256: 见相邻 `.sha256`.
+- SQLite: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-brief-stable-2026-07-30-v1.sqlite`; SHA-256: `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`.
+- Production SQLite has the same SHA-256; research-brief export did not change the evidence database.
+- Planned Git bundle: `/Users/USER/Zotero/auto-research-backups/auto-research-librarian-brief-stable-2026-07-30-v1.bundle`; generate it after the release commit and tag, then record its SHA-256.
+- Previous stable tag and artifacts remain available under `evidence-demo-2026-07-30-librarian-reasoning-stable-1` and the `librarian-reasoning-stable-2026-07-30-v1` backup names.
 
 Do not restore over the live tree. Verify a snapshot in a separate location before asking the user to switch.

@@ -1,11 +1,12 @@
 # Auto Research 阶段性交班总览
 
-> 交班快照：2026-07-30  
+> 交班快照：2026-08-01
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
-> 改造前保护提交：`17e6f60`
-> 第三、四阶段功能提交：`8e9c4c1`
-> 稳定标签：`evidence-demo-2026-07-30-librarian-reasoning-stable-1`
-> 证据库版本：`2026.07.30-librarian-reasoning-stable.1` / schema v12
+> 本轮改造前保护提交：`6ce9536`
+> 上一推理/呈现功能提交：`8e9c4c1`
+> 本轮共享核心提交：见当前 `git log -1`（文档不自引用提交哈希）
+> 最终稳定标签：由 macOS App 联合验收后创建；共享核心不单独打稳定标签
+> 证据库版本：`2026.07.30-librarian-brief-stable.1` / schema v12
 
 本文面向下一位 Codex Agent、工程维护者和未来的项目负责人。它说明项目为何存在、过去完成了什么、当前真正能做什么、日常工作流、禁止触碰的边界、验证与发布方法，以及尚未完成的目标。
 
@@ -52,13 +53,13 @@ Auto Research 不是一个单一脚本，而是两条相互关联、数据边界
 
 ### 2.2 实验数据证据库工作流
 
-目标是从真实 PDF 中提取可检索、可回到原文的实验数据、定性结论、完整表格和论文图片，并通过浏览器完成搜索、证据查看、校对、导出和 AI 辅助问答。
+目标是从真实 PDF 中提取可检索、可回到原文的实验数据、定性结论、完整表格和论文图片，并在个人工作台 App 中完成搜索、证据查看、校对、导出和 AI 辅助问答。当前先在 macOS 本机完成开发预览，正式用户端预计为 Windows。
 
 核心原则：
 
 ```text
 论文身份 → 真实 PDF → 实验类型 → 数据/结论/图表候选
-        → 原文证据 → 自动质量门 → 搜索与只读分享
+        → 原文证据 → 自动质量门 → App 内搜索、校对与导出
 ```
 
 Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证据数据库。不要把它们合并，也不要直接修改 Zotero 数据库来实现证据功能。
@@ -67,14 +68,14 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 
 用户是物理背景，希望不写 SQL、不写提示词也能完成真实实验数据整理。因此产品采用：
 
-- 中文浏览器工作台；
+- 中文个人桌面工作台（当前 macOS 开发预览，正式用户端预计为 Windows）；
 - 固定六列数据模型；
 - 每条记录保留页码、定位和短原文；
 - 数值数据、定性结论、表格、图片四类分开；
 - DeepSeek 承担项目运行时 AI；Codex 只负责开发和维护；
 - 自动质量门决定自动候选是否进入搜索；人工校对用于纠错和校准；
 - 搜索默认覆盖整个数据库，并支持 CSV/Excel 导出；
-- 本地编辑端与公网只读端共用一套前端和数据库。
+- App 内部复用既有前端与 loopback 服务；localhost 不作为用户产品入口。
 
 ## 4. 已完成的主要阶段
 
@@ -129,13 +130,24 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 - 相同数据库证据版本、问题和有限历史可复用一小时完整结果；
 - 图书管理员固定搜索全库，精确检索才允许限制论文范围；
 - 详情 AI 对话只读取当前选中条目和有限 PDF 相关页，不能写数据库。
+- 当前结构化五段报告只有在同一服务进程 HMAC 签名、不是澄清回答、至少有一条实际引用且通过一致性门时，才能确定性导出为 Markdown 研究简报。
+- 聊天响应顶层的 `research_brief` 信封包含 `snapshot_token`、`answered_at`、`evidence_fingerprint`、`eligible` 和 `ineligible_reason`；签名快照使用 `answered_at` 与 `evidence_version`。导出只接收当前进程签发的 `{snapshot, snapshot_token}`，不接受任意快照或 session id。
+- 每个规范 R# 必须唯一映射到 `agent_cited=true` 的 `item/finding/table/figure`，引用计数完全一致。澄清、零引用、孤儿/重复/无效引用或过期/篡改 token 均拒绝导出。
+- HMAC 只绑定公开响应快照，不保存服务器会话，不调用 DeepSeek，不重查 Search V2、SQLite 或 PDF，不读取曲线，不生成跨 bundle 定量比较，也不创建第五类证据。
+- 导出采用公开字段白名单；缺失题目、DOI、页码或原文片段保持为空，使 `integrity.status=warning` 并在文件中展示。本地路径、Zotero/设备 key、审核身份、内部备注、历史标识和 PDF/图片载荷不进入文件。
 
-### 4.7 本地与分享版本
+### 4.7 个人工作台 App
 
-- 本地编辑端：数据检查、文章切换、上传、人工补录、质量抽取、搜索与导出；
-- 公网只读端：只展示搜索、详情、原文证据和只读 AI 能力；
-- 两端共用 `web/index.html`、`app.js`、`app.css`，禁止维护第二套前端；
-- ngrok 只开放只读端口，不公开本地编辑端。
+- 唯一正式产品形态为个人桌面工作台：当前 macOS 预览使用 Auto Research.app，后续正式用户端面向 Windows；数据检查、文章切换、上传、人工补录、质量抽取、搜索与导出均在 App 内完成；
+- `web/index.html`、`app.js`、`app.css` 和本机 loopback 服务继续作为 App 内部实现，不能据此把浏览器页面作为第二个产品发布；
+- 图书管理员历史由桌面层用平台安全凭据库管理密钥并以 AES-GCM 持久化：当前 macOS 预览用 Keychain，后续 Windows 用 Credential Manager；`browser-local` 和 `readonly-none` 仅为历史兼容/权限测试；
+- history schema 和保存策略完全不变；`research_brief` 授权只存在于瞬态 `state.librarianBriefAuth`，不进入 session meta/messages、`localStorage` 或桌面加密历史。重启或只恢复历史都必须重新检索后才能导出；
+- 任何历史都不写科学数据库；桌面产品层是独立打包边界，共享前端适配不代表 `desktop/macos/**` 源码随本核心提交发布；
+- 正式 App 不要求 Auto Research 编辑密码；任何意外系统钥匙串授权窗都视为发布阻断，由桌面层修复后才可交付；
+- 导师只读页、浏览器工作台、`8765`/`8766` 和 ngrok 已退役，不再用于展示或分享。
+- 正式发行采用“桌面 App + 独立证据包”：用户导入经过版本、哈希与签名校验的数据包后离线检索；用户自己的 PDF 与私人库分离。DeepSeek 抽取和图书管理员使用用户自己的 key，并通过平台安全凭据库保存。跨平台契约见 `docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md`。
+
+历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。最终稳定 App 必须由桌面任务完成一次联合全测、一次构建和一次实机启动验收。
 
 ## 5. 当前真实状态
 
@@ -153,7 +165,8 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 | 固定验收 PDF | 50/50 身份与内容有效 |
 | 数据就绪论文 | 17/50 |
 | 图表就绪论文 | 30/50 |
-| 自动测试 | 226 项通过 |
+| 自动测试 | 253 项通过 |
+| 生产 SQLite SHA-256 | `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6` |
 
 重点 DOI `10.1016/j.jnucmat.2018.08.031` 当前有231个独立事实，403/403处自动记录可回到 PDF 定位。
 
@@ -233,27 +246,13 @@ PYTHONPATH=src python3 -m auto_research.cli evidence-quality-run "<DOI或题目>
 
 ## 8. 日常操作
 
-### 8.1 启动本地编辑端
+### 8.1 启动个人工作台
 
-双击：
+用户直接打开 Auto Research.app。旧 `打开本地编辑工作台.command` 与 `创建导师公网链接.command` 只保留迁移提示，不得静默启动浏览器、端口或公网隧道。
 
-`/Users/USER/Zotero/打开本地编辑工作台.command`
+维护者可以在隔离测试中使用 `evidence-serve` 验证 App 内部服务，但不得把 localhost URL 交给用户。
 
-或：
-
-```bash
-PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --port 8765
-```
-
-### 8.2 启动只读公网端
-
-双击：
-
-`/Users/USER/Zotero/创建导师公网链接.command`
-
-脚本应启动本地只读端口8766，再由 ngrok 暴露临时网址。不要把8765编辑端分享出去。
-
-### 8.3 基础只读验收
+### 8.2 基础只读验收
 
 ```bash
 PYTHONPATH=src python3 -m auto_research.cli evidence-db-health
@@ -308,8 +307,12 @@ git fsck --full
 - 不用 Zotero key 作为跨设备公开身份；
 - 不在页面、日志、Git、数据库或回答中输出 API key；
 - 不将 Zotero 数据库、生产 SQLite、PDF 全文或受版权保护截图直接发布到公共 GitHub；
-- 不维护第二套“导师页面”；只读模式必须复用同一前端；
+- 不恢复或发布“导师只读”网页、浏览器工作台、ngrok 或 localhost 用户入口；
+- 不删除 App 所依赖的内部共享前端和只读权限回归；
 - 不把浏览器本地 Agent 历史当服务器证据；
+- 不把桌面加密历史、浏览器历史、任意公开快照或 session id 当成研究简报输入；简报必须来自当前进程签名、合格且有实际引用的非澄清回答；
+- 不为恢复的旧回答重新签名；进程 token 失效后必须重新检索；
+- 不让研究简报重新调用模型、检索数据库/PDF、读取曲线或产生跨 evidence bundle 定量结论；
 - 不在用户只要求讨论或诊断时擅自改代码、重扫论文或开启公网服务；
 - 不宣称已完成30篇或全项目科学验收。
 
@@ -327,8 +330,8 @@ git fsck --full
 
 ## 11. 凭据和外部依赖
 
-- DeepSeek key 优先来自 `DEEPSEEK_API_KEY`，其次来自 macOS Keychain 服务 `auto-research-deepseek`；
-- ngrok 配置在本机非Git环境文件中；
+- 最终用户的 DeepSeek key 来自本人或专门提供给他的账号；产品只存平台安全凭据库（macOS Keychain / Windows Credential Manager），开发环境变量仅供维护测试；
+- 旧 ngrok 配置仅属本机历史兼容文件，不再是产品依赖；
 - `/api/ai/status` 只能显示是否可用，不能返回凭据；
 - `.env`、`.env.*`、日志和临时上传文件不得提交；
 - DeepSeek 是不可靠外部依赖，网络、429、5xx和格式错误必须安全降级；
@@ -341,7 +344,7 @@ git fsck --full
 | 数据库/六列 | `AGENT.md`、`docs/irradiation_evidence_database.md` | `evidence/db.py`、`six_column.py`、`fact_model.py` |
 | DeepSeek抽取 | `docs/adversarial_quality_gate.md` | `deepseek_extraction.py`、`quality_pipeline.py`、`prompts.py` |
 | 图表 | `AGENT.md`图表章节 | `visual_evidence.py` |
-| 搜索/Agent | `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` | `search_index.py`、`agent_runtime.py`、`librarian_reasoning.py`、`public_dto.py` |
+| 搜索/Agent/研究简报 | `docs/SEARCH_AND_AGENT_ARCHITECTURE.md`、`docs/LIBRARIAN_RESEARCH_BRIEF.md` | `search_index.py`、`agent_runtime.py`、`librarian_reasoning.py`、`public_dto.py`、`research_brief.py`、`web/librarian_brief.js` |
 | 详情AI对话 | `AGENT.md`证据对话章节 | `context_chat.py` |
 | 网页 | `STABLE_RELEASE.md` | `webapp.py`、`web/index.html`、`web/app.js`、`web/app.css` |
 | 上传/去重 | `README.md`证据上传章节 | `uploads.py`、`document_recognition.py` |
@@ -369,17 +372,17 @@ git fsck --full
 
 当前稳定恢复点：
 
-- Git标签：`evidence-demo-2026-07-30-librarian-reasoning-stable-1`
-- SQLite快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`；SHA-256 `bfded1930856019c3413096fc20dee9b7f6b33e3310960b9913b94ee1dd2220e`
-- Git bundle：`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-reasoning-stable-2026-07-30-v1.bundle`；SHA-256 见相邻 `.sha256`
-- 独立 Skill 压缩包：`/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v2.zip`；SHA-256 见相邻 `.sha256`
+- 计划 Git 标签：`evidence-demo-2026-07-30-librarian-brief-stable-1`；发布收口时创建
+- SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-brief-stable-2026-07-30-v1.sqlite`；SHA-256 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`
+- Git bundle 计划路径：`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-brief-stable-2026-07-30-v1.bundle`；本轮提交和标签完成后生成并补录 SHA-256
+- 上一稳定标签：`evidence-demo-2026-07-30-librarian-reasoning-stable-1`
+- 上一稳定 SQLite：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`
 
 本轮改造前保护点：
 
-- 提交：`17e6f60`
-- 标签：`evidence-demo-2026-07-30-pre-librarian-reasoning-presentation-1`
-- SQLite快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-librarian-reasoning-presentation-2026-07-30-v1.sqlite`
-- 快照 SHA-256：`c9d63be31ad660294e52a7d093d37d7c4bbbfb22b3c2e5138005070f6f3b5038`
+- 提交：`6ce9536`
+- 标签：`evidence-demo-2026-07-30-pre-research-brief-1`
+- 该保护点同时是上一图书管理员推理/呈现稳定版的发布提交；不要把保护标签误认成本轮稳定标签。
 
 不要使用破坏性 Git 命令回滚用户工作树。需要恢复时优先新建目录验证 bundle 或快照，再由用户确认切换。
 
@@ -388,7 +391,7 @@ git fsck --full
 - MinerU/云端视觉增强：实测质量不如本地稳定图表链路，已经完整回滚；
 - 自动曲线读点：证据风险过高，当前明确禁止；
 - 每条数据必须人工批准后才能搜索：用户已选择自动质量门优先；
-- 单独维护导师版网页：已改为同一前端的只读权限模式；
+- 导师只读/浏览器/ngrok 产品路线：2026-08-01 已正式退役；内部权限模式只为 App 和回归保留；
 - 把全部模型输出放进一种“AI结果”：违反四类证据模型，禁止；
 - 立即引入向量数据库：尚无金标准证明现有FTS无法满足，暂缓；
 - 公共GitHub直接发布完整数据库/PDF：版权和隐私边界未解决，暂缓。
@@ -403,7 +406,7 @@ git fsck --full
 4. 建立轻量用户反馈，区分漏检、错引和条件理解错误；
 5. 证明需要后再评估向量检索；
 6. 完成私有GitHub或代码+脱敏演示库的发布范围设计；
-7. 最后再考虑低成本常驻只读托管。
+7. 设计签名 App 与便携证据包分离的正式产品发行，不依赖开发者 Mac 常驻在线。
 
 ## 16. 更换账号后的 Skill 使用
 

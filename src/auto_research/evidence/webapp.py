@@ -5,6 +5,7 @@ import io
 import json
 import mimetypes
 import re
+import secrets
 import zipfile
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -36,6 +37,14 @@ from .quality_pipeline import (
     review_quality_candidate,
 )
 from .public_dto import public_evidence_dto, public_search_page
+from .research_brief import (
+    ResearchBriefError,
+    build_research_brief,
+    export_research_brief,
+    research_brief_snapshot_from_result,
+    sign_research_brief_snapshot,
+    verify_research_brief_snapshot,
+)
 from .review_handoff import review_batch_payload
 from .six_column import (
     SIX_FIELDS,
@@ -75,8 +84,8 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.30-librarian-reasoning-stable.1",
-    "label": "图书管理员推理与科研报告稳定版 2026.07.30",
+    "version": "2026.07.30-librarian-brief-stable.1",
+    "label": "图书管理员研究简报稳定版 2026.07.30",
     "evidence_schema": 12,
 }
 
@@ -84,7 +93,11 @@ RELEASE_INFO = {
 def is_read_only_mutation(method: str, path: str) -> bool:
     """Return whether a request would mutate the evidence database or local files."""
 
-    if method.upper() == "POST" and path in {"/api/context-chat", "/api/agents/librarian/chat"}:
+    if method.upper() == "POST" and path in {
+        "/api/context-chat",
+        "/api/agents/librarian/chat",
+        "/api/agents/librarian/research-brief.md",
+    }:
         return False
     return method.upper() not in {"GET", "HEAD", "OPTIONS"}
 
@@ -264,6 +277,7 @@ def _startup_document_index(upload_service: UploadService, *, read_only: bool) -
 
 class EvidenceHandler(BaseHTTPRequestHandler):
     agent_rate_limiter = AgentRateLimiter()
+    research_brief_signing_key = secrets.token_bytes(32)
     db: EvidenceDB
     upload_service: UploadService
     read_only: bool = False
@@ -609,7 +623,55 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     str(body.get("question") or ""),
                     history=body.get("history") or [],
                 )
+                snapshot = research_brief_snapshot_from_result(
+                    str(body.get("question") or ""),
+                    result,
+                )
+                brief_envelope = {
+                    "snapshot_token": "",
+                    "answered_at": result.get("answered_at") or "",
+                    "evidence_fingerprint": result.get("evidence_version") or "",
+                    "eligible": False,
+                    "ineligible_reason": "",
+                }
+                try:
+                    build_research_brief(
+                        snapshot,
+                        generated_at=result.get("answered_at") or None,
+                    )
+                except ResearchBriefError as exc:
+                    brief_envelope["ineligible_reason"] = str(exc)
+                else:
+                    brief_envelope["eligible"] = True
+                    brief_envelope["snapshot_token"] = sign_research_brief_snapshot(
+                        snapshot,
+                        self.research_brief_signing_key,
+                    )
+                result["research_brief"] = brief_envelope
                 return self.json_response(result)
+            if parsed.path == "/api/agents/librarian/research-brief.md":
+                snapshot = body.get("snapshot")
+                try:
+                    signature_valid = verify_research_brief_snapshot(
+                        snapshot,
+                        body.get("snapshot_token"),
+                        self.research_brief_signing_key,
+                    )
+                except ResearchBriefError:
+                    signature_valid = False
+                if not signature_valid:
+                    return self.json_response(
+                        {
+                            "error": "研究简报签名无效或已过期，请重新向图书管理员检索后再导出",
+                            "code": "invalid_snapshot_token",
+                        },
+                        HTTPStatus.FORBIDDEN,
+                    )
+                _, markdown = export_research_brief(
+                    snapshot,
+                    snapshot_binding="server_hmac_verified",
+                )
+                return self.markdown_download_response(markdown, "librarian-research-brief.md")
             match = re.fullmatch(r"/api/six-data/(\d+)/confirm", parsed.path)
             if match:
                 result = confirm_correction(
@@ -780,6 +842,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 {"error": str(exc), "code": "deepseek_response_error"},
                 HTTPStatus.BAD_GATEWAY,
             )
+        except ResearchBriefError as exc:
+            self.json_response({"error": str(exc)}, HTTPStatus.UNPROCESSABLE_ENTITY)
         except (ValueError, KeyError, FileNotFoundError, json.JSONDecodeError) as exc:
             self.json_response({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except (BrokenPipeError, ConnectionResetError):
@@ -806,7 +870,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         if length > 1_000_000:
             raise ValueError("Request too large")
-        return json.loads(self.rfile.read(length) or b"{}")
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        if not isinstance(payload, dict):
+            raise ValueError("JSON request body must be an object")
+        return payload
 
     def read_binary(self, max_bytes: int) -> bytes:
         length = int(self.headers.get("Content-Length", "0"))

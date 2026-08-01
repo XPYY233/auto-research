@@ -2,15 +2,17 @@
 
 ## 版本身份
 
-- 版本：`2026.07.30-librarian-reasoning-stable.1`
-- 功能实现提交：`8e9c4c1`
-- 稳定标签：`evidence-demo-2026-07-30-librarian-reasoning-stable-1`
+- 版本：`2026.07.30-librarian-brief-stable.1`
+- 本轮共享核心提交：见当前 `git log -1`（文档不自引用提交哈希）
+- 改造前保护提交：`6ce9536`
+- 改造前保护标签：`evidence-demo-2026-07-30-pre-research-brief-1`
+- 当前状态：共享核心候选；最终稳定标签由 macOS App 联合验收后创建
 - 证据库结构：`v12`
 - 固定验收语料：`config/evidence_test_set_50.json`
-- 本地编辑端：`http://127.0.0.1:8765/`
-- 只读分享端：由 `scripts/start_readonly_ngrok.command` 生成临时公网地址
+- 当前用户入口：Auto Research.app（macOS 开发预览）；正式用户端目标为 Windows 桌面工作台
+- 已退役入口：浏览器工作台、导师只读页、`8765`/`8766`、ngrok 公网链接
 
-本版在上一图书管理员覆盖召回版上完成第三阶段“推理升级”和第四阶段“回答呈现”。它保留既有数据、图表、原文定位、质量门、DeepSeek 证据对话和校对历史，没有重新提取论文、生成稳定截图或猜测图中曲线点。
+本版在 `2026.07.30-librarian-reasoning-stable.1` 上增加图书管理员研究简报的确定性只读导出，并为 App 内部共享前端增加桌面安全历史适配。它保留既有数据、图表、原文定位、质量门、DeepSeek 证据对话和校对历史，没有重新提取论文、重新查询 PDF、生成稳定截图或猜测图中曲线点。HTML/JavaScript 与 loopback webapp 仍是 App 内部实现，不再作为独立网页版产品交付。
 
 ## 图书管理员与 Search V2
 
@@ -22,14 +24,32 @@
 - 材料、辐照类型、粒子、温度、剂量/注量、物理量和样品状态按硬条件处理；同义词和元素名称/符号仅扩展召回。当前轮显式条件覆盖历史，避免把上一轮中子与本轮离子辐照错误拼接。
 - 硬条件完全由本地确定性解析器和有界历史继承产生；DeepSeek 只规划检索、选择有界证据并解释，不能创建、跨字段注入或改写硬条件。科学计数法注量会保持指数语义并做等价单位比较，`300 keV` 不会变成 `300 K`，`Ni/He` 粒子也不会冒充材料。
 - 候选由本地程序固定分为直接证据、只放宽一个条件的相关证据和缺少多个条件的扩展候选；DeepSeek 不能改变该分层。证据按论文、实际材料和完整实验条件成组，禁止跨组自动拼接定量前后关系。
-- 图书管理员固定检索整个证据库；论文范围选择只出现在精确检索。浏览器本地保存有限历史，恢复旧对话不会调用模型。
+- 图书管理员固定检索整个证据库；论文范围选择只出现在精确检索。正式 App 使用 macOS Keychain 管理密钥并以 AES-GCM 持久化历史；历史浏览器适配仅作为兼容测试边界。任何模式都不把历史写入科学数据库，恢复旧对话不会调用模型。稳定 App 不应要求用户输入 Auto Research 编辑密码；意外系统钥匙串授权窗属于发布阻断。
 - 回答固定展示直接结论、证据矩阵、相关证据、数据库空白和建议追问；建议追问可继续提交，最新 `[R#]` 可直接跳到证据卡。结果按“条目、结论、表格、图片”横向切换。
 - 加载动画明确标注“预计阶段”，真实秒数降低无障碍播报频率；提交新问题会先清空上一轮证据卡，历史轮引用不再错误绑定当前卡片。
 - 长问题会拆成严格组合和若干分面检索式，四类证据分别召回并受类型上限保护；页面同时公开候选总数与回答引用数，不再把单个标签中的少量记录误认为全部结果。
 - 最终中文总结走独立 JSON 通道；失败时依次降级到干净文本总结和确定性报告。内部协议、孤立 `[R编号]`、无证据数值、跨实验条件定量比较和无证据历史回答会被拦截。
 - Search V2、图表详情和图书管理员使用同一公开字段投影；只读响应不暴露本地路径、Zotero key、本机文章 key、审核者和内部备注。
 - 相同数据库版本、问题和有限历史会在服务进程内复用一小时的完整稳定结果；页面明确显示复用状态，数据库证据变化会自动使缓存失效。
-- 本地编辑端与公网只读端共用完全相同的前端、数据库和 Agent 接口；公网端仅通过权限层禁用写入功能。
+- App 内部继续复用同一套前端、数据库和 Agent 接口；历史只读权限模式保留用于回归，不再构成公开产品入口。
+
+## 图书管理员研究简报
+
+- 用户可从当前最新的结构化五段报告下载 `librarian-research-brief.md`。
+- 只有当前服务进程 HMAC 签名、不是澄清回答、至少有一条实际引用且通过一致性门的回答可以导出。澄清和零引用回答一律不生成文件。
+- 聊天响应顶层的 `research_brief` 信封包含 `snapshot_token`、`answered_at`、`evidence_fingerprint`、`eligible` 和 `ineligible_reason`；签名快照使用 `answered_at` 与值相同的 `evidence_version`。
+- 导出 POST 只接受当前进程签发的 `{snapshot, snapshot_token}`，而不是任意公开快照、session id、原始 SQLite、PDF 或文件路径。服务端不读取桌面历史来补齐或重新签名。
+- HMAC 只绑定规范化公开响应快照。它不建立服务器端历史，不写数据库，不重新调用 DeepSeek，也不重新查询 Search V2 或 PDF。
+- 每个规范 R# 必须唯一映射到 `agent_cited=true` 的公开结果，声明引用数完全一致，且最终至少有一条证据；类型继续固定为 `item/finding/table/figure`，研究简报不是第五类科学证据。
+- Markdown 固定包含研究问题、硬条件、五段报告、已引用证据附录、模型与召回统计、引用完整性检查和明确限制。
+- 字段白名单排除本地路径和 URL、Zotero/本机 key、审核者、内部备注、桌面历史标识、PDF/图片载荷和模型协议。缺失题目、DOI、页码或原文片段保持为空，使 `integrity.status=warning`，并按 R# 在下载文件中显示缺失字段。
+- 孤儿/重复/无效/未收录引用、缺失段落和计数不一致会使一致性门失败，而不是生成看似正常的简报。
+- 导出不从图片或曲线读取数据点，不新增跨 evidence bundle 的定量比较，也不创建、修正、确认、发布或审核科学记录。
+- App 内部服务允许该 POST，仅因为它验签并把当前进程绑定的公开快照转换为 `no-store` Markdown 附件；导出前后 SQLite 字节不变。
+- history schema 和保存策略完全不变；`research_brief` 授权只存在于瞬态 `state.librarianBriefAuth`，不进入 session meta/messages、`localStorage` 或桌面加密历史。重启或只恢复历史都必须重新检索后才能导出。
+- 共享前端的桌面历史适配属于本核心发布；实际桌面产品层仍是独立打包边界，不能据此声称 `desktop/macos/**` 源码已随本核心提交发布。
+
+完整契约、快照结构和验收见 `docs/LIBRARIAN_RESEARCH_BRIEF.md`。
 
 ## 当前数据库
 
@@ -48,14 +68,17 @@
 
 ## 本次体检和修复
 
-- 当前 226 项自动测试全部通过；新增硬条件/软扩展、历史继承覆盖、科学计数法注量、300 keV 与 300 K 边界、粒子/材料角色消歧、证据分级、实际条件成组、五段报告、孤儿引用、无证据数值、四类模型上下文、公网字段投影和图表审核索引刷新回归。
+- 最新已完成的共享核心验证为 253 项自动测试全部通过；除既有硬条件、证据分级、五段报告、公开 DTO 和兼容权限回归外，新增当前进程 HMAC、澄清/零引用拒绝、四类 `agent_cited` 引用、一致性门、来源缺失 warning 展示、确定性顺序、隐私清洗、数据库不变、Unicode/HTML 单位绕过和模型协议混淆回归。
+- 历史只读兼容验收曾使用“钨”问题召回 65 项：0 条直接、5 条相关、60 条扩展，报告实际引用 5 条；研究简报 POST 返回 200。该结果保留为权限回归证据，不代表仍发布浏览器只读产品。
 - 真实 DeepSeek `deepseek-v4-pro` 查询返回四类共 71 项候选，分为 4 条直接、8 条相关和 59 条扩展；生成 3 行证据矩阵、6 项相关证据和 3 个建议追问。关键含糊问题返回澄清而不猜测。
+- 研究简报导出不产生新的 DeepSeek 调用，不重新召回证据；生产 SQLite 导出前后 SHA-256 均为 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`。
+- 共享前端正式使用 `desktop-secure`；`browser-local` 和 `readonly-none` 只作为历史兼容与权限测试。桌面安全存储不可用时不会明文降级。
 - 新增 `evidence-reconcile-runs`：自动结束超过期限且后台已不存在的抽取、质量和处理任务；只修改运行审计状态，不改变数据、图表或校对历史。
 - 批量质量任务收到 `Ctrl+C` 时会把当前论文和批次明确写为“已中断”，不再残留假运行状态。
 - DeepSeek 或质量流程成功完成时会清除旧错误文本，避免“已完成但仍显示失败原因”。
 - 目标审计不再把“单篇样例功能通过”误写成“整个初始项目目标完成”；它同时读取固定语料完成度。
 - 修正文章选择规范仍写成 35 篇的问题，当前固定集合严格为 50 篇 DOI/题目选择器。
-- 本地编辑端、只读端、数据搜索、图表搜索、图表详情和图书管理员接口通过真实 HTTP/浏览器检查；只读端写入返回 403，检查前后 SQLite 哈希不变。浏览器实际验证五段报告、九个硬条件标签、四类标签、引用跳转、表格图片加载和无控制台错误。
+- 数据搜索、图表搜索、图表详情和图书管理员接口已通过共享核心验证；历史只读权限回归仍确认写入返回 403 且 SQLite 哈希不变。最终稳定声明还需桌面任务完成一次联合全测、一次 App 构建和一次实机验收。
 - Python 编译、前端 JavaScript 语法、macOS 启动脚本语法、依赖一致性、Git 对象完整性、空白错误和凭据扫描通过。
 
 ## 固定 50 篇语料的真实状态
@@ -77,16 +100,16 @@
 
 ## 启动与维护
 
-- 本地编辑端：双击 `/Users/USER/Zotero/打开本地编辑工作台.command`。
-- 只读公网端：双击 `/Users/USER/Zotero/创建导师公网链接.command`。
+- 用户启动：打开 Auto Research.app；不输入项目编辑密码，不使用 localhost 或公网隧道。
+- 旧 `打开本地编辑工作台.command` 与 `创建导师公网链接.command` 仅保留迁移提示，应明确引导用户打开 App，不再启动服务。
+- `evidence-serve`、只读模式和相关端口仅供 App 内部或维护测试，不是用户入口。
 - 完整维护流程：`MAINTENANCE_WORKFLOW.md`。
 - 阶段审计：`STAGE_AUDIT_2026-07-27.md`。
 - 固定语料审计：`data/evidence/test_sets/full-corpus-50-v1_audit.md`。
 
-- 本轮改造前保护提交：`17e6f60`。
-- 本轮改造前保护标签：`evidence-demo-2026-07-30-pre-librarian-reasoning-presentation-1`。
-- 本轮改造前 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-pre-librarian-reasoning-presentation-2026-07-30-v1.sqlite`，SHA-256 为 `c9d63be31ad660294e52a7d093d37d7c4bbbfb22b3c2e5138005070f6f3b5038`。
-- 最终稳定标签：`evidence-demo-2026-07-30-librarian-reasoning-stable-1`。
-- 最终 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`；SHA-256 为 `bfded1930856019c3413096fc20dee9b7f6b33e3310960b9913b94ee1dd2220e`。
-- 最终 Git bundle：`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-reasoning-stable-2026-07-30-v1.bundle`；SHA-256 见相邻 `.sha256`。
-- 独立维护 Skill：`/Users/USER/Zotero/auto-research-backups/auto-research-evidence-maintainer-skill-2026-07-30-v2.zip`；SHA-256 见相邻 `.sha256`。
+- 本轮改造前保护提交：`6ce9536`。
+- 本轮改造前保护标签：`evidence-demo-2026-07-30-pre-research-brief-1`。
+- 共享核心本轮不创建稳定标签；最终标签由桌面 App 联合验收后创建。
+- 最终 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-brief-stable-2026-07-30-v1.sqlite`；SHA-256 为 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`。
+- Git bundle 在最终 App 联合提交和标签完成后生成；本共享核心提交不单独打包。
+- 上一稳定恢复点仍为标签 `evidence-demo-2026-07-30-librarian-reasoning-stable-1`、SQLite `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite` 和相邻 Git bundle。

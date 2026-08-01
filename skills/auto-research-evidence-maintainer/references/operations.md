@@ -17,17 +17,15 @@
 
 All implementation paths above are under `src/auto_research/evidence/` unless stated otherwise.
 
-## Start services
+## Start the product and internal services
 
-Editable:
+Users open the desktop workbench. Auto Research.app is the current macOS development preview; Windows is the intended end-user target. The commands below are maintainer-only internal checks:
 
 ```bash
 PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --port 8765
 ```
 
-User launcher: `/Users/USER/Zotero/打开本地编辑工作台.command`.
-
-Read-only sharing: use `/Users/USER/Zotero/创建导师公网链接.command`; it starts read-only port 8766 and ngrok. Never expose the editable port.
+The retired root launchers are migration notices only. Do not expose either loopback port or start ngrok for users.
 
 ## Read-only maintenance checks
 

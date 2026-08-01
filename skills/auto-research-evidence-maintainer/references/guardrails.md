@@ -24,7 +24,7 @@ Retain `value_text`, `meaning`, `unit`, `article_title`, `doi`, and `context_exp
 - Treat API/network/model JSON as unreliable and preserve local non-AI functions on failure.
 - Do not bypass the adversarial gate for automatic publication.
 - Do not expose keys, prompts with sensitive content, full PDFs, or response bodies in logs.
-- Read credentials only from environment or project-specific macOS Keychain service `auto-research-deepseek`.
+- Runtime AI is BYOK. Store the user's key only in the platform secure credential store (macOS Keychain / Windows Credential Manager); environment variables are maintainer-only fallback. Never package or reuse the developer key for end users.
 
 ## Visual boundary
 
@@ -45,10 +45,10 @@ Retain `value_text`, `meaning`, `unit`, `article_title`, `doi`, and `context_exp
 
 ## UI and sharing boundary
 
-- Editable and public read-only modes share one frontend and database.
-- Public mode exposes search and read-only evidence only; block upload, review, extraction, article lists that leak local context, and all writes server-side.
-- Do not share port 8765. ngrok must front the read-only service on 8766.
-- Do not maintain a separate mentor/teacher UI.
+- The only product shape is a personal desktop workbench. macOS is the current development preview; Windows is the intended end-user target.
+- The embedded frontend and loopback service are App internals. Historical editable/read-only modes share one frontend and remain permission tests only.
+- Do not expose or document ports 8765/8766, ngrok, a mentor page or a browser workbench as user entry points.
+- Distribute the App separately from versioned evidence packages. Packages must be portable, sanitized, verifiable and rollback-safe; official packages and user-private data never overwrite one another.
 
 ## Workspace and Git boundary
 

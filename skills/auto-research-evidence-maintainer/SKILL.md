@@ -40,7 +40,8 @@ Keep these invariants:
 - New automatic publication passes the two-branch adversarial gate and optional third review; low-confidence records remain quarantined.
 - Search V2 is a disposable projection. Never write index content back into scientific records.
 - The Librarian uses DeepSeek planning, local four-type coverage recall, then DeepSeek evidence synthesis. It remains read-only and full-corpus.
-- Editable and public read-only modes serve the same frontend and database. Permissions, not a second UI, create the difference.
+- The product is one personal desktop workbench. The current preview is macOS and the intended end-user target is Windows. The embedded frontend, loopback service and historical read-only permissions remain internal implementation/test boundaries, not separate browser products.
+- Distribution separates the signed desktop App from versioned, verified evidence packages and from each user's private library. End-user DeepSeek extraction and Librarian calls are BYOK through the platform secure credential store; never package a developer key.
 - Codex develops the project; application runtime AI is DeepSeek.
 
 ## Choose the safe action level

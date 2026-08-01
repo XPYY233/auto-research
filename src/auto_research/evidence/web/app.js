@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchExperience: "agent", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, librarianMessages: [], librarianResults: [], librarianBusy: false, librarianResultType: "item", librarianSessions: [], librarianSessionId: null, librarianHistoryQuery: "", librarianMeta: {}, librarianProgressTimer: null, librarianProgressStarted: 0, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchExperience: "agent", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, librarianMessages: [], librarianResults: [], librarianBusy: false, librarianResultType: "item", librarianSessions: [], librarianSessionId: null, librarianHistoryQuery: "", librarianMeta: {}, librarianBriefAuth: null, librarianProgressTimer: null, librarianProgressStarted: 0, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const contextChat = { entity: null, conversations: new Map(), busy: false };
 const defaultContextQuestion = "说明这个数据本身的含义，并总结该数据在文章中的具体含义";
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
@@ -20,8 +20,11 @@ const fieldLabels = {
 const calibrationStoragePrefix = "evidence-calibration-batch-v1:";
 const recentPapersStorageKey = "evidence-recent-papers-v1";
 const librarianHistoryStorageKey = "evidence-librarian-history-v1";
+const librarianDesktopHistoryEndpoint = "/api/desktop/librarian-history";
 const librarianHistoryLimit = 16;
 const librarianHistoryByteLimit = 2_500_000;
+let librarianHistoryBackend = "unknown";
+let librarianHistorySaveChain = Promise.resolve();
 const librarianResultTypes = ["item", "finding", "table", "figure"];
 const librarianMatchOrder = { direct: 0, adjacent: 1, expansion: 2 };
 const reviewPageSize = 80;
@@ -2035,15 +2038,67 @@ function librarianSessionTitle(messages) {
   return first.length > 34 ? `${first.slice(0, 34)}…` : first;
 }
 
+function validLibrarianSessions(value) {
+  return Array.isArray(value)
+    ? value.filter(session => session?.id && Array.isArray(session.messages)).slice(0, librarianHistoryLimit)
+    : [];
+}
+
+function readLocalLibrarianHistory() {
+  try {
+    return validLibrarianSessions(JSON.parse(localStorage.getItem(librarianHistoryStorageKey) || '[]'));
+  } catch (_) {
+    return [];
+  }
+}
+
+async function readDesktopLibrarianHistory() {
+  const response = await fetch(librarianDesktopHistoryEndpoint, { cache: 'no-store' });
+  if (response.status === 404) return null;
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `本机加密历史读取失败 ${response.status}`);
+  if (body.storage !== 'macos-keychain-aes-256-gcm') throw new Error('桌面历史没有使用预期的加密存储');
+  return validLibrarianSessions(body.sessions);
+}
+
+async function persistLibrarianHistory(sessions) {
+  if (librarianHistoryBackend === 'desktop-secure') {
+    const response = await fetch(librarianDesktopHistoryEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessions }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `本机加密历史保存失败 ${response.status}`);
+    localStorage.removeItem(librarianHistoryStorageKey);
+    state.runtimeWarnings.delete('本机加密对话');
+    renderRuntimeWarnings();
+    return;
+  }
+  if (librarianHistoryBackend === 'browser-local') {
+    localStorage.setItem(librarianHistoryStorageKey, JSON.stringify(sessions));
+  }
+}
+
+function queueLibrarianHistorySave(sessions) {
+  const snapshot = JSON.parse(JSON.stringify(sessions));
+  librarianHistorySaveChain = librarianHistorySaveChain
+    .then(() => persistLibrarianHistory(snapshot))
+    .catch(error => {
+      state.runtimeWarnings.set('本机加密对话', `本机加密对话：${error.message}`);
+      renderRuntimeWarnings();
+    });
+}
+
 function compactLibrarianHistory() {
   let sessions = state.librarianSessions.slice(0, librarianHistoryLimit);
   while (sessions.length > 1 && JSON.stringify(sessions).length > librarianHistoryByteLimit) sessions.pop();
   state.librarianSessions = sessions;
   try {
-    localStorage.setItem(librarianHistoryStorageKey, JSON.stringify(sessions));
+    queueLibrarianHistorySave(sessions);
   } catch (_) {
     const lightweight = sessions.map((session, index) => index < 4 ? session : { ...session, results: [] });
-    try { localStorage.setItem(librarianHistoryStorageKey, JSON.stringify(lightweight)); } catch (_) { /* history is optional */ }
+    try { queueLibrarianHistorySave(lightweight); } catch (_) { /* history is optional */ }
     state.librarianSessions = lightweight;
   }
 }
@@ -2066,12 +2121,37 @@ function saveLibrarianSession() {
   renderLibrarianHistory();
 }
 
-function loadLibrarianHistory() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(librarianHistoryStorageKey) || '[]');
-    state.librarianSessions = Array.isArray(parsed) ? parsed.filter(session => session?.id && Array.isArray(session.messages)).slice(0, librarianHistoryLimit) : [];
-  } catch (_) {
+async function loadLibrarianHistory() {
+  if (isReadOnly()) {
+    librarianHistoryBackend = 'readonly-none';
     state.librarianSessions = [];
+    state.runtimeWarnings.delete('本机加密对话');
+    renderRuntimeWarnings();
+    setText('librarian-history-privacy', '只读模式不保存对话；不写科学数据库。');
+    resetLibrarian({ focus: false });
+    return;
+  }
+  try {
+    const desktopSessions = await readDesktopLibrarianHistory();
+    if (desktopSessions === null) {
+      librarianHistoryBackend = 'browser-local';
+      state.librarianSessions = readLocalLibrarianHistory();
+      setText('librarian-history-privacy', '记录仅保存在当前浏览器；打开旧对话不会再次调用模型。');
+    } else {
+      librarianHistoryBackend = 'desktop-secure';
+      const legacySessions = readLocalLibrarianHistory();
+      state.librarianSessions = desktopSessions.length ? desktopSessions : legacySessions;
+      if (!desktopSessions.length && legacySessions.length) await persistLibrarianHistory(legacySessions);
+      localStorage.removeItem(librarianHistoryStorageKey);
+      setText('librarian-history-privacy', '桌面版已在本机加密保存；密钥由 macOS Keychain 管理，不写入科学数据库。');
+    }
+  } catch (error) {
+    librarianHistoryBackend = 'desktop-secure-error';
+    state.librarianSessions = [];
+    localStorage.removeItem(librarianHistoryStorageKey);
+    state.runtimeWarnings.set('本机加密对话', `本机加密对话：${error.message}；为避免明文降级，本次不会保存历史。`);
+    renderRuntimeWarnings();
+    setText('librarian-history-privacy', '本机加密存储不可用；为避免明文降级，本次历史保存已暂停。');
   }
   if (state.librarianSessions.length) restoreLibrarianSession(state.librarianSessions[0].id, { focus: false });
   else resetLibrarian({ focus: false });
@@ -2079,6 +2159,7 @@ function loadLibrarianHistory() {
 
 function resetLibrarian(options = {}) {
   if (state.librarianBusy && options.force !== true) return toast('图书管理员仍在检索，请等待本次任务完成。', true);
+  clearLibrarianBriefAuthorization();
   state.librarianSessionId = librarianSessionId();
   state.librarianMessages = [];
   state.librarianResults = [];
@@ -2314,6 +2395,7 @@ function restoreLibrarianSession(sessionId, options = {}) {
   if (state.librarianBusy) return toast('图书管理员仍在检索，请等待本次任务完成。', true);
   const session = state.librarianSessions.find(value => value.id === sessionId);
   if (!session) return;
+  clearLibrarianBriefAuthorization();
   state.librarianSessionId = session.id;
   state.librarianMessages = session.messages || [];
   state.librarianResults = withLibrarianCitationFlags(session.results, state.librarianMessages);
@@ -2525,6 +2607,7 @@ async function submitLibrarian(event) {
   const input = document.querySelector('#librarian-input');
   const question = input.value.trim();
   if (!question) return toast('请先描述你想查找的问题。', true);
+  clearLibrarianBriefAuthorization();
   const history = state.librarianMessages.slice(-8).map(message => ({ role: message.role, content: message.content }));
   state.librarianMessages.push({ role: 'user', content: question });
   state.librarianResults = [];
@@ -2568,6 +2651,14 @@ async function submitLibrarian(event) {
       response_format: result.response_format || result.report?.schema_version || 'legacy',
       scope: 'all',
     };
+    state.librarianBriefAuth = {
+      session_id: state.librarianSessionId,
+      assistant_index: state.librarianMessages.length - 1,
+      envelope: result.research_brief || null,
+      plan_mode: result.plan_mode || '',
+      answered_at: result.answered_at || '',
+      evidence_version: result.evidence_version || '',
+    };
     const groups = librarianResultGroups(state.librarianResults);
     state.librarianResultType = preferredLibrarianResultType(groups);
     const summaryLabel = result.clarification_required
@@ -2587,6 +2678,7 @@ async function submitLibrarian(event) {
     renderLibrarianResults(state.librarianResults);
     success = true;
   } catch (error) {
+    clearLibrarianBriefAuthorization();
     state.librarianMessages.push({ role: 'assistant', content: `本次检索未完成：${error.message}。你仍可切换到精确检索。` });
     state.librarianMeta = { error: error.message };
     state.librarianResults = [];
@@ -2601,6 +2693,77 @@ async function submitLibrarian(event) {
     saveLibrarianSession();
   }
 }
+
+function getLatestLibrarianBriefSnapshot() {
+  const briefAuth = state.librarianBriefAuth;
+  if (
+    state.librarianBusy
+    || state.librarianMeta?.pending
+    || state.librarianMeta?.error
+    || state.librarianMeta?.clarification_required
+    || briefAuth?.session_id !== state.librarianSessionId
+    || briefAuth?.assistant_index !== state.librarianMessages.length - 1
+    || !briefAuth?.envelope?.eligible
+    || !briefAuth?.envelope?.snapshot_token
+  ) return null;
+  const assistantIndex = state.librarianMessages.length - 1;
+  const assistant = state.librarianMessages[assistantIndex];
+  if (assistant?.role !== 'assistant' || !assistant.report || typeof assistant.report !== 'object') return null;
+  if (
+    assistant.report?.direct_conclusion?.status === 'clarification'
+    || /DSML|tool_calls|<\|\|.*invoke/i.test(
+      `${String(assistant.content || '')} ${JSON.stringify(assistant.report || {})}`
+    )
+  ) return null;
+  let question = '';
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const message = state.librarianMessages[index];
+    if (message?.role === 'user' && String(message.content || '').trim()) {
+      question = String(message.content).trim();
+      break;
+    }
+  }
+  if (!question) return null;
+  return JSON.parse(JSON.stringify({
+    question,
+    report: assistant.report,
+    query_analysis: assistant.query_analysis || state.librarianMeta.query_analysis || null,
+    results: state.librarianResults,
+    model: state.librarianMeta.model || '',
+    plan_mode: briefAuth.plan_mode || '',
+    summary_mode: state.librarianMeta.summary_mode || '',
+    candidate_count: state.librarianMeta.candidate_count ?? state.librarianResults.length,
+    cited_count: state.librarianMeta.cited_count ?? state.librarianResults.filter(row => row.agent_cited).length,
+    match_counts: state.librarianMeta.match_counts || null,
+    bundle_count: state.librarianMeta.bundle_count || 0,
+    clarification_required: Boolean(state.librarianMeta.clarification_required),
+    response_format: state.librarianMeta.response_format || '',
+    cache_hit: Boolean(state.librarianMeta.cache_hit),
+    answered_at: briefAuth.answered_at || briefAuth.envelope.answered_at || '',
+    evidence_version: briefAuth.evidence_version || briefAuth.envelope.evidence_fingerprint || '',
+  }));
+}
+
+function getLatestLibrarianBriefPayload() {
+  const snapshot = getLatestLibrarianBriefSnapshot();
+  if (!snapshot) return null;
+  return {
+    snapshot,
+    snapshot_token: state.librarianBriefAuth.envelope.snapshot_token,
+  };
+}
+
+function clearLibrarianBriefAuthorization(expectedToken = '') {
+  const currentToken = state.librarianBriefAuth?.envelope?.snapshot_token || '';
+  if (expectedToken && currentToken !== expectedToken) return;
+  state.librarianBriefAuth = null;
+}
+
+globalThis.autoResearchLibrarianBrief = Object.freeze({
+  getLatestSnapshot: getLatestLibrarianBriefSnapshot,
+  getLatestPayload: getLatestLibrarianBriefPayload,
+  clearAuthorization: clearLibrarianBriefAuthorization,
+});
 
 function setSearchMode(mode, options = {}) {
   if (!searchModeCopy[mode]) return;
@@ -3587,9 +3750,14 @@ window.addEventListener("beforeunload", event => {
 });
 renderSearchSuggestions();
 renderActiveFilters();
-loadLibrarianHistory();
-setSearchExperience('agent');
-load().catch(error => {
+async function initializeApplication() {
+  state.uiMode = await api('/api/ui-mode');
+  applyUiMode();
+  await loadLibrarianHistory();
+  setSearchExperience('agent');
+  await load();
+}
+initializeApplication().catch(error => {
   state.runtimeWarnings.set("核心服务", `核心服务：${error.message}`);
   renderRuntimeWarnings();
   setText("workspace-title", "项目服务未完全连接");

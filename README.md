@@ -14,9 +14,17 @@ ln -s /Users/USER/Zotero/auto-research/skills/auto-research-evidence-maintainer 
   ~/.codex/skills/auto-research-evidence-maintainer
 ```
 
-The older `auto-research-zotero` skill remains specific to lawful PDF acquisition and Zotero corpus maintenance; use the new evidence-maintainer skill for the browser product, extraction database, quality gate, visuals, search, Librarian, release, and handoff work.
+The older `auto-research-zotero` skill remains specific to lawful PDF acquisition and Zotero corpus maintenance; use the new evidence-maintainer skill for the desktop workbench product, extraction database, quality gate, visuals, search, Librarian, release, and handoff work.
 
-Current evidence-product checkpoint: `2026.07.30-librarian-reasoning-stable.1`, schema v12, tag `evidence-demo-2026-07-30-librarian-reasoning-stable-1`. The release passed 226 automated tests. Its fixed corpus is still 17/50 data-ready; the database has 291 visual assets, while 243 is the preserved historical pre-cloud freeze rather than the current total.
+Current shared-core checkpoint: `2026.07.30-librarian-brief-stable.1`, schema v12. Its latest completed core validation passed 253 automated tests. Its fixed corpus is still 17/50 data-ready and 30/50 visual-ready; the database has 6,501 raw rows, 5,048 reportable numeric occurrences, 3,142 independent physical facts, 937 qualitative findings and 291 visual assets. The 243-asset count is the preserved historical pre-cloud freeze rather than the current total. The final macOS App version and stable tag are created only after the desktop layer completes one joint validation and one build.
+
+## Product entry point
+
+As of 2026-08-01, the only supported product shape is a **personal desktop research workbench**. The current development preview is Auto Research.app on macOS; the intended end-user target is Windows. The preview must open directly without an Auto Research edit password. The HTML/JavaScript frontend and loopback Python service remain internal App components; users are not expected to start or visit localhost ports.
+
+The former browser workbench, mentor read-only page, ports `8765`/`8766`, ngrok tunnel and their launchers are retired historical compatibility paths. They are retained only long enough to support rollback, migration and automated permission tests; they are not release, sharing or daily-use entry points.
+
+The intended distribution is the desktop App plus a separately supplied, signed and hashed `.aresearch` evidence package. Import enables offline search; a user's own PDFs and extraction results stay in a separate private library. DeepSeek extraction and Librarian use the user's own API key, stored in the operating-system credential store rather than the database or package. The complete cross-platform and non-technical onboarding contract is in [`docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md`](docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md).
 
 It prioritizes open/official sources and your lawful local access path. It does **not** bypass paywalls, crack captchas, use proxy pools, or impersonate institutional access.
 
@@ -141,7 +149,7 @@ search index. DeepSeek enriches captions and nearby extracted text only. The
 discarded MinerU/cloud-visual experiment is not part of the current database,
 search results, interface or runtime configuration.
 
-教师展示前请先阅读 [`TEACHER_DEMO.md`](TEACHER_DEMO.md)，其中包含只读公网端、本地编辑端、推荐演示顺序和当前数据边界。
+演示和日常使用均应打开 Auto Research.app。`TEACHER_DEMO.md` 中关于浏览器和公网只读链接的说明只保留为历史记录，不再代表当前产品路线。
 
 The current evidence workflow first classifies what kind of experiment the paper
 contains, then chooses the extraction focus accordingly. Irradiation remains the
@@ -167,32 +175,28 @@ auto-research evidence-prepare-pilot
 # Validate the publication gates and pilot balance
 auto-research evidence-validate
 
-# Start the local Chinese review/search interface
+# Maintainer-only internal service check; normal users open Auto Research.app
 auto-research evidence-serve
 ```
 
-Open `http://127.0.0.1:8765`. The server refuses non-local bind addresses.
-
-On macOS you can also double-click `scripts/start_evidence_ui.command`. If the
-local service is already running, the script just opens the browser. If it is
-not running, it starts the service and then opens `http://127.0.0.1:8765`. Keep
-the Terminal window open while reviewing data; close it or press `Ctrl+C` to
-stop the local web page.
-
-On this Mac, a convenience launcher is available at:
-
-`/Users/USER/Zotero/打开本地编辑工作台.command`
-
-Use this launcher for the editable local workbench. Use
-`/Users/USER/Zotero/创建导师公网链接.command` only for the search-only public
-link.
+Normal users open **Auto Research.app**. `evidence-serve` and the loopback URL are
+maintainer diagnostics used internally by the App and test suite. The former
+`打开本地编辑工作台.command` and `创建导师公网链接.command` files are migration
+notices only and must not silently start a browser service or public tunnel.
 
 The search page opens with the DeepSeek Librarian. It always searches the full
 evidence library and returns the existing four result types: numeric items,
 tables, figures and qualitative findings. Use precise search when a query must
-be limited by paper title, DOI or author. Librarian conversations are saved only
-in the current browser with bounded history; reopening one does not call the
-model. Every new turn uses DeepSeek to plan several short queries, runs a
+be limited by paper title, DOI or author. The macOS product persists Librarian
+history with an AES-GCM key managed by macOS Keychain. Historical browser-local
+and `readonly-none` adapters remain compatibility/test boundaries, not product
+modes. No history mode writes the scientific evidence database, and reopening a saved
+conversation does not call the model. The desktop product is a separate
+packaging boundary; this core checkpoint includes the shared-frontend adapter
+contract but does not claim that `desktop/macos/**` source is published in the
+core release commit. Research-brief authorization is transient only and is not
+stored in session meta/messages, `localStorage`, or desktop encrypted history.
+Every new turn uses DeepSeek to plan several short queries, runs a
 coverage search over all four evidence types, and then applies deterministic
 hard-condition matching for material, irradiation, particle, temperature,
 dose/fluence, property and specimen state. DeepSeek plans queries, selects
@@ -213,6 +217,26 @@ An identical question with identical bounded history reuses the complete answer
 and candidate set for one hour while the database source fingerprint remains
 unchanged. The UI labels this reuse; any evidence change invalidates it.
 
+After a structured Librarian answer is complete, choose **导出研究简报** to
+download `librarian-research-brief.md`. Export is enabled only for the latest
+non-clarification answer that has at least one actual citation and carries a
+valid current-process HMAC token over the public response snapshot. The server
+also requires every canonical R# to map uniquely to an `agent_cited=true`
+`item/finding/table/figure` result with consistent counts. Restored history does
+not gain a new token; after a service restart, run the query again before
+exporting. Missing title/DOI/page/excerpt remains empty, makes the brief a
+visible provenance warning, and is listed in the Markdown.
+
+The HMAC binds only the public snapshot, including its answer time and evidence
+version. It does not create server-side history, call DeepSeek again, search the
+database or PDF, read curve pixels, create cross-bundle quantitative
+comparisons, or write scientific data. The endpoint accepts
+`{snapshot, snapshot_token}` issued by the current process, not an arbitrary
+snapshot, session id, database or PDF. See
+[`docs/LIBRARIAN_RESEARCH_BRIEF.md`](docs/LIBRARIAN_RESEARCH_BRIEF.md) for the
+signed-envelope contract, privacy whitelist, consistency gate and acceptance
+boundary.
+
 ## Maintenance and release audit
 
 Before a stable checkpoint, stop extraction batches and run:
@@ -228,70 +252,23 @@ The first command only closes abandoned run metadata; it never edits evidence
 or graph/table files. See `MAINTENANCE_WORKFLOW.md` for the full release and
 backup checklist.
 
-The editable and public search pages share the same evidence-detail interface.
-After a user opens one numeric fact, table, or figure, the page presents a
+The App uses the same evidence-detail component for all four search types.
+After a user opens one numeric fact, table, or figure, the workbench presents a
 two-column workspace: DeepSeek Pro evidence chat on the left and the selected
 object's complete details on the right. The default question can be edited or
 replaced. Chat receives only that object's structured fields and bounded text
 pages from its source PDF, never the complete database, and it does not write
-review or scientific-data state. Public mode still rejects uploads, corrections
-and automatic extraction.
+review or scientific-data state.
 
-For external sharing, use the read-only ngrok launcher. This is the recommended
-free-account path for a live preview because it gives a temporary HTTPS link
-while keeping the editable workbench private:
+### Retired browser and public-link paths
 
-```bash
-./scripts/start_readonly_ngrok.command
-```
-
-On this Mac, a convenience launcher is also available at:
-
-`/Users/USER/Zotero/创建导师公网链接.command`
-
-Double-clicking it starts the read-only local web server if needed, checks that
-the page is in read-only mode, and then prints the ngrok HTTPS URL to share. If
-another ngrok window is already serving the same read-only port,
-the launcher prints the existing public URL instead of starting a duplicate
-tunnel.
-
-One-time ngrok setup:
-
-1. Open `https://dashboard.ngrok.com/get-started/your-authtoken`.
-2. Copy the free-account authtoken.
-3. Create `/Users/USER/Zotero/.env.ngrok`:
-
-```bash
-NGROK_AUTHTOKEN=your-ngrok-token
-```
-
-Do not paste the token into README, AGENT.md, or any file that will be
-committed.
-
-The launcher starts the same interface in read-only mode on local port `8766`,
-checks `/api/ui-mode` before opening the tunnel, and then prints an
-`https://...ngrok...` URL that can be shared externally. Read-only mode uses
-the same frontend files and the same database; it is not a separately maintained
-public website. It is intentionally search-only: the shared page exposes
-whole-database search, evidence highlighting, PDF evidence opening, and CSV/Excel
-export. The server rejects upload, review, manual entry, article switching,
-learning-sample, queue, current-paper, snapshot, and DeepSeek routes even if a
-visitor guesses the URL. The editable local workbench remains the separate
-`http://127.0.0.1:8765` service.
-Starting either service only opens the existing project state; it does not seed
-the demo article, switch papers, rescan a PDF, or call DeepSeek.
-The read-only service also skips PDF indexing at startup, so opening a public
-search session cannot silently update the SQLite database.
-
-The search-result `原文证据` action works without any editable-only API: it opens
-the public source metadata, highlighted sentence image, highlighted page image,
-and the corresponding local PDF page through the same read-only server.
-
-GitHub Pages is a good later option for a persistent read-only snapshot site:
-the project can export static HTML/JSON/CSV for external review, but Pages cannot run
-the local Python backend, DeepSeek extraction, PDF upload, or SQLite writes.
-Use ngrok for a live local preview; use GitHub Pages only after explicitly
-building a static snapshot package.
+The browser workbench, mentor read-only page, ngrok tunnel and GitHub Pages
+snapshot are no longer supported product paths. Their server modes and permission
+tests remain only as internal compatibility protection while the desktop App is
+stabilized. Do not configure or share `8765`, `8766`, `.env.ngrok` or a localhost
+URL with users. Future distribution should use the signed desktop App plus a
+separately reviewed portable evidence package; it must not depend on this Mac
+remaining online.
 
 For maintenance, `evidence-db-health` checks the SQLite file, foreign keys,
 six-column view and indexes, required fields, stable-key uniqueness, stale AI
@@ -361,12 +338,13 @@ not used as evidence locators.
 # Rebuild the immutable original extraction for the current target article
 auto-research evidence-seed-target
 
-# Open the local correction/search page
+# Maintainer-only internal service check
 auto-research evidence-serve
 ```
 
-Open `http://127.0.0.1:8765`. Edits in the left table remain temporary until
-`确认当前内容` is pressed; the immutable original remains visible on the right.
+Normal users open the desktop workbench and never need this loopback URL. In the
+App, edits in the left table remain temporary until `确认当前内容` is pressed;
+the immutable original remains visible on the right.
 Confirmed corrections create a new version during the demo, and manual entries
 have no synthetic original version. The original six-column export is written
 to `data/extractions/XJZQ42XP_six_column_original.csv`.
@@ -379,9 +357,9 @@ families and PDF pages. Confirm-and-next stays inside that subset; leaving the
 mode never changes unconfirmed rows. This is a sampling aid, not an automatic
 accuracy judgment.
 
-For day-to-day use on this Mac, double-click
-`scripts/start_evidence_ui.command` from Finder. It opens the same local page and
-keeps the server process visible in a Terminal window.
+For current development-preview use, open Auto Research.app. The retired
+`scripts/start_evidence_ui.command` remains only for maintainer rollback and must
+not be documented as the Windows end-user path.
 
 The review page has three explicit objects: `数据条目`, `原始表格`, and
 `论文图片`. Table/figure cards show the immutable high-resolution PDF crop and
@@ -454,15 +432,18 @@ Uploaded PDF binaries are stored under ignored `data/papers/evidence-uploads/`;
 the SQLite audit records and processing queue are tracked. Existing Zotero PDFs
 are indexed in place and Zotero itself is not modified.
 
-Runtime AI is reserved for DeepSeek. Copy `.env.example` values into the local
-shell environment when a key is available; never put a real key in a file that
-will be committed. With no key configured, upload, validation, deduplication,
-queueing, search, and human review still work normally.
+Runtime AI is reserved for DeepSeek and uses BYOK. The product must ask each
+user to configure their own key (or a key supplied specifically to them) before
+the first extraction or Librarian request. It must explain the provider,
+possible cost and bounded data sent. The current macOS preview stores the key in
+Keychain; the intended Windows build uses Credential Manager. A key is never
+stored in SQLite, evidence packages, logs or Git. With no key configured,
+package import, upload validation, deduplication, queueing, offline search and
+human review still work normally.
 
-On macOS this project can use a dedicated Keychain credential named
-`auto-research-deepseek`. The project checks `DEEPSEEK_API_KEY` first, then that
-project-only Keychain service. `/api/ai/status` reports only whether a credential
-is available and never returns the credential itself.
+Maintainers may use `DEEPSEEK_API_KEY` from the shell for isolated development
+tests. `/api/ai/status` reports only whether a credential is available and never
+returns it. A developer credential must never be bundled for end users.
 
 ```bash
 # Redacted local configuration check (does not call the API)

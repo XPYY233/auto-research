@@ -400,6 +400,8 @@ class SearchAgentTests(unittest.TestCase):
         self.assertIn("[R1]", result["answer"])
         self.assertEqual(result["scope"], {"paper_ids": [], "mode": "all"})
         self.assertEqual(result["summary_mode"], "deepseek_json")
+        self.assertTrue(result["answered_at"])
+        self.assertTrue(result["evidence_version"])
 
     def test_search_v2_public_projection_preserves_four_type_identity(self):
         index = EvidenceSearchIndex(self.db)
@@ -431,6 +433,145 @@ class SearchAgentTests(unittest.TestCase):
         )
         self.assertEqual(notes, {})
 
+    def test_scientific_number_validation_uses_complete_normalized_tokens(self):
+        plain = [{
+            "ref": "R1", "entity_type": "item", "entity_id": 1, "paper_id": 20,
+            "source_page": 20, "title": "注量", "value": "1", "unit": "cm^-2",
+            "evidence": "fluence was 1 cm^-2", "match_class": "direct",
+        }]
+        self.assertTrue(LibrarianAgentRuntime._has_unsupported_numbers(
+            "注量为1e20 cm^-2[R1]",
+            {"R1"},
+            plain,
+        ))
+        scientific = [{
+            "ref": "R1", "entity_type": "item", "entity_id": 1, "paper_id": 1,
+            "source_page": 4, "title": "注量", "value": "1 × 10^20", "unit": "cm⁻²",
+            "evidence": "fluence was 1×10^20 cm⁻²", "match_class": "direct",
+        }]
+        for notation in ("1e20", "1E+20", "1 × 10^20", "1×10²⁰"):
+            with self.subTest(notation=notation):
+                self.assertFalse(LibrarianAgentRuntime._has_unsupported_numbers(
+                    f"注量为{notation} cm^-2[R1]",
+                    {"R1"},
+                    scientific,
+                ))
+
+    def test_scientific_number_validation_binds_explicit_units(self):
+        hardness = [{
+            "ref": "R1", "entity_type": "item", "entity_id": 1,
+            "title": "硬度", "value": "4.2", "unit": "GPa",
+            "evidence": "hardness was 4.2 GPa", "match_class": "direct",
+        }]
+        self.assertFalse(LibrarianAgentRuntime._has_unsupported_numbers(
+            "硬度为4.2 GPa[R1]", {"R1"}, hardness,
+        ))
+        self.assertTrue(LibrarianAgentRuntime._has_unsupported_numbers(
+            "硬度为4.2 eV[R1]", {"R1"}, hardness,
+        ))
+        self.assertFalse(LibrarianAgentRuntime._has_unsupported_numbers(
+            "报告值为4.2[R1]", {"R1"}, hardness,
+        ))
+
+        temperature = [{
+            "ref": "R1", "entity_type": "item", "entity_id": 2,
+            "title": "温度", "value": "573", "unit": "K",
+            "evidence": "temperature was 573 K", "match_class": "direct",
+        }]
+        self.assertTrue(LibrarianAgentRuntime._has_unsupported_numbers(
+            "能量为573 keV[R1]", {"R1"}, temperature,
+        ))
+
+        for claim in (
+            "硬度为4.2 eV.[R1]",
+            "**硬度为4.2 eV**[R1]",
+            "**4.2 eV**[R1]",
+            "*4.2 eV*[R1]",
+            "_4.2 eV_[R1]",
+            "__4.2 eV__[R1]",
+            "$4.2 eV$[R1]",
+            r"$4.2\,\mathrm{eV}$[R1]",
+            r"\(4.2\,\mathrm{eV}\)[R1]",
+            "4.2&nbsp;eV[R1]",
+            "4.2\u200beV[R1]",
+            "4.2\u200ceV[R1]",
+            "4.2\u2060eV[R1]",
+            "4.2 ｅＶ[R1]",
+            "4.2 ℯV[R1]",
+            "𝟒.𝟐 eV[R1]",
+            "4.2 GPa and **4.2 eV**[R1]",
+            "硬度为4.2 `eV`[R1]",
+            "硬度为4.2 J[R1]",
+            "硬度为4.2 Sv[R1]",
+            "硬度为4.2 mSv[R1]",
+            "硬度为4.2 Bq[R1]",
+            "硬度为4.2 mol[R1]",
+            "硬度为4.2 ions/cm^-2[R1]",
+        ):
+            with self.subTest(claim=claim):
+                self.assertTrue(
+                    LibrarianAgentRuntime._has_unsupported_numbers(
+                        claim,
+                        {"R1"},
+                        hardness,
+                    )
+                )
+
+        fluence = [{
+            "ref": "R1", "entity_type": "item", "entity_id": 3,
+            "title": "注量", "value": "5 × 10^16", "unit": "cm⁻²",
+            "evidence": "fluence was 5×10¹⁶ cm⁻²", "match_class": "direct",
+        }]
+        self.assertFalse(LibrarianAgentRuntime._has_unsupported_numbers(
+            "注量为5e16 cm^-2[R1]", {"R1"}, fluence,
+        ))
+        self.assertTrue(LibrarianAgentRuntime._has_unsupported_numbers(
+            "注量为5e16 m^-2[R1]", {"R1"}, fluence,
+        ))
+
+        missing = [{
+            "ref": "R1", "entity_type": "item", "entity_id": 4,
+            "title": "温度", "value": "300", "unit": "",
+            "evidence": "reported value 300", "match_class": "direct",
+        }]
+        self.assertTrue(LibrarianAgentRuntime._has_unsupported_numbers(
+            "温度为300 °C[R1]", {"R1"}, missing,
+        ))
+
+        for multiplication in ("·", "⋅", "∙"):
+            with self.subTest(multiplication=multiplication):
+                self.assertTrue(LibrarianAgentRuntime._has_unsupported_numbers(
+                    f"硬度为1{multiplication}10^20 GPa[R1]",
+                    {"R1"},
+                    [{
+                        "ref": "R1", "entity_type": "item", "entity_id": 5,
+                        "title": "硬度", "value": "1", "unit": "GPa",
+                        "evidence": "1 GPa at 10 K", "match_class": "direct",
+                    }],
+                ))
+                self.assertFalse(LibrarianAgentRuntime._has_unsupported_numbers(
+                    f"硬度为1{multiplication}10^20 GPa[R1]",
+                    {"R1"},
+                    [{
+                        "ref": "R1", "entity_type": "item", "entity_id": 6,
+                        "title": "硬度", "value": "1e20", "unit": "GPa",
+                        "evidence": "1e20 GPa", "match_class": "direct",
+                    }],
+                ))
+
+    def test_scientific_number_validation_ignores_json_metadata_numbers(self):
+        candidates = [{
+            "ref": "R1", "entity_type": "figure", "entity_id": 20, "paper_id": 20,
+            "source_page": 20, "search_score": 20, "doi": "10.20/example",
+            "article_title": "Study 20", "title": "TEM image",
+            "caption": "No quantitative result is reported.", "match_class": "direct",
+        }]
+        self.assertTrue(LibrarianAgentRuntime._has_unsupported_numbers(
+            "结果为20 GPa[R1]",
+            {"R1"},
+            candidates,
+        ))
+
     def test_single_numeric_delta_cannot_compare_different_evidence_bundles(self):
         candidates = [
             {"ref": "R1", "bundle_id": "B1"},
@@ -441,6 +582,162 @@ class SearchAgentTests(unittest.TestCase):
             {"R1", "R2"},
             candidates,
         ))
+
+    def test_any_quantitative_multi_bundle_statement_is_rejected(self):
+        candidates = [
+            {"ref": "R1", "bundle_id": "B1"},
+            {"ref": "R2", "bundle_id": "B2"},
+        ]
+        for statement in (
+            "提升1.1 GPa[R1][R2]",
+            "由4.2 GPa变为5.3 GPa[R1][R2]",
+            "4.2 GPa vs 5.3 GPa[R1][R2]",
+            "后者更大，为5.3 GPa[R1][R2]",
+            "测得4.2 GPa和5.3 GPa[R1][R2]",
+            "后者更大[R1][R2]",
+            "辐照后硬度提升[R1][R2]",
+            "R1 对应样品更硬[R1][R2]",
+            "R1 的硬度超过 R2[R1][R2]",
+            "R1 的硬度较高[R1][R2]",
+            "两个实验分别观察到不同缺陷[R1][R2]",
+        ):
+            with self.subTest(statement=statement):
+                self.assertTrue(LibrarianAgentRuntime._unsafe_cross_bundle_comparison(
+                    statement,
+                    {"R1", "R2"},
+                    candidates,
+                ))
+        same_bundle = [
+            {"ref": "R1", "bundle_id": "B1"},
+            {"ref": "R2", "bundle_id": "B1"},
+        ]
+        self.assertFalse(LibrarianAgentRuntime._unsafe_cross_bundle_comparison(
+            "由4.2 GPa变为5.3 GPa[R1][R2]",
+            {"R1", "R2"},
+            same_bundle,
+        ))
+        self.assertTrue(LibrarianAgentRuntime._unsafe_cross_bundle_comparison(
+            "两项证据的实验条件不同[R1][R2]",
+            {"R1", "R2"},
+            candidates,
+        ))
+        self.assertFalse(LibrarianAgentRuntime._unsafe_cross_bundle_comparison(
+            "检索到2条证据[R1][R2]",
+            {"R1", "R2"},
+            candidates,
+        ))
+        unknown_bundle = [dict(candidate) for candidate in candidates]
+        unknown_bundle[1]["bundle_id"] = ""
+        self.assertTrue(LibrarianAgentRuntime._unsafe_cross_bundle_comparison(
+            "后者更大[R1][R2]",
+            {"R1", "R2"},
+            unknown_bundle,
+        ))
+        self.assertFalse(LibrarianAgentRuntime._has_unsupported_numbers(
+            "检索到2条证据[R1][R2]",
+            {"R1", "R2"},
+            candidates,
+        ))
+
+    def test_report_payload_preserves_direct_adjacent_and_expansion_boundaries(self):
+        analysis = build_query_analysis("高熵合金在300°C中子辐照后的硬度")
+        candidates = [
+            {
+                "ref": "R1", "entity_type": "item", "entity_id": 1, "paper_id": 1,
+                "title": "硬度", "value": "4.2", "unit": "GPa",
+                "context": "高熵合金；300°C；中子辐照",
+                "evidence": "hardness was 4.2 GPa", "match_class": "direct",
+                "bundle_id": "B1", "missing_constraints": [],
+            },
+            {
+                "ref": "R2", "entity_type": "item", "entity_id": 2, "paper_id": 1,
+                "title": "硬度", "value": "4.0", "unit": "GPa",
+                "context": "高熵合金；中子辐照",
+                "evidence": "hardness was 4.0 GPa", "match_class": "adjacent",
+                "bundle_id": "B2", "missing_constraints": [{"label": "温度"}],
+            },
+            {
+                "ref": "R3", "entity_type": "item", "entity_id": 3, "paper_id": 2,
+                "title": "硬度", "value": "3.8", "unit": "GPa",
+                "context": "另一材料",
+                "evidence": "hardness was 3.8 GPa", "match_class": "expansion",
+                "bundle_id": "B3", "missing_constraints": [
+                    {"label": "材料"}, {"label": "温度"},
+                ],
+            },
+        ]
+        payload = {
+            "direct_conclusion": "直接硬度为4.2 GPa[R1]",
+            "direct_refs": ["R1", "R2", "R3"],
+            "related_refs": ["R1", "R2", "R3"],
+            "related_notes": [
+                {"ref": "R1", "summary": "错误放入相关区的4.2 GPa"},
+                {"ref": "R2", "summary": "仅缺温度，报告4.0 GPa"},
+                {"ref": "R3", "summary": "缺多个条件，报告3.8 GPa"},
+            ],
+        }
+        report = LibrarianAgentRuntime(self.db, client=FakePlannedClient())._report_from_payload(
+            payload,
+            analysis,
+            candidates,
+        )
+        self.assertEqual(report["direct_conclusion"]["refs"], ["R1"])
+        self.assertEqual([row["refs"] for row in report["evidence_matrix"]], [["R1"]])
+        self.assertEqual([row["refs"] for row in report["related_evidence"]], [["R2"]])
+        self.assertEqual(report["related_evidence"][0]["summary"], "仅缺温度，报告4.0 GPa")
+
+    def test_related_note_rejects_quantitative_cross_bundle_synthesis(self):
+        candidates = [
+            {
+                "ref": "R1", "title": "硬度", "value": "4.2", "unit": "GPa",
+                "evidence": "4.2 GPa", "match_class": "adjacent", "bundle_id": "B1",
+            },
+            {
+                "ref": "R2", "title": "硬度", "value": "5.3", "unit": "GPa",
+                "evidence": "5.3 GPa", "match_class": "adjacent", "bundle_id": "B2",
+            },
+        ]
+        notes = LibrarianAgentRuntime._related_notes(
+            {
+                "related_notes": [{
+                    "refs": ["R1", "R2"],
+                    "summary": "由4.2 GPa提升至5.3 GPa",
+                }],
+            },
+            candidates,
+        )
+        self.assertEqual(notes, {})
+
+    def test_direct_conclusion_rejects_implicit_cross_bundle_comparison(self):
+        analysis = build_query_analysis("高熵合金中子辐照后的硬度")
+        candidates = [
+            {
+                "ref": "R1", "entity_type": "item", "entity_id": 1, "paper_id": 1,
+                "title": "硬度", "value": "4.2", "unit": "GPa",
+                "evidence": "hardness was 4.2 GPa", "match_class": "direct",
+                "bundle_id": "B1", "missing_constraints": [],
+            },
+            {
+                "ref": "R2", "entity_type": "item", "entity_id": 2, "paper_id": 2,
+                "title": "硬度", "value": "6.0", "unit": "GPa",
+                "evidence": "hardness was 6.0 GPa", "match_class": "direct",
+                "bundle_id": "B9", "missing_constraints": [],
+            },
+        ]
+        report = LibrarianAgentRuntime(self.db, client=FakePlannedClient())._report_from_payload(
+            {
+                "direct_conclusion": "后者更大[R1][R2]",
+                "direct_refs": ["R1", "R2"],
+            },
+            analysis,
+            candidates,
+        )
+        self.assertNotIn("后者更大", report["direct_conclusion"]["text"])
+        self.assertEqual(report["direct_conclusion"]["refs"], ["R1", "R2"])
+        self.assertEqual(
+            [row["refs"] for row in report["evidence_matrix"]],
+            [["R1"], ["R2"]],
+        )
 
     def test_librarian_keeps_uncited_recall_candidates_visible(self):
         stamp = now()

@@ -1527,7 +1527,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["evidence_occurrences"]), list)
 
     def test_stable_release_metadata_is_explicit(self):
-        self.assertEqual(RELEASE_INFO["version"], "2026.07.30-librarian-reasoning-stable.1")
+        self.assertEqual(RELEASE_INFO["version"], "2026.07.30-librarian-brief-stable.1")
         self.assertEqual(RELEASE_INFO["evidence_schema"], 12)
 
     def test_rejected_cloud_visual_experiment_is_absent_from_active_ui(self):
@@ -1548,6 +1548,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
         app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
         app_css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
+        brief_js = (WEB_DIR / "librarian_brief.js").read_text(encoding="utf-8")
         self.assertIn('data-search-scope="selected"', index_html)
         self.assertIn("selectedSearchPaperParam", app_js)
         self.assertIn("scientificQuantityHtml", app_js)
@@ -1575,8 +1576,69 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("codex-pet-working.webp", app_css)
         self.assertIn("librarianHistoryStorageKey", app_js)
         self.assertIn("paper_ids: []", app_js)
+        self.assertIn('id="librarian-brief-export"', index_html)
+        self.assertIn("getLatestLibrarianBriefSnapshot", app_js)
+        self.assertIn("getLatestLibrarianBriefPayload", app_js)
+        self.assertIn("librarianBriefAuth", app_js)
+        self.assertNotIn("meta: state.librarianBriefAuth", app_js)
+        self.assertIn("/api/agents/librarian/research-brief.md", brief_js)
+        self.assertIn("snapshot_token", app_js)
+        self.assertNotIn("localStorage", brief_js)
+        self.assertNotIn("/api/desktop/librarian-history", brief_js)
+        self.assertLess(
+            index_html.index('<script src="/static/app.js"></script>'),
+            index_html.index('<script src="/static/librarian_brief.js"></script>'),
+        )
         server_source = Path(webapp_module.__file__).read_text(encoding="utf-8")
         self.assertIn("answer_context_chat", server_source)
+        self.assertIn("export_research_brief", server_source)
+        self.assertIn("verify_research_brief_snapshot", server_source)
+        persistence_slice = app_js[
+            app_js.index("async function persistLibrarianHistory"):
+            app_js.index("async function loadLibrarianHistory")
+        ]
+        for transient_field in (
+            "librarianBriefAuth",
+            "snapshot_token",
+            "answered_at",
+            "evidence_version",
+            "plan_mode",
+        ):
+            self.assertNotIn(transient_field, persistence_slice)
+        reset_slice = app_js[
+            app_js.index("function resetLibrarian"):
+            app_js.index("function bindLibrarianSuggestions")
+        ]
+        restore_slice = app_js[
+            app_js.index("function restoreLibrarianSession"):
+            app_js.index("function deleteLibrarianSession")
+        ]
+        submit_slice = app_js[
+            app_js.index("async function submitLibrarian"):
+            app_js.index("function getLatestLibrarianBriefSnapshot")
+        ]
+        self.assertIn("clearLibrarianBriefAuthorization();", reset_slice)
+        self.assertIn("clearLibrarianBriefAuthorization();", restore_slice)
+        self.assertGreaterEqual(submit_slice.count("clearLibrarianBriefAuthorization();"), 2)
+        self.assertLess(
+            submit_slice.index("clearLibrarianBriefAuthorization();"),
+            submit_slice.index("await api('/api/agents/librarian/chat'"),
+        )
+        self.assertIn("clearAuthorization: clearLibrarianBriefAuthorization", app_js)
+        clear_auth_slice = app_js[
+            app_js.index("function clearLibrarianBriefAuthorization"):
+            app_js.index("globalThis.autoResearchLibrarianBrief")
+        ]
+        self.assertIn("currentToken !== expectedToken", clear_auth_slice)
+        self.assertIn("state.librarianBriefAuth = null;", clear_auth_slice)
+        export_slice = brief_js[
+            brief_js.index("async function exportBrief"):
+            brief_js.index('button.addEventListener("click", exportBrief)')
+        ]
+        self.assertIn("clearAuthorization?.();", export_slice)
+        self.assertIn("if (!response.ok)", export_slice)
+        export_failure_slice = export_slice[export_slice.index("} catch (error)"):]
+        self.assertIn("clearAuthorization?.(payload.snapshot_token)", export_failure_slice)
         self.assertFalse(is_read_only_public_get("/api/context-chat"))
         self.assertIn('parsed.path in {"/", "/index.html", "/readonly"}', server_source)
         self.assertFalse((WEB_DIR / "readonly.html").exists())
@@ -2034,6 +2096,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertFalse(is_read_only_mutation("HEAD", "/"))
         self.assertFalse(is_read_only_mutation("POST", "/api/context-chat"))
         self.assertFalse(is_read_only_mutation("POST", "/api/agents/librarian/chat"))
+        self.assertFalse(is_read_only_mutation("POST", "/api/agents/librarian/research-brief.md"))
+        self.assertFalse(is_read_only_public_get("/api/agents/librarian/research-brief.md"))
         self.assertTrue(is_read_only_mutation("POST", "/api/current-paper/deepseek-preview"))
         self.assertTrue(is_read_only_mutation("POST", "/api/uploads/pdf"))
 

@@ -250,7 +250,7 @@
               <div class="librarian-history-head"><div><span>LIBRARY LOG</span><strong>对话记录</strong></div><button type="button" id="librarian-reset">＋ 新对话</button></div>
               <label class="librarian-history-search"><span class="visually-hidden">搜索历史对话</span><input id="librarian-history-query" type="search" placeholder="搜索过去的问题" autocomplete="off"></label>
               <div class="librarian-history-list" id="librarian-history-list"></div>
-              <small>记录仅保存在当前浏览器；打开旧对话不会再次调用模型。</small>
+              <small id="librarian-history-privacy">记录仅保存在当前设备，不写入科学数据库；打开旧对话不会再次调用模型。</small>
             </aside>
             <div class="librarian-main">
               <div class="librarian-intro">
@@ -267,7 +267,14 @@
               <form id="librarian-form" class="librarian-form">
                 <label class="visually-hidden" for="librarian-input">向图书管理员描述问题</label>
                 <textarea id="librarian-input" maxlength="2000" rows="3" placeholder="例如：帮我找高熵合金在中子辐照后硬度如何变化，并给出对应论文和原文证据"></textarea>
-                <div><small id="librarian-status">检索范围：整个文献库</small><button type="submit" id="librarian-send">交给图书管理员</button></div>
+                <div>
+                  <small id="librarian-status">检索范围：整个文献库</small>
+                  <span class="librarian-form-actions">
+                    <button type="button" id="librarian-brief-export" disabled>导出研究简报</button>
+                    <button type="submit" id="librarian-send">交给图书管理员</button>
+                  </span>
+                </div>
+                <small id="librarian-brief-status" class="librarian-brief-status" aria-live="polite"></small>
               </form>
             </div>
           </section>
@@ -525,5 +532,6 @@
     </form>
   </dialog>
   <script src="/static/app.js"></script>
+  <script src="/static/librarian_brief.js"></script>
 </body>
 </html>

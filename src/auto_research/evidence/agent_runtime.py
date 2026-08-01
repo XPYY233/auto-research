@@ -8,6 +8,8 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Callable
 
 from auto_research.ai.deepseek import DeepSeekClient
@@ -24,6 +26,10 @@ from .librarian_reasoning import (
     soft_recall_queries,
 )
 from .public_dto import public_evidence_dto
+from .research_brief import (
+    _has_unsupported_quantitative_claim,
+    _is_safe_cross_bundle_overview,
+)
 from .search_index import ENTITY_TYPES, EvidenceSearchIndex, plan_query
 
 
@@ -48,10 +54,55 @@ _CONCEPT_EXPANSIONS = {
 
 
 _DSML_MARKER = "DSML"
+_EVIDENCE_NUMBER_FIELDS = (
+    "title",
+    "value",
+    "unit",
+    "context",
+    "evidence",
+    "finding",
+    "label",
+    "caption",
+    "materials",
+    "conditions",
+    "quantities",
+)
 
 
 def _is_internal_protocol(content: Any) -> bool:
     return _DSML_MARKER in str(content or "")
+
+
+def _scientific_scalar_values(value: Any, *, depth: int = 0) -> tuple[Any, ...]:
+    if depth > 4 or value is None or isinstance(value, bool):
+        return ()
+    if isinstance(value, dict):
+        return tuple(
+            scalar
+            for item in value.values()
+            for scalar in _scientific_scalar_values(item, depth=depth + 1)
+        )
+    if isinstance(value, (list, tuple, set)):
+        return tuple(
+            scalar
+            for item in value
+            for scalar in _scientific_scalar_values(item, depth=depth + 1)
+        )
+    if isinstance(value, (str, int, float, Decimal)):
+        return (value,)
+    return ()
+
+
+def _candidate_quantitative_inputs(
+    candidate: dict[str, Any],
+) -> tuple[list[Any], list[tuple[Any, Any]]]:
+    values: list[Any] = []
+    for field in _EVIDENCE_NUMBER_FIELDS:
+        values.extend(_scientific_scalar_values(candidate.get(field)))
+    structured_value = candidate.get("value")
+    if structured_value in (None, ""):
+        structured_value = candidate.get("value_text")
+    return values, [(structured_value, candidate.get("unit"))]
 
 
 def _cited_refs(answer: str) -> set[str]:
@@ -578,17 +629,13 @@ class LibrarianAgentRuntime:
         refs: set[str],
         candidates: list[dict[str, Any]],
     ) -> bool:
-        if not any(marker in text for marker in ("前后", "从", "增加", "降低", "升高", "减小", "高于", "低于", "相比", "比较")):
-            return False
-        without_refs = re.sub(r"\[R\d+\]", "", text)
-        # A derived delta such as “相比提高 1.1 GPa” contains only one number
-        # but still compares at least two source records. Multiple bundles are
-        # therefore unsafe whenever comparative prose carries any quantity.
-        if not re.search(r"\d+(?:\.\d+)?", without_refs):
-            return False
+        # Cross-bundle free prose cannot be made safe by enumerating comparison
+        # words. Only the deterministic retrieval-count overview is allowed;
+        # independent quantitative rows remain available in the evidence matrix.
         by_ref = {str(row.get("ref")): row for row in candidates}
         bundles = {str(by_ref[ref].get("bundle_id") or "") for ref in refs if ref in by_ref}
-        return len(bundles - {""}) > 1
+        crosses_bundles = bool(bundles) and ("" in bundles or len(bundles) > 1)
+        return crosses_bundles and not _is_safe_cross_bundle_overview(text)
 
     @staticmethod
     def _has_unsupported_numbers(
@@ -598,16 +645,20 @@ class LibrarianAgentRuntime:
     ) -> bool:
         """Reject model prose whose quantitative tokens are absent from its evidence."""
 
-        prose = re.sub(r"\[R\d+\]", "", str(text or ""))
-        numbers = re.findall(r"(?<![A-Za-z])\d+(?:\.\d+)?(?:\s*[×x]\s*10\s*\^?\s*[+-]?\d+)?", prose)
-        if not numbers:
-            return False
         by_ref = {str(row.get("ref")): row for row in candidates}
-        evidence = " ".join(candidate_text for ref in refs if (candidate_text := json.dumps(by_ref.get(ref) or {}, ensure_ascii=False)))
-        compact_evidence = re.sub(r"\s+", "", evidence).casefold().replace("−", "-").replace("–", "-")
-        return any(
-            re.sub(r"\s+", "", number).casefold().replace("−", "-").replace("–", "-") not in compact_evidence
-            for number in numbers
+        evidence_values: list[Any] = []
+        structured_pairs: list[tuple[Any, Any]] = []
+        for ref in refs:
+            candidate = by_ref.get(ref)
+            if candidate:
+                values, pairs = _candidate_quantitative_inputs(candidate)
+                evidence_values.extend(values)
+                structured_pairs.extend(pairs)
+        return _has_unsupported_quantitative_claim(
+            text,
+            evidence_values,
+            structured_value_units=structured_pairs,
+            ignore_retrieval_counts=True,
         )
 
     @staticmethod
@@ -616,7 +667,11 @@ class LibrarianAgentRuntime:
         candidates: list[dict[str, Any]],
     ) -> dict[str, str]:
         output: dict[str, str] = {}
-        available = {str(row.get("ref")) for row in candidates}
+        available = {
+            str(row.get("ref"))
+            for row in candidates
+            if row.get("match_class") == "adjacent"
+        }
         raw = payload.get("related_notes") or []
         if isinstance(raw, dict):
             raw = [{"ref": key, "summary": value} for key, value in raw.items()]
@@ -627,12 +682,21 @@ class LibrarianAgentRuntime:
                 continue
             refs = LibrarianAgentRuntime._payload_refs(item.get("refs") or item.get("ref"), available)
             summary = " ".join(str(item.get("summary") or "").split()).strip()[:260]
-            for ref in refs:
-                if summary and not LibrarianAgentRuntime._has_unsupported_numbers(
+            if (
+                summary
+                and refs
+                and not LibrarianAgentRuntime._unsafe_cross_bundle_comparison(
                     summary,
-                    {ref},
+                    refs,
                     candidates,
-                ):
+                )
+                and not LibrarianAgentRuntime._has_unsupported_numbers(
+                    summary,
+                    refs,
+                    candidates,
+                )
+            ):
+                for ref in refs:
                     output[ref] = summary
         return output
 
@@ -646,8 +710,12 @@ class LibrarianAgentRuntime:
         direct_available = {str(row.get("ref")) for row in candidates if row.get("match_class") == "direct"}
         adjacent_available = {str(row.get("ref")) for row in candidates if row.get("match_class") == "adjacent"}
         legacy_refs = self._payload_refs(payload.get("selected_refs"), available)
-        direct_refs = self._payload_refs(payload.get("direct_refs"), available) | (legacy_refs & direct_available)
-        related_refs = self._payload_refs(payload.get("related_refs"), available) | (legacy_refs & adjacent_available)
+        direct_refs = self._payload_refs(payload.get("direct_refs"), direct_available) | (
+            legacy_refs & direct_available
+        )
+        related_refs = self._payload_refs(payload.get("related_refs"), adjacent_available) | (
+            legacy_refs & adjacent_available
+        )
         direct_text = str(payload.get("direct_conclusion") or payload.get("answer") or "").strip()
         all_text_refs = _cited_refs(direct_text)
         orphan_refs = all_text_refs - available
@@ -807,6 +875,8 @@ class LibrarianAgentRuntime:
         result = {
             "agent": {"id": agent.agent_id, "name": agent.name},
             "response_format": LIBRARIAN_RESPONSE_FORMAT_VERSION,
+            "answered_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "evidence_version": self.index.source_fingerprint(),
             "answer": answer,
             "report": report,
             "query_analysis": analysis.as_dict(),
