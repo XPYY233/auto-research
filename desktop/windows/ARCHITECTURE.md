@@ -48,6 +48,15 @@ Auto Research\
 
 候选程序必须携带 `bundled-runtime-manifest.json`，逐项记录内置 Python、标准库、SQLite、加密库、PyMuPDF、pywebview、WebView2 loader、业务核心和共享界面的相对路径、大小与 SHA-256。clean-machine harness 在空工作目录、空 `PATH` 和无项目环境变量的临时用户目录中复验首次启动契约。
 
+App shell coordinator 只编排平台组件，不导入科学核心：准备数据目录、获取工作区互斥锁、创建一次性启动令牌、启动随机 loopback 端口、打开 Edge WebView2 窗口、关闭服务并释放锁。真实 server builder 等共享接口冻结后注入；`pywebview` 只在显示窗口时延迟载入。
+
+## Windows 版本策略
+
+- 正式首发与实机验收：受支持且已更新的 Windows 11 x64；
+- Windows 10 22H2 x64（build 19045+）：兼容测试级别，必须显示系统已结束常规支持的提示；
+- 更旧 Windows、32 位 Windows 与 Windows on ARM：首版拒绝安装；
+- WebView2 是否存在另行检测，系统版本兼容不等于运行时已经安装。
+
 ## 当前阻塞
 
 本目录目前只建立平台安全地基，不伪造可用安装包。启动器必须等待共享核心冻结 distribution schema v1、stable source/entity identity、official/private federated read、资料包激活/回退 API 和私人导入 API 后再接入。

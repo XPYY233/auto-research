@@ -11,5 +11,9 @@
 - 添加默认关闭候选安装包输出的 Windows 构建门；
 - 添加内置 Python/生产依赖的逐文件哈希清单与篡改检查；
 - 添加无 Git、Node、系统 Python、项目环境变量或源码目录的干净机验收夹具；
+- 添加可注入 App shell coordinator，组合单实例、loopback 生命周期和窗口清理；
+- 添加延迟载入 pywebview 的 Edge WebView2 窗口适配器；
+- 将首次窗口入口固定为 `import-evidence-package`，运行报告不暴露启动令牌；
+- 添加 Windows 11 x64 正式支持与 Windows 10 22H2 x64 兼容级别检测；
 - 添加可在 macOS 上运行的纯契约测试；
 - 明确当前不是可交付安装包，等待共享 distribution 与 federated read 契约冻结。
