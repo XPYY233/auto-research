@@ -593,7 +593,7 @@ function renderExtractionStatus() {
   el.textContent = `${lead} · ${scanNote}${packetNote}${savedNote} · ${status.message}`;
   el.className = status.supported ? "supported" : status.packet_ready ? "ready" : "unsupported";
   button.disabled = status.action === "manual_only";
-  button.textContent = status.action === "prepare_packet" ? "生成抽取包" : "自动提取/核验";
+  button.textContent = status.action === "prepare_packet" ? "生成抽取包" : "一键提取并核验";
   saveButton.disabled = !state.rows.length;
   packetLink.hidden = !status.packet_ready;
   if (status.packet_ready) {
@@ -650,10 +650,7 @@ function renderEvidenceAudit() {
 
 function renderDeepSeekRun() {
   const el = document.querySelector("#paper-deepseek-status");
-  const button = document.querySelector("#run-deepseek-preview");
-  if (!el || !button) return;
-  button.textContent = state.rows.length ? "重新运行对抗式质量提取" : "对抗式质量提取";
-  button.disabled = !state.ai?.configured || !state.paper?.pdf_path;
+  if (!el) return;
   if (!state.ai?.configured) {
     el.textContent = "DeepSeek 未配置：已保存数据仍可浏览、检索和修正，但新文章无法运行自动质量提取。";
     el.className = "unsupported";
@@ -814,46 +811,6 @@ function confirmRescanIfNeeded(actionLabel) {
     `再次执行“${actionLabel}”会重新调用 DeepSeek/自动抽取，可能产生新的费用和新的候选结果。\n\n` +
     "只有确认仍然需要再次扫描，才会继续。是否继续？"
   );
-}
-
-async function runDeepSeekPreview() {
-  if (rejectReadOnlyAction("运行对抗式质量提取")) return;
-  if (!confirmDiscardUnsaved("对抗式质量提取")) return;
-  const button = document.querySelector("#run-deepseek-preview");
-  const forceRescan = confirmRescanIfNeeded("对抗式质量提取");
-  if ((state.extraction?.scanned || state.rows.length || state.deepseekRun?.status === "completed") && !forceRescan) {
-    toast("已取消再次扫描；当前仍显示本地已保存数据。");
-    return;
-  }
-  const previous = button.textContent;
-  button.disabled = true;
-  button.textContent = "双路提取与评分中…";
-  updateProgress(2, "自动质量门：准备本地图表证据");
-  void pollQualityProgress(state.paper.id);
-  try {
-    const result = await api("/api/current-paper/quality-run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paper_id: state.paper.id, chunk_pages: 2, quality_threshold: 85, force_rescan: forceRescan }),
-    });
-    clearInterval(state.progressTimer);
-    state.progressTimer = null;
-    await loadCurrentPaper();
-    const summary = result.summary || {};
-    finishProgress(`完成：双路通过 ${summary.dual_pass_count || 0}，第三次复核通过 ${summary.third_pass_count || 0}，自动拦截 ${summary.manual_review_count || 0}。`);
-    toast(`质量检测完成：已自动发布 ${Number(summary.dual_pass_count || 0) + Number(summary.third_pass_count || 0)} 项；自动拦截 ${summary.manual_review_count || 0} 项。`);
-  } catch (error) {
-    clearInterval(state.progressTimer);
-    state.progressTimer = null;
-    finishProgress(`处理失败：${error.message}`, false);
-    toast(error.message, true);
-    await loadCurrentPaper();
-  } finally {
-    button.disabled = false;
-    button.textContent = previous;
-    renderDeepSeekRun();
-    renderQualityStatus();
-  }
 }
 
 function filteredRows() {
@@ -1253,7 +1210,7 @@ function renderQualityReview() {
   const grid = document.querySelector("#quality-review-grid");
   if (!grid) return;
   if (!state.qualityCandidates.length) {
-    grid.innerHTML = `<div class="blank"><span>✓</span><h3>没有被自动拦截的候选</h3><p>双路一致或第三次复核通过的结果已自动发布；未运行时可点击“对抗式质量提取”。</p></div>`;
+    grid.innerHTML = `<div class="blank"><span>✓</span><h3>没有被自动拦截的候选</h3><p>双路一致或第三次复核通过的结果已自动发布；未运行时可点击“一键提取并核验”。</p></div>`;
     return;
   }
   grid.innerHTML = state.qualityCandidates.map(qualityReviewCard).join("");
@@ -1305,7 +1262,7 @@ function renderVisualReview() {
   setText("visual-review-summary", `共 ${assets.length} 项，历史修正 ${reviewed} 项。可检查截图、图注与检索标签；图片曲线不会被自动转换为精确数值。`);
   const grid = document.querySelector("#visual-review-grid");
   if (!assets.length) {
-    grid.innerHTML = `<div class="blank visual-review-empty"><span>▧</span><h3>当前文章尚未建立${typeName}</h3><p>运行“自动提取/核验”后，系统会先从本地 PDF 建立高分辨率图表截图；识别不到的扫描件将保留为待处理任务。</p></div>`;
+    grid.innerHTML = `<div class="blank visual-review-empty"><span>▧</span><h3>当前文章尚未建立${typeName}</h3><p>运行“一键提取并核验”后，系统会先从本地 PDF 建立高分辨率图表截图；识别不到的扫描件将保留为待处理任务。</p></div>`;
     return;
   }
   grid.innerHTML = assets.map(visualReviewCard).join("");
@@ -3504,7 +3461,7 @@ async function runCurrentExtraction() {
     updateProgress(2, "自动质量门：准备本地图表证据");
     void pollQualityProgress(state.paper.id);
   } else {
-    startProgress("自动提取/核验");
+    startProgress("一键提取并核验");
   }
   try {
     const result = await api("/api/current-paper/run-workflow", {
@@ -3721,7 +3678,6 @@ document.querySelector("#pdf-upload-file").addEventListener("change", event => {
 document.querySelector("#refresh-upload-queue").addEventListener("click", refreshUploadWorkspace);
 document.querySelector("#paper-switch-form").addEventListener("submit", submitPaperSwitch);
 document.querySelector("#run-current-extraction").addEventListener("click", runCurrentExtraction);
-document.querySelector("#run-deepseek-preview").addEventListener("click", runDeepSeekPreview);
 document.querySelector("#save-current-snapshot").addEventListener("click", saveCurrentSnapshot);
 document.querySelector("#review-decision-form").addEventListener("submit", submitReviewDecision);
 document.querySelectorAll("[data-close-review-decision]").forEach(button => button.addEventListener("click", closeReviewDecision));
