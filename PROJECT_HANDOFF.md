@@ -4,8 +4,9 @@
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
 > 本轮改造前保护提交：`6ce9536`
 > 上一推理/呈现功能提交：`8e9c4c1`
-> 本轮共享核心提交：见当前 `git log -1`（文档不自引用提交哈希）
-> 最终稳定标签：由 macOS App 联合验收后创建；共享核心不单独打稳定标签
+> 当前桌面候选：Auto Research `0.4.0-preview.1`（Apple Silicon macOS，内部开发预览）
+> 当前预览标签：`evidence-demo-2026-08-01-macos-workbench-preview-2`
+> 联合验证：587 项通过（core 395 / macOS 110 / Windows 82）
 > 证据库版本：`2026.07.30-librarian-brief-stable.1` / schema v12
 
 本文面向下一位 Codex Agent、工程维护者和未来的项目负责人。它说明项目为何存在、过去完成了什么、当前真正能做什么、日常工作流、禁止触碰的边界、验证与发布方法，以及尚未完成的目标。
@@ -140,18 +141,18 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 
 - 唯一正式产品形态为个人桌面工作台：当前 macOS 预览使用 Auto Research.app，后续正式用户端面向 Windows；数据检查、文章切换、上传、人工补录、质量抽取、搜索与导出均在 App 内完成；
 - `web/index.html`、`app.js`、`app.css` 和本机 loopback 服务继续作为 App 内部实现，不能据此把浏览器页面作为第二个产品发布；
-- 图书管理员历史由桌面层用平台安全凭据库管理密钥并以 AES-GCM 持久化：当前 macOS 预览用 Keychain，后续 Windows 用 Credential Manager；`browser-local` 和 `readonly-none` 仅为历史兼容/权限测试；
+- 图书管理员历史由桌面层以 AES-GCM 持久化：当前 ad-hoc 签名的 macOS 内部预览使用 Application Support 私有目录中的独立随机密钥，避免向非技术用户弹出误导性的 Keychain 密码框；正式签名 macOS 发行切换到 Keychain，Windows 使用 Credential Manager；`browser-local` 和 `readonly-none` 仅为历史兼容/权限测试；
 - history schema 和保存策略完全不变；`research_brief` 授权只存在于瞬态 `state.librarianBriefAuth`，不进入 session meta/messages、`localStorage` 或桌面加密历史。重启或只恢复历史都必须重新检索后才能导出；
 - 任何历史都不写科学数据库；桌面产品层是独立打包边界，共享前端适配不代表 `desktop/macos/**` 源码随本核心提交发布；
 - 正式 App 不要求 Auto Research 编辑密码；任何意外系统钥匙串授权窗都视为发布阻断，由桌面层修复后才可交付；
 - 导师只读页、浏览器工作台、`8765`/`8766` 和 ngrok 已退役，不再用于展示或分享。
 - 正式发行采用“桌面 App + 独立证据包”：用户导入经过版本、哈希与签名校验的数据包后离线检索；用户自己的 PDF 与私人库分离。DeepSeek 抽取和图书管理员使用用户自己的 key，并通过平台安全凭据库保存。跨平台契约见 `docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md`。
 
-历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。最终稳定 App 必须由桌面任务完成一次联合全测、一次构建和一次实机启动验收。
+历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。`0.4.0-preview.1` 已完成一次干净工作树联合全测和一次隔离 App/DMG 构建验证；它仍是依赖 checkout v12 的内部开发预览，只有完成实机导包/滚动修复复验并重建后，才可冻结最终候选哈希。
 
 ## 5. 当前真实状态
 
-以2026-07-30稳定版为准：
+以2026-08-01内部预览检查点为准：
 
 | 对象 | 数量/状态 |
 |---|---:|
@@ -165,8 +166,10 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 | 固定验收 PDF | 50/50 身份与内容有效 |
 | 数据就绪论文 | 17/50 |
 | 图表就绪论文 | 30/50 |
-| 自动测试 | 253 项通过 |
+| 自动测试 | 587 项通过（core 395 / macOS 110 / Windows 82） |
 | 生产 SQLite SHA-256 | `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6` |
+
+首个内部官方资料包为 `0.1.0-preview.1`，大小约 2.36 MB，SHA-256 为 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`。它包含60篇论文元数据和4,356个只读实体（3,142 item、936 finding、46 table、232 figure），不含 PDF 和二进制图片。官方包与 schema-v12 可编辑工作区是两个数据源，不能 `ATTACH`、覆盖或互相写入。
 
 重点 DOI `10.1016/j.jnucmat.2018.08.031` 当前有231个独立事实，403/403处自动记录可回到 PDF 定位。
 

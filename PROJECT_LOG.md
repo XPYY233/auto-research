@@ -1,5 +1,24 @@
 # Auto Research Evidence 项目日志
 
+## 2026-08-01：macOS 0.4.0-preview.1 阶段收口
+
+### 面向项目负责人 / 人类工程师
+
+- Apple Silicon macOS 内部开发预览已完成官方资料包导入、只读联合搜索、原生单文件选择、BYOK 状态管理和统一桌面安全 bridge 接线。它仍依赖当前 checkout 的 schema-v12 可编辑工作区，不能描述为脱离源码即可分发的正式产品。
+- 首个签名内部资料包约2.36 MB，SHA-256 为 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`；包含60篇论文元数据和4,356个实体（3,142条目、936结论、46表格、232图片），不含PDF和二进制图片。
+- 干净 release worktree 串行完成587项联合测试：共享核心395、macOS 110、Windows 82；schema-v12 健康检查和稳定快照 SHA-256 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6` 保持不变。
+- App 与 DMG 已各构建一次并通过隔离 smoke、ad-hoc 签名和镜像检查。中间候选 DMG SHA-256 为 `df1a9bc49ea42427553c2464eae1ef753fa48f2b49a6cafb82621c811a3d2f89`；由于实机滚动修复后需要重建，该值只作阶段审计，最终下载校验值稍后更新。
+- 旧浏览器工作台、导师只读页、固定端口和 ngrok 已退役，启动脚本只提供迁移提示。Windows 已完成受测模块和组合根，但尚无真实自包含 Setup 和 Win11 clean-machine 证据，必须最后收口。
+- 产品构建稳定不等于语料完成或科学准确率已得到人工金标准：固定语料仍为17/50 data-ready、30/50 visual-ready，33篇仍需全文抽取。
+
+### 面向 Agent / 后续工程师
+
+- 当前预览标签：`evidence-demo-2026-08-01-macos-workbench-preview-2`；不要移动或重命名为稳定正式版。最终候选必须在实机修复后从干净 worktree 重建、复核 SHA 并生成新的发布记录。
+- 可编辑 schema-v12、只读 `distribution-sqlite-v1` 官方包和私人实验库是三个隔离数据域。官方包只允许通过 `OfficialEvidenceRepository` 审计后激活；不得 `ATTACH`、调用 `EvidenceDB.init()` 或写回科学库。
+- 当前 ad-hoc macOS 预览的历史和 DeepSeek 凭据使用 Application Support 私有目录、独立随机密钥和 AES-256-GCM，避免代码身份变化触发系统密码框；正式签名发行才切换到 Keychain。Windows 使用 Credential Manager。
+- 后续优先偿还运行时公共 API、跨平台资料包状态/错误契约、SemVer/包身份单源、官方库只读连接文件身份以及大型 product/desktop 模块拆分；不得在 macOS 与 Windows 中复制签名、审计或搜索算法。
+- 生产数据库和 `paper_056` 现场产物仍是隔离的用户数据；代码提交、打包与测试均不得暂存、重置或借此“清理”它们。
+
 ## 2026-08-01：联合召回多词覆盖门修正
 
 - 修正多词查询被单个通用词放行的问题：1–2 词要求全部命中，3 词及以上要求至少命中 `max(2, ceil(2/3 × 词数))`；候选先按覆盖词数、再按字段权重排序。
@@ -49,7 +68,7 @@
 - 推荐论文现在携带四类全库覆盖计数；只有 table/figure 而没有 item/finding 时，页面显示“全文证据抽取尚未完成”预警。本轮不重新抽取论文、不修改科学 SQLite、PDF、图表资产或审核历史。
 
 - 产品入口正式收敛为个人桌面工作台：当前先交付 macOS 本机开发预览，正式用户端预计为 Windows。导师只读网页、独立浏览器工作台、8765/8766、ngrok 和浏览器启动器退役；既有 HTML/JavaScript、loopback webapp 与权限模式继续作为 App 内部实现和回归保护。
-- 稳定 App 不应要求用户输入 Auto Research 编辑密码；意外系统凭据授权窗口被列为发布阻断。当前 macOS 使用 Keychain，后续 Windows 使用 Credential Manager，二者通过统一安全凭据接口承载。
+- 稳定 App 不应要求用户输入 Auto Research 编辑密码；意外系统凭据授权窗口被列为发布阻断。当时的正式发行规划为 macOS Keychain 与 Windows Credential Manager；当前 ad-hoc macOS 内部预览的实际存储边界已在本日志顶部更新为 Application Support 私有 AES-GCM 存储。
 - 正式发行采用“桌面 App + 独立 `.aresearch` 证据包”：用户导入经过版本、哈希与签名校验的数据包后即可离线检索；官方包、用户私人库和 App 安装彼此分离。默认不含受限 PDF、本机路径、Zotero key、私人对话或开发者凭据，导入失败必须可回退。
 - 新文献 DeepSeek 抽取和图书管理员 Agent 均采用 BYOK。用户可粘贴专门提供给他的 key 或使用自己的 key；首次 AI 调用需说明服务方、可能费用和数据外发范围，密钥只进操作系统凭据库，不进数据库、数据包、日志或 Git。
 - 共享核心沿用最后完成的 253/253 自动测试与生产 SQLite SHA-256 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`。为降低电脑发热，本次只做文档、差异与单文件语法轻量收口；最终由桌面任务顺序执行一次联合全测、一次 macOS 构建和一次实机验收。

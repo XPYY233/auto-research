@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from auto_research.product import (
+from auto_research.product.runtime_api import (
     ActiveOfficialPackage,
     EvidencePackageError,
     OfficialEvidenceRepository,

@@ -52,8 +52,8 @@ platform-neutral utilities
 
 以下路径当前已冻结：
 
-- `stable`：本地 PyMuPDF 图表资产、DeepSeek 文本语义增强、四类证据搜索、对抗式质量门、签名资料包核心。
-- `experimental`：官方与私人来源的联合召回、资料包桌面导入 UI，直至 macOS/Windows 实机验收完成。
+- `stable`：本地 PyMuPDF 图表资产、DeepSeek 文本语义增强、四类证据搜索、对抗式质量门、签名资料包核心、官方/私人只读联合召回契约。
+- `experimental`：资料包桌面导入产品体验和私人实验 UI，直至 macOS/Windows 实机验收完成。macOS `0.4.0-preview.1` 已完成隔离构建与镜像验证，但仍是 checkout-dependent 内部预览。
 - `compatibility`：历史 read-only 权限回归；只用于测试安全边界。
 - `retired`：MinerU 云端视觉替换、浏览器编辑工作台、导师公网链接、ngrok 产品路径、无约束 Librarian 工具循环、重复 DeepSeek 预览按钮。
 
@@ -113,7 +113,19 @@ platform-neutral utilities
 
 不得用测试通过替代以下声明：语料完成度、科学准确率、版权可分发性或跨平台实机通过。四者分别验收。
 
-## 8. 架构决定记录
+当前阶段证据：干净 release worktree 已通过587项联合测试和一次 macOS App/DMG 构建镜像检查；Windows 尚无真实 Setup 和 Win11 clean-machine 验收，因此发布序列仍未结束。
+
+## 8. 下一轮分层目标
+
+为避免平台接线继续扩大依赖面，后续新增能力按以下顺序收敛：
+
+1. 桌面端只通过 `product/runtime_api.py` 使用验签、安装、审计、active selector 与只读仓库接口；构建器、v12导出器和内部预览生成器不得被桌面冻结包隐式导入。该窄接口已在本阶段落地，后续平台接入不得回退到宽包根导入。
+2. 把资料包阶段、稳定错误码、严格版本/包身份和来源身份提升为平台无关契约；macOS 与 Windows 只负责投影，不各自维护第二套语义。
+3. 保持 `federated_search` 只读；官方、私人和历史v12适配为搜索源，不允许搜索层反向写任何仓库。
+4. 将 `desktop_server` 收缩为受保护的路由组合层；session/CSRF、history、credential、readiness、package jobs 分离为可单测服务。
+5. 对超过约800–1000行或承担三种以上职责的 package/repository 模块分步拆分；每一步保持公开API、包字节和攻击回归兼容，禁止一次性大重写。
+
+## 9. 架构决定记录
 
 出现以下变化时，必须在项目日志和本文件或独立 ADR 中记录：
 

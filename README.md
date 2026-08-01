@@ -16,7 +16,11 @@ ln -s /Users/USER/Zotero/auto-research/skills/auto-research-evidence-maintainer 
 
 The older `auto-research-zotero` skill remains specific to lawful PDF acquisition and Zotero corpus maintenance; use the new evidence-maintainer skill for the desktop workbench product, extraction database, quality gate, visuals, search, Librarian, release, and handoff work.
 
-Current shared-core checkpoint: `2026.07.30-librarian-brief-stable.1`, schema v12. Its latest completed core validation passed 253 automated tests. Its fixed corpus is still 17/50 data-ready and 30/50 visual-ready; the database has 6,501 raw rows, 5,048 reportable numeric occurrences, 3,142 independent physical facts, 937 qualitative findings and 291 visual assets. The 243-asset count is the preserved historical pre-cloud freeze rather than the current total. The final macOS App version and stable tag are created only after the desktop layer completes one joint validation and one build.
+Current desktop checkpoint: **Auto Research `0.4.0-preview.1` for Apple Silicon macOS**, tagged `evidence-demo-2026-08-01-macos-workbench-preview-2`. It is an internal development preview, not a portable public release: the editable scientific workspace still depends on this checkout and the schema-v12 database. The clean release worktree passed 587 automated tests (395 shared core, 110 macOS and 82 Windows), database health checks and one isolated App/DMG build-and-image verification.
+
+The scientific corpus has not become complete merely because the product build is stable: it remains 17/50 data-ready and 30/50 visual-ready. The schema-v12 baseline contains 6,501 raw rows, 5,048 reportable numeric occurrences, 3,142 independent physical facts, 937 qualitative findings and 291 visual assets. The 243-asset count is the preserved historical pre-cloud freeze rather than the current total.
+
+The first internal `.aresearch` package is a separate, signed, read-only distribution artifact: 2.36 MB, SHA-256 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`, with 60 paper metadata records and 4,356 entities (3,142 item, 936 finding, 46 table and 232 figure). It contains no PDFs or binary images. Importing it does not replace or write the editable v12 workspace.
 
 ## Product entry point
 
@@ -24,7 +28,7 @@ As of 2026-08-01, the only supported product shape is a **personal desktop resea
 
 The former browser workbench, mentor read-only page, ports `8765`/`8766`, ngrok tunnel and their launchers are retired historical compatibility paths. They are retained only long enough to support rollback, migration and automated permission tests; they are not release, sharing or daily-use entry points.
 
-The intended distribution is the desktop App plus a separately supplied, signed and hashed `.aresearch` evidence package. Import enables offline search; a user's own PDFs and extraction results stay in a separate private library. DeepSeek extraction and Librarian use the user's own API key, stored in the operating-system credential store rather than the database or package. The complete cross-platform and non-technical onboarding contract is in [`docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md`](docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md).
+The intended distribution is the desktop App plus a separately supplied, signed and hashed `.aresearch` evidence package. Import enables offline search; a user's own PDFs and extraction results stay in a separate private library. DeepSeek extraction and Librarian use the user's own API key, stored outside the database and evidence package. The ad-hoc-signed macOS preview deliberately uses Application Support private files with a separate AES-256-GCM key to avoid a misleading Keychain password prompt; a formally signed macOS release must use Keychain, and Windows uses Credential Manager. The complete cross-platform and non-technical onboarding contract is in [`docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md`](docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md).
 
 It prioritizes open/official sources and your lawful local access path. It does **not** bypass paywalls, crack captchas, use proxy pools, or impersonate institutional access.
 
@@ -187,8 +191,10 @@ notices only and must not silently start a browser service or public tunnel.
 The search page opens with the DeepSeek Librarian. It always searches the full
 evidence library and returns the existing four result types: numeric items,
 tables, figures and qualitative findings. Use precise search when a query must
-be limited by paper title, DOI or author. The macOS product persists Librarian
-history with an AES-GCM key managed by macOS Keychain. Historical browser-local
+be limited by paper title, DOI or author. The current ad-hoc macOS preview
+persists Librarian history with AES-GCM and a separate private key under
+Application Support; a formally signed release switches that key to macOS
+Keychain. Historical browser-local
 and `readonly-none` adapters remain compatibility/test boundaries, not product
 modes. No history mode writes the scientific evidence database, and reopening a saved
 conversation does not call the model. The desktop product is a separate
@@ -435,8 +441,9 @@ are indexed in place and Zotero itself is not modified.
 Runtime AI is reserved for DeepSeek and uses BYOK. The product must ask each
 user to configure their own key (or a key supplied specifically to them) before
 the first extraction or Librarian request. It must explain the provider,
-possible cost and bounded data sent. The current macOS preview stores the key in
-Keychain; the intended Windows build uses Credential Manager. A key is never
+possible cost and bounded data sent. The current ad-hoc macOS preview stores the
+key in a private AES-GCM Application Support store; a formally signed macOS
+release uses Keychain, and the intended Windows build uses Credential Manager. A key is never
 stored in SQLite, evidence packages, logs or Git. With no key configured,
 package import, upload validation, deduplication, queueing, offline search and
 human review still work normally.

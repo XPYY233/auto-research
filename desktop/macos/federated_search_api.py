@@ -6,7 +6,7 @@ from typing import Any, Iterable, Protocol
 from urllib.parse import parse_qs, urlparse
 
 from auto_research.evidence.federated_search import FederatedEvidenceSearch
-from auto_research.product import ActiveOfficialPackage, OfficialEvidenceRepository
+from auto_research.product.runtime_api import ActiveOfficialPackage, OfficialEvidenceRepository
 
 
 FEDERATED_SEARCH_PATH = "/api/desktop/federated-search"
