@@ -5,6 +5,7 @@ description = "Local Auto Research pipeline for literature discovery, lawful acq
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "cryptography>=42,<49",
   "requests>=2.31",
   "PyYAML>=6.0",
   "PyMuPDF>=1.23"
