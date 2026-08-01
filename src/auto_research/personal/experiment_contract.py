@@ -74,6 +74,7 @@ class ColumnMapping:
     source_name: str
     role: str
     data_type: str
+    role_confirmed: bool = False
     meaning: str | None = None
     meaning_confirmed: bool = False
     unit: str | None = None
@@ -100,11 +101,13 @@ class ColumnMapping:
 
     @property
     def needs_user_confirmation(self) -> bool:
+        if not self.role_confirmed:
+            return True
         if self.role == "ignore":
             return False
         if not self.meaning or not self.meaning_confirmed:
             return True
-        if self.data_type == "number" and not self.unit_confirmed:
+        if not self.unit_confirmed:
             return True
         return False
 
@@ -112,6 +115,7 @@ class ColumnMapping:
         return {
             "source_name": self.source_name,
             "role": self.role,
+            "role_confirmed": self.role_confirmed,
             "data_type": self.data_type,
             "meaning": self.meaning,
             "meaning_confirmed": self.meaning_confirmed,

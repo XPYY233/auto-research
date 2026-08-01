@@ -87,6 +87,7 @@ class PersonalTabularPreviewTests(unittest.TestCase):
         self.assertEqual(columns["Dose (dpa)"].meaning, "Dose")
         self.assertEqual(columns["Dose (dpa)"].unit, "dpa")
         self.assertEqual(columns["Dose (dpa)"].role, "condition")
+        self.assertFalse(columns["Dose (dpa)"].role_confirmed)
         self.assertFalse(columns["Dose (dpa)"].meaning_confirmed)
         self.assertFalse(columns["Dose (dpa)"].unit_confirmed)
         self.assertTrue(columns["Dose (dpa)"].needs_user_confirmation)

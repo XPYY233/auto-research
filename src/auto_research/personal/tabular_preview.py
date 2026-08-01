@@ -439,6 +439,7 @@ def _rows_to_sheet(
             ColumnMapping(
                 source_name=name,
                 role=_suggest_role(meaning, data_type),
+                role_confirmed=False,
                 data_type=data_type,
                 meaning=meaning,
                 meaning_confirmed=False,
