@@ -1,0 +1,9 @@
+{
+  "desktop_version": "0.3.0-preview.1",
+  "bundle_short_version": "0.3.0",
+  "build_number": "3",
+  "target": "macOS arm64 development preview",
+  "product_target": "Windows production client",
+  "data_mode": "external-project-preview",
+  "minimum_evidence_schema": 12
+}

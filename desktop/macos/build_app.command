@@ -1,0 +1,119 @@
+#!/bin/zsh
+set -euo pipefail
+
+SCRIPT_DIR="${0:A:h}"
+PROJECT_ROOT="${SCRIPT_DIR:h:h}"
+PYTHON_BIN="${AUTO_RESEARCH_DESKTOP_PYTHON:-$(command -v python3 || true)}"
+CACHE_ROOT="${HOME}/Library/Caches/AutoResearchDesktop"
+VENV_ROOT="${CACHE_ROOT}/build-venv"
+OUTPUT_ROOT="${SCRIPT_DIR}/dist"
+PREVIOUS_ROOT="${SCRIPT_DIR}/releases"
+APP_PATH="${OUTPUT_ROOT}/Auto Research.app"
+BUILD_STAMP="$(date '+%Y%m%d-%H%M%S')"
+
+pause_on_error() {
+  local status=$?
+  if (( status != 0 )) && [[ -t 0 ]]; then
+    echo
+    echo "构建没有完成。上面的最后几行是原因；请把它们交给 Codex。"
+    read -k 1 "?按任意键关闭窗口。"
+    echo
+  fi
+  exit ${status}
+}
+trap pause_on_error EXIT
+
+cd "${PROJECT_ROOT}"
+
+echo "Auto Research macOS 开发预览构建器"
+echo "桌面版本: 0.3.0-preview.1"
+echo "当前构建设备: Apple Silicon Mac（正式用户端目标为 Windows）"
+echo
+
+if [[ -z "${PYTHON_BIN}" || ! -x "${PYTHON_BIN}" ]]; then
+  echo "没有找到可用的 Python 3。"
+  exit 2
+fi
+
+if [[ "$(uname -m)" != "arm64" ]]; then
+  echo "第一阶段只允许在 Apple Silicon（arm64）Mac 上构建。"
+  exit 2
+fi
+
+DIRTY_STATE="$(git status --porcelain --untracked-files=all)"
+if [[ -n "${DIRTY_STATE}" && "${AUTO_RESEARCH_ALLOW_DIRTY_BUILD:-0}" != "1" ]]; then
+  echo "项目还有未提交改动，因此没有生成可能混合多个对话的桌面版本。"
+  echo "请先让所有 Codex 对话完成、测试并提交，再运行“更新桌面版.command”。"
+  echo
+  echo "当前未完成文件："
+  echo "${DIRTY_STATE}"
+  exit 3
+fi
+
+mkdir -p "${CACHE_ROOT}" "${OUTPUT_ROOT}" "${PREVIOUS_ROOT}"
+if [[ ! -x "${VENV_ROOT}/bin/python" ]]; then
+  echo "第一次构建：正在建立独立打包环境。"
+  "${PYTHON_BIN}" -m venv "${VENV_ROOT}"
+fi
+
+echo "正在准备固定版本的桌面打包工具。"
+"${VENV_ROOT}/bin/python" -m pip install --disable-pip-version-check --quiet --upgrade pip
+"${VENV_ROOT}/bin/python" -m pip install --disable-pip-version-check --quiet \
+  --requirement "${SCRIPT_DIR}/requirements-macos-arm64.lock"
+
+BUILD_ROOT="$(mktemp -d "${CACHE_ROOT}/candidate-${BUILD_STAMP}.XXXXXX")"
+export AUTO_RESEARCH_DESKTOP_BUILD_ROOT="${PROJECT_ROOT}"
+
+echo "正在生成候选应用；当前证据数据库不会打包进应用，也不会被修改。"
+"${VENV_ROOT}/bin/python" -m PyInstaller \
+  --noconfirm \
+  --clean \
+  --distpath "${BUILD_ROOT}/dist" \
+  --workpath "${BUILD_ROOT}/work" \
+  "${SCRIPT_DIR}/AutoResearch.spec"
+
+CANDIDATE_APP="${BUILD_ROOT}/dist/Auto Research.app"
+CANDIDATE_EXECUTABLE="${CANDIDATE_APP}/Contents/MacOS/Auto Research"
+if [[ ! -x "${CANDIDATE_EXECUTABLE}" ]]; then
+  echo "候选应用没有生成可执行入口。"
+  exit 4
+fi
+
+echo "正在执行只读冒烟检查。"
+"${VENV_ROOT}/bin/python" "${SCRIPT_DIR}/verify_candidate.py" \
+  --app "${CANDIDATE_APP}" \
+  --project-root "${PROJECT_ROOT}" \
+  --cache-root "${CACHE_ROOT}"
+
+"${VENV_ROOT}/bin/python" "${SCRIPT_DIR}/build_manifest.py" \
+  --project-root "${PROJECT_ROOT}" \
+  --app "${CANDIDATE_APP}"
+codesign --force --deep --sign - "${CANDIDATE_APP}"
+codesign --verify --deep --strict "${CANDIDATE_APP}"
+plutil -lint "${CANDIDATE_APP}/Contents/Info.plist"
+
+if [[ -d "${APP_PATH}" ]]; then
+  PREVIOUS_APP="${PREVIOUS_ROOT}/Auto Research-${BUILD_STAMP}.app"
+  echo "正在把上一版移入可恢复目录：${PREVIOUS_APP}"
+  mv "${APP_PATH}" "${PREVIOUS_APP}"
+fi
+
+ditto "${CANDIDATE_APP}" "${APP_PATH}"
+if [[ -f "${BUILD_ROOT}/work/AutoResearch/warn-AutoResearch.txt" ]]; then
+  ditto "${BUILD_ROOT}/work/AutoResearch/warn-AutoResearch.txt" \
+    "${OUTPUT_ROOT}/pyinstaller-warnings.txt"
+fi
+if [[ "${BUILD_ROOT}" == "${CACHE_ROOT}"/candidate-${BUILD_STAMP}.* ]]; then
+  rm -rf -- "${BUILD_ROOT}"
+fi
+
+echo
+echo "构建完成：${APP_PATH}"
+echo "上一版（如有）保存在：${PREVIOUS_ROOT}"
+echo "现在可以双击应用测试；它仍使用当前项目的数据工作区，不是 Windows 正式发行版。"
+
+trap - EXIT
+if [[ -t 0 ]]; then
+  read -k 1 "?按任意键关闭窗口。"
+  echo
+fi
