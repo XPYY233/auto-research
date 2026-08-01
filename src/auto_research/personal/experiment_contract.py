@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -16,6 +17,7 @@ COLUMN_ROLES = {
 COLUMN_DATA_TYPES = {"number", "text", "datetime", "boolean", "unknown"}
 ARTIFACT_KINDS = {"plot", "image", "document"}
 CONFIRMATION_STATES = {"draft", "confirmed", "rejected"}
+_URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
 
 def _required_text(value: str, field_name: str, *, limit: int = 500) -> str:
@@ -38,6 +40,20 @@ def _optional_text(value: str | None, field_name: str, *, limit: int = 2_000) ->
     return cleaned
 
 
+def _pure_basename(value: str, field_name: str, *, limit: int) -> str:
+    cleaned = _required_text(value, field_name, limit=limit)
+    if (
+        cleaned in {".", ".."}
+        or "/" in cleaned
+        or "\\" in cleaned
+        or ":" in cleaned
+        or _URI_SCHEME.match(cleaned)
+        or any(ord(char) < 32 for char in cleaned)
+    ):
+        raise ValueError(f"{field_name} must be a plain basename, not a path or URI")
+    return cleaned
+
+
 @dataclass(frozen=True)
 class PersonalSourceFile:
     """Immutable identity of an imported file; local paths are never public."""
@@ -49,8 +65,12 @@ class PersonalSourceFile:
     size_bytes: int
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "file_id", _required_text(self.file_id, "file_id", limit=240))
-        object.__setattr__(self, "original_name", _required_text(self.original_name, "original_name"))
+        object.__setattr__(self, "file_id", _pure_basename(self.file_id, "file_id", limit=240))
+        object.__setattr__(
+            self,
+            "original_name",
+            _pure_basename(self.original_name, "original_name", limit=500),
+        )
         object.__setattr__(self, "media_type", _required_text(self.media_type, "media_type", limit=120))
         digest = str(self.sha256 or "").strip().casefold()
         if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
@@ -229,6 +249,7 @@ class PersonalExperimentDraft:
     def confirmation_issues(self) -> tuple[str, ...]:
         issues = [f"unconfirmed_column:{name}" for name in self.preview.unresolved_columns]
         columns = {column.source_name for column in self.preview.columns}
+        column_roles = {column.source_name: column.role for column in self.preview.columns}
         series_ids = {item.series_id for item in self.series}
         file_ids = {self.preview.source_file.file_id, *(item.file_id for item in self.supporting_files)}
         if len(file_ids) != 1 + len(self.supporting_files):
@@ -243,6 +264,8 @@ class PersonalExperimentDraft:
             ):
                 if column_name and column_name not in columns:
                     issues.append(f"missing_{field_name}:{item.series_id}:{column_name}")
+                elif column_name and column_roles[column_name] == "ignore":
+                    issues.append(f"ignored_{field_name}:{item.series_id}:{column_name}")
         for artifact in self.artifacts:
             if artifact.source_file_id not in file_ids:
                 issues.append(f"unknown_artifact_source:{artifact.artifact_id}")

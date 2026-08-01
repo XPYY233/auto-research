@@ -34,6 +34,7 @@ class PrivateExperimentSearchSourceTests(unittest.TestCase):
         self.repo = PrivateExperimentRepository(self.root)
         self.repo.add_project(PrivateProject("project-1", "W-Ta 辐照实验"))
         self.repo.add_sample(PrivateSample("sample-1", "project-1", "W-Ta-03", "W-Ta"))
+        self.revisions: dict[str, int] = {}
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -120,13 +121,18 @@ class PrivateExperimentSearchSourceTests(unittest.TestCase):
     def _register_and_save(self, draft: PersonalExperimentDraft, paths: dict[str, Path]) -> None:
         for source in (draft.preview.source_file, *draft.supporting_files):
             self.repo.register_source_file(source, paths[source.file_id])
-        self.repo.save_experiment(draft, project_id="project-1", sample_id="sample-1")
+        result = self.repo.save_experiment(
+            draft, project_id="project-1", sample_id="sample-1"
+        )
+        assert result.revision is not None
+        self.revisions[draft.draft_id] = result.revision
 
     def _confirm(self, draft: PersonalExperimentDraft) -> None:
         self.repo.save_experiment(
             replace(draft, confirmation_state="confirmed"),
             project_id="project-1",
             sample_id="sample-1",
+            expected_revision=self.revisions[draft.draft_id],
         )
 
     def test_confirmed_run_maps_to_the_existing_four_entity_types(self):
@@ -190,7 +196,7 @@ class PrivateExperimentSearchSourceTests(unittest.TestCase):
 
         self._confirm(draft)
         self.assertEqual(len(source.list_documents()), 4)
-        with self.repo.connect() as conn:
+        with self.repo.connect(write=True) as conn:
             conn.execute(
                 "UPDATE column_mappings SET meaning_confirmed=0 WHERE run_id=?",
                 (draft.draft_id,),

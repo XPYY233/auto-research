@@ -20,6 +20,10 @@
 
 ### 私人实验仓库 v1
 
+- 发布阻断 P1 收口：私人 schema 升级为 v2，首次初始化和 v1 迁移均使用原子事务；所有写操作使用 `BEGIN IMMEDIATE`，草稿增加 `revision` 比较交换，阻止陈旧草稿覆盖新版本或已确认记录。
+- 文件身份强制为纯 basename，拒绝路径和 URI；私人根目录、`files/`、SQLite 和目的文件对符号链接、非普通文件及权限收紧失败均 fail closed。
+- 同文件并发登记使用每操作唯一 staging；失败方只清理自己的临时文件或经 inode 确认且未登记的自有目的文件，不会删除成功方内容。测量序列同时禁止引用 `role=ignore` 列。
+- 新增 basename/URI、符号链接、权限失败、schema DDL 回滚、陈旧草稿、并发 CAS、同文件登记竞态和登记故障注入回归；仅使用临时目录，未接入 web、desktop、product、官方库或联合召回。
 - 新增显式 `data_root` 的独立私人仓库，只创建 `personal_experiments.sqlite` 和私有 `files/`，schema v1 覆盖项目、样品、实验批次、条件、列映射、测量序列、附件引用及项目/样品/批次备注；没有连接或 `ATTACH` 官方证据库。
 - 文件保存前复核预览 SHA-256 与大小，只在私人目录记录相对路径；数据库符号链接、未知既有数据库、不完整/未来 schema、跨项目样品引用和变化后的文件均拒绝。
 - 列角色新增 `role_confirmed`，与 `meaning_confirmed`、`unit_confirmed` 共同构成检索门。草稿可更新为已确认，已确认批次不可静默覆盖；搜索投影还会从 SQLite 再次核验全部确认标志。

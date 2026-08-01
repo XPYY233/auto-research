@@ -108,6 +108,16 @@ class PersonalExperimentContractTests(unittest.TestCase):
         self.assertIn("missing_x_column:series-1:missing", draft.confirmation_issues())
         self.assertFalse(draft.ready_to_confirm)
 
+    def test_ignored_column_cannot_be_referenced_by_measurement_series(self):
+        ignored = replace(self.preview(confirmed=True).columns[0], role="ignore")
+        preview = replace(
+            self.preview(confirmed=True),
+            columns=(ignored, self.preview(confirmed=True).columns[1]),
+        )
+        draft = replace(self.draft(), preview=preview)
+        self.assertIn("ignored_x_column:series-1:dose", draft.confirmation_issues())
+        self.assertFalse(draft.ready_to_confirm)
+
     def test_unlinked_artifact_reference_blocks_confirmation(self):
         draft = replace(
             self.draft(),
@@ -150,6 +160,22 @@ class PersonalExperimentContractTests(unittest.TestCase):
     def test_bad_file_hash_is_rejected(self):
         with self.assertRaises(ValueError):
             PersonalSourceFile("file-1", "data.csv", "text/csv", "not-a-hash", 12)
+
+    def test_file_identity_requires_plain_basenames_not_paths_or_uris(self):
+        invalid_names = (
+            "../data.csv",
+            "/tmp/data.csv",
+            "folder/data.csv",
+            "folder\\data.csv",
+            "C:\\data.csv",
+            "file:///tmp/data.csv",
+            "https://example.test/data.csv",
+        )
+        for value in invalid_names:
+            with self.subTest(original_name=value), self.assertRaises(ValueError):
+                PersonalSourceFile("file-1", value, "text/csv", "a" * 64, 12)
+            with self.subTest(file_id=value), self.assertRaises(ValueError):
+                PersonalSourceFile(value, "data.csv", "text/csv", "a" * 64, 12)
 
 
 if __name__ == "__main__":

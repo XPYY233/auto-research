@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from auto_research.personal.experiment_contract import (
     ColumnMapping,
@@ -115,7 +119,7 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
 
     def save_confirmed(self, draft: PersonalExperimentDraft) -> PrivateOperationResult:
         draft_version = replace(draft, confirmation_state="draft")
-        self.repo.save_experiment(
+        saved = self.repo.save_experiment(
             draft_version,
             project_id="project-1",
             sample_id="sample-1",
@@ -124,6 +128,7 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
             replace(draft, confirmation_state="confirmed"),
             project_id="project-1",
             sample_id="sample-1",
+            expected_revision=saved.revision,
         )
 
     def test_schema_v1_is_isolated_under_explicit_data_root(self):
@@ -173,7 +178,10 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
 
         confirmed = replace(draft, confirmation_state="confirmed")
         confirmed_result = self.repo.save_experiment(
-            confirmed, project_id="project-1", sample_id="sample-1"
+            confirmed,
+            project_id="project-1",
+            sample_id="sample-1",
+            expected_revision=draft_result.revision,
         )
         self.assertEqual(confirmed_result.import_state, "indexable")
         self.assertEqual(confirmed_result.confirmation_state, "confirmed")
@@ -228,7 +236,7 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
         draft, paths = self.draft(state="confirmed")
         self.register_draft_files(draft, paths)
         self.save_confirmed(draft)
-        with self.repo.connect() as conn:
+        with self.repo.connect(write=True) as conn:
             conn.execute(
                 "UPDATE column_mappings SET unit_confirmed=0 WHERE run_id=? AND source_name=?",
                 ("run-1", "hardness"),
@@ -313,6 +321,7 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
                 "confirmation_state": None,
                 "indexable": False,
                 "changed": True,
+                "revision": None,
             },
         )
         repeated = self.repo.register_source_file(source, paths[source.file_id])
@@ -329,6 +338,7 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
             replace(draft, confirmation_state="confirmed"),
             project_id="project-1",
             sample_id="sample-1",
+            expected_revision=saved.revision,
         )
         self.assertEqual(confirmed.import_state, "indexable")
         self.assertEqual(confirmed.confirmation_state, "confirmed")
@@ -375,6 +385,269 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
         with self.assertRaises(PrivateRepositoryError) as caught:
             self.repo.add_note("missing-note", "不存在", run_id="missing-run")
         self.assertEqual(caught.exception.code, "RUN_NOT_FOUND")
+
+    def test_schema_initialization_rolls_back_partial_ddl(self):
+        root = Path(self.tmp.name) / "atomic-schema"
+        root.mkdir()
+        database = root / DATABASE_NAME
+        database.write_bytes(b"")
+        os.chmod(database, 0o600)
+
+        def fail_after_first_statement(conn: sqlite3.Connection, _script: str) -> None:
+            conn.execute("CREATE TABLE partial_schema(value TEXT)")
+            raise sqlite3.OperationalError("injected schema failure")
+
+        with patch.object(
+            PrivateExperimentRepository,
+            "_execute_schema_statements",
+            side_effect=fail_after_first_statement,
+        ):
+            with self.assertRaises(PrivateRepositoryError) as caught:
+                PrivateExperimentRepository(root)
+        self.assertEqual(caught.exception.code, "PRIVATE_DB_UNAVAILABLE")
+        with sqlite3.connect(database) as conn:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(tables, set())
+        self.assertEqual(version, 0)
+
+    def test_files_root_symlink_is_rejected(self):
+        root = Path(self.tmp.name) / "files-link-root"
+        outside = Path(self.tmp.name) / "outside-files"
+        root.mkdir()
+        outside.mkdir()
+        try:
+            (root / "files").symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest("symbolic links are unavailable on this platform")
+        with self.assertRaises(PrivateRepositoryError) as caught:
+            PrivateExperimentRepository(root)
+        self.assertEqual(caught.exception.code, "PRIVATE_FILES_UNSAFE")
+        self.assertFalse((root / DATABASE_NAME).exists())
+
+    def test_destination_symlink_is_rejected_without_touching_target(self):
+        path, source = self.make_file("data.csv", b"source", "text/csv")
+        destination = (
+            self.repo.files_root
+            / source.sha256[:2]
+            / source.sha256
+            / f"{source.file_id}-{source.original_name}"
+        )
+        destination.parent.mkdir(parents=True)
+        outside = Path(self.tmp.name) / "outside-target"
+        outside.write_bytes(b"keep")
+        try:
+            destination.symlink_to(outside)
+        except OSError:
+            self.skipTest("symbolic links are unavailable on this platform")
+        with self.assertRaises(PrivateRepositoryError) as caught:
+            self.repo.register_source_file(source, path)
+        self.assertEqual(caught.exception.code, "PRIVATE_PATH_UNSAFE")
+        self.assertEqual(outside.read_bytes(), b"keep")
+        self.assertTrue(destination.is_symlink())
+
+    def test_permission_failure_fails_closed_before_database_creation(self):
+        root = Path(self.tmp.name) / "permission-failure"
+        with patch(
+            "auto_research.personal.private_repository.os.chmod",
+            side_effect=PermissionError("injected"),
+        ):
+            with self.assertRaises(PrivateRepositoryError) as caught:
+                PrivateExperimentRepository(root)
+        self.assertEqual(caught.exception.code, "PRIVATE_PERMISSIONS_UNSAFE")
+        self.assertFalse((root / DATABASE_NAME).exists())
+
+    def test_destination_permission_failure_removes_only_owned_file(self):
+        path, source = self.make_file("data.csv", b"source", "text/csv")
+        real_chmod = os.chmod
+
+        def fail_final_file(target, mode):
+            if Path(target).name.endswith("-data.csv"):
+                raise PermissionError("injected")
+            return real_chmod(target, mode)
+
+        with patch(
+            "auto_research.personal.private_repository.os.chmod",
+            side_effect=fail_final_file,
+        ):
+            with self.assertRaises(PrivateRepositoryError) as caught:
+                self.repo.register_source_file(source, path)
+        self.assertEqual(caught.exception.code, "PRIVATE_PERMISSIONS_UNSAFE")
+        with self.repo.connect() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM source_files").fetchone()[0]
+        self.assertEqual(count, 0)
+        self.assertEqual(
+            [item for item in self.repo.files_root.rglob("*") if item.is_file()],
+            [],
+        )
+
+    def test_stale_draft_cannot_overwrite_confirmed_revision(self):
+        draft, paths = self.draft()
+        self.register_draft_files(draft, paths)
+        saved = self.repo.save_experiment(
+            draft,
+            project_id="project-1",
+            sample_id="sample-1",
+        )
+        confirmed = self.repo.save_experiment(
+            replace(draft, confirmation_state="confirmed"),
+            project_id="project-1",
+            sample_id="sample-1",
+            expected_revision=saved.revision,
+        )
+        self.assertEqual(confirmed.revision, 2)
+
+        stale_repository = PrivateExperimentRepository(self.root)
+        with self.assertRaises(PrivateRepositoryError) as caught:
+            stale_repository.save_experiment(
+                replace(draft, run_name="陈旧草稿"),
+                project_id="project-1",
+                sample_id="sample-1",
+                expected_revision=saved.revision,
+            )
+        self.assertEqual(caught.exception.code, "RUN_CONFIRMED_IMMUTABLE")
+        document = self.repo.list_personal_search_documents()[0]
+        self.assertEqual(document["display_title"], "室温纳米压痕")
+
+    def test_concurrent_draft_updates_use_revision_compare_and_swap(self):
+        draft, paths = self.draft()
+        self.register_draft_files(draft, paths)
+        saved = self.repo.save_experiment(
+            draft,
+            project_id="project-1",
+            sample_id="sample-1",
+        )
+        barrier = threading.Barrier(2)
+
+        def update(repository: PrivateExperimentRepository, name: str):
+            barrier.wait(timeout=5)
+            try:
+                result = repository.save_experiment(
+                    replace(draft, run_name=name),
+                    project_id="project-1",
+                    sample_id="sample-1",
+                    expected_revision=saved.revision,
+                )
+                return ("ok", result.revision)
+            except PrivateRepositoryError as exc:
+                return (exc.code, exc.details.get("actual_revision"))
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(update, PrivateExperimentRepository(self.root), "更新 A"),
+                executor.submit(update, PrivateExperimentRepository(self.root), "更新 B"),
+            ]
+            outcomes = [future.result(timeout=10) for future in futures]
+        self.assertEqual(sorted(item[0] for item in outcomes), ["RUN_REVISION_CONFLICT", "ok"])
+        self.assertEqual({item[1] for item in outcomes}, {2})
+        with self.repo.connect() as conn:
+            row = conn.execute(
+                "SELECT name,revision,confirmation_state FROM experiment_runs WHERE run_id=?",
+                (draft.draft_id,),
+            ).fetchone()
+        self.assertIn(str(row["name"]), {"更新 A", "更新 B"})
+        self.assertEqual(int(row["revision"]), 2)
+        self.assertEqual(str(row["confirmation_state"]), "draft")
+
+    def test_concurrent_conflicting_file_registration_preserves_winner(self):
+        first_path, first = self.make_file("first.csv", b"first", "text/csv")
+        second_path, second_identity = self.make_file("second.csv", b"second", "text/csv")
+        second = replace(second_identity, file_id=first.file_id)
+        barrier = threading.Barrier(2)
+
+        class RacingRepository(PrivateExperimentRepository):
+            def _stage_source_file(self, selected, temporary, source):
+                PrivateExperimentRepository._stage_source_file(selected, temporary, source)
+                barrier.wait(timeout=5)
+
+        def register(repository, source, path):
+            try:
+                result = repository.register_source_file(source, path)
+                return ("ok", result.changed)
+            except PrivateRepositoryError as exc:
+                return (exc.code, False)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(register, RacingRepository(self.root), first, first_path),
+                executor.submit(register, RacingRepository(self.root), second, second_path),
+            ]
+            outcomes = [future.result(timeout=10) for future in futures]
+        self.assertEqual(sorted(item[0] for item in outcomes), ["DUPLICATE_ID", "ok"])
+        stored = self.repo.private_path_for_file(first.file_id)
+        self.assertTrue(stored.is_file())
+        self.assertIn(stored.read_bytes(), {b"first", b"second"})
+        files = [item for item in self.repo.files_root.rglob("*") if item.is_file()]
+        self.assertEqual(files, [stored])
+        self.assertEqual(list(self.repo.files_root.rglob("*.tmp")), [])
+
+    def test_post_publish_database_failure_cleans_owned_destination(self):
+        path, source = self.make_file("fault.csv", b"source", "text/csv")
+
+        class FailingRepository(PrivateExperimentRepository):
+            @staticmethod
+            def _insert_source_file_row(conn, source, relative):
+                raise sqlite3.OperationalError("injected insert failure")
+
+        repository = FailingRepository(self.root)
+        with self.assertRaises(PrivateRepositoryError) as caught:
+            repository.register_source_file(source, path)
+        self.assertEqual(caught.exception.code, "SOURCE_FILE_UNAVAILABLE")
+        with self.repo.connect() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM source_files").fetchone()[0]
+        self.assertEqual(count, 0)
+        self.assertEqual(
+            [item for item in self.repo.files_root.rglob("*") if item.is_file()],
+            [],
+        )
+
+    def test_projection_rejects_series_that_references_ignored_column(self):
+        draft, paths = self.draft(state="confirmed")
+        self.register_draft_files(draft, paths)
+        self.save_confirmed(draft)
+        with self.repo.connect(write=True) as conn:
+            conn.execute(
+                "UPDATE column_mappings SET role='ignore' WHERE run_id=? AND source_name=?",
+                (draft.draft_id, "dose"),
+            )
+        self.assertEqual(self.repo.list_personal_search_documents(), [])
+
+    def test_draft_rejects_series_that_references_ignored_column(self):
+        draft, paths = self.draft()
+        ignored = replace(
+            draft.preview.columns[0],
+            role="ignore",
+            role_confirmed=True,
+            meaning_confirmed=True,
+            unit_confirmed=True,
+        )
+        invalid = replace(
+            draft,
+            preview=replace(
+                draft.preview,
+                columns=(ignored, draft.preview.columns[1]),
+            ),
+        )
+        self.register_draft_files(invalid, paths)
+        with self.assertRaises(PrivateRepositoryError) as caught:
+            self.repo.save_experiment(
+                invalid,
+                project_id="project-1",
+                sample_id="sample-1",
+            )
+        self.assertEqual(caught.exception.code, "INVALID_SERIES_COLUMN")
+        self.assertEqual(
+            caught.exception.details["issue_codes"],
+            ["ignored_x_column"],
+        )
+        with self.repo.connect() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM experiment_runs").fetchone()[0]
+        self.assertEqual(count, 0)
 
     def test_unknown_existing_database_is_not_adopted(self):
         other_root = Path(self.tmp.name) / "unknown"

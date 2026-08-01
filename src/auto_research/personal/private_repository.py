@@ -3,8 +3,8 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import shutil
 import sqlite3
+import stat
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -15,7 +15,7 @@ from typing import Any, Iterator, Mapping
 from .experiment_contract import PersonalExperimentDraft, PersonalSourceFile
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DATABASE_NAME = "personal_experiments.sqlite"
 IMPORT_STATES = frozenset({"previewed", "draft_saved", "indexable"})
 _ERROR_DETAIL_KEYS = {
@@ -26,6 +26,8 @@ _ERROR_DETAIL_KEYS = {
     "issue_codes",
     "schema_version",
     "operation",
+    "expected_revision",
+    "actual_revision",
 }
 _REQUIRED_TABLES = {
     "repository_meta",
@@ -80,6 +82,7 @@ class PrivateOperationResult:
     confirmation_state: str | None = None
     indexable: bool = False
     changed: bool = True
+    revision: int | None = None
 
     def __post_init__(self) -> None:
         if self.import_state is not None and self.import_state not in IMPORT_STATES:
@@ -92,6 +95,10 @@ class PrivateOperationResult:
             raise ValueError("indexable private result must also be confirmed")
         if self.import_state == "indexable" and not self.indexable:
             raise ValueError("indexable import state must set indexable=true")
+        if self.revision is not None and (
+            isinstance(self.revision, bool) or int(self.revision) < 1
+        ):
+            raise ValueError("revision must be a positive integer")
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -104,6 +111,7 @@ class PrivateOperationResult:
             "confirmation_state": self.confirmation_state,
             "indexable": self.indexable,
             "changed": self.changed,
+            "revision": self.revision,
         }
 
 
@@ -187,8 +195,22 @@ class PrivateExperimentRepository:
                 details={"field": "data_root"},
             )
         try:
-            self.data_root = Path(data_root).expanduser().resolve()
+            requested_root = Path(data_root).expanduser().absolute()
         except (OSError, RuntimeError, TypeError):
+            raise _failure(
+                "PRIVATE_ROOT_UNAVAILABLE",
+                "个人实验数据位置不可用，请重新选择。",
+                details={"operation": "initialize"},
+            ) from None
+        if requested_root.is_symlink():
+            raise _failure(
+                "PRIVATE_ROOT_UNSAFE",
+                "个人实验数据位置不能是符号链接。",
+                details={"operation": "initialize"},
+            )
+        try:
+            self.data_root = requested_root.resolve()
+        except (OSError, RuntimeError):
             raise _failure(
                 "PRIVATE_ROOT_UNAVAILABLE",
                 "个人实验数据位置不可用，请重新选择。",
@@ -199,92 +221,285 @@ class PrivateExperimentRepository:
         self._initialize()
 
     def _initialize(self) -> None:
+        database_created = False
+        database_identity: tuple[int, int] | None = None
+        conn: sqlite3.Connection | None = None
         try:
-            self.data_root.mkdir(parents=True, exist_ok=True)
-            self.files_root.mkdir(parents=True, exist_ok=True)
-        except OSError:
+            self.data_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if self.files_root.is_symlink():
+                raise _failure(
+                    "PRIVATE_FILES_UNSAFE",
+                    "私人文件目录不能是符号链接。",
+                    details={"operation": "initialize"},
+                )
+            self.files_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            self._restrict_permissions(self.data_root, 0o700)
+            self._restrict_permissions(self.files_root, 0o700)
+            database_created, database_identity = self._prepare_database_file()
+
+            conn = sqlite3.connect(self.database_path, timeout=10)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=10000")
+            conn.execute("BEGIN IMMEDIATE")
+            version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            existing = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+            }
+            if version == 0 and existing:
+                raise _failure(
+                    "PRIVATE_SCHEMA_UNKNOWN",
+                    "所选位置已有无法识别的数据，请更换位置。",
+                    details={"operation": "initialize"},
+                )
+            if version not in {0, 1, SCHEMA_VERSION}:
+                raise _failure(
+                    "PRIVATE_SCHEMA_FUTURE",
+                    "个人实验数据版本与当前软件不兼容。",
+                    details={"schema_version": version},
+                )
+            if version == 0:
+                self._execute_schema_statements(conn, _SCHEMA_V2)
+                conn.execute(
+                    "INSERT INTO repository_meta(key,value) VALUES('repository_id',?)",
+                    (f"personal-{uuid.uuid4()}",),
+                )
+                conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            else:
+                self._validate_schema_tables(existing, version)
+                columns = {
+                    str(row[1]) for row in conn.execute("PRAGMA table_info(experiment_runs)")
+                }
+                if version == 1:
+                    if "revision" not in columns:
+                        conn.execute(
+                            """ALTER TABLE experiment_runs ADD COLUMN revision INTEGER
+                            NOT NULL DEFAULT 1 CHECK(revision>=1)"""
+                        )
+                    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                elif "revision" not in columns:
+                    raise _failure(
+                        "PRIVATE_SCHEMA_INCOMPLETE",
+                        "个人实验数据库不完整，未进行任何修改。",
+                        details={"schema_version": version},
+                    )
+            conn.commit()
+        except PrivateRepositoryError:
+            if conn is not None:
+                conn.rollback()
+                conn.close()
+                conn = None
+            if database_created and database_identity is not None:
+                self._unlink_owned_file(self.database_path, database_identity)
+            raise
+        except (OSError, sqlite3.Error):
+            if conn is not None:
+                conn.rollback()
+                conn.close()
+                conn = None
+            if database_created and database_identity is not None:
+                self._unlink_owned_file(self.database_path, database_identity)
             raise _failure(
-                "PRIVATE_ROOT_UNAVAILABLE",
-                "个人实验数据位置不可用，请重新选择。",
+                "PRIVATE_DB_UNAVAILABLE",
+                "个人实验数据库暂时无法打开。",
                 details={"operation": "initialize"},
             ) from None
+        finally:
+            if conn is not None:
+                conn.close()
+
+    def _prepare_database_file(self) -> tuple[bool, tuple[int, int]]:
         if self.database_path.is_symlink():
             raise _failure(
                 "PRIVATE_DB_UNSAFE",
                 "个人实验数据库位置不安全，请重新选择。",
                 details={"operation": "initialize"},
             )
-        self._restrict_permissions(self.data_root, 0o700)
-        self._restrict_permissions(self.files_root, 0o700)
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        created = False
         try:
-            with sqlite3.connect(self.database_path) as conn:
-                conn.execute("PRAGMA foreign_keys=ON")
-                version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-                existing = {
-                    row[0]
-                    for row in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-                    )
-                }
-                if version == 0 and existing:
-                    raise _failure(
-                        "PRIVATE_SCHEMA_UNKNOWN",
-                        "所选位置已有无法识别的数据，请更换位置。",
-                        details={"operation": "initialize"},
-                    )
-                if version not in {0, SCHEMA_VERSION}:
-                    raise _failure(
-                        "PRIVATE_SCHEMA_FUTURE",
-                        "个人实验数据版本与当前软件不兼容。",
-                        details={"schema_version": version},
-                    )
-                if version == 0:
-                    conn.executescript(_SCHEMA_V1)
-                    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-                    conn.execute(
-                        "INSERT INTO repository_meta(key,value) VALUES('repository_id',?)",
-                        (f"personal-{uuid.uuid4()}",),
-                    )
-                elif not _REQUIRED_TABLES <= existing:
-                    raise _failure(
-                        "PRIVATE_SCHEMA_INCOMPLETE",
-                        "个人实验数据库不完整，未进行任何修改。",
-                        details={"schema_version": version},
-                    )
-                conn.commit()
-        except PrivateRepositoryError:
-            raise
-        except sqlite3.Error:
+            fd = os.open(
+                self.database_path,
+                os.O_RDWR | os.O_CREAT | os.O_EXCL | no_follow,
+                0o600,
+            )
+            created = True
+        except FileExistsError:
+            if self.database_path.is_symlink():
+                raise _failure(
+                    "PRIVATE_DB_UNSAFE",
+                    "个人实验数据库位置不安全，请重新选择。",
+                    details={"operation": "initialize"},
+                )
+            try:
+                fd = os.open(self.database_path, os.O_RDWR | no_follow)
+            except OSError:
+                raise _failure(
+                    "PRIVATE_DB_UNSAFE",
+                    "个人实验数据库位置不安全，请重新选择。",
+                    details={"operation": "initialize"},
+                ) from None
+        except OSError:
             raise _failure(
                 "PRIVATE_DB_UNAVAILABLE",
-                "个人实验数据库暂时无法打开。",
+                "个人实验数据库暂时无法创建。",
                 details={"operation": "initialize"},
             ) from None
-        self._restrict_permissions(self.database_path, 0o600)
+        try:
+            metadata = os.fstat(fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise _failure(
+                    "PRIVATE_DB_UNSAFE",
+                    "个人实验数据库必须是普通文件。",
+                    details={"operation": "initialize"},
+                )
+            identity = (int(metadata.st_dev), int(metadata.st_ino))
+        finally:
+            os.close(fd)
+        try:
+            self._restrict_permissions(self.database_path, 0o600)
+        except PrivateRepositoryError:
+            if created:
+                self._unlink_owned_file(self.database_path, identity)
+            raise
+        return created, identity
+
+    @staticmethod
+    def _execute_schema_statements(conn: sqlite3.Connection, script: str) -> None:
+        statement = ""
+        for line in script.splitlines(keepends=True):
+            statement += line
+            if sqlite3.complete_statement(statement):
+                conn.execute(statement)
+                statement = ""
+        if statement.strip():
+            raise sqlite3.OperationalError("incomplete private schema statement")
+
+    @staticmethod
+    def _validate_schema_tables(existing: set[str], version: int) -> None:
+        if not _REQUIRED_TABLES <= existing:
+            raise _failure(
+                "PRIVATE_SCHEMA_INCOMPLETE",
+                "个人实验数据库不完整，未进行任何修改。",
+                details={"schema_version": version},
+            )
+
+    @staticmethod
+    def _unlink_owned_file(path: Path, identity: tuple[int, int]) -> None:
+        try:
+            metadata = path.lstat()
+            if stat.S_ISREG(metadata.st_mode) and (
+                int(metadata.st_dev),
+                int(metadata.st_ino),
+            ) == identity:
+                path.unlink()
+        except OSError:
+            pass
 
     @staticmethod
     def _restrict_permissions(path: Path, mode: int) -> None:
+        if path.is_symlink():
+            raise _failure(
+                "PRIVATE_PERMISSIONS_UNSAFE",
+                "私人数据权限无法安全设置。",
+                details={"operation": "secure_storage"},
+            )
         try:
             os.chmod(path, mode)
+            current_mode = stat.S_IMODE(path.stat().st_mode)
         except OSError:
-            # Windows ACLs are owned by the desktop integration layer. The
-            # repository still never broadens permissions itself.
-            pass
+            raise _failure(
+                "PRIVATE_PERMISSIONS_UNSAFE",
+                "私人数据权限无法安全设置。",
+                details={"operation": "secure_storage"},
+            ) from None
+        if os.name != "nt" and current_mode != mode:
+            raise _failure(
+                "PRIVATE_PERMISSIONS_UNSAFE",
+                "私人数据权限无法安全设置。",
+                details={"operation": "secure_storage"},
+            )
+
+    def _assert_storage_roots_safe(self) -> None:
+        if self.data_root.is_symlink() or self.files_root.is_symlink():
+            raise _failure(
+                "PRIVATE_FILES_UNSAFE",
+                "私人数据目录不能是符号链接。",
+                details={"operation": "access_storage"},
+            )
+        if self.database_path.is_symlink():
+            raise _failure(
+                "PRIVATE_DB_UNSAFE",
+                "个人实验数据库位置不安全。",
+                details={"operation": "access_storage"},
+            )
+
+    def _assert_destination_safe(self, destination: Path) -> None:
+        self._assert_storage_roots_safe()
+        try:
+            relative = destination.relative_to(self.files_root)
+        except ValueError:
+            raise _failure(
+                "PRIVATE_PATH_UNSAFE",
+                "私人文件保存位置不安全。",
+                details={"operation": "access_storage"},
+            ) from None
+        current = self.files_root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                raise _failure(
+                    "PRIVATE_PATH_UNSAFE",
+                    "私人文件保存路径不能包含符号链接。",
+                    details={"operation": "access_storage"},
+                )
 
     @contextmanager
-    def connect(self) -> Iterator[sqlite3.Connection]:
+    def connect(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
+        self._assert_storage_roots_safe()
+        self._prepare_existing_database_for_access()
         conn = sqlite3.connect(self.database_path, timeout=10)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=10000")
+        if write:
+            conn.execute("BEGIN IMMEDIATE")
+        else:
+            conn.execute("PRAGMA query_only=ON")
         try:
             yield conn
-            conn.commit()
+            if write:
+                conn.commit()
         except Exception:
-            conn.rollback()
+            if write:
+                conn.rollback()
             raise
         finally:
             conn.close()
+
+    def _prepare_existing_database_for_access(self) -> None:
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(self.database_path, os.O_RDONLY | no_follow)
+        except OSError:
+            raise _failure(
+                "PRIVATE_DB_UNSAFE",
+                "个人实验数据库位置不安全。",
+                details={"operation": "access_storage"},
+            ) from None
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise _failure(
+                    "PRIVATE_DB_UNSAFE",
+                    "个人实验数据库必须是普通文件。",
+                    details={"operation": "access_storage"},
+                )
+        finally:
+            os.close(fd)
+        self._restrict_permissions(self.database_path, 0o600)
 
     @property
     def repository_id(self) -> str:
@@ -319,7 +534,7 @@ class PrivateExperimentRepository:
                 details={"entity_type": "project"},
             ) from None
         try:
-            with self.connect() as conn:
+            with self.connect(write=True) as conn:
                 conn.execute(
                     "INSERT INTO projects(project_id,name,description,created_at) VALUES(?,?,?,?)",
                     (project_id, name, description, _now()),
@@ -352,7 +567,7 @@ class PrivateExperimentRepository:
                 details={"entity_type": "sample"},
             ) from None
         try:
-            with self.connect() as conn:
+            with self.connect(write=True) as conn:
                 if conn.execute(
                     "SELECT 1 FROM projects WHERE project_id=?", (project_id,)
                 ).fetchone() is None:
@@ -405,27 +620,16 @@ class PrivateExperimentRepository:
                 details={"entity_type": "source_file"},
             )
         safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", source.file_id)[:100] or "file"
-        safe_name = re.sub(r"[^A-Za-z0-9_. -]+", "_", Path(source.original_name).name)[:140]
+        safe_name = re.sub(r"[^A-Za-z0-9_. -]+", "_", source.original_name)[:140]
         relative = Path("files") / source.sha256[:2] / source.sha256 / f"{safe_id}-{safe_name}"
-        try:
-            destination = (self.data_root / relative).resolve()
-        except (OSError, RuntimeError):
-            raise _failure(
-                "PRIVATE_PATH_UNSAFE",
-                "私人文件保存位置不可用，未保存文件。",
-                details={"operation": "register_source_file"},
-            ) from None
-        if self.data_root not in destination.parents:
-            raise _failure(
-                "PRIVATE_PATH_UNSAFE",
-                "私人文件保存位置不安全，未保存文件。",
-                details={"operation": "register_source_file"},
-            )
+        destination = self.data_root / relative
+        self._assert_destination_safe(destination)
 
         try:
             with self.connect() as conn:
                 existing = conn.execute(
-                    "SELECT sha256,size_bytes,relative_path FROM source_files WHERE file_id=?",
+                    """SELECT sha256,size_bytes,relative_path
+                    FROM source_files WHERE file_id=?""",
                     (source.file_id,),
                 ).fetchone()
         except sqlite3.Error:
@@ -435,71 +639,49 @@ class PrivateExperimentRepository:
                 details={"operation": "register_source_file"},
             ) from None
         if existing is not None:
-            if str(existing["sha256"]) != source.sha256 or int(existing["size_bytes"]) != source.size_bytes:
-                raise _failure(
-                    "DUPLICATE_ID",
-                    "该文件标识已被其他内容使用。",
-                    details={"entity_type": "source_file"},
-                )
-            stored = self._resolve_relative_path(str(existing["relative_path"]))
-            try:
-                stored_matches = stored.is_file() and self._sha256(stored) == source.sha256
-            except OSError:
-                stored_matches = False
-            if not stored_matches:
-                raise _failure(
-                    "SOURCE_FILE_CHANGED",
-                    "已保存的私人文件缺失或发生变化。",
-                    details={"entity_type": "source_file"},
-                )
-            return PrivateOperationResult(
-                "register_source_file",
-                "source_file",
-                source.file_id,
-                import_state="previewed",
-                changed=False,
-            )
+            return self._registered_source_result(source, existing)
 
         temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
+        published_identity: tuple[int, int] | None = None
         try:
-            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            self._assert_destination_safe(destination)
             self._restrict_permissions(destination.parent, 0o700)
-            digest = hashlib.sha256()
-            size = 0
-            with selected.open("rb") as reader, temporary.open("xb") as writer:
-                while chunk := reader.read(1024 * 1024):
-                    digest.update(chunk)
-                    size += len(chunk)
-                    writer.write(chunk)
-                writer.flush()
-                os.fsync(writer.fileno())
-            if digest.hexdigest() != source.sha256 or size != source.size_bytes:
-                raise _failure(
-                    "SOURCE_FILE_CHANGED",
-                    "所选文件在预览后发生变化，请重新预览。",
-                    details={"entity_type": "source_file"},
-                )
-            os.replace(temporary, destination)
-            self._restrict_permissions(destination, 0o600)
-            with self.connect() as conn:
-                conn.execute(
-                    """INSERT INTO source_files(
-                        file_id,original_name,media_type,sha256,size_bytes,relative_path,created_at
-                    ) VALUES(?,?,?,?,?,?,?)""",
-                    (
-                        source.file_id,
-                        source.original_name,
-                        source.media_type,
-                        source.sha256,
-                        source.size_bytes,
-                        relative.as_posix(),
-                        _now(),
-                    ),
-                )
+            self._stage_source_file(selected, temporary, source)
+            with self.connect(write=True) as conn:
+                existing = conn.execute(
+                    """SELECT sha256,size_bytes,relative_path
+                    FROM source_files WHERE file_id=?""",
+                    (source.file_id,),
+                ).fetchone()
+                if existing is not None:
+                    return self._registered_source_result(source, existing)
+                self._assert_destination_safe(destination)
+                if destination.is_symlink() or destination.exists():
+                    raise _failure(
+                        "PRIVATE_PATH_UNSAFE",
+                        "私人文件目标已存在，未覆盖任何文件。",
+                        details={"operation": "register_source_file"},
+                    )
+                os.replace(temporary, destination)
+                metadata = destination.lstat()
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise _failure(
+                        "PRIVATE_PATH_UNSAFE",
+                        "私人文件目标不是普通文件。",
+                        details={"operation": "register_source_file"},
+                    )
+                published_identity = (int(metadata.st_dev), int(metadata.st_ino))
+                self._restrict_permissions(destination, 0o600)
+                self._insert_source_file_row(conn, source, relative)
         except Exception as exc:
-            temporary.unlink(missing_ok=True)
-            if destination.exists():
-                destination.unlink(missing_ok=True)
+            self._unlink_staging_file(temporary)
+            if published_identity is not None:
+                self._cleanup_unregistered_owned_destination(
+                    destination,
+                    published_identity,
+                    source.file_id,
+                )
             if isinstance(exc, PrivateRepositoryError):
                 raise
             if isinstance(exc, sqlite3.IntegrityError):
@@ -513,12 +695,126 @@ class PrivateExperimentRepository:
                 "文件暂时无法保存，请稍后重试。",
                 details={"operation": "register_source_file"},
             ) from None
+        finally:
+            self._unlink_staging_file(temporary)
         return PrivateOperationResult(
             "register_source_file",
             "source_file",
             source.file_id,
             import_state="previewed",
         )
+
+    def _registered_source_result(
+        self,
+        source: PersonalSourceFile,
+        existing: sqlite3.Row,
+    ) -> PrivateOperationResult:
+        if (
+            str(existing["sha256"]) != source.sha256
+            or int(existing["size_bytes"]) != source.size_bytes
+        ):
+            raise _failure(
+                "DUPLICATE_ID",
+                "该文件标识已被其他内容使用。",
+                details={"entity_type": "source_file"},
+            )
+        stored = self._resolve_relative_path(str(existing["relative_path"]))
+        try:
+            stored_matches = (
+                not stored.is_symlink()
+                and stored.is_file()
+                and self._sha256(stored) == source.sha256
+            )
+        except OSError:
+            stored_matches = False
+        if not stored_matches:
+            raise _failure(
+                "SOURCE_FILE_CHANGED",
+                "已保存的私人文件缺失或发生变化。",
+                details={"entity_type": "source_file"},
+            )
+        return PrivateOperationResult(
+            "register_source_file",
+            "source_file",
+            source.file_id,
+            import_state="previewed",
+            changed=False,
+        )
+
+    @staticmethod
+    def _stage_source_file(
+        selected: Path,
+        temporary: Path,
+        source: PersonalSourceFile,
+    ) -> None:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(temporary, flags, 0o600)
+        try:
+            digest = hashlib.sha256()
+            size = 0
+            with selected.open("rb") as reader, os.fdopen(descriptor, "wb") as writer:
+                descriptor = -1
+                while chunk := reader.read(1024 * 1024):
+                    digest.update(chunk)
+                    size += len(chunk)
+                    writer.write(chunk)
+                writer.flush()
+                os.fsync(writer.fileno())
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        if digest.hexdigest() != source.sha256 or size != source.size_bytes:
+            raise _failure(
+                "SOURCE_FILE_CHANGED",
+                "所选文件在预览后发生变化，请重新预览。",
+                details={"entity_type": "source_file"},
+            )
+
+    @staticmethod
+    def _insert_source_file_row(
+        conn: sqlite3.Connection,
+        source: PersonalSourceFile,
+        relative: Path,
+    ) -> None:
+        conn.execute(
+            """INSERT INTO source_files(
+                file_id,original_name,media_type,sha256,size_bytes,relative_path,created_at
+            ) VALUES(?,?,?,?,?,?,?)""",
+            (
+                source.file_id,
+                source.original_name,
+                source.media_type,
+                source.sha256,
+                source.size_bytes,
+                relative.as_posix(),
+                _now(),
+            ),
+        )
+
+    @staticmethod
+    def _unlink_staging_file(path: Path) -> None:
+        try:
+            if path.is_symlink() or path.exists():
+                path.unlink()
+        except OSError:
+            pass
+
+    def _cleanup_unregistered_owned_destination(
+        self,
+        destination: Path,
+        identity: tuple[int, int],
+        file_id: str,
+    ) -> None:
+        try:
+            with self.connect() as conn:
+                registered = conn.execute(
+                    "SELECT 1 FROM source_files WHERE file_id=?",
+                    (file_id,),
+                ).fetchone()
+        except Exception:
+            return
+        if registered is None:
+            self._unlink_owned_file(destination, identity)
 
     def private_path_for_file(self, file_id: str) -> Path:
         """Resolve an internal file path for trusted private-repository code only."""
@@ -544,27 +840,20 @@ class PrivateExperimentRepository:
 
     def _resolve_relative_path(self, relative_path: str) -> Path:
         relative = Path(relative_path)
-        if relative.is_absolute():
+        if (
+            relative.is_absolute()
+            or not relative.parts
+            or relative.parts[0] != "files"
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
             raise _failure(
                 "PRIVATE_PATH_UNSAFE",
                 "私人文件记录包含不安全路径。",
                 details={"operation": "resolve_private_file"},
             )
-        try:
-            resolved = (self.data_root / relative).resolve()
-        except (OSError, RuntimeError):
-            raise _failure(
-                "PRIVATE_PATH_UNSAFE",
-                "私人文件记录包含不安全路径。",
-                details={"operation": "resolve_private_file"},
-            ) from None
-        if self.data_root not in resolved.parents:
-            raise _failure(
-                "PRIVATE_PATH_UNSAFE",
-                "私人文件记录包含不安全路径。",
-                details={"operation": "resolve_private_file"},
-            )
-        return resolved
+        destination = self.data_root / relative
+        self._assert_destination_safe(destination)
+        return destination
 
     @staticmethod
     def _sha256(path: Path) -> str:
@@ -580,8 +869,36 @@ class PrivateExperimentRepository:
         *,
         project_id: str,
         sample_id: str,
+        expected_revision: int | None = None,
     ) -> PrivateOperationResult:
-        """Save or confirm one run; confirmed runs are immutable in repository v1."""
+        """Save or confirm one run through an immediate transaction and revision CAS."""
+
+        ignored_series_issues = [
+            issue
+            for issue in draft.confirmation_issues()
+            if issue.startswith("ignored_")
+        ]
+        if ignored_series_issues:
+            raise _failure(
+                "INVALID_SERIES_COLUMN",
+                "测量序列不能引用已忽略的列。",
+                details={
+                    "entity_type": "measurement_series",
+                    "issue_codes": list(
+                        dict.fromkeys(
+                            issue.partition(":")[0] for issue in ignored_series_issues
+                        )
+                    ),
+                },
+            )
+        if expected_revision is not None and (
+            isinstance(expected_revision, bool) or int(expected_revision) < 1
+        ):
+            raise _failure(
+                "VALIDATION_FAILED",
+                "实验记录版本无效，请重新加载。",
+                details={"field": "expected_revision"},
+            )
 
         if draft.confirmation_state == "confirmed" and not draft.ready_to_confirm:
             raise _failure(
@@ -594,8 +911,9 @@ class PrivateExperimentRepository:
                 },
             )
         expected_files = (draft.preview.source_file, *draft.supporting_files)
+        new_revision: int | None = None
         try:
-            with self.connect() as conn:
+            with self.connect(write=True) as conn:
                 project = conn.execute(
                     "SELECT project_id FROM projects WHERE project_id=?", (project_id,)
                 ).fetchone()
@@ -641,7 +959,7 @@ class PrivateExperimentRepository:
                         )
 
                 existing = conn.execute(
-                    """SELECT confirmation_state,project_id,sample_id
+                    """SELECT confirmation_state,project_id,sample_id,revision
                     FROM experiment_runs WHERE run_id=?""",
                     (draft.draft_id,),
                 ).fetchone()
@@ -654,6 +972,16 @@ class PrivateExperimentRepository:
                             "entity_type": "experiment_run",
                             "current_state": "previewed",
                             "required_state": "draft_saved",
+                        },
+                    )
+                if existing is None and expected_revision is not None:
+                    raise _failure(
+                        "RUN_REVISION_CONFLICT",
+                        "实验草稿版本已变化，请重新加载后再保存。",
+                        details={
+                            "entity_type": "experiment_run",
+                            "expected_revision": expected_revision,
+                            "actual_revision": 0,
                         },
                     )
                 if existing is not None and current_state == "confirmed":
@@ -675,6 +1003,27 @@ class PrivateExperimentRepository:
                             "required_state": "draft_saved",
                         },
                     )
+                if existing is not None:
+                    actual_revision = int(existing["revision"])
+                    if expected_revision is None:
+                        raise _failure(
+                            "RUN_REVISION_REQUIRED",
+                            "请重新加载实验草稿后再保存。",
+                            details={
+                                "entity_type": "experiment_run",
+                                "actual_revision": actual_revision,
+                            },
+                        )
+                    if expected_revision != actual_revision:
+                        raise _failure(
+                            "RUN_REVISION_CONFLICT",
+                            "实验草稿已被更新，请重新加载后再保存。",
+                            details={
+                                "entity_type": "experiment_run",
+                                "expected_revision": expected_revision,
+                                "actual_revision": actual_revision,
+                            },
+                        )
                 if existing is not None and (
                     str(existing["project_id"]) != project_id
                     or str(existing["sample_id"]) != sample_id
@@ -688,8 +1037,8 @@ class PrivateExperimentRepository:
                     conn.execute(
                         """INSERT INTO experiment_runs(
                             run_id,project_id,sample_id,name,method,confirmation_state,
-                            sheet_name,row_count,created_at,updated_at
-                        ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                            sheet_name,row_count,revision,created_at,updated_at
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             draft.draft_id,
                             project_id,
@@ -699,16 +1048,19 @@ class PrivateExperimentRepository:
                             draft.confirmation_state,
                             draft.preview.sheet_name,
                             draft.preview.row_count,
+                            1,
                             _now(),
                             _now(),
                         ),
                     )
+                    new_revision = 1
                 else:
-                    self._clear_run_children(conn, draft.draft_id)
-                    conn.execute(
+                    assert expected_revision is not None
+                    cursor = conn.execute(
                         """UPDATE experiment_runs SET
-                            name=?,method=?,confirmation_state=?,sheet_name=?,row_count=?,updated_at=?
-                        WHERE run_id=?""",
+                            name=?,method=?,confirmation_state=?,sheet_name=?,row_count=?,
+                            revision=revision+1,updated_at=?
+                        WHERE run_id=? AND revision=? AND confirmation_state='draft'""",
                         (
                             draft.run_name,
                             draft.method,
@@ -717,8 +1069,25 @@ class PrivateExperimentRepository:
                             draft.preview.row_count,
                             _now(),
                             draft.draft_id,
+                            expected_revision,
                         ),
                     )
+                    if cursor.rowcount != 1:
+                        actual = conn.execute(
+                            "SELECT revision FROM experiment_runs WHERE run_id=?",
+                            (draft.draft_id,),
+                        ).fetchone()
+                        raise _failure(
+                            "RUN_REVISION_CONFLICT",
+                            "实验草稿已被更新，请重新加载后再保存。",
+                            details={
+                                "entity_type": "experiment_run",
+                                "expected_revision": expected_revision,
+                                "actual_revision": int(actual[0]) if actual else 0,
+                            },
+                        )
+                    new_revision = expected_revision + 1
+                    self._clear_run_children(conn, draft.draft_id)
                 self._insert_run_children(conn, draft)
                 if draft.confirmation_state == "confirmed" and not self._run_is_searchable(
                     conn, draft.draft_id
@@ -754,6 +1123,7 @@ class PrivateExperimentRepository:
                 import_state="indexable",
                 confirmation_state="confirmed",
                 indexable=True,
+                revision=new_revision,
             )
         return PrivateOperationResult(
             "save_experiment",
@@ -761,6 +1131,7 @@ class PrivateExperimentRepository:
             draft.draft_id,
             import_state="draft_saved",
             confirmation_state=draft.confirmation_state,
+            revision=new_revision,
         )
 
     @staticmethod
@@ -894,7 +1265,7 @@ class PrivateExperimentRepository:
             ),
         }[target_type]
         try:
-            with self.connect() as conn:
+            with self.connect(write=True) as conn:
                 if conn.execute(
                     f"SELECT 1 FROM {table} WHERE {column}=?", (target_id,)
                 ).fetchone() is None:
@@ -961,6 +1332,28 @@ class PrivateExperimentRepository:
         relevant = [row for row in rows if str(row["role"]) != "ignore"]
         if not relevant:
             return False
+        columns = {
+            str(row["source_name"]): str(row["role"])
+            for row in conn.execute(
+                "SELECT source_name,role FROM column_mappings WHERE run_id=?",
+                (run_id,),
+            )
+        }
+        for series in conn.execute(
+            """SELECT x_column,y_column,uncertainty_column
+            FROM measurement_series WHERE run_id=?""",
+            (run_id,),
+        ):
+            referenced = [
+                series["x_column"],
+                series["y_column"],
+                series["uncertainty_column"],
+            ]
+            if any(
+                column_name and columns.get(str(column_name)) in {None, "ignore"}
+                for column_name in referenced
+            ):
+                return False
         return all(
             bool(row["role_confirmed"])
             and bool(row["meaning_confirmed"])
@@ -1062,7 +1455,7 @@ class PrivateExperimentRepository:
         }
 
 
-_SCHEMA_V1 = """
+_SCHEMA_V2 = """
 CREATE TABLE repository_meta(
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -1104,6 +1497,7 @@ CREATE TABLE experiment_runs(
     confirmation_state TEXT NOT NULL CHECK(confirmation_state IN ('draft','confirmed','rejected')),
     sheet_name TEXT NOT NULL,
     row_count INTEGER NOT NULL CHECK(row_count>=0),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>=1),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY(sample_id,project_id) REFERENCES samples(sample_id,project_id) ON DELETE CASCADE

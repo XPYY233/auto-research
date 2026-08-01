@@ -27,16 +27,17 @@
 
 私人仓库必须由桌面产品传入显式 `data_root`，并在该目录下创建独立的 `personal_experiments.sqlite` 与 `files/`。它不会打开、挂载或写入官方证据库，也不会使用项目生产 SQLite。
 
-- schema v1 分开保存项目、样品、实验批次、条件、列映射、测量序列、附件—序列关联和项目/样品/批次备注。
-- 用户明确保存时，原始表格和趋势图按预览哈希复核后复制进私人文件目录；SQLite 只保存相对路径。数据库及文件在支持的平台上收紧为当前用户权限。
-- 草稿可以保存并继续确认；已确认批次在 v1 中不可静默覆盖。只有状态为 `confirmed`，且所有纳入列的角色、含义和单位均确认后，才生成 `personal-search-document-v1`。
+- 当前 schema v2 分开保存项目、样品、实验批次、条件、列映射、测量序列、附件—序列关联和项目/样品/批次备注；从 v1 升级与首次建表都在原子事务中完成。
+- 用户明确保存时，原始表格和趋势图按预览哈希复核后复制进私人文件目录；SQLite 只保存相对路径。`file_id` 和原始文件名必须是单一 basename，任何路径、URI、符号链接、非普通文件或无法收紧的权限都会安全失败。
+- 草稿更新必须携带上次读取的 `revision`；写入使用 `BEGIN IMMEDIATE` 和比较交换，陈旧草稿不能覆盖更新版本或已确认批次。只有状态为 `confirmed`，且所有纳入列的角色、含义和单位均确认后，才生成 `personal-search-document-v1`。
+- 并发登记同一文件时，每个操作只清理自己的唯一 staging 文件，不删除其他操作已成功登记的内容。`role=ignore` 列不得被任何测量序列引用。
 - 搜索投影使用仓库随机身份作为 `source_id`，不包含 SQLite 路径、文件相对路径或 `data_root`。项目、样品和批次备注可参与私人检索，但不会进入官方文献证据。
 
 ### 导入状态与操作结果
 
 导入流程采用单向状态链：`previewed → draft_saved → confirmed/indexable`。文件完成受限预览并复制到私人目录后为 `previewed`；实验人员第一次必须保存为草稿，进入 `draft_saved`；只有从既有草稿完成确认，且角色、含义、单位和引用关系再次通过数据库门禁后，操作结果才同时标记 `confirmation_state=confirmed`、`import_state=indexable` 和 `indexable=true`。不能跳过草稿直接确认。
 
-成功操作统一返回 `private-operation-result-v1`，包含 `operation`、`entity_type`、`entity_id`、`import_state`、`confirmation_state`、`indexable` 和 `changed`。重复注册同一份未变化文件返回 `changed=false`，不会再次复制。
+成功操作统一返回 `private-operation-result-v1`，包含 `operation`、`entity_type`、`entity_id`、`import_state`、`confirmation_state`、`indexable`、`changed` 和草稿写入后的 `revision`。重复注册同一份未变化文件返回 `changed=false`，不会再次复制。
 
 失败统一抛出 `PrivateRepositoryError`，并可序列化为 `private-repository-error-v1`：
 
@@ -84,6 +85,6 @@
 
 - 尚未支持旧二进制 `.xls`、宏工作簿、外部链接或需要执行公式才能得到结果的表格；这些输入会安全拒绝，而不是降级猜测。
 - 已提供私人仓库到四类搜索文档的平台中立只读适配器，但尚未接入联合召回、统一搜索 API 和 App。
-- 尚未提供仪器原始格式导入、多人协作、版本冲突处理或云同步。
+- 尚未提供仪器原始格式导入、多人协作或云同步；单机草稿已能检测版本冲突，但尚未接入 App 的冲突解决界面。
 - 尚未从用户趋势图数字化曲线；如果以后增加，必须是单独确认和审核的流程。
 - 尚未接入 App 界面。macOS 和 Windows 桌面任务只需消费平台中立契约，不在各自客户端复制科学逻辑。
