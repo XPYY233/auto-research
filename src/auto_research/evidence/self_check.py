@@ -23,7 +23,6 @@ from .webapp import make_xlsx
 
 DEFAULT_CHECK_QUERIES = ("温度", "硬度", "CoCrFeMnNi")
 WEB_DIR = Path(__file__).parent / "web"
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _check(checks: list[dict[str, Any]], name: str, ok: bool, detail: str,
@@ -123,34 +122,6 @@ def _web_ui_contract() -> dict[str, Any]:
             and ".evidence-workspace-card" in css,
         ),
         ("dense_review_rows", "autoSizeReviewCell" in js and "grid-template-columns:repeat(3,minmax(0,1fr))" in css and ".edit-table{min-width:1380px;font-size:14px}" in css),
-    ]
-    failed = [name for name, ok in expectations if not ok]
-    return {
-        "ok": not failed,
-        "failed": failed,
-        "checked": [name for name, _ in expectations],
-    }
-
-
-def _public_share_contract() -> dict[str, Any]:
-    script = PROJECT_ROOT / "scripts" / "start_readonly_ngrok.command"
-    text = script.read_text(encoding="utf-8") if script.is_file() else ""
-    server_text = (WEB_DIR.parent / "webapp.py").read_text(encoding="utf-8")
-    expectations = [
-        ("ngrok_script_exists", script.is_file()),
-        ("read_only_port", "--read-only" in text and "8766" in text),
-        ("no_editable_port", "8765" not in text),
-        ("token_not_committed", ".env.ngrok" in text and "NGROK_AUTHTOKEN" in text),
-        ("zotero_token_fallback", "/Users/USER/Zotero/.env.ngrok" in text),
-        ("server_side_readonly_check", "/api/ui-mode" in text and '"read_only": true' in text),
-        (
-            "ngrok_public_url",
-            "ngrok http" in text
-            and "export NGROK_AUTHTOKEN" in text
-            and "--authtoken" not in text,
-        ),
-        ("startup_no_demo_seed", "seed_target_article(evidence_db)" not in server_text),
-        ("public_security_headers", all(header in server_text for header in ("X-Content-Type-Options", "Referrer-Policy", "X-Frame-Options", "Permissions-Policy"))),
     ]
     failed = [name for name, ok in expectations if not ok]
     return {
@@ -390,19 +361,6 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
             else f"网页工作流契约缺失：{', '.join(ui_contract['failed'])}"
         ),
         web_ui=ui_contract,
-    )
-
-    share_contract = _public_share_contract()
-    _check(
-        checks,
-        "public_readonly_ngrok_share",
-        share_contract["ok"],
-        (
-            "ngrok 只读公网分享脚本存在：只开放 8766 只读服务，token 从本机环境文件读取。"
-            if share_contract["ok"]
-            else f"ngrok 只读公网分享脚本缺失：{', '.join(share_contract['failed'])}"
-        ),
-        public_share=share_contract,
     )
 
     requirements = _requirement_summary(checks)

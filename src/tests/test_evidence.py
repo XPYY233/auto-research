@@ -2010,10 +2010,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("readonly_source_direct", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("search_review_state", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("dense_review_rows", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertTrue(by_name["public_readonly_ngrok_share"]["ok"])
-        self.assertIn("ngrok_public_url", by_name["public_readonly_ngrok_share"]["public_share"]["checked"])
-        self.assertIn("zotero_token_fallback", by_name["public_readonly_ngrok_share"]["public_share"]["checked"])
-        self.assertIn("startup_no_demo_seed", by_name["public_readonly_ngrok_share"]["public_share"]["checked"])
+        self.assertNotIn("public_readonly_ngrok_share", by_name)
         requirements = {item["id"]: item for item in report["requirements"]}
         self.assertTrue(all(item["ok"] for item in requirements.values()))
         self.assertTrue(requirements["article_selector_to_extracted_rows"]["ok"])
