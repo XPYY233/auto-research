@@ -81,9 +81,15 @@ def _http_smoke_checks(
     }
     checks = {"unauthorized_blocked": unauthorized_blocked}
     for name, route in routes.items():
-        with opener.open(f"{url}{route}", timeout=10) as response:
-            json.load(response)
-            checks[name] = response.status == 200
+        try:
+            with opener.open(f"{url}{route}", timeout=10) as response:
+                json.load(response)
+                checks[name] = response.status == 200
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:500]
+            raise RuntimeError(
+                f"桌面冒烟接口失败：{name} {route} HTTP {exc.code} {detail}"
+            ) from exc
 
     history_url = f"{url}/api/desktop/librarian-history"
     with opener.open(history_url, timeout=10) as response:

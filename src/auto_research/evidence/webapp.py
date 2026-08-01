@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from xml.sax.saxutils import escape as xml_escape
 
+from auto_research import paths as project_paths
 from auto_research.ai.deepseek import (
     DeepSeekNotConfigured,
     DeepSeekResponseError,
@@ -541,7 +542,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 return self.json_response(annotate_navigation_tags(list_paper_workflow_summaries(self.db)))
             if parsed.path == "/api/test-set":
                 from .test_set import resolve_test_set
-                return self.json_response(resolve_test_set(self.db))
+                return self.json_response(resolve_test_set(
+                    self.db,
+                    project_paths.CONFIG_DIR / "evidence_test_set_50.json",
+                ))
             match = re.fullmatch(r"/api/papers/(\d+)", parsed.path)
             if match:
                 paper = self.db.get_paper(int(match.group(1)))
