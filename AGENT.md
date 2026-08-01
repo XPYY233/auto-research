@@ -12,7 +12,7 @@ This project is a local literature automation workflow for fusion materials, rad
 - Do not solve platform integration by copying product logic into `desktop/macos/**` or `desktop/windows/**`. Package verification, official repository audit, stable source identity and federated read-only search stay platform-neutral; desktop code supplies lifecycle, native file selection, credentials and protected routing only.
 - The canonical official package selector is `<app-data>/official-packages/active.json`. A package becomes active only after signature/checksum validation and `OfficialEvidenceRepository` audit; `distribution-sqlite-v1` must never pass through `EvidenceDB.init()` or any writable v12 search-index path.
 - Signing private keys are maintainer-only files outside Git and outside application data packages. Applications trust only reviewed public keys from `auto_research.product.trusted_publishers`; missing keys must never be silently regenerated under an existing `key_id`.
-- Current desktop checkpoint: Apple Silicon macOS `0.4.0-preview.1`, tag `evidence-demo-2026-08-01-macos-workbench-preview-2`. It is an internal development preview that still depends on the checkout schema-v12 workspace, not a portable stable release. The clean release worktree passed 587 tests (395 core / 110 macOS / 82 Windows) and one isolated App/DMG build-and-image verification; a real-device scrolling fix requires the final candidate to be rebuilt and re-hashed.
+- Current desktop checkpoint: Apple Silicon macOS `0.4.0-preview.1`, artifact tag `evidence-demo-2026-08-01-macos-workbench-preview-3`. It is an internal development preview that still depends on the checkout schema-v12 workspace, not a portable stable release. The final clean release worktree passed 591 tests (399 core / 110 macOS / 82 Windows); the rebuilt App/DMG passed isolated smoke, signing, image verification and a real launch/health/clean-shutdown check. Final DMG SHA-256: `89766b8efd8e2821abef0d7940dec513cd60ebaf2a36eea042adf784fa1483ee`.
 - Current internal official package: `0.1.0-preview.1`, SHA-256 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`, about 2.36 MB, 60 paper metadata rows and 4,356 entities (3,142 item / 936 finding / 46 table / 232 figure). It is read-only, contains no PDFs or binary images, and must never replace or write the editable v12 workspace.
 - Product stability, corpus completion and scientific validity remain separate claims. The fixed corpus is still 17/50 data-ready and 30/50 visual-ready; automatic adversarial agreement is not an independent human physics gold standard.
 
@@ -483,8 +483,8 @@ As of the `2026.07.30-librarian-brief-stable.1` checkpoint (schema v12):
   current fact layer is 0/231 human-reviewed.
 - The current fact layer is 0/3,142 human-reviewed. Never present automatic
   quality scores as physical-science confirmation.
-- The latest clean release-worktree validation passed 587/587 automated tests
-  (395 shared core, 110 macOS and 82 Windows). Its
+- The latest clean release-worktree validation passed 591/591 automated tests
+  (399 shared core, 110 macOS and 82 Windows). Its
   read-only brief export left the production SQLite SHA-256 unchanged at
   `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`.
 - Test command: `PYTHONPATH=src python3 -m unittest discover -s src/tests -p 'test_*.py'`.

@@ -5,8 +5,8 @@
 > 本轮改造前保护提交：`6ce9536`
 > 上一推理/呈现功能提交：`8e9c4c1`
 > 当前桌面候选：Auto Research `0.4.0-preview.1`（Apple Silicon macOS，内部开发预览）
-> 当前预览标签：`evidence-demo-2026-08-01-macos-workbench-preview-2`
-> 联合验证：587 项通过（core 395 / macOS 110 / Windows 82）
+> 当前制品标签：`evidence-demo-2026-08-01-macos-workbench-preview-3`
+> 联合验证：591 项通过（core 399 / macOS 110 / Windows 82）
 > 证据库版本：`2026.07.30-librarian-brief-stable.1` / schema v12
 
 本文面向下一位 Codex Agent、工程维护者和未来的项目负责人。它说明项目为何存在、过去完成了什么、当前真正能做什么、日常工作流、禁止触碰的边界、验证与发布方法，以及尚未完成的目标。
@@ -148,7 +148,7 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 - 导师只读页、浏览器工作台、`8765`/`8766` 和 ngrok 已退役，不再用于展示或分享。
 - 正式发行采用“桌面 App + 独立证据包”：用户导入经过版本、哈希与签名校验的数据包后离线检索；用户自己的 PDF 与私人库分离。DeepSeek 抽取和图书管理员使用用户自己的 key，并通过平台安全凭据库保存。跨平台契约见 `docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md`。
 
-历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。`0.4.0-preview.1` 已完成一次干净工作树联合全测和一次隔离 App/DMG 构建验证；它仍是依赖 checkout v12 的内部开发预览，只有完成实机导包/滚动修复复验并重建后，才可冻结最终候选哈希。
+历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。`0.4.0-preview.1` 已在干净工作树完成591项联合测试，并在滚动修复后重建 App/DMG；隔离 smoke、签名、镜像校验以及实机启动/健康检查/退出均通过。它仍是依赖 checkout v12 的内部开发预览，不得表述为可移植正式版。
 
 ## 5. 当前真实状态
 
@@ -166,7 +166,7 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 | 固定验收 PDF | 50/50 身份与内容有效 |
 | 数据就绪论文 | 17/50 |
 | 图表就绪论文 | 30/50 |
-| 自动测试 | 587 项通过（core 395 / macOS 110 / Windows 82） |
+| 自动测试 | 591 项通过（core 399 / macOS 110 / Windows 82） |
 | 生产 SQLite SHA-256 | `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6` |
 
 首个内部官方资料包为 `0.1.0-preview.1`，大小约 2.36 MB，SHA-256 为 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`。它包含60篇论文元数据和4,356个只读实体（3,142 item、936 finding、46 table、232 figure），不含 PDF 和二进制图片。官方包与 schema-v12 可编辑工作区是两个数据源，不能 `ATTACH`、覆盖或互相写入。

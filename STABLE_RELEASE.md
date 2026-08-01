@@ -4,10 +4,10 @@
 
 - 科学数据基线：`2026.07.30-librarian-brief-stable.1`
 - 桌面候选：Auto Research `0.4.0-preview.1`（Apple Silicon macOS）
-- 预览标签：`evidence-demo-2026-08-01-macos-workbench-preview-2`
+- 制品标签：`evidence-demo-2026-08-01-macos-workbench-preview-3`
 - 改造前保护提交：`6ce9536`
 - 改造前保护标签：`evidence-demo-2026-07-30-pre-research-brief-1`
-- 当前状态：内部开发预览；联合测试、隔离 App 构建和 DMG 镜像验证已通过，但仍依赖 checkout v12，且最终滚动修复后的候选需重建并更新哈希
+- 当前状态：内部开发预览；滚动修复后的联合测试、隔离 App 构建、DMG 镜像验证和实机启动健康检查均已通过，但仍依赖 checkout v12
 - 证据库结构：`v12`
 - 固定验收语料：`config/evidence_test_set_50.json`
 - 当前用户入口：Auto Research.app（macOS 开发预览）；正式用户端目标为 Windows 桌面工作台
@@ -17,8 +17,8 @@
 
 ## 0.4.0-preview.1 验收摘要
 
-- 干净 release worktree 联合验证：587 项通过（共享核心395、macOS 110、Windows 82）；前端语法、差异检查和 schema-v12 数据库健康检查通过。
-- Apple Silicon App 与 DMG 已各构建一次并通过隔离 smoke、ad-hoc codesign、镜像挂载/文件检查；实机滚动修复后会重建，因此当前候选 DMG SHA-256 `df1a9bc49ea42427553c2464eae1ef753fa48f2b49a6cafb82621c811a3d2f89` 仅作中间审计，不能作为最终下载校验值。
+- 最终干净 release worktree 联合验证：591 项通过（共享核心399、macOS 110、Windows 82）；前端语法、差异检查和 schema-v12 数据库健康检查通过。
+- 滚动修复后的 Apple Silicon App 与 DMG 已重新构建，并通过隔离 smoke、ad-hoc codesign、镜像校验、实机启动、204健康检查和干净退出；最终 DMG SHA-256 为 `89766b8efd8e2821abef0d7940dec513cd60ebaf2a36eea042adf784fa1483ee`。
 - 首个内部 `.aresearch` 包约2.36 MB，SHA-256 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`，含60篇论文元数据与4,356个实体（3,142 item、936 finding、46 table、232 figure），不含PDF和二进制图片。
 - 官方包只通过 `OfficialEvidenceRepository` 审计后进入只读联合搜索；它不经过 `EvidenceDB.init()`，不写入或替换 schema-v12 可编辑工作区。
 - 旧浏览器工作台、导师只读页、固定端口和 ngrok 已退役；对应启动脚本只允许显示迁移提示。
@@ -78,7 +78,7 @@
 
 ## 本次体检和修复
 
-- 最新已完成的联合候选验证为 587 项自动测试全部通过；除既有硬条件、证据分级、五段报告、公开 DTO 和兼容权限回归外，还覆盖签名资料包、发布者策略、官方/私人联合召回、macOS 安全 bridge、Windows 组合根与多词覆盖门。
+- 最新已完成的联合候选验证为 591 项自动测试全部通过；除既有硬条件、证据分级、五段报告、公开 DTO 和兼容权限回归外，还覆盖签名资料包、发布者策略、官方/私人联合召回、窄运行时 API、macOS 安全 bridge、Windows 组合根、多词覆盖门与 WebView 滚动状态回归。
 - 历史只读兼容验收曾使用“钨”问题召回 65 项：0 条直接、5 条相关、60 条扩展，报告实际引用 5 条；研究简报 POST 返回 200。该结果保留为权限回归证据，不代表仍发布浏览器只读产品。
 - 真实 DeepSeek `deepseek-v4-pro` 查询返回四类共 71 项候选，分为 4 条直接、8 条相关和 59 条扩展；生成 3 行证据矩阵、6 项相关证据和 3 个建议追问。关键含糊问题返回澄清而不猜测。
 - 研究简报导出不产生新的 DeepSeek 调用，不重新召回证据；生产 SQLite 导出前后 SHA-256 均为 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`。
@@ -88,7 +88,7 @@
 - DeepSeek 或质量流程成功完成时会清除旧错误文本，避免“已完成但仍显示失败原因”。
 - 目标审计不再把“单篇样例功能通过”误写成“整个初始项目目标完成”；它同时读取固定语料完成度。
 - 修正文章选择规范仍写成 35 篇的问题，当前固定集合严格为 50 篇 DOI/题目选择器。
-- 数据搜索、图表搜索、图表详情和图书管理员接口已通过共享核心验证；历史只读权限回归仍确认写入返回 403 且 SQLite 哈希不变。联合全测、一次 App 构建与 DMG 镜像检查已完成；最终候选仍需实机滚动修复复验并重建哈希。
+- 数据搜索、图表搜索、图表详情和图书管理员接口已通过共享核心验证；历史只读权限回归仍确认写入返回 403 且 SQLite 哈希不变。最终联合全测、App/DMG 重建、镜像校验和实机启动健康检查均已完成。
 - Python 编译、前端 JavaScript 语法、macOS 启动脚本语法、依赖一致性、Git 对象完整性、空白错误和凭据扫描通过。
 
 ## 固定 50 篇语料的真实状态
@@ -119,7 +119,7 @@
 
 - 本轮改造前保护提交：`6ce9536`。
 - 本轮改造前保护标签：`evidence-demo-2026-07-30-pre-research-brief-1`。
-- 当前预览标签为 `evidence-demo-2026-08-01-macos-workbench-preview-2`；它明确是内部开发预览，不得重命名为稳定正式版。
+- 当前制品标签为 `evidence-demo-2026-08-01-macos-workbench-preview-3`；它明确是内部开发预览，不得重命名为稳定正式版。
 - 最终 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-brief-stable-2026-07-30-v1.sqlite`；SHA-256 为 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`。
 - Git bundle 在最终 App 联合提交和标签完成后生成；本共享核心提交不单独打包。
 - 上一稳定恢复点仍为标签 `evidence-demo-2026-07-30-librarian-reasoning-stable-1`、SQLite `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite` 和相邻 Git bundle。

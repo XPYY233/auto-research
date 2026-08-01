@@ -113,7 +113,7 @@ platform-neutral utilities
 
 不得用测试通过替代以下声明：语料完成度、科学准确率、版权可分发性或跨平台实机通过。四者分别验收。
 
-当前阶段证据：干净 release worktree 已通过587项联合测试和一次 macOS App/DMG 构建镜像检查；Windows 尚无真实 Setup 和 Win11 clean-machine 验收，因此发布序列仍未结束。
+当前阶段证据：最终干净 release worktree 已通过591项联合测试，滚动修复后的 macOS App/DMG 已通过隔离构建、镜像校验和实机启动健康检查；Windows 尚无真实 Setup 和 Win11 clean-machine 验收，因此发布序列仍未结束。
 
 ## 8. 下一轮分层目标
 

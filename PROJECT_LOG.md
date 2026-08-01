@@ -6,14 +6,14 @@
 
 - Apple Silicon macOS 内部开发预览已完成官方资料包导入、只读联合搜索、原生单文件选择、BYOK 状态管理和统一桌面安全 bridge 接线。它仍依赖当前 checkout 的 schema-v12 可编辑工作区，不能描述为脱离源码即可分发的正式产品。
 - 首个签名内部资料包约2.36 MB，SHA-256 为 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`；包含60篇论文元数据和4,356个实体（3,142条目、936结论、46表格、232图片），不含PDF和二进制图片。
-- 干净 release worktree 串行完成587项联合测试：共享核心395、macOS 110、Windows 82；schema-v12 健康检查和稳定快照 SHA-256 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6` 保持不变。
-- App 与 DMG 已各构建一次并通过隔离 smoke、ad-hoc 签名和镜像检查。中间候选 DMG SHA-256 为 `df1a9bc49ea42427553c2464eae1ef753fa48f2b49a6cafb82621c811a3d2f89`；由于实机滚动修复后需要重建，该值只作阶段审计，最终下载校验值稍后更新。
+- 最终干净 release worktree 串行完成591项联合测试：共享核心399、macOS 110、Windows 82；schema-v12 健康检查和稳定快照 SHA-256 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6` 保持不变。
+- 滚动状态修复后的 App 与 DMG 已重建并通过隔离 smoke、ad-hoc 签名、镜像校验和实机启动/204健康检查/干净退出。最终候选 DMG SHA-256 为 `89766b8efd8e2821abef0d7940dec513cd60ebaf2a36eea042adf784fa1483ee`。
 - 旧浏览器工作台、导师只读页、固定端口和 ngrok 已退役，启动脚本只提供迁移提示。Windows 已完成受测模块和组合根，但尚无真实自包含 Setup 和 Win11 clean-machine 证据，必须最后收口。
 - 产品构建稳定不等于语料完成或科学准确率已得到人工金标准：固定语料仍为17/50 data-ready、30/50 visual-ready，33篇仍需全文抽取。
 
 ### 面向 Agent / 后续工程师
 
-- 当前预览标签：`evidence-demo-2026-08-01-macos-workbench-preview-2`；不要移动或重命名为稳定正式版。最终候选必须在实机修复后从干净 worktree 重建、复核 SHA 并生成新的发布记录。
+- 当前制品标签：`evidence-demo-2026-08-01-macos-workbench-preview-3`；不要移动或重命名为稳定正式版。标签锁定实际构建源码提交 `f34bf68`，后续文档记录提交不改变该制品身份。
 - 可编辑 schema-v12、只读 `distribution-sqlite-v1` 官方包和私人实验库是三个隔离数据域。官方包只允许通过 `OfficialEvidenceRepository` 审计后激活；不得 `ATTACH`、调用 `EvidenceDB.init()` 或写回科学库。
 - 当前 ad-hoc macOS 预览的历史和 DeepSeek 凭据使用 Application Support 私有目录、独立随机密钥和 AES-256-GCM，避免代码身份变化触发系统密码框；正式签名发行才切换到 Keychain。Windows 使用 Credential Manager。
 - 后续优先偿还运行时公共 API、跨平台资料包状态/错误契约、SemVer/包身份单源、官方库只读连接文件身份以及大型 product/desktop 模块拆分；不得在 macOS 与 Windows 中复制签名、审计或搜索算法。
