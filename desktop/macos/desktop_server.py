@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import os
 import secrets
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -13,12 +14,15 @@ from auto_research.evidence.search_index import EvidenceSearchIndex
 from auto_research.evidence.uploads import UploadService
 from auto_research.evidence.webapp import EvidenceHandler
 from secure_history import SecureHistoryError, SecureHistoryStore
+from secure_credentials import DeepSeekCredentialStore, SecureCredentialError
 
 
 COOKIE_NAME = "auto_research_desktop_session"
 TOKEN_QUERY_NAME = "desktop_token"
 HISTORY_PATH = "/api/desktop/librarian-history"
+CREDENTIAL_PATH = "/api/desktop/credentials/deepseek"
 MAX_HISTORY_REQUEST_BYTES = 3_000_000
+MAX_CREDENTIAL_REQUEST_BYTES = 8_192
 
 
 def new_session_token() -> str:
@@ -40,6 +44,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
 
     desktop_token: str = ""
     history_store: SecureHistoryStore | None = None
+    credential_store: DeepSeekCredentialStore | None = None
     _issue_desktop_cookie: bool = False
 
     def log_message(self, fmt: str, *args) -> None:
@@ -97,6 +102,76 @@ class DesktopEvidenceHandler(EvidenceHandler):
             raise SecureHistoryError("对话历史请求必须是对象")
         return value
 
+    def _read_credential_json(self) -> dict:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as exc:
+            raise SecureCredentialError(
+                "credential_invalid", "凭据请求长度无效", http_status=400
+            ) from exc
+        if length <= 0 or length > MAX_CREDENTIAL_REQUEST_BYTES:
+            raise SecureCredentialError(
+                "credential_invalid", "凭据请求大小无效", http_status=400
+            )
+        try:
+            value = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SecureCredentialError(
+                "credential_invalid", "凭据请求格式无效", http_status=400
+            ) from exc
+        if not isinstance(value, dict) or set(value) != {"api_key"}:
+            raise SecureCredentialError(
+                "credential_invalid", "凭据请求字段无效", http_status=400
+            )
+        return value
+
+    def _credential_error(self, error: SecureCredentialError) -> None:
+        self.json_response(
+            {"error": str(error), "code": error.code},
+            HTTPStatus(error.http_status),
+        )
+
+    def _credential_status(self) -> None:
+        if self.credential_store is None:
+            return self.json_response(
+                {"error": "桌面安全凭据存储未配置", "code": "credential_store_disabled"},
+                HTTPStatus.NOT_FOUND,
+            )
+        try:
+            status = self.credential_store.status()
+        except SecureCredentialError as exc:
+            return self._credential_error(exc)
+        self.json_response(status.public_dict())
+
+    def _save_credential(self) -> None:
+        if self.credential_store is None:
+            return self.json_response(
+                {"error": "桌面安全凭据存储未配置", "code": "credential_store_disabled"},
+                HTTPStatus.NOT_FOUND,
+            )
+        try:
+            body = self._read_credential_json()
+            status = self.credential_store.save(body["api_key"])
+            # Existing core settings read the key from process memory. It is
+            # never returned to the browser, persisted in SQLite, or logged.
+            os.environ["DEEPSEEK_API_KEY"] = body["api_key"].strip()
+        except SecureCredentialError as exc:
+            return self._credential_error(exc)
+        self.json_response(status.public_dict())
+
+    def _delete_credential(self) -> None:
+        if self.credential_store is None:
+            return self.json_response(
+                {"error": "桌面安全凭据存储未配置", "code": "credential_store_disabled"},
+                HTTPStatus.NOT_FOUND,
+            )
+        try:
+            status = self.credential_store.delete()
+            os.environ.pop("DEEPSEEK_API_KEY", None)
+        except SecureCredentialError as exc:
+            return self._credential_error(exc)
+        self.json_response(status.public_dict())
+
     def _get_desktop_history(self) -> None:
         if self.history_store is None:
             return self.json_response(
@@ -149,6 +224,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._desktop_forbidden()
         if urlparse(self.path).path == HISTORY_PATH:
             return self._get_desktop_history()
+        if urlparse(self.path).path == CREDENTIAL_PATH:
+            return self._credential_status()
         return super().do_GET()
 
     def do_POST(self) -> None:
@@ -156,7 +233,19 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._desktop_forbidden()
         if urlparse(self.path).path == HISTORY_PATH:
             return self._save_desktop_history()
+        if urlparse(self.path).path == CREDENTIAL_PATH:
+            return self._save_credential()
         return super().do_POST()
+
+    def do_DELETE(self) -> None:
+        if not self._has_session():
+            return self._desktop_forbidden()
+        if urlparse(self.path).path == CREDENTIAL_PATH:
+            return self._delete_credential()
+        self.json_response(
+            {"error": "桌面接口不存在", "code": "desktop_endpoint_not_found"},
+            HTTPStatus.NOT_FOUND,
+        )
 
     def do_OPTIONS(self) -> None:
         if not self._has_session():
@@ -173,6 +262,7 @@ def create_desktop_server(
     token: str,
     read_only: bool = False,
     history_store: SecureHistoryStore | None = None,
+    credential_store: DeepSeekCredentialStore | None = None,
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
     database.init()
     upload_service = UploadService(database)
@@ -191,6 +281,7 @@ def create_desktop_server(
             "read_only": read_only,
             "desktop_token": token,
             "history_store": history_store,
+            "credential_store": credential_store,
         },
     )
     server = ThreadingHTTPServer((host, port), handler)

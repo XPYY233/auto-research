@@ -43,6 +43,15 @@ AES-256-GCM 认证加密
 
 不得把一个无限额开发者主密钥分发给所有用户。内测使用独立、可撤销、有限额的密钥；正式版使用用户自己的密钥或带账户、配额和审计的网关。
 
+### macOS 凭据后端契约
+
+- 桌面内部接口仅返回 `provider / configured / storage`，永不返回密钥、尾号或可复原提示；
+- `GET /api/desktop/credentials/deepseek` 查询状态，`POST` 仅接受 `api_key`，`DELETE` 显式删除；三者均要求每次启动随机桌面会话；
+- 当前 ad-hoc 预览默认使用 Application Support 私有目录中的 AES-256-GCM 密文与独立 `0600` 随机密钥，因此不会探测旧 Keychain 项或弹出登录钥匙串密码；
+- 稳定签名构建通过 `AUTO_RESEARCH_MACOS_CREDENTIAL_STORE=keychain` 切换到 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` 的新 Keychain service；
+- 保存后密钥只装载到当前 App 进程内存供既有 DeepSeek 核心读取，不写 SQLite、资料包、普通设置或日志；删除时同时清除持久化凭据与当前进程值；
+- 错误响应使用稳定错误码，不携带密钥、OSStatus 或请求正文。
+
 ## 资料包与版权边界
 
 `.aresearch` 包必须校验版本、哈希、签名和相对路径。默认不包含绝对路径、Zotero/device key、私人对话、API 密钥、未授权全文、截图或长摘录。付费或机构订阅 PDF 由用户自行合法导入。

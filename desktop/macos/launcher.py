@@ -37,6 +37,10 @@ from secure_history import (  # noqa: E402
     StaticHistoryKeyProvider,
     default_secure_history_store,
 )
+from secure_credentials import (  # noqa: E402
+    SecureCredentialError,
+    default_deepseek_credential_store,
+)
 
 
 DESKTOP_VERSION = "0.3.0-preview.1"
@@ -326,6 +330,13 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     host = "127.0.0.1"
     token = new_session_token()
     server_errors: queue.Queue[BaseException] = queue.Queue(maxsize=1)
+    credential_store = default_deepseek_credential_store()
+    try:
+        saved_api_key = credential_store.read_for_runtime()
+    except SecureCredentialError:
+        saved_api_key = None
+    if saved_api_key:
+        os.environ["DEEPSEEK_API_KEY"] = saved_api_key
 
     try:
         database = EvidenceDB(project_root / "db" / "experimental_evidence.sqlite")
@@ -336,6 +347,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             token=token,
             read_only=False,
             history_store=default_secure_history_store(),
+            credential_store=credential_store,
         )
         configure_imported_module_paths(project_root)
     except BaseException as exc:

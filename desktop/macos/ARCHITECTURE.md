@@ -38,6 +38,10 @@ SQLite、PDF、图表、原文定位、校对历史和抽取产物属于用户�
 
 图书管理员历史不进入科学 SQLite，也不依赖 pywebview 的持久化浏览器缓存。当前 ad-hoc 开发预览使用 `0600` 私有随机密钥，将会话认证加密后保存到 `~/Library/Application Support/Auto Research/Private Data/`；它不会读取旧 Keychain 项，因此重建后不向用户索要钥匙串密码。正式签名发行切换到统一的 OS secure credential store 抽象：macOS Keychain，未来 Windows 为 Credential Manager。
 
+### 4.1 外部 AI 凭据生命周期
+
+DeepSeek API 密钥属于桌面私有状态，不属于科学数据或网页状态。桌面本机服务提供受会话保护的状态、保存和删除端点；浏览器只能知道“是否已配置”和存储类型。当前 ad-hoc 预览使用独立本地 AES-256-GCM 存储，稳定签名版切换到新的 macOS Keychain service。两种后端共用相同错误码与 API，不要求共享核心或未来 Windows 壳复制前端业务逻辑。
+
 ### 5. 跨平台资料生命周期
 
 正式产品把官方只读资料包、用户私人库和 App 状态物理分开。`.aresearch` 只使用包内相对资源身份、版本、哈希与签名，不携带开发机绝对路径、API 密钥或未授权全文。本阶段只冻结契约，不增加 Windows 构建或依赖。
