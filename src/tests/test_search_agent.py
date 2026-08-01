@@ -400,6 +400,8 @@ class SearchAgentTests(unittest.TestCase):
         self.assertIn("[R1]", result["answer"])
         self.assertEqual(result["scope"], {"paper_ids": [], "mode": "all"})
         self.assertEqual(result["summary_mode"], "deepseek_json")
+        self.assertEqual(result["planning_model"], "deepseek-v4-flash")
+        self.assertEqual(result["model"], "deepseek-v4-pro")
         self.assertTrue(result["answered_at"])
         self.assertTrue(result["evidence_version"])
 

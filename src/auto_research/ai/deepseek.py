@@ -61,6 +61,8 @@ class DeepSeekSettings:
     base_url: str = "https://api.deepseek.com"
     extraction_model: str = "deepseek-v4-pro"
     analysis_model: str = "deepseek-v4-pro"
+    librarian_planning_model: str = "deepseek-v4-flash"
+    librarian_synthesis_model: str = "deepseek-v4-pro"
     timeout_seconds: int = 180
     max_attempts: int = 2
     retry_base_seconds: int = 0
@@ -72,11 +74,18 @@ class DeepSeekSettings:
         keychain_service = os.environ.get("DEEPSEEK_KEYCHAIN_SERVICE", DEFAULT_KEYCHAIN_SERVICE)
         keychain_key = None if environment_key else _read_project_keychain(keychain_service)
         api_key = environment_key or keychain_key
+        analysis_model = os.environ.get("DEEPSEEK_ANALYSIS_MODEL", "deepseek-v4-pro")
         return cls(
             api_key=api_key,
             base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/"),
             extraction_model=os.environ.get("DEEPSEEK_EXTRACTION_MODEL", "deepseek-v4-pro"),
-            analysis_model=os.environ.get("DEEPSEEK_ANALYSIS_MODEL", "deepseek-v4-pro"),
+            analysis_model=analysis_model,
+            librarian_planning_model=os.environ.get(
+                "DEEPSEEK_LIBRARIAN_PLANNING_MODEL", "deepseek-v4-flash"
+            ),
+            librarian_synthesis_model=os.environ.get(
+                "DEEPSEEK_LIBRARIAN_SYNTHESIS_MODEL", analysis_model
+            ),
             timeout_seconds=_env_int(
                 "DEEPSEEK_TIMEOUT_SECONDS", 180, minimum=10, maximum=1800
             ),
@@ -100,6 +109,8 @@ class DeepSeekSettings:
             "base_url": self.base_url,
             "extraction_model": self.extraction_model,
             "analysis_model": self.analysis_model,
+            "librarian_planning_model": self.librarian_planning_model,
+            "librarian_synthesis_model": self.librarian_synthesis_model,
             "timeout_seconds": self.timeout_seconds,
             "max_attempts": self.max_attempts,
             "credential_source": self.credential_source,
@@ -113,6 +124,15 @@ class DeepSeekClient:
         self.settings = settings or DeepSeekSettings.from_env()
         self.session = session or requests
 
+    def _model_for_task(self, task: str) -> str:
+        if task in {"extraction", "verification"}:
+            return self.settings.extraction_model
+        if task == "librarian_planning":
+            return self.settings.librarian_planning_model
+        if task == "librarian_synthesis":
+            return self.settings.librarian_synthesis_model
+        return self.settings.analysis_model
+
     def request_json(self, messages: list[dict[str, str]], *, task: str = "extraction",
                      max_tokens: int = 16_000, thinking: bool | None = None,
                      temperature: float | None = None) -> dict[str, Any]:
@@ -120,10 +140,7 @@ class DeepSeekClient:
             raise DeepSeekNotConfigured(
                 "DeepSeek 尚未配置；请在本机环境变量 DEEPSEEK_API_KEY 中设置密钥"
             )
-        model = (
-            self.settings.extraction_model if task in {"extraction", "verification"}
-            else self.settings.analysis_model
-        )
+        model = self._model_for_task(task)
         payload = {
             "model": model,
             "messages": messages,
@@ -213,7 +230,7 @@ class DeepSeekClient:
             raise DeepSeekNotConfigured(
                 "DeepSeek 尚未配置；请在本机环境变量 DEEPSEEK_API_KEY 中设置密钥"
             )
-        model = self.settings.extraction_model if task in {"extraction", "verification"} else self.settings.analysis_model
+        model = self._model_for_task(task)
         payload = {
             "model": model,
             "messages": messages,

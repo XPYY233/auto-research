@@ -511,7 +511,7 @@ class LibrarianAgentRuntime:
                         ),
                     },
                 ],
-                task="analysis",
+                task="librarian_planning",
                 max_tokens=1_200,
                 thinking=False,
                 temperature=0.0,
@@ -782,7 +782,7 @@ class LibrarianAgentRuntime:
         try:
             payload = self.client.request_json(
                 messages,
-                task="analysis",
+                task="librarian_synthesis",
                 max_tokens=3_600,
                 thinking=False,
                 temperature=0.0,
@@ -794,7 +794,10 @@ class LibrarianAgentRuntime:
         except Exception:
             pass
         try:
-            message = self.client.request_tool_message(messages, [], task="analysis", max_tokens=3_600, temperature=0.0)
+            message = self.client.request_tool_message(
+                messages, [], task="librarian_synthesis",
+                max_tokens=3_600, temperature=0.0,
+            )
             answer = str(message.get("content") or "").strip()
             selected = _cited_refs(answer) & available
             if answer and selected and not _is_internal_protocol(answer):
@@ -893,7 +896,8 @@ class LibrarianAgentRuntime:
             "summary_mode": summary_mode,
             "clarification_required": analysis.needs_clarification,
             "scope": {"paper_ids": [], "mode": "all"},
-            "model": self.client.settings.analysis_model,
+            "model": self.client.settings.librarian_synthesis_model,
+            "planning_model": self.client.settings.librarian_planning_model,
             "cache_hit": False,
         }
         self._cache_put(cache_key, result)

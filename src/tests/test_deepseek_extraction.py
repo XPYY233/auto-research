@@ -11,6 +11,7 @@ from unittest.mock import patch
 import fitz
 
 from auto_research.ai.deepseek import (
+    DeepSeekClient,
     DeepSeekResponseError,
     DeepSeekSettings,
     DeepSeekUnavailableError,
@@ -75,6 +76,19 @@ class FakeDeepSeekClient:
 
 
 class DeepSeekExtractionTests(unittest.TestCase):
+    def test_librarian_uses_flash_for_planning_and_pro_for_synthesis(self):
+        settings = DeepSeekSettings(api_key="fake")
+        client = DeepSeekClient(settings=settings)
+        self.assertEqual(client._model_for_task("extraction"), "deepseek-v4-pro")
+        self.assertEqual(client._model_for_task("verification"), "deepseek-v4-pro")
+        self.assertEqual(
+            client._model_for_task("librarian_planning"), "deepseek-v4-flash"
+        )
+        self.assertEqual(
+            client._model_for_task("librarian_synthesis"), "deepseek-v4-pro"
+        )
+        self.assertEqual(client._model_for_task("analysis"), "deepseek-v4-pro")
+
     def test_document_mode_guard_rejects_measured_values_from_computational_paper(self):
         candidates = [
             {"candidate_id": "m1", "evidence_type": "measured", "value_text": "1.2"},
