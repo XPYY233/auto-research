@@ -11,6 +11,14 @@ from secure_credentials import CredentialStatus
 
 
 MAX_ACTIVE_PACKAGE_STATUS_BYTES = 16_384
+DEFAULT_ACTIVE_PACKAGE_STATUS_PATH = (
+    Path.home()
+    / "Library"
+    / "Application Support"
+    / "Auto Research"
+    / "Package State"
+    / "active.json"
+)
 PACKAGE_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$")
 PACKAGE_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
 

@@ -41,6 +41,7 @@ from secure_credentials import (  # noqa: E402
     SecureCredentialError,
     default_deepseek_credential_store,
 )
+from first_use_state import DEFAULT_ACTIVE_PACKAGE_STATUS_PATH  # noqa: E402
 
 
 DESKTOP_VERSION = "0.3.0-preview.1"
@@ -348,6 +349,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             read_only=False,
             history_store=default_secure_history_store(),
             credential_store=credential_store,
+            active_package_status_path=DEFAULT_ACTIVE_PACKAGE_STATUS_PATH,
         )
         configure_imported_module_paths(project_root)
     except BaseException as exc:

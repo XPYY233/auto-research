@@ -7,6 +7,7 @@ import secrets
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from auto_research.evidence.db import EvidenceDB
@@ -15,12 +16,19 @@ from auto_research.evidence.uploads import UploadService
 from auto_research.evidence.webapp import EvidenceHandler
 from secure_history import SecureHistoryError, SecureHistoryStore
 from secure_credentials import DeepSeekCredentialStore, SecureCredentialError
+from first_use_state import (
+    ActivePackageStatus,
+    FirstUseStateError,
+    read_active_package_status,
+    resolve_first_use_state,
+)
 
 
 COOKIE_NAME = "auto_research_desktop_session"
 TOKEN_QUERY_NAME = "desktop_token"
 HISTORY_PATH = "/api/desktop/librarian-history"
 CREDENTIAL_PATH = "/api/desktop/credentials/deepseek"
+READINESS_PATH = "/api/desktop/readiness"
 MAX_HISTORY_REQUEST_BYTES = 3_000_000
 MAX_CREDENTIAL_REQUEST_BYTES = 8_192
 
@@ -45,6 +53,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     desktop_token: str = ""
     history_store: SecureHistoryStore | None = None
     credential_store: DeepSeekCredentialStore | None = None
+    active_package_status_path: Path | None = None
     _issue_desktop_cookie: bool = False
 
     def log_message(self, fmt: str, *args) -> None:
@@ -172,6 +181,45 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._credential_error(exc)
         self.json_response(status.public_dict())
 
+    def _readiness_status(self) -> None:
+        if self.credential_store is None:
+            return self.json_response(
+                {"error": "桌面安全凭据存储未配置", "code": "credential_store_disabled"},
+                HTTPStatus.NOT_FOUND,
+            )
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        if set(query) - {"intent"} or len(query.get("intent", [])) > 1:
+            return self.json_response(
+                {"error": "首次使用状态请求参数无效", "code": "readiness_intent_invalid"},
+                HTTPStatus.BAD_REQUEST,
+            )
+        intent = query.get("intent", ["offline"])[0]
+        if intent not in {"offline", "ai"}:
+            return self.json_response(
+                {"error": "首次使用状态请求参数无效", "code": "readiness_intent_invalid"},
+                HTTPStatus.BAD_REQUEST,
+            )
+        try:
+            active_package = (
+                read_active_package_status(self.active_package_status_path)
+                if self.active_package_status_path is not None
+                else ActivePackageStatus.inactive()
+            )
+            readiness = resolve_first_use_state(
+                active_package,
+                self.credential_store.status(),
+                ai_action_requested=intent == "ai",
+            )
+        except SecureCredentialError as exc:
+            return self._credential_error(exc)
+        except FirstUseStateError as exc:
+            return self.json_response(
+                {"error": str(exc), "code": exc.code},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+        self.json_response(readiness.public_dict())
+
     def _get_desktop_history(self) -> None:
         if self.history_store is None:
             return self.json_response(
@@ -226,6 +274,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._get_desktop_history()
         if urlparse(self.path).path == CREDENTIAL_PATH:
             return self._credential_status()
+        if urlparse(self.path).path == READINESS_PATH:
+            return self._readiness_status()
         return super().do_GET()
 
     def do_POST(self) -> None:
@@ -263,6 +313,7 @@ def create_desktop_server(
     read_only: bool = False,
     history_store: SecureHistoryStore | None = None,
     credential_store: DeepSeekCredentialStore | None = None,
+    active_package_status_path: Path | None = None,
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
     database.init()
     upload_service = UploadService(database)
@@ -282,6 +333,7 @@ def create_desktop_server(
             "desktop_token": token,
             "history_store": history_store,
             "credential_store": credential_store,
+            "active_package_status_path": active_package_status_path,
         },
     )
     server = ThreadingHTTPServer((host, port), handler)
