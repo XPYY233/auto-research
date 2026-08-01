@@ -97,11 +97,36 @@
       : "检索本机可编辑工作区；支持打开原文、校对、导出与继续提取。";
   }
 
+  function revealSearchWorkspace() {
+    const searchView = el("view-search");
+    if (typeof searchView?.scrollIntoView === "function") {
+      try {
+        searchView.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
+        return;
+      } catch (_error) {
+        // Fall through to the outer viewport reset used by older WKWebView/test DOMs.
+      }
+    }
+    const scrollRoot = document.scrollingElement || document.documentElement;
+    if (scrollRoot) {
+      scrollRoot.scrollTop = 0;
+      scrollRoot.scrollLeft = 0;
+    }
+    if (typeof window.scrollTo === "function") {
+      try {
+        window.scrollTo(0, 0);
+      } catch (_error) {
+        // Lightweight DOM test environments may not implement scrolling.
+      }
+    }
+  }
+
   function setSearchRepository(repository) {
     if (!product.available || !["workspace", "official"].includes(repository)) return;
     if (repository === "official" && !product.packageStatus?.active) return;
     product.searchRepository = repository;
     applyRepositoryUI();
+    revealSearchWorkspace();
     runSearch(null, { remember: false });
   }
 
@@ -211,6 +236,7 @@
       product.searchRepository = "official";
       applyRepositoryUI();
       setSearchExperience("precise");
+      revealSearchWorkspace();
       toast("官方资料包已安全导入，可离线搜索。");
     } catch (error) {
       setPackageNote(error.message);

@@ -3294,6 +3294,25 @@ function renderLearningGuidanceCard() {
   el.innerHTML = `<div><span>${esc(readinessLabels[report.readiness] || "学习状态")}</span><h3>${esc(report.message || "等待人工校对样本")}</h3><p>${esc(report.safety_rule || "学习样本只用于字段边界、失败模式和措辞偏好；不能作为新论文数据证据。")}</p></div><dl><div><dt>当前文章样本</dt><dd>${esc(report.sample_count || 0)}</dd></div><div><dt>负例/歧义</dt><dd>${esc(negativeCount)}</dd></div><div><dt>全库样本</dt><dd>${esc(allReport.sample_count || 0)}</dd></div><div><dt>进入提示</dt><dd>${esc(report.included_sample_count || 0)}</dd></div></dl><ul>${included || "<li><strong>尚无样本</strong><span>完成任一审核决定后自动出现</span></li>"}</ul>${preview}`;
 }
 
+function resetViewportTop() {
+  const scrollRoot = document.scrollingElement || document.documentElement;
+  if (scrollRoot) {
+    scrollRoot.scrollTop = 0;
+    scrollRoot.scrollLeft = 0;
+  }
+  if (document.body && document.body !== scrollRoot) {
+    document.body.scrollTop = 0;
+    document.body.scrollLeft = 0;
+  }
+  if (typeof window.scrollTo === "function") {
+    try {
+      window.scrollTo(0, 0);
+    } catch (_error) {
+      // Lightweight DOM test environments may expose scrollTo without implementing it.
+    }
+  }
+}
+
 function switchView(name) {
   if (isReadOnly() && name !== "search") name = "search";
   if (name !== "review" && state.focusReview) setFocusReview(false);
@@ -3302,6 +3321,7 @@ function switchView(name) {
   document.querySelector(`#view-${name}`).classList.add("active");
   document.body.dataset.view = name;
   renderViewHeader(name);
+  resetViewportTop();
   if (name === "search" && !document.querySelector("#search-results").children.length) runSearch();
   if (name === "upload") refreshUploadWorkspace();
   if (name === "manual") fillManualDefaults();
