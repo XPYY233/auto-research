@@ -17,6 +17,7 @@ class WindowsBuildPlan:
     desktop_version: str
     target: str
     distribution_schema: int
+    bundle_contract_version: int
     installer_ready: bool
     bundled_python_runtime: bool
     requires_user_environment_setup: bool
@@ -34,6 +35,7 @@ class WindowsBuildPlan:
                 desktop_version=str(value["desktop_version"]),
                 target=str(value["target"]),
                 distribution_schema=int(value["distribution_schema"]),
+                bundle_contract_version=int(value["bundle_contract_version"]),
                 installer_ready=value["installer_ready"] is True,
                 bundled_python_runtime=value["bundled_python_runtime"] is True,
                 requires_user_environment_setup=value["requires_user_environment_setup"] is True,
@@ -45,6 +47,8 @@ class WindowsBuildPlan:
     def validate_contract(self) -> None:
         if not self.desktop_version or self.distribution_schema != 1:
             raise WindowsBuildError("Windows 构建契约尚未锁定 distribution schema v1")
+        if self.bundle_contract_version != 1:
+            raise WindowsBuildError("Windows 内置运行时清单契约必须为 v1")
         if "Windows" not in self.target or "x64" not in self.target:
             raise WindowsBuildError("Windows 构建目标必须明确为 Windows x64")
         if not self.bundled_python_runtime or self.requires_user_environment_setup:
@@ -64,6 +68,7 @@ class WindowsBuildPlan:
             "desktop_version": self.desktop_version,
             "target": self.target,
             "distribution_schema": self.distribution_schema,
+            "bundle_contract_version": self.bundle_contract_version,
             "installer_ready": self.installer_ready,
             "bundled_python_runtime": self.bundled_python_runtime,
             "requires_user_environment_setup": self.requires_user_environment_setup,

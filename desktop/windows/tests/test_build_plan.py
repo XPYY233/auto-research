@@ -25,6 +25,7 @@ class WindowsBuildPlanTests(unittest.TestCase):
                     "desktop_version": "0.1.0-dev.1",
                     "target": "Windows 11 x64 development skeleton",
                     "distribution_schema": 1,
+                    "bundle_contract_version": 1,
                     "installer_ready": ready,
                     "bundled_python_runtime": True,
                     "requires_user_environment_setup": False,

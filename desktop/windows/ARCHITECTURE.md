@@ -46,6 +46,8 @@ Auto Research\
 - 首次启动直接进入 `.aresearch` 资料包导入，导入后立即支持离线搜索；
 - DeepSeek key 只在首次使用 AI 功能时配置，不是安装、导包或离线搜索前置条件。
 
+候选程序必须携带 `bundled-runtime-manifest.json`，逐项记录内置 Python、标准库、SQLite、加密库、PyMuPDF、pywebview、WebView2 loader、业务核心和共享界面的相对路径、大小与 SHA-256。clean-machine harness 在空工作目录、空 `PATH` 和无项目环境变量的临时用户目录中复验首次启动契约。
+
 ## 当前阻塞
 
 本目录目前只建立平台安全地基，不伪造可用安装包。启动器必须等待共享核心冻结 distribution schema v1、stable source/entity identity、official/private federated read、资料包激活/回退 API 和私人导入 API 后再接入。

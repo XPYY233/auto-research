@@ -26,4 +26,6 @@ python3 -m unittest discover -s desktop/windows/tests -p 'test_*.py'
 python3 desktop/windows/build_plan.py
 ```
 
+上述命令只验证构建契约，不会产生安装包。真正的 Windows 候选必须进一步通过内置运行时清单与 clean-machine acceptance harness。
+
 只要并行任务仍在修改兼容接口，或者共享核心尚未宣布冻结，本目录不得向用户输出“稳定安装包”。
