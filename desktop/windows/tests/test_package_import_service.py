@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import importlib.util
 from pathlib import Path
 
 
@@ -174,6 +175,9 @@ class PackageImportServiceTests(unittest.TestCase):
             "invalid_signature": "package_signature_invalid",
             "incompatible_schema": "package_incompatible_schema",
             "install_conflict": "package_install_conflict",
+            "trusted_key_policy_mismatch": "package_untrusted",
+            "untrusted_package_identity": "package_untrusted",
+            "untrusted_rights_scope": "package_rights_invalid",
         }
         for source, expected in cases.items():
             with self.subTest(source=source):
@@ -191,6 +195,55 @@ class PackageImportServiceTests(unittest.TestCase):
                 error = job.snapshot().as_public_dict()["error"]
                 self.assertEqual(error["code"], expected)
                 self.assertNotIn(str(SECRET_PATH), str(error))
+
+    def test_trust_policy_failures_use_cross_platform_codes_stages_and_retry_policy(self) -> None:
+        mac_path = PROJECT_ROOT / "desktop" / "macos" / "package_job_state.py"
+        spec = importlib.util.spec_from_file_location("mac_package_job_state_contract", mac_path)
+        assert spec and spec.loader
+        mac = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mac
+        spec.loader.exec_module(mac)
+        cases = (
+            (
+                "trusted_key_policy_mismatch",
+                PROGRESS.PackageJobStage.VERIFY_SIGNATURE,
+                mac.PackageJobStage.VERIFY_SIGNATURE,
+                "package_untrusted",
+            ),
+            (
+                "untrusted_package_identity",
+                PROGRESS.PackageJobStage.AUDIT_REPOSITORY,
+                mac.PackageJobStage.AUDIT_REPOSITORY,
+                "package_untrusted",
+            ),
+            (
+                "untrusted_rights_scope",
+                PROGRESS.PackageJobStage.AUDIT_REPOSITORY,
+                mac.PackageJobStage.AUDIT_REPOSITORY,
+                "package_rights_invalid",
+            ),
+        )
+        for source, windows_stage, mac_stage, expected in cases:
+            with self.subTest(source=source):
+                api = FakeOfficialApi()
+                api.import_error = FakePackageError(source)
+                service = SERVICE.PackageImportService(
+                    broker=FakeBroker(),
+                    data_root=Path(self.temporary.name) / source,
+                    current_app_version="0.4.0-preview.1",
+                    official_api=api,
+                    search_service=FakeSearchService(),
+                )
+                job = PROGRESS.PackageImportProgressCoordinator().run(
+                    opaque_handle(), service
+                )
+                error = job.snapshot().as_public_dict()["error"]
+                mac_error = mac.map_package_error(source, mac_stage)
+                self.assertEqual(error["code"], expected)
+                self.assertEqual(error["stage"], windows_stage.value)
+                self.assertFalse(error["retryable"])
+                self.assertEqual(mac_error.code, expected)
+                self.assertFalse(mac_error.retryable)
 
     def test_startup_missing_package_is_not_ready_and_other_audit_errors_fail_closed(self) -> None:
         self.api.open_error = FakePackageError("active_package_missing")

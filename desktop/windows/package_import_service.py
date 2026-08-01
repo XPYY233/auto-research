@@ -7,9 +7,11 @@ from typing import Any, Mapping, Protocol
 from evidence_search_service import EvidenceSearchError
 
 from package_import_progress import (
+    ACTIVE_STAGES,
     PackageImporterFailure,
     PackageImportProgressJob,
     PackageJobStage,
+    STAGE_INDEX,
 )
 from package_input import PackageInputBroker, PackageInputHandle, PackageInputError
 
@@ -118,6 +120,7 @@ _SOURCE_ERROR_GROUPS = {
         "rights",
         "rights_scope",
         "provenance",
+        "untrusted_rights_scope",
     },
     "package_install_conflict": {"install_conflict"},
     "package_install_failed": {
@@ -147,10 +150,21 @@ _SOURCE_ERROR_GROUPS = {
         "search_projection_invalid",
     },
 }
+_SOURCE_ERROR_GROUPS["package_untrusted"] = {
+    *_SOURCE_ERROR_GROUPS["package_untrusted"],
+    "trusted_key_policy_mismatch",
+    "untrusted_package_identity",
+}
 _SOURCE_TO_PUBLIC = {
     source: public
     for public, sources in _SOURCE_ERROR_GROUPS.items()
     for source in sources
+}
+
+_SOURCE_FAILURE_STAGES = {
+    "trusted_key_policy_mismatch": PackageJobStage.VERIFY_SIGNATURE,
+    "untrusted_package_identity": PackageJobStage.AUDIT_REPOSITORY,
+    "untrusted_rights_scope": PackageJobStage.AUDIT_REPOSITORY,
 }
 
 
@@ -288,6 +302,7 @@ class PackageImportService:
             progress.advance(PackageJobStage.COMPLETED)
         except Exception as exc:
             self._deactivate_search()
+            self._advance_to_failure_stage(progress, exc)
             public_code = public_import_error_code(exc)
             self._readiness = OfflineReadiness(
                 False,
@@ -331,4 +346,25 @@ class PackageImportService:
             self.search_service.deactivate()
         except Exception:
             # Readiness already fails closed; never expose adapter details.
+            return
+
+    @staticmethod
+    def _advance_to_failure_stage(
+        progress: PackageImportProgressJob, error: BaseException
+    ) -> None:
+        target = _SOURCE_FAILURE_STAGES.get(str(getattr(error, "code", "") or ""))
+        if target is None or progress.stage in {
+            PackageJobStage.COMPLETED,
+            PackageJobStage.FAILED,
+        }:
+            return
+        current_index = STAGE_INDEX[progress.stage]
+        target_index = STAGE_INDEX[target]
+        if target_index <= current_index:
+            return
+        try:
+            for stage in ACTIVE_STAGES[current_index + 1 : target_index + 1]:
+                progress.advance(stage)
+        except Exception:
+            # The original stable package error remains authoritative.
             return
