@@ -92,6 +92,13 @@ class FakeSearchService:
     def activate_official_repository(self, *, active_package, repository):
         self.calls.append((active_package, repository))
 
+    @property
+    def is_ready(self):
+        return bool(self.calls)
+
+    def deactivate(self):
+        self.calls.clear()
+
 
 class PackageImportServiceTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -130,6 +137,7 @@ class PackageImportServiceTests(unittest.TestCase):
         self.assertNotIn(str(SECRET_PATH), str(self.service.readiness.public_dict()))
 
     def test_failed_post_import_audit_keeps_offline_search_closed(self) -> None:
+        self.search.calls.append((self.api.active, self.api.repository))
         self.api.open_error = FakePackageError("repository_audit_failed")
         job = PROGRESS.PackageImportProgressCoordinator().run(
             opaque_handle(), self.service
@@ -149,6 +157,7 @@ class PackageImportServiceTests(unittest.TestCase):
             data_root=Path(self.temporary.name) / "official",
             current_app_version="0.4.0-preview.1",
             official_api=self.api,
+            search_service=FakeSearchService(),
         )
         job = PROGRESS.PackageImportProgressCoordinator().run(
             opaque_handle(), service
@@ -199,6 +208,25 @@ class PackageImportServiceTests(unittest.TestCase):
         self.assertTrue(readiness["offline_ready"])
         self.assertEqual(readiness["active_package"]["package_version"], "0.1.0-preview.1")
         self.assertEqual(len(self.search.calls), 1)
+
+    def test_missing_search_service_never_reports_offline_ready(self) -> None:
+        service = SERVICE.PackageImportService(
+            broker=FakeBroker(),
+            data_root=Path(self.temporary.name) / "no-search",
+            current_app_version="0.4.0-preview.1",
+            official_api=self.api,
+        )
+        startup = service.refresh_startup_readiness().public_dict()
+        self.assertFalse(startup["offline_ready"])
+        self.assertEqual(startup["code"], "offline_search_unavailable")
+
+        job = PROGRESS.PackageImportProgressCoordinator().run(
+            opaque_handle(), service
+        )
+        public = job.snapshot().as_public_dict()
+        self.assertEqual(public["stage"], "failed")
+        self.assertEqual(public["error"]["code"], "offline_search_unavailable")
+        self.assertFalse(service.readiness.offline_ready)
 
     def test_real_product_adapter_uses_frozen_trust_registry_and_missing_state_contract(self) -> None:
         sys.path.insert(0, str(PROJECT_ROOT / "src"))

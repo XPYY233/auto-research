@@ -84,6 +84,7 @@ ERRORS: Mapping[str, tuple[str, bool]] = {
     "package_selection_invalid": ("资料包选择已失效，请重新选择文件。", True),
     "package_job_transition_invalid": ("资料包任务状态异常，已停止本次操作。", False),
     "package_import_failed": ("资料包导入没有完成，原有资料库保持不变。", True),
+    "offline_search_unavailable": ("资料包已保留，但四类离线搜索未能安全建立。", True),
 }
 
 

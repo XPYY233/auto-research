@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
+from evidence_search_service import EvidenceSearchError
+
 from package_import_progress import (
     PackageImporterFailure,
     PackageImportProgressJob,
@@ -29,6 +31,11 @@ class EvidenceSearchService(Protocol):
     """Future federated-search injection point; Windows owns no search logic."""
 
     def activate_official_repository(self, *, active_package: Any, repository: Any) -> None: ...
+
+    def deactivate(self) -> None: ...
+
+    @property
+    def is_ready(self) -> bool: ...
 
 
 class AutoResearchProductApi:
@@ -130,6 +137,11 @@ _SOURCE_ERROR_GROUPS = {
     },
     "active_state_invalid": {"active_package_missing", "invalid_active_state"},
     "package_cancelled": {"package_cancelled"},
+    "offline_search_unavailable": {
+        "offline_search_activation_failed",
+        "offline_search_unavailable",
+        "search_projection_invalid",
+    },
 }
 _SOURCE_TO_PUBLIC = {
     source: public
@@ -185,14 +197,8 @@ class PackageImportService:
     def refresh_startup_readiness(self) -> OfflineReadiness:
         try:
             active, repository = self._open_active()
-            self._activate_search(active, repository)
-            self._readiness = OfflineReadiness(
-                True,
-                "offline_ready",
-                "官方资料包已通过审计，可以离线搜索。",
-                _active_public_dict(active),
-            )
         except Exception as exc:
+            self._deactivate_search()
             code = str(getattr(exc, "code", "") or "")
             if code == "active_package_missing":
                 self._readiness = OfflineReadiness(
@@ -206,6 +212,24 @@ class PackageImportService:
                     "active_state_invalid",
                     "当前官方资料包未通过启动审计，离线搜索保持关闭。",
                 )
+            return self._readiness
+        try:
+            self._activate_search(active, repository)
+        except Exception:
+            self._deactivate_search()
+            self._readiness = OfflineReadiness(
+                False,
+                "offline_search_unavailable",
+                "官方资料包已通过审计，但四类离线搜索未能安全建立。",
+                _active_public_dict(active),
+            )
+            return self._readiness
+        self._readiness = OfflineReadiness(
+            True,
+            "offline_ready",
+            "官方资料包已通过审计，可以离线搜索。",
+            _active_public_dict(active),
+        )
         return self._readiness
 
     def run(self, handle: PackageInputHandle, progress: PackageImportProgressJob) -> None:
@@ -259,12 +283,18 @@ class PackageImportService:
             )
             progress.advance(PackageJobStage.COMPLETED)
         except Exception as exc:
+            self._deactivate_search()
+            public_code = public_import_error_code(exc)
             self._readiness = OfflineReadiness(
                 False,
-                "offline_unavailable",
-                "官方资料包尚未准备完成，离线搜索保持关闭。",
+                public_code,
+                (
+                    "官方资料包已保留，但四类离线搜索未能安全建立。"
+                    if public_code == "offline_search_unavailable"
+                    else "官方资料包尚未准备完成，离线搜索保持关闭。"
+                ),
             )
-            raise PackageImporterFailure(public_import_error_code(exc)) from None
+            raise PackageImporterFailure(public_code) from None
 
     def _trusted_keys(self) -> Mapping[str, bytes]:
         return self.official_api.trusted_public_keys(channel=TRUST_CHANNEL)
@@ -277,8 +307,24 @@ class PackageImportService:
         )
 
     def _activate_search(self, active_package: Any, repository: Any) -> None:
-        if self.search_service is not None:
-            self.search_service.activate_official_repository(
-                active_package=active_package,
-                repository=repository,
+        if self.search_service is None:
+            raise EvidenceSearchError(
+                "offline_search_unavailable", "四类离线搜索服务尚未注入。"
             )
+        self.search_service.activate_official_repository(
+            active_package=active_package,
+            repository=repository,
+        )
+        if not self.search_service.is_ready:
+            raise EvidenceSearchError(
+                "offline_search_activation_failed", "四类离线搜索没有进入就绪状态。"
+            )
+
+    def _deactivate_search(self) -> None:
+        if self.search_service is None:
+            return
+        try:
+            self.search_service.deactivate()
+        except Exception:
+            # Readiness already fails closed; never expose adapter details.
+            return
