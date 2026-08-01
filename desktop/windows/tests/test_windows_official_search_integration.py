@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import base64
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +38,10 @@ try:
         provenance_for_papers,
         stable_paper_uid,
     )
+    from auto_research.product.trusted_publishers import (
+        TrustedPublisher,
+        TrustedPublisherPolicy,
+    )
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 finally:
@@ -53,8 +58,9 @@ class FixedPackageBroker:
 
 
 class RealTemporaryOfficialApi:
-    def __init__(self, trusted):
+    def __init__(self, trusted, policy):
         self.trusted = trusted
+        self.policy = policy
 
     def trusted_public_keys(self, *, channel):
         if channel != "internal-preview":
@@ -62,9 +68,11 @@ class RealTemporaryOfficialApi:
         return self.trusted
 
     def import_official_evidence_package(self, package_path, **kwargs):
+        kwargs["publisher_policy"] = self.policy
         return import_official_evidence_package(package_path, **kwargs)
 
     def open_active_official_repository(self, **kwargs):
+        kwargs["publisher_policy"] = self.policy
         return open_active_official_repository(**kwargs)
 
 
@@ -89,7 +97,21 @@ class WindowsOfficialSearchIntegrationTests(unittest.TestCase):
             format=serialization.PublicFormat.Raw,
         )
         self.trusted = {"windows-test-key": public}
-        self.api = RealTemporaryOfficialApi(self.trusted)
+        self.policy = TrustedPublisherPolicy(
+            channel="internal-preview",
+            publishers=(
+                TrustedPublisher(
+                    key_id="windows-test-key",
+                    display_name="Windows integration test",
+                    manifest_publisher_name="Windows integration test",
+                    public_key_base64=base64.b64encode(public).decode("ascii"),
+                    channel="internal-preview",
+                    allowed_package_ids=("windows-official-preview",),
+                    required_rights_redistribution="internal-test-only",
+                ),
+            ),
+        )
+        self.api = RealTemporaryOfficialApi(self.trusted, self.policy)
         self.paper = {
             "doi": "10.1000/windows.preview",
             "title": "Windows four-type integration preview",
@@ -267,11 +289,13 @@ class WindowsOfficialSearchIntegrationTests(unittest.TestCase):
             target_version="0.4.0-preview.1",
             trusted_public_keys=self.trusted,
             current_app_version="0.4.0-preview.1",
+            publisher_policy=self.policy,
         )
         active, _repository = open_active_official_repository(
             data_root=self.data_root,
             trusted_public_keys=self.trusted,
             current_app_version="0.4.0-preview.1",
+            publisher_policy=self.policy,
         )
         self.assertEqual(active.package_version, "0.4.0-preview.1")
 

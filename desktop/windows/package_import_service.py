@@ -41,20 +41,24 @@ class EvidenceSearchService(Protocol):
 class AutoResearchProductApi:
     """Load the shared product API lazily inside the packaged application."""
 
-    @staticmethod
-    def _product() -> Any:
-        from auto_research import product
-
-        return product
-
     def trusted_public_keys(self, *, channel: str) -> Mapping[str, bytes]:
-        return self._product().trusted_public_keys(channel=channel)
+        from auto_research.product.trusted_publishers import trusted_public_keys
+
+        return trusted_public_keys(channel=channel)
 
     def import_official_evidence_package(self, package_path: object, **kwargs: Any) -> Any:
-        return self._product().import_official_evidence_package(package_path, **kwargs)
+        from auto_research.product.official_package_store import (
+            import_official_evidence_package,
+        )
+
+        return import_official_evidence_package(package_path, **kwargs)
 
     def open_active_official_repository(self, **kwargs: Any) -> tuple[Any, Any]:
-        return self._product().open_active_official_repository(**kwargs)
+        from auto_research.product.official_package_store import (
+            open_active_official_repository,
+        )
+
+        return open_active_official_repository(**kwargs)
 
 
 @dataclass(frozen=True)

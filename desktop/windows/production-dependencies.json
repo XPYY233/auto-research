@@ -1,0 +1,69 @@
+{
+  "contract_version": 1,
+  "release_status": "internal-development",
+  "dependency_closure_status": "pending-core-narrow-runtime-api-and-wheel-lock",
+  "target": "windows-11-x64",
+  "python": "3.12.x-x64-bundled",
+  "windows_modules": [
+    "app_paths",
+    "app_shell",
+    "composition_root",
+    "credential_bridge",
+    "credential_manager",
+    "evidence_search_bridge",
+    "evidence_search_service",
+    "instance_guard",
+    "launcher",
+    "loopback_server_adapter",
+    "os_compatibility",
+    "package_import_bridge",
+    "package_import_progress",
+    "package_import_service",
+    "package_input",
+    "package_input_window",
+    "runtime_lifecycle",
+    "webview_window_adapter"
+  ],
+  "build_gate_modules": [
+    "build_plan",
+    "clean_machine_acceptance",
+    "runtime_bundle"
+  ],
+  "shared_runtime_modules": [
+    "auto_research.product.evidence_package",
+    "auto_research.product.official_package_store",
+    "auto_research.product.portable_repository",
+    "auto_research.product.trusted_publishers",
+    "auto_research.evidence.federated_search",
+    "auto_research.personal.private_repository",
+    "auto_research.personal.search_source"
+  ],
+  "external_runtime_components": [
+    "cryptography",
+    "PyMuPDF",
+    "PyYAML",
+    "requests",
+    "pywebview",
+    "Microsoft Edge WebView2 Runtime"
+  ],
+  "windows_facilities": [
+    "%LOCALAPPDATA% per-user storage",
+    "Windows Credential Manager",
+    "Win32 named mutex",
+    "127.0.0.1 OS-selected loopback port"
+  ],
+  "required_injections": {
+    "shared_desktop_http_bridge": "pending-frozen-contract-v1",
+    "native_package_picker": "pending-production-adapter",
+    "private_search_source": "optional"
+  },
+  "must_exclude_before_candidate": [
+    "auto_research.product.internal_preview_builder",
+    "auto_research.product.evidence_v12_export",
+    "Git",
+    "Node.js",
+    "source checkout",
+    "developer signing key"
+  ],
+  "installer_ready": false
+}
