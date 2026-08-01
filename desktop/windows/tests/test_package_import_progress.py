@@ -65,6 +65,25 @@ class PackageImportProgressTests(unittest.TestCase):
             {value[1] for value in MODULE.UI_PHASES.values()},
             {"检查文件", "验证资料包", "安装", "准备离线搜索", "完成"},
         )
+        self.assertTrue(
+            {
+                "package_too_large",
+                "package_invalid_or_corrupt",
+                "package_unsafe",
+                "package_untrusted",
+                "package_signature_invalid",
+                "package_incompatible_app",
+                "package_incompatible_schema",
+                "package_rights_invalid",
+                "package_install_conflict",
+                "package_install_failed",
+                "repository_audit_failed",
+                "active_state_invalid",
+                "package_busy",
+                "package_selection_invalid",
+                "package_job_transition_invalid",
+            }.issubset(MODULE.ERRORS)
+        )
 
     def test_successful_fake_import_has_separate_monotonic_progress_and_path_free_summary(self) -> None:
         handle = opaque_handle()

@@ -68,13 +68,21 @@ WAIT_REASONS = {
 
 ERRORS: Mapping[str, tuple[str, bool]] = {
     "package_cancelled": ("导入已取消，原有资料库保持不变。", True),
-    "package_unavailable": ("无法读取所选资料包，请重新选择。", True),
-    "package_invalid": ("资料包结构或内容无效。", False),
-    "package_untrusted": ("资料包发布者无法验证。", False),
-    "package_incompatible": ("资料包与当前 Auto Research 版本不兼容。", False),
-    "package_install_failed": ("资料包未能安全安装，原有资料库保持不变。", True),
-    "repository_audit_failed": ("资料库完整性检查未通过，未激活新版本。", False),
-    "active_state_invalid": ("资料库激活状态无效，原有版本保持不变。", True),
+    "package_too_large": ("资料包超过安全大小限制，请联系发布者获取正确版本。", False),
+    "package_invalid_or_corrupt": ("资料包无效或已损坏，请重新获取官方资料包。", False),
+    "package_unsafe": ("资料包未通过安全检查，已停止导入。", False),
+    "package_untrusted": ("资料包发布者不在可信列表中，无法导入。", False),
+    "package_signature_invalid": ("资料包签名验证失败，内容可能已被修改。", False),
+    "package_incompatible_app": ("资料包与当前软件版本不兼容，请先更新软件或更换资料包。", False),
+    "package_incompatible_schema": ("资料包数据格式与当前软件不兼容。", False),
+    "package_rights_invalid": ("资料包缺少有效的授权或来源声明，无法导入。", False),
+    "package_install_conflict": ("本机已有同版本但内容不同的资料包，已拒绝覆盖。", False),
+    "package_install_failed": ("资料包未能完成安装，原有资料保持不变。", True),
+    "repository_audit_failed": ("资料仓库未通过完整性审计，未切换到新资料包。", False),
+    "active_state_invalid": ("当前资料包启用状态异常，请使用回退或修复功能。", False),
+    "package_busy": ("已有资料包任务正在进行，请完成后再试。", True),
+    "package_selection_invalid": ("资料包选择已失效，请重新选择文件。", True),
+    "package_job_transition_invalid": ("资料包任务状态异常，已停止本次操作。", False),
     "package_import_failed": ("资料包导入没有完成，原有资料库保持不变。", True),
 }
 
