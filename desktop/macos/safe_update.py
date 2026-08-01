@@ -80,14 +80,21 @@ def main() -> int:
     print(f"SHA-256：{digest}")
 
     run([sys.executable, "-m", "unittest", "discover", "-s", "desktop/macos/tests", "-p", "test_*.py"])
-    run([sys.executable, "-m", "unittest", "discover", "-s", "src/tests", "-p", "test_*.py"])
+    source_environment = {
+        **dict(os.environ),
+        "PYTHONPATH": str(PROJECT_ROOT / "src"),
+    }
+    run(
+        [sys.executable, "-m", "unittest", "discover", "-s", "src/tests", "-p", "test_*.py"],
+        env=source_environment,
+    )
     run([sys.executable, "-m", "compileall", "-q", "src", "desktop/macos"])
     run(["node", "--check", "src/auto_research/evidence/web/app.js"])
     run(["git", "diff", "--check"])
-    run([sys.executable, "-m", "auto_research.cli", "evidence-db-health"], env={
-        **dict(os.environ),
-        "PYTHONPATH": str(PROJECT_ROOT / "src"),
-    })
+    run(
+        [sys.executable, "-m", "auto_research.cli", "evidence-db-health"],
+        env=source_environment,
+    )
     run([str(DESKTOP_ROOT / "build_app.command")])
     # build_app.command already performs the isolated candidate smoke check and
     # signature/plist validation. Do not repeat the same high-load verification.
