@@ -559,6 +559,30 @@ def _normalise_aliases(values: Iterable[Any], *, kind: str, primary: Any) -> tup
     return tuple(sorted(aliases))
 
 
+def _unique_alias_rows(
+    rows: Iterable[tuple[str, str, str]],
+) -> tuple[tuple[str, str, str], ...]:
+    """Keep only aliases that resolve to exactly one public object.
+
+    Historical workspaces may contain duplicate papers or stable keys that
+    legitimately produce the same secondary alias.  Such an alias is
+    ambiguous and must not pick a winner based on insertion order.  The
+    canonical paper/entity UIDs remain available; only the unsafe lookup alias
+    is omitted from the portable repository.
+    """
+
+    owners: dict[tuple[str, str], set[str]] = {}
+    for kind, alias_hash, object_uid in rows:
+        owners.setdefault((kind, alias_hash), set()).add(object_uid)
+    return tuple(
+        sorted(
+            (kind, alias_hash, next(iter(object_uids)))
+            for (kind, alias_hash), object_uids in owners.items()
+            if len(object_uids) == 1
+        )
+    )
+
+
 def _normalise_paper(source: Mapping[str, Any]) -> tuple[dict[str, Any], tuple[str, ...]]:
     _check_mapping_keys(source, _PAPER_INPUT_KEYS, "文章")
     title = _clean_text(source.get("title"), label="文章题名", maximum=1200, required=True)
@@ -1302,6 +1326,13 @@ def materialize_portable_repository(
             raise PortableRepositoryError("paper_collision", "公开文章身份冲突")
         paper_records[record["paper_uid"]] = record
         alias_rows.update(("paper", alias, record["paper_uid"]) for alias in aliases)
+        alias_rows.add(
+            (
+                "paper",
+                _alias_hash("paper", f"uid:{record['paper_uid']}"),
+                record["paper_uid"],
+            )
+        )
 
     entity_records: dict[str, dict[str, Any]] = {}
     for raw in plan.entities:
@@ -1313,6 +1344,15 @@ def materialize_portable_repository(
             raise PortableRepositoryError("entity_collision", "公开证据身份冲突")
         entity_records[record["entity_uid"]] = record
         alias_rows.update(("entity", alias, record["entity_uid"]) for alias in aliases)
+        alias_rows.add(
+            (
+                "entity",
+                _alias_hash(
+                    f"entity:{record['entity_type']}", f"uid:{record['entity_uid']}"
+                ),
+                record["entity_uid"],
+            )
+        )
 
     rights = _validate_policy(
         release_policy,
@@ -1360,7 +1400,7 @@ def materialize_portable_repository(
                 "provenance_sha256": provenance_digest,
             },
             papers=paper_records.values(),
-            aliases=alias_rows,
+            aliases=_unique_alias_rows(alias_rows),
             entities=entity_records.values(),
             assets=asset_rows,
         )

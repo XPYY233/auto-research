@@ -241,6 +241,55 @@ class PortableRepositoryTests(unittest.TestCase):
         self.assertEqual(first.database_sha256, second.database_sha256)
         self.assertEqual(first.database_path.read_bytes(), second.database_path.read_bytes())
 
+    def test_ambiguous_secondary_alias_is_omitted_without_dropping_records(self) -> None:
+        shared_alias = "metadata:historical duplicate label"
+        first = dict(self.paper, identity_aliases=(shared_alias,))
+        second = {
+            **self.paper,
+            "doi": "10.1000/test.2",
+            "title": "A second controlled irradiation experiment",
+            "identity_aliases": (shared_alias,),
+        }
+        first_uid = stable_paper_uid(
+            doi=first["doi"],
+            title=first["title"],
+            year=first["year"],
+            first_author=first["first_author"],
+        )
+        second_uid = stable_paper_uid(
+            doi=second["doi"],
+            title=second["title"],
+            year=second["year"],
+            first_author=second["first_author"],
+        )
+        output = materialize_portable_repository(
+            PortableExportPlan(papers=(first, second), entities=()),
+            self.root / "ambiguous-alias",
+            package_id="official-fusion-preview",
+            package_version="0.1.0",
+            release_policy=ReleasePolicy(
+                distribution_scope="internal-preview-only",
+                allowed_paper_uids=frozenset({first_uid, second_uid}),
+                allow_structured_evidence=True,
+            ),
+            provenance=provenance_for_papers(
+                (first, second), publisher="Auto Research internal preview"
+            ),
+        )
+        connection = sqlite3.connect(
+            f"{output.database_path.as_uri()}?mode=ro&immutable=1", uri=True
+        )
+        try:
+            papers = connection.execute("SELECT COUNT(*) FROM papers").fetchone()[0]
+            ambiguous = connection.execute(
+                "SELECT COUNT(*) FROM identity_aliases WHERE object_kind='paper' AND alias_hash=?",
+                (repository_module._alias_hash("paper", shared_alias),),
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        self.assertEqual(papers, 2)
+        self.assertEqual(ambiguous, 0)
+
     def test_unexplained_sanitizer_drops_block_release(self) -> None:
         policy = ReleasePolicy(
             distribution_scope="internal-preview-only",

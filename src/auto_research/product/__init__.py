@@ -33,6 +33,13 @@ from .portable_repository import (
     materialize_portable_repository,
     provenance_for_papers,
 )
+from .trusted_publishers import (
+    TRUSTED_PUBLISHER_REGISTRY_VERSION,
+    TrustedPublisher,
+    assert_trusted_package_identity,
+    trusted_public_keys,
+    trusted_publishers,
+)
 
 __all__ = [
     "ARESEARCH_FORMAT",
@@ -62,4 +69,9 @@ __all__ = [
     "import_official_evidence_package",
     "open_active_official_repository",
     "rollback_official_evidence_package",
+    "TRUSTED_PUBLISHER_REGISTRY_VERSION",
+    "TrustedPublisher",
+    "assert_trusted_package_identity",
+    "trusted_public_keys",
+    "trusted_publishers",
 ]
