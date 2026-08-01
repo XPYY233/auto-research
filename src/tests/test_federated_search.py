@@ -150,6 +150,66 @@ class FederatedEvidenceSearchTests(unittest.TestCase):
         self.assertGreater(page.hits[0].score, 0)
         self.assertEqual(page.hits[0].matched_terms, ("硬度",))
 
+    def test_multi_term_coverage_excludes_one_word_noise_and_keeps_three_of_four(self) -> None:
+        only_common = official_document(
+            "item",
+            "only-common-term",
+            title="Generic irradiation evidence",
+            meaning="辐照实验",
+        )
+        only_common["metadata_text"] = "generic evidence"
+        documents = (
+            only_common,
+            official_document(
+                "item",
+                "three-of-four",
+                title="W Ta irradiation evidence",
+                meaning="W Ta 辐照实验",
+            ),
+            official_document(
+                "item",
+                "all-four",
+                title="W Ta He irradiation evidence",
+                meaning="W Ta 合金 He 辐照",
+            ),
+        )
+        service = FederatedEvidenceSearch((MappingSource(documents),))
+        page = service.search("W Ta He 辐照")
+        self.assertEqual(
+            [hit.document["entity_uid"] for hit in page.hits],
+            ["all-four", "three-of-four"],
+        )
+        self.assertEqual(len(page.hits[0].matched_terms), 4)
+        self.assertEqual(len(page.hits[1].matched_terms), 3)
+
+    def test_one_or_two_term_queries_require_each_term_and_keep_short_chinese_terms(self) -> None:
+        documents = (
+            official_document(
+                "item",
+                "tungsten-hardness",
+                title="钨的纳米硬度",
+                meaning="硬度随温度变化",
+            ),
+            official_document(
+                "item",
+                "hardness-only",
+                title="硬度测量",
+                meaning="辐照后力学性能",
+            ),
+        )
+        service = FederatedEvidenceSearch((MappingSource(documents),))
+        for query in ("钨", "硬度", "温度"):
+            with self.subTest(query=query):
+                self.assertGreater(service.search(query).total, 0)
+        combined = service.search("钨 硬度")
+        self.assertEqual(combined.total, 1)
+        self.assertEqual(combined.hits[0].document["entity_uid"], "tungsten-hardness")
+
+    def test_empty_query_browse_is_not_subject_to_coverage_gate(self) -> None:
+        page = self.service.search("")
+        self.assertEqual(page.total, self.service.document_count)
+        self.assertTrue(all(hit.matched_terms == () for hit in page.hits))
+
     def test_four_type_and_source_filters_can_be_combined(self) -> None:
         private_only = self.service.search(
             "",

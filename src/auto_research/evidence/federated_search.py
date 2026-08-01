@@ -16,6 +16,7 @@ MAX_DOCUMENTS = 100_000
 
 _ENTITY_ORDER = {"item": 0, "finding": 1, "table": 2, "figure": 3}
 _WORD_RE = re.compile(r"[^\W_]+(?:[.\-^×][^\W_]+)*", re.UNICODE)
+_ASCII_TOKEN_RE = re.compile(r"[a-z0-9]+")
 _WINDOWS_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
 _FORBIDDEN_KEYS = frozenset(
     {
@@ -99,6 +100,7 @@ class _IndexedDocument:
     entity_type: str
     stable_order: tuple[Any, ...]
     weighted_fields: tuple[tuple[int, str], ...]
+    weighted_short_terms: tuple[tuple[int, frozenset[str]], ...]
 
 
 class FederatedEvidenceSearch:
@@ -155,7 +157,8 @@ class FederatedEvidenceSearch:
         terms = _query_terms(cleaned_query)
         normalised_phrase = _normalise_search_text(cleaned_query)
 
-        ranked: list[tuple[int, tuple[str, ...], _IndexedDocument]] = []
+        required_coverage = _minimum_term_coverage(len(terms))
+        ranked: list[tuple[int, int, tuple[str, ...], _IndexedDocument]] = []
         for item in self._documents:
             scope, source_id, _entity_uid = item.identity
             if selected_types is not None and item.entity_type not in selected_types:
@@ -165,14 +168,15 @@ class FederatedEvidenceSearch:
             if selected_ids is not None and source_id not in selected_ids:
                 continue
             score, matched = _score(item, terms, normalised_phrase)
-            if terms and not matched:
+            coverage = len(matched)
+            if coverage < required_coverage:
                 continue
-            ranked.append((score, matched, item))
+            ranked.append((coverage, score, matched, item))
 
         if terms:
-            ranked.sort(key=lambda row: (-row[0], row[2].stable_order))
+            ranked.sort(key=lambda row: (-row[0], -row[1], row[3].stable_order))
         else:
-            ranked.sort(key=lambda row: row[2].stable_order)
+            ranked.sort(key=lambda row: row[3].stable_order)
         total = len(ranked)
         start = (page - 1) * page_size
         selected = ranked[start : start + page_size]
@@ -182,7 +186,7 @@ class FederatedEvidenceSearch:
                 matched_terms=matched,
                 document=copy.deepcopy(dict(item.document)),
             )
-            for score, matched, item in selected
+            for _coverage, score, matched, item in selected
         )
         return FederatedSearchPage(
             query=cleaned_query,
@@ -348,13 +352,25 @@ def _index_document(
         identity[1].casefold(),
         identity[2].casefold(),
     )
+    weighted_fields = tuple(
+        (weight, _normalise_search_text(text)) for weight, text in fields if text
+    )
     return _IndexedDocument(
         document=document,
         identity=identity,
         entity_type=entity_type,
         stable_order=stable_order,
-        weighted_fields=tuple(
-            (weight, _normalise_search_text(text)) for weight, text in fields if text
+        weighted_fields=weighted_fields,
+        weighted_short_terms=tuple(
+            (
+                weight,
+                frozenset(
+                    token
+                    for token in _ASCII_TOKEN_RE.findall(text)
+                    if len(token) <= 2
+                ),
+            )
+            for weight, text in weighted_fields
         ),
     )
 
@@ -369,10 +385,20 @@ def _score(
     score = 0
     matched: list[str] = []
     for term in terms:
-        best = max(
-            (weight for weight, text in item.weighted_fields if term in text),
-            default=0,
-        )
+        if len(term) <= 2 and term.isascii() and term.isalpha():
+            best = max(
+                (
+                    weight
+                    for weight, short_terms in item.weighted_short_terms
+                    if term in short_terms
+                ),
+                default=0,
+            )
+        else:
+            best = max(
+                (weight for weight, text in item.weighted_fields if term in text),
+                default=0,
+            )
         if best:
             score += best
             matched.append(term)
@@ -392,6 +418,12 @@ def _query_terms(query: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(_WORD_RE.findall(normalised)))[:32]
 
 
+def _minimum_term_coverage(term_count: int) -> int:
+    if term_count <= 2:
+        return term_count
+    return max(2, (2 * term_count + 2) // 3)
+
+
 def _normalise_search_text(value: Any) -> str:
     return " ".join(unicodedata.normalize("NFKC", str(value or "")).casefold().split())
 
@@ -402,9 +434,7 @@ def _join_fields(document: Mapping[str, Any], *keys: str) -> str:
 
 def _flatten_text(value: Any) -> str:
     if isinstance(value, Mapping):
-        return " ".join(
-            f"{key} {_flatten_text(item)}" for key, item in value.items()
-        )
+        return " ".join(_flatten_text(item) for item in value.values())
     if isinstance(value, (list, tuple)):
         return " ".join(_flatten_text(item) for item in value)
     if value is None:
