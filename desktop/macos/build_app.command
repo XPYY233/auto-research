@@ -10,6 +10,7 @@ OUTPUT_ROOT="${SCRIPT_DIR}/dist"
 PREVIOUS_ROOT="${SCRIPT_DIR}/releases"
 APP_PATH="${OUTPUT_ROOT}/Auto Research.app"
 BUILD_STAMP="$(date '+%Y%m%d-%H%M%S')"
+DESKTOP_VERSION="$(/usr/bin/plutil -extract desktop_version raw -o - "${SCRIPT_DIR}/version.json")"
 
 pause_on_error() {
   local status=$?
@@ -26,7 +27,7 @@ trap pause_on_error EXIT
 cd "${PROJECT_ROOT}"
 
 echo "Auto Research macOS 开发预览构建器"
-echo "桌面版本: 0.3.0-preview.1"
+echo "桌面版本: ${DESKTOP_VERSION}"
 echo "当前构建设备: Apple Silicon Mac（正式用户端目标为 Windows）"
 echo
 

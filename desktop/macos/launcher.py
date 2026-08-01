@@ -154,6 +154,7 @@ def _http_smoke_checks(
         )
     binary_routes = {
         "static_js": "/static/app.js",
+        "desktop_product_js": "/static/desktop_product.js",
         "static_css": "/static/app.css",
         "working_asset": "/static/codex-pet-working.webp",
         "visual_image": f"/api/visual-assets/{visual_id}/image",

@@ -34,6 +34,12 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn("Auto-Research-${DESKTOP_VERSION}-macOS-arm64.dmg", command)
         self.assertNotIn("Auto-Research-0.3.0-preview.1", command)
 
+    def test_build_output_reads_the_same_version_metadata(self) -> None:
+        command = (DESKTOP_ROOT / "build_app.command").read_text(encoding="utf-8")
+        self.assertIn("plutil -extract desktop_version", command)
+        self.assertIn('echo "桌面版本: ${DESKTOP_VERSION}"', command)
+        self.assertNotIn('echo "桌面版本: 0.3.0-preview.1"', command)
+
 
 if __name__ == "__main__":
     unittest.main()
