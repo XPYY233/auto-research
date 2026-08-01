@@ -34,8 +34,17 @@ Auto Research\
 - Python 3.12 x64 + PyInstaller；
 - pywebview + Microsoft Edge WebView2；
 - 本地服务仅绑定随机 `127.0.0.1` 端口，并使用每次启动随机会话令牌；
+- 每个数据工作区持有独立 Windows 命名互斥锁，阻止两个进程同时导包或写入私人库；
 - Inno Setup 生成按用户安装包；
 - Windows Authenticode 签名、干净机安装、升级/回退和卸载必须在正式候选中验收。
+
+## 零环境配置发布门
+
+- 安装包自带 Python 运行时和全部生产依赖，用户不安装 Python、Git、Node 或数据库工具；
+- 用户不配置环境变量、不选择项目源码目录、不运行命令行；
+- WebView2 缺失时由安装器检测并通过微软官方 Evergreen Bootstrapper 安装；
+- 首次启动直接进入 `.aresearch` 资料包导入，导入后立即支持离线搜索；
+- DeepSeek key 只在首次使用 AI 功能时配置，不是安装、导包或离线搜索前置条件。
 
 ## 当前阻塞
 

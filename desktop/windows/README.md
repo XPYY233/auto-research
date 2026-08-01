@@ -2,6 +2,8 @@
 
 这里是 Windows 正式用户端的独立平台目录。当前版本 `0.1.0-dev.1` 只包含数据目录与 Windows Credential Manager 地基，尚未生成可交付安装包。
 
+正式安装包必须“开罐即用”：自带运行时和依赖，不要求用户配置开发环境；首次启动只需选择并导入 `.aresearch` 数据包。
+
 ## 最终用户验收路径
 
 1. 在干净 Windows 电脑上安装；
@@ -21,6 +23,7 @@ Mac 可以验证纯路径契约、凭据适配逻辑、Python 静态检查和共
 
 ```bash
 python3 -m unittest discover -s desktop/windows/tests -p 'test_*.py'
+python3 desktop/windows/build_plan.py
 ```
 
 只要并行任务仍在修改兼容接口，或者共享核心尚未宣布冻结，本目录不得向用户输出“稳定安装包”。

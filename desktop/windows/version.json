@@ -4,5 +4,8 @@
   "product_target": "Windows desktop client",
   "distribution_schema": 1,
   "data_mode": "official-package-plus-private-library",
+  "bundled_python_runtime": true,
+  "requires_user_environment_setup": false,
+  "first_run_entry": "import-evidence-package",
   "installer_ready": false
 }
