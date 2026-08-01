@@ -820,6 +820,111 @@ def build_evidence_bundles(candidates: list[dict[str, Any]], analysis: QueryAnal
     return bundles
 
 
+def build_article_recommendations(
+    candidates: list[dict[str, Any]],
+    *,
+    limit: int = 6,
+) -> list[dict[str, Any]]:
+    """Aggregate bounded evidence candidates into conservative paper suggestions.
+
+    Recommendations are a read-only paper view over the existing four evidence
+    types. They do not add a fifth evidence type and do not make uncited model
+    claims. Direct and adjacent papers are preferred; expansion papers are used
+    only when the database has no closer paper at all.
+    """
+
+    if limit < 1:
+        return []
+    grouped: OrderedDict[int, list[dict[str, Any]]] = OrderedDict()
+    for candidate in candidates:
+        paper_id = int(candidate.get("paper_id") or 0)
+        if paper_id > 0:
+            grouped.setdefault(paper_id, []).append(candidate)
+
+    ranked: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    for paper_id, members in grouped.items():
+        best_class = min(
+            (str(member.get("match_class") or "expansion") for member in members),
+            key=lambda value: MATCH_CLASS_ORDER.get(value, 9),
+        )
+        supporting = [
+            member for member in members
+            if str(member.get("match_class") or "expansion") == best_class
+        ]
+        supporting.sort(key=lambda row: (
+            -float(row.get("constraint_coverage") or 0),
+            -float(row.get("search_score") or 0),
+            int(str(row.get("ref") or "R9999")[1:] or 9999),
+        ))
+        matched_conditions = _dedupe(
+            f"{item.get('label')}：{'、'.join(str(value) for value in item.get('matched') or [])}"
+            for member in supporting
+            for item in member.get("matched_constraints") or []
+            if item.get("label") and item.get("matched")
+        )
+        relaxed = _dedupe(
+            item.get("label")
+            for member in supporting
+            for item in member.get("missing_constraints") or []
+            if item.get("label")
+        )
+        properties = _dedupe(
+            member.get("title") or member.get("label") or "证据"
+            for member in supporting
+        )
+        entity_types = _dedupe(
+            member.get("entity_type") for member in supporting
+        )
+        refs = _dedupe(
+            str(member.get("ref") or "") for member in supporting
+            if re.fullmatch(r"R\d+", str(member.get("ref") or ""))
+        )
+        if best_class == "direct":
+            reason = f"该论文有 {len(supporting)} 项候选同时满足当前问题的全部硬条件。"
+            level = "direct"
+        elif best_class == "adjacent":
+            relaxed_text = "、".join(relaxed) or "一个硬条件"
+            reason = f"这是最接近当前问题的相邻论文；阅读时需注意缺少或放宽：{relaxed_text}。"
+            level = "related"
+        else:
+            reason = "当前数据库没有更接近的论文；此文仅作为拓展阅读，不能视为原问题的直接证据。"
+            level = "expansion"
+        first = supporting[0]
+        recommendation = {
+            "paper_id": paper_id,
+            "article_title": first.get("article_title") or "未命名文章",
+            "doi": first.get("doi") or "",
+            "first_author": first.get("first_author") or "",
+            "year": first.get("year"),
+            "recommendation_level": level,
+            "match_class": best_class,
+            "constraint_coverage": max(
+                float(member.get("constraint_coverage") or 0) for member in supporting
+            ),
+            "why_recommended": reason,
+            "matched_conditions": list(matched_conditions),
+            "relaxed_constraints": list(relaxed),
+            "properties": list(properties),
+            "entity_types": list(entity_types),
+            "supporting_refs": list(refs[:4]),
+            "evidence_count": len(members),
+        }
+        rank = (
+            MATCH_CLASS_ORDER.get(best_class, 9),
+            -recommendation["constraint_coverage"],
+            -len(entity_types),
+            -len(members),
+            -max(float(member.get("search_score") or 0) for member in supporting),
+            paper_id,
+        )
+        ranked.append((rank, recommendation))
+
+    close = [item for item in ranked if item[1]["match_class"] in {"direct", "adjacent"}]
+    selected = close if close else ranked
+    selected.sort(key=lambda item: item[0])
+    return [recommendation for _, recommendation in selected[:limit]]
+
+
 def _select_diverse(candidates: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
     bundle_counts: dict[str, int] = {}

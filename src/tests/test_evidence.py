@@ -1654,6 +1654,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("report.related_evidence", app_js)
         self.assertIn("report.database_gaps", app_js)
         self.assertIn("report.suggested_followups", app_js)
+        self.assertIn("recommended_articles", app_js)
+        self.assertIn("数据库内相关文章", app_js)
+        self.assertIn("覆盖预警", app_js)
         self.assertIn("query_analysis", app_js)
         self.assertIn("agent_match_class", app_js)
         self.assertIn("agent_bundle_id", app_js)
@@ -1677,6 +1680,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn(".librarian-research-report", app_css)
         self.assertIn(".librarian-query-chips", app_css)
         self.assertIn(".librarian-related-row", app_css)
+        self.assertIn(".librarian-article-recommendations", app_css)
+        self.assertIn(".librarian-article-warning", app_css)
         self.assertIn(".agent-result-ref.direct", app_css)
 
     def test_future_visual_metadata_prompt_requires_material_and_comparison_context(self):

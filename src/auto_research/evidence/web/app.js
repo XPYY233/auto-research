@@ -2256,7 +2256,7 @@ function librarianReportRefsHtml(refs, interactiveRefs) {
     .join(' ');
 }
 
-function librarianReportHtml(report, queryAnalysis, interactiveRefs) {
+function librarianReportHtml(report, queryAnalysis, interactiveRefs, recommendedArticles = []) {
   if (!report || typeof report !== 'object' || !report.direct_conclusion) return '';
   const conclusion = report.direct_conclusion || {};
   const status = ['found', 'not_found', 'clarification'].includes(conclusion.status) ? conclusion.status : 'unknown';
@@ -2265,6 +2265,7 @@ function librarianReportHtml(report, queryAnalysis, interactiveRefs) {
   const related = Array.isArray(report.related_evidence) ? report.related_evidence : [];
   const gaps = Array.isArray(report.database_gaps) ? report.database_gaps : [];
   const followups = (Array.isArray(report.suggested_followups) ? report.suggested_followups : []).slice(0, 3);
+  const articles = (Array.isArray(recommendedArticles) ? recommendedArticles : []).slice(0, 6);
   const focus = String(queryAnalysis?.focus || '').trim();
   const conclusionTextRefs = new Set([...String(conclusion.text || '').matchAll(/\[R(\d+)\]/g)].map(match => `R${match[1]}`));
   const conclusionExtraRefs = (Array.isArray(conclusion.refs) ? conclusion.refs : []).filter(ref => !conclusionTextRefs.has(String(ref)));
@@ -2288,6 +2289,21 @@ function librarianReportHtml(report, queryAnalysis, interactiveRefs) {
   const followupHtml = followups.length
     ? `<div class="librarian-followups">${followups.map(value => `<button type="button" data-librarian-followup="${esc(value)}">${esc(value)}</button>`).join('')}</div>`
     : '<p class="librarian-report-empty">可继续补充材料、实验条件或目标物理量后追问。</p>';
+  const articleLevelLabels = { direct: '直接相关', related: '相邻相关', expansion: '拓展阅读' };
+  const articleTypeLabels = { item: '数据', finding: '结论', table: '表格', figure: '图片' };
+  const articleHtml = articles.length
+    ? `<aside class="librarian-article-recommendations" aria-label="相关文章推荐"><header><div><span>RELATED PAPERS</span><h3>数据库内相关文章</h3></div><b>${articles.length} 篇</b></header><div class="librarian-article-list">${articles.map(article => {
+        const level = ['direct', 'related', 'expansion'].includes(article?.recommendation_level) ? article.recommendation_level : 'related';
+        const details = [article?.first_author, article?.year, article?.doi].filter(Boolean).map(esc).join(' · ');
+        const properties = (Array.isArray(article?.properties) ? article.properties : []).filter(Boolean).slice(0, 4);
+        const types = (Array.isArray(article?.entity_types) ? article.entity_types : []).filter(Boolean).slice(0, 4);
+        const tags = [...properties, ...types.map(value => articleTypeLabels[value] || value)];
+        const coverage = article?.database_evidence_counts || {};
+        const coverageSummary = `数值 ${Number(coverage.item) || 0} · 结论 ${Number(coverage.finding) || 0} · 表格 ${Number(coverage.table) || 0} · 图片 ${Number(coverage.figure) || 0}`;
+        const warning = String(article?.coverage_warning || '').trim();
+        return `<article class="librarian-article-card level-${esc(level)}${warning ? ' coverage-warning' : ''}"><div class="librarian-article-copy"><div class="librarian-article-kicker"><b>${esc(articleLevelLabels[level])}</b><span>${esc(Math.round(Number(article?.constraint_coverage || 0) * 100))}% 条件覆盖</span></div><h4>${esc(article?.article_title || '未命名文章')}</h4>${details ? `<small>${details}</small>` : ''}<p>${esc(article?.why_recommended || '该论文包含与当前问题相关的数据库证据。')}</p><small class="librarian-article-coverage">${esc(coverageSummary)}</small>${warning ? `<div class="librarian-article-warning"><b>覆盖预警</b>${esc(warning)}</div>` : ''}${tags.length ? `<div class="librarian-article-tags">${tags.map(value => `<span>${esc(value)}</span>`).join('')}</div>` : ''}</div><div class="librarian-article-refs">${librarianReportRefsHtml(article?.supporting_refs, interactiveRefs)}</div></article>`;
+      }).join('')}</div></aside>`
+    : '';
   return `<div class="librarian-answer librarian-research-report">
     ${focusHtml}
     <section class="librarian-report-section report-direct status-${esc(status)}"><header><i>01</i><div><span>DIRECT CONCLUSION</span><h3>直接结论</h3></div><b>${esc(statusLabel)}</b></header><div class="librarian-report-body">${librarianMarkdown(conclusion.text || '未形成直接结论。', { interactiveRefs })}${librarianReportRefsHtml(conclusionExtraRefs, interactiveRefs)}</div></section>
@@ -2295,6 +2311,7 @@ function librarianReportHtml(report, queryAnalysis, interactiveRefs) {
     <section class="librarian-report-section report-related"><header><i>03</i><div><span>RELATED EVIDENCE</span><h3>相关证据</h3></div><b>${related.length} 项</b></header><div class="librarian-related-list">${relatedHtml}</div></section>
     <section class="librarian-report-section report-gaps"><header><i>04</i><div><span>DATABASE GAPS</span><h3>数据库空白</h3></div><b>${gaps.length} 项</b></header><div class="librarian-report-body">${gapHtml}</div></section>
     <section class="librarian-report-section report-followups"><header><i>05</i><div><span>NEXT QUESTIONS</span><h3>建议追问</h3></div><b>${followups.length} 项</b></header>${followupHtml}</section>
+    ${articleHtml}
   </div>`;
 }
 
@@ -2304,6 +2321,7 @@ function librarianMessageHtml(message, index, activeAssistantIndex) {
   const active = role === 'assistant' && index === activeAssistantIndex;
   const report = message?.report || (active ? state.librarianMeta?.report : null);
   const queryAnalysis = message?.query_analysis || (active ? state.librarianMeta?.query_analysis : null);
+  const recommendedArticles = message?.recommended_articles || (active ? state.librarianMeta?.recommended_articles : []);
   const currentRefs = new Set((state.librarianResults || []).map(row => String(row.agent_ref || '')).filter(Boolean));
   const answerRefs = new Set([
     ...[...String(content || '').matchAll(/\[R(\d+)\]/g)].map(match => `R${match[1]}`),
@@ -2318,7 +2336,9 @@ function librarianMessageHtml(message, index, activeAssistantIndex) {
       ? '这条历史回答没有绑定可核对的数据库证据，已停止展示。请重新发送问题；新回答将强制执行本轮检索。'
       : content;
   const interactiveRefs = active && !guarded ? currentRefs : new Set();
-  const structured = role === 'assistant' && !guarded ? librarianReportHtml(report, queryAnalysis, interactiveRefs) : '';
+  const structured = role === 'assistant' && !guarded
+    ? librarianReportHtml(report, queryAnalysis, interactiveRefs, recommendedArticles)
+    : '';
   const answerBody = structured || (role === 'assistant' && !guarded
     ? `<div class="librarian-answer">${librarianMarkdown(visibleContent, { interactiveRefs })}</div>`
     : `<p>${esc(visibleContent).replace(/\n/g, '<br>')}</p>`);
@@ -2636,6 +2656,7 @@ async function submitLibrarian(event) {
       content: result.answer,
       report: result.report || null,
       query_analysis: result.query_analysis || null,
+      recommended_articles: result.recommended_articles || [],
     });
     state.librarianResults = result.results || [];
     state.librarianMeta = {
@@ -2649,6 +2670,8 @@ async function submitLibrarian(event) {
       report: result.report || null,
       query_analysis: result.query_analysis || null,
       evidence_bundles: result.evidence_bundles || [],
+      recommended_articles: result.recommended_articles || [],
+      recommended_article_count: result.recommended_article_count || 0,
       match_counts: result.match_counts || null,
       bundle_count: result.bundle_count || 0,
       clarification_required: Boolean(result.clarification_required),

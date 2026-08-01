@@ -2,6 +2,14 @@
 
 ## 2026-08-01：桌面产品方向与低负载联合收口
 
+### 图书管理员模型分工、相关文章与抽取覆盖预警
+
+- 官方能力核验确认 DeepSeek V4 Flash/Pro API 均为文本模型，不直接读取论文图像。抽取、独立验证和最终证据综合继续默认使用 V4 Pro；只有有本地规则兜底的 Librarian 检索式规划默认使用 V4 Flash。四个模型角色可分别配置，Flash 不会波及科学抽取或视觉语义链。
+- 图书管理员响应升级为 `reasoning-presentation-v2`，新增顶层 `recommended_articles`：将本轮已召回的 item/finding/table/figure 按论文聚合，最多推荐六篇，显示 direct/adjacent/expansion 等级、条件覆盖、相关性质和支持 R#。它不新增第五类证据、不改变五段报告和 `agent_cited`。
+- 相关文章区独立放在五段报告之后；对话历史仅自然保存该公开响应字段，没有修改桌面历史 storage labels、`readDesktopLibrarianHistory` 或 `loadLibrarianHistory`，也没有把研究简报授权写入历史。
+- 初次只读审计发现 13 篇论文存在“有表格/图片资产但零可报告数值、零实验结论”的状态：12 篇为 `prompt_ready`、1 篇为 `benchmark_imported`，均没有正式 AI 抽取运行。随后 App 对 paper 56 的重复 PDF 启动但未完成预览抽取，新建 13 个图表资产，使现场动态计数变为 14 篇（另含 1 篇 `queued`）。这说明图表建档可先于全文抽取，不应解释为论文没有文本数据；paper 56 的运行/图表归属用户现场数据，本功能提交不纳入或处理。
+- 推荐论文现在携带四类全库覆盖计数；只有 table/figure 而没有 item/finding 时，页面显示“全文证据抽取尚未完成”预警。本轮不重新抽取论文、不修改科学 SQLite、PDF、图表资产或审核历史。
+
 - 产品入口正式收敛为个人桌面工作台：当前先交付 macOS 本机开发预览，正式用户端预计为 Windows。导师只读网页、独立浏览器工作台、8765/8766、ngrok 和浏览器启动器退役；既有 HTML/JavaScript、loopback webapp 与权限模式继续作为 App 内部实现和回归保护。
 - 稳定 App 不应要求用户输入 Auto Research 编辑密码；意外系统凭据授权窗口被列为发布阻断。当前 macOS 使用 Keychain，后续 Windows 使用 Credential Manager，二者通过统一安全凭据接口承载。
 - 正式发行采用“桌面 App + 独立 `.aresearch` 证据包”：用户导入经过版本、哈希与签名校验的数据包后即可离线检索；官方包、用户私人库和 App 安装彼此分离。默认不含受限 PDF、本机路径、Zotero key、私人对话或开发者凭据，导入失败必须可回退。

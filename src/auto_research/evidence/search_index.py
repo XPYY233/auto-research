@@ -558,6 +558,30 @@ class EvidenceSearchIndex:
             ).fetchone()
         return {**fresh, "counts": counts, "rebuilt_at": rebuilt["value"] if rebuilt else None}
 
+    def paper_entity_counts(
+        self,
+        paper_ids: Iterable[int],
+        *,
+        refresh: bool = True,
+    ) -> dict[int, dict[str, int]]:
+        """Return four-type index coverage without reading or changing evidence."""
+
+        selected = sorted({int(paper_id) for paper_id in paper_ids if int(paper_id) > 0})
+        if not selected:
+            return {}
+        if refresh:
+            self.ensure_fresh()
+        placeholders = ",".join("?" for _ in selected)
+        output = {paper_id: {entity_type: 0 for entity_type in ENTITY_TYPES} for paper_id in selected}
+        with self.db.connect() as conn:
+            for row in conn.execute(
+                "SELECT paper_id,entity_type,COUNT(*) n FROM search_index_documents "
+                f"WHERE paper_id IN ({placeholders}) GROUP BY paper_id,entity_type",
+                selected,
+            ):
+                output[int(row["paper_id"])][str(row["entity_type"])] = int(row["n"])
+        return output
+
     def get(self, entity_type: str, entity_id: int) -> dict[str, Any]:
         if entity_type not in ENTITY_TYPES:
             raise ValueError("unsupported search entity type")

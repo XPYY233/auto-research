@@ -7,12 +7,14 @@ from pathlib import Path
 from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.agent_runtime import (
     LibrarianAgentRuntime,
+    _annotate_article_coverage,
     _bounded_json_list,
     _fallback_recall_queries,
 )
 from auto_research.evidence.db import EvidenceDB, now
 from auto_research.evidence.librarian_reasoning import (
     build_evidence_bundles,
+    build_article_recommendations,
     build_query_analysis,
     build_research_report,
     reason_candidates,
@@ -386,6 +388,72 @@ class SearchAgentTests(unittest.TestCase):
         self.assertLessEqual(len(report["suggested_followups"]), 3)
         self.assertEqual(report_references(report), {"R1", "R2"})
 
+    def test_article_recommendations_aggregate_existing_four_type_candidates(self):
+        candidates = [
+            {
+                "ref": "R1", "entity_type": "item", "entity_id": 1,
+                "paper_id": 11, "article_title": "Direct paper", "doi": "10.1/direct",
+                "first_author": "A", "year": 2024, "title": "硬度",
+                "match_class": "direct", "constraint_coverage": 1.0,
+                "matched_constraints": [{"label": "材料", "matched": ["高熵合金"]}],
+                "missing_constraints": [], "search_score": 9.0,
+            },
+            {
+                "ref": "R2", "entity_type": "figure", "entity_id": 2,
+                "paper_id": 11, "article_title": "Direct paper", "doi": "10.1/direct",
+                "first_author": "A", "year": 2024, "title": "缺陷图",
+                "match_class": "direct", "constraint_coverage": 1.0,
+                "matched_constraints": [{"label": "材料", "matched": ["高熵合金"]}],
+                "missing_constraints": [], "search_score": 8.0,
+            },
+            {
+                "ref": "R3", "entity_type": "finding", "entity_id": 3,
+                "paper_id": 12, "article_title": "Adjacent paper", "doi": "10.1/adjacent",
+                "title": "硬化趋势", "match_class": "adjacent",
+                "constraint_coverage": 0.75, "matched_constraints": [],
+                "missing_constraints": [{"label": "温度"}], "search_score": 7.0,
+            },
+            {
+                "ref": "R4", "entity_type": "table", "entity_id": 4,
+                "paper_id": 13, "article_title": "Expansion paper", "doi": "10.1/expansion",
+                "title": "力学性质表", "match_class": "expansion",
+                "constraint_coverage": 0.25, "matched_constraints": [],
+                "missing_constraints": [{"label": "材料"}, {"label": "温度"}],
+                "search_score": 6.0,
+            },
+        ]
+        recommendations = build_article_recommendations(candidates)
+        self.assertEqual([row["paper_id"] for row in recommendations], [11, 12])
+        self.assertEqual(recommendations[0]["supporting_refs"], ["R1", "R2"])
+        self.assertEqual(recommendations[0]["entity_types"], ["item", "figure"])
+        self.assertEqual(recommendations[0]["recommendation_level"], "direct")
+        self.assertEqual(recommendations[1]["relaxed_constraints"], ["温度"])
+        self.assertNotIn("R4", json.dumps(recommendations, ensure_ascii=False))
+
+        expansion_only = build_article_recommendations([candidates[-1]])
+        self.assertEqual(expansion_only[0]["recommendation_level"], "expansion")
+        self.assertIn("拓展阅读", expansion_only[0]["why_recommended"])
+
+    def test_article_recommendation_warns_when_only_visual_index_exists(self):
+        recommendations = [{"paper_id": 21, "article_title": "Visual-only paper"}]
+        annotated = _annotate_article_coverage(
+            recommendations,
+            {21: {"item": 0, "finding": 0, "table": 3, "figure": 11}},
+        )
+        self.assertEqual(annotated[0]["textual_evidence_status"], "visual_only")
+        self.assertIn("全文证据抽取尚未完成", annotated[0]["coverage_warning"])
+        self.assertEqual(
+            annotated[0]["database_evidence_counts"],
+            {"item": 0, "finding": 0, "table": 3, "figure": 11},
+        )
+
+        available = _annotate_article_coverage(
+            [{"paper_id": 22}],
+            {22: {"item": 1, "finding": 0, "table": 2, "figure": 4}},
+        )
+        self.assertEqual(available[0]["textual_evidence_status"], "available")
+        self.assertEqual(available[0]["coverage_warning"], "")
+
     def test_librarian_reuses_four_type_search_and_returns_source_payload(self):
         client = FakePlannedClient()
         result = LibrarianAgentRuntime(self.db, client=client).run(
@@ -404,6 +472,10 @@ class SearchAgentTests(unittest.TestCase):
         self.assertEqual(result["model"], "deepseek-v4-pro")
         self.assertTrue(result["answered_at"])
         self.assertTrue(result["evidence_version"])
+        self.assertEqual(result["recommended_article_count"], 1)
+        self.assertEqual(result["recommended_articles"][0]["paper_id"], self.paper_id)
+        self.assertEqual(result["recommended_articles"][0]["supporting_refs"], ["R1"])
+        self.assertEqual(result["response_format"], "reasoning-presentation-v2")
 
     def test_search_v2_public_projection_preserves_four_type_identity(self):
         index = EvidenceSearchIndex(self.db)
@@ -789,6 +861,7 @@ class SearchAgentTests(unittest.TestCase):
         )
         forbidden = {"image_path", "pdf_path", "zotero_key", "local_article_key", "editor", "edit_note"}
         self.assertFalse(forbidden.intersection(result["results"][0]))
+        self.assertFalse(forbidden.intersection(result["recommended_articles"][0]))
 
     def test_shared_public_projection_removes_local_and_review_metadata(self):
         public = public_evidence_dto({

@@ -18,6 +18,7 @@ from .db import EvidenceDB
 from .librarian_reasoning import (
     QueryAnalysis,
     build_evidence_bundles,
+    build_article_recommendations,
     build_query_analysis,
     build_research_report,
     reason_candidates as reason_candidate_rows,
@@ -41,7 +42,7 @@ MAX_SUMMARY_RESULTS = 48
 MAX_RESULTS_PER_TYPE = {"item": 24, "finding": 20, "table": 18, "figure": 18}
 AGENT_CACHE_TTL_SECONDS = 3_600
 AGENT_CACHE_MAX_ENTRIES = 32
-LIBRARIAN_RESPONSE_FORMAT_VERSION = "reasoning-presentation-v1"
+LIBRARIAN_RESPONSE_FORMAT_VERSION = "reasoning-presentation-v2"
 
 _GENERIC_RECALL_TERMS = {"变化", "影响", "结果", "情况", "表现", "关系", "规律", "研究"}
 _IRRADIATION_TERMS = {"中子辐照", "离子辐照", "电子辐照", "辐照实验", "氦离子", "氢离子", "重离子"}
@@ -300,6 +301,8 @@ def _compact_result(entity_type: str, row: dict[str, Any], ref: str) -> dict[str
         "paper_id": int(row.get("paper_id") or 0),
         "article_title": row.get("article_title"),
         "doi": row.get("doi"),
+        "first_author": row.get("first_author"),
+        "year": row.get("year"),
         "source_page": row.get("source_page") or row.get("page_start"),
         "search_score": row.get("search_score") or 0,
     }
@@ -321,6 +324,27 @@ def _compact_result(entity_type: str, row: dict[str, Any], ref: str) -> dict[str
             "quantities": row.get("physical_quantities"),
         })
     return common
+
+
+def _annotate_article_coverage(
+    recommendations: list[dict[str, Any]],
+    coverage: dict[int, dict[str, int]],
+) -> list[dict[str, Any]]:
+    for article in recommendations:
+        counts = {
+            entity_type: int(coverage.get(int(article.get("paper_id") or 0), {}).get(entity_type, 0))
+            for entity_type in ("item", "finding", "table", "figure")
+        }
+        article["database_evidence_counts"] = counts
+        visual_only = counts["item"] == 0 and counts["finding"] == 0 and (
+            counts["table"] > 0 or counts["figure"] > 0
+        )
+        article["textual_evidence_status"] = "visual_only" if visual_only else "available"
+        article["coverage_warning"] = (
+            "当前仅有表格/图片索引，尚无可报告数值条目或实验结论；这通常表示全文证据抽取尚未完成。"
+            if visual_only else ""
+        )
+    return recommendations
 
 
 class LibrarianAgentRuntime:
@@ -875,6 +899,14 @@ class LibrarianAgentRuntime:
             match_class: sum(1 for row in public_results if row.get("agent_match_class") == match_class)
             for match_class in ("direct", "adjacent", "expansion")
         }
+        recommended_articles = build_article_recommendations(reasoned)
+        _annotate_article_coverage(
+            recommended_articles,
+            self.index.paper_entity_counts(
+                [article["paper_id"] for article in recommended_articles],
+                refresh=False,
+            ),
+        )
         result = {
             "agent": {"id": agent.agent_id, "name": agent.name},
             "response_format": LIBRARIAN_RESPONSE_FORMAT_VERSION,
@@ -885,6 +917,8 @@ class LibrarianAgentRuntime:
             "query_analysis": analysis.as_dict(),
             "evidence_bundles": bundles,
             "results": public_results,
+            "recommended_articles": recommended_articles,
+            "recommended_article_count": len(recommended_articles),
             "tool_calls": len(queries),
             "search_operations": search_operations,
             "candidate_count": len(public_results),
