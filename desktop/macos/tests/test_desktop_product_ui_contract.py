@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+WEB_ROOT = PROJECT_ROOT / "src" / "auto_research" / "evidence" / "web"
+
+
+class DesktopProductUIContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+        cls.app = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+        cls.product = (WEB_ROOT / "desktop_product.js").read_text(encoding="utf-8")
+        cls.styles = (WEB_ROOT / "app.css").read_text(encoding="utf-8")
+
+    def test_product_module_is_loaded_without_entering_history_module(self) -> None:
+        product_script = '<script src="/static/desktop_product.js"></script>'
+        self.assertIn(product_script, self.index)
+        self.assertLess(
+            self.index.index(product_script),
+            self.index.index('<script src="/static/librarian_brief.js"></script>'),
+        )
+        self.assertNotIn("librarian-history", self.product)
+        self.assertNotIn("librarianHistory", self.product)
+
+    def test_native_picker_and_package_import_use_only_selection_id(self) -> None:
+        self.assertIn("pywebview.api.select_evidence_package()", self.product)
+        self.assertIn("/api/desktop/evidence-packages/import", self.product)
+        self.assertIn("selection_id: selected.selection.selection_id", self.product)
+        self.assertNotIn("selected.selection.path", self.product)
+        self.assertNotIn('type="file" accept=".aresearch', self.index)
+
+    def test_official_search_keeps_stable_identity_and_four_type_tabs(self) -> None:
+        self.assertIn("/api/desktop/federated-search", self.product)
+        self.assertIn("document.entity_uid", self.product)
+        self.assertNotIn("Number(document.entity_uid", self.product)
+        self.assertNotIn("Number(hit.document", self.product)
+        for entity_type in ("item", "finding", "table", "figure"):
+            self.assertIn(f'data-search-mode="{entity_type}"', self.index)
+
+    def test_unavailable_binaries_are_visibly_disabled(self) -> None:
+        self.assertIn("原文 PDF 未随包提供", self.product)
+        self.assertIn("图片未随包提供", self.product)
+        self.assertIn('type="button" disabled', self.product)
+
+    def test_local_workspace_and_official_package_are_named_separately(self) -> None:
+        self.assertIn('data-search-repository="workspace"', self.index)
+        self.assertIn('data-search-repository="official"', self.index)
+        self.assertIn("不会覆盖本机可编辑工作区", self.index)
+        self.assertIn("官方资料库搜索不需要 AI 密钥", self.index)
+        self.assertIn(".official-result-card", self.styles)
+
+    def test_shared_app_contains_only_explicit_product_hooks(self) -> None:
+        self.assertIn("AutoResearchDesktopProduct?.initialize()", self.app)
+        self.assertIn("AutoResearchDesktopProduct?.handleSearch", self.app)
+        self.assertIn("body.error || body.message", self.app)
+
+
+if __name__ == "__main__":
+    unittest.main()

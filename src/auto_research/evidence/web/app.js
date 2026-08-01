@@ -53,7 +53,7 @@ async function api(url, options = {}) {
   const response = await fetch(url, desktopRequestOptions(options));
   captureDesktopCsrf(response);
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `请求失败 ${response.status}`);
+  if (!response.ok) throw new Error(body.error || body.message || `请求失败 ${response.status}`);
   return body;
 }
 
@@ -1917,6 +1917,7 @@ function focusSearchShortcut(event) {
 async function runSearch(event, options = {}) {
   event?.preventDefault();
   if (state.searchExperience !== "precise") return;
+  if (globalThis.AutoResearchDesktopProduct?.handleSearch(event, options)) return;
   const q = document.querySelector("#search-query").value.trim();
   const requestId = ++state.searchRequest;
   state.search = q;
@@ -3754,6 +3755,7 @@ renderActiveFilters();
 async function initializeApplication() {
   state.uiMode = await api('/api/ui-mode');
   applyUiMode();
+  await globalThis.AutoResearchDesktopProduct?.initialize();
   await loadLibrarianHistory();
   setSearchExperience('agent');
   await load();

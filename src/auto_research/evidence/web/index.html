@@ -277,7 +277,32 @@
               </form>
             </div>
           </section>
+          <section class="desktop-product-panel" id="desktop-product-panel" hidden aria-label="桌面资料与 AI 设置">
+            <div class="desktop-product-copy">
+              <span>DESKTOP PREVIEW · LOCAL FIRST</span>
+              <h3>把官方资料装进自己的电脑</h3>
+              <p>资料包经签名与完整性检查后，以只读方式独立安装；不会覆盖本机可编辑工作区。</p>
+            </div>
+            <div class="desktop-product-status">
+              <i id="desktop-package-dot"></i>
+              <div><small>官方资料库</small><strong id="desktop-package-title">尚未导入</strong><p id="desktop-package-note">选择我们提供的 .aresearch 资料包即可离线搜索。</p></div>
+              <button type="button" id="desktop-package-import">选择资料包</button>
+            </div>
+            <details class="desktop-ai-settings" id="desktop-ai-settings">
+              <summary><span>AI 功能</span><strong id="desktop-ai-title">检查密钥状态</strong><small>图书管理员与新文献提取使用</small></summary>
+              <div>
+                <p>官方资料库搜索不需要 AI 密钥。只有使用图书管理员或提取自己的新文献时才需要；密钥只保存在本机安全凭据存储中。</p>
+                <label>DeepSeek API 密钥<input id="desktop-ai-key" type="password" autocomplete="off" placeholder="粘贴你获得的 API 密钥"></label>
+                <div class="desktop-ai-actions"><button type="button" id="desktop-ai-save">安全保存</button><button type="button" id="desktop-ai-delete">删除本机密钥</button></div>
+              </div>
+            </details>
+          </section>
           <div id="precise-search-workspace" hidden>
+          <div class="search-repository-switch" id="search-repository-switch" hidden role="tablist" aria-label="搜索资料来源">
+            <div><span>搜索位置</span><small>两个来源互不覆盖</small></div>
+            <button type="button" class="active" role="tab" aria-selected="true" data-search-repository="workspace"><strong>本机工作区</strong><small>上传、提取、校对中的私人文献</small></button>
+            <button type="button" role="tab" aria-selected="false" data-search-repository="official" disabled><strong>官方资料库</strong><small>签名资料包 · 只读离线搜索</small></button>
+          </div>
           <div class="search-scope-selector" aria-label="检索文章范围">
             <div class="search-scope-switch" role="group" aria-label="检索范围">
               <button type="button" class="active" data-search-scope="all" aria-pressed="true">全部文章</button>
@@ -531,6 +556,7 @@
     </form>
   </dialog>
   <script src="/static/app.js"></script>
+  <script src="/static/desktop_product.js"></script>
   <script src="/static/librarian_brief.js"></script>
 </body>
 </html>
