@@ -63,6 +63,21 @@ def _http_smoke_checks(
         "search_status": "/api/search-v2/status",
         "search_query": "/api/search-v2?q=%E6%B8%A9%E5%BA%A6&limit=1",
         "visual_query": "/api/visual-search?q=&type=figure",
+        "paper_catalog": "/api/search-papers",
+        "test_set": "/api/test-set",
+        "uploads": "/api/uploads",
+        "processing_jobs": "/api/processing-jobs",
+        "ai_status": "/api/ai/status",
+        "current_visuals": "/api/current-paper/visual-assets",
+        "current_extraction": "/api/current-paper/extraction",
+        "current_experiment_profile": "/api/current-paper/experiment-profile",
+        "current_learning_samples": "/api/current-paper/learning-samples",
+        "all_learning_samples": "/api/learning-samples",
+        "current_learning_report": "/api/current-paper/learning-report",
+        "all_learning_report": "/api/learning-report",
+        "current_deepseek_run": "/api/current-paper/deepseek-run",
+        "current_quality_run": "/api/current-paper/quality-run",
+        "current_quality_candidates": "/api/current-paper/quality-candidates?status=manual_review",
     }
     checks = {"unauthorized_blocked": unauthorized_blocked}
     for name, route in routes.items():

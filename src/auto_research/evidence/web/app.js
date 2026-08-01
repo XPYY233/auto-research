@@ -21,6 +21,10 @@ const calibrationStoragePrefix = "evidence-calibration-batch-v1:";
 const recentPapersStorageKey = "evidence-recent-papers-v1";
 const librarianHistoryStorageKey = "evidence-librarian-history-v1";
 const librarianDesktopHistoryEndpoint = "/api/desktop/librarian-history";
+const librarianDesktopStorageLabels = new Set([
+  'macos-keychain-aes-256-gcm',
+  'macos-preview-local-key-aes-256-gcm',
+]);
 const librarianHistoryLimit = 16;
 const librarianHistoryByteLimit = 2_500_000;
 let librarianHistoryBackend = "unknown";
@@ -2057,7 +2061,7 @@ async function readDesktopLibrarianHistory() {
   if (response.status === 404) return null;
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `本机加密历史读取失败 ${response.status}`);
-  if (body.storage !== 'macos-keychain-aes-256-gcm') throw new Error('桌面历史没有使用预期的加密存储');
+  if (!librarianDesktopStorageLabels.has(body.storage)) throw new Error('桌面历史没有使用预期的加密存储');
   return validLibrarianSessions(body.sessions);
 }
 
@@ -2143,7 +2147,7 @@ async function loadLibrarianHistory() {
       state.librarianSessions = desktopSessions.length ? desktopSessions : legacySessions;
       if (!desktopSessions.length && legacySessions.length) await persistLibrarianHistory(legacySessions);
       localStorage.removeItem(librarianHistoryStorageKey);
-      setText('librarian-history-privacy', '桌面版已在本机加密保存；密钥由 macOS Keychain 管理，不写入科学数据库。');
+      setText('librarian-history-privacy', '桌面版已在本机加密保存；不写入科学数据库。');
     }
   } catch (error) {
     librarianHistoryBackend = 'desktop-secure-error';

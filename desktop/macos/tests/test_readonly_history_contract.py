@@ -9,6 +9,12 @@ WEB_APP = PROJECT_ROOT / "src" / "auto_research" / "evidence" / "web" / "app.js"
 
 
 class ReadOnlyHistoryContractTests(unittest.TestCase):
+    def test_desktop_history_accepts_signed_and_adhoc_preview_storage(self) -> None:
+        source = WEB_APP.read_text(encoding="utf-8")
+        self.assertIn("'macos-keychain-aes-256-gcm'", source)
+        self.assertIn("'macos-preview-local-key-aes-256-gcm'", source)
+        self.assertIn("librarianDesktopStorageLabels.has(body.storage)", source)
+
     def test_read_only_history_is_memory_only_and_selected_before_desktop_probe(self) -> None:
         source = WEB_APP.read_text(encoding="utf-8")
         load_start = source.index("async function loadLibrarianHistory()")
