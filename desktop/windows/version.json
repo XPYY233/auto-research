@@ -1,0 +1,8 @@
+{
+  "desktop_version": "0.1.0-dev.1",
+  "target": "Windows 11 x64 development skeleton",
+  "product_target": "Windows desktop client",
+  "distribution_schema": 1,
+  "data_mode": "official-package-plus-private-library",
+  "installer_ready": false
+}

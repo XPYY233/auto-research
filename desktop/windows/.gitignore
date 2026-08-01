@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+releases/
+*.exe
+*.msi
+*.msix
+*.pfx
+*.cer
