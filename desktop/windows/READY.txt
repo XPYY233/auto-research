@@ -1,0 +1,12 @@
+AUTO RESEARCH WINDOWS INTERNAL TEST
+STATE=BUILD KIT READY
+SETUP_PRESENT=NO
+
+This folder is ready to copy to Windows 11 and run the one-click build-kit check.
+It is NOT a Windows installer release. A real Setup must still be generated and smoke-tested on Windows 11 after the production shared bridge is integrated.
+
+FIRST_ACTION=Double-click Build-Windows-Preview.cmd
+RETURN_FILE=Windows-Build-Report.txt
+
+Do not install Python, Git, or Node.js manually.
+Do not disable Defender or SmartScreen.
