@@ -13,8 +13,9 @@ Read in this order before changing anything:
 
 1. `PROJECT_HANDOFF.md`
 2. `AGENT.md`
-3. `STABLE_RELEASE.md`
-4. `git status --short`
+3. `docs/ARCHITECTURE_GOVERNANCE.md`
+4. `STABLE_RELEASE.md`
+5. `git status --short`
 
 Do not develop in the former iCloud checkout. Preserve unrelated or user-owned worktree changes.
 
@@ -42,6 +43,9 @@ Keep these invariants:
 - The Librarian uses DeepSeek planning, local four-type coverage recall, then DeepSeek evidence synthesis. It remains read-only and full-corpus.
 - The product is one personal desktop workbench. The current preview is macOS and the intended end-user target is Windows. The embedded frontend, loopback service and historical read-only permissions remain internal implementation/test boundaries, not separate browser products.
 - Distribution separates the signed desktop App from versioned, verified evidence packages and from each user's private library. End-user DeepSeek extraction and Librarian calls are BYOK through the platform secure credential store; never package a developer key.
+- The official distribution database is `distribution-sqlite-v1`, not EvidenceDB v12. Its canonical activity selector is `<app-data>/official-packages/active.json`; only signature/checksum verification followed by `OfficialEvidenceRepository` audit may atomically change it.
+- Applications trust only reviewed public keys in `auto_research.product.trusted_publishers`. Maintainer signing private keys stay outside Git, App data, logs and `.aresearch` files; never silently regenerate a missing key under an existing `key_id`.
+- Keep platform logic thin. macOS and Windows may implement lifecycle, native selection, credentials and a protected bridge, but must reuse product package, identity, audit and federated-search contracts rather than copy them.
 - Codex develops the project; application runtime AI is DeepSeek.
 
 ## Choose the safe action level
@@ -70,6 +74,8 @@ python3 -m compileall -q src
 node --check src/auto_research/evidence/web/app.js
 git diff --check
 ```
+
+For a desktop/package release, first use synthetic temporary roots and the signed-package target tests. Run the shared full suite and desktop build only once after all platform interfaces freeze. Never use the activity production database or user `paper_056` run artifacts as disposable package test data.
 
 Interpret a fixed-corpus audit honestly: pending extraction is not necessarily code failure. Never fabricate evidence to make an audit pass.
 
