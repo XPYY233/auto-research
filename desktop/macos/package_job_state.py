@@ -57,6 +57,10 @@ _SELECTION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 _JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 
+def is_valid_package_selection_id(value: object) -> bool:
+    return isinstance(value, str) and _SELECTION_ID_RE.fullmatch(value) is not None
+
+
 @dataclass(frozen=True)
 class PackageJobError:
     code: str
@@ -366,7 +370,7 @@ class PackageImportJobCoordinator:
             return self._active_job_id
 
     def begin_import(self, selection_id: str) -> PackageJobSnapshot:
-        if not isinstance(selection_id, str) or not _SELECTION_ID_RE.fullmatch(selection_id):
+        if not is_valid_package_selection_id(selection_id):
             raise PackageJobStateError(
                 _public_error("package_selection_invalid", PackageJobStage.QUEUED)
             )
