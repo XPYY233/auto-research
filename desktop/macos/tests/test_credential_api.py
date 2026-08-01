@@ -22,7 +22,12 @@ for path in (DESKTOP_ROOT, SOURCE_ROOT):
         sys.path.insert(0, str(path))
 
 from auto_research.evidence.db import EvidenceDB  # noqa: E402
-from desktop_server import CREDENTIAL_PATH, create_desktop_server, new_session_token  # noqa: E402
+from desktop_server import (  # noqa: E402
+    CREDENTIAL_PATH,
+    CSRF_HEADER,
+    create_desktop_server,
+    new_session_token,
+)
 from secure_credentials import (  # noqa: E402
     ERROR_LOCKED,
     DeepSeekCredentialStore,
@@ -87,6 +92,8 @@ class CredentialAPITests(unittest.TestCase):
             urllib.request.HTTPCookieProcessor(CookieJar())
         )
         self.opener.open(f"{self.base_url}/?desktop_token={self.token}", timeout=5).close()
+        with self.opener.open(f"{self.base_url}/api/ui-mode", timeout=5) as response:
+            self.csrf_token = response.headers[CSRF_HEADER]
 
     def tearDown(self) -> None:
         self.server.shutdown()
@@ -99,10 +106,13 @@ class CredentialAPITests(unittest.TestCase):
 
     def request(self, method: str, body: dict | None = None):
         data = json.dumps(body).encode("utf-8") if body is not None else None
+        headers = {"Origin": self.base_url, CSRF_HEADER: self.csrf_token}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
         request = urllib.request.Request(
             f"{self.base_url}{CREDENTIAL_PATH}",
             data=data,
-            headers={"Content-Type": "application/json"} if data is not None else {},
+            headers=headers,
             method=method,
         )
         with self.opener.open(request, timeout=5) as response:
@@ -140,7 +150,11 @@ class CredentialAPITests(unittest.TestCase):
         request = urllib.request.Request(
             f"{self.base_url}{CREDENTIAL_PATH}",
             data=json.dumps({"api_key": invalid}).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Origin": self.base_url,
+                CSRF_HEADER: self.csrf_token,
+            },
             method="POST",
         )
         with self.assertRaises(urllib.error.HTTPError) as raised:

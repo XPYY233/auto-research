@@ -90,6 +90,7 @@ RELEASE_INFO = {
     "evidence_schema": 12,
 }
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+MAX_JSON_REQUEST_BYTES = 1_000_000
 
 
 def require_loopback_host(host: str) -> str:
@@ -899,22 +900,48 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             paper_id=int(one("paper_id")) if one("paper_id") else None, limit=limit,
         )
 
-    def read_json(self) -> dict:
-        length = int(self.headers.get("Content-Length", "0"))
-        if length > 1_000_000:
+    def _content_length(self, max_bytes: int, *, require_body: bool) -> int:
+        transfer_encoding = self.headers.get_all("Transfer-Encoding") or []
+        if transfer_encoding:
+            raise ValueError("Transfer-Encoding is not supported")
+        raw_lengths = self.headers.get_all("Content-Length") or []
+        if len(raw_lengths) != 1:
+            if not raw_lengths and not require_body:
+                return 0
+            raise ValueError("Exactly one Content-Length header is required")
+        raw_length = raw_lengths[0].strip()
+        if not raw_length.isascii() or not raw_length.isdigit():
+            raise ValueError("Invalid Content-Length")
+        length = int(raw_length)
+        if require_body and length <= 0:
+            raise ValueError("Request body is empty")
+        if length > max_bytes:
             raise ValueError("Request too large")
-        payload = json.loads(self.rfile.read(length) or b"{}")
+        return length
+
+    def _read_exact_body(self, length: int) -> bytes:
+        data = self.rfile.read(length)
+        if len(data) != length:
+            raise ValueError("Incomplete request body")
+        return data
+
+    def read_json(self) -> dict:
+        length = self._content_length(MAX_JSON_REQUEST_BYTES, require_body=True)
+        payload = json.loads(self._read_exact_body(length) or b"{}")
         if not isinstance(payload, dict):
             raise ValueError("JSON request body must be an object")
         return payload
 
     def read_binary(self, max_bytes: int) -> bytes:
-        length = int(self.headers.get("Content-Length", "0"))
-        if length <= 0:
-            raise ValueError("上传文件为空")
-        if length > max_bytes:
-            raise ValueError(f"上传文件超过 {max_bytes // (1024 * 1024)} MB")
-        return self.rfile.read(length)
+        try:
+            length = self._content_length(max_bytes, require_body=True)
+            return self._read_exact_body(length)
+        except ValueError as exc:
+            if str(exc) == "Request body is empty":
+                raise ValueError("上传文件为空") from exc
+            if str(exc) == "Request too large":
+                raise ValueError(f"上传文件超过 {max_bytes // (1024 * 1024)} MB") from exc
+            raise
 
     def json_response(self, payload, status: HTTPStatus = HTTPStatus.OK) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -1120,8 +1147,13 @@ class EvidenceHandler(BaseHTTPRequestHandler):
 
 
 def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 8765,
-          read_only: bool = False) -> None:
+          read_only: bool = False, *, allow_insecure_development: bool = False) -> None:
     host = require_loopback_host(host)
+    if not read_only and not allow_insecure_development:
+        raise RuntimeError(
+            "The unauthenticated editable browser service is retired; use the desktop App. "
+            "Maintainers must opt in explicitly with allow_insecure_development=True."
+        )
     evidence_db = db or EvidenceDB()
     evidence_db.init()
     upload_service = UploadService(evidence_db)

@@ -32,9 +32,26 @@ let librarianHistorySaveChain = Promise.resolve();
 const librarianResultTypes = ["item", "finding", "table", "figure"];
 const librarianMatchOrder = { direct: 0, adjacent: 1, expansion: 2 };
 const reviewPageSize = 80;
+const desktopCsrfHeader = "X-Auto-Research-CSRF";
+let desktopCsrfToken = "";
+
+function desktopRequestOptions(options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers || {});
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && desktopCsrfToken) {
+    headers.set(desktopCsrfHeader, desktopCsrfToken);
+  }
+  return { ...options, headers };
+}
+
+function captureDesktopCsrf(response) {
+  const token = response.headers.get(desktopCsrfHeader);
+  if (token) desktopCsrfToken = token;
+}
 
 async function api(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, desktopRequestOptions(options));
+  captureDesktopCsrf(response);
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `请求失败 ${response.status}`);
   return body;
@@ -2024,11 +2041,12 @@ async function readDesktopLibrarianHistory() {
 
 async function persistLibrarianHistory(sessions) {
   if (librarianHistoryBackend === 'desktop-secure') {
-    const response = await fetch(librarianDesktopHistoryEndpoint, {
+    const response = await fetch(librarianDesktopHistoryEndpoint, desktopRequestOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessions }),
-    });
+    }));
+    captureDesktopCsrf(response);
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || `本机加密历史保存失败 ${response.status}`);
     localStorage.removeItem(librarianHistoryStorageKey);

@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import secrets
+import threading
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import ThreadingHTTPServer
@@ -13,7 +14,11 @@ from urllib.parse import parse_qs, urlparse
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.search_index import EvidenceSearchIndex
 from auto_research.evidence.uploads import UploadService
-from auto_research.evidence.webapp import EvidenceHandler, require_loopback_host
+from auto_research.evidence.webapp import (
+    EvidenceHandler,
+    is_read_only_mutation,
+    require_loopback_host,
+)
 from secure_history import SecureHistoryError, SecureHistoryStore
 from secure_credentials import DeepSeekCredentialStore, SecureCredentialError
 from first_use_state import (
@@ -29,8 +34,17 @@ TOKEN_QUERY_NAME = "desktop_token"
 HISTORY_PATH = "/api/desktop/librarian-history"
 CREDENTIAL_PATH = "/api/desktop/credentials/deepseek"
 READINESS_PATH = "/api/desktop/readiness"
+HEALTH_PATH = "/api/desktop/healthz"
+CSRF_HEADER = "X-Auto-Research-CSRF"
 MAX_HISTORY_REQUEST_BYTES = 3_000_000
 MAX_CREDENTIAL_REQUEST_BYTES = 8_192
+HIGH_COST_PATHS = frozenset(
+    {
+        "/api/current-paper/run-workflow",
+        "/api/current-paper/deepseek-preview",
+        "/api/current-paper/quality-run",
+    }
+)
 
 
 def new_session_token() -> str:
@@ -47,42 +61,149 @@ def _cookie_token(raw_cookie: str) -> str:
     return morsel.value if morsel else ""
 
 
+class DesktopSecurityState:
+    def __init__(self, bootstrap_token: str) -> None:
+        if not isinstance(bootstrap_token, str) or len(bootstrap_token) < 32:
+            raise ValueError("desktop bootstrap token is invalid")
+        self.bootstrap_token = bootstrap_token
+        self.session_token = new_session_token()
+        self.csrf_token = new_session_token()
+        self.expected_authority = ""
+        self.bootstrap_consumed = False
+        self.high_cost_active = False
+        self._lock = threading.Lock()
+
+    def set_expected_authority(self, authority: str) -> None:
+        with self._lock:
+            self.expected_authority = authority
+
+    def consume_bootstrap(self, supplied: str) -> bool:
+        with self._lock:
+            if self.bootstrap_consumed or not supplied:
+                return False
+            if not hmac.compare_digest(supplied, self.bootstrap_token):
+                return False
+            self.bootstrap_consumed = True
+            self.bootstrap_token = ""
+            return True
+
+    def acquire_high_cost(self) -> bool:
+        with self._lock:
+            if self.high_cost_active:
+                return False
+            self.high_cost_active = True
+            return True
+
+    def release_high_cost(self) -> None:
+        with self._lock:
+            self.high_cost_active = False
+
+
 class DesktopEvidenceHandler(EvidenceHandler):
     """Evidence handler protected by a per-launch desktop session cookie."""
 
-    desktop_token: str = ""
+    security_state: DesktopSecurityState
     history_store: SecureHistoryStore | None = None
     credential_store: DeepSeekCredentialStore | None = None
     active_package_status_path: Path | None = None
     _issue_desktop_cookie: bool = False
+    _issue_csrf_header: bool = False
 
     def log_message(self, fmt: str, *args) -> None:
         # The bootstrap URL contains a secret token. Never put request lines in logs.
         return
 
-    def _same_origin_if_supplied(self) -> bool:
-        origin = self.headers.get("Origin")
-        if not origin:
-            return True
-        host = self.headers.get("Host") or ""
-        return origin == f"http://{host}"
+    def _single_header(self, name: str) -> str | None:
+        values = self.headers.get_all(name) or []
+        if len(values) != 1:
+            return None
+        value = values[0].strip()
+        return value if value and "," not in value else None
 
-    def _has_session(self) -> bool:
+    def _valid_host(self) -> bool:
+        return self._single_header("Host") == self.security_state.expected_authority
+
+    def _valid_origin(self, *, required: bool) -> bool:
+        values = self.headers.get_all("Origin") or []
+        if not values:
+            return not required
+        if len(values) != 1:
+            return False
+        return values[0].strip() == f"http://{self.security_state.expected_authority}"
+
+    def _has_session(self, *, require_origin: bool = False) -> bool:
         supplied = _cookie_token(self.headers.get("Cookie") or "")
         return bool(
-            supplied
-            and hmac.compare_digest(supplied, self.desktop_token)
-            and self._same_origin_if_supplied()
+            self._valid_host()
+            and supplied
+            and hmac.compare_digest(supplied, self.security_state.session_token)
+            and self._valid_origin(required=require_origin)
         )
 
     def _valid_bootstrap(self) -> bool:
         parsed = urlparse(self.path)
-        supplied = parse_qs(parsed.query).get(TOKEN_QUERY_NAME, [""])[0]
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        supplied_values = query.get(TOKEN_QUERY_NAME, [])
         return bool(
-            parsed.path in {"/", "/index.html"}
-            and supplied
-            and hmac.compare_digest(supplied, self.desktop_token)
+            self._valid_host()
+            and parsed.path in {"/", "/index.html"}
+            and set(query) == {TOKEN_QUERY_NAME}
+            and len(supplied_values) == 1
+            and self.security_state.consume_bootstrap(supplied_values[0])
         )
+
+    def _bootstrap_redirect(self) -> None:
+        self._issue_desktop_cookie = True
+        self.send_response(HTTPStatus.SEE_OTHER)
+        self.send_header("Location", "/")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    def _health_response(self) -> None:
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    def _csrf_valid(self) -> bool:
+        supplied = self._single_header(CSRF_HEADER) or ""
+        return bool(supplied and hmac.compare_digest(supplied, self.security_state.csrf_token))
+
+    def _content_type_is(self, expected: str) -> bool:
+        values = self.headers.get_all("Content-Type") or []
+        if len(values) != 1:
+            return False
+        return values[0].split(";", 1)[0].strip().casefold() == expected
+
+    def _authorize_post(self, path: str) -> bool:
+        if not self._has_session(require_origin=True):
+            self._desktop_forbidden()
+            return False
+        expected_type = "application/pdf" if path == "/api/uploads/pdf" else "application/json"
+        if not self._content_type_is(expected_type):
+            self.json_response(
+                {"error": "桌面请求类型无效", "code": "desktop_media_type_required"},
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+            )
+            return False
+        if is_read_only_mutation("POST", path) and not self._csrf_valid():
+            self.json_response(
+                {"error": "桌面写入授权无效", "code": "desktop_csrf_required"},
+                HTTPStatus.FORBIDDEN,
+            )
+            return False
+        return True
+
+    def _authorize_delete(self) -> bool:
+        if not self._has_session(require_origin=True):
+            self._desktop_forbidden()
+            return False
+        if not self._csrf_valid():
+            self.json_response(
+                {"error": "桌面写入授权无效", "code": "desktop_csrf_required"},
+                HTTPStatus.FORBIDDEN,
+            )
+            return False
+        return True
 
     def _desktop_forbidden(self) -> None:
         self.json_response(
@@ -98,35 +219,21 @@ class DesktopEvidenceHandler(EvidenceHandler):
 
     def _read_limited_json(self) -> dict:
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError as exc:
+            length = self._content_length(MAX_HISTORY_REQUEST_BYTES, require_body=True)
+            value = json.loads(self._read_exact_body(length).decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise SecureHistoryError("请求长度无效") from exc
-        if length < 0 or length > MAX_HISTORY_REQUEST_BYTES:
-            raise SecureHistoryError("对话历史请求超过安全上限")
-        try:
-            value = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise SecureHistoryError("对话历史请求格式无效") from exc
         if not isinstance(value, dict):
             raise SecureHistoryError("对话历史请求必须是对象")
         return value
 
     def _read_credential_json(self) -> dict:
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError as exc:
+            length = self._content_length(MAX_CREDENTIAL_REQUEST_BYTES, require_body=True)
+            value = json.loads(self._read_exact_body(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise SecureCredentialError(
                 "credential_invalid", "凭据请求长度无效", http_status=400
-            ) from exc
-        if length <= 0 or length > MAX_CREDENTIAL_REQUEST_BYTES:
-            raise SecureCredentialError(
-                "credential_invalid", "凭据请求大小无效", http_status=400
-            )
-        try:
-            value = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise SecureCredentialError(
-                "credential_invalid", "凭据请求格式无效", http_status=400
             ) from exc
         if not isinstance(value, dict) or set(value) != {"api_key"}:
             raise SecureCredentialError(
@@ -260,36 +367,55 @@ class DesktopEvidenceHandler(EvidenceHandler):
         if self._issue_desktop_cookie:
             self.send_header(
                 "Set-Cookie",
-                f"{COOKIE_NAME}={self.desktop_token}; HttpOnly; SameSite=Strict; Path=/",
+                f"{COOKIE_NAME}={self.security_state.session_token}; HttpOnly; SameSite=Strict; Path=/",
             )
+        if self._issue_csrf_header:
+            self.send_header(CSRF_HEADER, self.security_state.csrf_token)
         super().end_headers()
 
     def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == HEALTH_PATH and not parsed.query:
+            if not self._valid_host():
+                return self._desktop_forbidden()
+            return self._health_response()
         if self._valid_bootstrap():
-            self._issue_desktop_cookie = True
-            return super().do_GET()
+            return self._bootstrap_redirect()
         if not self._has_session():
             return self._desktop_forbidden()
-        if urlparse(self.path).path == HISTORY_PATH:
+        if parsed.path == HISTORY_PATH:
             return self._get_desktop_history()
-        if urlparse(self.path).path == CREDENTIAL_PATH:
+        if parsed.path == CREDENTIAL_PATH:
             return self._credential_status()
-        if urlparse(self.path).path == READINESS_PATH:
+        if parsed.path == READINESS_PATH:
             return self._readiness_status()
+        if parsed.path == "/api/ui-mode":
+            self._issue_csrf_header = True
         return super().do_GET()
 
     def do_POST(self) -> None:
-        if not self._has_session():
-            return self._desktop_forbidden()
-        if urlparse(self.path).path == HISTORY_PATH:
+        path = urlparse(self.path).path
+        if not self._authorize_post(path):
+            return
+        if path == HISTORY_PATH:
             return self._save_desktop_history()
-        if urlparse(self.path).path == CREDENTIAL_PATH:
+        if path == CREDENTIAL_PATH:
             return self._save_credential()
-        return super().do_POST()
+        high_cost = path in HIGH_COST_PATHS
+        if high_cost and not self.security_state.acquire_high_cost():
+            return self.json_response(
+                {"error": "已有提取或质量任务正在运行", "code": "desktop_high_cost_in_progress"},
+                HTTPStatus.CONFLICT,
+            )
+        try:
+            return super().do_POST()
+        finally:
+            if high_cost:
+                self.security_state.release_high_cost()
 
     def do_DELETE(self) -> None:
-        if not self._has_session():
-            return self._desktop_forbidden()
+        if not self._authorize_delete():
+            return
         if urlparse(self.path).path == CREDENTIAL_PATH:
             return self._delete_credential()
         self.json_response(
@@ -298,10 +424,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
         )
 
     def do_OPTIONS(self) -> None:
-        if not self._has_session():
-            return self._desktop_forbidden()
-        self.send_response(HTTPStatus.NO_CONTENT)
-        self.end_headers()
+        self._desktop_forbidden()
 
 
 def create_desktop_server(
@@ -316,6 +439,9 @@ def create_desktop_server(
     active_package_status_path: Path | None = None,
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
     host = require_loopback_host(host)
+    if host != "127.0.0.1":
+        raise ValueError("desktop bridge requires the numeric IPv4 loopback address")
+    security_state = DesktopSecurityState(token)
     database.init()
     upload_service = UploadService(database)
     if read_only:
@@ -331,11 +457,12 @@ def create_desktop_server(
             "db": database,
             "upload_service": upload_service,
             "read_only": read_only,
-            "desktop_token": token,
+            "security_state": security_state,
             "history_store": history_store,
             "credential_store": credential_store,
             "active_package_status_path": active_package_status_path,
         },
     )
     server = ThreadingHTTPServer((host, port), handler)
+    security_state.set_expected_authority(f"127.0.0.1:{server.server_address[1]}")
     return server, {"document_index": document_index, "search_index": search_index}

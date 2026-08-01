@@ -10,7 +10,6 @@ import time
 import urllib.error
 import urllib.request
 import fcntl
-from http.cookiejar import CookieJar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -178,24 +177,19 @@ def wait_for_ui(
     *,
     bootstrap_token: str | None = None,
 ) -> dict[str, Any]:
+    """Wait for the narrow desktop health endpoint without consuming bootstrap."""
+
     deadline = time.monotonic() + timeout_seconds
     last_error = ""
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
-    bootstrapped = bootstrap_token is None
+    health_url = f"{url}/api/desktop/healthz"
     while time.monotonic() < deadline:
         try:
-            if not bootstrapped:
-                opener.open(f"{url}/?desktop_token={bootstrap_token}", timeout=1.5).close()
-                bootstrapped = True
-            with opener.open(f"{url}/api/ui-mode", timeout=1.5) as response:
-                payload = json.load(response)
-            if payload.get("read_only") is False:
-                return payload
-            last_error = "服务启动成了只读模式"
+            with urllib.request.urlopen(health_url, timeout=1.5) as response:
+                if response.status == 204 and response.read(1) == b"":
+                    return {"read_only": False}
+                last_error = "桌面健康端点响应无效"
         except (OSError, ValueError, urllib.error.URLError) as exc:
             last_error = str(exc)
-            if bootstrap_token is not None:
-                bootstrapped = False
         time.sleep(0.2)
     raise TimeoutError(f"桌面服务未在 {timeout_seconds:.0f} 秒内就绪：{last_error}")
 

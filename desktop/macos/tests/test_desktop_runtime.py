@@ -21,6 +21,7 @@ from desktop_runtime import (  # noqa: E402
     is_project_root,
     legacy_editor_is_running,
     smoke_check_project,
+    wait_for_ui,
 )
 
 
@@ -101,6 +102,33 @@ class DesktopRuntimeTests(unittest.TestCase):
     def test_missing_legacy_editor_is_safe(self) -> None:
         with patch("desktop_runtime.urllib.request.urlopen", side_effect=OSError("offline")):
             self.assertFalse(legacy_editor_is_running())
+
+    def test_wait_for_ui_uses_only_secret_free_health_endpoint(self) -> None:
+        class HealthResponse:
+            status = 204
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _size=-1):
+                return b""
+
+        secret = "bootstrap-secret-must-not-be-probed"
+        with patch(
+            "desktop_runtime.urllib.request.urlopen", return_value=HealthResponse()
+        ) as opened:
+            result = wait_for_ui(
+                "http://127.0.0.1:43210",
+                timeout_seconds=0.1,
+                bootstrap_token=secret,
+            )
+        self.assertEqual(result, {"read_only": False})
+        requested_url = opened.call_args.args[0]
+        self.assertEqual(requested_url, "http://127.0.0.1:43210/api/desktop/healthz")
+        self.assertNotIn(secret, requested_url)
 
 
 if __name__ == "__main__":
