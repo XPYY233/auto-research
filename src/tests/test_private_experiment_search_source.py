@@ -143,6 +143,14 @@ class PrivateExperimentSearchSourceTests(unittest.TestCase):
 
         documents = source.list_documents()
         self.assertIsInstance(source, EvidenceSearchSource)
+        self.assertEqual(tuple(source.iter_search_documents()), documents)
+        self.assertEqual(
+            {
+                document.entity_type
+                for document in source.iter_search_documents(entity_types=("item",))
+            },
+            {"item"},
+        )
         self.assertEqual(
             [document.entity_type for document in documents],
             ["item", "table", "figure", "finding"],

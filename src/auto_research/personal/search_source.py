@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping, Protocol, runtime_checkable
+from typing import Any, Iterable, Iterator, Literal, Mapping, Protocol, runtime_checkable
 
 from .private_repository import PrivateExperimentRepository
 
@@ -161,7 +161,11 @@ class EvidenceSearchSource(Protocol):
     @property
     def source_id(self) -> str: ...
 
-    def list_documents(self) -> tuple[EvidenceSearchDocument, ...]: ...
+    def iter_search_documents(
+        self,
+        *,
+        entity_types: Iterable[str] | None = None,
+    ) -> Iterator[EvidenceSearchDocument]: ...
 
 
 class PrivateRepositorySearchSource:
@@ -185,6 +189,21 @@ class PrivateRepositorySearchSource:
                 continue
             documents.extend(self._adapt_run(run))
         return tuple(documents)
+
+    def iter_search_documents(
+        self,
+        *,
+        entity_types: Iterable[str] | None = None,
+    ) -> Iterator[EvidenceSearchDocument]:
+        selected = set(entity_types or ENTITY_TYPES)
+        invalid = selected - ENTITY_TYPES
+        if invalid:
+            raise ValueError(
+                f"unsupported evidence types: {', '.join(sorted(invalid))}"
+            )
+        for document in self.list_documents():
+            if document.entity_type in selected:
+                yield document
 
     def _adapt_run(self, run: Mapping[str, Any]) -> list[EvidenceSearchDocument]:
         source_id = _required_text(run.get("source_id"), "source_id")
