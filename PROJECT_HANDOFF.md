@@ -7,6 +7,7 @@
 > 当前桌面候选：Auto Research `0.4.0-preview.1`（Apple Silicon macOS，内部开发预览）
 > 当前制品标签：`evidence-demo-2026-08-01-macos-workbench-preview-3`
 > 联合验证：591 项通过（core 399 / macOS 110 / Windows 82）
+> Windows 交付：OneDrive `Auto-Research-Windows-Internal-Test`（BUILD KIT READY；SETUP_PRESENT=NO）
 > 证据库版本：`2026.07.30-librarian-brief-stable.1` / schema v12
 
 本文面向下一位 Codex Agent、工程维护者和未来的项目负责人。它说明项目为何存在、过去完成了什么、当前真正能做什么、日常工作流、禁止触碰的边界、验证与发布方法，以及尚未完成的目标。

@@ -2,6 +2,8 @@
 
 ## 2026-08-01：macOS 0.4.0-preview.1 阶段收口
 
+- Windows 最后收口提交 `3632377` 已生成 Win11 内部构建测试资料夹并同步到 OneDrive `Auto-Research-Windows-Internal-Test`。源码压缩包、官方资料包、单击入口、中文手册、身份文件和 READY 的 SHA-256 均复核通过；状态明确为 `BUILD KIT READY / SETUP_PRESENT=NO`，不冒充 Windows 安装包。Windows 82项定向测试通过，真实 production shared bridge、Setup 与 Win11 全流程冒烟留待下一阶段。
+
 ### 面向项目负责人 / 人类工程师
 
 - Apple Silicon macOS 内部开发预览已完成官方资料包导入、只读联合搜索、原生单文件选择、BYOK 状态管理和统一桌面安全 bridge 接线。它仍依赖当前 checkout 的 schema-v12 可编辑工作区，不能描述为脱离源码即可分发的正式产品。

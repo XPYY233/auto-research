@@ -22,7 +22,7 @@
 - 首个内部 `.aresearch` 包约2.36 MB，SHA-256 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`，含60篇论文元数据与4,356个实体（3,142 item、936 finding、46 table、232 figure），不含PDF和二进制图片。
 - 官方包只通过 `OfficialEvidenceRepository` 审计后进入只读联合搜索；它不经过 `EvidenceDB.init()`，不写入或替换 schema-v12 可编辑工作区。
 - 旧浏览器工作台、导师只读页、固定端口和 ngrok 已退役；对应启动脚本只允许显示迁移提示。
-- Windows 已有受测模块和组合根，但尚无真实自包含 Setup 或 Win11 clean-machine 验收，必须作为最后一个平台收口。
+- Windows 已交付 OneDrive 内部构建测试资料夹和零基础入口，82项平台测试及所有交付文件哈希通过；其 `READY.txt` 明确为 `BUILD KIT READY`、`SETUP_PRESENT=NO`。生产 shared bridge、真实 Setup 和 Win11 完整冒烟仍未完成，因此不能称为 Windows 安装版。
 
 ## 图书管理员与 Search V2
 
