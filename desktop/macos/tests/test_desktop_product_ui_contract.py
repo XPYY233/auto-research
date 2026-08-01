@@ -18,9 +18,15 @@ class DesktopProductUIContractTests(unittest.TestCase):
 
     def test_product_module_is_loaded_without_entering_history_module(self) -> None:
         product_script = '<script src="/static/desktop_product.js"></script>'
+        app_script = '<script src="/static/app.js"></script>'
         self.assertIn(product_script, self.index)
+        self.assertIn(app_script, self.index)
         self.assertLess(
             self.index.index(product_script),
+            self.index.index(app_script),
+        )
+        self.assertLess(
+            self.index.index(app_script),
             self.index.index('<script src="/static/librarian_brief.js"></script>'),
         )
         self.assertNotIn("librarian-history", self.product)
@@ -57,6 +63,13 @@ class DesktopProductUIContractTests(unittest.TestCase):
         self.assertIn("AutoResearchDesktopProduct?.initialize()", self.app)
         self.assertIn("AutoResearchDesktopProduct?.handleSearch", self.app)
         self.assertIn("body.error || body.message", self.app)
+
+    def test_successful_import_enters_precise_official_search(self) -> None:
+        success = self.product.index('toast("官方资料包已安全导入')
+        source = self.product.rfind('product.searchRepository = "official"', 0, success)
+        precise = self.product.rfind('setSearchExperience("precise")', 0, success)
+        self.assertGreater(source, 0)
+        self.assertGreater(precise, source)
 
 
 if __name__ == "__main__":

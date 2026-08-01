@@ -208,7 +208,9 @@
       });
       await waitForJob(job.job_id);
       await loadPackageStatus();
-      setSearchRepository("official");
+      product.searchRepository = "official";
+      applyRepositoryUI();
+      setSearchExperience("precise");
       toast("官方资料包已安全导入，可离线搜索。");
     } catch (error) {
       setPackageNote(error.message);
