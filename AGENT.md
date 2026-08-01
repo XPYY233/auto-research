@@ -8,6 +8,10 @@ This project is a local literature automation workflow for fusion materials, rad
 - The canonical portable project skill is `skills/auto-research-evidence-maintainer/`; its current-account installation is a symlink under `~/.codex/skills/auto-research-evidence-maintainer`.
 - The handoff separates the historical Zotero/PDF corpus workflow from the experimental-evidence product. Never infer that the 300-PDF Zotero checkpoint means 300 evidence papers are extracted; the fixed evidence corpus remains 17/50 data-ready at the 2026-07-30 checkpoint.
 - Project-local handoff and Git-tracked skill files override stale account memory. Update them whenever a later stable release changes paths, data counts, architecture boundaries, rejected approaches, or release/rollback instructions.
+- Read `docs/ARCHITECTURE_GOVERNANCE.md` before adding a database, desktop bridge, search source, Agent or distribution path. It defines the one-way dependency graph, module ownership, stable/experimental/compatibility/retired states and the release sequence.
+- Do not solve platform integration by copying product logic into `desktop/macos/**` or `desktop/windows/**`. Package verification, official repository audit, stable source identity and federated read-only search stay platform-neutral; desktop code supplies lifecycle, native file selection, credentials and protected routing only.
+- The canonical official package selector is `<app-data>/official-packages/active.json`. A package becomes active only after signature/checksum validation and `OfficialEvidenceRepository` audit; `distribution-sqlite-v1` must never pass through `EvidenceDB.init()` or any writable v12 search-index path.
+- Signing private keys are maintainer-only files outside Git and outside application data packages. Applications trust only reviewed public keys from `auto_research.product.trusted_publishers`; missing keys must never be silently regenerated under an existing `key_id`.
 
 ## Search V2 and in-product agents (2026-07-30)
 
