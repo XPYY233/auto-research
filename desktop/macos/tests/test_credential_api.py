@@ -58,6 +58,16 @@ class LockedBackend(MemoryBackend):
 
 
 class CredentialAPITests(unittest.TestCase):
+    def test_desktop_server_rejects_non_loopback_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "local-only"):
+                create_desktop_server(
+                    EvidenceDB(Path(directory) / "temporary.sqlite"),
+                    host="0.0.0.0",
+                    port=0,
+                    token=new_session_token(),
+                )
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="auto-research-credential-api-test-")
         self.previous_api_key = os.environ.pop("DEEPSEEK_API_KEY", None)

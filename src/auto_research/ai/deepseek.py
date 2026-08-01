@@ -7,11 +7,13 @@ import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
 
 
 DEFAULT_KEYCHAIN_SERVICE = "auto-research-deepseek"
+TRUSTED_DEEPSEEK_API_HOST = "api.deepseek.com"
 
 
 def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
@@ -53,6 +55,32 @@ class DeepSeekResponseError(RuntimeError):
 
 class DeepSeekUnavailableError(DeepSeekResponseError):
     """The provider/network is unavailable; changing prompt shape will not help."""
+
+
+def trusted_deepseek_chat_url(base_url: str) -> str:
+    """Return the chat endpoint only for the supported credential recipient.
+
+    The API key is an Authorization bearer credential. An environment variable
+    must not be able to redirect it to an arbitrary HTTP(S) endpoint.
+    """
+
+    try:
+        parsed = urlsplit(str(base_url or ""))
+        port = parsed.port
+    except (TypeError, ValueError) as exc:
+        raise DeepSeekResponseError("DeepSeek API 地址无效；已阻止发送凭据") from exc
+    if (
+        parsed.scheme.casefold() != "https"
+        or (parsed.hostname or "").casefold() != TRUSTED_DEEPSEEK_API_HOST
+        or port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise DeepSeekResponseError("DeepSeek API 地址不受信任；已阻止发送凭据")
+    return f"https://{TRUSTED_DEEPSEEK_API_HOST}/chat/completions"
 
 
 @dataclass(frozen=True)
@@ -103,10 +131,19 @@ class DeepSeekSettings:
         )
 
     def public_status(self) -> dict[str, Any]:
+        try:
+            trusted_deepseek_chat_url(self.base_url)
+        except DeepSeekResponseError:
+            public_base_url = None
+            endpoint_trusted = False
+        else:
+            public_base_url = f"https://{TRUSTED_DEEPSEEK_API_HOST}"
+            endpoint_trusted = True
         return {
             "provider": "deepseek",
             "configured": bool(self.api_key),
-            "base_url": self.base_url,
+            "base_url": public_base_url,
+            "endpoint_trusted": endpoint_trusted,
             "extraction_model": self.extraction_model,
             "analysis_model": self.analysis_model,
             "librarian_planning_model": self.librarian_planning_model,
@@ -140,6 +177,7 @@ class DeepSeekClient:
             raise DeepSeekNotConfigured(
                 "DeepSeek 尚未配置；请在本机环境变量 DEEPSEEK_API_KEY 中设置密钥"
             )
+        endpoint = trusted_deepseek_chat_url(self.settings.base_url)
         model = self._model_for_task(task)
         payload = {
             "model": model,
@@ -163,7 +201,7 @@ class DeepSeekClient:
         for attempt in range(self.settings.max_attempts):
             try:
                 response = self.session.post(
-                    f"{self.settings.base_url}/chat/completions",
+                    endpoint,
                     headers={
                         "Authorization": f"Bearer {self.settings.api_key}",
                         "Content-Type": "application/json",
@@ -230,6 +268,7 @@ class DeepSeekClient:
             raise DeepSeekNotConfigured(
                 "DeepSeek 尚未配置；请在本机环境变量 DEEPSEEK_API_KEY 中设置密钥"
             )
+        endpoint = trusted_deepseek_chat_url(self.settings.base_url)
         model = self._model_for_task(task)
         payload = {
             "model": model,
@@ -245,7 +284,7 @@ class DeepSeekClient:
         for attempt in range(self.settings.max_attempts):
             try:
                 response = self.session.post(
-                    f"{self.settings.base_url}/chat/completions",
+                    endpoint,
                     headers={
                         "Authorization": f"Bearer {self.settings.api_key}",
                         "Content-Type": "application/json",

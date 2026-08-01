@@ -523,6 +523,15 @@ API key or remote response body in raised errors. Parse
 malformed local environment file cannot prevent the web application from
 starting.
 
+Security work follows `docs/SECURITY_MODEL.md`. Treat internal-only deployment
+as an exposure reduction, not as authentication or a privacy guarantee. Test
+only project-controlled local targets and synthetic/temporary data. API keys
+may be sent only to the supported HTTPS DeepSeek host; arbitrary base-URL
+redirection must fail before any network request. Treat PDF, spreadsheet,
+model, package and history content as untrusted input. Every security fix needs
+an attack regression, and an unresolved credential leak, unauthorized write,
+code-execution or S0/S1 data disclosure blocks a stable release.
+
 ### B2 DeepSeek evidence extraction
 
 `DeepSeekEvidenceExtractor` is the only runtime path for new AI extraction. It processes the real local PDF in two-page blocks and uses two complementary extraction passes per block: methods/materials/conditions/tables, then results/calculations/observations. Candidates must then pass all gates:

@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlparse
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.search_index import EvidenceSearchIndex
 from auto_research.evidence.uploads import UploadService
-from auto_research.evidence.webapp import EvidenceHandler
+from auto_research.evidence.webapp import EvidenceHandler, require_loopback_host
 from secure_history import SecureHistoryError, SecureHistoryStore
 from secure_credentials import DeepSeekCredentialStore, SecureCredentialError
 from first_use_state import (
@@ -315,6 +315,7 @@ def create_desktop_server(
     credential_store: DeepSeekCredentialStore | None = None,
     active_package_status_path: Path | None = None,
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
+    host = require_loopback_host(host)
     database.init()
     upload_service = UploadService(database)
     if read_only:

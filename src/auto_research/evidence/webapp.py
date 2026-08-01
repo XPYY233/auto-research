@@ -89,6 +89,29 @@ RELEASE_INFO = {
     "label": "图书管理员研究简报稳定版 2026.07.30",
     "evidence_schema": 12,
 }
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def require_loopback_host(host: str) -> str:
+    normalized = str(host or "").strip().casefold()
+    if normalized not in LOOPBACK_HOSTS:
+        raise ValueError("Evidence service is local-only and must bind to loopback")
+    return normalized
+
+
+def spreadsheet_safe_cell(value: object) -> object:
+    """Neutralize spreadsheet formulas while preserving exported text."""
+
+    if not isinstance(value, str) or not value:
+        return value
+    stripped = value.lstrip(" \t\r\n")
+    if not stripped or stripped[0] not in {"=", "+", "-", "@"}:
+        return value
+    return "'" + value
+
+
+def spreadsheet_safe_row(row: dict) -> dict:
+    return {key: spreadsheet_safe_cell(value) for key, value in row.items()}
 
 
 def is_read_only_mutation(method: str, path: str) -> bool:
@@ -578,8 +601,11 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             # or leaving the page. This is a normal client disconnect, not a
             # server failure, so do not try to write a second response.
             return
-        except Exception as exc:
-            self.json_response({"error": f"server_error: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+        except Exception:
+            self.json_response(
+                {"error": "服务器内部错误", "code": "internal_server_error"},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -852,8 +878,11 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             self.json_response({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except (BrokenPipeError, ConnectionResetError):
             return
-        except Exception as exc:
-            self.json_response({"error": f"server_error: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+        except Exception:
+            self.json_response(
+                {"error": "服务器内部错误", "code": "internal_server_error"},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
 
     def measurement_query(self, query: str, limit: int = 500) -> list[dict]:
         params = parse_qs(query)
@@ -900,12 +929,13 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=EXPORT_COLUMNS, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(spreadsheet_safe_row(dict(row)) for row in rows)
         data = ("\ufeff" + output.getvalue()).encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/csv; charset=utf-8")
         self.send_header("Content-Disposition", 'attachment; filename="irradiation-evidence.csv"')
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -925,12 +955,13 @@ class EvidenceHandler(BaseHTTPRequestHandler):
             for field in ("fact_member_ids", "evidence_occurrences"):
                 item[field] = json.dumps(item.get(field) or [], ensure_ascii=False)
             export_rows.append(item)
-        writer.writerows(export_rows)
+        writer.writerows(spreadsheet_safe_row(item) for item in export_rows)
         data = ("\ufeff" + output.getvalue()).encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/csv; charset=utf-8")
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -952,6 +983,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -977,12 +1009,13 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(export_rows)
+        writer.writerows(spreadsheet_safe_row(item) for item in export_rows)
         data = ("\ufeff" + output.getvalue()).encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/csv; charset=utf-8")
         self.send_header("Content-Disposition", 'attachment; filename="qualitative-findings.csv"')
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -993,6 +1026,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         self.send_header("Content-Disposition", 'attachment; filename="qualitative-findings.xlsx"')
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -1049,6 +1083,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/pdf")
         self.send_header("Content-Disposition", f'inline; filename="paper-{paper_id}.pdf"')
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -1086,6 +1121,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
 
 def serve(db: EvidenceDB | None = None, host: str = "127.0.0.1", port: int = 8765,
           read_only: bool = False) -> None:
+    host = require_loopback_host(host)
     evidence_db = db or EvidenceDB()
     evidence_db.init()
     upload_service = UploadService(evidence_db)

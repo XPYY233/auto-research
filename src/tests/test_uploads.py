@@ -12,6 +12,7 @@ import requests
 from auto_research.ai.deepseek import (
     DeepSeekClient,
     DeepSeekNotConfigured,
+    DeepSeekResponseError,
     DeepSeekSettings,
     DeepSeekUnavailableError,
 )
@@ -125,6 +126,46 @@ class UploadWorkflowTests(unittest.TestCase):
 
 
 class DeepSeekFrameworkTests(unittest.TestCase):
+    def test_untrusted_base_url_never_receives_api_key(self):
+        class Session:
+            calls = []
+
+            @classmethod
+            def post(cls, *args, **kwargs):
+                cls.calls.append((args, kwargs))
+                raise AssertionError("untrusted endpoint must not be called")
+
+        settings = DeepSeekSettings(
+            api_key="fake-secret",
+            base_url="https://attacker.invalid/collect",
+        )
+        with self.assertRaisesRegex(DeepSeekResponseError, "不受信任"):
+            DeepSeekClient(settings, session=Session()).request_json(
+                [{"role": "user", "content": "sensitive paper text"}]
+            )
+        self.assertEqual(Session.calls, [])
+
+    def test_plain_http_deepseek_url_is_rejected_before_network(self):
+        settings = DeepSeekSettings(
+            api_key="fake-secret",
+            base_url="http://api.deepseek.com",
+        )
+        with self.assertRaisesRegex(DeepSeekResponseError, "不受信任"):
+            DeepSeekClient(settings).request_json(
+                [{"role": "user", "content": "sensitive paper text"}]
+            )
+
+    def test_public_status_does_not_echo_untrusted_url_credentials(self):
+        marker = "do-not-echo-this-value"
+        settings = DeepSeekSettings(
+            api_key="fake-secret",
+            base_url=f"https://user:{marker}@attacker.invalid/collect",
+        )
+        status = settings.public_status()
+        self.assertFalse(status["endpoint_trusted"])
+        self.assertIsNone(status["base_url"])
+        self.assertNotIn(marker, str(status))
+
     def test_invalid_timeout_environment_uses_safe_bounded_default(self):
         with patch.dict(os.environ, {"DEEPSEEK_TIMEOUT_SECONDS": "not-a-number"}, clear=True), patch(
             "auto_research.ai.deepseek._read_project_keychain", return_value=None
