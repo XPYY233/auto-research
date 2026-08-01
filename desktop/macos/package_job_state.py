@@ -274,6 +274,21 @@ _SOURCE_ERROR_GROUPS = {
     "rollback_target_missing": {"missing_target"},
     "rollback_failed": {"invalid_target"},
     "package_busy": {"package_busy"},
+    "package_selection_invalid": {
+        "package_selection_invalid",
+        "package_selection_multiple",
+        "package_selection_file_url",
+        "package_selection_extension",
+        "package_selection_path_too_long",
+        "package_selection_missing",
+        "package_selection_symlink",
+        "package_selection_not_regular",
+        "package_selection_nonlocal",
+        "package_selection_locality_unknown",
+        "package_selection_expired",
+        "package_selection_changed",
+        "package_selection_capacity",
+    },
 }
 
 _SOURCE_TO_PUBLIC = {
@@ -300,6 +315,7 @@ _SOURCE_TO_PUBLIC.update(
             "rollback_target_missing",
             "rollback_failed",
             "package_busy",
+            "package_selection_invalid",
         )
     }
 )
@@ -356,7 +372,7 @@ class _PackageJob:
 
 
 class PackageImportJobCoordinator:
-    """Pure in-memory contract for one active desktop package import."""
+    """Pure in-memory contract for one active desktop package operation."""
 
     def __init__(self, *, job_id_factory: Callable[[], str] | None = None) -> None:
         self._job_id_factory = job_id_factory or (lambda: secrets.token_urlsafe(18))
@@ -374,6 +390,17 @@ class PackageImportJobCoordinator:
             raise PackageJobStateError(
                 _public_error("package_selection_invalid", PackageJobStage.QUEUED)
             )
+        return self._begin(PackageJobOperation.IMPORT, selection_id=selection_id)
+
+    def begin_rollback(self) -> PackageJobSnapshot:
+        return self._begin(PackageJobOperation.ROLLBACK, selection_id="")
+
+    def _begin(
+        self,
+        operation: PackageJobOperation,
+        *,
+        selection_id: str,
+    ) -> PackageJobSnapshot:
         with self._lock:
             if self._active_job_id is not None:
                 raise PackageJobStateError(
@@ -390,7 +417,7 @@ class PackageImportJobCoordinator:
                 )
             job = _PackageJob(
                 job_id=job_id,
-                operation=PackageJobOperation.IMPORT,
+                operation=operation,
                 selection_id=selection_id,
             )
             self._jobs[job_id] = job

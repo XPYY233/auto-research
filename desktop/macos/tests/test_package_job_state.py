@@ -110,6 +110,17 @@ class PackageJobStateTests(unittest.TestCase):
         second = coordinator.begin_import("selection_fedcba9876543210")
         self.assertNotEqual(first.job_id, second.job_id)
 
+    def test_rollback_uses_the_same_single_operation_lock(self) -> None:
+        coordinator = self.coordinator()
+        rollback = coordinator.begin_rollback()
+        self.assertEqual(rollback.operation, PackageJobOperation.ROLLBACK)
+        with self.assertRaises(PackageJobStateError) as busy:
+            coordinator.begin_import("selection_0123456789abcdef")
+        self.assertEqual(busy.exception.code, "package_busy")
+        failed = coordinator.fail(rollback.job_id, "missing_target")
+        self.assertEqual(failed.error.code, "rollback_target_missing")
+        self.assertIsNone(coordinator.active_job_id)
+
     def test_selection_id_is_opaque_and_paths_are_rejected_without_io(self) -> None:
         sample = self.root / "sample.aresearch"
         sample.write_bytes(b"not-a-package")
