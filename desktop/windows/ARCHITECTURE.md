@@ -61,6 +61,8 @@ App shell coordinator 只编排平台组件，不导入科学核心：准备数�
 
 文件选择、拖放和未来安装器注册的双击文件关联共用 `PackageInputBroker`。一次只接受一个本机普通 `.aresearch` 文件；目录、符号链接/重解析点、UNC 网络路径、Windows 设备路径、上级跳转和超长路径在 importer 之前拒绝。窗口只持有不透明句柄，错误与公开状态不包含用户路径；importer 请求受控路径时再次核验大小、设备和文件身份，防止选择后的替换攻击。当前不执行任何注册表变更。
 
+导入进度壳保留与 macOS 一致的 `queued → snapshot_source → verify_archive → verify_signature → verify_checksums → extract_staging → audit_repository → activate → refresh_readiness → completed/failed`，UI 合并为五步。阶段进度和真实字节进度互不替代；取消只允许在 `activate` 之前，超过短阈值后展示固定、path-free 的等待原因。
+
 ## 当前阻塞
 
 本目录目前只建立平台安全地基，不伪造可用安装包。启动器必须等待共享核心冻结 distribution schema v1、stable source/entity identity、official/private federated read、资料包激活/回退 API 和私人导入 API 后再接入。
