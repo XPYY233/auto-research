@@ -15,5 +15,8 @@
 - 添加延迟载入 pywebview 的 Edge WebView2 窗口适配器；
 - 将首次窗口入口固定为 `import-evidence-package`，运行报告不暴露启动令牌；
 - 添加 Windows 11 x64 正式支持与 Windows 10 22H2 x64 兼容级别检测；
+- 统一 `.aresearch` 文件选择、拖放和双击文件关联输入契约；
+- 拒绝多文件、目录、链接、UNC/设备路径、上级跳转、错误扩展名和超长路径；
+- UI 仅接收不透明句柄，真实路径在 importer 边界重新检查后才内部释放；
 - 添加可在 macOS 上运行的纯契约测试；
 - 明确当前不是可交付安装包，等待共享 distribution 与 federated read 契约冻结。
