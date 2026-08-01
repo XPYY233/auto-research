@@ -16,6 +16,10 @@ analysis = Analysis(
             str(project_root / "src" / "auto_research" / "evidence" / "web"),
             "auto_research/evidence/web",
         ),
+        (
+            str(desktop_root / "version.json"),
+            "desktop/macos",
+        ),
     ],
     hiddenimports=["webview.platforms.cocoa", "Security"],
     hookspath=[],

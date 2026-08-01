@@ -33,6 +33,9 @@ class _FakeOfficialCore:
         self.imported_paths: list[Path] = []
         self.rollback_calls: list[tuple[str, str]] = []
         self.open_calls = 0
+        self.open_kwargs: list[dict] = []
+        self.import_kwargs: list[dict] = []
+        self.rollback_kwargs: list[dict] = []
         self.import_error: EvidencePackageError | None = None
         self.open_error: Exception | None = None
         self.repository = SimpleNamespace(name="immutable-official-repository")
@@ -45,8 +48,9 @@ class _FakeOfficialCore:
             manifest_sha256="b" * 64,
         )
 
-    def open_active(self, **_kwargs):
+    def open_active(self, **kwargs):
         self.open_calls += 1
+        self.open_kwargs.append(dict(kwargs))
         if self.open_error is not None:
             raise self.open_error
         if not self.installed:
@@ -55,15 +59,17 @@ class _FakeOfficialCore:
             )
         return self.active(), self.repository
 
-    def import_package(self, package_path: Path, **_kwargs):
+    def import_package(self, package_path: Path, **kwargs):
         self.imported_paths.append(Path(package_path))
+        self.import_kwargs.append(dict(kwargs))
         if self.import_error is not None:
             raise self.import_error
         self.installed = True
         return SimpleNamespace(package_id="official-preview")
 
-    def rollback_package(self, *, package_id: str, target_version: str, **_kwargs):
+    def rollback_package(self, *, package_id: str, target_version: str, **kwargs):
         self.rollback_calls.append((package_id, target_version))
+        self.rollback_kwargs.append(dict(kwargs))
         self.installed = True
         return SimpleNamespace(package_id=package_id)
 
@@ -95,6 +101,7 @@ class PackageImportServiceTests(unittest.TestCase):
         *,
         scheduler=lambda task: task(),
         listener=None,
+        reset=None,
         broker: PackageSelectionBroker | None = None,
     ) -> PackageImportService:
         return PackageImportService(
@@ -103,7 +110,7 @@ class PackageImportServiceTests(unittest.TestCase):
             broker=broker or self.broker(),
             scheduler=scheduler,
             repository_listener=listener,
-            trusted_keys={},
+            repository_reset=reset,
             import_package=core.import_package,
             open_active=core.open_active,
             rollback_package=core.rollback_package,
@@ -146,6 +153,9 @@ class PackageImportServiceTests(unittest.TestCase):
         self.assertEqual(job.stage, PackageJobStage.COMPLETED)
         self.assertEqual(job.progress, 100)
         self.assertGreaterEqual(core.open_calls, 2)
+        for kwargs in (*core.open_kwargs, *core.import_kwargs):
+            self.assertNotIn("trusted_public_keys", kwargs)
+            self.assertNotIn("publisher_policy", kwargs)
         self.assertEqual(len(core.imported_paths), 1)
         self.assertTrue(
             core.imported_paths[0].samefile(self.root / "official-preview.aresearch")
@@ -172,6 +182,25 @@ class PackageImportServiceTests(unittest.TestCase):
         self.assertEqual(job.error.code, "package_signature_invalid")
         self.assertEqual(job.error.stage, PackageJobStage.VERIFY_SIGNATURE)
         self.assertNotIn(str(self.root), json.dumps(job.public_dict()))
+
+    def test_publisher_policy_failures_map_to_audit_stage(self) -> None:
+        cases = (
+            ("trusted_key_policy_mismatch", "package_untrusted"),
+            ("untrusted_package_identity", "package_untrusted"),
+            ("untrusted_rights_scope", "package_rights_invalid"),
+        )
+        for source_code, public_code in cases:
+            with self.subTest(source_code=source_code):
+                core = _FakeOfficialCore()
+                core.import_error = EvidencePackageError(source_code, "internal")
+                broker = self.broker()
+                selection = self.select_package(broker)
+                service = self.service(core, broker=broker)
+                job = service.start_import(selection.selection_id)
+                self.assertEqual(job.stage, PackageJobStage.FAILED)
+                self.assertEqual(job.error.code, public_code)
+                self.assertEqual(job.error.stage, PackageJobStage.AUDIT_REPOSITORY)
+                self.assertFalse(job.error.retryable)
 
     def test_invalid_active_repository_fails_readiness_closed(self) -> None:
         core = _FakeOfficialCore(initially_installed=True)
@@ -200,6 +229,9 @@ class PackageImportServiceTests(unittest.TestCase):
             [("official-preview", "0.1.0-preview.1")],
         )
         self.assertGreater(core.open_calls, opens_before)
+        for kwargs in core.rollback_kwargs:
+            self.assertNotIn("trusted_public_keys", kwargs)
+            self.assertNotIn("publisher_policy", kwargs)
         self.assertTrue(service.readiness_active_package().active)
 
     def test_deferred_import_holds_single_operation_lock(self) -> None:
@@ -220,6 +252,29 @@ class PackageImportServiceTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "package_busy")
         tasks[0]()
         self.assertEqual(service.get_job(queued.job_id).stage, PackageJobStage.COMPLETED)
+
+    def test_listener_failure_clears_repository_and_fails_readiness_closed(self) -> None:
+        core = _FakeOfficialCore()
+        broker = self.broker()
+        selection = self.select_package(broker)
+        resets: list[str] = []
+        service = self.service(
+            core,
+            broker=broker,
+            listener=lambda _active, _repository: (_ for _ in ()).throw(
+                RuntimeError("index failure")
+            ),
+            reset=lambda: resets.append("cleared"),
+        )
+
+        job = service.start_import(selection.selection_id)
+
+        self.assertEqual(job.stage, PackageJobStage.FAILED)
+        self.assertEqual(job.error.code, "active_state_invalid")
+        self.assertEqual(job.error.stage, PackageJobStage.REFRESH_READINESS)
+        self.assertIsNone(service.active_repository())
+        self.assertFalse(service.status().active)
+        self.assertGreaterEqual(len(resets), 1)
 
 
 if __name__ == "__main__":

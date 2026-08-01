@@ -27,6 +27,9 @@ from first_use_state import (
     read_active_package_status,
     resolve_first_use_state,
 )
+from federated_search_api import FederatedSearchAPI
+from package_api import PackageAPI
+from package_import_service import PackageImportService, PackageImportServiceError
 
 
 COOKIE_NAME = "auto_research_desktop_session"
@@ -106,6 +109,9 @@ class DesktopEvidenceHandler(EvidenceHandler):
     history_store: SecureHistoryStore | None = None
     credential_store: DeepSeekCredentialStore | None = None
     active_package_status_path: Path | None = None
+    package_service: PackageImportService | None = None
+    package_api: PackageAPI | None = None
+    federated_search_api: FederatedSearchAPI | None = None
     _issue_desktop_cookie: bool = False
     _issue_csrf_header: bool = False
 
@@ -308,11 +314,14 @@ class DesktopEvidenceHandler(EvidenceHandler):
                 HTTPStatus.BAD_REQUEST,
             )
         try:
-            active_package = (
-                read_active_package_status(self.active_package_status_path)
-                if self.active_package_status_path is not None
-                else ActivePackageStatus.inactive()
-            )
+            if self.package_service is not None:
+                active_package = self.package_service.readiness_active_package()
+            else:
+                active_package = (
+                    read_active_package_status(self.active_package_status_path)
+                    if self.active_package_status_path is not None
+                    else ActivePackageStatus.inactive()
+                )
             readiness = resolve_first_use_state(
                 active_package,
                 self.credential_store.status(),
@@ -320,6 +329,11 @@ class DesktopEvidenceHandler(EvidenceHandler):
             )
         except SecureCredentialError as exc:
             return self._credential_error(exc)
+        except PackageImportServiceError as exc:
+            return self.json_response(
+                {"error": exc.message, "code": exc.code, "retryable": exc.retryable},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
         except FirstUseStateError as exc:
             return self.json_response(
                 {"error": str(exc), "code": exc.code},
@@ -389,6 +403,13 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._credential_status()
         if parsed.path == READINESS_PATH:
             return self._readiness_status()
+        if self.package_api is not None and self.package_api.handle_get(self):
+            return
+        if (
+            self.federated_search_api is not None
+            and self.federated_search_api.handle_get(self)
+        ):
+            return
         if parsed.path == "/api/ui-mode":
             self._issue_csrf_header = True
         return super().do_GET()
@@ -401,6 +422,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._save_desktop_history()
         if path == CREDENTIAL_PATH:
             return self._save_credential()
+        if self.package_api is not None and self.package_api.handle_post(self):
+            return
         high_cost = path in HIGH_COST_PATHS
         if high_cost and not self.security_state.acquire_high_cost():
             return self.json_response(
@@ -437,6 +460,9 @@ def create_desktop_server(
     history_store: SecureHistoryStore | None = None,
     credential_store: DeepSeekCredentialStore | None = None,
     active_package_status_path: Path | None = None,
+    package_service: PackageImportService | None = None,
+    package_api: PackageAPI | None = None,
+    federated_search_api: FederatedSearchAPI | None = None,
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
     host = require_loopback_host(host)
     if host != "127.0.0.1":
@@ -461,6 +487,9 @@ def create_desktop_server(
             "history_store": history_store,
             "credential_store": credential_store,
             "active_package_status_path": active_package_status_path,
+            "package_service": package_service,
+            "package_api": package_api,
+            "federated_search_api": federated_search_api,
         },
     )
     server = ThreadingHTTPServer((host, port), handler)

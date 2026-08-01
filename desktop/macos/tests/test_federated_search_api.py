@@ -161,6 +161,15 @@ class DesktopFederatedSearchTests(unittest.TestCase):
         self.assertEqual(invalid.responses[0][0]["code"], "federated_search_invalid")
         self.assertFalse(self.api.handle_get(_Handler("/api/desktop/unknown")))
 
+    def test_clear_removes_stale_index_after_active_package_failure(self) -> None:
+        self.service.install_official_repository(_active(), _Repository())
+        self.assertTrue(self.service.status()["ready"])
+        self.service.clear()
+        self.assertFalse(self.service.status()["ready"])
+        with self.assertRaises(DesktopFederatedSearchError) as raised:
+            self.service.search(query="")
+        self.assertEqual(raised.exception.code, "evidence_package_required")
+
     def test_core_public_dto_guard_rejects_local_paths(self) -> None:
         unsafe = _document("item", "unsafe")
         unsafe["pdf_path"] = "/Users/private/paper.pdf"

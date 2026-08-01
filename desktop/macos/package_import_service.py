@@ -3,16 +3,16 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable
 
 from auto_research.product import (
     ActiveOfficialPackage,
     EvidencePackageError,
     OfficialEvidenceRepository,
+    TrustedPublisherPolicy,
     import_official_evidence_package,
     open_active_official_repository,
     rollback_official_evidence_package,
-    trusted_public_keys,
 )
 from first_use_state import ActivePackageStatus
 from package_job_state import (
@@ -30,11 +30,9 @@ from package_selection_broker import PackageSelectionBroker, PackageSelectionErr
 DEFAULT_PACKAGE_DATA_ROOT = (
     Path.home() / "Library" / "Application Support" / "Auto Research"
 )
-TRUST_CHANNEL = "internal-preview"
-
-
 Scheduler = Callable[[Callable[[], None]], None]
 RepositoryListener = Callable[[ActiveOfficialPackage, OfficialEvidenceRepository], None]
+RepositoryReset = Callable[[], None]
 
 
 def _thread_scheduler(task: Callable[[], None]) -> None:
@@ -94,11 +92,14 @@ _ERROR_STAGES = {
     "source_changed": PackageJobStage.SNAPSHOT_SOURCE,
     "unsupported_signature": PackageJobStage.VERIFY_SIGNATURE,
     "untrusted_signer": PackageJobStage.VERIFY_SIGNATURE,
+    "trusted_key_policy_mismatch": PackageJobStage.AUDIT_REPOSITORY,
+    "untrusted_package_identity": PackageJobStage.AUDIT_REPOSITORY,
     "invalid_signature": PackageJobStage.VERIFY_SIGNATURE,
     "invalid_trust_key": PackageJobStage.VERIFY_SIGNATURE,
     "invalid_checksums": PackageJobStage.VERIFY_CHECKSUMS,
     "checksum_inventory": PackageJobStage.VERIFY_CHECKSUMS,
     "checksum_mismatch": PackageJobStage.VERIFY_CHECKSUMS,
+    "untrusted_rights_scope": PackageJobStage.AUDIT_REPOSITORY,
     "install_conflict": PackageJobStage.EXTRACT_STAGING,
     "unsafe_install_root": PackageJobStage.EXTRACT_STAGING,
     "invalid_install": PackageJobStage.EXTRACT_STAGING,
@@ -129,7 +130,8 @@ class PackageImportService:
         jobs: PackageImportJobCoordinator | None = None,
         scheduler: Scheduler = _thread_scheduler,
         repository_listener: RepositoryListener | None = None,
-        trusted_keys: Mapping[str, bytes] | None = None,
+        repository_reset: RepositoryReset | None = None,
+        publisher_policy: TrustedPublisherPolicy | None = None,
         import_package: Callable[..., Any] = import_official_evidence_package,
         open_active: Callable[..., Any] = open_active_official_repository,
         rollback_package: Callable[..., Any] = rollback_official_evidence_package,
@@ -140,11 +142,10 @@ class PackageImportService:
         self.jobs = jobs or PackageImportJobCoordinator()
         self._scheduler = scheduler
         self._repository_listener = repository_listener
-        self._trusted_keys = (
-            trusted_public_keys(channel=TRUST_CHANNEL)
-            if trusted_keys is None
-            else trusted_keys
-        )
+        self._repository_reset = repository_reset
+        # Production deliberately passes no policy override: the shared official
+        # core owns the bundled channel, signer, identity and rights binding.
+        self._publisher_policy = publisher_policy
         self._import_package = import_package
         self._open_active = open_active
         self._rollback_package = rollback_package
@@ -196,17 +197,14 @@ class PackageImportService:
 
     def refresh_active(self, *, allow_missing: bool = False) -> PackageServiceStatus:
         try:
-            active, repository = self._open_active(
-                data_root=self.data_root,
-                trusted_public_keys=self._trusted_keys,
-                current_app_version=self.current_app_version,
-            )
+            active, repository = self._open_active(**self._core_kwargs())
         except EvidencePackageError as exc:
             if allow_missing and exc.code == "active_package_missing":
                 with self._lock:
                     self._active = None
                     self._repository = None
                     self._active_error = None
+                self._reset_repository_listener()
                 return self.status()
             mapped = map_package_error(exc.code, PackageJobStage.REFRESH_READINESS)
             error = PackageImportServiceError(
@@ -218,6 +216,7 @@ class PackageImportService:
                 self._active = None
                 self._repository = None
                 self._active_error = error
+            self._reset_repository_listener()
             if not allow_missing:
                 raise error from exc
             return self.status()
@@ -231,6 +230,7 @@ class PackageImportService:
                 self._active = None
                 self._repository = None
                 self._active_error = error
+            self._reset_repository_listener()
             if not allow_missing:
                 raise error from exc
             return self.status()
@@ -240,8 +240,30 @@ class PackageImportService:
             self._repository = repository
             self._active_error = None
         if self._repository_listener is not None:
-            self._repository_listener(active, repository)
+            try:
+                self._repository_listener(active, repository)
+            except Exception as exc:
+                error = PackageImportServiceError(
+                    "active_state_invalid",
+                    "官方资料包已验证，但离线搜索尚未安全就绪。",
+                    retryable=True,
+                )
+                with self._lock:
+                    self._active = None
+                    self._repository = None
+                    self._active_error = error
+                self._reset_repository_listener()
+                if not allow_missing:
+                    raise error from exc
         return self.status()
+
+    def _reset_repository_listener(self) -> None:
+        if self._repository_reset is None:
+            return
+        try:
+            self._repository_reset()
+        except Exception:
+            return
 
     def start_import(self, selection_id: str) -> PackageJobSnapshot:
         job = self.jobs.begin_import(selection_id)
@@ -277,12 +299,7 @@ class PackageImportService:
             self._advance_to(job_id, PackageJobStage.SNAPSHOT_SOURCE)
             resolved = self.broker.resolve(selection_id)
             self._advance_to(job_id, PackageJobStage.VERIFY_ARCHIVE)
-            self._import_package(
-                resolved.path,
-                data_root=self.data_root,
-                trusted_public_keys=self._trusted_keys,
-                current_app_version=self.current_app_version,
-            )
+            self._import_package(resolved.path, **self._core_kwargs())
             self._advance_to(job_id, PackageJobStage.AUDIT_REPOSITORY)
             self.refresh_active()
             self._advance_to(job_id, PackageJobStage.COMPLETED)
@@ -301,11 +318,9 @@ class PackageImportService:
         try:
             self._advance_to(job_id, PackageJobStage.AUDIT_REPOSITORY)
             self._rollback_package(
-                data_root=self.data_root,
                 package_id=package_id,
                 target_version=target_version,
-                trusted_public_keys=self._trusted_keys,
-                current_app_version=self.current_app_version,
+                **self._core_kwargs(),
             )
             self.refresh_active()
             self._advance_to(job_id, PackageJobStage.COMPLETED)
@@ -315,6 +330,15 @@ class PackageImportService:
             self._fail(job_id, exc.code)
         except Exception:
             self._fail(job_id, "rollback_failed")
+
+    def _core_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "data_root": self.data_root,
+            "current_app_version": self.current_app_version,
+        }
+        if self._publisher_policy is not None:
+            kwargs["publisher_policy"] = self._publisher_policy
+        return kwargs
 
     def _advance_to(self, job_id: str, target: PackageJobStage) -> PackageJobSnapshot:
         snapshot = self.jobs.get(job_id)

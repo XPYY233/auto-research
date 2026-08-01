@@ -236,7 +236,12 @@ _SOURCE_ERROR_GROUPS = {
         "checksum_inventory",
         "noncanonical_control",
     },
-    "package_untrusted": {"untrusted_signer", "invalid_trust_key"},
+    "package_untrusted": {
+        "untrusted_signer",
+        "invalid_trust_key",
+        "trusted_key_policy_mismatch",
+        "untrusted_package_identity",
+    },
     "package_signature_invalid": {"unsupported_signature", "invalid_signature"},
     "package_incompatible_app": {"incompatible_app", "invalid_compatibility"},
     "package_incompatible_schema": {"incompatible_schema", "invalid_schema"},
@@ -246,6 +251,7 @@ _SOURCE_ERROR_GROUPS = {
         "rights",
         "rights_scope",
         "provenance",
+        "untrusted_rights_scope",
     },
     "package_install_conflict": {"install_conflict"},
     "package_install_failed": {

@@ -41,10 +41,20 @@ from secure_credentials import (  # noqa: E402
     SecureCredentialError,
     default_deepseek_credential_store,
 )
-from first_use_state import DEFAULT_ACTIVE_PACKAGE_STATUS_PATH  # noqa: E402
+def _desktop_version_metadata() -> dict[str, object]:
+    if getattr(sys, "frozen", False):
+        bundle_root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        path = bundle_root / "desktop" / "macos" / "version.json"
+    else:
+        path = Path(__file__).resolve().with_name("version.json")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or not isinstance(value.get("desktop_version"), str):
+        raise RuntimeError("desktop version metadata is invalid")
+    return value
 
 
-DESKTOP_VERSION = "0.3.0-preview.1"
+DESKTOP_VERSION_METADATA = _desktop_version_metadata()
+DESKTOP_VERSION = str(DESKTOP_VERSION_METADATA["desktop_version"])
 
 
 def _http_smoke_checks(
@@ -63,8 +73,11 @@ def _http_smoke_checks(
 
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
     opener.open(f"{url}/?desktop_token={token}", timeout=5).close()
+    with opener.open(f"{url}/api/ui-mode", timeout=10) as response:
+        json.load(response)
+        csrf_token = response.headers.get("X-Auto-Research-CSRF") or ""
+        ui_mode_ok = response.status == 200 and bool(csrf_token)
     routes = {
-        "ui_mode": "/api/ui-mode",
         "search_status": "/api/search-v2/status",
         "search_query": "/api/search-v2?q=%E6%B8%A9%E5%BA%A6&limit=1",
         "visual_query": "/api/visual-search?q=&type=figure",
@@ -83,8 +96,12 @@ def _http_smoke_checks(
         "current_deepseek_run": "/api/current-paper/deepseek-run",
         "current_quality_run": "/api/current-paper/quality-run",
         "current_quality_candidates": "/api/current-paper/quality-candidates?status=manual_review",
+        "official_package_status": "/api/desktop/evidence-packages",
     }
-    checks = {"unauthorized_blocked": unauthorized_blocked}
+    checks = {
+        "unauthorized_blocked": unauthorized_blocked,
+        "ui_mode": ui_mode_ok,
+    }
     for name, route in routes.items():
         try:
             with opener.open(f"{url}{route}", timeout=10) as response:
@@ -119,7 +136,11 @@ def _http_smoke_checks(
     request = urllib.request.Request(
         history_url,
         data=json.dumps(history_payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Origin": url,
+            "X-Auto-Research-CSRF": csrf_token,
+        },
         method="POST",
     )
     with opener.open(request, timeout=10) as response:
@@ -228,6 +249,7 @@ def _run_smoke_test(project_root: Path) -> int:
 
     from auto_research.evidence.db import EvidenceDB
     from auto_research.evidence.webapp import RELEASE_INFO, WEB_DIR
+    from desktop_product_services import create_desktop_product_services
     from desktop_server import create_desktop_server, new_session_token
 
     production_database = project_root / "db" / "experimental_evidence.sqlite"
@@ -248,6 +270,10 @@ def _run_smoke_test(project_root: Path) -> int:
             StaticHistoryKeyProvider(b"\x91" * 32),
             storage_label="test-static-aes-256-gcm",
         )
+        product_services = create_desktop_product_services(
+            data_root=Path(directory) / "application-support",
+            current_app_version=DESKTOP_VERSION,
+        )
         server, _ = create_desktop_server(
             EvidenceDB(temporary_database),
             host="127.0.0.1",
@@ -255,6 +281,9 @@ def _run_smoke_test(project_root: Path) -> int:
             token=token,
             read_only=False,
             history_store=history_store,
+            package_service=product_services.package_service,
+            package_api=product_services.package_api,
+            federated_search_api=product_services.federated_search_api,
         )
         configure_imported_module_paths(project_root)
         port = int(server.server_address[1])
@@ -320,7 +349,10 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     configure_core_paths(project_root)
 
     from auto_research.evidence.db import EvidenceDB
+    from desktop_product_services import create_desktop_product_services
     from desktop_server import create_desktop_server, new_session_token
+    from native_package_bridge import NativePackageBridge
+    from package_import_service import DEFAULT_PACKAGE_DATA_ROOT
     import webview
 
     webview.settings["ALLOW_DOWNLOADS"] = True
@@ -341,6 +373,11 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
 
     try:
         database = EvidenceDB(project_root / "db" / "experimental_evidence.sqlite")
+        product_services = create_desktop_product_services(
+            data_root=DEFAULT_PACKAGE_DATA_ROOT,
+            current_app_version=DESKTOP_VERSION,
+        )
+        native_package_bridge = NativePackageBridge(product_services.package_service.broker)
         server, _ = create_desktop_server(
             database,
             host=host,
@@ -349,7 +386,9 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             read_only=False,
             history_store=default_secure_history_store(),
             credential_store=credential_store,
-            active_package_status_path=DEFAULT_ACTIVE_PACKAGE_STATUS_PATH,
+            package_service=product_services.package_service,
+            package_api=product_services.package_api,
+            federated_search_api=product_services.federated_search_api,
         )
         configure_imported_module_paths(project_root)
     except BaseException as exc:
@@ -379,11 +418,13 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     window = webview.create_window(
         APP_NAME,
         url=f"{url}/?desktop_token={token}",
+        js_api=native_package_bridge,
         width=1440,
         height=920,
         min_size=(1040, 700),
         background_color="#f4f1e9",
     )
+    native_package_bridge.bind_window(window)
     window.events.loaded += lambda: window.evaluate_js(
         "window.history.replaceState({}, document.title, '/');"
     )

@@ -20,6 +20,7 @@ for path in (DESKTOP_ROOT, SOURCE_ROOT):
 
 from auto_research.evidence.db import EvidenceDB  # noqa: E402
 from desktop_server import READINESS_PATH, create_desktop_server, new_session_token  # noqa: E402
+from first_use_state import ActivePackageStatus  # noqa: E402
 from secure_credentials import DeepSeekCredentialStore  # noqa: E402
 
 
@@ -152,6 +153,44 @@ class ReadinessAPITests(unittest.TestCase):
         payload = json.loads(error.read())
         error.close()
         self.assertEqual(payload["code"], "desktop_session_required")
+
+    def test_injected_audited_repository_status_overrides_legacy_selector(self) -> None:
+        class AuditedPackageProvider:
+            def readiness_active_package(self):
+                return ActivePackageStatus(
+                    active=True,
+                    package_id="audited-official-preview",
+                    package_version="0.1.0-preview.1",
+                )
+
+        self.active_path.write_text("not-json", encoding="utf-8")
+        token = new_session_token()
+        server, _ = create_desktop_server(
+            EvidenceDB(self.root / "audited-readiness.sqlite"),
+            host="127.0.0.1",
+            port=0,
+            token=token,
+            credential_store=DeepSeekCredentialStore(self.backend),
+            active_package_status_path=self.active_path,
+            package_service=AuditedPackageProvider(),
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base_url = f"http://127.0.0.1:{server.server_address[1]}"
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(CookieJar())
+        )
+        try:
+            opener.open(f"{base_url}/?desktop_token={token}", timeout=5).close()
+            with opener.open(f"{base_url}{READINESS_PATH}", timeout=5) as response:
+                payload = json.load(response)
+            self.assertEqual(payload["state"], "offline_ready")
+            self.assertEqual(payload["package_id"], "audited-official-preview")
+            self.assertNotIn(str(self.active_path), json.dumps(payload))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
 
 if __name__ == "__main__":

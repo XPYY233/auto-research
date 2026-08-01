@@ -14,7 +14,7 @@ from auto_research.product.trusted_publishers import (
 
 class TrustedPublisherTests(unittest.TestCase):
     def test_internal_preview_publisher_is_valid_and_path_free(self) -> None:
-        self.assertEqual(TRUSTED_PUBLISHER_REGISTRY_VERSION, 1)
+        self.assertEqual(TRUSTED_PUBLISHER_REGISTRY_VERSION, 2)
         publishers = trusted_publishers()
         self.assertEqual(len(publishers), 1)
         publisher = publishers[0]
@@ -22,6 +22,10 @@ class TrustedPublisherTests(unittest.TestCase):
             publisher.key_id, "auto-research-internal-preview-2026-v1"
         )
         self.assertEqual(publisher.channel, "internal-preview")
+        self.assertEqual(
+            publisher.required_rights_redistribution,
+            "internal-preview-only",
+        )
         self.assertNotIn("path", publisher.public_dict())
         Ed25519PublicKey.from_public_bytes(publisher.public_key_bytes())
         self.assertEqual(

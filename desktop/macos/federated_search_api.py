@@ -74,6 +74,11 @@ class DesktopFederatedSearchService:
                 "content_fingerprint": self._active.content_fingerprint,
             }
 
+    def clear(self) -> None:
+        with self._lock:
+            self._active = None
+            self._search = None
+
     def search(self, **kwargs: Any) -> dict[str, Any]:
         service = self._require_search()
         try:

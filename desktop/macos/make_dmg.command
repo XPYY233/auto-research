@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 APP_PATH="${SCRIPT_DIR}/dist/Auto Research.app"
-DMG_PATH="${SCRIPT_DIR}/dist/Auto-Research-0.3.0-preview.1-macOS-arm64.dmg"
+DESKTOP_VERSION="$(/usr/bin/plutil -extract desktop_version raw -o - "${SCRIPT_DIR}/version.json")"
+DMG_PATH="${SCRIPT_DIR}/dist/Auto-Research-${DESKTOP_VERSION}-macOS-arm64.dmg"
 
 if [[ ! -d "${APP_PATH}" ]]; then
   echo "还没有找到构建好的 Auto Research.app。"
