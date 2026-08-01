@@ -27,6 +27,9 @@
 - 私人导入状态固定为 `previewed → draft_saved → confirmed/indexable`，禁止跳过草稿直接确认；成功操作统一返回 `private-operation-result-v1`，明确状态、可检索性和是否实际发生变化。
 - 新增 `PrivateRepositoryError` 的稳定 `private-repository-error-v1` 契约。错误详情仅允许受控白名单字段，不返回本机路径、SQLite 语句、约束文本或底层异常；桌面端后续只需按稳定错误码提供恢复动作。
 - 确认操作继续使用单一 SQLite 事务，既有 `confirmed` 批次不可覆盖；状态迁移、确认门或写入失败均回滚并保留原可检索记录。本阶段未接入 web/API、公共索引、产品资料包或桌面端。
+- 新增私人仓库只读搜索源 Protocol/DTO 和适配器。只有 `confirmed + indexable` 批次可被确定性拆分为测量序列 `item`、导入表格摘要 `table`、关联趋势图 `figure`、确认备注/结论 `finding`，不新增第五类对象。
+- 四类私人文档携带 `source_scope=private`、稳定仓库 `source_id` 和不可反推内部主键的稳定 `entity_uid`，并保留项目、样品、材料、方法与条件；输出不含路径、文件哈希或 run/series/attachment/note/file 主键。
+- 适配过程只读且测试验证前后私人 SQLite 字节一致；未 `ATTACH` 官方库，未接入 web、Search V2、桌面端、产品资料包或联合召回。
 
 ### 图书管理员模型分工、相关文章与抽取覆盖预警
 
