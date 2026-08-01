@@ -24,6 +24,9 @@
 - 文件保存前复核预览 SHA-256 与大小，只在私人目录记录相对路径；数据库符号链接、未知既有数据库、不完整/未来 schema、跨项目样品引用和变化后的文件均拒绝。
 - 列角色新增 `role_confirmed`，与 `meaning_confirmed`、`unit_confirmed` 共同构成检索门。草稿可更新为已确认，已确认批次不可静默覆盖；搜索投影还会从 SQLite 再次核验全部确认标志。
 - `personal-search-document-v1` 只返回私人仓库随机 `source_id`、项目/样品/批次语义、条件、列、测量序列、附件说明、备注和无路径文件身份；不返回 `data_root`、SQLite 路径或内部相对路径。目标测试全部使用 `TemporaryDirectory`。
+- 私人导入状态固定为 `previewed → draft_saved → confirmed/indexable`，禁止跳过草稿直接确认；成功操作统一返回 `private-operation-result-v1`，明确状态、可检索性和是否实际发生变化。
+- 新增 `PrivateRepositoryError` 的稳定 `private-repository-error-v1` 契约。错误详情仅允许受控白名单字段，不返回本机路径、SQLite 语句、约束文本或底层异常；桌面端后续只需按稳定错误码提供恢复动作。
+- 确认操作继续使用单一 SQLite 事务，既有 `confirmed` 批次不可覆盖；状态迁移、确认门或写入失败均回滚并保留原可检索记录。本阶段未接入 web/API、公共索引、产品资料包或桌面端。
 
 ### 图书管理员模型分工、相关文章与抽取覆盖预警
 

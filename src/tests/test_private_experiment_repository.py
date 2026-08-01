@@ -20,7 +20,9 @@ from auto_research.personal.private_repository import (
     DATABASE_NAME,
     SCHEMA_VERSION,
     PrivateExperimentRepository,
+    PrivateOperationResult,
     PrivateProject,
+    PrivateRepositoryError,
     PrivateSample,
 )
 
@@ -111,6 +113,19 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
         for source in (draft.preview.source_file, *draft.supporting_files):
             self.repo.register_source_file(source, paths[source.file_id])
 
+    def save_confirmed(self, draft: PersonalExperimentDraft) -> PrivateOperationResult:
+        draft_version = replace(draft, confirmation_state="draft")
+        self.repo.save_experiment(
+            draft_version,
+            project_id="project-1",
+            sample_id="sample-1",
+        )
+        return self.repo.save_experiment(
+            replace(draft, confirmation_state="confirmed"),
+            project_id="project-1",
+            sample_id="sample-1",
+        )
+
     def test_schema_v1_is_isolated_under_explicit_data_root(self):
         self.assertEqual(self.repo.database_path, self.root.resolve() / DATABASE_NAME)
         self.assertTrue(self.repo.database_path.is_file())
@@ -149,11 +164,20 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
     def test_draft_can_be_saved_then_confirmed_and_only_confirmed_is_searchable(self):
         draft, paths = self.draft(state="draft")
         self.register_draft_files(draft, paths)
-        self.repo.save_experiment(draft, project_id="project-1", sample_id="sample-1")
+        draft_result = self.repo.save_experiment(
+            draft, project_id="project-1", sample_id="sample-1"
+        )
+        self.assertEqual(draft_result.import_state, "draft_saved")
+        self.assertFalse(draft_result.indexable)
         self.assertEqual(self.repo.list_personal_search_documents(), [])
 
         confirmed = replace(draft, confirmation_state="confirmed")
-        self.repo.save_experiment(confirmed, project_id="project-1", sample_id="sample-1")
+        confirmed_result = self.repo.save_experiment(
+            confirmed, project_id="project-1", sample_id="sample-1"
+        )
+        self.assertEqual(confirmed_result.import_state, "indexable")
+        self.assertEqual(confirmed_result.confirmation_state, "confirmed")
+        self.assertTrue(confirmed_result.indexable)
         documents = self.repo.list_personal_search_documents()
         self.assertEqual(len(documents), 1)
         document = documents[0]
@@ -168,7 +192,7 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
     def test_public_projection_contains_no_private_paths(self):
         draft, paths = self.draft(state="confirmed")
         self.register_draft_files(draft, paths)
-        self.repo.save_experiment(draft, project_id="project-1", sample_id="sample-1")
+        self.save_confirmed(draft)
         encoded = json.dumps(self.repo.list_personal_search_documents(), ensure_ascii=False)
         self.assertNotIn(str(self.root), encoded)
         self.assertNotIn(str(Path(self.tmp.name)), encoded)
@@ -203,7 +227,7 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
     def test_projection_gate_rechecks_database_flags(self):
         draft, paths = self.draft(state="confirmed")
         self.register_draft_files(draft, paths)
-        self.repo.save_experiment(draft, project_id="project-1", sample_id="sample-1")
+        self.save_confirmed(draft)
         with self.repo.connect() as conn:
             conn.execute(
                 "UPDATE column_mappings SET unit_confirmed=0 WHERE run_id=? AND source_name=?",
@@ -214,7 +238,7 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
     def test_project_sample_series_attachment_and_notes_are_persisted(self):
         draft, paths = self.draft(state="confirmed")
         self.register_draft_files(draft, paths)
-        self.repo.save_experiment(draft, project_id="project-1", sample_id="sample-1")
+        self.save_confirmed(draft)
         self.repo.add_note("sample-note-1", "样品边缘区域", sample_id="sample-1")
         self.repo.add_note("project-note-1", "项目共用仪器 A", project_id="project-1")
         self.repo.add_note("run-note-extra", "第二天复核", run_id="run-1")
@@ -263,12 +287,94 @@ class PrivateExperimentRepositoryTests(unittest.TestCase):
     def test_confirmed_run_is_immutable_and_repository_identity_survives_reopen(self):
         draft, paths = self.draft(state="confirmed")
         self.register_draft_files(draft, paths)
-        self.repo.save_experiment(draft, project_id="project-1", sample_id="sample-1")
-        with self.assertRaises(ValueError):
+        self.save_confirmed(draft)
+        before = self.repo.list_personal_search_documents()
+        with self.assertRaises(PrivateRepositoryError) as caught:
             self.repo.save_experiment(draft, project_id="project-1", sample_id="sample-1")
+        self.assertEqual(caught.exception.code, "RUN_CONFIRMED_IMMUTABLE")
+        self.assertEqual(self.repo.list_personal_search_documents(), before)
         original_id = self.repo.repository_id
         reopened = PrivateExperimentRepository(self.root)
         self.assertEqual(reopened.repository_id, original_id)
+
+    def test_operation_results_follow_preview_draft_confirmed_indexable_contract(self):
+        draft, paths = self.draft(state="draft")
+        source = draft.preview.source_file
+        previewed = self.repo.register_source_file(source, paths[source.file_id])
+        self.assertEqual(
+            previewed.as_dict(),
+            {
+                "schema_version": "private-operation-result-v1",
+                "ok": True,
+                "operation": "register_source_file",
+                "entity_type": "source_file",
+                "entity_id": source.file_id,
+                "import_state": "previewed",
+                "confirmation_state": None,
+                "indexable": False,
+                "changed": True,
+            },
+        )
+        repeated = self.repo.register_source_file(source, paths[source.file_id])
+        self.assertEqual(repeated.import_state, "previewed")
+        self.assertFalse(repeated.changed)
+        supporting = draft.supporting_files[0]
+        self.repo.register_source_file(supporting, paths[supporting.file_id])
+
+        saved = self.repo.save_experiment(
+            draft, project_id="project-1", sample_id="sample-1"
+        )
+        self.assertEqual(saved.import_state, "draft_saved")
+        confirmed = self.repo.save_experiment(
+            replace(draft, confirmation_state="confirmed"),
+            project_id="project-1",
+            sample_id="sample-1",
+        )
+        self.assertEqual(confirmed.import_state, "indexable")
+        self.assertEqual(confirmed.confirmation_state, "confirmed")
+        self.assertTrue(confirmed.indexable)
+
+    def test_direct_confirmation_is_rejected_with_path_free_stable_error(self):
+        draft, paths = self.draft(state="confirmed")
+        self.register_draft_files(draft, paths)
+        with self.assertRaises(PrivateRepositoryError) as caught:
+            self.repo.save_experiment(
+                draft, project_id="project-1", sample_id="sample-1"
+            )
+        error = caught.exception
+        self.assertEqual(error.code, "INVALID_IMPORT_TRANSITION")
+        self.assertEqual(error.details["current_state"], "previewed")
+        self.assertEqual(error.details["required_state"], "draft_saved")
+        encoded = json.dumps(error.as_dict(), ensure_ascii=False)
+        self.assertNotIn(str(self.root), encoded)
+        self.assertNotIn(str(Path(self.tmp.name)), encoded)
+        self.assertNotIn("sqlite", encoded.lower())
+
+    def test_duplicate_error_hides_sqlite_and_private_paths(self):
+        with self.assertRaises(PrivateRepositoryError) as caught:
+            self.repo.add_project(PrivateProject("project-1", "重复项目"))
+        error = caught.exception
+        self.assertEqual(error.code, "DUPLICATE_ID")
+        encoded = json.dumps(error.as_dict(), ensure_ascii=False)
+        self.assertNotIn("UNIQUE constraint failed", encoded)
+        self.assertNotIn(str(self.root), encoded)
+        self.assertEqual(set(error.details), {"entity_type"})
+
+    def test_error_details_reject_path_fields(self):
+        with self.assertRaises(ValueError):
+            PrivateRepositoryError(
+                "UNSAFE_TEST",
+                "安全消息",
+                details={"path": str(self.root)},
+            )
+
+    def test_note_result_and_missing_target_use_stable_contract(self):
+        result = self.repo.add_note("project-note", "项目备注", project_id="project-1")
+        self.assertEqual(result.entity_type, "note")
+        self.assertTrue(result.changed)
+        with self.assertRaises(PrivateRepositoryError) as caught:
+            self.repo.add_note("missing-note", "不存在", run_id="missing-run")
+        self.assertEqual(caught.exception.code, "RUN_NOT_FOUND")
 
     def test_unknown_existing_database_is_not_adopted(self):
         other_root = Path(self.tmp.name) / "unknown"

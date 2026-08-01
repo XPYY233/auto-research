@@ -32,6 +32,31 @@
 - 草稿可以保存并继续确认；已确认批次在 v1 中不可静默覆盖。只有状态为 `confirmed`，且所有纳入列的角色、含义和单位均确认后，才生成 `personal-search-document-v1`。
 - 搜索投影使用仓库随机身份作为 `source_id`，不包含 SQLite 路径、文件相对路径或 `data_root`。项目、样品和批次备注可参与私人检索，但不会进入官方文献证据。
 
+### 导入状态与操作结果
+
+导入流程采用单向状态链：`previewed → draft_saved → confirmed/indexable`。文件完成受限预览并复制到私人目录后为 `previewed`；实验人员第一次必须保存为草稿，进入 `draft_saved`；只有从既有草稿完成确认，且角色、含义、单位和引用关系再次通过数据库门禁后，操作结果才同时标记 `confirmation_state=confirmed`、`import_state=indexable` 和 `indexable=true`。不能跳过草稿直接确认。
+
+成功操作统一返回 `private-operation-result-v1`，包含 `operation`、`entity_type`、`entity_id`、`import_state`、`confirmation_state`、`indexable` 和 `changed`。重复注册同一份未变化文件返回 `changed=false`，不会再次复制。
+
+失败统一抛出 `PrivateRepositoryError`，并可序列化为 `private-repository-error-v1`：
+
+```json
+{
+  "schema_version": "private-repository-error-v1",
+  "code": "INVALID_IMPORT_TRANSITION",
+  "message": "请先保存草稿，再确认实验数据。",
+  "details": {
+    "entity_type": "experiment_run",
+    "current_state": "previewed",
+    "required_state": "draft_saved"
+  }
+}
+```
+
+`details` 只允许实体类型、字段、当前/要求状态、确认问题码、schema 版本和操作名等白名单字段。错误响应不包含 `data_root`、文件路径、SQLite 语句、约束文本或底层异常。稳定错误码覆盖根目录/数据库不可用、schema 不兼容、校验失败、重复标识、父对象缺失、文件变化、非法状态迁移、确认门未通过和读写失败；界面应按 `code` 决定交互，不解析消息文字。
+
+实验确认写入在一个事务内完成。任何确认门、外键、重复标识或数据库写入失败都会回滚；既有 `confirmed` 记录在 v1 中不可变，失败操作不得清除、替换或降级已经可检索的数据。
+
 ## 搜索与图书管理员
 
 用户始终使用同一个入口，并可选择“文献数据库 / 我的实验 / 两者一起”。已知样品号、批次号、文件名或明确关键词时走精确搜索；比较、解释、趋势总结等问题交给图书管理员。自动判断只是默认值，用户可以手动切换。
