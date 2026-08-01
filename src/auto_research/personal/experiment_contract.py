@@ -75,6 +75,7 @@ class ColumnMapping:
     role: str
     data_type: str
     meaning: str | None = None
+    meaning_confirmed: bool = False
     unit: str | None = None
     unit_confirmed: bool = False
     sample_values: tuple[str, ...] = ()
@@ -101,7 +102,7 @@ class ColumnMapping:
     def needs_user_confirmation(self) -> bool:
         if self.role == "ignore":
             return False
-        if not self.meaning:
+        if not self.meaning or not self.meaning_confirmed:
             return True
         if self.data_type == "number" and not self.unit_confirmed:
             return True
@@ -113,6 +114,7 @@ class ColumnMapping:
             "role": self.role,
             "data_type": self.data_type,
             "meaning": self.meaning,
+            "meaning_confirmed": self.meaning_confirmed,
             "unit": self.unit,
             "unit_confirmed": self.unit_confirmed,
             "sample_values": list(self.sample_values),
