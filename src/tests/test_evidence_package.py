@@ -152,8 +152,8 @@ class EvidencePackageTests(unittest.TestCase):
         self.assertTrue(installed.install_path.is_dir())
         self.assertFalse(installed.already_installed)
         active = json.loads(installed.active_state_path.read_text(encoding="utf-8"))
-        self.assertEqual(active["active_version"], "1.0.0")
-        self.assertIsNone(active["previous_version"])
+        self.assertEqual(active["package_version"], "1.0.0")
+        self.assertIsNone(active["previous_package"])
 
     def test_untrusted_signer_is_rejected(self) -> None:
         package = self.build()
@@ -362,7 +362,7 @@ class EvidencePackageTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "incompatible_schema")
         active = json.loads(imported.active_state_path.read_text(encoding="utf-8"))
-        self.assertEqual(active["active_version"], "1.0.0")
+        self.assertEqual(active["package_version"], "1.0.0")
         self.assertFalse((data_root / "official-packages" / "official-fusion-demo" / "2.0.0").exists())
 
     def test_tampered_database_and_same_version_conflict_do_not_overwrite(self) -> None:
@@ -412,11 +412,11 @@ class EvidencePackageTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "install_conflict")
         active = json.loads(
-            (data_root / "official-packages" / "official-fusion-demo" / "active.json").read_text(
+            (data_root / "official-packages" / "active.json").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertEqual(active["active_version"], "1.0.0")
+        self.assertEqual(active["package_version"], "1.0.0")
 
     def test_update_keeps_old_version_and_allows_explicit_rollback(self) -> None:
         data_root = self.root / "app-data"
@@ -440,8 +440,8 @@ class EvidencePackageTests(unittest.TestCase):
             expected_evidence_schema=12,
         )
         active = json.loads(rolled_back.active_state_path.read_text(encoding="utf-8"))
-        self.assertEqual(active["active_version"], "1.0.0")
-        self.assertEqual(active["previous_version"], "2.0.0")
+        self.assertEqual(active["package_version"], "1.0.0")
+        self.assertEqual(active["previous_package"]["package_version"], "2.0.0")
 
     def test_import_uses_private_snapshot_when_source_is_replaced(self) -> None:
         package = self.build("1.0.0")

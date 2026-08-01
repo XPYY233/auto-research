@@ -12,6 +12,15 @@ from .evidence_package import (
     verify_evidence_package,
 )
 from .evidence_v12_export import plan_evidence_v12_export
+from .official_package_store import (
+    ACTIVE_SELECTOR_RELATIVE_PATH,
+    EXPECTED_DISTRIBUTION_SCHEMA,
+    ActiveOfficialPackage,
+    default_active_state_path,
+    import_official_evidence_package,
+    open_active_official_repository,
+    rollback_official_evidence_package,
+)
 from .portable_repository import (
     DATABASE_CONTRACT,
     DISTRIBUTION_SCHEMA_VERSION,
@@ -46,4 +55,11 @@ __all__ = [
     "materialize_portable_repository",
     "plan_evidence_v12_export",
     "provenance_for_papers",
+    "ACTIVE_SELECTOR_RELATIVE_PATH",
+    "EXPECTED_DISTRIBUTION_SCHEMA",
+    "ActiveOfficialPackage",
+    "default_active_state_path",
+    "import_official_evidence_package",
+    "open_active_official_repository",
+    "rollback_official_evidence_package",
 ]

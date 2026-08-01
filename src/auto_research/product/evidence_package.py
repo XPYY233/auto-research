@@ -15,7 +15,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -85,6 +85,11 @@ class ImportedEvidencePackage:
     active_state_path: Path
     previous_version: str | None
     already_installed: bool
+    content_fingerprint: str | None = None
+    previous_package_id: str | None = None
+
+
+RepositoryValidator = Callable[[Path, Mapping[str, Any]], Any]
 
 
 def _canonical_json_bytes(value: Any) -> bytes:
@@ -487,7 +492,68 @@ def _read_active_state(path: Path) -> dict[str, Any] | None:
         raise EvidencePackageError("invalid_active_state", "本机官方资料包状态损坏") from exc
     if not isinstance(value, dict):
         raise EvidencePackageError("invalid_active_state", "本机官方资料包状态无效")
+    required = {
+        "schema_version",
+        "package_id",
+        "package_version",
+        "manifest_sha256",
+        "content_fingerprint",
+        "activated_at",
+        "previous_package",
+    }
+    if set(value) != required or value.get("schema_version") != "official-active-package-v1":
+        raise EvidencePackageError("invalid_active_state", "本机官方资料包状态版本无效")
+    if not PACKAGE_ID_RE.fullmatch(str(value.get("package_id") or "")) or not PACKAGE_VERSION_RE.fullmatch(
+        str(value.get("package_version") or "")
+    ):
+        raise EvidencePackageError("invalid_active_state", "本机官方资料包身份无效")
+    if not SHA256_RE.fullmatch(str(value.get("manifest_sha256") or "")):
+        raise EvidencePackageError("invalid_active_state", "本机官方资料包清单指纹无效")
+    fingerprint = str(value.get("content_fingerprint") or "")
+    if fingerprint and not SHA256_RE.fullmatch(fingerprint):
+        raise EvidencePackageError("invalid_active_state", "本机官方资料库内容指纹无效")
+    previous = value.get("previous_package")
+    if previous is not None and (
+        not isinstance(previous, dict)
+        or set(previous) != {"package_id", "package_version", "content_fingerprint"}
+        or not PACKAGE_ID_RE.fullmatch(str(previous.get("package_id") or ""))
+        or not PACKAGE_VERSION_RE.fullmatch(str(previous.get("package_version") or ""))
+    ):
+        raise EvidencePackageError("invalid_active_state", "本机官方资料包回退状态无效")
     return value
+
+
+def _run_repository_validator(
+    validator: RepositoryValidator | None,
+    install_root: Path,
+    manifest: Mapping[str, Any],
+    *,
+    expected_evidence_schema: int,
+) -> str | None:
+    if validator is None:
+        if int(expected_evidence_schema) == 1:
+            raise EvidencePackageError(
+                "repository_validator_required",
+                "分发 schema v1 必须在激活前完成官方只读仓库审计",
+            )
+        return None
+    try:
+        result = validator(install_root, manifest)
+    except EvidencePackageError:
+        raise
+    except Exception as exc:
+        raise EvidencePackageError(
+            "repository_audit_failed", "资料包已验证，但官方只读仓库审计失败"
+        ) from exc
+    if isinstance(result, Mapping):
+        fingerprint = str(result.get("content_fingerprint") or "")
+    else:
+        fingerprint = str(getattr(result, "content_fingerprint", "") or "")
+    if not SHA256_RE.fullmatch(fingerprint):
+        raise EvidencePackageError(
+            "repository_audit_failed", "官方只读仓库没有返回有效内容指纹"
+        )
+    return fingerprint
 
 
 def _snapshot_package(source_path: Path | str, staging_parent: Path) -> tuple[Path, Path]:
@@ -676,6 +742,8 @@ def import_evidence_package(
     trusted_public_keys: Mapping[str, bytes | Ed25519PublicKey],
     current_app_version: str,
     expected_evidence_schema: int,
+    repository_validator: RepositoryValidator | None = None,
+    active_state_path: Path | str | None = None,
 ) -> ImportedEvidencePackage:
     root = Path(data_root).expanduser().resolve()
     staging_parent = root / ".package-staging"
@@ -691,9 +759,14 @@ def import_evidence_package(
         target = official_root / verified.package_version
         if official_root.is_symlink() or target.is_symlink():
             raise EvidencePackageError("unsafe_install_root", "本机资料包安装目录不安全")
-        active_state_path = official_root / "active.json"
-        active_before = _read_active_state(active_state_path)
-        previous_version = str(active_before.get("active_version")) if active_before else None
+        selector_path = (
+            Path(active_state_path).expanduser().resolve()
+            if active_state_path is not None
+            else root / "official-packages" / "active.json"
+        )
+        active_before = _read_active_state(selector_path)
+        previous_version = str(active_before.get("package_version")) if active_before else None
+        previous_package_id = str(active_before.get("package_id")) if active_before else None
         expected_install_digest = verified.manifest_sha256
         already_installed = target.is_dir()
         if already_installed:
@@ -705,6 +778,12 @@ def import_evidence_package(
                 expected_package_id=verified.package_id,
                 expected_package_version=verified.package_version,
                 expected_manifest_sha256=expected_install_digest,
+            )
+            content_fingerprint = _run_repository_validator(
+                repository_validator,
+                target,
+                verified.manifest,
+                expected_evidence_schema=expected_evidence_schema,
             )
         else:
             staging = operation / "install"
@@ -743,6 +822,12 @@ def import_evidence_package(
                     expected_package_version=verified.package_version,
                     expected_manifest_sha256=expected_install_digest,
                 )
+                content_fingerprint = _run_repository_validator(
+                    repository_validator,
+                    staging,
+                    verified.manifest,
+                    expected_evidence_schema=expected_evidence_schema,
+                )
                 official_root.mkdir(parents=True, exist_ok=True)
                 os.replace(staging, target)
             except EvidencePackageError:
@@ -751,24 +836,37 @@ def import_evidence_package(
                 raise EvidencePackageError(
                     "install_failed", "资料包未能安全安装，旧资料库保持不变"
                 ) from exc
+        previous_package = None
+        if active_before and (
+            previous_package_id != verified.package_id
+            or previous_version != verified.package_version
+        ):
+            previous_package = {
+                "package_id": previous_package_id,
+                "package_version": previous_version,
+                "content_fingerprint": str(active_before.get("content_fingerprint") or ""),
+            }
         _atomic_json_write(
-            active_state_path,
+            selector_path,
             {
+                "schema_version": "official-active-package-v1",
                 "package_id": verified.package_id,
-                "active_version": verified.package_version,
-                "previous_version": (
-                    previous_version if previous_version != verified.package_version else None
-                ),
+                "package_version": verified.package_version,
+                "manifest_sha256": expected_install_digest,
+                "content_fingerprint": content_fingerprint or "",
                 "activated_at": datetime.now(timezone.utc).isoformat(),
+                "previous_package": previous_package,
             },
         )
         return ImportedEvidencePackage(
             package_id=verified.package_id,
             package_version=verified.package_version,
             install_path=target,
-            active_state_path=active_state_path,
+            active_state_path=selector_path,
             previous_version=previous_version,
             already_installed=already_installed,
+            content_fingerprint=content_fingerprint,
+            previous_package_id=previous_package_id,
         )
     finally:
         shutil.rmtree(operation, ignore_errors=True)
@@ -782,6 +880,8 @@ def rollback_evidence_package(
     trusted_public_keys: Mapping[str, bytes | Ed25519PublicKey],
     current_app_version: str,
     expected_evidence_schema: int,
+    repository_validator: RepositoryValidator | None = None,
+    active_state_path: Path | str | None = None,
 ) -> ImportedEvidencePackage:
     if not PACKAGE_ID_RE.fullmatch(package_id) or not PACKAGE_VERSION_RE.fullmatch(target_version):
         raise EvidencePackageError("invalid_target", "回退目标格式无效")
@@ -790,7 +890,7 @@ def rollback_evidence_package(
     target = official_root / target_version
     if not target.is_dir() or not (target / "install.json").is_file():
         raise EvidencePackageError("missing_target", "要回退的资料包版本尚未安装")
-    _validate_installed_tree(
+    manifest = _validate_installed_tree(
         target,
         trusted_public_keys=trusted_public_keys,
         current_app_version=current_app_version,
@@ -798,26 +898,52 @@ def rollback_evidence_package(
         expected_package_id=package_id,
         expected_package_version=target_version,
     )
-    active_state_path = official_root / "active.json"
-    active_before = _read_active_state(active_state_path)
-    previous_version = str(active_before.get("active_version")) if active_before else None
+    content_fingerprint = _run_repository_validator(
+        repository_validator,
+        target,
+        manifest,
+        expected_evidence_schema=expected_evidence_schema,
+    )
+    selector_path = (
+        Path(active_state_path).expanduser().resolve()
+        if active_state_path is not None
+        else root / "official-packages" / "active.json"
+    )
+    active_before = _read_active_state(selector_path)
+    previous_version = str(active_before.get("package_version")) if active_before else None
+    previous_package_id = str(active_before.get("package_id")) if active_before else None
+    manifest_path = target / MANIFEST_NAME
+    manifest_sha256, _ = _sha256_file(manifest_path)
+    previous_package = None
+    if active_before and (
+        previous_package_id != package_id or previous_version != target_version
+    ):
+        previous_package = {
+            "package_id": previous_package_id,
+            "package_version": previous_version,
+            "content_fingerprint": str(active_before.get("content_fingerprint") or ""),
+        }
     _atomic_json_write(
-        active_state_path,
+        selector_path,
         {
+            "schema_version": "official-active-package-v1",
             "package_id": package_id,
-            "active_version": target_version,
-            "previous_version": previous_version if previous_version != target_version else None,
+            "package_version": target_version,
+            "manifest_sha256": manifest_sha256,
+            "content_fingerprint": content_fingerprint or "",
             "activated_at": datetime.now(timezone.utc).isoformat(),
-            "reason": "manual_rollback",
+            "previous_package": previous_package,
         },
     )
     return ImportedEvidencePackage(
         package_id=package_id,
         package_version=target_version,
         install_path=target,
-        active_state_path=active_state_path,
+        active_state_path=selector_path,
         previous_version=previous_version,
         already_installed=True,
+        content_fingerprint=content_fingerprint,
+        previous_package_id=previous_package_id,
     )
 
 
@@ -837,67 +963,124 @@ def build_evidence_package(
     manifest_value = dict(manifest)
     _validate_manifest(manifest_value, current_app_version=None, expected_evidence_schema=None)
     normalized_key_id = _validate_key_id(signer_key_id)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_root = Path(tempfile.mkdtemp(prefix=".package-build-", dir=output.parent))
+    os.chmod(snapshot_root, 0o700)
     normalized_payload: dict[str, Path] = {}
     portable_names: set[str] = set()
     checksums: dict[str, dict[str, Any]] = {}
-    for raw_name, raw_source in payload_files.items():
-        name = _safe_member_name(str(raw_name))
-        if name in CONTROL_FILES or name == "install.json":
-            raise EvidencePackageError("reserved_member", f"资料包 payload 使用了保留名称：{name}")
-        folded = unicodedata.normalize("NFC", name).casefold()
-        if folded in portable_names:
-            raise EvidencePackageError("duplicate_member", f"资料包包含跨平台冲突文件：{name}")
-        portable_names.add(folded)
-        source = Path(raw_source).expanduser().resolve()
-        if not source.is_file() or source.is_symlink():
-            raise EvidencePackageError("missing_source", f"待打包文件不存在或不安全：{name}")
-        digest, size = _sha256_file(source)
-        normalized_payload[name] = source
-        checksums[name] = {"sha256": digest, "size": size}
-    required_payloads = {
-        str(manifest_value["database_path"]),
-        str(manifest_value["rights_path"]),
-        str(manifest_value["provenance_path"]),
-    }
-    if not required_payloads.issubset(normalized_payload):
-        raise EvidencePackageError("missing_payload", "构建资料包需要数据库、权利和来源清单")
-    _validate_rights_document(
-        _read_small_file(
-            normalized_payload[str(manifest_value["rights_path"])],
-            maximum=MAX_METADATA_BYTES,
-            label="权利清单",
-        )
-    )
-    _validate_provenance_document(
-        _read_small_file(
-            normalized_payload[str(manifest_value["provenance_path"])],
-            maximum=MAX_METADATA_BYTES,
-            label="来源清单",
-        )
-    )
-    manifest_bytes = _canonical_json_bytes(manifest_value)
-    checksums_document = {"algorithm": "sha256", "files": checksums}
-    checksums_bytes = _canonical_json_bytes(checksums_document)
-    signed = SIGNATURE_DOMAIN + manifest_bytes + b"\0" + checksums_bytes
-    signature_document = {
-        "algorithm": "ed25519",
-        "key_id": normalized_key_id,
-        "signature": base64.b64encode(signing_key.sign(signed)).decode("ascii"),
-    }
-    output.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{output.name}.", dir=output.parent)
-    os.close(descriptor)
-    temporary = Path(temporary_name)
     try:
+        for index, (raw_name, raw_source) in enumerate(payload_files.items()):
+            name = _safe_member_name(str(raw_name))
+            if name in CONTROL_FILES or name == "install.json":
+                raise EvidencePackageError(
+                    "reserved_member", f"资料包 payload 使用了保留名称：{name}"
+                )
+            folded = unicodedata.normalize("NFC", name).casefold()
+            if folded in portable_names:
+                raise EvidencePackageError(
+                    "duplicate_member", f"资料包包含跨平台冲突文件：{name}"
+                )
+            portable_names.add(folded)
+            source = Path(raw_source).expanduser()
+            source_fd = -1
+            destination_fd = -1
+            snapshot = snapshot_root / f"payload-{index:06d}"
+            digest = hashlib.sha256()
+            copied = 0
+            try:
+                flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                source_fd = os.open(source, flags)
+                source_stat = os.fstat(source_fd)
+                if not stat.S_ISREG(source_stat.st_mode):
+                    raise EvidencePackageError(
+                        "missing_source", f"待打包文件不存在或不安全：{name}"
+                    )
+                destination_fd = os.open(
+                    snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+                )
+                while True:
+                    chunk = os.read(source_fd, 1024 * 1024)
+                    if not chunk:
+                        break
+                    copied += len(chunk)
+                    digest.update(chunk)
+                    view = memoryview(chunk)
+                    while view:
+                        written = os.write(destination_fd, view)
+                        view = view[written:]
+                if copied != source_stat.st_size:
+                    raise EvidencePackageError(
+                        "source_changed", f"待打包文件复制过程中发生变化：{name}"
+                    )
+                os.fsync(destination_fd)
+            except EvidencePackageError:
+                raise
+            except OSError as exc:
+                raise EvidencePackageError(
+                    "missing_source", f"无法安全读取待打包文件：{name}"
+                ) from exc
+            finally:
+                if destination_fd >= 0:
+                    os.close(destination_fd)
+                if source_fd >= 0:
+                    os.close(source_fd)
+            normalized_payload[name] = snapshot
+            checksums[name] = {"sha256": digest.hexdigest(), "size": copied}
+
+        required_payloads = {
+            str(manifest_value["database_path"]),
+            str(manifest_value["rights_path"]),
+            str(manifest_value["provenance_path"]),
+        }
+        if not required_payloads.issubset(normalized_payload):
+            raise EvidencePackageError("missing_payload", "构建资料包需要数据库、权利和来源清单")
+        _validate_rights_document(
+            _read_small_file(
+                normalized_payload[str(manifest_value["rights_path"])],
+                maximum=MAX_METADATA_BYTES,
+                label="权利清单",
+            )
+        )
+        _validate_provenance_document(
+            _read_small_file(
+                normalized_payload[str(manifest_value["provenance_path"])],
+                maximum=MAX_METADATA_BYTES,
+                label="来源清单",
+            )
+        )
+        manifest_bytes = _canonical_json_bytes(manifest_value)
+        checksums_document = {"algorithm": "sha256", "files": checksums}
+        checksums_bytes = _canonical_json_bytes(checksums_document)
+        signed = SIGNATURE_DOMAIN + manifest_bytes + b"\0" + checksums_bytes
+        signature_document = {
+            "algorithm": "ed25519",
+            "key_id": normalized_key_id,
+            "signature": base64.b64encode(signing_key.sign(signed)).decode("ascii"),
+        }
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{output.stem}.", suffix=".aresearch", dir=output.parent
+        )
+        os.close(descriptor)
+        temporary = Path(temporary_name)
         with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
             archive.writestr(MANIFEST_NAME, manifest_bytes)
             archive.writestr(CHECKSUMS_NAME, checksums_bytes)
             archive.writestr(SIGNATURE_NAME, _canonical_json_bytes(signature_document))
             for name, source in sorted(normalized_payload.items()):
                 archive.write(source, arcname=name)
+        verify_evidence_package(
+            temporary,
+            trusted_public_keys={normalized_key_id: signing_key.public_key()},
+            expected_evidence_schema=int(manifest_value["evidence_schema"]),
+        )
         os.replace(temporary, output)
+    except EvidencePackageError:
+        raise
     except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
         raise EvidencePackageError("build_failed", "资料包构建失败") from exc
     finally:
-        temporary.unlink(missing_ok=True)
+        if "temporary" in locals():
+            temporary.unlink(missing_ok=True)
+        shutil.rmtree(snapshot_root, ignore_errors=True)
     return output

@@ -1443,6 +1443,7 @@ def audit_portable_repository(
     *,
     expected_package_id: str | None = None,
     expected_version: str | None = None,
+    allowed_extra_paths: Iterable[str] = (),
 ) -> RepositoryAudit:
     raw_root = Path(root).expanduser()
     if raw_root.is_symlink() or not raw_root.is_dir():
@@ -1648,7 +1649,11 @@ def audit_portable_repository(
                 raise PortableRepositoryError("audit_asset", "资产哈希、类型或许可不一致")
             _validate_image_header(asset_path, str(row["media_type"]))
 
-    expected_inventory = {DATABASE_PATH, RIGHTS_PATH, PROVENANCE_PATH, *asset_paths}
+    safe_extra_paths = {_safe_relative_path(str(path)) for path in allowed_extra_paths}
+    required_inventory = {DATABASE_PATH, RIGHTS_PATH, PROVENANCE_PATH, *asset_paths}
+    if safe_extra_paths & required_inventory:
+        raise PortableRepositoryError("audit_tree", "允许的包控制文件与仓库内容冲突")
+    expected_inventory = required_inventory | safe_extra_paths
     if _repository_inventory(repository_root) != expected_inventory:
         raise PortableRepositoryError("audit_tree", "分发仓库包含未登记文件或缺少必需文件")
     return RepositoryAudit(
@@ -1679,13 +1684,35 @@ class OfficialEvidenceRepository:
         *,
         expected_package_id: str | None = None,
         expected_version: str | None = None,
+        allowed_extra_paths: Iterable[str] = (),
     ) -> "OfficialEvidenceRepository":
         audit = audit_portable_repository(
             root,
             expected_package_id=expected_package_id,
             expected_version=expected_version,
+            allowed_extra_paths=allowed_extra_paths,
         )
         return cls(audit.root, audit)
+
+    @classmethod
+    def open_installed_package(
+        cls,
+        root: Path | str,
+        *,
+        expected_package_id: str,
+        expected_version: str,
+    ) -> "OfficialEvidenceRepository":
+        return cls.open(
+            root,
+            expected_package_id=expected_package_id,
+            expected_version=expected_version,
+            allowed_extra_paths={
+                "manifest.json",
+                "checksums.json",
+                "signature.json",
+                "install.json",
+            },
+        )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
