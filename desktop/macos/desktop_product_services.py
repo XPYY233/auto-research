@@ -47,6 +47,11 @@ def create_desktop_product_services(
         data_root=application_data_root / DEFAULT_PERSONAL_LIBRARY_DIRECTORY,
         selection_provider=personal_file_selection_broker,
     )
+    personal_import_api = PersonalImportAPI(
+        personal_import_service,
+        search_service=federated_search_service,
+    )
+    personal_import_api.restore_private_search()
     return DesktopProductServices(
         package_service=package_service,
         package_api=PackageAPI(package_service),
@@ -54,5 +59,5 @@ def create_desktop_product_services(
         federated_search_api=FederatedSearchAPI(federated_search_service),
         personal_file_selection_broker=personal_file_selection_broker,
         personal_import_service=personal_import_service,
-        personal_import_api=PersonalImportAPI(personal_import_service),
+        personal_import_api=personal_import_api,
     )

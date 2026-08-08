@@ -78,6 +78,31 @@ class _Service:
         self.calls.append(("confirm", import_id, expected_revision))
         return _Result("indexable")
 
+    def private_search_snapshot(self):
+        self.calls.append(("private_search_snapshot",))
+        return SimpleNamespace(
+            source_id="private-lab",
+            content_fingerprint="f" * 64,
+            document_count=2,
+        )
+
+
+class _SearchService:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[tuple[object, ...]] = []
+
+    def refresh_private_source(
+        self,
+        source: object,
+        *,
+        source_id: str,
+        fingerprint: str,
+    ) -> None:
+        self.calls.append(("refresh", source, source_id, fingerprint))
+        if self.fail:
+            raise RuntimeError("/private/hidden/personal_experiments.sqlite")
+
 
 class PersonalImportAPITests(unittest.TestCase):
     def setUp(self) -> None:
@@ -119,6 +144,168 @@ class PersonalImportAPITests(unittest.TestCase):
             ],
         )
         self.assertTrue(confirm.responses[0][0]["indexable"])
+
+    def test_confirm_refreshes_immutable_private_search_snapshot(self) -> None:
+        search_service = _SearchService()
+        api = PersonalImportAPI(  # type: ignore[arg-type]
+            self.service,
+            search_service=search_service,
+        )
+        confirm = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/confirm",
+            {"expected_revision": 2},
+        )
+
+        self.assertTrue(api.handle_post(confirm))
+
+        self.assertEqual(
+            [call[0] for call in self.service.calls],
+            ["confirm", "private_search_snapshot"],
+        )
+        self.assertEqual(len(search_service.calls), 1)
+        _, snapshot, source_id, fingerprint = search_service.calls[0]
+        self.assertEqual(source_id, snapshot.source_id)
+        self.assertEqual(fingerprint, snapshot.content_fingerprint)
+        self.assertEqual(confirm.responses[0][1], HTTPStatus.OK)
+        self.assertTrue(confirm.responses[0][0]["indexable"])
+        self.assertEqual(
+            api.search_status(),
+            {
+                "schema_version": "personal-search-readiness-v1",
+                "state": "ready",
+                "ready": True,
+                "document_count": 2,
+                "active_fingerprint": "f" * 64,
+            },
+        )
+
+    def test_refresh_failure_keeps_confirmed_data_and_returns_fixed_error(self) -> None:
+        search_service = _SearchService(fail=True)
+        api = PersonalImportAPI(  # type: ignore[arg-type]
+            self.service,
+            search_service=search_service,
+        )
+        confirm = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/confirm",
+            {"expected_revision": 2},
+        )
+
+        self.assertTrue(api.handle_post(confirm))
+
+        self.assertEqual(
+            [call[0] for call in self.service.calls],
+            ["confirm", "private_search_snapshot"],
+        )
+        payload, status = confirm.responses[0]
+        self.assertEqual(status, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(payload["code"], "personal_search_refresh_failed")
+        self.assertEqual(payload["message"], "数据已保存，搜索刷新待重试。")
+        self.assertTrue(payload["retryable"])
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("hidden", serialized)
+        self.assertNotIn("path", serialized.casefold())
+        search_status = api.search_status()
+        self.assertEqual(search_status["state"], "retry_required")
+        self.assertFalse(search_status["ready"])
+        self.assertEqual(
+            search_status["error"]["code"],
+            "personal_search_refresh_failed",
+        )
+
+        status_handler = _Handler("/api/desktop/personal-imports/search-status")
+        self.assertTrue(api.handle_get(status_handler))
+        self.assertEqual(status_handler.responses[0][0], search_status)
+
+    def test_startup_restore_failure_is_observable_without_escaping(self) -> None:
+        class _SnapshotFailure(_Service):
+            def private_search_snapshot(self):
+                raise RuntimeError("/private/hidden/personal_experiments.sqlite")
+
+        api = PersonalImportAPI(  # type: ignore[arg-type]
+            _SnapshotFailure(),
+            search_service=_SearchService(),
+        )
+
+        status = api.restore_private_search()
+
+        self.assertEqual(status["state"], "retry_required")
+        self.assertEqual(status["error"]["code"], "personal_search_refresh_failed")
+        serialized = json.dumps(status, ensure_ascii=False)
+        self.assertNotIn("hidden", serialized)
+        self.assertNotIn("path", serialized.casefold())
+
+    def test_refresh_failure_preserves_previous_ready_source_as_stale(self) -> None:
+        search_service = _SearchService()
+        api = PersonalImportAPI(  # type: ignore[arg-type]
+            self.service,
+            search_service=search_service,
+        )
+        first = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/confirm",
+            {"expected_revision": 2},
+        )
+        self.assertTrue(api.handle_post(first))
+        search_service.fail = True
+        second = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/confirm",
+            {"expected_revision": 3},
+        )
+
+        self.assertTrue(api.handle_post(second))
+
+        payload, response_status = second.responses[0]
+        self.assertEqual(response_status, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(payload["code"], "personal_search_refresh_failed")
+        status = api.search_status()
+        self.assertEqual(status["state"], "stale")
+        self.assertTrue(status["ready"])
+        self.assertEqual(status["document_count"], 2)
+        self.assertEqual(status["active_fingerprint"], "f" * 64)
+        self.assertEqual(status["error"]["code"], "personal_search_refresh_failed")
+
+    def test_search_refresh_route_recovers_without_repeating_confirmation(self) -> None:
+        search_service = _SearchService(fail=True)
+        api = PersonalImportAPI(  # type: ignore[arg-type]
+            self.service,
+            search_service=search_service,
+        )
+        confirm = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/confirm",
+            {"expected_revision": 2},
+        )
+        self.assertTrue(api.handle_post(confirm))
+        self.assertEqual(api.search_status()["state"], "retry_required")
+        search_service.fail = False
+        retry = _Handler("/api/desktop/personal-imports/search-refresh", {})
+
+        self.assertTrue(api.handle_post(retry))
+
+        payload, status = retry.responses[0]
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertEqual(payload["state"], "ready")
+        self.assertTrue(payload["ready"])
+        self.assertEqual(payload["active_fingerprint"], "f" * 64)
+        self.assertEqual(
+            [call[0] for call in self.service.calls].count("confirm"),
+            1,
+        )
+        self.assertEqual(
+            [call[0] for call in self.service.calls].count(
+                "private_search_snapshot"
+            ),
+            2,
+        )
+
+        invalid = _Handler(
+            "/api/desktop/personal-imports/search-refresh",
+            {"path": "/private/hidden.sqlite"},
+        )
+        self.assertTrue(api.handle_post(invalid))
+        self.assertEqual(invalid.responses[0][1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(
+            invalid.responses[0][0]["code"],
+            "personal_request_invalid",
+        )
 
     def test_path_injection_extra_fields_and_invalid_json_are_rejected(self) -> None:
         native_path = "/private/secret/experiment.csv"
@@ -162,10 +349,13 @@ class PersonalImportAPITests(unittest.TestCase):
 
     def test_unknown_and_query_routes_fall_through(self) -> None:
         self.assertFalse(self.api.handle_get(_Handler("/api/desktop/unknown")))
+        query = _Handler("/api/desktop/personal-imports/preview?unsafe=1", {})
+        self.assertTrue(self.api.handle_post(query))
+        payload, status = query.responses[0]
+        self.assertEqual(status, HTTPStatus.BAD_REQUEST)
+        self.assertEqual(payload["code"], "personal_request_invalid")
         self.assertFalse(
-            self.api.handle_post(
-                _Handler("/api/desktop/personal-imports/preview?unsafe=1", {})
-            )
+            self.api.handle_post(_Handler("/api/desktop/unknown?unsafe=1", {}))
         )
 
 

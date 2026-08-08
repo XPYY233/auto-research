@@ -285,6 +285,7 @@ def _run_smoke_test(project_root: Path) -> int:
             package_service=product_services.package_service,
             package_api=product_services.package_api,
             federated_search_api=product_services.federated_search_api,
+            personal_import_api=product_services.personal_import_api,
         )
         configure_imported_module_paths(project_root)
         port = int(server.server_address[1])
@@ -352,7 +353,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     from auto_research.evidence.db import EvidenceDB
     from desktop_product_services import create_desktop_product_services
     from desktop_server import create_desktop_server, new_session_token
-    from native_package_bridge import NativePackageBridge
+    from native_desktop_bridge import NativeDesktopBridge
     from package_import_service import DEFAULT_PACKAGE_DATA_ROOT
     import webview
 
@@ -378,7 +379,10 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             data_root=DEFAULT_PACKAGE_DATA_ROOT,
             current_app_version=DESKTOP_VERSION,
         )
-        native_package_bridge = NativePackageBridge(product_services.package_service.broker)
+        native_desktop_bridge = NativeDesktopBridge(
+            product_services.package_service.broker,
+            product_services.personal_file_selection_broker,
+        )
         server, _ = create_desktop_server(
             database,
             host=host,
@@ -390,6 +394,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             package_service=product_services.package_service,
             package_api=product_services.package_api,
             federated_search_api=product_services.federated_search_api,
+            personal_import_api=product_services.personal_import_api,
         )
         configure_imported_module_paths(project_root)
     except BaseException as exc:
@@ -419,13 +424,13 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     window = webview.create_window(
         APP_NAME,
         url=f"{url}/?desktop_token={token}",
-        js_api=native_package_bridge,
+        js_api=native_desktop_bridge,
         width=1440,
         height=920,
         min_size=(1040, 700),
         background_color="#f4f1e9",
     )
-    native_package_bridge.bind_window(window)
+    native_desktop_bridge.bind_window(window)
     window.events.loaded += lambda: window.evaluate_js(
         "window.history.replaceState({}, document.title, '/');"
     )

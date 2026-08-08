@@ -30,6 +30,7 @@ from first_use_state import (
 from federated_search_api import FederatedSearchAPI
 from package_api import PackageAPI
 from package_import_service import PackageImportService, PackageImportServiceError
+from personal_import_api import PersonalImportAPI
 
 
 COOKIE_NAME = "auto_research_desktop_session"
@@ -112,6 +113,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     package_service: PackageImportService | None = None
     package_api: PackageAPI | None = None
     federated_search_api: FederatedSearchAPI | None = None
+    personal_import_api: PersonalImportAPI | None = None
     _issue_desktop_cookie: bool = False
     _issue_csrf_header: bool = False
 
@@ -410,6 +412,11 @@ class DesktopEvidenceHandler(EvidenceHandler):
             and self.federated_search_api.handle_get(self)
         ):
             return
+        if (
+            self.personal_import_api is not None
+            and self.personal_import_api.handle_get(self)
+        ):
+            return
         if parsed.path == "/api/ui-mode":
             self._issue_csrf_header = True
         return super().do_GET()
@@ -424,6 +431,19 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._save_credential()
         if self.package_api is not None and self.package_api.handle_post(self):
             return
+        if (
+            self.personal_import_api is not None
+            and self.personal_import_api.is_post_route(path)
+        ):
+            if self.read_only:
+                return self.json_response(
+                    {
+                        "error": "当前为只读模式，不允许导入或确认个人实验数据。",
+                        "code": "read_only",
+                    },
+                    HTTPStatus.FORBIDDEN,
+                )
+            return self.personal_import_api.handle_post(self)
         high_cost = path in HIGH_COST_PATHS
         if high_cost and not self.security_state.acquire_high_cost():
             return self.json_response(
@@ -463,6 +483,7 @@ def create_desktop_server(
     package_service: PackageImportService | None = None,
     package_api: PackageAPI | None = None,
     federated_search_api: FederatedSearchAPI | None = None,
+    personal_import_api: PersonalImportAPI | None = None,
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
     host = require_loopback_host(host)
     if host != "127.0.0.1":
@@ -490,6 +511,7 @@ def create_desktop_server(
             "package_service": package_service,
             "package_api": package_api,
             "federated_search_api": federated_search_api,
+            "personal_import_api": personal_import_api,
         },
     )
     server = ThreadingHTTPServer((host, port), handler)

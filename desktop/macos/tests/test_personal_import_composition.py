@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 DESKTOP_ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,10 @@ from desktop_product_services import create_desktop_product_services  # noqa: E4
 
 
 class _PrivateSource:
+    source_id = "private-lab"
+    content_fingerprint = "f" * 64
+    document_count = 1
+
     def iter_search_documents(self):
         yield {
             "schema_version": "evidence-search-document-v1",
@@ -29,7 +34,7 @@ class _PrivateSource:
 
 
 class PersonalImportCompositionTests(unittest.TestCase):
-    def test_composition_uses_separate_lazy_private_library(self) -> None:
+    def test_composition_uses_separate_private_library_and_wires_refresh(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             data_root = Path(temporary) / "Application Support"
             services = create_desktop_product_services(
@@ -46,7 +51,74 @@ class PersonalImportCompositionTests(unittest.TestCase):
                 services.personal_import_service.selection_provider,
                 services.personal_file_selection_broker,
             )
-            self.assertFalse(expected.exists())
+            self.assertIs(
+                services.personal_import_api.search_service,
+                services.federated_search_service,
+            )
+            self.assertTrue(expected.exists())
+            self.assertFalse(
+                services.federated_search_service.status()["private_ready"]
+            )
+
+    def test_startup_restores_nonempty_private_search_snapshot(self) -> None:
+        snapshot = _PrivateSource()
+
+        class _PersonalService:
+            def __init__(self, *, data_root, selection_provider) -> None:
+                self.data_root = Path(data_root).absolute()
+                self.selection_provider = selection_provider
+
+            def private_search_snapshot(self):
+                return snapshot
+
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "desktop_product_services.PersonalImportService",
+            _PersonalService,
+        ):
+            services = create_desktop_product_services(
+                data_root=Path(temporary) / "Application Support",
+                current_app_version="0.4.0-preview.1",
+            )
+
+        status = services.federated_search_service.status()
+        self.assertTrue(status["private_ready"])
+        self.assertEqual(status["private_source"]["source_id"], snapshot.source_id)
+        self.assertEqual(
+            status["private_source"]["fingerprint"],
+            snapshot.content_fingerprint,
+        )
+        self.assertEqual(
+            services.federated_search_service.search(query="硬度")["total"],
+            1,
+        )
+
+    def test_startup_private_restore_failure_keeps_composition_available(self) -> None:
+        class _FailingPersonalService:
+            def __init__(self, *, data_root, selection_provider) -> None:
+                self.data_root = Path(data_root).absolute()
+                self.selection_provider = selection_provider
+
+            def private_search_snapshot(self):
+                raise RuntimeError("/private/hidden/personal_experiments.sqlite")
+
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "desktop_product_services.PersonalImportService",
+            _FailingPersonalService,
+        ):
+            services = create_desktop_product_services(
+                data_root=Path(temporary) / "Application Support",
+                current_app_version="0.4.0-preview.1",
+            )
+
+        personal_status = services.personal_import_api.search_status()
+        self.assertEqual(personal_status["state"], "retry_required")
+        self.assertEqual(
+            personal_status["error"]["code"],
+            "personal_search_refresh_failed",
+        )
+        self.assertFalse(
+            services.federated_search_service.status()["private_ready"]
+        )
 
     def test_package_reset_clears_only_official_search_source(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

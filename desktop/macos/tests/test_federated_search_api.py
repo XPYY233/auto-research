@@ -214,6 +214,7 @@ class DesktopFederatedSearchTests(unittest.TestCase):
         )
 
     def test_failed_private_refresh_preserves_previous_fingerprint(self) -> None:
+        self.service.install_official_repository(_active(), _Repository())
         self.service.refresh_private_source(
             _PrivateSource(),
             source_id="private-lab",
@@ -234,7 +235,10 @@ class DesktopFederatedSearchTests(unittest.TestCase):
             self.service.status()["private_source"]["fingerprint"],
             "revision:private-1",
         )
-        self.assertEqual(self.service.search(query="")["total"], 2)
+        status = self.service.status()
+        self.assertTrue(status["official_ready"])
+        self.assertEqual(status["official_source"]["fingerprint"], "a" * 64)
+        self.assertEqual(self.service.search(query="", page_size=10)["total"], 4)
 
     def test_search_route_supports_browse_paging_and_repeated_filters(self) -> None:
         self.service.install_official_repository(_active(), _Repository())
