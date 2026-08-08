@@ -18,6 +18,12 @@ _ENTITY_ORDER = {"item": 0, "finding": 1, "table": 2, "figure": 3}
 _WORD_RE = re.compile(r"[^\W_]+(?:[.\-^×][^\W_]+)*", re.UNICODE)
 _ASCII_TOKEN_RE = re.compile(r"[a-z0-9]+")
 _WINDOWS_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
+_PRIVATE_POSIX_PATH_RE = re.compile(
+    r"^/(?:users|home|private|tmp|var|etc|usr|root|srv|mnt|media|applications|library|system)(?:/|$)",
+    re.IGNORECASE,
+)
+_LOCAL_URI_RE = re.compile(r"^(?:file|sqlite):(?:/{1,3}|\\{1,2})", re.IGNORECASE)
+_PUBLIC_ID_KEYS = frozenset({"source_id"})
 _FORBIDDEN_KEYS = frozenset(
     {
         "data_root",
@@ -39,6 +45,12 @@ _FORBIDDEN_KEYS = frozenset(
         "series_id",
         "attachment_id",
         "note_id",
+        "file_id",
+        "source_file_id",
+        "project_id",
+        "sample_id",
+        "draft_id",
+        "import_id",
         "rowid",
     }
 )
@@ -243,7 +255,12 @@ def _validate_public_value(value: Any, *, depth: int) -> None:
             if not isinstance(raw_key, str):
                 raise ValueError("public evidence document keys must be strings")
             key = str(raw_key).strip().casefold()
-            if not key or key in _FORBIDDEN_KEYS or key.endswith("_path"):
+            if (
+                not key
+                or key in _FORBIDDEN_KEYS
+                or key.endswith("_path")
+                or (key.endswith("_id") and key not in _PUBLIC_ID_KEYS)
+            ):
                 raise ValueError("public evidence document contains a private field")
             _validate_public_value(item, depth=depth + 1)
         return
@@ -262,7 +279,9 @@ def _validate_public_value(value: Any, *, depth: int) -> None:
         raise ValueError("public evidence field is too long")
     lowered = text.strip().casefold()
     if (
-        lowered.startswith(("file://", "sqlite://", "/users/", "/home/"))
+        _PRIVATE_POSIX_PATH_RE.match(lowered)
+        or _LOCAL_URI_RE.match(lowered)
+        or lowered.startswith(("~/", "~\\", "//", "\\\\"))
         or _WINDOWS_PATH_RE.match(text.strip())
     ):
         raise ValueError("public evidence document contains a local path")

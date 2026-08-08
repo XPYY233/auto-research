@@ -60,7 +60,7 @@
 
 ### 私人只读搜索源
 
-`PrivateRepositorySearchSource` 只调用私人仓库的无路径确认投影，不直接打开官方仓库，也不使用 SQLite `ATTACH`。它实现平台中立的 `EvidenceSearchSource` Protocol，输出严格的 `EvidenceSearchDocument` DTO；后续联合召回层可以让官方与私人来源实现同一 Protocol，而不要求两者共享数据库或内部主键。
+`PrivateRepositorySearchSource` 只调用私人仓库的无路径确认投影，不直接打开官方仓库，也不使用 SQLite `ATTACH`。仓库内部的批次聚合投影使用 `record_type=experiment_run`，它不是可公开检索 DTO。适配器将其转换为平台中立的 `EvidenceSearchDocument`，再交给联合召回层；官方与私人来源因此可以实现同一只读 Protocol，而不要求两者共享数据库或内部主键。
 
 私人实验对象继续复用既有四类展示模型：
 
@@ -79,12 +79,12 @@
 
 用户始终使用同一个入口，并可选择“文献数据库 / 我的实验 / 两者一起”。已知样品号、批次号、文件名或明确关键词时走精确搜索；比较、解释、趋势总结等问题交给图书管理员。自动判断只是默认值，用户可以手动切换。
 
-个人实验搜索文档使用 `source_domain=personal`、`source_scope=private` 和稳定 `entity_uid`。个人记录使用 `record_type`，不冒充文献的 `item/table/figure/finding`，也不写入论文六列事实表。未来“文献 + 我的实验”的回答必须分别标明来源，禁止把用户测量值误写成论文结论。
+个人实验的公开搜索投影统一使用 `item/table/figure/finding` 四类 `entity_type`，并携带 `source_scope=private`、稳定 `source_id` 和不可反推内部主键的 `entity_uid`。`record_type=experiment_run` 只属于私人仓库内部聚合契约，不会成为第五类搜索结果，私人数据也不写入论文六列事实表。“文献 + 我的实验”的回答必须分别标明来源，禁止把用户测量值误写成论文结论。
 
 ## 当前尚未实现
 
 - 尚未支持旧二进制 `.xls`、宏工作簿、外部链接或需要执行公式才能得到结果的表格；这些输入会安全拒绝，而不是降级猜测。
-- 已提供私人仓库到四类搜索文档的平台中立只读适配器，但尚未接入联合召回、统一搜索 API 和 App。
+- 已提供私人仓库到四类搜索文档的平台中立只读适配器，也已实现官方+私人联合召回与原子生命周期核心；统一搜索 API 和 App 界面仍在独立接线中。
 - 尚未提供仪器原始格式导入、多人协作或云同步；单机草稿已能检测版本冲突，但尚未接入 App 的冲突解决界面。
 - 尚未从用户趋势图数字化曲线；如果以后增加，必须是单独确认和审核的流程。
 - 尚未接入 App 界面。macOS 和 Windows 桌面任务只需消费平台中立契约，不在各自客户端复制科学逻辑。

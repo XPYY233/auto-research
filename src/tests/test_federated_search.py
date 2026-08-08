@@ -277,6 +277,73 @@ class FederatedEvidenceSearchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             FederatedEvidenceSearch((MappingSource((fifth,)),))
 
+    def test_public_projection_rejects_local_paths_and_storage_uris(self) -> None:
+        unsafe_values = (
+            "/private/var/data.db",
+            "/tmp/import.csv",
+            "/var/folders/cache",
+            "/etc/passwd",
+            "/usr/local/bin/tool",
+            "/root/private.db",
+            "/srv/evidence",
+            "/mnt/share",
+            "/media/usb/data.xlsx",
+            "/Applications/Auto Research.app",
+            "/Library/Application Support/Auto Research",
+            "/System/Library/CoreServices",
+            "~/Documents/private.csv",
+            "file:///Users/test/private.csv",
+            "sqlite:///tmp/private.db",
+            r"\\server\share\private.db",
+            "//server/share/private.db",
+            r"C:\Users\test\private.db",
+        )
+        for index, unsafe_value in enumerate(unsafe_values):
+            with self.subTest(unsafe_value=unsafe_value):
+                document = official_document(
+                    "item",
+                    f"unsafe-path-{index}",
+                    title="Unsafe path",
+                    meaning="公开含义",
+                )
+                document["source_excerpt"] = unsafe_value
+                with self.assertRaisesRegex(ValueError, "local path"):
+                    FederatedEvidenceSearch((MappingSource((document,)),))
+
+    def test_public_projection_rejects_internal_ids_but_keeps_stable_identity(self) -> None:
+        forbidden_id_keys = (
+            "file_id",
+            "source_file_id",
+            "project_id",
+            "sample_id",
+            "draft_id",
+            "import_id",
+            "operation_id",
+        )
+        for forbidden_key in forbidden_id_keys:
+            with self.subTest(forbidden_key=forbidden_key):
+                document = official_document(
+                    "item",
+                    f"unsafe-{forbidden_key}",
+                    title="Internal identity",
+                    meaning="公开含义",
+                )
+                document[forbidden_key] = "private-internal-value"
+                with self.assertRaisesRegex(ValueError, "private field"):
+                    FederatedEvidenceSearch((MappingSource((document,)),))
+
+        safe = official_document(
+            "item",
+            "entity_uid-remains-public",
+            title="Stable public identity",
+            meaning="公开含义",
+            source_id="source_id-remains-public",
+        )
+        service = FederatedEvidenceSearch((MappingSource((safe,)),))
+        result = service.search("").hits[0].document
+        self.assertEqual(result["source_id"], "source_id-remains-public")
+        self.assertEqual(result["entity_uid"], "entity_uid-remains-public")
+
     def test_page_and_query_bounds_are_enforced(self) -> None:
         with self.assertRaises(ValueError):
             self.service.search("x", page=0)
