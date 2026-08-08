@@ -293,10 +293,14 @@ class FederatedEvidenceSearchTests(unittest.TestCase):
             "/System/Library/CoreServices",
             "~/Documents/private.csv",
             "file:///Users/test/private.csv",
+            r"file:C:\Users\test\private.csv",
             "sqlite:///tmp/private.db",
+            "sqlite:relative.db",
             r"\\server\share\private.db",
             "//server/share/private.db",
             r"C:\Users\test\private.db",
+            "saved at /Users/name/a.pdf",
+            "db=sqlite:/tmp/a.db",
         )
         for index, unsafe_value in enumerate(unsafe_values):
             with self.subTest(unsafe_value=unsafe_value):
@@ -309,6 +313,16 @@ class FederatedEvidenceSearchTests(unittest.TestCase):
                 document["source_excerpt"] = unsafe_value
                 with self.assertRaisesRegex(ValueError, "local path"):
                     FederatedEvidenceSearch((MappingSource((document,)),))
+
+        public_url = official_document(
+            "item",
+            "public-url-is-not-a-local-path",
+            title="Public source URL",
+            meaning="公开含义",
+        )
+        public_url["source_excerpt"] = "available at https://example.org/evidence"
+        service = FederatedEvidenceSearch((MappingSource((public_url,)),))
+        self.assertEqual(service.document_count, 1)
 
     def test_public_projection_rejects_internal_ids_but_keeps_stable_identity(self) -> None:
         forbidden_id_keys = (

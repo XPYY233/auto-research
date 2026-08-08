@@ -17,12 +17,17 @@ MAX_DOCUMENTS = 100_000
 _ENTITY_ORDER = {"item": 0, "finding": 1, "table": 2, "figure": 3}
 _WORD_RE = re.compile(r"[^\W_]+(?:[.\-^×][^\W_]+)*", re.UNICODE)
 _ASCII_TOKEN_RE = re.compile(r"[a-z0-9]+")
-_WINDOWS_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
-_PRIVATE_POSIX_PATH_RE = re.compile(
-    r"^/(?:users|home|private|tmp|var|etc|usr|root|srv|mnt|media|applications|library|system)(?:/|$)",
+_LOCAL_REFERENCE_RE = re.compile(
+    r"(?:^|[\s\"'=])(?:"
+    r"(?:file|sqlite):"
+    r"|/(?:users|home|private|tmp|var|etc|usr|root|srv|mnt|media|applications|library|system)(?:/|$)"
+    r"|~[\\/]"
+    r"|//"
+    r"|\\\\"
+    r"|[a-z]:[\\/]"
+    r")",
     re.IGNORECASE,
 )
-_LOCAL_URI_RE = re.compile(r"^(?:file|sqlite):(?:/{1,3}|\\{1,2})", re.IGNORECASE)
 _PUBLIC_ID_KEYS = frozenset({"source_id"})
 _FORBIDDEN_KEYS = frozenset(
     {
@@ -277,13 +282,7 @@ def _validate_public_value(value: Any, *, depth: int) -> None:
     text = str(value)
     if len(text) > 50_000:
         raise ValueError("public evidence field is too long")
-    lowered = text.strip().casefold()
-    if (
-        _PRIVATE_POSIX_PATH_RE.match(lowered)
-        or _LOCAL_URI_RE.match(lowered)
-        or lowered.startswith(("~/", "~\\", "//", "\\\\"))
-        or _WINDOWS_PATH_RE.match(text.strip())
-    ):
+    if _LOCAL_REFERENCE_RE.search(text.strip()):
         raise ValueError("public evidence document contains a local path")
 
 
