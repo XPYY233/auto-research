@@ -4,10 +4,13 @@ import io
 import json
 import unittest
 from email.message import Message
+from http import HTTPStatus
 from pathlib import Path
 from unittest.mock import patch
 
 from auto_research.evidence.webapp import (
+    LIBRARIAN_TRANSPORT_FAILED_CODE,
+    LIBRARIAN_TRANSPORT_FAILED_MESSAGE,
     MAX_LIBRARIAN_CHAT_REQUEST_BYTES,
     MAX_LIBRARIAN_RESEARCH_STATE_BYTES,
     EvidenceHandler,
@@ -28,6 +31,12 @@ class _Runtime:
     def run(self, question: str, **kwargs):
         self.calls.append((question, kwargs))
         return {"answer": "ok"}
+
+
+class _AllowAllRateLimiter:
+    @staticmethod
+    def allow(_client_key: str) -> bool:
+        return True
 
 
 class LibrarianV3WebAPITests(unittest.TestCase):
@@ -159,6 +168,43 @@ class LibrarianV3WebAPITests(unittest.TestCase):
             oversized.read_librarian_json()
         self.assertEqual(too_large.exception.code, "librarian_request_too_large")
 
+    def test_route_redacts_unexpected_runtime_canary_from_transport_response(self) -> None:
+        canary = (
+            "provider failure /Users/private/library.sqlite "
+            "api-token=sk-sensitive-canary parser-detail"
+        )
+        handler = EvidenceHandler.__new__(EvidenceHandler)
+        handler.path = "/api/agents/librarian/chat"
+        handler.read_only = False
+        handler.client_address = ("127.0.0.1", 49152)
+        handler.agent_rate_limiter = _AllowAllRateLimiter()
+        handler.db = object()  # type: ignore[assignment]
+        handler.read_librarian_json = lambda: {"question": "钨的缺陷", "history": []}
+        responses: list[tuple[dict, HTTPStatus]] = []
+        handler.json_response = lambda payload, status=HTTPStatus.OK: responses.append(
+            (payload, status)
+        )
+
+        with patch(
+            "auto_research.evidence.webapp.execute_librarian_chat_request",
+            side_effect=RuntimeError(canary),
+        ):
+            handler.do_POST()
+
+        self.assertEqual(
+            responses,
+            [
+                (
+                    {
+                        "error": LIBRARIAN_TRANSPORT_FAILED_MESSAGE,
+                        "code": LIBRARIAN_TRANSPORT_FAILED_CODE,
+                    },
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+            ],
+        )
+        self.assertNotIn(canary, json.dumps(responses, ensure_ascii=False, default=str))
+
 
 class LibrarianV3WebUIContractTests(unittest.TestCase):
     @classmethod
@@ -211,6 +257,23 @@ class LibrarianV3WebUIContractTests(unittest.TestCase):
         self.assertIn("JSON.stringify(librarianResearchRequest(question, history))", submit)
         self.assertNotIn("paper_ids", submit)
         self.assertNotIn("console.log", submit)
+
+    def test_transport_canary_cannot_enter_librarian_history_meta_or_toast(self) -> None:
+        submit = self.app_js[
+            self.app_js.index("async function submitLibrarian"):
+            self.app_js.index("function getLatestLibrarianBriefSnapshot")
+        ]
+        catch = submit[submit.index("} catch (error) {"):]
+        self.assertNotIn("error.message", catch)
+        self.assertIn("content: librarianTransportFailureMessage", catch)
+        self.assertIn("error: true", catch)
+        self.assertIn("safe_failure_code: failureCode", catch)
+        self.assertIn(
+            "toast('图书管理员暂时无法完成本次请求，请稍后重试。', true)",
+            catch,
+        )
+        self.assertIn("function librarianTransportFailureCode(error)", self.app_js)
+        self.assertIn("'librarian_transport_failed'", self.app_js)
 
 
 if __name__ == "__main__":

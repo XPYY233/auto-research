@@ -5,6 +5,11 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Iterator, Literal, Mapping, Protocol, runtime_checkable
 
+from auto_research.evidence.federated_search import (
+    validate_public_evidence_document,
+    validate_public_source_id,
+)
+
 from .private_repository import PrivateExperimentRepository
 
 
@@ -12,6 +17,7 @@ EvidenceEntityType = Literal["item", "finding", "table", "figure"]
 EvidenceSourceScope = Literal["private", "official"]
 ENTITY_TYPES = frozenset({"item", "finding", "table", "figure"})
 SOURCE_SCOPES = frozenset({"private", "official"})
+PRIVATE_SEARCH_SNAPSHOT_SCHEMA_VERSION = "private-search-snapshot-v1"
 
 
 def _required_text(value: Any, field_name: str, *, limit: int = 4_000) -> str:
@@ -179,15 +185,22 @@ class PrivateSearchSnapshot:
     content_fingerprint: str = field(init=False)
 
     def __post_init__(self) -> None:
-        source_id = _required_text(self.source_id, "source_id")
+        source_id = validate_public_source_id(self.source_id)
         documents = tuple(self.documents)
+        canonical_documents: list[dict[str, Any]] = []
+        entity_uids: set[str] = set()
         for document in documents:
             if not isinstance(document, EvidenceSearchDocument):
                 raise TypeError("private search snapshot documents must use EvidenceSearchDocument")
             if document.source_scope != "private" or document.source_id != source_id:
                 raise ValueError("private search snapshot identity mismatch")
-        canonical_documents = sorted(
-            (document.as_dict() for document in documents),
+            public_document = validate_public_evidence_document(document)
+            entity_uid = str(public_document["entity_uid"])
+            if entity_uid in entity_uids:
+                raise ValueError("private search snapshot contains duplicate evidence identity")
+            entity_uids.add(entity_uid)
+            canonical_documents.append(public_document)
+        canonical_documents.sort(
             key=lambda value: (
                 str(value["source_scope"]),
                 str(value["source_id"]),
@@ -195,8 +208,14 @@ class PrivateSearchSnapshot:
                 str(value["entity_uid"]),
             ),
         )
+        canonical_envelope = {
+            "schema_version": PRIVATE_SEARCH_SNAPSHOT_SCHEMA_VERSION,
+            "source_scope": "private",
+            "source_id": source_id,
+            "documents": canonical_documents,
+        }
         canonical_json = json.dumps(
-            canonical_documents,
+            canonical_envelope,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -222,7 +241,7 @@ class PrivateSearchSnapshot:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": "private-search-snapshot-v1",
+            "schema_version": PRIVATE_SEARCH_SNAPSHOT_SCHEMA_VERSION,
             "source_scope": self.source_scope,
             "source_id": self.source_id,
             "document_count": self.document_count,

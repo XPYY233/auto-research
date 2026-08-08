@@ -133,7 +133,7 @@ class FederatedEvidenceSearch:
             for raw_document in iterator():
                 if len(indexed) >= MAX_DOCUMENTS:
                     raise ValueError("federated source document limit exceeded")
-                document = _public_document(raw_document)
+                document = validate_public_evidence_document(raw_document)
                 identity = _identity(document)
                 if identity in identities:
                     raise ValueError("duplicate federated evidence identity")
@@ -234,7 +234,9 @@ class FederatedEvidenceSearch:
         return copy.deepcopy(dict(item.document))
 
 
-def _public_document(raw_document: Any) -> dict[str, Any]:
+def validate_public_evidence_document(raw_document: Any) -> dict[str, Any]:
+    """Return one defensive public DTO or fail without echoing rejected data."""
+
     if isinstance(raw_document, Mapping):
         document = copy.deepcopy(dict(raw_document))
     else:
@@ -248,6 +250,14 @@ def _public_document(raw_document: Any) -> dict[str, Any]:
     _validate_public_value(document, depth=0)
     _identity(document)
     return document
+
+
+def validate_public_source_id(value: Any) -> str:
+    """Validate a public source identity with the shared DTO privacy rules."""
+
+    source_id = _required_text(value, "source_id", limit=500)
+    _validate_public_value(source_id, depth=0)
+    return source_id
 
 
 def _validate_public_value(value: Any, *, depth: int) -> None:
@@ -289,7 +299,7 @@ def _validate_public_value(value: Any, *, depth: int) -> None:
 def _identity(document: Mapping[str, Any]) -> tuple[str, str, str]:
     entity_type = _choice(document.get("entity_type"), ENTITY_TYPES, "entity_type")
     source_scope = _choice(document.get("source_scope"), SOURCE_SCOPES, "source_scope")
-    source_id = _required_text(document.get("source_id"), "source_id", limit=500)
+    source_id = validate_public_source_id(document.get("source_id"))
     entity_uid = _required_text(document.get("entity_uid"), "entity_uid", limit=500)
     if (
         entity_type != document.get("entity_type")

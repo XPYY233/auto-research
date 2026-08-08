@@ -111,6 +111,8 @@ LIBRARIAN_CHAT_FIELDS = frozenset({
     "state_token",
 })
 _LIBRARIAN_CONVERSATION_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+LIBRARIAN_TRANSPORT_FAILED_CODE = "librarian_transport_failed"
+LIBRARIAN_TRANSPORT_FAILED_MESSAGE = "图书管理员暂时无法完成本次请求，请稍后重试。"
 
 
 class LibrarianChatRequestError(ValueError):
@@ -744,6 +746,8 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 },
                 HTTPStatus.FORBIDDEN,
             )
+        if parsed.path == "/api/agents/librarian/chat":
+            return self._handle_librarian_chat()
         try:
             if parsed.path == "/api/uploads/pdf":
                 params = parse_qs(parsed.query)
@@ -760,13 +764,7 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 )
                 status = HTTPStatus.CREATED if result["outcome"] == "accepted" else HTTPStatus.OK
                 return self.json_response(result, status)
-            if parsed.path == "/api/agents/librarian/chat":
-                try:
-                    body = self.read_librarian_json()
-                except LibrarianChatRequestError as exc:
-                    return self.json_response(exc.public_dict(), HTTPStatus.BAD_REQUEST)
-            else:
-                body = self.read_json()
+            body = self.read_json()
             if parsed.path == "/api/context-chat":
                 return self.json_response(answer_context_chat(
                     self.db,
@@ -775,43 +773,6 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                     question=str(body.get("question") or ""),
                     history=body.get("history") or [],
                 ))
-            if parsed.path == "/api/agents/librarian/chat":
-                client_key = str(self.client_address[0] if self.client_address else "local")
-                if not self.agent_rate_limiter.allow(client_key):
-                    return self.json_response(
-                        {"error": "请求较频繁，请稍后再试", "code": "rate_limited"},
-                        HTTPStatus.TOO_MANY_REQUESTS,
-                    )
-                try:
-                    result = execute_librarian_chat_request(self.db, body)
-                except LibrarianChatRequestError as exc:
-                    return self.json_response(exc.public_dict(), HTTPStatus.BAD_REQUEST)
-                snapshot = research_brief_snapshot_from_result(
-                    str(body.get("question") or ""),
-                    result,
-                )
-                brief_envelope = {
-                    "snapshot_token": "",
-                    "answered_at": result.get("answered_at") or "",
-                    "evidence_fingerprint": result.get("evidence_version") or "",
-                    "eligible": False,
-                    "ineligible_reason": "",
-                }
-                try:
-                    build_research_brief(
-                        snapshot,
-                        generated_at=result.get("answered_at") or None,
-                    )
-                except ResearchBriefError as exc:
-                    brief_envelope["ineligible_reason"] = str(exc)
-                else:
-                    brief_envelope["eligible"] = True
-                    brief_envelope["snapshot_token"] = sign_research_brief_snapshot(
-                        snapshot,
-                        self.research_brief_signing_key,
-                    )
-                result["research_brief"] = brief_envelope
-                return self.json_response(result)
             if parsed.path == "/api/agents/librarian/research-brief.md":
                 snapshot = body.get("snapshot")
                 try:
@@ -1016,6 +977,53 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 {"error": "服务器内部错误", "code": "internal_server_error"},
                 HTTPStatus.INTERNAL_SERVER_ERROR,
             )
+
+    def _handle_librarian_chat(self) -> None:
+        try:
+            body = self.read_librarian_json()
+            client_key = str(self.client_address[0] if self.client_address else "local")
+            if not self.agent_rate_limiter.allow(client_key):
+                payload = {"error": "请求较频繁，请稍后再试", "code": "rate_limited"}
+                status = HTTPStatus.TOO_MANY_REQUESTS
+            else:
+                result = execute_librarian_chat_request(self.db, body)
+                snapshot = research_brief_snapshot_from_result(
+                    str(body.get("question") or ""),
+                    result,
+                )
+                brief_envelope = {
+                    "snapshot_token": "",
+                    "answered_at": result.get("answered_at") or "",
+                    "evidence_fingerprint": result.get("evidence_version") or "",
+                    "eligible": False,
+                    "ineligible_reason": "",
+                }
+                try:
+                    build_research_brief(
+                        snapshot,
+                        generated_at=result.get("answered_at") or None,
+                    )
+                except ResearchBriefError as exc:
+                    brief_envelope["ineligible_reason"] = str(exc)
+                else:
+                    brief_envelope["eligible"] = True
+                    brief_envelope["snapshot_token"] = sign_research_brief_snapshot(
+                        snapshot,
+                        self.research_brief_signing_key,
+                    )
+                result["research_brief"] = brief_envelope
+                payload = result
+                status = HTTPStatus.OK
+        except LibrarianChatRequestError as exc:
+            payload = exc.public_dict()
+            status = HTTPStatus.BAD_REQUEST
+        except Exception:
+            payload = {
+                "error": LIBRARIAN_TRANSPORT_FAILED_MESSAGE,
+                "code": LIBRARIAN_TRANSPORT_FAILED_CODE,
+            }
+            status = HTTPStatus.INTERNAL_SERVER_ERROR
+        self.json_response(payload, status)
 
     def measurement_query(self, query: str, limit: int = 500) -> list[dict]:
         params = parse_qs(query)

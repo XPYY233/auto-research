@@ -53,7 +53,11 @@ async function api(url, options = {}) {
   const response = await fetch(url, desktopRequestOptions(options));
   captureDesktopCsrf(response);
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || body.message || `请求失败 ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(body.error || body.message || `请求失败 ${response.status}`);
+    error.code = typeof body.code === 'string' ? body.code : '';
+    throw error;
+  }
   return body;
 }
 
@@ -2055,6 +2059,29 @@ function librarianStateFailureCode(result) {
   return /^(research_state_|anchor_resolution_failed$|idempotent_replay_result_unavailable$)/.test(code) ? code : '';
 }
 
+const librarianTransportFailureMessage = '本次检索未完成，请稍后重试。为避免重复使用状态，旧 R# 与 B# 已停止使用。';
+const librarianTransportFailureCodes = new Set([
+  'librarian_request_invalid',
+  'librarian_question_invalid',
+  'librarian_history_invalid',
+  'librarian_conversation_invalid',
+  'librarian_research_state_invalid',
+  'librarian_research_state_too_large',
+  'librarian_state_token_invalid',
+  'librarian_content_type_invalid',
+  'librarian_request_too_large',
+  'librarian_transport_failed',
+  'rate_limited',
+  'desktop_session_required',
+  'desktop_media_type_required',
+  'desktop_csrf_required',
+]);
+
+function librarianTransportFailureCode(error) {
+  const code = String(error?.code || '');
+  return librarianTransportFailureCodes.has(code) ? code : 'librarian_transport_failed';
+}
+
 function librarianSessionTitle(messages) {
   const first = messages.find(message => message.role === 'user')?.content || '新对话';
   return first.length > 34 ? `${first.slice(0, 34)}…` : first;
@@ -2792,19 +2819,20 @@ async function submitLibrarian(event) {
   } catch (error) {
     clearLibrarianBriefAuthorization();
     clearLibrarianResearchContext();
+    const failureCode = librarianTransportFailureCode(error);
     state.librarianMessages.push({
       role: 'assistant',
-      content: `本次检索未完成：${error.message}。为避免重复使用状态，旧 R# 与 B# 已停止使用。`,
+      content: librarianTransportFailureMessage,
       recovery_question: recoveryQuestion,
     });
     state.librarianMeta = {
-      error: error.message,
-      safe_failure_code: 'transport_state_unknown',
+      error: true,
+      safe_failure_code: failureCode,
     };
     state.librarianResults = [];
     setText('librarian-status', '图书管理员暂时不可用；精确检索仍可正常使用');
     renderLibrarianResults([]);
-    toast(error.message, true);
+    toast('图书管理员暂时无法完成本次请求，请稍后重试。', true);
   } finally {
     state.librarianBusy = false;
     document.querySelector('#librarian-send').disabled = false;

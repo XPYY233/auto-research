@@ -7,6 +7,7 @@ import unittest
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
+from auto_research.evidence.federated_search import validate_public_evidence_document
 from auto_research.personal.experiment_contract import (
     ColumnMapping,
     MeasurementSeriesDraft,
@@ -290,6 +291,62 @@ class PrivateExperimentSearchSourceTests(unittest.TestCase):
         self.assertNotEqual(after_confirm.content_fingerprint, first.content_fingerprint)
         self.assertEqual(after_confirm.document_count, 8)
         self.assertEqual(first.document_count, 4)
+
+    def test_empty_snapshot_fingerprint_binds_schema_scope_and_source_identity(self):
+        first = PrivateSearchSnapshot(source_id="private-source-a", documents=())
+        second = PrivateSearchSnapshot(source_id="private-source-b", documents=())
+        envelope = {
+            "schema_version": "private-search-snapshot-v1",
+            "source_scope": "private",
+            "source_id": "private-source-a",
+            "documents": [],
+        }
+        expected = hashlib.sha256(
+            json.dumps(
+                envelope,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+
+        self.assertEqual(first.content_fingerprint, expected)
+        self.assertNotEqual(first.content_fingerprint, second.content_fingerprint)
+
+    def test_snapshot_rejects_duplicate_identity_and_local_path_canary(self):
+        draft, paths = self._draft()
+        self._register_and_save(draft, paths)
+        self._confirm(draft)
+        source = PrivateRepositorySearchSource(self.repo)
+        document = source.snapshot().documents[0]
+
+        with self.assertRaises(ValueError) as duplicate:
+            PrivateSearchSnapshot(
+                source_id=source.source_id,
+                documents=(document, document),
+            )
+        self.assertEqual(
+            str(duplicate.exception),
+            "private search snapshot contains duplicate evidence identity",
+        )
+
+        canary = "/Users/private/library.sqlite api-token=sk-sensitive-canary"
+        unsafe = replace(document, context_text=canary)
+        with self.assertRaises(ValueError) as rejected:
+            PrivateSearchSnapshot(source_id=source.source_id, documents=(unsafe,))
+        self.assertNotIn(canary, str(rejected.exception))
+
+    def test_shared_public_dto_validator_rejects_internal_fields_without_echo(self):
+        draft, paths = self._draft()
+        self._register_and_save(draft, paths)
+        self._confirm(draft)
+        document = PrivateRepositorySearchSource(self.repo).snapshot().documents[0]
+        unsafe = document.as_dict()
+        unsafe["run_id"] = "private-run-canary"
+
+        with self.assertRaises(ValueError) as rejected:
+            validate_public_evidence_document(unsafe)
+        self.assertNotIn("private-run-canary", str(rejected.exception))
 
     def test_confirmed_notes_become_distinct_findings_without_note_ids(self):
         draft, paths = self._draft()
