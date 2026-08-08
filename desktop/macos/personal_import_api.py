@@ -6,7 +6,10 @@ from http import HTTPStatus
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
-from personal_import_service import PersonalImportService, PersonalImportServiceError
+from auto_research.personal.import_service import (
+    PersonalImportService,
+    PersonalImportServiceError,
+)
 
 
 PERSONAL_PREVIEW_PATH = "/api/desktop/personal-imports/preview"

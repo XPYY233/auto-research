@@ -12,6 +12,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from auto_research.personal.import_service import SelectionSnapshotProviderError
+
 
 DEFAULT_SELECTION_TTL_SECONDS = 3_600.0
 DEFAULT_MAX_ACTIVE_SELECTIONS = 16
@@ -25,12 +27,9 @@ class PersonalFileSelectionSource(str, Enum):
     FILE_PICKER = "file_picker"
 
 
-class PersonalFileSelectionError(RuntimeError):
+class PersonalFileSelectionError(SelectionSnapshotProviderError):
     def __init__(self, code: str, message: str, *, retryable: bool) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.retryable = retryable
+        super().__init__(code, message, retryable=retryable)
 
     def public_dict(self) -> dict[str, Any]:
         return {

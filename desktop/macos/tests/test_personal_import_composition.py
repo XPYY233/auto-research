@@ -27,6 +27,10 @@ class PersonalImportCompositionTests(unittest.TestCase):
                 services.personal_import_api.service,
                 services.personal_import_service,
             )
+            self.assertIs(
+                services.personal_import_service.selection_provider,
+                services.personal_file_selection_broker,
+            )
             self.assertFalse(expected.exists())
 
 

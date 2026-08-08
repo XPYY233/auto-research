@@ -1,0 +1,378 @@
+from __future__ import annotations
+
+import copy
+import json
+import tempfile
+import unittest
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+from auto_research.personal.experiment_contract import (
+    ColumnMapping,
+    PersonalSourceFile,
+    TabularImportPreview,
+)
+from auto_research.personal.import_service import (
+    PersonalImportService,
+    PersonalImportServiceError,
+    SelectionSnapshotProviderError,
+)
+from auto_research.personal.private_repository import (
+    PrivateOperationResult,
+    PrivateRepositoryError,
+)
+from auto_research.personal.tabular_preview import TabularFilePreview
+
+
+SELECTION_ID = "personal_selection_0123456789abcdef"
+IMPORT_ID = "personal_import_0123456789abcdef"
+
+
+def _preview_value() -> TabularFilePreview:
+    source = PersonalSourceFile(
+        file_id="personal-file-0123456789abcdef",
+        original_name="experiment.csv",
+        media_type="text/csv",
+        sha256="1" * 64,
+        size_bytes=42,
+    )
+    sheet = TabularImportPreview(
+        source_file=source,
+        sheet_name="Sheet1",
+        row_count=2,
+        columns=(
+            ColumnMapping(
+                source_name="Dose (dpa)",
+                role="condition",
+                data_type="number",
+                unit="dpa",
+                sample_values=("0", "1"),
+            ),
+            ColumnMapping(
+                source_name="Hardness [GPa]",
+                role="dependent",
+                data_type="number",
+                unit="GPa",
+                sample_values=("3.2", "4.0"),
+            ),
+        ),
+    )
+    return TabularFilePreview(
+        source_file=source,
+        detected_format="csv",
+        sheets=(sheet,),
+    )
+
+
+class _MemorySelectionProvider:
+    def __init__(self) -> None:
+        self.revoked: list[str] = []
+        self.error: SelectionSnapshotProviderError | None = None
+
+    @contextmanager
+    def snapshot(self, selection_id: str):
+        if self.error is not None:
+            raise self.error
+        if selection_id != SELECTION_ID:
+            raise SelectionSnapshotProviderError(
+                "personal_selection_invalid",
+                "文件选择无效，请重新选择。",
+                retryable=True,
+            )
+        yield SimpleNamespace(path=Path("/ignored/private/experiment.csv"))
+
+    def revoke(self, selection_id: str) -> None:
+        self.revoked.append(selection_id)
+
+
+class _FileSelectionProvider:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.revoked: list[str] = []
+
+    @contextmanager
+    def snapshot(self, selection_id: str):
+        if selection_id != SELECTION_ID:
+            raise SelectionSnapshotProviderError(
+                "personal_selection_invalid",
+                "文件选择无效，请重新选择。",
+                retryable=True,
+            )
+        yield SimpleNamespace(path=self.path)
+
+    def revoke(self, selection_id: str) -> None:
+        self.revoked.append(selection_id)
+
+
+class _MemoryRepository:
+    repository_id = "private-memory-tests"
+
+    def __init__(self) -> None:
+        self.revision = 0
+        self.fail_save = False
+        self.operations: list[str] = []
+
+    def add_project(self, _project) -> PrivateOperationResult:
+        self.operations.append("project")
+        return PrivateOperationResult("add_project", "project", "project")
+
+    def add_sample(self, _sample) -> PrivateOperationResult:
+        self.operations.append("sample")
+        return PrivateOperationResult("add_sample", "sample", "sample")
+
+    def register_source_file(self, source, _selected) -> PrivateOperationResult:
+        self.operations.append("source")
+        return PrivateOperationResult(
+            "register_source_file",
+            "source_file",
+            source.file_id,
+            import_state="previewed",
+        )
+
+    def save_experiment(
+        self,
+        draft,
+        *,
+        project_id: str,
+        sample_id: str,
+        expected_revision: int | None,
+    ) -> PrivateOperationResult:
+        del project_id, sample_id
+        self.operations.append("save")
+        if self.fail_save:
+            raise PrivateRepositoryError(
+                "PRIVATE_DB_WRITE_FAILED",
+                "暂时无法保存私人实验数据。",
+                details={"operation": "save_experiment"},
+            )
+        if expected_revision is not None and expected_revision != self.revision:
+            raise PrivateRepositoryError(
+                "RUN_REVISION_CONFLICT",
+                "实验草稿已被更新。",
+                details={
+                    "expected_revision": expected_revision,
+                    "actual_revision": self.revision,
+                },
+            )
+        self.revision += 1
+        if draft.confirmation_state == "confirmed":
+            return PrivateOperationResult(
+                "save_experiment",
+                "experiment_run",
+                draft.draft_id,
+                import_state="indexable",
+                confirmation_state="confirmed",
+                indexable=True,
+                revision=self.revision,
+            )
+        return PrivateOperationResult(
+            "save_experiment",
+            "experiment_run",
+            draft.draft_id,
+            import_state="draft_saved",
+            confirmation_state="draft",
+            revision=self.revision,
+        )
+
+    def list_personal_search_documents(self) -> list[dict[str, Any]]:
+        return []
+
+
+class PersonalImportServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.provider = _MemorySelectionProvider()
+        self.repository = _MemoryRepository()
+        self.previewer_calls: list[Path] = []
+
+        def previewer(path: Path, *, limits) -> TabularFilePreview:
+            del limits
+            self.previewer_calls.append(path)
+            return _preview_value()
+
+        self.service = PersonalImportService(
+            data_root=self.root / "private-library",
+            selection_provider=self.provider,
+            repository=self.repository,  # type: ignore[arg-type]
+            previewer=previewer,
+            import_id_factory=lambda: IMPORT_ID,
+        )
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    @staticmethod
+    def _payload(*, confirmed: bool, expected_revision: int | None = None):
+        value: dict[str, Any] = {
+            "sheet_index": 0,
+            "project": {"name": "W-Ta 辐照实验"},
+            "sample": {"name": "W-Ta-01", "material": "W-Ta"},
+            "run": {
+                "name": "纳米压痕批次 1",
+                "method": "纳米压痕",
+                "conditions": {"temperature": "室温"},
+            },
+            "columns": [
+                {
+                    "source_name": "Dose (dpa)",
+                    "role": "independent",
+                    "role_confirmed": confirmed,
+                    "meaning": "辐照剂量",
+                    "meaning_confirmed": confirmed,
+                    "unit": "dpa",
+                    "unit_confirmed": confirmed,
+                },
+                {
+                    "source_name": "Hardness [GPa]",
+                    "role": "dependent",
+                    "role_confirmed": confirmed,
+                    "meaning": "硬度",
+                    "meaning_confirmed": confirmed,
+                    "unit": "GPa",
+                    "unit_confirmed": confirmed,
+                },
+            ],
+            "series": [
+                {
+                    "series_id": "hardness-dose",
+                    "name": "硬度随剂量变化",
+                    "x_column": "Dose (dpa)",
+                    "y_column": "Hardness [GPa]",
+                }
+            ],
+        }
+        if expected_revision is not None:
+            value["expected_revision"] = expected_revision
+        return value
+
+    def test_preview_uses_narrow_provider_and_public_dto_is_path_free(self) -> None:
+        result = self.service.preview(SELECTION_ID)
+        serialized = json.dumps(result.public_dict(), ensure_ascii=False)
+        self.assertEqual(result.status.stage.value, "previewed")
+        self.assertEqual(
+            self.previewer_calls,
+            [Path("/ignored/private/experiment.csv")],
+        )
+        self.assertNotIn("/ignored/private", serialized)
+        self.assertEqual(self.repository.operations, [])
+
+    def test_provider_error_is_translated_without_platform_dependency(self) -> None:
+        self.provider.error = SelectionSnapshotProviderError(
+            "personal_selection_changed",
+            "文件在选择后发生变化，请重新选择。",
+            retryable=True,
+        )
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            self.service.preview(SELECTION_ID)
+        self.assertEqual(raised.exception.code, "personal_selection_changed")
+        self.assertTrue(raised.exception.retryable)
+        self.assertEqual(self.repository.operations, [])
+
+    def test_preview_must_be_saved_before_confirm(self) -> None:
+        self.service.preview(SELECTION_ID)
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            self.service.confirm(IMPORT_ID, expected_revision=1)
+        self.assertEqual(raised.exception.code, "INVALID_IMPORT_TRANSITION")
+        self.assertEqual(self.service.status(IMPORT_ID).stage.value, "previewed")
+
+    def test_explicit_flags_revision_cas_and_confirmed_immutability(self) -> None:
+        self.service.preview(SELECTION_ID)
+        draft = self.service.save_draft(IMPORT_ID, self._payload(confirmed=False))
+        self.assertEqual(draft.stage.value, "draft_saved")
+        self.assertEqual(draft.revision, 1)
+        self.assertFalse(draft.indexable)
+        self.assertEqual(self.provider.revoked, [SELECTION_ID])
+
+        with self.assertRaises(PersonalImportServiceError) as incomplete:
+            self.service.confirm(IMPORT_ID, expected_revision=1)
+        self.assertEqual(incomplete.exception.code, "RUN_CONFIRMATION_INCOMPLETE")
+
+        with self.assertRaises(PersonalImportServiceError) as stale:
+            self.service.save_draft(
+                IMPORT_ID,
+                self._payload(confirmed=True, expected_revision=99),
+            )
+        self.assertEqual(stale.exception.code, "RUN_REVISION_CONFLICT")
+        self.assertEqual(self.repository.revision, 1)
+
+        updated = self.service.save_draft(
+            IMPORT_ID,
+            self._payload(confirmed=True, expected_revision=1),
+        )
+        self.assertEqual(updated.revision, 2)
+        confirmed = self.service.confirm(IMPORT_ID, expected_revision=2)
+        self.assertTrue(confirmed.indexable)
+        self.assertEqual(confirmed.revision, 3)
+
+        with self.assertRaises(PersonalImportServiceError) as immutable:
+            self.service.save_draft(
+                IMPORT_ID,
+                self._payload(confirmed=True, expected_revision=3),
+            )
+        self.assertEqual(immutable.exception.code, "personal_import_already_confirmed")
+
+    def test_concurrent_confirm_only_succeeds_once(self) -> None:
+        self.service.preview(SELECTION_ID)
+        draft = self.service.save_draft(IMPORT_ID, self._payload(confirmed=True))
+
+        def confirm_once() -> str:
+            try:
+                self.service.confirm(IMPORT_ID, expected_revision=draft.revision or 0)
+            except PersonalImportServiceError as exc:
+                return exc.code
+            return "success"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = sorted(executor.map(lambda _item: confirm_once(), range(2)))
+        self.assertEqual(outcomes, ["personal_import_already_confirmed", "success"])
+
+    def test_repository_failure_keeps_session_non_indexable(self) -> None:
+        self.service.preview(SELECTION_ID)
+        self.repository.fail_save = True
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            self.service.save_draft(IMPORT_ID, self._payload(confirmed=True))
+        self.assertEqual(raised.exception.code, "PRIVATE_DB_WRITE_FAILED")
+        status = self.service.status(IMPORT_ID)
+        self.assertEqual(status.stage.value, "previewed")
+        self.assertFalse(status.indexable)
+
+    def test_confirmation_flags_must_be_boolean(self) -> None:
+        self.service.preview(SELECTION_ID)
+        payload = copy.deepcopy(self._payload(confirmed=True))
+        payload["columns"][0]["unit_confirmed"] = "yes"
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            self.service.save_draft(IMPORT_ID, payload)
+        self.assertEqual(raised.exception.code, "personal_confirmation_flag_required")
+        self.assertEqual(self.repository.operations, [])
+
+    def test_shared_service_integrates_bounded_parser_and_private_repository(self) -> None:
+        source = self.root / "experiment.csv"
+        source.write_text(
+            "Dose (dpa),Hardness [GPa]\n0,3.2\n1,4.0\n",
+            encoding="utf-8",
+        )
+        provider = _FileSelectionProvider(source)
+        service = PersonalImportService(
+            data_root=self.root / "real-private-library",
+            selection_provider=provider,
+            import_id_factory=lambda: IMPORT_ID,
+        )
+        preview = service.preview(SELECTION_ID)
+        self.assertEqual(preview.preview.detected_format, "csv")
+        draft = service.save_draft(IMPORT_ID, self._payload(confirmed=True))
+        confirmed = service.confirm(IMPORT_ID, expected_revision=draft.revision or 0)
+        self.assertTrue(confirmed.indexable)
+        self.assertGreater(len(service.private_search_source().list_documents()), 0)
+        self.assertEqual(provider.revoked, [SELECTION_ID])
+        self.assertNotIn(
+            str(self.root),
+            json.dumps(confirmed.public_dict(), ensure_ascii=False),
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
