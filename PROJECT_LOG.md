@@ -1,5 +1,13 @@
 # Auto Research Evidence 项目日志
 
+## 2026-08-08：Librarian V3 平台中立核心
+
+- 在保护点 `auto-research-pre-librarian-v3-integration-2026-08-08` 之后实现本地七类意图路由和四种召回策略。系统能力与普通对话在索引指纹读取前返回，保持 0 召回、0 模型；宽泛研究问题进入本地 `review_map`，R#/B# 追问进入稳定 anchor 解析。
+- 新增当前进程签名的 `research-state-v1`：绑定 conversation、turn、evidence fingerprint、state hash、父状态链和过期时间；公开状态仅含稳定 `source_scope/source_id/entity_uid/bundle_uid`，不含路径、内部异常或凭据。篡改、过期、跨会话、语料变化、未知/重复 anchor 和不同请求重放均 fail closed。
+- 同一状态令牌只允许同一请求幂等重放并复用完整响应缓存；缓存缺失时拒绝再次产生模型费用。跨不兼容 bundle 的定量追问返回 `unsupported_comparison`，不会交给模型自由处理。
+- 宽泛综述先本地聚类并限制每主题代表证据，再由 Pro 读取有界公开 DTO；候选文本中的提示注入不能改变意图、硬条件、候选、引用或预算。模型超时、非法/超长 JSON 时仍可生成确定性报告并解析稳定 anchor。
+- 新增 `suggested-action-v1`，每条建议必须通过当前有界候选 dry-run 并给出可回答数量；未知 R# 与无证据领域漂移被剔除。旧 `answer/report/results`、五段报告和 `item/finding/table/figure` 保持兼容，只新增 V3 字段；本阶段未接 UI、desktop、personal、product，也未读取或写入生产数据库和 `paper_056`。
+
 ## 2026-08-01：macOS 0.4.0-preview.1 阶段收口
 
 - Windows 最后收口提交 `3632377` 已生成 Win11 内部构建测试资料夹并同步到 OneDrive `Auto-Research-Windows-Internal-Test`。源码压缩包、官方资料包、单击入口、中文手册、身份文件和 READY 的 SHA-256 均复核通过；状态明确为 `BUILD KIT READY / SETUP_PRESENT=NO`，不冒充 Windows 安装包。Windows 82项定向测试通过，真实 production shared bridge、Setup 与 Win11 全流程冒烟留待下一阶段。

@@ -34,6 +34,48 @@
      确定性研究简报导出 → Markdown 下载
 ```
 
+## Librarian V3 核心（平台中立，尚未接入 UI）
+
+V3 在既有四类证据和五段报告外增加一层本地控制平面；旧字段 `answer/report/results`、旧接口路径与四类详情契约保持不变。
+
+```text
+用户问题
+  → 本地意图路由
+     ├─ system_capability / conversation → 0 召回、0 模型
+     ├─ clarification                  → 本地澄清、0 召回
+     ├─ followup_ref / followup_bundle → 验签后解析稳定 anchor
+     ├─ research_lookup                → focused 召回
+     └─ research_review                → review_map 主题聚类 + 有界代表证据
+  → 本地硬条件、direct/adjacent/expansion、bundle 与引用完整性门
+  → DeepSeek V4 Pro 仅综合有界公开 DTO
+  → 本地建议追问 dry-run、状态签名与兼容响应
+```
+
+本地意图固定为 `system_capability/research_lookup/research_review/followup_ref/followup_bundle/clarification/conversation`；召回策略固定为 `none/resolve_anchors/focused/review_map`。系统能力问答读取本地 `capability-manifest-v1`，可说明 Flash 规划、Pro 综合、文本模型和本地确定性边界，但不得返回密钥、底层路径或内部异常。
+
+### `research-state-v1`
+
+每轮研究回答新增 path-free `research_state` 和当前进程 `state_token`。状态包含：`conversation_id`、`turn_id`、`evidence_version`、由本地硬条件生成的非原文主题摘要和结构化条件、R# 到 `source_scope/source_id/entity_uid/entity_type` 的稳定映射、B# 到 `bundle_uid/member_entity_uids` 的映射、已选择 anchor、签发/过期时间、父状态哈希和当前状态哈希。状态不保存用户原始 prompt。R#、B# 只是本轮显示别名；后续解析只认验签后的稳定身份。
+
+状态签名绑定会话、轮次、证据指纹、完整状态哈希和父状态链。篡改、过期、跨会话、语料变化、未知/重复 anchor 或 bundle 成员都 fail closed。令牌第一次只绑定一个请求指纹：相同请求可从完整响应缓存幂等返回，不同问题复用同一令牌会在模型调用前拒绝；若幂等结果已被逐出内存，也拒绝再次付费调用。签名器和时钟可注入测试，生产默认使用当前进程随机 HMAC 密钥，不持久化到历史或数据库。
+
+### 宽泛综述与建议动作
+
+`review_map` 先按现有候选的研究用途/机制做本地主题聚类，每个主题最多选择少量跨论文代表 R#，再交给 Pro 做定性综合；不会把几十张卡直接堆给模型。跨不兼容 bundle 只能分别陈述，定量比较返回稳定错误码 `unsupported_comparison`。
+
+旧 `report.suggested_followups` 继续保留，但内容来自已通过本地验证的 `suggested-action-v1`。新顶层 `suggested_actions` 包含 `text/intent/anchor_refs/bundle_uid/estimated_matches/answerable/reason_code`。模型建议必须通过当前有界候选 dry-run；未知 R#、无本地证据或催化/光学/电池等领域漂移会被剔除，再用可解析 anchor 生成确定性建议。
+
+### 新增响应字段与兼容边界
+
+- `librarian_core_version=librarian-v3`
+- `intent`（`intent-decision-v1`）与 `retrieval_policy`
+- `research_state`、`state_token`
+- `suggested_actions`（`suggested-action-v1`）
+- `report.review_map`（仅宽泛综述）
+- 结果可附 `source_scope/source_id/entity_uid/agent_bundle_uid`
+
+缓存键加入意图、研究状态指纹和 `evidence_version`。DeepSeek 超时、非法/超长 JSON 或不可用时，系统能力回答、稳定 anchor 解析和确定性报告仍工作。候选论文文本中的提示词只作为有界证据字符串，不能改变本地意图、硬条件、候选、引用、预算或写权限。本阶段不修改 web、desktop、个人库、产品资料包或科学数据库；UI 需要在后续独立接线时原样转发状态和令牌。
+
 ## 不变量
 
 - `data_items/data_versions`、定性结论聚类和 `visual_assets` 仍是科学记录来源。
