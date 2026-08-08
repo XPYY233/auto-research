@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import sys
 import unittest
@@ -22,15 +23,25 @@ from federated_search_api import (  # noqa: E402
 )
 
 
-def _document(entity_type: str, entity_uid: str) -> dict:
+def _document(
+    entity_type: str,
+    entity_uid: str,
+    *,
+    source_scope: str = "official",
+    source_id: str | None = None,
+    text: str = "辐照后硬度变化",
+) -> dict:
+    source_id = source_id or (
+        "official-preview" if source_scope == "official" else "private-lab"
+    )
     return {
         "schema_version": "official-evidence-document-v1",
         "entity_type": entity_type,
-        "source_scope": "official",
-        "source_id": "official-preview",
+        "source_scope": source_scope,
+        "source_id": source_id,
         "entity_uid": entity_uid,
         "article_title": "Tungsten irradiation study",
-        "display_title": "辐照后硬度变化",
+        "display_title": text,
         "source_excerpt": "硬度随剂量增加。",
         "doi": "10.1000/example",
         "source_page": 5,
@@ -50,6 +61,33 @@ class _Repository:
 
     def iter_search_documents(self):
         yield from self.documents
+
+
+class _PrivateSource:
+    def __init__(self, documents=None) -> None:
+        self.documents = documents or (
+            _document(
+                "table",
+                "private-table-1",
+                source_scope="private",
+                text="私人样品硬度表",
+            ),
+            _document(
+                "figure",
+                "private-figure-1",
+                source_scope="private",
+                text="私人实验趋势图",
+            ),
+        )
+
+    def iter_search_documents(self):
+        yield from self.documents
+
+
+class _BrokenSource:
+    def iter_search_documents(self):
+        raise RuntimeError("private implementation detail")
+        yield
 
 
 def _active() -> ActiveOfficialPackage:
@@ -80,14 +118,29 @@ class DesktopFederatedSearchTests(unittest.TestCase):
             self.service.search(query="")
         self.assertEqual(raised.exception.code, "evidence_package_required")
         self.assertEqual(raised.exception.status, HTTPStatus.CONFLICT)
-        self.assertEqual(self.service.status(), {"ready": False, "document_count": 0})
+        self.assertEqual(
+            self.service.status(),
+            {
+                "schema_version": "federated-search-readiness-v2",
+                "official_ready": False,
+                "private_ready": False,
+                "federated_ready": False,
+                "document_count": 0,
+                "official_source": None,
+                "private_source": None,
+            },
+        )
 
     def test_install_rebuilds_from_audited_repository_identity(self) -> None:
         repository = _Repository()
         self.service.install_official_repository(_active(), repository)
         status = self.service.status()
-        self.assertTrue(status["ready"])
+        self.assertTrue(status["official_ready"])
+        self.assertFalse(status["private_ready"])
+        self.assertTrue(status["federated_ready"])
         self.assertEqual(status["document_count"], 2)
+        self.assertEqual(status["official_source"]["source_id"], "official-preview")
+        self.assertEqual(status["official_source"]["fingerprint"], "a" * 64)
         page = self.service.search(query="硬度", source_scopes=("official",))
         self.assertEqual(page["total"], 2)
         self.assertEqual(page["results"][0]["document"]["source_scope"], "official")
@@ -104,7 +157,84 @@ class DesktopFederatedSearchTests(unittest.TestCase):
         self.assertEqual(
             raised.exception.code, "federated_repository_identity_invalid"
         )
-        self.assertFalse(self.service.status()["ready"])
+        self.assertFalse(self.service.status()["federated_ready"])
+
+    def test_official_private_and_both_source_combinations_are_searchable(self) -> None:
+        official_only = DesktopFederatedSearchService()
+        official_only.install_official_repository(_active(), _Repository())
+        self.assertEqual(official_only.search(query="", page_size=10)["total"], 2)
+        self.assertTrue(official_only.status()["official_ready"])
+        self.assertFalse(official_only.status()["private_ready"])
+
+        private_only = DesktopFederatedSearchService()
+        private_only.refresh_private_source(
+            _PrivateSource(),
+            source_id="private-lab",
+            fingerprint="revision:private-1",
+        )
+        self.assertEqual(private_only.search(query="", page_size=10)["total"], 2)
+        self.assertFalse(private_only.status()["official_ready"])
+        self.assertTrue(private_only.status()["private_ready"])
+
+        combined = DesktopFederatedSearchService()
+        combined.refresh_private_source(
+            _PrivateSource(),
+            source_id="private-lab",
+            fingerprint="revision:private-1",
+        )
+        combined.install_official_repository(_active(), _Repository())
+        page = combined.search(query="", page_size=10)
+        self.assertEqual(page["total"], 4)
+        self.assertEqual(
+            {hit["document"]["source_scope"] for hit in page["results"]},
+            {"official", "private"},
+        )
+        self.assertTrue(combined.status()["official_ready"])
+        self.assertTrue(combined.status()["private_ready"])
+
+    def test_clear_official_preserves_private_source_and_search(self) -> None:
+        self.service.refresh_private_source(
+            _PrivateSource(),
+            source_id="private-lab",
+            fingerprint="revision:private-1",
+        )
+        self.service.install_official_repository(_active(), _Repository())
+
+        self.service.clear_official_repository()
+
+        status = self.service.status()
+        self.assertFalse(status["official_ready"])
+        self.assertTrue(status["private_ready"])
+        self.assertTrue(status["federated_ready"])
+        self.assertEqual(status["document_count"], 2)
+        page = self.service.search(query="", page_size=10)
+        self.assertEqual(
+            {hit["document"]["source_scope"] for hit in page["results"]},
+            {"private"},
+        )
+
+    def test_failed_private_refresh_preserves_previous_fingerprint(self) -> None:
+        self.service.refresh_private_source(
+            _PrivateSource(),
+            source_id="private-lab",
+            fingerprint="revision:private-1",
+        )
+        before = self.service.status()
+
+        with self.assertRaises(DesktopFederatedSearchError) as raised:
+            self.service.refresh_private_source(
+                _BrokenSource(),
+                source_id="private-lab",
+                fingerprint="revision:private-2",
+            )
+
+        self.assertEqual(raised.exception.code, "federated_private_source_invalid")
+        self.assertEqual(self.service.status(), before)
+        self.assertEqual(
+            self.service.status()["private_source"]["fingerprint"],
+            "revision:private-1",
+        )
+        self.assertEqual(self.service.search(query="")["total"], 2)
 
     def test_search_route_supports_browse_paging_and_repeated_filters(self) -> None:
         self.service.install_official_repository(_active(), _Repository())
@@ -161,11 +291,11 @@ class DesktopFederatedSearchTests(unittest.TestCase):
         self.assertEqual(invalid.responses[0][0]["code"], "federated_search_invalid")
         self.assertFalse(self.api.handle_get(_Handler("/api/desktop/unknown")))
 
-    def test_clear_removes_stale_index_after_active_package_failure(self) -> None:
+    def test_clear_last_official_source_fails_closed(self) -> None:
         self.service.install_official_repository(_active(), _Repository())
-        self.assertTrue(self.service.status()["ready"])
-        self.service.clear()
-        self.assertFalse(self.service.status()["ready"])
+        self.assertTrue(self.service.status()["federated_ready"])
+        self.service.clear_official_repository()
+        self.assertFalse(self.service.status()["federated_ready"])
         with self.assertRaises(DesktopFederatedSearchError) as raised:
             self.service.search(query="")
         self.assertEqual(raised.exception.code, "evidence_package_required")
@@ -173,8 +303,21 @@ class DesktopFederatedSearchTests(unittest.TestCase):
     def test_core_public_dto_guard_rejects_local_paths(self) -> None:
         unsafe = _document("item", "unsafe")
         unsafe["pdf_path"] = "/Users/private/paper.pdf"
-        with self.assertRaises(ValueError):
+        with self.assertRaises(DesktopFederatedSearchError) as raised:
             self.service.install_official_repository(_active(), _Repository((unsafe,)))
+        self.assertEqual(
+            raised.exception.code,
+            "federated_repository_identity_invalid",
+        )
+        self.assertNotIn("/Users/private", str(raised.exception))
+
+    def test_service_has_no_local_federated_engine_lifecycle(self) -> None:
+        source = inspect.getsource(DesktopFederatedSearchService)
+        self.assertNotIn("self._active", source)
+        self.assertNotIn("self._private_source", source)
+        self.assertNotIn("self._search", source)
+        self.assertNotIn("FederatedEvidenceSearch", source)
+        self.assertTrue(hasattr(self.service, "session"))
 
 
 if __name__ == "__main__":

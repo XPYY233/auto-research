@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-import threading
 from http import HTTPStatus
 from typing import Any, Iterable, Protocol
 from urllib.parse import parse_qs, urlparse
 
-from auto_research.evidence.federated_search import FederatedEvidenceSearch
+from auto_research.evidence.federated_search_session import (
+    FederatedSearchSession,
+    FederatedSearchSessionError,
+    FederatedSearchSessionProtocol,
+    SearchSourceRegistration,
+)
 from auto_research.product.runtime_api import ActiveOfficialPackage, OfficialEvidenceRepository
 
 
@@ -31,13 +35,14 @@ class DesktopFederatedSearchError(RuntimeError):
 
 
 class DesktopFederatedSearchService:
-    """Atomic, read-only index over audited repositories injected by the desktop."""
+    """Thin macOS adapter over the shared atomic federated-search session."""
 
-    def __init__(self, *, private_source: object | None = None) -> None:
-        self._private_source = private_source
-        self._active: ActiveOfficialPackage | None = None
-        self._search: FederatedEvidenceSearch | None = None
-        self._lock = threading.RLock()
+    def __init__(
+        self,
+        *,
+        session: FederatedSearchSessionProtocol | None = None,
+    ) -> None:
+        self.session = session if session is not None else FederatedSearchSession()
 
     def install_official_repository(
         self,
@@ -54,72 +59,104 @@ class DesktopFederatedSearchService:
                 "官方资料库身份校验失败，未更新搜索索引。",
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
-        sources: list[object] = [repository]
-        if self._private_source is not None:
-            sources.append(self._private_source)
-        rebuilt = FederatedEvidenceSearch(sources)
-        with self._lock:
-            self._active = active
-            self._search = rebuilt
+        try:
+            self.session.install_official(
+                SearchSourceRegistration.official(
+                    repository,
+                    source_id=active.package_id,
+                    fingerprint=active.content_fingerprint,
+                )
+            )
+        except (FederatedSearchSessionError, TypeError, ValueError):
+            raise DesktopFederatedSearchError(
+                "federated_repository_identity_invalid",
+                "官方资料库身份校验失败，未更新搜索索引。",
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            ) from None
+
+    def refresh_private_source(
+        self,
+        source: object,
+        *,
+        source_id: str,
+        fingerprint: str,
+    ) -> None:
+        try:
+            registration = SearchSourceRegistration.private(
+                source,
+                source_id=source_id,
+                fingerprint=fingerprint,
+            )
+            self.session.refresh_private(registration)
+        except (FederatedSearchSessionError, TypeError, ValueError):
+            raise DesktopFederatedSearchError(
+                "federated_private_source_invalid",
+                "私人实验搜索源未能安全建立，原有搜索保持不变。",
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            ) from None
 
     def status(self) -> dict[str, Any]:
-        with self._lock:
-            if self._active is None or self._search is None:
-                return {"ready": False, "document_count": 0}
-            return {
-                "ready": True,
-                "document_count": self._search.document_count,
-                "package_id": self._active.package_id,
-                "package_version": self._active.package_version,
-                "content_fingerprint": self._active.content_fingerprint,
-            }
+        return dict(self.session.status())
 
-    def clear(self) -> None:
-        with self._lock:
-            self._active = None
-            self._search = None
+    def clear_official_repository(self) -> None:
+        try:
+            self.session.clear_official()
+        except FederatedSearchSessionError:
+            raise DesktopFederatedSearchError(
+                "federated_repository_reset_failed",
+                "官方资料搜索源暂未清除，原有搜索保持不变。",
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            ) from None
 
     def search(self, **kwargs: Any) -> dict[str, Any]:
-        service = self._require_search()
         try:
-            return service.search(**kwargs).as_dict()
+            return self.session.search(**kwargs).as_dict()
+        except FederatedSearchSessionError as exc:
+            raise self._session_unavailable(exc) from None
         except (TypeError, ValueError) as exc:
             raise DesktopFederatedSearchError(
                 "federated_search_invalid",
-                "官方资料库搜索条件无效。",
+                "离线资料搜索条件无效。",
                 status=HTTPStatus.BAD_REQUEST,
             ) from exc
 
     def get(self, *, source_scope: str, source_id: str, entity_uid: str) -> dict[str, Any]:
-        service = self._require_search()
         try:
-            return service.get(
+            return self.session.get(
                 source_scope=source_scope,
                 source_id=source_id,
                 entity_uid=entity_uid,
             )
+        except FederatedSearchSessionError as exc:
+            raise self._session_unavailable(exc) from None
         except ValueError as exc:
             raise DesktopFederatedSearchError(
                 "federated_identity_invalid",
-                "官方证据身份无效。",
+                "离线证据身份无效。",
                 status=HTTPStatus.BAD_REQUEST,
             ) from exc
         except KeyError as exc:
             raise DesktopFederatedSearchError(
                 "federated_evidence_not_found",
-                "未找到对应的官方证据。",
+                "未找到对应的离线证据。",
                 status=HTTPStatus.NOT_FOUND,
             ) from exc
 
-    def _require_search(self) -> FederatedEvidenceSearch:
-        with self._lock:
-            if self._search is None:
-                raise DesktopFederatedSearchError(
-                    "evidence_package_required",
-                    "请先导入并启用官方资料包。",
-                    status=HTTPStatus.CONFLICT,
-                )
-            return self._search
+    @staticmethod
+    def _session_unavailable(
+        error: FederatedSearchSessionError,
+    ) -> DesktopFederatedSearchError:
+        if error.code == "federated_search_unavailable":
+            return DesktopFederatedSearchError(
+                "evidence_package_required",
+                "请先启用官方资料包或确认私人实验数据。",
+                status=HTTPStatus.CONFLICT,
+            )
+        return DesktopFederatedSearchError(
+            "federated_search_unavailable",
+            "离线搜索暂时不可用，原有数据未改变。",
+            status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        )
 
 
 class FederatedSearchAPI:

@@ -40,7 +40,7 @@ def create_desktop_product_services(
         data_root=application_data_root,
         current_app_version=current_app_version,
         repository_listener=federated_search_service.install_official_repository,
-        repository_reset=federated_search_service.clear,
+        repository_reset=federated_search_service.clear_official_repository,
     )
     personal_file_selection_broker = PersonalFileSelectionBroker()
     personal_import_service = PersonalImportService(
