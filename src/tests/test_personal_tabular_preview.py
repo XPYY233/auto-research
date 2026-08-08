@@ -177,6 +177,20 @@ class PersonalTabularPreviewTests(unittest.TestCase):
         with self.assertRaises(UnsafeTabularFileError):
             preview_tabular_file(entity)
 
+    def test_unused_zip_traversal_member_is_rejected(self):
+        path = self.root / "traversal.xlsx"
+        write_xlsx(path, extra_entries={"../PRIVATE_MARKER.txt": b"unsafe"})
+        with self.assertRaisesRegex(UnsafeTabularFileError, "unsafe ZIP entry path"):
+            preview_tabular_file(path)
+
+    def test_embedded_ole_and_activex_payloads_are_rejected(self):
+        for filename in ("xl/embeddings/oleObject1.bin", "xl/activeX/activeX1.bin"):
+            with self.subTest(filename=filename):
+                path = self.root / (filename.split("/")[-1] + ".xlsx")
+                write_xlsx(path, extra_entries={filename: b"embedded-payload"})
+                with self.assertRaisesRegex(UnsafeTabularFileError, "OLE or ActiveX"):
+                    preview_tabular_file(path)
+
     def test_file_and_zip_limits_fail_closed(self):
         path = self.root / "small.csv"
         path.write_text("x\n1\n", encoding="utf-8")

@@ -34,6 +34,11 @@ _MEDIA_TYPES = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 
+_UNSAFE_EMBEDDED_PREFIXES = (
+    "xl/activex/",
+    "xl/embeddings/",
+)
+
 
 class UnsafeTabularFileError(ValueError):
     """The selected file cannot be safely previewed under the bounded contract."""
@@ -226,12 +231,29 @@ def _validate_xlsx_archive(archive: zipfile.ZipFile, limits: PreviewLimits) -> N
     names = {info.filename for info in infos}
     if len(names) != len(infos):
         raise UnsafeTabularFileError("XLSX contains duplicate ZIP entry names")
+    for name in names:
+        _validate_xlsx_member_name(name)
     if any(info.flag_bits & 0x1 for info in infos):
         raise UnsafeTabularFileError("encrypted XLSX files are not supported")
     if "xl/vbaProject.bin" in names or any(name.casefold().endswith("vbaproject.bin") for name in names):
         raise UnsafeTabularFileError("macro-enabled workbooks are not supported")
     if any(name.startswith("xl/externalLinks/") for name in names):
         raise UnsafeTabularFileError("workbooks with external links are not supported")
+    if any(
+        name.casefold().startswith(_UNSAFE_EMBEDDED_PREFIXES)
+        for name in names
+    ):
+        raise UnsafeTabularFileError("workbooks with embedded OLE or ActiveX objects are not supported")
+
+
+def _validate_xlsx_member_name(name: str) -> None:
+    """Reject unsafe archive members even when the workbook never references them."""
+
+    if not name or "\x00" in name or "\\" in name or name.startswith("/"):
+        raise UnsafeTabularFileError("XLSX contains an unsafe ZIP entry path")
+    parts = name.split("/")
+    if any(part in {".", ".."} for part in parts) or ":" in parts[0]:
+        raise UnsafeTabularFileError("XLSX contains an unsafe ZIP entry path")
 
 
 def _preview_xlsx(
