@@ -1,5 +1,12 @@
 # Auto Research Evidence 项目日志
 
+## 2026-08-08：官方与私人联合搜索共享生命周期
+
+- 新增平台中立 `FederatedSearchSession`，统一持有可选官方 source、可选私人 confirmed/indexable source 和既有 `FederatedEvidenceSearch` 不可变快照；macOS/Windows 后续只消费窄 Protocol，不再复制召回、排序、readiness 或 engine swap。
+- official-only、private-only、both 三种组合均支持空查询浏览、精确关键词搜索、四类过滤和稳定身份 get；无 source 时 fail closed。结果继续只有 `item/finding/table/figure`，并原样保留 `source_scope/source_id/entity_uid`。
+- 官方与私人可分别 install/replace/clear，私人 refresh 使用同一原子路径。所有变更先在旧 engine 之外构建新 engine，成功后锁内一次 swap；构建、身份或读取失败不替换旧可用组合。清官方不清私人，清最后一个 source 才变为未就绪。
+- 新增 path-free `federated-search-readiness-v2`，只公开双源 readiness、总文档数和稳定 source ID/fingerprint；错误 DTO 不含路径或底层异常。本阶段未修改 desktop、web、personal、product、科学数据库或现有联合召回算法。
+
 ## 2026-08-08：Librarian V3 平台中立核心
 
 - 在保护点 `auto-research-pre-librarian-v3-integration-2026-08-08` 之后实现本地七类意图路由和四种召回策略。系统能力与普通对话在索引指纹读取前返回，保持 0 召回、0 模型；宽泛研究问题进入本地 `review_map`，R#/B# 追问进入稳定 anchor 解析。

@@ -112,6 +112,16 @@ V3 在既有四类证据和五段报告外增加一层本地控制平面；旧�
 
 文献检索结果可附带 `source_scope/source_id/entity_uid`，但 `entity_type` 仍严格限定为 `item/table/figure/finding`。这些来源字段不是第五类证据，也不能改变原证据内容或审核状态。个人实验记录将使用独立私有数据模型，不能塞入论文六列事实表。
 
+### 联合搜索会话生命周期 v2
+
+`FederatedSearchSession` 是 macOS 与 Windows 共用的只读生命周期层。它只包装现有 `FederatedEvidenceSearch`，不复制关键词覆盖、字段权重、排序、分页或四类 DTO 逻辑。平台适配器通过窄 `FederatedSearchSessionProtocol` 调用 `status/install_official/install_private/refresh_private/clear_official/clear_private/search/get`，不得再各自维护 engine swap 和 readiness 状态机。
+
+会话最多持有一个官方只读 source 和一个私人 confirmed/indexable source。三种组合均可离线精确检索：仅官方、仅私人、官方与私人联合；没有任何 source 时 `search/get` 以 `federated_search_unavailable` fail closed。私人 source 必须使用 `PrivateRepositorySearchSource` 或满足同等确认门的只读适配器，session 不读取或写入私人 SQLite。
+
+每次安装、替换、清理或私人刷新都先根据新 source 组合完整构建一个不可变 `FederatedEvidenceSearch`。变更期间读请求继续使用旧 engine；只有新 engine 构建和文档身份校验全部成功后才在锁内一次性 swap。失败返回 path-free `federated-search-session-error-v1`，旧 engine、官方/私人身份和 readiness 保持不变。`clear_official` 只重建剩余私人 source，`clear_private` 同理；清除最后一个 source 才进入未就绪状态。
+
+`federated-search-readiness-v2` 仅公开 `official_ready/private_ready/federated_ready/document_count`，以及官方/私人 source 的 `source_scope/source_id/fingerprint`；不含仓库对象、数据库位置、资料包根目录或内部异常。source 注册还会验证每份文档的 scope/id 与注册身份一致。`search` 原样返回 `FederatedSearchPage`，`get` 原样返回既有 `item/finding/table/figure` 公开 DTO，并保留 `source_scope/source_id/entity_uid`。
+
 ## 索引维护
 
 - `evidence-search-reindex`：全量重建。用于结构升级、词典变化和发布前维护。
