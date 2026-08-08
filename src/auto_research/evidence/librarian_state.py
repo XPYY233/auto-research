@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from copy import deepcopy
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Protocol
 
@@ -86,12 +87,14 @@ class ResearchStateCodec:
         signer: StateSigner | None = None,
         clock: Callable[[], float] | None = None,
         ttl_seconds: int = 7_200,
+        max_locators: int = 8_192,
     ):
         self._signer = signer or HMACStateSigner(secret)
         self._clock = clock or time.time
         self._ttl_seconds = min(max(int(ttl_seconds), 60), 86_400)
-        self._locators: dict[tuple[str, str], ResolvedAnchor] = {}
-        self._consumed: dict[str, str] = {}
+        self._max_locators = min(max(int(max_locators), 128), 65_536)
+        self._locators: OrderedDict[tuple[str, str], ResolvedAnchor] = OrderedDict()
+        self._consumed: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
 
     def sign(self, state: Mapping[str, Any]) -> str:
@@ -123,11 +126,15 @@ class ResearchStateCodec:
 
         token_hash = hashlib.sha256(str(token).encode("utf-8")).hexdigest()
         with self._lock:
+            now = float(self._clock())
+            for key, (_, expires_at) in tuple(self._consumed.items()):
+                if expires_at < now:
+                    self._consumed.pop(key, None)
             previous = self._consumed.get(token_hash)
             if previous is None:
-                self._consumed[token_hash] = request_fingerprint
+                self._consumed[token_hash] = (request_fingerprint, now + self._ttl_seconds)
                 return False
-            if hmac.compare_digest(previous, request_fingerprint):
+            if hmac.compare_digest(previous[0], request_fingerprint):
                 return True
         raise ResearchStateError("research_state_replayed_for_different_request")
 
@@ -179,15 +186,23 @@ class ResearchStateCodec:
 
     def register(self, source_id: str, entity_uid: str, entity_type: str, locator: int) -> None:
         with self._lock:
-            self._locators[(source_id, entity_uid)] = ResolvedAnchor(
+            key = (source_id, entity_uid)
+            self._locators[key] = ResolvedAnchor(
                 entity_uid=entity_uid,
                 entity_type=entity_type,
                 locator=int(locator),
             )
+            self._locators.move_to_end(key)
+            while len(self._locators) > self._max_locators:
+                self._locators.popitem(last=False)
 
     def resolve(self, source_id: str, entity_uid: str) -> ResolvedAnchor | None:
         with self._lock:
-            return self._locators.get((source_id, entity_uid))
+            key = (source_id, entity_uid)
+            value = self._locators.get(key)
+            if value is not None:
+                self._locators.move_to_end(key)
+            return value
 
     def build(
         self,

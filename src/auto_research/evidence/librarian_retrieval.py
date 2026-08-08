@@ -76,7 +76,11 @@ def incompatible_bundle_comparison(
     decision: IntentDecision,
     state: Mapping[str, Any],
 ) -> bool:
-    if not _COMPARE_PATTERN.search(question or "") or decision.kind != "followup_ref":
+    if not _COMPARE_PATTERN.search(question or ""):
+        return False
+    if decision.kind == "followup_bundle":
+        return len(set(decision.bundle_refs)) > 1
+    if decision.kind != "followup_ref":
         return False
     bundles = state.get("bundles") or {}
     anchor_to_bundle: dict[str, str] = {}

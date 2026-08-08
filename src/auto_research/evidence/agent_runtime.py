@@ -759,6 +759,7 @@ class LibrarianAgentRuntime:
             "research_state": None,
             "state_token": "",
             "suggested_actions": [],
+            "review_map": [],
         }
         if capability is not None:
             result["capabilities"] = capability
@@ -1155,6 +1156,7 @@ class LibrarianAgentRuntime:
             )
         if not anchors_pre_resolved:
             self._collected = []
+        review_map: list[dict[str, Any]] = []
         if decision.kind == "clarification":
             queries: list[str] = []
             plan_mode = "local_clarification"
@@ -1313,6 +1315,7 @@ class LibrarianAgentRuntime:
             "research_state": state,
             "state_token": signed_state_token,
             "suggested_actions": suggested_actions,
+            "review_map": review_map,
         }
         self._cache_put(cache_key, result)
         return result

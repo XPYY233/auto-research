@@ -96,6 +96,7 @@ class LibrarianV3Tests(unittest.TestCase):
 
     def test_local_intent_routes_system_review_and_stable_anchors(self):
         self.assertEqual(route_librarian_intent("你用什么AI模型？").kind, "system_capability")
+        self.assertEqual(route_librarian_intent("你是什么模型？").kind, "system_capability")
         self.assertEqual(route_librarian_intent("DFT在辐照材料研究中有哪些用途？").kind, "research_review")
         self.assertEqual(route_librarian_intent("详细解释R3").kind, "followup_ref")
         self.assertEqual(route_librarian_intent("继续分析B2").kind, "followup_bundle")
@@ -184,6 +185,31 @@ class LibrarianV3Tests(unittest.TestCase):
         )
         same["bundles"].pop("B2")
         self.assertFalse(incompatible_bundle_comparison("定量比较R1和R2的差异", decision, same))
+        bundle_decision = route_librarian_intent("定量比较B1和B2的差异")
+        self.assertTrue(
+            incompatible_bundle_comparison("定量比较B1和B2的差异", bundle_decision, state)
+        )
+
+    def test_review_response_exposes_the_locally_bounded_review_map(self):
+        result = LibrarianAgentRuntime(self.db, client=OfflineClient()).run(
+            "DFT在辐照材料研究中有哪些用途？"
+        )
+        self.assertEqual(result["retrieval_policy"], "review_map")
+        self.assertTrue(result["review_map"])
+        available = {row["agent_ref"] for row in result["results"]}
+        self.assertTrue(
+            all(
+                set(theme["representative_refs"]).issubset(available)
+                for theme in result["review_map"]
+            )
+        )
+
+    def test_runtime_locator_map_is_bounded(self):
+        codec = ResearchStateCodec(secret=b"k" * 32, max_locators=128)
+        for locator in range(1, 140):
+            codec.register("official-test", f"ev-{locator}", "item", locator)
+        self.assertIsNone(codec.resolve("official-test", "ev-1"))
+        self.assertIsNotNone(codec.resolve("official-test", "ev-139"))
 
     def test_prompt_injection_is_bounded_as_evidence_text_only(self):
         rows = bounded_public_candidates([{

@@ -21,6 +21,8 @@ _REF_PATTERN = re.compile(r"(?<![A-Za-z0-9])R(\d{1,4})(?![A-Za-z0-9])", re.IGNOR
 _BUNDLE_PATTERN = re.compile(r"(?<![A-Za-z0-9])B(\d{1,4})(?![A-Za-z0-9])", re.IGNORECASE)
 _SYSTEM_PATTERNS = (
     re.compile(r"(?:你|系统|软件).{0,12}(?:用|使用|基于|调用).{0,8}(?:什么|哪个).{0,4}(?:AI|模型)", re.I),
+    re.compile(r"(?:你|系统|软件).{0,8}(?:是|属于).{0,6}(?:什么|哪个).{0,4}(?:AI|大模型|模型)", re.I),
+    re.compile(r"(?:AI|大模型|模型).{0,6}(?:是什么|是哪一个|是哪种)", re.I),
     re.compile(r"(?:什么|哪个).{0,4}(?:AI|大模型|模型).{0,8}(?:回答|驱动|支持)", re.I),
     re.compile(r"(?:你是谁|你能做什么|系统能力|软件能力|隐私|数据会上传|是否联网|模型版本)", re.I),
 )
