@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Iterator, Literal, Mapping, Protocol, runtime_checkable
 
 from .private_repository import PrivateExperimentRepository
@@ -168,6 +168,69 @@ class EvidenceSearchSource(Protocol):
     ) -> Iterator[EvidenceSearchDocument]: ...
 
 
+@dataclass(frozen=True)
+class PrivateSearchSnapshot:
+    """Immutable, path-free snapshot of one private repository search source."""
+
+    source_id: str
+    documents: tuple[EvidenceSearchDocument, ...]
+    source_scope: EvidenceSourceScope = field(init=False, default="private")
+    document_count: int = field(init=False)
+    content_fingerprint: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        source_id = _required_text(self.source_id, "source_id")
+        documents = tuple(self.documents)
+        for document in documents:
+            if not isinstance(document, EvidenceSearchDocument):
+                raise TypeError("private search snapshot documents must use EvidenceSearchDocument")
+            if document.source_scope != "private" or document.source_id != source_id:
+                raise ValueError("private search snapshot identity mismatch")
+        canonical_documents = sorted(
+            (document.as_dict() for document in documents),
+            key=lambda value: (
+                str(value["source_scope"]),
+                str(value["source_id"]),
+                str(value["entity_type"]),
+                str(value["entity_uid"]),
+            ),
+        )
+        canonical_json = json.dumps(
+            canonical_documents,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        object.__setattr__(self, "source_id", source_id)
+        object.__setattr__(self, "documents", documents)
+        object.__setattr__(self, "document_count", len(documents))
+        object.__setattr__(
+            self,
+            "content_fingerprint",
+            hashlib.sha256(canonical_json).hexdigest(),
+        )
+
+    def iter_search_documents(
+        self,
+        *,
+        entity_types: Iterable[str] | None = None,
+    ) -> Iterator[EvidenceSearchDocument]:
+        selected = _selected_entity_types(entity_types)
+        for document in self.documents:
+            if document.entity_type in selected:
+                yield document
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "private-search-snapshot-v1",
+            "source_scope": self.source_scope,
+            "source_id": self.source_id,
+            "document_count": self.document_count,
+            "content_fingerprint": self.content_fingerprint,
+            "documents": [document.as_dict() for document in self.documents],
+        }
+
+
 class PrivateRepositorySearchSource:
     """Adapt confirmed/indexable private runs without exposing repository IDs."""
 
@@ -190,17 +253,18 @@ class PrivateRepositorySearchSource:
             documents.extend(self._adapt_run(run))
         return tuple(documents)
 
+    def snapshot(self) -> PrivateSearchSnapshot:
+        """Capture one immutable view for atomic federated-search activation."""
+
+        documents = self.list_documents()
+        return PrivateSearchSnapshot(source_id=self.source_id, documents=documents)
+
     def iter_search_documents(
         self,
         *,
         entity_types: Iterable[str] | None = None,
     ) -> Iterator[EvidenceSearchDocument]:
-        selected = set(entity_types or ENTITY_TYPES)
-        invalid = selected - ENTITY_TYPES
-        if invalid:
-            raise ValueError(
-                f"unsupported evidence types: {', '.join(sorted(invalid))}"
-            )
+        selected = _selected_entity_types(entity_types)
         for document in self.list_documents():
             if document.entity_type in selected:
                 yield document
@@ -412,6 +476,14 @@ def _opaque_entity_uid(
         sort_keys=True,
     ).encode("utf-8")
     return f"private:{entity_type}:{hashlib.sha256(payload).hexdigest()[:32]}"
+
+
+def _selected_entity_types(entity_types: Iterable[str] | None) -> set[str]:
+    selected = set(entity_types or ENTITY_TYPES)
+    invalid = selected - ENTITY_TYPES
+    if invalid:
+        raise ValueError(f"unsupported evidence types: {', '.join(sorted(invalid))}")
+    return selected
 
 
 def _experiment_context(

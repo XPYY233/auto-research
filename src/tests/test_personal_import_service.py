@@ -367,6 +367,10 @@ class PersonalImportServiceTests(unittest.TestCase):
         confirmed = service.confirm(IMPORT_ID, expected_revision=draft.revision or 0)
         self.assertTrue(confirmed.indexable)
         self.assertGreater(len(service.private_search_source().list_documents()), 0)
+        snapshot = service.private_search_snapshot()
+        self.assertGreater(snapshot.document_count, 0)
+        self.assertEqual(snapshot.source_scope, "private")
+        self.assertEqual(len(snapshot.content_fingerprint), 64)
         self.assertEqual(provider.revoked, [SELECTION_ID])
         self.assertNotIn(
             str(self.root),

@@ -23,7 +23,10 @@ from auto_research.personal.private_repository import (
     PrivateRepositoryError,
     PrivateSample,
 )
-from auto_research.personal.search_source import PrivateRepositorySearchSource
+from auto_research.personal.search_source import (
+    PrivateRepositorySearchSource,
+    PrivateSearchSnapshot,
+)
 from auto_research.personal.tabular_preview import (
     PreviewLimits,
     TabularFilePreview,
@@ -555,6 +558,11 @@ class PersonalImportService:
         """Injection point for the frozen federated search composition."""
 
         return PrivateRepositorySearchSource(self._repository())
+
+    def private_search_snapshot(self) -> PrivateSearchSnapshot:
+        """Return one immutable source view for atomic federated-search refresh."""
+
+        return self.private_search_source().snapshot()
 
     def _repository(self) -> PrivateExperimentRepository:
         if self._repository_value is not None:

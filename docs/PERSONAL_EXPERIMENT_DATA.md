@@ -75,6 +75,8 @@
 
 适配器会再次要求 `confirmation_state=confirmed` 且 `indexable=true`。草稿、拒绝记录和任一列确认门失效的批次都不会生成四类搜索文档。适配过程只读，不建立索引、不写回私人仓库，也不改变官方证据。
 
+`PrivateRepositorySearchSource.snapshot()` 从一次已确认投影抓取生成不可变 `PrivateSearchSnapshot`，固定 `source_scope=private`、`source_id`、四类公开文档 tuple、`document_count` 和 SHA-256 `content_fingerprint`。指纹只对规范 JSON 的公开 DTO 计算，不包含路径或仓库内部主键；同一内容重开仓库后保持稳定，草稿不改变指纹，新的 confirmed/indexable 公开内容才会改变它。联合搜索可先完整构建新快照再原子替换，避免一次刷新中多次读库得到不一致内容。
+
 ## 搜索与图书管理员
 
 用户始终使用同一个入口，并可选择“文献数据库 / 我的实验 / 两者一起”。已知样品号、批次号、文件名或明确关键词时走精确搜索；比较、解释、趋势总结等问题交给图书管理员。自动判断只是默认值，用户可以手动切换。

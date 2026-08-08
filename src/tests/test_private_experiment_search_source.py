@@ -4,7 +4,7 @@ import hashlib
 import json
 import tempfile
 import unittest
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 from auto_research.personal.experiment_contract import (
@@ -24,6 +24,7 @@ from auto_research.personal.search_source import (
     EvidenceSearchDocument,
     EvidenceSearchSource,
     PrivateRepositorySearchSource,
+    PrivateSearchSnapshot,
 )
 
 
@@ -239,6 +240,56 @@ class PrivateExperimentSearchSourceTests(unittest.TestCase):
             draft.preview.source_file.sha256,
         ):
             self.assertNotIn(private_value, encoded)
+
+    def test_snapshot_is_immutable_stable_and_changes_only_for_public_confirmed_content(self):
+        first_draft, first_paths = self._draft()
+        self._register_and_save(first_draft, first_paths)
+        self._confirm(first_draft)
+        source = PrivateRepositorySearchSource(self.repo)
+
+        first = source.snapshot()
+        reopened = PrivateRepositorySearchSource(
+            PrivateExperimentRepository(self.root)
+        ).snapshot()
+        self.assertIsInstance(first, PrivateSearchSnapshot)
+        self.assertIsInstance(first, EvidenceSearchSource)
+        self.assertEqual(first.source_scope, "private")
+        self.assertEqual(first.source_id, self.repo.repository_id)
+        self.assertEqual(first.document_count, 4)
+        self.assertEqual(len(first.content_fingerprint), 64)
+        self.assertEqual(first.content_fingerprint, reopened.content_fingerprint)
+        self.assertEqual(first.documents, reopened.documents)
+        self.assertEqual(tuple(first.iter_search_documents()), first.documents)
+        with self.assertRaises(FrozenInstanceError):
+            setattr(first, "documents", ())
+
+        second_draft, second_paths = self._draft("run-2")
+        second_series = replace(
+            second_draft.series[0],
+            series_id="series-2",
+            name="第二批硬度-剂量趋势",
+        )
+        second_artifact = replace(
+            second_draft.artifacts[0],
+            artifact_id="attachment-2",
+            linked_series_ids=("series-2",),
+        )
+        second_draft = replace(
+            second_draft,
+            run_name="第二批室温纳米压痕",
+            series=(second_series,),
+            artifacts=(second_artifact,),
+        )
+        self._register_and_save(second_draft, second_paths)
+        after_draft = source.snapshot()
+        self.assertEqual(after_draft.content_fingerprint, first.content_fingerprint)
+        self.assertEqual(after_draft.document_count, first.document_count)
+
+        self._confirm(second_draft)
+        after_confirm = source.snapshot()
+        self.assertNotEqual(after_confirm.content_fingerprint, first.content_fingerprint)
+        self.assertEqual(after_confirm.document_count, 8)
+        self.assertEqual(first.document_count, 4)
 
     def test_confirmed_notes_become_distinct_findings_without_note_ids(self):
         draft, paths = self._draft()
