@@ -1596,7 +1596,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn('id="librarian-result-overview"', index_html)
         self.assertIn("codex-pet-working.webp", app_css)
         self.assertIn("librarianHistoryStorageKey", app_js)
-        self.assertIn("paper_ids: []", app_js)
+        self.assertIn("librarianResearchRequest", app_js)
         self.assertIn('id="librarian-brief-export"', index_html)
         self.assertIn("getLatestLibrarianBriefSnapshot", app_js)
         self.assertIn("getLatestLibrarianBriefPayload", app_js)

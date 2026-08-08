@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import copy
 import re
-from collections.abc import Iterable, Mapping
-from typing import Any, Callable
+from collections.abc import Mapping
+from typing import Any
+
+from auto_research.evidence.federated_search_session import (
+    FederatedSearchSession,
+    FederatedSearchSessionError,
+    FederatedSearchSessionProtocol,
+    SearchSourceRegistration,
+)
 
 
 ENTITY_TYPES = frozenset({"item", "finding", "table", "figure"})
@@ -22,17 +29,11 @@ _FORBIDDEN_KEYS = frozenset(
 
 
 class EvidenceSearchError(RuntimeError):
-    """Stable, path-free Windows search service failure."""
+    """Stable, path-free Windows search bridge failure."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
-
-
-def _default_engine_factory(sources: Iterable[object]) -> object:
-    from auto_research.evidence.federated_search import FederatedEvidenceSearch
-
-    return FederatedEvidenceSearch(tuple(sources))
 
 
 def _public_active_identity(active_package: Any) -> dict[str, str]:
@@ -44,6 +45,16 @@ def _public_active_identity(active_package: Any) -> dict[str, str]:
             "官方资料包身份无法用于离线搜索。",
         )
     return {key: str(value[key]) for key in sorted(expected)}
+
+
+def _private_identity(source: object) -> str:
+    source_id = getattr(source, "source_id", None)
+    if not isinstance(source_id, str) or not source_id.strip():
+        raise EvidenceSearchError(
+            "offline_search_activation_failed",
+            "私人实验搜索源缺少稳定身份。",
+        )
+    return source_id
 
 
 def _validate_path_free(value: Any, *, depth: int = 0) -> None:
@@ -70,11 +81,7 @@ def _validate_path_free(value: Any, *, depth: int = 0) -> None:
             raise EvidenceSearchError(
                 "search_projection_invalid", "搜索结果包含本机位置。"
             )
-        if _WINDOWS_PATH_RE.match(text):
-            raise EvidenceSearchError(
-                "search_projection_invalid", "搜索结果包含本机位置。"
-            )
-        if text.startswith(("\\\\", "//")):
+        if _WINDOWS_PATH_RE.match(text) or text.startswith(("\\\\", "//")):
             raise EvidenceSearchError(
                 "search_projection_invalid", "搜索结果包含本机位置。"
             )
@@ -95,59 +102,110 @@ def _validate_document(document: Any) -> dict[str, Any]:
     return value
 
 
+def _translate_session_error(error: FederatedSearchSessionError) -> EvidenceSearchError:
+    codes = {
+        "federated_search_unavailable": "offline_search_unavailable",
+        "federated_source_activation_failed": "offline_search_activation_failed",
+    }
+    return EvidenceSearchError(
+        codes.get(error.code, "search_failed"),
+        str(error),
+    )
+
+
 class WindowsEvidenceSearchService:
-    """Own one fail-closed federated index over audited read-only sources."""
+    """Thin Windows projection over the shared atomic federated session."""
 
     def __init__(
         self,
         *,
+        session: FederatedSearchSessionProtocol | None = None,
+        engine_factory: Any | None = None,
         private_source: object | None = None,
-        engine_factory: Callable[[Iterable[object]], object] = _default_engine_factory,
+        private_fingerprint: str = "confirmed-index-v1",
     ) -> None:
-        self.private_source = private_source
-        self.engine_factory = engine_factory
-        self._engine: object | None = None
-        self._active_package: dict[str, str] | None = None
+        if session is not None and (engine_factory is not None or private_source is not None):
+            raise ValueError("an injected session cannot be combined with source construction")
+        if session is None:
+            kwargs = {"engine_factory": engine_factory} if engine_factory is not None else {}
+            session = FederatedSearchSession(**kwargs)
+        self.session = session
+        if private_source is not None:
+            self.activate_private_source(private_source, fingerprint=private_fingerprint)
+
+    def status(self) -> dict[str, Any]:
+        value = self.session.status()
+        if value.get("schema_version") != "federated-search-readiness-v2":
+            raise EvidenceSearchError("search_projection_invalid", "搜索就绪状态契约无效。")
+        _validate_path_free(value)
+        return copy.deepcopy(value)
 
     @property
     def is_ready(self) -> bool:
-        return self._engine is not None and self._active_package is not None
+        return self.status()["federated_ready"] is True
 
     @property
-    def active_package(self) -> dict[str, str] | None:
-        return dict(self._active_package) if self._active_package else None
+    def official_ready(self) -> bool:
+        return self.status()["official_ready"] is True
+
+    @property
+    def private_ready(self) -> bool:
+        return self.status()["private_ready"] is True
 
     def deactivate(self) -> None:
-        self._engine = None
-        self._active_package = None
+        self.session.clear_official()
+        self.session.clear_private()
 
-    def activate_official_repository(self, *, active_package: Any, repository: Any) -> None:
-        # Clear first: a failed rebuild must never leave an older source
-        # reachable while readiness refers to the newly activated package.
-        self.deactivate()
+    def deactivate_official_repository(self) -> None:
         try:
-            identity = _public_active_identity(active_package)
-            sources = [repository]
-            if self.private_source is not None:
-                sources.append(self.private_source)
-            engine = self.engine_factory(tuple(sources))
-            document_count = getattr(engine, "document_count", None)
-            if isinstance(document_count, bool) or not isinstance(document_count, int):
-                raise TypeError("federated engine lacks document_count")
+            self.session.clear_official()
+        except FederatedSearchSessionError as exc:
+            raise _translate_session_error(exc) from None
+
+    def activate_private_source(
+        self,
+        source: object,
+        fingerprint: str = "confirmed-index-v1",
+    ) -> None:
+        try:
+            registration = SearchSourceRegistration.private(
+                source,  # type: ignore[arg-type]
+                source_id=_private_identity(source),
+                fingerprint=fingerprint,
+            )
+            self.session.refresh_private(registration)
         except EvidenceSearchError:
             raise
-        except Exception:
+        except FederatedSearchSessionError as exc:
+            raise _translate_session_error(exc) from None
+        except (TypeError, ValueError):
+            raise EvidenceSearchError(
+                "offline_search_activation_failed",
+                "私人实验搜索源无法安全建立。",
+            ) from None
+
+    def activate_official_repository(self, *, active_package: Any, repository: Any) -> None:
+        try:
+            identity = _public_active_identity(active_package)
+            registration = SearchSourceRegistration.official(
+                repository,
+                source_id=identity["package_id"],
+                fingerprint=identity["content_fingerprint"],
+            )
+            self.session.install_official(registration)
+        except EvidenceSearchError:
+            raise
+        except FederatedSearchSessionError as exc:
+            raise _translate_session_error(exc) from None
+        except (TypeError, ValueError):
             raise EvidenceSearchError(
                 "offline_search_activation_failed",
                 "四类离线搜索未能安全建立。",
             ) from None
-        self._engine = engine
-        self._active_package = identity
 
     def search(self, query: str = "", **filters: Any) -> dict[str, Any]:
-        engine = self._require_engine()
         try:
-            page = engine.search(query, **filters).as_dict()
+            page = self.session.search(query, **filters).as_dict()
             if not isinstance(page, Mapping) or page.get("schema_version") != "federated-search-page-v1":
                 raise EvidenceSearchError("search_projection_invalid", "搜索页契约无效。")
             value = copy.deepcopy(dict(page))
@@ -165,37 +223,29 @@ class WindowsEvidenceSearchService:
             _validate_path_free(value)
             return value
         except EvidenceSearchError:
-            self.deactivate()
             raise
+        except FederatedSearchSessionError as exc:
+            raise _translate_session_error(exc) from None
         except (TypeError, ValueError):
             raise EvidenceSearchError("search_request_invalid", "搜索条件无效。") from None
         except Exception:
-            self.deactivate()
             raise EvidenceSearchError("search_failed", "离线搜索未能完成。") from None
 
     def get(self, *, source_scope: str, source_id: str, entity_uid: str) -> dict[str, Any]:
-        engine = self._require_engine()
         try:
-            document = engine.get(
+            document = self.session.get(
                 source_scope=source_scope,
                 source_id=source_id,
                 entity_uid=entity_uid,
             )
             return _validate_document(document)
         except EvidenceSearchError:
-            self.deactivate()
             raise
+        except FederatedSearchSessionError as exc:
+            raise _translate_session_error(exc) from None
         except KeyError:
             raise EvidenceSearchError("evidence_not_found", "未找到指定证据。") from None
         except (TypeError, ValueError):
             raise EvidenceSearchError("search_request_invalid", "证据身份无效。") from None
         except Exception:
-            self.deactivate()
             raise EvidenceSearchError("search_failed", "离线证据读取未能完成。") from None
-
-    def _require_engine(self) -> Any:
-        if not self.is_ready:
-            raise EvidenceSearchError(
-                "offline_search_unavailable", "离线搜索尚未准备完成。"
-            )
-        return self._engine

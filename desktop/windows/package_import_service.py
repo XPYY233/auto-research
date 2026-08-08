@@ -36,6 +36,8 @@ class EvidenceSearchService(Protocol):
 
     def deactivate(self) -> None: ...
 
+    def deactivate_official_repository(self) -> None: ...
+
     @property
     def is_ready(self) -> bool: ...
 
@@ -343,7 +345,15 @@ class PackageImportService:
         if self.search_service is None:
             return
         try:
-            self.search_service.deactivate()
+            deactivate_official = getattr(
+                self.search_service,
+                "deactivate_official_repository",
+                None,
+            )
+            if callable(deactivate_official):
+                deactivate_official()
+            else:
+                self.search_service.deactivate()
         except Exception:
             # Readiness already fails closed; never expose adapter details.
             return

@@ -23,12 +23,18 @@ class FakePathRuntime:
         self.root = root
         self.state_directory = root / "State"
         self.official_data_root = root / "Repositories" / "Official"
+        self.private_data_root = root / "Repositories" / "Private"
         self.mutex_identity = r"C:\Users\Researcher\AppData\Local\Auto Research"
         self.prepare_count = 0
 
     def prepare_directories(self):
         self.prepare_count += 1
-        for path in (self.root, self.state_directory, self.official_data_root):
+        for path in (
+            self.root,
+            self.state_directory,
+            self.official_data_root,
+            self.private_data_root,
+        ):
             path.mkdir(parents=True, exist_ok=True)
 
 
@@ -128,6 +134,22 @@ class FakeOfficialApi:
         raise error
 
 
+class FakeLibrarianRuntime:
+    def run(self, question, **kwargs):
+        return {
+            "answer": question,
+            "report": {"review_map": []},
+            "results": [],
+            "response_format": "reasoning-presentation-v2",
+            "intent": {"id": "research_question"},
+            "retrieval_policy": "focused",
+            "research_state": {"conversation_id": kwargs.get("conversation_id")},
+            "state_token": "token",
+            "suggested_actions": [],
+            "review_map": [],
+        }
+
+
 def compatibility():
     return COMPATIBILITY.WindowsCompatibility(
         product_name="Windows 11",
@@ -155,6 +177,7 @@ class CompositionRootTests(unittest.TestCase):
             shared_http_bridge=self.shared,
             package_window_bridge=FakePicker(),
             official_api=FakeOfficialApi(),
+            librarian_runtime=FakeLibrarianRuntime(),
             credential_backend=self.backend,
             package_probe=FakeProbe(),
             native_path_factory=PureWindowsPath,
@@ -175,7 +198,9 @@ class CompositionRootTests(unittest.TestCase):
             composition.services.deepseek_credentials.resolve_for_runtime(), "sk-user-owned"
         )
         self.assertEqual(len(composition.history_key_provider.get_or_create_key()), 32)
-        self.assertFalse(composition.search_service.is_ready)
+        self.assertTrue(composition.search_service.is_ready)
+        self.assertTrue(composition.search_service.private_ready)
+        self.assertFalse(composition.search_service.official_ready)
         self.assertIs(
             composition.services.package_import.service,
             composition.package_import_service,
@@ -184,6 +209,19 @@ class CompositionRootTests(unittest.TestCase):
             composition.services.evidence_search.service,
             composition.search_service,
         )
+        self.assertIs(
+            composition.services.personal_import.service,
+            composition.personal_import_service,
+        )
+        librarian = composition.services.librarian.chat(
+            "research",
+            conversation_id="conversation-1",
+        )
+        self.assertEqual(librarian["retrieval_policy"], "focused")
+        readiness = composition.services.readiness.status().public_dict()
+        self.assertTrue(readiness["private_ready"])
+        self.assertTrue(readiness["federated_ready"])
+        self.assertTrue(readiness["librarian_ready"])
 
     def test_launch_injects_services_into_real_loopback_lifecycle_and_cleans_up(self) -> None:
         report = self.root.launch()

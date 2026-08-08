@@ -10,6 +10,7 @@ import zipfile
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 from xml.sax.saxutils import escape as xml_escape
 
@@ -22,7 +23,13 @@ from auto_research.ai.deepseek import (
 )
 
 from .article_navigation import annotate_navigation_tags
-from .agent_runtime import AgentRateLimiter, LibrarianAgentRuntime, build_agent_catalog
+from .agent_runtime import (
+    MAX_AGENT_HISTORY_MESSAGES,
+    MAX_AGENT_QUESTION_CHARS,
+    AgentRateLimiter,
+    LibrarianAgentRuntime,
+    build_agent_catalog,
+)
 from .context_chat import answer_context_chat
 from .db import EvidenceDB
 from .evidence_audit import audit_six_column_evidence
@@ -91,6 +98,125 @@ RELEASE_INFO = {
 }
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 MAX_JSON_REQUEST_BYTES = 1_000_000
+MAX_LIBRARIAN_CHAT_REQUEST_BYTES = 256_000
+MAX_LIBRARIAN_HISTORY_CONTENT_CHARS = 3_000
+MAX_LIBRARIAN_RESEARCH_STATE_BYTES = 128_000
+MAX_LIBRARIAN_STATE_TOKEN_CHARS = 512
+MAX_LIBRARIAN_CONVERSATION_ID_CHARS = 128
+LIBRARIAN_CHAT_FIELDS = frozenset({
+    "question",
+    "history",
+    "conversation_id",
+    "research_state",
+    "state_token",
+})
+_LIBRARIAN_CONVERSATION_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+class LibrarianChatRequestError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+    def public_dict(self) -> dict[str, str]:
+        return {"error": self.message, "code": self.code}
+
+
+def _librarian_request_error(
+    code: str = "librarian_request_invalid",
+    message: str = "图书管理员请求格式无效。",
+) -> LibrarianChatRequestError:
+    return LibrarianChatRequestError(code, message)
+
+
+def validate_librarian_chat_request(body: Any) -> dict[str, Any]:
+    """Validate the V3 transport envelope without interpreting signed state."""
+
+    if not isinstance(body, dict) or set(body) - LIBRARIAN_CHAT_FIELDS:
+        raise _librarian_request_error()
+    question = body.get("question")
+    if (
+        not isinstance(question, str)
+        or not question.strip()
+        or len(question) > MAX_AGENT_QUESTION_CHARS
+    ):
+        raise _librarian_request_error(
+            "librarian_question_invalid",
+            "研究问题为空或超过长度限制。",
+        )
+    history = body.get("history", [])
+    if not isinstance(history, list) or len(history) > MAX_AGENT_HISTORY_MESSAGES:
+        raise _librarian_request_error(
+            "librarian_history_invalid",
+            "对话历史格式无效或超过轮次限制。",
+        )
+    for message in history:
+        if (
+            not isinstance(message, dict)
+            or set(message) != {"role", "content"}
+            or message.get("role") not in {"user", "assistant"}
+            or not isinstance(message.get("content"), str)
+            or not message["content"].strip()
+            or len(message["content"]) > MAX_LIBRARIAN_HISTORY_CONTENT_CHARS
+        ):
+            raise _librarian_request_error(
+                "librarian_history_invalid",
+                "对话历史格式无效或超过轮次限制。",
+            )
+    if "conversation_id" in body:
+        conversation_id = body["conversation_id"]
+        if (
+            not isinstance(conversation_id, str)
+            or len(conversation_id) > MAX_LIBRARIAN_CONVERSATION_ID_CHARS
+            or _LIBRARIAN_CONVERSATION_ID_RE.fullmatch(conversation_id) is None
+        ):
+            raise _librarian_request_error(
+                "librarian_conversation_invalid",
+                "当前对话身份无效，请新建对话后重试。",
+            )
+    if "research_state" in body:
+        research_state = body["research_state"]
+        if not isinstance(research_state, dict):
+            raise _librarian_request_error(
+                "librarian_research_state_invalid",
+                "上一轮研究状态格式无效，请重新检索。",
+            )
+        if len(json.dumps(
+            research_state,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")) > MAX_LIBRARIAN_RESEARCH_STATE_BYTES:
+            raise _librarian_request_error(
+                "librarian_research_state_too_large",
+                "上一轮研究状态超过安全限制，请重新检索。",
+            )
+    if "state_token" in body:
+        token = body["state_token"]
+        if not isinstance(token, str) or len(token) > MAX_LIBRARIAN_STATE_TOKEN_CHARS:
+            raise _librarian_request_error(
+                "librarian_state_token_invalid",
+                "上一轮研究状态凭据无效，请重新检索。",
+            )
+    return {key: body[key] for key in LIBRARIAN_CHAT_FIELDS if key in body}
+
+
+def execute_librarian_chat_request(
+    db: EvidenceDB,
+    body: Any,
+    *,
+    runtime_factory: Callable[[EvidenceDB], LibrarianAgentRuntime] | None = None,
+) -> dict[str, Any]:
+    payload = validate_librarian_chat_request(body)
+    kwargs: dict[str, Any] = {"history": payload.get("history", [])}
+    for key in ("conversation_id", "research_state", "state_token"):
+        if key in payload:
+            kwargs[key] = payload[key]
+    return (runtime_factory or LibrarianAgentRuntime)(db).run(
+        payload["question"],
+        **kwargs,
+    )
 
 
 def require_loopback_host(host: str) -> str:
@@ -634,7 +760,13 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                 )
                 status = HTTPStatus.CREATED if result["outcome"] == "accepted" else HTTPStatus.OK
                 return self.json_response(result, status)
-            body = self.read_json()
+            if parsed.path == "/api/agents/librarian/chat":
+                try:
+                    body = self.read_librarian_json()
+                except LibrarianChatRequestError as exc:
+                    return self.json_response(exc.public_dict(), HTTPStatus.BAD_REQUEST)
+            else:
+                body = self.read_json()
             if parsed.path == "/api/context-chat":
                 return self.json_response(answer_context_chat(
                     self.db,
@@ -650,10 +782,10 @@ class EvidenceHandler(BaseHTTPRequestHandler):
                         {"error": "请求较频繁，请稍后再试", "code": "rate_limited"},
                         HTTPStatus.TOO_MANY_REQUESTS,
                     )
-                result = LibrarianAgentRuntime(self.db).run(
-                    str(body.get("question") or ""),
-                    history=body.get("history") or [],
-                )
+                try:
+                    result = execute_librarian_chat_request(self.db, body)
+                except LibrarianChatRequestError as exc:
+                    return self.json_response(exc.public_dict(), HTTPStatus.BAD_REQUEST)
                 snapshot = research_brief_snapshot_from_result(
                     str(body.get("question") or ""),
                     result,
@@ -930,6 +1062,31 @@ class EvidenceHandler(BaseHTTPRequestHandler):
         payload = json.loads(self._read_exact_body(length) or b"{}")
         if not isinstance(payload, dict):
             raise ValueError("JSON request body must be an object")
+        return payload
+
+    def read_librarian_json(self) -> dict:
+        if self.headers.get_content_type() != "application/json":
+            raise _librarian_request_error(
+                "librarian_content_type_invalid",
+                "图书管理员请求必须使用 JSON 格式。",
+            )
+        try:
+            length = self._content_length(
+                MAX_LIBRARIAN_CHAT_REQUEST_BYTES,
+                require_body=True,
+            )
+            payload = json.loads(self._read_exact_body(length) or b"{}")
+        except json.JSONDecodeError as exc:
+            raise _librarian_request_error() from exc
+        except ValueError as exc:
+            if str(exc) == "Request too large":
+                raise _librarian_request_error(
+                    "librarian_request_too_large",
+                    "图书管理员请求超过安全大小限制。",
+                ) from exc
+            raise _librarian_request_error() from exc
+        if not isinstance(payload, dict):
+            raise _librarian_request_error()
         return payload
 
     def read_binary(self, max_bytes: int) -> bytes:

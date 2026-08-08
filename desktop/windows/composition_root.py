@@ -17,13 +17,25 @@ from credential_bridge import DeepSeekCredentialBridgeAdapter
 from evidence_search_bridge import EvidenceSearchBridgeAdapter
 from evidence_search_service import WindowsEvidenceSearchService
 from instance_guard import WindowsInstanceGuard
+from librarian_bridge import LibrarianV3BridgeAdapter, LibrarianV3Runtime
 from loopback_server_adapter import LoopbackServerAdapter, ServerLike
 from os_compatibility import WindowsCompatibility, detect_windows_compatibility
 from package_import_bridge import PackageImportBridgeAdapter
 from package_import_service import AutoResearchProductApi, OfficialPackageApi, PackageImportService
 from package_input import FileSystemProbe, PackageInputBroker
 from package_input_window import PackageInputWindowAdapter, PackageWindowBridge
+from personal_file_selection import (
+    WindowsPersonalFileInputAdapter,
+    WindowsPersonalFileSelectionBroker,
+)
+from personal_import_bridge import PersonalImportBridgeAdapter
+from readiness_service import WindowsReadinessV2Service
 from webview_window_adapter import PyWebViewWindowAdapter
+
+from auto_research.personal.import_service import (
+    PersonalImportService,
+    SelectionSnapshotProvider,
+)
 
 
 SHARED_BRIDGE_CONTRACT_VERSION = 1
@@ -43,6 +55,9 @@ class ApplicationPathRuntime(Protocol):
 
     @property
     def official_data_root(self) -> Path: ...
+
+    @property
+    def private_data_root(self) -> Path: ...
 
     @property
     def mutex_identity(self) -> str: ...
@@ -130,6 +145,10 @@ class NativeWindowsPathRuntime:
         return self._native(self.paths.official_repositories)
 
     @property
+    def private_data_root(self) -> Path:
+        return self._native(self.paths.private_repository)
+
+    @property
     def mutex_identity(self) -> str:
         return str(self.paths.root)
 
@@ -143,6 +162,10 @@ class WindowsBridgeServices:
     package_import: PackageImportBridgeAdapter
     evidence_search: EvidenceSearchBridgeAdapter
     deepseek_credentials: DeepSeekCredentialBridgeAdapter
+    personal_file_input: WindowsPersonalFileInputAdapter
+    personal_import: PersonalImportBridgeAdapter
+    librarian: LibrarianV3BridgeAdapter
+    readiness: WindowsReadinessV2Service
 
 
 @dataclass(frozen=True)
@@ -151,6 +174,8 @@ class WindowsProductionComposition:
     services: WindowsBridgeServices
     search_service: WindowsEvidenceSearchService
     package_import_service: PackageImportService
+    personal_import_service: PersonalImportService
+    readiness_service: WindowsReadinessV2Service
     history_key_provider: CredentialKeyProvider
     shell: WindowsAppShellCoordinator
     shared_bridge_contract_version: int
@@ -171,6 +196,8 @@ class WindowsCompositionRoot:
         shared_http_bridge: SharedDesktopHttpBridge | None = None,
         package_window_bridge: ProductionPackageWindowBridge | None = None,
         private_search_source: StructuredEvidenceSource | None = None,
+        personal_selection_provider: SelectionSnapshotProvider | None = None,
+        librarian_runtime: LibrarianV3Runtime | None = None,
         official_api: OfficialPackageApi | None = None,
         credential_backend: CredentialBackend | None = None,
         package_probe: FileSystemProbe | None = None,
@@ -186,6 +213,8 @@ class WindowsCompositionRoot:
         self.shared_http_bridge = shared_http_bridge or UnavailableSharedDesktopHttpBridge()
         self.package_window_bridge = package_window_bridge or UnavailablePackageWindowBridge()
         self.private_search_source = private_search_source
+        self.personal_selection_provider = personal_selection_provider
+        self.librarian_runtime = librarian_runtime
         self.official_api = official_api or AutoResearchProductApi()
         self.credential_backend = credential_backend
         self.package_probe = package_probe
@@ -232,13 +261,33 @@ class WindowsCompositionRoot:
         backend = self.credential_backend or Win32CredentialBackend()
         deepseek_credentials = CredentialSecretStore(backend)
         history_key_provider = CredentialKeyProvider(backend)
+        credential_bridge = DeepSeekCredentialBridgeAdapter(deepseek_credentials)
         broker = PackageInputBroker(
             self.package_probe,
             native_path_factory=self.native_path_factory,
         )
         package_input = PackageInputWindowAdapter(broker, self.package_window_bridge)
-        search_service = WindowsEvidenceSearchService(
-            private_source=self.private_search_source
+        personal_selection = self.personal_selection_provider or (
+            WindowsPersonalFileSelectionBroker()
+        )
+        personal_import_service = PersonalImportService(
+            data_root=self.path_runtime.private_data_root,
+            selection_provider=personal_selection,
+        )
+        private_source = (
+            self.private_search_source
+            or personal_import_service.private_search_source()
+        )
+        search_service = WindowsEvidenceSearchService()
+        search_service.activate_private_source(
+            private_source,
+            fingerprint="confirmed-index-v1",
+        )
+        librarian = LibrarianV3BridgeAdapter(self.librarian_runtime)
+        readiness = WindowsReadinessV2Service(
+            search=search_service,
+            credentials=credential_bridge,
+            librarian=librarian,
         )
         package_import_service = PackageImportService(
             broker=broker,
@@ -251,9 +300,17 @@ class WindowsCompositionRoot:
             package_input=package_input,
             package_import=PackageImportBridgeAdapter(package_import_service),
             evidence_search=EvidenceSearchBridgeAdapter(search_service),
-            deepseek_credentials=DeepSeekCredentialBridgeAdapter(
-                deepseek_credentials
+            deepseek_credentials=credential_bridge,
+            personal_file_input=WindowsPersonalFileInputAdapter(
+                personal_selection,
+                self.package_window_bridge,
             ),
+            personal_import=PersonalImportBridgeAdapter(
+                personal_import_service,
+                private_source_listener=search_service.activate_private_source,
+            ),
+            librarian=librarian,
+            readiness=readiness,
         )
 
         def server_builder(**kwargs: Any) -> ServerLike:
@@ -279,6 +336,8 @@ class WindowsCompositionRoot:
             services=services,
             search_service=search_service,
             package_import_service=package_import_service,
+            personal_import_service=personal_import_service,
+            readiness_service=readiness,
             history_key_provider=history_key_provider,
             shell=shell,
             shared_bridge_contract_version=self.shared_http_bridge.contract_version,

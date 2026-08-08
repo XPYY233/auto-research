@@ -21,6 +21,10 @@
     "package_import_service",
     "package_input",
     "package_input_window",
+    "personal_file_selection",
+    "personal_import_bridge",
+    "librarian_bridge",
+    "readiness_service",
     "runtime_lifecycle",
     "webview_window_adapter"
   ],
@@ -35,6 +39,8 @@
     "auto_research.product.portable_repository",
     "auto_research.product.trusted_publishers",
     "auto_research.evidence.federated_search",
+    "auto_research.evidence.federated_search_session",
+    "auto_research.personal.import_service",
     "auto_research.personal.private_repository",
     "auto_research.personal.search_source"
   ],
@@ -55,7 +61,9 @@
   "required_injections": {
     "shared_desktop_http_bridge": "pending-frozen-contract-v1",
     "native_package_picker": "pending-production-adapter",
-    "private_search_source": "optional"
+    "private_search_source": "optional",
+    "personal_selection_snapshot_provider": "windows-native",
+    "librarian_v3_runtime": "pending-shared-http-injection"
   },
   "must_exclude_before_candidate": [
     "auto_research.product.internal_preview_builder",
