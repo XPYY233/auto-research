@@ -17,7 +17,7 @@ class WebViewScrollContractTests(unittest.TestCase):
     def test_switch_view_resets_the_outer_webview_scroll_position(self) -> None:
         self.assertIn("function resetViewportTop()", self.app)
         self.assertIn('typeof window.scrollTo === "function"', self.app)
-        start = self.app.index("function switchView(name)")
+        start = self.app.index("function switchView(name")
         end = self.app.index("function setFocusReview", start)
         self.assertIn("resetViewportTop();", self.app[start:end])
 
