@@ -30,6 +30,11 @@
     completed: "导入完成",
     failed: "导入未完成",
   };
+  const packageOutcomeLabels = {
+    installed: "新版官方资料包已安装并启用。",
+    activated: "已安装的官方资料包已重新启用。",
+    already_active: "该官方资料包已经启用，无需重复安装。",
+  };
   const entityLabels = {
     official: { item: "数据条目", table: "原始表格", figure: "论文图片", finding: "实验结论" },
     private: { item: "测量序列", table: "导入表格", figure: "趋势图 / 实验图像", finding: "我的备注 / 结论" },
@@ -371,7 +376,11 @@
       const job = await api(`/api/desktop/evidence-package-jobs/${encodeURIComponent(jobId)}`);
       setPackageNote(`${stageLabels[job.stage] || "正在安全导入"} · ${job.progress}%`);
       if (job.terminal) {
-        if (job.stage === "failed") throw new Error(job.error?.message || "资料包导入未完成");
+        if (job.stage === "failed") {
+          const code = job.error?.code || "package_install_failed";
+          const stage = job.error?.stage || "failed";
+          throw new Error(`${job.error?.message || "资料包导入未完成"}（${code} · ${stage}）`);
+        }
         return job;
       }
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -398,7 +407,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ selection_id: selected.selection.selection_id }),
       });
-      await waitForJob(job.job_id);
+      const completed = await waitForJob(job.job_id);
       await loadPackageStatus();
       product.searchRepository = "offline";
       product.sourceScope = "official";
@@ -406,7 +415,7 @@
       applySearchUI();
       revealSearchWorkspace();
       runSearch(null, { remember: false });
-      toast("官方资料包已安全导入，可离线搜索。");
+      toast(packageOutcomeLabels[completed.outcome] || "官方资料包已安全导入，可离线搜索。");
     } catch (error) {
       setPackageNote(error.message);
       toast(error.message, true);

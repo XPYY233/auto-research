@@ -299,10 +299,14 @@ class PackageImportService:
             self._advance_to(job_id, PackageJobStage.SNAPSHOT_SOURCE)
             resolved = self.broker.resolve(selection_id)
             self._advance_to(job_id, PackageJobStage.VERIFY_ARCHIVE)
-            self._import_package(resolved.path, **self._core_kwargs())
+            imported = self._import_package(resolved.path, **self._core_kwargs())
             self._advance_to(job_id, PackageJobStage.AUDIT_REPOSITORY)
             self.refresh_active()
-            self._advance_to(job_id, PackageJobStage.COMPLETED)
+            self._advance_to(
+                job_id,
+                PackageJobStage.COMPLETED,
+                outcome=str(getattr(imported, "outcome", "installed")),
+            )
         except PackageSelectionError as exc:
             self._fail(job_id, exc.code)
         except EvidencePackageError as exc:
@@ -317,13 +321,17 @@ class PackageImportService:
     def _run_rollback(self, job_id: str, package_id: str, target_version: str) -> None:
         try:
             self._advance_to(job_id, PackageJobStage.AUDIT_REPOSITORY)
-            self._rollback_package(
+            rolled_back = self._rollback_package(
                 package_id=package_id,
                 target_version=target_version,
                 **self._core_kwargs(),
             )
             self.refresh_active()
-            self._advance_to(job_id, PackageJobStage.COMPLETED)
+            self._advance_to(
+                job_id,
+                PackageJobStage.COMPLETED,
+                outcome=str(getattr(rolled_back, "outcome", "activated")),
+            )
         except EvidencePackageError as exc:
             self._fail(job_id, exc.code)
         except PackageImportServiceError as exc:
@@ -340,7 +348,13 @@ class PackageImportService:
             kwargs["publisher_policy"] = self._publisher_policy
         return kwargs
 
-    def _advance_to(self, job_id: str, target: PackageJobStage) -> PackageJobSnapshot:
+    def _advance_to(
+        self,
+        job_id: str,
+        target: PackageJobStage,
+        *,
+        outcome: str | None = None,
+    ) -> PackageJobSnapshot:
         snapshot = self.jobs.get(job_id)
         if snapshot.terminal:
             return snapshot
@@ -355,7 +369,11 @@ class PackageImportService:
                 )
             )
         for stage in PACKAGE_JOB_SEQUENCE[current_index + 1 : target_index + 1]:
-            snapshot = self.jobs.advance(job_id, stage)
+            snapshot = self.jobs.advance(
+                job_id,
+                stage,
+                outcome=outcome if stage is PackageJobStage.COMPLETED else None,
+            )
         return snapshot
 
     def _fail(self, job_id: str, source_code: str) -> None:

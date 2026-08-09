@@ -76,6 +76,7 @@ class PackageJobStateTests(unittest.TestCase):
         self.assertEqual(observed_progress, sorted(observed_progress))
         self.assertTrue(current.terminal)
         self.assertEqual(current.progress, 100)
+        self.assertIsNone(current.outcome)
         self.assertIsNone(coordinator.active_job_id)
 
     def test_regression_skip_and_terminal_mutation_are_rejected(self) -> None:
@@ -153,8 +154,21 @@ class PackageJobStateTests(unittest.TestCase):
         self.assertNotIn("path", serialized.lower())
         self.assertEqual(
             set(public),
-            {"job_id", "operation", "stage", "progress", "terminal"},
+            {"job_id", "operation", "stage", "progress", "terminal", "outcome"},
         )
+
+    def test_completion_can_publish_a_stable_outcome(self) -> None:
+        coordinator = self.coordinator()
+        job = coordinator.begin_import("selection_0123456789abcdef")
+        for stage in PACKAGE_JOB_SEQUENCE[1:-1]:
+            job = coordinator.advance(job.job_id, stage)
+        job = coordinator.advance(
+            job.job_id,
+            PackageJobStage.COMPLETED,
+            outcome="already_active",
+        )
+        self.assertEqual(job.outcome, "already_active")
+        self.assertEqual(job.public_dict()["outcome"], "already_active")
 
     def test_failure_keeps_progress_and_reports_the_actual_failure_stage(self) -> None:
         coordinator = self.coordinator()

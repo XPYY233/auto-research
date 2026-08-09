@@ -65,13 +65,13 @@ class _FakeOfficialCore:
         if self.import_error is not None:
             raise self.import_error
         self.installed = True
-        return SimpleNamespace(package_id="official-preview")
+        return SimpleNamespace(package_id="official-preview", outcome="already_active")
 
     def rollback_package(self, *, package_id: str, target_version: str, **kwargs):
         self.rollback_calls.append((package_id, target_version))
         self.rollback_kwargs.append(dict(kwargs))
         self.installed = True
-        return SimpleNamespace(package_id=package_id)
+        return SimpleNamespace(package_id=package_id, outcome="activated")
 
 
 class PackageImportServiceTests(unittest.TestCase):
@@ -152,6 +152,7 @@ class PackageImportServiceTests(unittest.TestCase):
 
         self.assertEqual(job.stage, PackageJobStage.COMPLETED)
         self.assertEqual(job.progress, 100)
+        self.assertEqual(job.outcome, "already_active")
         self.assertGreaterEqual(core.open_calls, 2)
         for kwargs in (*core.open_kwargs, *core.import_kwargs):
             self.assertNotIn("trusted_public_keys", kwargs)
@@ -224,6 +225,7 @@ class PackageImportServiceTests(unittest.TestCase):
 
         self.assertEqual(job.stage, PackageJobStage.COMPLETED)
         self.assertEqual(job.operation.value, "rollback")
+        self.assertEqual(job.outcome, "activated")
         self.assertEqual(
             core.rollback_calls,
             [("official-preview", "0.1.0-preview.1")],

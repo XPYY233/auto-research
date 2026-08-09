@@ -85,6 +85,7 @@ class PackageJobSnapshot:
     progress: int
     terminal: bool
     error: PackageJobError | None = None
+    outcome: str | None = None
 
     def public_dict(self) -> dict[str, Any]:
         value: dict[str, Any] = {
@@ -93,6 +94,7 @@ class PackageJobSnapshot:
             "stage": self.stage.value,
             "progress": self.progress,
             "terminal": self.terminal,
+            "outcome": self.outcome,
         }
         if self.error is not None:
             value["error"] = self.error.public_dict()
@@ -365,6 +367,7 @@ class _PackageJob:
     stage: PackageJobStage = PackageJobStage.QUEUED
     progress: int = 0
     error: PackageJobError | None = None
+    outcome: str | None = None
 
     def snapshot(self) -> PackageJobSnapshot:
         return PackageJobSnapshot(
@@ -374,6 +377,7 @@ class _PackageJob:
             progress=self.progress,
             terminal=self.stage in {PackageJobStage.COMPLETED, PackageJobStage.FAILED},
             error=self.error,
+            outcome=self.outcome,
         )
 
 
@@ -434,7 +438,13 @@ class PackageImportJobCoordinator:
         with self._lock:
             return self._get_job(job_id).snapshot()
 
-    def advance(self, job_id: str, stage: PackageJobStage) -> PackageJobSnapshot:
+    def advance(
+        self,
+        job_id: str,
+        stage: PackageJobStage,
+        *,
+        outcome: str | None = None,
+    ) -> PackageJobSnapshot:
         with self._lock:
             job = self._get_job(job_id)
             if job.stage in {PackageJobStage.COMPLETED, PackageJobStage.FAILED}:
@@ -447,6 +457,10 @@ class PackageImportJobCoordinator:
                 raise PackageJobStateError(
                     _public_error("package_job_transition_invalid", job.stage)
                 )
+            if stage is not PackageJobStage.COMPLETED and outcome is not None:
+                raise PackageJobStateError(
+                    _public_error("package_job_transition_invalid", job.stage)
+                )
             progress = PACKAGE_JOB_PROGRESS[stage]
             if progress < job.progress:
                 raise PackageJobStateError(
@@ -455,6 +469,7 @@ class PackageImportJobCoordinator:
             job.stage = stage
             job.progress = progress
             if stage is PackageJobStage.COMPLETED:
+                job.outcome = outcome
                 self._active_job_id = None
             return job.snapshot()
 

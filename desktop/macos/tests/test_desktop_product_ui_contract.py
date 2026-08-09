@@ -119,7 +119,7 @@ class DesktopProductUIContractTests(unittest.TestCase):
         self.assertIn("AutoResearchDesktopProduct?.applySearchUI?.()", experience)
 
     def test_successful_package_import_enters_precise_official_search(self) -> None:
-        success = self.product.index('toast("官方资料包已安全导入')
+        success = self.product.index("toast(packageOutcomeLabels[completed.outcome]")
         repository = self.product.rfind('product.searchRepository = "offline"', 0, success)
         scope = self.product.rfind('product.sourceScope = "official"', 0, success)
         precise = self.product.rfind('setSearchExperience("precise")', 0, success)
