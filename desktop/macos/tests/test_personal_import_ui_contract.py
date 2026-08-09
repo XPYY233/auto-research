@@ -67,6 +67,8 @@ class PersonalImportUIContractTests(unittest.TestCase):
         self.assertIn("内容已修改，请重新保存确认草稿后再确认", self.product)
         self.assertIn('error.code === "personal_search_refresh_failed"', self.product)
         self.assertIn("不要重复确认", self.product)
+        self.assertIn("showPrivateSearchResults()", self.product)
+        self.assertIn('switchView("search", { skipSearch: true })', self.product)
         self.assertNotIn("localStorage", self.product)
         self.assertNotIn("selected.selection.path", self.product)
 
@@ -96,6 +98,14 @@ class PersonalImportUIContractTests(unittest.TestCase):
         self.assertNotIn("data-source-scope", librarian.group(0))
         self.assertIn("librarianTransportFailureCode", self.app)
         self.assertIn("body.error || body.message", self.app)
+
+    def test_hidden_legacy_views_keep_compatibility_without_navigation(self) -> None:
+        self.assertNotIn('<button class="nav" data-view="manual">', self.index)
+        self.assertNotIn('<button class="nav" data-view="history">', self.index)
+        self.assertIn('<section class="view" id="view-manual">', self.index)
+        self.assertIn('<section class="view" id="view-history">', self.index)
+        self.assertIn('manual: { kicker: "MANUAL ENTRY"', self.app)
+        self.assertIn('history: { kicker: "REVISION HISTORY"', self.app)
 
 
 if __name__ == "__main__":

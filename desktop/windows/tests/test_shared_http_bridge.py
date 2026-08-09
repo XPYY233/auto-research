@@ -192,6 +192,16 @@ class SharedHttpBridgeTests(unittest.TestCase):
         connection.close()
         return status, payload, no_store
 
+    def _get_text(self, path):
+        connection = self._connection()
+        connection.request("GET", path, headers={"Cookie": self.cookie})
+        response = connection.getresponse()
+        body = response.read().decode("utf-8")
+        status = response.status
+        no_store = response.getheader("Cache-Control")
+        connection.close()
+        return status, body, no_store
+
     def _post(self, path, payload, *, origin=True, csrf=True):
         body = json.dumps(payload).encode("utf-8")
         headers = {
@@ -243,6 +253,25 @@ class SharedHttpBridgeTests(unittest.TestCase):
         status, job, _ = self._get("/api/desktop/evidence-package-jobs/package-job-0123456789")
         self.assertEqual(status, 200)
         self.assertEqual(job["stage"], "completed")
+
+    def test_shared_workbench_exposes_four_primary_destinations_and_personal_picker(self) -> None:
+        status, index, no_store = self._get_text("/index.html")
+        self.assertEqual(status, 200)
+        self.assertEqual(no_store, "no-store")
+        for destination in ("review", "search", "upload", "personal"):
+            self.assertIn(f'data-view="{destination}"', index)
+        self.assertIn("上传实验数据", index)
+        self.assertNotIn('data-view="manual"', index)
+        self.assertNotIn('data-view="history"', index)
+        self.assertIn('id="view-personal"', index)
+
+        status, product, no_store = self._get_text("/static/desktop_product.js")
+        self.assertEqual(status, 200)
+        self.assertEqual(no_store, "no-store")
+        self.assertIn("select_personal_data_file", product)
+        self.assertIn("openPersonalImport", product)
+        self.assertIn("personalView.appendChild(personalPanel)", product)
+        self.assertNotIn("selected.selection.path", product)
 
     def test_session_origin_csrf_and_one_time_bootstrap_are_enforced(self) -> None:
         connection = self._connection()

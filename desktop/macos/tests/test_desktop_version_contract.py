@@ -54,6 +54,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         checks = launcher._frozen_product_contract_checks()
         self.assertTrue(checks)
         self.assertTrue(all(checks.values()), checks)
+        self.assertTrue(checks["primary_personal_import_navigation"])
 
 
 if __name__ == "__main__":

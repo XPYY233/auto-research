@@ -6,8 +6,9 @@ const viewCopy = {
   review: { kicker: "EVIDENCE CHECK", title: "检查自动提取结果", subtitle: "自动质量门决定是否收录；本页用于检查证据和修正少量异常。" },
   search: { kicker: "EXPERIMENTAL EVIDENCE LIBRARY", title: "实验文献证据检索平台", subtitle: "数据、图表、结论与 PDF 原文证据的统一检索入口。" },
   upload: { kicker: "PDF INTAKE", title: "导入实验文献", subtitle: "验证真实 PDF、识别重复论文，并加入待处理队列。" },
-  manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "为自动抽取未覆盖的实验结果补充六列记录。" },
-  history: { kicker: "REVISION HISTORY", title: "查看修正记录", subtitle: "复查人工确认、修正和补录留下的版本记录。" },
+  personal: { kicker: "EXPERIMENT DATA INTAKE", title: "上传实验数据", subtitle: "安全预览 CSV、TSV 或 XLSX，逐列确认含义和单位后加入本机私人检索。" },
+  manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "历史兼容视图；当前产品不再提供导航入口。" },
+  history: { kicker: "REVISION HISTORY", title: "查看修正记录", subtitle: "历史兼容视图；当前产品不再提供导航入口。" },
 };
 const fieldLabels = {
   value_text: "具体数值",
@@ -113,7 +114,7 @@ function applyUiMode() {
     state.uiMode?.release?.version,
     state.uiMode?.release?.evidence_schema ? `证据库结构 v${state.uiMode.release.evidence_schema}` : "",
   ].filter(Boolean).join(" · ");
-  document.querySelectorAll('[data-view="upload"],[data-view="manual"],[data-write-action]').forEach(el => {
+  document.querySelectorAll('[data-view="upload"],[data-view="personal"],[data-write-action]').forEach(el => {
     el.hidden = readonly;
   });
   document.querySelectorAll(".nav").forEach(btn => {
@@ -3460,18 +3461,19 @@ function resetViewportTop() {
   }
 }
 
-function switchView(name) {
+function switchView(name, options = {}) {
   if (isReadOnly() && name !== "search") name = "search";
   if (name !== "review" && state.focusReview) setFocusReview(false);
   document.querySelectorAll(".nav,.view").forEach(el => el.classList.remove("active"));
   document.querySelector(`.nav[data-view="${name}"]`)?.classList.add("active");
-  document.querySelector(`#view-${name}`).classList.add("active");
+  document.querySelector(`#view-${name}`)?.classList.add("active");
   document.body.dataset.view = name;
   renderViewHeader(name);
   resetViewportTop();
-  if (name === "search" && !document.querySelector("#search-results").children.length) runSearch();
+  if (name === "search" && !options.skipSearch && !document.querySelector("#search-results").children.length) runSearch();
   if (name === "upload") refreshUploadWorkspace();
-  if (name === "manual") fillManualDefaults();
+  if (name === "personal") globalThis.AutoResearchDesktopProduct?.openPersonalImport?.();
+  else globalThis.AutoResearchDesktopProduct?.applySearchUI?.();
 }
 
 function setFocusReview(enabled) {

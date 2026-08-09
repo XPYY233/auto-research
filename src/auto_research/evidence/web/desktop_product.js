@@ -133,21 +133,31 @@
   }
 
   async function initialize() {
-    try {
-      await loadPackageStatus();
-    } catch (_error) {
-      return;
+    const personalView = el("view-personal");
+    const personalPanel = el("personal-import-panel");
+    if (personalView && personalPanel && personalPanel.parentElement !== personalView) {
+      personalView.appendChild(personalPanel);
     }
     product.available = true;
     el("desktop-product-panel").hidden = false;
     el("search-repository-switch").hidden = false;
-    await Promise.all([loadCredentialStatus(), loadPersonalSearchStatus()]);
+    const [packageResult] = await Promise.allSettled([
+      loadPackageStatus(),
+      loadCredentialStatus(),
+      loadPersonalSearchStatus(),
+    ]);
+    if (packageResult.status === "rejected") {
+      product.packageStatus = { unavailable: true };
+      renderPackageStatus();
+      setPackageNote("官方资料包服务暂不可用；仍可导入和检索本机实验数据。");
+    }
     applySearchUI();
   }
 
   function applySearchUI() {
     if (!product.available) return;
     const offline = product.searchRepository === "offline";
+    const personalPage = document.body.dataset.view === "personal";
     document.querySelectorAll("[data-search-repository]").forEach(button => {
       const active = button.dataset.searchRepository === product.searchRepository;
       button.classList.toggle("active", active);
@@ -165,11 +175,24 @@
     if (el("search-exports")) {
       el("search-exports").hidden = offline || !["item", "finding"].includes(state.searchMode);
     }
-    el("personal-import-panel")?.toggleAttribute("hidden", !(offline && product.sourceScope === "private"));
+    el("personal-import-panel")?.toggleAttribute("hidden", !personalPage);
     const help = el("search-help");
     if (help) help.textContent = offline
       ? "离线资料库统一检索四类公开记录；官方文献和我的实验保持来源标识，不会互相写入。"
       : "检索本地可编辑文献工作区；支持打开原文、校对、导出与继续提取。";
+  }
+
+  function openPersonalImport() {
+    if (!product.available) return;
+    applySearchUI();
+    void loadPersonalSearchStatus();
+  }
+
+  function showPrivateSearchResults() {
+    product.searchRepository = "offline";
+    product.sourceScope = "private";
+    switchView("search", { skipSearch: true });
+    setSearchExperience("precise");
   }
 
   function revealSearchWorkspace() {
@@ -684,10 +707,8 @@
       product.reviewedRevision = null;
       await loadPersonalSearchStatus();
       setPersonalProgress("实验数据已确认并加入“我的实验”搜索。");
-      product.searchRepository = "offline";
-      product.sourceScope = "private";
-      applySearchUI();
-      runSearch(null, { remember: false });
+      showPrivateSearchResults();
+      toast("实验数据已确认，正在显示“我的实验”搜索结果。");
     } catch (error) {
       if (error.code === "personal_search_refresh_failed") {
         try { product.personalImportStatus = await readLatestImportStatus(); } catch (_statusError) { /* Search status remains authoritative. */ }
@@ -722,11 +743,9 @@
       });
       renderPersonalSearchStatus();
       if (privateReady()) {
-        product.searchRepository = "offline";
-        product.sourceScope = "private";
-        applySearchUI();
-        runSearch(null, { remember: false });
         setPersonalProgress("私人搜索已刷新，可以检索最新确认数据。");
+        showPrivateSearchResults();
+        toast("私人搜索已刷新，正在显示最新结果。");
       }
     } catch (error) {
       await loadPersonalSearchStatus();
@@ -766,7 +785,7 @@
   }
 
   el("desktop-package-import")?.addEventListener("click", importPackage);
-  el("desktop-personal-import")?.addEventListener("click", choosePersonalFile);
+  el("desktop-personal-import")?.addEventListener("click", () => switchView("personal"));
   el("personal-import-choose")?.addEventListener("click", choosePersonalFile);
   el("personal-import-sheet")?.addEventListener("change", renderPreviewSheet);
   el("personal-import-form")?.addEventListener("submit", savePersonalDraft);
@@ -797,5 +816,5 @@
     button.addEventListener("click", () => setSourceScope(button.dataset.sourceScope));
   });
 
-  globalThis.AutoResearchDesktopProduct = { initialize, handleSearch, applySearchUI };
+  globalThis.AutoResearchDesktopProduct = { initialize, handleSearch, applySearchUI, openPersonalImport };
 })();

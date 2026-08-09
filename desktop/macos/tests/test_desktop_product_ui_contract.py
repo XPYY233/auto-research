@@ -65,6 +65,31 @@ class DesktopProductUIContractTests(unittest.TestCase):
         self.assertIn("官方资料库搜索不需要 AI 密钥", self.index)
         self.assertIn(".federated-result-card", self.styles)
 
+    def test_personal_import_is_a_primary_navigation_destination(self) -> None:
+        self.assertIn('<button class="nav" data-view="personal">上传实验数据</button>', self.index)
+        self.assertNotIn('<button class="nav" data-view="manual">', self.index)
+        self.assertNotIn('<button class="nav" data-view="history">', self.index)
+        self.assertIn('<section class="view" id="view-personal"', self.index)
+        self.assertIn('title: "上传实验数据"', self.app)
+        self.assertIn('querySelector(`#view-${name}`)', self.app)
+        self.assertIn("openPersonalImport", self.product)
+        self.assertIn('personalView.appendChild(personalPanel)', self.product)
+        self.assertIn('switchView("search", { skipSearch: true })', self.product)
+        self.assertIn('setSearchExperience("precise")', self.product)
+        self.assertIn('body[data-view="personal"] #personal-import-panel', self.styles)
+        self.assertNotIn(".search-hero .personal-import-panel", self.styles)
+
+    def test_personal_import_mount_does_not_depend_on_package_status(self) -> None:
+        initialize = self.product.split("async function initialize()", 1)[1].split(
+            "function applySearchUI()", 1
+        )[0]
+        self.assertLess(
+            initialize.index("personalView.appendChild(personalPanel)"),
+            initialize.index("loadPackageStatus()"),
+        )
+        self.assertIn("Promise.allSettled", initialize)
+        self.assertIn("仍可导入和检索本机实验数据", initialize)
+
     def test_shared_app_contains_only_explicit_product_hooks(self) -> None:
         self.assertIn("AutoResearchDesktopProduct?.initialize()", self.app)
         self.assertIn("AutoResearchDesktopProduct?.handleSearch", self.app)
