@@ -1,0 +1,489 @@
+"""Platform-neutral orchestration for the Auto Research package center.
+
+This module owns no filesystem paths, database handles, archive algorithms, or
+desktop state.  Native shells resolve short-lived opaque tokens and injected
+ports implement scientific payload planning and transfer package I/O.
+"""
+
+from __future__ import annotations
+
+import secrets
+import threading
+import time
+from dataclasses import dataclass
+from typing import Any, Callable, Mapping
+
+from .package_job_contract import (
+    PackageJobError,
+    PackageJobProgress,
+    PackageJobStage,
+    PackageOperation,
+    advance_package_job,
+    begin_package_job,
+    fail_package_job,
+)
+from .package_center_models import (
+    MAX_TRANSFER_BYTES,
+    SHA256_RE,
+    DestinationResolver,
+    PackageCenterError,
+    PackageExportPlan,
+    PackageKind,
+    PackageScope,
+    PayloadPlanCandidate,
+    PayloadPlanner,
+    RightsConfirmation,
+    RightsRequirement,
+    SelectionResolver,
+    TransferExporter,
+    TransferImporter,
+    TransferInspector,
+    assert_path_free,
+    normalize_kind,
+    normalize_scope,
+    normalize_selection,
+    normalize_token,
+    public_result,
+    safe_port_error,
+)
+
+
+MAX_PLAN_CACHE = 128
+MAX_JOB_CACHE = 128
+
+
+@dataclass
+class _StoredJob:
+    job_id: str
+    progress: PackageJobProgress
+    result: dict[str, Any] | None = None
+
+    def public_dict(self) -> dict[str, Any]:
+        value = self.progress.public_dict()
+        value["job_id"] = self.job_id
+        if self.result is not None:
+            value["result"] = self.result
+        assert_path_free(value)
+        return value
+
+
+class PackageJobService:
+    """Small in-memory single-flight job registry shared by package actions."""
+
+    def __init__(self, *, max_jobs: int = MAX_JOB_CACHE) -> None:
+        if not 1 <= int(max_jobs) <= 1_000:
+            raise ValueError("max_jobs must be between 1 and 1000")
+        self._max_jobs = int(max_jobs)
+        self._lock = threading.RLock()
+        self._active_job_id: str | None = None
+        self._jobs: dict[str, _StoredJob] = {}
+        self._order: list[str] = []
+
+    def get(self, job_id: str) -> dict[str, Any]:
+        normalized = normalize_token(job_id, label="package_job")
+        with self._lock:
+            job = self._jobs.get(normalized)
+            if job is None:
+                raise PackageCenterError("package_job_not_found", "资料包任务不存在或已过期。")
+            return job.public_dict()
+
+    def _begin(self, operation: PackageOperation) -> str:
+        with self._lock:
+            if self._active_job_id is not None:
+                raise PackageCenterError(
+                    "package_busy", "已有资料包任务正在进行，请稍后再试。", retryable=True
+                )
+            self._trim_locked()
+            job_id = secrets.token_urlsafe(24)
+            self._jobs[job_id] = _StoredJob(job_id, begin_package_job(operation))
+            self._order.append(job_id)
+            self._active_job_id = job_id
+            return job_id
+
+    def _advance(self, job_id: str, stage: PackageJobStage) -> None:
+        with self._lock:
+            job = self._jobs[job_id]
+            job.progress = advance_package_job(job.progress, stage)
+
+    def _complete(self, job_id: str, *, outcome: str, result: dict[str, Any]) -> None:
+        with self._lock:
+            job = self._jobs[job_id]
+            job.progress = advance_package_job(
+                job.progress, PackageJobStage.COMPLETED, outcome=outcome
+            )
+            job.result = result
+            if self._active_job_id == job_id:
+                self._active_job_id = None
+
+    def _fail(self, job_id: str, error: PackageCenterError) -> None:
+        with self._lock:
+            job = self._jobs[job_id]
+            failure = PackageJobError(
+                code=error.code,
+                safe_message=error.safe_message,
+                stage=job.progress.stage,
+                retryable=error.retryable,
+            )
+            job.progress = fail_package_job(job.progress, failure)
+            if self._active_job_id == job_id:
+                self._active_job_id = None
+
+    def _trim_locked(self) -> None:
+        while len(self._order) >= self._max_jobs:
+            oldest = self._order[0]
+            if oldest == self._active_job_id:
+                break
+            self._order.pop(0)
+            self._jobs.pop(oldest, None)
+
+
+class PackageCenter:
+    def __init__(
+        self,
+        *,
+        selection_resolver: SelectionResolver,
+        inspector: TransferInspector,
+    ) -> None:
+        self._selection_resolver = selection_resolver
+        self._inspector = inspector
+
+    def inspect(self, selection_token: str) -> dict[str, Any]:
+        token = normalize_token(selection_token, label="package_selection")
+        try:
+            source = self._selection_resolver.resolve(token)
+            summary = public_result(self._inspector(source))
+        except Exception as exc:
+            raise safe_port_error(
+                exc,
+                fallback_code="package_inspect_failed",
+                fallback_message="无法安全检查该资料包。",
+            ) from None
+        summary = dict(summary)
+        summary["checksum_ack_required"] = True
+        return summary
+
+
+class PackageExportService:
+    def __init__(
+        self,
+        *,
+        payload_planner: PayloadPlanner,
+        destination_resolver: DestinationResolver,
+        exporter: TransferExporter,
+        jobs: PackageJobService,
+        plan_ttl_seconds: int = 600,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not 30 <= int(plan_ttl_seconds) <= 3600:
+            raise ValueError("plan_ttl_seconds must be between 30 and 3600")
+        self._planner = payload_planner
+        self._destination_resolver = destination_resolver
+        self._exporter = exporter
+        self._jobs = jobs
+        self._ttl = int(plan_ttl_seconds)
+        self._clock = clock
+        self._lock = threading.RLock()
+        self._plans: dict[str, PackageExportPlan] = {}
+        self._consumed_destination_tokens: set[str] = set()
+
+    def plan(self, kind: str, scope: str, selection: Any) -> dict[str, Any]:
+        normalized_kind = normalize_kind(kind)
+        normalized_scope = normalize_scope(scope)
+        normalized_selection, selection_fingerprint, selected_count = normalize_selection(
+            normalized_scope, selection
+        )
+        try:
+            candidate = self._planner.plan(
+                kind=normalized_kind.value,
+                scope=normalized_scope.value,
+                selection=normalized_selection,
+            )
+        except Exception as exc:
+            raise safe_port_error(
+                exc,
+                fallback_code="package_plan_failed",
+                fallback_message="无法生成资料包计划。",
+            ) from None
+        self._validate_candidate(candidate, normalized_kind)
+        now = self._clock()
+        token = secrets.token_urlsafe(24)
+        plan = PackageExportPlan(
+            token=token,
+            kind=normalized_kind,
+            scope=normalized_scope,
+            selection_fingerprint=selection_fingerprint,
+            candidate=candidate,
+            created_at=now,
+            expires_at=now + self._ttl,
+            selected_count=selected_count,
+        )
+        with self._lock:
+            self._prune_plans_locked(now)
+            if len(self._plans) >= MAX_PLAN_CACHE:
+                oldest = min(self._plans.values(), key=lambda value: value.created_at)
+                self._plans.pop(oldest.token, None)
+            self._plans[token] = plan
+        return plan.public_dict(now=now)
+
+    def start(
+        self,
+        plan_token: str,
+        rights_confirmations: Mapping[str, Any],
+        destination_token: str,
+    ) -> dict[str, Any]:
+        token = normalize_token(plan_token, label="package_plan")
+        destination = normalize_token(destination_token, label="package_destination")
+        plan = self._get_plan(token)
+        confirmations = self._normalize_confirmations(plan, rights_confirmations)
+        job_id = self._jobs._begin(PackageOperation.TRANSFER_EXPORT)
+        try:
+            self._jobs._advance(job_id, PackageJobStage.PLAN)
+            current_fingerprint = self._planner.current_content_fingerprint(plan.candidate)
+            if current_fingerprint != plan.candidate.content_fingerprint:
+                raise PackageCenterError(
+                    "package_plan_stale", "源数据已发生变化，请重新生成导出计划。"
+                )
+            self._jobs._advance(job_id, PackageJobStage.SNAPSHOT_SOURCE)
+            self._jobs._advance(job_id, PackageJobStage.RIGHTS_AUDIT)
+            materialized = self._planner.materialize(
+                plan.candidate,
+                rights_confirmations=confirmations,
+            )
+            self._jobs._advance(job_id, PackageJobStage.BUILD_ARCHIVE)
+            with self._lock:
+                if destination in self._consumed_destination_tokens:
+                    raise PackageCenterError(
+                        "package_destination_expired",
+                        "导出位置选择已使用，请重新选择保存位置。",
+                    )
+                self._consumed_destination_tokens.add(destination)
+            destination_value = self._destination_resolver.resolve(destination)
+            exported = self._exporter(
+                materialized,
+                destination_value,
+                unencrypted_ack=True,
+            )
+            self._jobs._advance(job_id, PackageJobStage.VERIFY_CHECKSUMS)
+            result = public_result(exported)
+            self._jobs._advance(job_id, PackageJobStage.PUBLISH)
+            self._jobs._complete(
+                job_id,
+                outcome=str(result.get("outcome") or "exported"),
+                result=result,
+            )
+        except Exception as exc:
+            error = safe_port_error(
+                exc,
+                fallback_code="package_export_failed",
+                fallback_message="资料包导出失败。",
+            )
+            self._jobs._fail(job_id, error)
+        return self._jobs.get(job_id)
+
+    def _get_plan(self, token: str) -> PackageExportPlan:
+        now = self._clock()
+        with self._lock:
+            self._prune_plans_locked(now)
+            plan = self._plans.get(token)
+        if plan is None:
+            raise PackageCenterError(
+                "package_plan_expired", "导出计划不存在或已过期，请重新生成。"
+            )
+        return plan
+
+    def _prune_plans_locked(self, now: float) -> None:
+        expired = [token for token, plan in self._plans.items() if plan.expires_at <= now]
+        for token in expired:
+            self._plans.pop(token, None)
+
+    @staticmethod
+    def _validate_candidate(candidate: Any, kind: PackageKind) -> None:
+        if not isinstance(candidate, PayloadPlanCandidate):
+            raise PackageCenterError("package_plan_invalid", "资料包计划格式无效。")
+        if (
+            not candidate.package_id
+            or not candidate.package_version
+            or not SHA256_RE.fullmatch(candidate.content_fingerprint)
+            or candidate.estimated_bytes < 0
+            or candidate.estimated_bytes > MAX_TRANSFER_BYTES
+            or candidate.item_count < 0
+            or candidate.paper_count < 0
+            or candidate.missing_pdf_count < 0
+        ):
+            raise PackageCenterError("package_plan_invalid", "资料包计划内容无效。")
+        if kind is PackageKind.PERSONAL_EXPERIMENTS and candidate.rights_requirements:
+            raise PackageCenterError(
+                "package_plan_invalid", "私人实验包不能包含论文 PDF 权利确认。"
+            )
+        ids = [requirement.paper_uid for requirement in candidate.rights_requirements]
+        if (
+            len(ids) != len(set(ids))
+            or any(not item or len(item) > 128 for item in ids)
+            or any(
+                not isinstance(requirement, RightsRequirement)
+                or not requirement.title.strip()
+                or len(requirement.title) > 500
+                or len(requirement.reason) > 500
+                for requirement in candidate.rights_requirements
+            )
+        ):
+            raise PackageCenterError("package_plan_invalid", "PDF 权利确认项无效。")
+
+    @staticmethod
+    def _normalize_confirmations(
+        plan: PackageExportPlan, raw: Mapping[str, Any]
+    ) -> dict[str, RightsConfirmation]:
+        if not isinstance(raw, Mapping):
+            raise PackageCenterError(
+                "package_risk_ack_required", "请确认资料包传递风险。"
+            )
+        required_fields = {
+            "unencrypted_ack",
+            "unauthenticated_source_ack",
+            "internal_use_only_ack",
+            "paper_rights",
+        }
+        if set(raw) != required_fields or any(
+            raw.get(field) is not True
+            for field in (
+                "unencrypted_ack",
+                "unauthenticated_source_ack",
+                "internal_use_only_ack",
+            )
+        ):
+            raise PackageCenterError(
+                "package_risk_ack_required",
+                "请确认资料包未加密、来源未认证且仅限组内使用。",
+            )
+        rights = raw.get("paper_rights")
+        if not isinstance(rights, Mapping):
+            raise PackageCenterError(
+                "package_rights_confirmation_invalid", "PDF 权利确认格式无效。"
+            )
+        required_ids = {
+            requirement.paper_uid for requirement in plan.candidate.rights_requirements
+        }
+        if set(map(str, rights)) != required_ids:
+            raise PackageCenterError(
+                "package_pdf_rights_required", "每篇受限 PDF 都必须单独确认分享权限。"
+            )
+        normalized: dict[str, RightsConfirmation] = {}
+        for paper_uid, value in rights.items():
+            if not isinstance(value, Mapping) or set(value) != {"allowed", "basis"}:
+                raise PackageCenterError(
+                    "package_rights_confirmation_invalid", "PDF 权利确认格式无效。"
+                )
+            basis = str(value.get("basis") or "").strip()
+            if value.get("allowed") is not True or not basis or len(basis) > 500:
+                raise PackageCenterError(
+                    "package_pdf_rights_required", "每篇受限 PDF 都必须说明组内分享依据。"
+                )
+            normalized[str(paper_uid)] = RightsConfirmation(True, basis)
+        return normalized
+
+
+class PackageTransferImportService:
+    def __init__(
+        self,
+        *,
+        selection_resolver: SelectionResolver,
+        inspector: TransferInspector,
+        importer: TransferImporter,
+        jobs: PackageJobService,
+    ) -> None:
+        self._selection_resolver = selection_resolver
+        self._inspector = inspector
+        self._importer = importer
+        self._jobs = jobs
+        self._lock = threading.RLock()
+        self._consumed_selection_tokens: set[str] = set()
+
+    def start(
+        self,
+        selection_token: str,
+        *,
+        checksum_ack: bool,
+        expected_sha: str,
+    ) -> dict[str, Any]:
+        token = normalize_token(selection_token, label="package_selection")
+        if checksum_ack is not True:
+            raise PackageCenterError(
+                "transfer_checksum_ack_required",
+                "请先通过其他渠道与发送者核对 SHA-256。",
+            )
+        expected = str(expected_sha or "").casefold()
+        if not SHA256_RE.fullmatch(expected):
+            raise PackageCenterError(
+                "transfer_expected_checksum_invalid", "请输入完整的 64 位 SHA-256。"
+            )
+        job_id = self._jobs._begin(PackageOperation.TRANSFER_IMPORT)
+        try:
+            with self._lock:
+                if token in self._consumed_selection_tokens:
+                    raise PackageCenterError(
+                        "package_selection_expired",
+                        "资料包选择已使用，请重新选择文件。",
+                    )
+                self._consumed_selection_tokens.add(token)
+            source = self._selection_resolver.resolve(token)
+            self._jobs._advance(job_id, PackageJobStage.SNAPSHOT_SOURCE)
+            self._jobs._advance(job_id, PackageJobStage.VERIFY_ARCHIVE)
+            inspected = public_result(self._inspector(source))
+            try:
+                inspected_kind = PackageKind(str(inspected.get("package_kind") or ""))
+            except ValueError as exc:
+                raise PackageCenterError(
+                    "transfer_kind_invalid", "该文件不是可导入的用户资料包。"
+                ) from exc
+            package_sha = str(inspected.get("package_sha256") or "").casefold()
+            if package_sha != expected:
+                raise PackageCenterError(
+                    "transfer_package_checksum_mismatch",
+                    "资料包与发送方提供的 SHA-256 不一致。",
+                )
+            self._jobs._advance(job_id, PackageJobStage.VERIFY_CHECKSUMS)
+            self._jobs._advance(job_id, PackageJobStage.RIGHTS_AUDIT)
+            self._jobs._advance(job_id, PackageJobStage.EXTRACT_STAGING)
+            imported = self._importer(
+                source,
+                expected_kind=inspected_kind.value,
+                expected_package_sha256=expected,
+                checksum_ack=True,
+            )
+            self._jobs._advance(job_id, PackageJobStage.AUDIT_PAYLOAD)
+            result = public_result(imported)
+            self._jobs._advance(job_id, PackageJobStage.ACTIVATE)
+            self._jobs._complete(
+                job_id,
+                outcome=str(result.get("outcome") or "imported"),
+                result=result,
+            )
+        except Exception as exc:
+            error = safe_port_error(
+                exc,
+                fallback_code="transfer_import_failed",
+                fallback_message="用户资料包导入失败。",
+            )
+            self._jobs._fail(job_id, error)
+        return self._jobs.get(job_id)
+
+
+__all__ = [
+    "DestinationResolver",
+    "PackageCenter",
+    "PackageCenterError",
+    "PackageExportPlan",
+    "PackageExportService",
+    "PackageJobService",
+    "PackageKind",
+    "PackageScope",
+    "PackageTransferImportService",
+    "PayloadPlanCandidate",
+    "PayloadPlanner",
+    "RightsConfirmation",
+    "RightsRequirement",
+    "SelectionResolver",
+    "TransferExporter",
+    "TransferImporter",
+    "TransferInspector",
+]
