@@ -87,9 +87,42 @@ class ImportedEvidencePackage:
     already_installed: bool
     content_fingerprint: str | None = None
     previous_package_id: str | None = None
+    outcome: str = "installed"
+
+    def public_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "package-summary-v1",
+            "package_kind": "official_evidence",
+            "package_id": self.package_id,
+            "package_version": self.package_version,
+            "outcome": self.outcome,
+            "trusted_official": True,
+            "previous_package_id": self.previous_package_id,
+            "previous_version": self.previous_version,
+            "content_fingerprint": self.content_fingerprint,
+        }
 
 
 RepositoryValidator = Callable[[Path, Mapping[str, Any]], Any]
+
+
+def _active_state_matches(
+    active_state: Mapping[str, Any] | None,
+    *,
+    package_id: str,
+    package_version: str,
+    manifest_sha256: str,
+    content_fingerprint: str | None,
+) -> bool:
+    if not active_state:
+        return False
+    return (
+        str(active_state.get("package_id") or "") == package_id
+        and str(active_state.get("package_version") or "") == package_version
+        and str(active_state.get("manifest_sha256") or "") == manifest_sha256
+        and str(active_state.get("content_fingerprint") or "")
+        == str(content_fingerprint or "")
+    )
 
 
 def _canonical_json_bytes(value: Any) -> bytes:
@@ -837,6 +870,24 @@ def import_evidence_package(
                     "install_failed", "资料包未能安全安装，旧资料库保持不变"
                 ) from exc
         previous_package = None
+        if already_installed and _active_state_matches(
+            active_before,
+            package_id=verified.package_id,
+            package_version=verified.package_version,
+            manifest_sha256=expected_install_digest,
+            content_fingerprint=content_fingerprint,
+        ):
+            return ImportedEvidencePackage(
+                package_id=verified.package_id,
+                package_version=verified.package_version,
+                install_path=target,
+                active_state_path=selector_path,
+                previous_version=previous_version,
+                already_installed=True,
+                content_fingerprint=content_fingerprint,
+                previous_package_id=previous_package_id,
+                outcome="already_active",
+            )
         if active_before and (
             previous_package_id != verified.package_id
             or previous_version != verified.package_version
@@ -867,6 +918,7 @@ def import_evidence_package(
             already_installed=already_installed,
             content_fingerprint=content_fingerprint,
             previous_package_id=previous_package_id,
+            outcome="activated" if already_installed else "installed",
         )
     finally:
         shutil.rmtree(operation, ignore_errors=True)
@@ -914,6 +966,24 @@ def rollback_evidence_package(
     previous_package_id = str(active_before.get("package_id")) if active_before else None
     manifest_path = target / MANIFEST_NAME
     manifest_sha256, _ = _sha256_file(manifest_path)
+    if _active_state_matches(
+        active_before,
+        package_id=package_id,
+        package_version=target_version,
+        manifest_sha256=manifest_sha256,
+        content_fingerprint=content_fingerprint,
+    ):
+        return ImportedEvidencePackage(
+            package_id=package_id,
+            package_version=target_version,
+            install_path=target,
+            active_state_path=selector_path,
+            previous_version=previous_version,
+            already_installed=True,
+            content_fingerprint=content_fingerprint,
+            previous_package_id=previous_package_id,
+            outcome="already_active",
+        )
     previous_package = None
     if active_before and (
         previous_package_id != package_id or previous_version != target_version
@@ -944,6 +1014,7 @@ def rollback_evidence_package(
         already_installed=True,
         content_fingerprint=content_fingerprint,
         previous_package_id=previous_package_id,
+        outcome="activated",
     )
 
 

@@ -151,9 +151,24 @@ class EvidencePackageTests(unittest.TestCase):
         )
         self.assertTrue(installed.install_path.is_dir())
         self.assertFalse(installed.already_installed)
+        self.assertEqual(installed.outcome, "installed")
+        self.assertEqual(installed.public_dict()["schema"], "package-summary-v1")
+        self.assertTrue(installed.public_dict()["trusted_official"])
         active = json.loads(installed.active_state_path.read_text(encoding="utf-8"))
         self.assertEqual(active["package_version"], "1.0.0")
         self.assertIsNone(active["previous_package"])
+
+        active_before = installed.active_state_path.read_bytes()
+        repeated = import_evidence_package(
+            package,
+            data_root=self.root / "app-data",
+            trusted_public_keys=self.trusted,
+            current_app_version="0.3.0-preview.1",
+            expected_evidence_schema=12,
+        )
+        self.assertTrue(repeated.already_installed)
+        self.assertEqual(repeated.outcome, "already_active")
+        self.assertEqual(repeated.active_state_path.read_bytes(), active_before)
 
     def test_untrusted_signer_is_rejected(self) -> None:
         package = self.build()
@@ -440,6 +455,38 @@ class EvidencePackageTests(unittest.TestCase):
             expected_evidence_schema=12,
         )
         active = json.loads(rolled_back.active_state_path.read_text(encoding="utf-8"))
+        self.assertEqual(active["package_version"], "1.0.0")
+        self.assertEqual(active["previous_package"]["package_version"], "2.0.0")
+        self.assertEqual(rolled_back.outcome, "activated")
+
+    def test_reimporting_an_installed_inactive_version_reports_activated(self) -> None:
+        data_root = self.root / "reactivation-app-data"
+        first = self.build("1.0.0")
+        second = self.build("2.0.0")
+        import_evidence_package(
+            first,
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="0.3.0-preview.1",
+            expected_evidence_schema=12,
+        )
+        import_evidence_package(
+            second,
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="0.3.0-preview.1",
+            expected_evidence_schema=12,
+        )
+        activated = import_evidence_package(
+            first,
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="0.3.0-preview.1",
+            expected_evidence_schema=12,
+        )
+        self.assertTrue(activated.already_installed)
+        self.assertEqual(activated.outcome, "activated")
+        active = json.loads(activated.active_state_path.read_text(encoding="utf-8"))
         self.assertEqual(active["package_version"], "1.0.0")
         self.assertEqual(active["previous_package"]["package_version"], "2.0.0")
 
