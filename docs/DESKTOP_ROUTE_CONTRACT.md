@@ -57,6 +57,7 @@ Facade 根据目录解析路由，依次复核 session、mode、body cap、CSRF�
 
 `DEFAULT_DESKTOP_ROUTES` 已覆盖以下现有路由家族：
 
+- `package_center.*`：官方版本目录、用户包检查、导出计划、导出、导入与任务查询；
 - readiness 与 `ui-mode`；
 - DeepSeek credential 与 Librarian history；
 - 官方资料包状态、导入、回退与 job；
@@ -82,4 +83,4 @@ Facade 根据目录解析路由，依次复核 session、mode、body cap、CSRF�
 - 未授权模式、缺 session、缺 CSRF、超限 body 在 controller 前失败；
 - pattern 只返回命名的稳定参数；
 - 未注册 controller 与内部异常只返回 path-free 固定错误；
-- package、personal、federated、readiness、credential、Librarian、workspace 七个家族均在黄金目录中。
+- package、package_center、personal、federated、readiness、credential、Librarian、workspace 八个家族均在黄金目录中。

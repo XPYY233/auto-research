@@ -127,6 +127,41 @@ DEFAULT_DESKTOP_ROUTES: tuple[RouteSpec, ...] = (
         r"^/api/desktop/evidence-package-jobs/(?P<job_id>[A-Za-z0-9_-]{16,128})$",
         "package.job_get",
     ),
+    # Unified official and user-transfer package center.
+    _get(
+        "package_center.status",
+        "/api/desktop/package-center",
+        "package_center.status",
+    ),
+    _post(
+        "package_center.inspect",
+        "/api/desktop/package-center/inspect",
+        "package_center.inspect",
+        PACKAGE_BYTES,
+    ),
+    _post(
+        "package_center.export_plan",
+        "/api/desktop/package-center/export-plan",
+        "package_center.export_plan",
+        PERSONAL_BYTES,
+    ),
+    _post(
+        "package_center.export",
+        "/api/desktop/package-center/export",
+        "package_center.export",
+        PERSONAL_BYTES,
+    ),
+    _post(
+        "package_center.import",
+        "/api/desktop/package-center/import",
+        "package_center.import",
+        PERSONAL_BYTES,
+    ),
+    _get_pattern(
+        "package_center.job_get",
+        r"^/api/desktop/package-center/jobs/(?P<job_id>[A-Za-z0-9_-]{16,128})$",
+        "package_center.job_get",
+    ),
     # Personal experiment import and private search refresh.
     _post(
         "personal.preview",

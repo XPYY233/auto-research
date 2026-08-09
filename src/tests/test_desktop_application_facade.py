@@ -136,6 +136,10 @@ class RouteRegistryTests(unittest.TestCase):
         )
         by_id = {row["route_id"]: row for row in contract}
         self.assertEqual(by_id["package.import"]["path"], "/api/desktop/evidence-packages/import")
+        self.assertEqual(
+            by_id["package_center.export"]["path"],
+            "/api/desktop/package-center/export",
+        )
         self.assertEqual(by_id["personal.preview"]["body_cap_bytes"], 512 * 1024)
         self.assertFalse(by_id["librarian.chat"]["mutation"])
         self.assertTrue(by_id["workspace.upload_pdf"]["csrf_required"])
@@ -145,6 +149,7 @@ class RouteRegistryTests(unittest.TestCase):
         self.assertTrue(
             {
                 "package",
+                "package_center",
                 "personal",
                 "federated",
                 "readiness",
