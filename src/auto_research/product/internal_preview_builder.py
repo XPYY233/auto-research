@@ -4,6 +4,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import shutil
 import stat
 import tempfile
@@ -12,7 +13,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Iterable, Sequence
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -63,6 +64,57 @@ class InternalPreviewBuildReport:
     distribution_scope: str = "internal-preview-only"
     includes_pdfs: bool = False
     includes_binary_assets: bool = False
+
+    def public_dict(self) -> dict[str, object]:
+        value = asdict(self)
+        value["package_path"] = Path(self.package_path).name
+        return value
+
+
+PAPER_UID_RE = re.compile(r"^paper_[0-9a-f]{32}$")
+
+
+def normalize_approved_paper_uids(values: Iterable[str]) -> frozenset[str]:
+    normalized: set[str] = set()
+    for raw in values:
+        uid = str(raw).strip()
+        if not uid or not PAPER_UID_RE.fullmatch(uid):
+            raise RuntimeError("批准论文清单包含无效 paper_uid")
+        if uid in normalized:
+            raise RuntimeError("批准论文清单包含重复 paper_uid")
+        normalized.add(uid)
+    if not normalized:
+        raise RuntimeError("必须显式提供至少一篇已批准论文")
+    return frozenset(normalized)
+
+
+def load_approved_paper_uids(path: Path | str) -> frozenset[str]:
+    """Read one canonical paper_uid per non-empty UTF-8 line."""
+
+    source = Path(path).expanduser()
+    descriptor = -1
+    try:
+        descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 2 * 1024 * 1024:
+            raise RuntimeError("批准论文清单不存在或不安全")
+        payload = b""
+        while len(payload) <= 2 * 1024 * 1024:
+            chunk = os.read(descriptor, 64 * 1024)
+            if not chunk:
+                break
+            payload += chunk
+        if len(payload) != metadata.st_size:
+            raise RuntimeError("批准论文清单读取过程中发生变化")
+        lines = payload.decode("utf-8").splitlines()
+    except RuntimeError:
+        raise
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RuntimeError("批准论文清单必须是 UTF-8 文本") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    return normalize_approved_paper_uids(line for line in lines if line.strip())
 
 
 def _sha256_file(path: Path) -> str:
@@ -152,11 +204,12 @@ def build_internal_preview_package(
     output_directory: Path | str,
     signing_key_path: Path | str,
     expected_source_sha256: str,
+    approved_paper_uids: Iterable[str],
     package_id: str = "auto-research-internal-evidence",
-    package_version: str = "0.1.0-preview.1",
+    package_version: str = "0.2.0-preview.1",
     signer_key_id: str = "auto-research-internal-preview-2026-v1",
-    current_app_version: str = "0.4.0-preview.1",
-    app_minimum: str = "0.4.0",
+    current_app_version: str = "0.6.0-preview.1",
+    app_minimum: str = "0.6.0",
     app_maximum_exclusive: str = "1.0.0",
 ) -> InternalPreviewBuildReport:
     output = Path(output_directory).expanduser().resolve()
@@ -170,9 +223,9 @@ def build_internal_preview_package(
         report = _build_internal_preview_package_in_directory(
             source_snapshot=source_snapshot,
             staging_directory=staging,
-            published_output_directory=output,
             signing_key_path=signing_key_path,
             expected_source_sha256=expected_source_sha256,
+            approved_paper_uids=approved_paper_uids,
             package_id=package_id,
             package_version=package_version,
             signer_key_id=signer_key_id,
@@ -191,9 +244,9 @@ def _build_internal_preview_package_in_directory(
     *,
     source_snapshot: Path | str,
     staging_directory: Path,
-    published_output_directory: Path,
     signing_key_path: Path | str,
     expected_source_sha256: str,
+    approved_paper_uids: Iterable[str],
     package_id: str,
     package_version: str,
     signer_key_id: str,
@@ -217,6 +270,21 @@ def _build_internal_preview_package_in_directory(
     plan = plan_evidence_v12_export(source_snapshot)
     if plan.private_source_sha256 != expected_digest:
         raise RuntimeError("稳定源快照 SHA-256 不匹配，拒绝构建资料包")
+    unexplained_drops = {
+        str(reason): int(count)
+        for reason, count in plan.dropped_by_reason.items()
+        if int(count) != 0
+    }
+    if unexplained_drops:
+        raise RuntimeError("官方资料包发布要求 dropped_by_reason 全部为零")
+    approved = normalize_approved_paper_uids(approved_paper_uids)
+    planned = frozenset(str(paper["paper_uid"]) for paper in plan.papers)
+    if approved != planned:
+        missing = len(planned - approved)
+        extra = len(approved - planned)
+        raise RuntimeError(
+            f"批准论文清单与待发布论文不一致（缺少 {missing}，多出 {extra}）"
+        )
     repository = materialize_portable_repository(
         plan,
         repository_root,
@@ -224,13 +292,13 @@ def _build_internal_preview_package_in_directory(
         package_version=package_version,
         release_policy=ReleasePolicy(
             distribution_scope="internal-preview-only",
-            allowed_paper_uids=frozenset(str(paper["paper_uid"]) for paper in plan.papers),
+            allowed_paper_uids=approved,
             allow_structured_evidence=True,
             allow_short_excerpts=True,
-            maximum_excerpt_chars=8000,
-            maximum_excerpt_chars_per_paper=150_000,
-            maximum_excerpt_chars_total=8_000_000,
-            accepted_dropped_by_reason=plan.dropped_by_reason,
+            maximum_excerpt_chars=1000,
+            maximum_excerpt_chars_per_paper=5000,
+            maximum_excerpt_chars_total=200_000,
+            accepted_dropped_by_reason={},
         ),
         provenance=provenance_for_papers(
             plan.papers, publisher="Auto Research internal preview"
@@ -320,9 +388,7 @@ def _build_internal_preview_package_in_directory(
         package_id=package_id,
         package_version=package_version,
         signer_key_id=signer_key_id,
-        package_path=str(
-            published_output_directory / f"{package_id}-{package_version}.aresearch"
-        ),
+        package_path=f"{package_id}-{package_version}.aresearch",
         package_size_bytes=package_path.stat().st_size,
         package_sha256=_sha256_file(package_path),
         manifest_sha256=verified.manifest_sha256,
@@ -339,7 +405,7 @@ def _build_internal_preview_package_in_directory(
         verified_import_seconds=round(elapsed, 3),
     )
     report_path.write_text(
-        json.dumps(asdict(report), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        json.dumps(report.public_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return report
@@ -351,8 +417,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-directory", required=True)
     parser.add_argument("--signing-key", required=True)
     parser.add_argument("--expected-source-sha256", required=True)
-    parser.add_argument("--package-version", default="0.1.0-preview.1")
-    parser.add_argument("--current-app-version", default="0.4.0-preview.1")
+    parser.add_argument("--approved-paper-uids-file", required=True)
+    parser.add_argument("--package-version", default="0.2.0-preview.1")
+    parser.add_argument("--current-app-version", default="0.6.0-preview.1")
+    parser.add_argument("--app-minimum", default="0.6.0")
+    parser.add_argument("--app-maximum-exclusive", default="1.0.0")
     parser.add_argument("--initialize-signing-key", action="store_true")
     arguments = parser.parse_args(argv)
     if arguments.initialize_signing_key:
@@ -362,10 +431,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_directory=arguments.output_directory,
         signing_key_path=arguments.signing_key,
         expected_source_sha256=arguments.expected_source_sha256,
+        approved_paper_uids=load_approved_paper_uids(
+            arguments.approved_paper_uids_file
+        ),
         package_version=arguments.package_version,
         current_app_version=arguments.current_app_version,
+        app_minimum=arguments.app_minimum,
+        app_maximum_exclusive=arguments.app_maximum_exclusive,
     )
-    print(json.dumps(asdict(report), ensure_ascii=False, sort_keys=True))
+    print(json.dumps(report.public_dict(), ensure_ascii=False, sort_keys=True))
     return 0
 
 
