@@ -19,7 +19,14 @@ class DesktopVersionContractTests(unittest.TestCase):
             (DESKTOP_ROOT / "version.json").read_text(encoding="utf-8")
         )
         self.assertEqual(launcher.DESKTOP_VERSION, metadata["desktop_version"])
-        self.assertEqual(launcher.DESKTOP_VERSION, "0.4.0-preview.1")
+        self.assertEqual(launcher.DESKTOP_VERSION, "0.5.0-preview.1")
+        self.assertEqual(metadata["bundle_short_version"], "0.5.0")
+        self.assertEqual(metadata["build_number"], "5")
+        self.assertEqual(metadata["target"], "macOS arm64 internal development preview")
+        self.assertIn("legacy-v12-workspace", metadata["data_mode"])
+        self.assertIn("signed-official-package", metadata["data_mode"])
+        self.assertIn("local-private-library", metadata["data_mode"])
+        self.assertIn("not released", metadata["product_target"])
         launcher_source = (DESKTOP_ROOT / "launcher.py").read_text(encoding="utf-8")
         self.assertNotIn('DESKTOP_VERSION = "0.', launcher_source)
 
@@ -39,6 +46,14 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn("plutil -extract desktop_version", command)
         self.assertIn('echo "桌面版本: ${DESKTOP_VERSION}"', command)
         self.assertNotIn('echo "桌面版本: 0.3.0-preview.1"', command)
+        self.assertIn("CFBundleShortVersionString", command)
+        self.assertIn("CFBundleVersion", command)
+        self.assertIn("${PREVIOUS_SHORT_VERSION}-build${PREVIOUS_BUILD_NUMBER}", command)
+
+    def test_frozen_candidate_imports_all_product_contracts(self) -> None:
+        checks = launcher._frozen_product_contract_checks()
+        self.assertTrue(checks)
+        self.assertTrue(all(checks.values()), checks)
 
 
 if __name__ == "__main__":

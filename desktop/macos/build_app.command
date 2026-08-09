@@ -94,7 +94,12 @@ codesign --verify --deep --strict "${CANDIDATE_APP}"
 plutil -lint "${CANDIDATE_APP}/Contents/Info.plist"
 
 if [[ -d "${APP_PATH}" ]]; then
-  PREVIOUS_APP="${PREVIOUS_ROOT}/Auto Research-${BUILD_STAMP}.app"
+  PREVIOUS_INFO="${APP_PATH}/Contents/Info.plist"
+  PREVIOUS_SHORT_VERSION="$(/usr/bin/plutil -extract CFBundleShortVersionString raw -o - "${PREVIOUS_INFO}" 2>/dev/null || true)"
+  PREVIOUS_BUILD_NUMBER="$(/usr/bin/plutil -extract CFBundleVersion raw -o - "${PREVIOUS_INFO}" 2>/dev/null || true)"
+  PREVIOUS_SHORT_VERSION="${PREVIOUS_SHORT_VERSION:-unknown-version}"
+  PREVIOUS_BUILD_NUMBER="${PREVIOUS_BUILD_NUMBER:-unknown-build}"
+  PREVIOUS_APP="${PREVIOUS_ROOT}/Auto Research-${PREVIOUS_SHORT_VERSION}-build${PREVIOUS_BUILD_NUMBER}-${BUILD_STAMP}.app"
   echo "正在把上一版移入可恢复目录：${PREVIOUS_APP}"
   mv "${APP_PATH}" "${PREVIOUS_APP}"
 fi

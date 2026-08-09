@@ -57,6 +57,74 @@ DESKTOP_VERSION_METADATA = _desktop_version_metadata()
 DESKTOP_VERSION = str(DESKTOP_VERSION_METADATA["desktop_version"])
 
 
+def _frozen_product_contract_checks() -> dict[str, bool]:
+    """Confirm the frozen bundle imports every desktop product surface."""
+
+    from inspect import signature
+
+    from auto_research.evidence.webapp import LIBRARIAN_CHAT_FIELDS
+    from desktop_server import (
+        CREDENTIAL_PATH,
+        READINESS_PATH,
+        DesktopEvidenceHandler,
+        create_desktop_server,
+    )
+    from federated_search_api import FEDERATED_EVIDENCE_PATH, FEDERATED_SEARCH_PATH
+    from native_desktop_bridge import NativeDesktopBridge
+    from personal_import_api import (
+        PERSONAL_PREVIEW_PATH,
+        PERSONAL_SEARCH_REFRESH_PATH,
+        PERSONAL_SEARCH_STATUS_PATH,
+        PersonalImportAPI,
+    )
+
+    import_id = "personal_import_0123456789abcdef"
+    personal_posts = (
+        PERSONAL_PREVIEW_PATH,
+        PERSONAL_SEARCH_REFRESH_PATH,
+        f"/api/desktop/personal-imports/{import_id}/draft",
+        f"/api/desktop/personal-imports/{import_id}/confirm",
+    )
+    server_parameters = signature(create_desktop_server).parameters
+    return {
+        "personal_six_routes": bool(
+            PERSONAL_SEARCH_STATUS_PATH
+            and f"/api/desktop/personal-imports/{import_id}"
+            and all(PersonalImportAPI.is_post_route(path) for path in personal_posts)
+        ),
+        "federated_routes": {
+            FEDERATED_SEARCH_PATH,
+            FEDERATED_EVIDENCE_PATH,
+        }
+        == {
+            "/api/desktop/federated-search",
+            "/api/desktop/federated-evidence",
+        },
+        "credential_readiness_routes": (
+            CREDENTIAL_PATH == "/api/desktop/credentials/deepseek"
+            and READINESS_PATH == "/api/desktop/readiness"
+        ),
+        "protected_route_composition": bool(
+            callable(getattr(DesktopEvidenceHandler, "_authorize_post", None))
+            and callable(getattr(DesktopEvidenceHandler, "_has_session", None))
+            and {"federated_search_api", "personal_import_api", "credential_store"}
+            <= set(server_parameters)
+        ),
+        "native_dual_picker": bool(
+            callable(getattr(NativeDesktopBridge, "select_evidence_package", None))
+            and callable(getattr(NativeDesktopBridge, "select_personal_data_file", None))
+        ),
+        "librarian_v3_backend": {
+            "question",
+            "history",
+            "conversation_id",
+            "research_state",
+            "state_token",
+        }
+        <= LIBRARIAN_CHAT_FIELDS,
+    }
+
+
 def _http_smoke_checks(
     url: str,
     token: str,
@@ -164,6 +232,37 @@ def _http_smoke_checks(
     for name, route in binary_routes.items():
         with opener.open(f"{url}{route}", timeout=20) as response:
             checks[name] = response.status == 200 and bool(response.read(32))
+
+    text_contracts = {
+        "desktop_product_contract": (
+            "/static/desktop_product.js",
+            (
+                "select_personal_data_file",
+                "/api/desktop/personal-imports/preview",
+                "/api/desktop/personal-imports/search-status",
+                "/api/desktop/personal-imports/search-refresh",
+                "/api/desktop/federated-search",
+                "/api/desktop/federated-evidence",
+                "/api/desktop/credentials/deepseek",
+            ),
+        ),
+        "librarian_v3_frontend_contract": (
+            "/static/app.js",
+            (
+                "conversation_id",
+                "research_state",
+                "state_token",
+                "review_map",
+                "suggested_actions",
+            ),
+        ),
+    }
+    for name, (route, markers) in text_contracts.items():
+        with opener.open(f"{url}{route}", timeout=20) as response:
+            payload = response.read(2_000_000).decode("utf-8")
+            checks[name] = response.status == 200 and all(
+                marker in payload for marker in markers
+            )
 
     def valid_jsonl(payload: bytes) -> bool:
         try:
@@ -334,6 +433,7 @@ def _run_smoke_test(project_root: Path) -> int:
             "desktop_version": DESKTOP_VERSION,
             "core_release": RELEASE_INFO.get("version"),
             "web_assets": (WEB_DIR / "index.html").is_file(),
+            "frozen_product_contracts": _frozen_product_contract_checks(),
         }
     )
     report["ok"] = bool(
@@ -342,6 +442,7 @@ def _run_smoke_test(project_root: Path) -> int:
         and report["http_stack"]
         and report["secure_history_ciphertext"]
         and all(report["http_checks"].values())
+        and all(report["frozen_product_contracts"].values())
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["ok"] else 1
