@@ -17,6 +17,7 @@ from auto_research.product.evidence_package import (
 )
 from auto_research.product.official_package_store import (
     import_official_evidence_package,
+    list_installed_official_packages,
     open_active_official_repository,
     rollback_official_evidence_package,
 )
@@ -331,6 +332,68 @@ class OfficialPackageStoreTests(unittest.TestCase):
             publisher_policy=self.policy,
         )
         self.assertEqual(restored.package_version, "0.1.0-preview.1")
+
+    def test_list_installed_versions_reaudits_and_keeps_healthy_siblings(self) -> None:
+        first = self.build_package(version="0.1.0-preview.1")
+        second = self.build_package(version="0.2.0-preview.1")
+        data_root = self.root / "installed-list"
+        for package in (first, second):
+            import_official_evidence_package(
+                package,
+                data_root=data_root,
+                trusted_public_keys=self.trusted,
+                current_app_version="0.6.1-preview.1",
+                publisher_policy=self.policy,
+            )
+
+        versions = list_installed_official_packages(
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="0.6.1-preview.1",
+            publisher_policy=self.policy,
+        )
+        self.assertEqual([entry.package_version for entry in versions], [
+            "0.2.0-preview.1",
+            "0.1.0-preview.1",
+        ])
+        self.assertTrue(versions[0].active)
+        self.assertTrue(all(entry.audit_status == "ready" for entry in versions))
+        self.assertNotIn("path", str([entry.public_dict() for entry in versions]).lower())
+
+        damaged = (
+            data_root
+            / "official-packages"
+            / "auto-research-internal-evidence"
+            / "0.1.0-preview.1"
+            / DATABASE_PATH
+        )
+        with damaged.open("ab") as handle:
+            handle.write(b"damage")
+        versions = list_installed_official_packages(
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="0.6.1-preview.1",
+            publisher_policy=self.policy,
+        )
+        by_version = {entry.package_version: entry for entry in versions}
+        self.assertEqual(by_version["0.2.0-preview.1"].audit_status, "ready")
+        self.assertEqual(by_version["0.1.0-preview.1"].audit_status, "invalid")
+        self.assertFalse(by_version["0.1.0-preview.1"].active)
+        self.assertTrue(by_version["0.1.0-preview.1"].error_code)
+
+    def test_list_installed_versions_rejects_unsafe_directory_topology(self) -> None:
+        data_root = self.root / "unsafe-list"
+        official_root = data_root / "official-packages"
+        official_root.mkdir(parents=True)
+        (official_root / "bad link").symlink_to(self.root, target_is_directory=True)
+        with self.assertRaises(EvidencePackageError) as raised:
+            list_installed_official_packages(
+                data_root=data_root,
+                trusted_public_keys=self.trusted,
+                current_app_version="0.6.1-preview.1",
+                publisher_policy=self.policy,
+            )
+        self.assertEqual(raised.exception.code, "unsafe_install_root")
 
 
 if __name__ == "__main__":

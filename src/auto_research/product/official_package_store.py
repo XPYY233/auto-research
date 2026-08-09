@@ -10,6 +10,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from .evidence_package import (
     EvidencePackageError,
     ImportedEvidencePackage,
+    PACKAGE_ID_RE,
+    PACKAGE_VERSION_RE,
     _read_active_state,
     _validate_installed_tree,
     import_evidence_package,
@@ -48,6 +50,29 @@ class ActiveOfficialPackage:
             "package_id": self.package_id,
             "package_version": self.package_version,
             "content_fingerprint": self.content_fingerprint,
+        }
+
+
+@dataclass(frozen=True)
+class InstalledOfficialPackage:
+    package_id: str
+    package_version: str
+    content_fingerprint: str | None
+    installed_at: str | None
+    active: bool
+    audit_status: str
+    error_code: str | None = None
+
+    def public_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "installed-official-package-v1",
+            "package_id": self.package_id,
+            "package_version": self.package_version,
+            "content_fingerprint": self.content_fingerprint,
+            "installed_at": self.installed_at,
+            "active": self.active,
+            "audit_status": self.audit_status,
+            "error_code": self.error_code,
         }
 
 
@@ -244,6 +269,114 @@ def rollback_official_evidence_package(
         expected_evidence_schema=EXPECTED_DISTRIBUTION_SCHEMA,
         repository_validator=_official_repository_validator(policy),
         active_state_path=active_state_path,
+    )
+
+
+def list_installed_official_packages(
+    *,
+    data_root: Path | str,
+    current_app_version: str,
+    trusted_public_keys: Mapping[str, bytes | Ed25519PublicKey] | None = None,
+    publisher_policy: TrustedPublisherPolicy | None = None,
+    active_state_path: Path | str | None = None,
+) -> tuple[InstalledOfficialPackage, ...]:
+    """Return path-free installed versions after revalidating every candidate.
+
+    A damaged version remains visible as an unavailable rollback target, while
+    healthy siblings can still be used.  Unsafe directory topology fails the
+    whole listing instead of following attacker-controlled links.
+    """
+
+    policy, policy_keys = _resolve_publisher_policy(
+        trusted_public_keys, publisher_policy
+    )
+    root = Path(data_root).expanduser().resolve()
+    official_root = root / "official-packages"
+    selector_path = (
+        Path(active_state_path).expanduser().resolve()
+        if active_state_path is not None
+        else default_active_state_path(root)
+    )
+    active = _read_active_state(selector_path)
+    if not official_root.exists():
+        return ()
+    if official_root.is_symlink() or not official_root.is_dir():
+        raise EvidencePackageError("unsafe_install_root", "本机官方资料包目录不安全")
+
+    results: list[InstalledOfficialPackage] = []
+    for package_root in sorted(official_root.iterdir(), key=lambda path: path.name):
+        if package_root.name == "active.json":
+            continue
+        if (
+            package_root.is_symlink()
+            or not package_root.is_dir()
+            or not PACKAGE_ID_RE.fullmatch(package_root.name)
+        ):
+            raise EvidencePackageError("unsafe_install_root", "本机官方资料包目录不安全")
+        for version_root in sorted(package_root.iterdir(), key=lambda path: path.name):
+            if (
+                version_root.is_symlink()
+                or not version_root.is_dir()
+                or not PACKAGE_VERSION_RE.fullmatch(version_root.name)
+            ):
+                raise EvidencePackageError("unsafe_install_root", "本机官方资料包目录不安全")
+            package_id = package_root.name
+            package_version = version_root.name
+            is_active = bool(
+                active
+                and str(active.get("package_id") or "") == package_id
+                and str(active.get("package_version") or "") == package_version
+            )
+            installed_at: str | None = None
+            fingerprint: str | None = None
+            try:
+                marker = _read_trust_json(
+                    version_root / "install.json", label="安装记录", maximum=64 * 1024
+                )
+                installed_at_value = str(marker.get("installed_at") or "")
+                installed_at = (
+                    installed_at_value if len(installed_at_value) <= 80 else None
+                )
+                manifest = _validate_installed_tree(
+                    version_root,
+                    trusted_public_keys=policy_keys,
+                    current_app_version=current_app_version,
+                    expected_evidence_schema=EXPECTED_DISTRIBUTION_SCHEMA,
+                    expected_package_id=package_id,
+                    expected_package_version=package_version,
+                    expected_manifest_sha256=str(marker.get("manifest_sha256") or ""),
+                )
+                repository = _official_repository_validator(policy)(
+                    version_root, manifest
+                )
+                fingerprint = repository.content_fingerprint
+                results.append(
+                    InstalledOfficialPackage(
+                        package_id=package_id,
+                        package_version=package_version,
+                        content_fingerprint=fingerprint,
+                        installed_at=installed_at,
+                        active=is_active,
+                        audit_status="ready",
+                    )
+                )
+            except EvidencePackageError as exc:
+                results.append(
+                    InstalledOfficialPackage(
+                        package_id=package_id,
+                        package_version=package_version,
+                        content_fingerprint=fingerprint,
+                        installed_at=installed_at,
+                        active=is_active,
+                        audit_status="invalid",
+                        error_code=exc.code,
+                    )
+                )
+    return tuple(
+        sorted(
+            results,
+            key=lambda entry: (not entry.active, entry.package_id, entry.package_version),
+        )
     )
 
 
