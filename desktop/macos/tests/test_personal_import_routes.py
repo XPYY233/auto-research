@@ -23,6 +23,8 @@ PERSONAL_POST_PATHS = (
     "/api/desktop/personal-imports/search-refresh",
     f"/api/desktop/personal-imports/{IMPORT_ID}/draft",
     f"/api/desktop/personal-imports/{IMPORT_ID}/confirm",
+    f"/api/desktop/personal-imports/{IMPORT_ID}/ai-suggestion",
+    f"/api/desktop/personal-imports/{IMPORT_ID}/reviewed-import",
 )
 
 

@@ -82,6 +82,25 @@ class _Personal:
     def confirm(self, import_id, *, expected_revision):
         return {"schema_version": "personal-import-status-v1", "import_id": import_id, "stage": "indexable"}
 
+    def suggest(self, import_id, *, sheet_index):
+        return {
+            "schema_version": "personal-import-suggestion-v1",
+            "import_id": import_id,
+            "sheet_index": sheet_index,
+            "provider": "DeepSeek",
+            "columns": [],
+            "series": [],
+            "requires_human_review": True,
+        }
+
+    def import_reviewed(self, import_id, payload, *, reviewed):
+        return {
+            "schema_version": "personal-import-status-v1",
+            "import_id": import_id,
+            "stage": "indexable",
+            "indexable": reviewed and isinstance(payload, dict),
+        }
+
     def search_status(self):
         return {"schema_version": "personal-search-readiness-v1", "state": "empty", "ready": False, "document_count": 0}
 
@@ -242,6 +261,8 @@ class SharedHttpBridgeTests(unittest.TestCase):
             ("/api/desktop/personal-imports/preview", {"selection_id": "personal_selection_0123456789abcdef"}, 201),
             (f"/api/desktop/personal-imports/{IMPORT_ID}/draft", {"sheet_index": 0}, 200),
             (f"/api/desktop/personal-imports/{IMPORT_ID}/confirm", {"expected_revision": 1}, 200),
+            (f"/api/desktop/personal-imports/{IMPORT_ID}/ai-suggestion", {"sheet_index": 0, "consent": True}, 200),
+            (f"/api/desktop/personal-imports/{IMPORT_ID}/reviewed-import", {"reviewed": True, "draft": {"sheet_index": 0}}, 200),
             ("/api/desktop/personal-imports/search-refresh", {}, 200),
             ("/api/desktop/credentials/deepseek", {"api_key": "sk-user-owned"}, 200),
         )
@@ -254,15 +275,22 @@ class SharedHttpBridgeTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(job["stage"], "completed")
 
-    def test_shared_workbench_exposes_four_primary_destinations_and_personal_picker(self) -> None:
+    def test_shared_workbench_exposes_three_primary_destinations_and_personal_picker(self) -> None:
         status, index, no_store = self._get_text("/index.html")
         self.assertEqual(status, 200)
         self.assertEqual(no_store, "no-store")
-        for destination in ("review", "search", "upload", "personal"):
+        for destination in ("paper", "search", "personal"):
             self.assertIn(f'data-view="{destination}"', index)
+        self.assertNotIn('class="nav" data-view="review"', index)
+        self.assertNotIn('class="nav" data-view="upload"', index)
+        self.assertIn("文献处理", index)
+        self.assertIn("搜索数据", index)
         self.assertIn("上传实验数据", index)
         self.assertNotIn('data-view="manual"', index)
         self.assertNotIn('data-view="history"', index)
+        self.assertIn('id="view-review"', index)
+        self.assertIn('id="view-upload"', index)
+        self.assertIn('id="paper-upload-mount"', index)
         self.assertIn('id="view-personal"', index)
 
         status, product, no_store = self._get_text("/static/desktop_product.js")
@@ -271,7 +299,23 @@ class SharedHttpBridgeTests(unittest.TestCase):
         self.assertIn("select_personal_data_file", product)
         self.assertIn("openPersonalImport", product)
         self.assertIn("personalView.appendChild(personalPanel)", product)
+        self.assertIn("ai-suggestion", product)
+        self.assertIn("reviewed-import", product)
         self.assertNotIn("selected.selection.path", product)
+
+    def test_personal_ai_requires_explicit_consent_and_human_review(self) -> None:
+        status, payload = self._post(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/ai-suggestion",
+            {"sheet_index": 0, "consent": False},
+        )
+        self.assertEqual(status, 428)
+        self.assertEqual(payload["code"], "personal_ai_consent_required")
+        status, payload = self._post(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/reviewed-import",
+            {"reviewed": False, "draft": {"sheet_index": 0}},
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(payload["code"], "personal_review_required")
 
     def test_session_origin_csrf_and_one_time_bootstrap_are_enforced(self) -> None:
         connection = self._connection()

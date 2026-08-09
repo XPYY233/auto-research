@@ -43,49 +43,43 @@ class PersonalImportUIContractTests(unittest.TestCase):
         self.assertIn("当前搜索记录不含原文件", self.product)
         self.assertRegex(self.product, r'<button type="button" disabled>\$\{esc\(binaryUnavailableLabel')
 
-    def test_personal_import_follows_frozen_routes_and_confirmation_order(self) -> None:
+    def test_personal_import_uses_ai_prefill_and_one_reviewed_action(self) -> None:
         routes = (
             "/api/desktop/personal-imports/preview",
             "/api/desktop/personal-imports/search-status",
             "/api/desktop/personal-imports/search-refresh",
-            "/draft",
-            "/confirm",
+            "/ai-suggestion",
+            "/reviewed-import",
         )
         for route in routes:
             self.assertIn(route, self.product)
-        self.assertIn("await readLatestImportStatus()", self.product)
-        self.assertIn("reviewedImportId", self.product)
-        self.assertIn("reviewedRevision", self.product)
-        self.assertIn("personalDraftGeneration", self.product)
-        self.assertIn("product.personalDraftGeneration === draftGeneration", self.product)
-        self.assertIn("latest.revision !== reviewedRevision", self.product)
-        self.assertIn("product.reviewedRevision !== reviewedRevision", self.product)
-        self.assertIn("expected_revision: reviewedRevision", self.product)
-        self.assertNotIn("expected_revision: latest.revision", self.product)
+        self.assertIn("consent: true", self.product)
+        self.assertIn('suggestion.schema_version !== "personal-import-suggestion-v1"', self.product)
+        self.assertIn("importReviewedPersonal", self.product)
+        self.assertIn("JSON.stringify({ reviewed: true, draft: payload })", self.product)
+        self.assertEqual(self.index.count('id="personal-reviewed-import"'), 1)
+        self.assertNotIn('id="personal-save-draft"', self.index)
+        self.assertNotIn('id="personal-confirm-import"', self.index)
         self.assertIn("confirmingPersonal", self.product)
-        self.assertIn("personalDraftDirty", self.product)
-        self.assertIn("内容已修改，请重新保存确认草稿后再确认", self.product)
         self.assertIn('error.code === "personal_search_refresh_failed"', self.product)
-        self.assertIn("不要重复确认", self.product)
+        self.assertIn("不要重复导入", self.product)
         self.assertIn("showPrivateSearchResults()", self.product)
         self.assertIn('switchView("search", { skipSearch: true })', self.product)
         self.assertNotIn("localStorage", self.product)
         self.assertNotIn("selected.selection.path", self.product)
 
-    def test_every_column_requires_explicit_three_way_confirmation(self) -> None:
-        for marker in (
-            "data-confirm-role",
-            "data-confirm-meaning",
-            "data-confirm-unit",
-            "role_confirmed: true",
-            "meaning_confirmed: true",
-            "unit_confirmed: true",
-        ):
-            self.assertIn(marker, self.product)
+    def test_one_visible_review_replaces_per_column_checkboxes(self) -> None:
+        for marker in ("data-confirm-role", "data-confirm-meaning", "data-confirm-unit"):
+            self.assertNotIn(marker, self.product)
+        self.assertIn("只有识别错误时才需要修改", self.index)
+        self.assertIn("最多 5 行样例", self.index)
+        self.assertIn("完整表格不会上传", self.index)
+        self.assertIn("AI 识别结果", self.index)
         self.assertIn('column.role !== "ignore"', self.product)
         self.assertIn("被忽略的列不能用于测量序列", self.product)
-        self.assertIn("不会执行公式、宏或外链", self.index)
-        self.assertIn("不会自动读取曲线或生成趋势图", self.index)
+        self.assertIn("不会执行公式", self.product)
+        self.assertNotIn("请至少填写一项实验条件", self.product)
+        self.assertNotIn("请至少添加一个测量序列", self.product)
 
     def test_librarian_remains_official_only_and_security_hook_is_preserved(self) -> None:
         librarian = re.search(

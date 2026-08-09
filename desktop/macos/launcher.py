@@ -84,6 +84,8 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
         PERSONAL_SEARCH_REFRESH_PATH,
         f"/api/desktop/personal-imports/{import_id}/draft",
         f"/api/desktop/personal-imports/{import_id}/confirm",
+        f"/api/desktop/personal-imports/{import_id}/ai-suggestion",
+        f"/api/desktop/personal-imports/{import_id}/reviewed-import",
     )
     server_parameters = signature(create_desktop_server).parameters
     index_source = (WEB_DIR / "index.html").read_text(encoding="utf-8")
@@ -91,14 +93,19 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
     product_source = (WEB_DIR / "desktop_product.js").read_text(encoding="utf-8")
     return {
         "primary_personal_import_navigation": bool(
-            'data-view="personal">上传实验数据</button>' in index_source
+            'data-view="paper">文献处理' in index_source
+            and 'data-view="search">搜索数据' in index_source
+            and 'data-view="personal">上传实验数据' in index_source
             and 'data-view="manual"' not in index_source
             and 'data-view="history"' not in index_source
             and 'id="view-personal"' in index_source
-            and 'querySelector(`#view-${name}`)' in app_source
+            and 'querySelector(`#view-${viewName}`)' in app_source
             and "openPersonalImport" in product_source
             and "personalView.appendChild(personalPanel)" in product_source
             and "select_personal_data_file" in product_source
+            and "/ai-suggestion" in product_source
+            and "/reviewed-import" in product_source
+            and 'id="personal-reviewed-import"' in index_source
         ),
         "personal_six_routes": bool(
             PERSONAL_SEARCH_STATUS_PATH

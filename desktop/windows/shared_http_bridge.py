@@ -16,6 +16,7 @@ from evidence_search_bridge import EvidenceSearchBridgeAdapter
 from librarian_bridge import LibrarianBridgeError
 from package_import_bridge import PackageBridgeError
 from personal_import_bridge import PersonalImportBridgeAdapter
+from auto_research.personal.import_service import PersonalImportServiceError
 
 
 COOKIE_NAME = "auto_research_desktop_session"
@@ -34,6 +35,12 @@ _IMPORT_DRAFT_RE = re.compile(
 )
 _IMPORT_CONFIRM_RE = re.compile(
     r"^/api/desktop/personal-imports/(personal_import_[A-Za-z0-9_-]{16,96})/confirm$"
+)
+_IMPORT_SUGGEST_RE = re.compile(
+    r"^/api/desktop/personal-imports/(personal_import_[A-Za-z0-9_-]{16,96})/ai-suggestion$"
+)
+_IMPORT_REVIEWED_RE = re.compile(
+    r"^/api/desktop/personal-imports/(personal_import_[A-Za-z0-9_-]{16,96})/reviewed-import$"
 )
 _PACKAGE_JOB_RE = re.compile(
     r"^/api/desktop/evidence-package-jobs/([A-Za-z0-9_-]{16,128})$"
@@ -472,6 +479,39 @@ class WindowsSharedHttpBridge:
                                 expected_revision=body["expected_revision"],
                             )
                         )
+                    suggest_match = _IMPORT_SUGGEST_RE.fullmatch(parsed.path)
+                    if suggest_match is not None:
+                        body = self._read_json(MAX_PERSONAL_REQUEST_BYTES)
+                        if set(body) != {"sheet_index", "consent"}:
+                            raise ValueError("invalid suggestion fields")
+                        if body["consent"] is not True:
+                            raise PersonalImportServiceError(
+                                "personal_ai_consent_required",
+                                "请确认本次将有限表格摘要发送给 DeepSeek 后再继续。",
+                                retryable=False,
+                            )
+                        return self.json_response(
+                            services.personal_import.suggest(
+                                suggest_match.group(1),
+                                sheet_index=body["sheet_index"],
+                            )
+                        )
+                    reviewed_match = _IMPORT_REVIEWED_RE.fullmatch(parsed.path)
+                    if reviewed_match is not None:
+                        body = self._read_json(MAX_PERSONAL_REQUEST_BYTES)
+                        if set(body) != {"reviewed", "draft"} or body["reviewed"] is not True:
+                            raise PersonalImportServiceError(
+                                "personal_review_required",
+                                "请先检查当前识别结果，再确认导入。",
+                                retryable=False,
+                            )
+                        return self.json_response(
+                            services.personal_import.import_reviewed(
+                                reviewed_match.group(1),
+                                body["draft"],
+                                reviewed=True,
+                            )
+                        )
                     if parsed.path == "/api/desktop/personal-imports/search-refresh":
                         body = self._read_json(MAX_PERSONAL_REQUEST_BYTES)
                         if body:
@@ -521,10 +561,8 @@ class WindowsSharedHttpBridge:
                 except Exception as exc:
                     if parsed.path.startswith("/api/desktop/personal-imports/"):
                         payload = PersonalImportBridgeAdapter.public_error(exc)
-                        status = (
-                            HTTPStatus.SERVICE_UNAVAILABLE
-                            if payload["code"] == "personal_search_refresh_failed"
-                            else HTTPStatus.BAD_REQUEST
+                        status = PersonalImportBridgeAdapter.error_http_status(
+                            str(payload["code"])
                         )
                         return self.json_response(payload, status)
                     return self.json_response(

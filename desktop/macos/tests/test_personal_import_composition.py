@@ -64,9 +64,10 @@ class PersonalImportCompositionTests(unittest.TestCase):
         snapshot = _PrivateSource()
 
         class _PersonalService:
-            def __init__(self, *, data_root, selection_provider) -> None:
+            def __init__(self, *, data_root, selection_provider, suggestion_model=None) -> None:
                 self.data_root = Path(data_root).absolute()
                 self.selection_provider = selection_provider
+                self.suggestion_model = suggestion_model
 
             def private_search_snapshot(self):
                 return snapshot
@@ -94,9 +95,10 @@ class PersonalImportCompositionTests(unittest.TestCase):
 
     def test_startup_private_restore_failure_keeps_composition_available(self) -> None:
         class _FailingPersonalService:
-            def __init__(self, *, data_root, selection_provider) -> None:
+            def __init__(self, *, data_root, selection_provider, suggestion_model=None) -> None:
                 self.data_root = Path(data_root).absolute()
                 self.selection_provider = selection_provider
+                self.suggestion_model = suggestion_model
 
             def private_search_snapshot(self):
                 raise RuntimeError("/private/hidden/personal_experiments.sqlite")

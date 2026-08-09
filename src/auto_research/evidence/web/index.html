@@ -6,15 +6,14 @@
   <title>实验数据工作台</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body data-view="review">
+<body data-view="paper" data-paper-stage="review">
   <a class="skip-link" href="#main">跳到主要内容</a>
   <div class="shell">
     <aside class="sidebar">
       <div class="brand"><span class="beam">→</span><div><strong>实验数据工作台</strong><small>ARTICLE → DATA → EVIDENCE</small></div></div>
       <nav aria-label="工作区">
-        <button class="nav active" data-view="review">数据检查 <b id="nav-count">0</b></button>
+        <button class="nav active" data-view="paper">文献处理 <b id="nav-count">0</b></button>
         <button class="nav" data-view="search">搜索数据</button>
-        <button class="nav" data-view="upload">上传文献</button>
         <button class="nav" data-view="personal">上传实验数据</button>
       </nav>
       <div class="article-mini">
@@ -28,9 +27,9 @@
     <main id="main">
       <header class="topbar">
         <div class="topbar-copy">
-          <p class="eyebrow" id="workspace-kicker">EVIDENCE REVIEW</p>
-          <h1 id="workspace-title">检查自动提取结果</h1>
-          <p class="workspace-subtitle" id="workspace-subtitle">自动质量门决定是否收录；本页用于检查证据和修正少量异常。</p>
+          <p class="eyebrow" id="workspace-kicker">LITERATURE WORKFLOW</p>
+          <h1 id="workspace-title">文献处理</h1>
+          <p class="workspace-subtitle" id="workspace-subtitle">导入真实 PDF，在同一流程内完成去重、自动提取和必要的证据检查。</p>
         </div>
         <div class="topbar-status">
           <div class="runtime-warning" id="runtime-warning" hidden></div>
@@ -38,6 +37,18 @@
           <div class="readonly-badge" id="readonly-badge" hidden><i></i>只读模式</div>
         </div>
       </header>
+
+      <section class="paper-workflow-nav" aria-label="文献处理流程">
+        <div>
+          <p class="eyebrow">LITERATURE WORKFLOW</p>
+          <strong>从 PDF 导入到证据检查，在同一流程内完成</strong>
+          <small>上传只进行验证、去重和入库；是否调用 DeepSeek 由你在当前文章页明确决定。</small>
+        </div>
+        <div class="paper-workflow-actions" role="tablist" aria-label="文献处理阶段">
+          <button type="button" role="tab" aria-selected="false" data-paper-stage="upload"><span>01</span><strong>导入 PDF</strong><small>验证并去重</small></button>
+          <button type="button" class="active" role="tab" aria-selected="true" data-paper-stage="review"><span>02</span><strong>当前文章</strong><small>提取、查看与必要修正</small></button>
+        </div>
+      </section>
 
       <section class="article-picker">
         <div class="article-picker-main">
@@ -97,7 +108,7 @@
           </summary>
           <div class="article-tools-body">
             <div class="article-tool-actions">
-              <button type="button" id="run-current-extraction" data-write-action>一键提取并核验</button>
+              <button type="button" id="run-current-extraction" data-write-action>开始自动提取与核验</button>
               <button type="button" id="save-current-snapshot" data-write-action>生成当前文章 CSV 备份</button>
               <a id="current-export-csv" href="/api/current-paper/export.csv">下载 CSV</a>
               <a id="current-export-xlsx" href="/api/current-paper/export.xlsx">下载 Excel</a>
@@ -136,6 +147,7 @@
       </section>
 
       <section class="view active" id="view-review">
+        <div id="paper-upload-mount"></div>
         <div class="view-head">
           <div><p class="eyebrow">EVIDENCE WORKBENCH</p><h2>自动提取结果检查</h2></div>
           <div class="view-actions">
@@ -176,10 +188,10 @@
           </div>
         </div>
         <div class="review-object-switch" id="review-object-switch" role="tablist" aria-label="检查对象">
-          <button type="button" class="active" role="tab" aria-selected="true" data-review-object="data"><span>01</span><strong>数据条目</strong><small id="review-data-count">0 条</small></button>
+          <button type="button" class="active" role="tab" aria-selected="true" data-review-object="data"><span>01</span><strong>已收录数据</strong><small id="review-data-count">0 条</small></button>
           <button type="button" role="tab" aria-selected="false" data-review-object="table"><span>02</span><strong>原始表格</strong><small id="review-table-count">0 张</small></button>
           <button type="button" role="tab" aria-selected="false" data-review-object="figure"><span>03</span><strong>论文图片</strong><small id="review-figure-count">0 幅</small></button>
-          <button type="button" role="tab" aria-selected="false" data-review-object="quality"><span>04</span><strong>自动拦截</strong><small id="review-quality-count">0 项</small></button>
+          <button type="button" role="tab" aria-selected="false" data-review-object="quality"><span>04</span><strong>需处理异常</strong><small id="review-quality-count">0 项</small></button>
         </div>
         <div id="data-review-workspace">
         <div class="review-progress-card" id="review-progress-card" hidden>
@@ -227,7 +239,7 @@
         </section>
         <section class="quality-review-workspace" id="quality-review-workspace" hidden aria-live="polite">
           <header>
-            <div><p class="eyebrow">QUALITY GATE QUARANTINE</p><h2>自动质量门拦截项</h2><p>这里仅展示第三次复核后仍低于阈值的候选。它们不会进入搜索；可重新运行整篇自动提取以再次评估。</p></div>
+            <div><p class="eyebrow">QUALITY GATE QUARANTINE</p><h2>需要处理的异常</h2><p>这里只展示自动核验后仍无法可靠判断的少量候选；已通过质量门的数据无需逐项确认。</p></div>
             <div class="quality-review-threshold"><span>自动发布阈值</span><strong>85 / 100</strong></div>
           </header>
           <div class="quality-review-grid" id="quality-review-grid"></div>
@@ -317,12 +329,12 @@
           </div>
           <section class="personal-import-panel" id="personal-import-panel" hidden aria-label="导入个人实验数据">
             <header>
-              <div><span>MY EXPERIMENT DATA</span><h3>导入实验表格</h3><p>只预览 CSV、TSV、XLSX；不会执行公式、宏或外链，也不会自动读取曲线或生成趋势图。</p></div>
-              <button type="button" id="personal-import-choose">选择数据文件</button>
+              <div><span>MY EXPERIMENT DATA</span><h3>AI 辅助导入实验数据</h3><p>选择后，DeepSeek 只接收列名、单位、数据类型和最多 5 行样例，用于生成待核验建议；完整表格不会上传。</p></div>
+              <button type="button" id="personal-import-choose">选择文件并自动识别</button>
             </header>
             <div class="personal-search-notice" id="personal-search-notice" aria-live="polite"><span id="personal-search-notice-text"></span><button type="button" id="personal-search-refresh" hidden>重试刷新搜索</button></div>
             <div class="personal-import-workflow" id="personal-import-workflow" hidden>
-              <div class="personal-import-progress" id="personal-import-progress" role="status" aria-live="polite">等待选择文件</div>
+              <div class="personal-import-progress-row"><div class="personal-import-progress" id="personal-import-progress" role="status" aria-live="polite">等待选择文件</div><button type="button" class="personal-secondary" id="personal-ai-retry" hidden>重新让 AI 识别</button></div>
               <div class="personal-preview-summary" id="personal-preview-summary"></div>
               <label class="personal-sheet-selector">选择工作表<select id="personal-import-sheet"></select></label>
               <form id="personal-import-form">
@@ -334,24 +346,24 @@
                     <label>材料<input id="personal-sample-material" maxlength="500" placeholder="例如：W-5Ta"></label>
                     <label>实验批次<input id="personal-run-name" required maxlength="500" placeholder="例如：室温纳米压痕"></label>
                     <label>测试方法<input id="personal-run-method" required maxlength="500" placeholder="例如：纳米压痕"></label>
-                    <label class="personal-wide">实验条件（每行“名称=数值或说明”）<textarea id="personal-run-conditions" required rows="3" placeholder="temperature=300 K&#10;dose=1 dpa"></textarea></label>
+                    <label class="personal-wide">实验条件（可选；每行“名称=数值或说明”）<textarea id="personal-run-conditions" rows="3" placeholder="temperature=300 K&#10;dose=1 dpa"></textarea></label>
                     <label class="personal-wide">实验备注（可选）<textarea id="personal-run-note" rows="2" placeholder="只记录自己确认过的说明"></textarea></label>
                   </div>
                 </fieldset>
                 <fieldset>
-                  <legend>确认每一列</legend>
-                  <p class="personal-field-help">逐列确认角色、物理意义和单位。没有单位时可留空，但仍需勾选“单位已确认”；忽略列也要明确确认不适用。</p>
+                  <legend>AI 识别结果</legend>
+                  <p class="personal-field-help">请浏览列角色、物理意义和单位；只有识别错误时才需要修改。最终点击一次“我已检查，确认导入”即可。</p>
                   <div class="personal-column-list" id="personal-import-columns"></div>
                 </fieldset>
-                <fieldset>
-                  <legend>测量序列</legend>
-                  <p class="personal-field-help">手动指定横轴、纵轴和可选误差列。被标记为“忽略”的列不会出现在这里。</p>
+                <fieldset class="personal-advanced-series">
+                  <legend>变量关系（AI 可自动识别，可选）</legend>
+                  <p class="personal-field-help">只有表格明确表达横纵轴关系时才需要测量序列；普通数据表可以不填写。</p>
                   <div class="personal-series-list" id="personal-series-list"></div>
                   <button type="button" class="personal-secondary" id="personal-add-series">＋ 添加测量序列</button>
                 </fieldset>
                 <div class="personal-import-actions">
-                  <button type="submit" id="personal-save-draft">保存确认草稿</button>
-                  <button type="button" id="personal-confirm-import" disabled>确认并加入“我的实验”搜索</button>
+                  <div><strong>最终核验</strong><small>点击即表示你已经浏览当前页面；系统会在后台完成保存、版本核对和搜索更新。</small></div>
+                  <button type="submit" id="personal-reviewed-import">我已检查，确认导入</button>
                 </div>
               </form>
             </div>
@@ -420,9 +432,9 @@
 
       <section class="view" id="view-personal" aria-label="上传实验数据"></section>
 
-      <section class="view" id="view-upload">
+      <section class="paper-workflow-intake" id="view-upload" hidden>
         <div class="view-head">
-          <div><p class="eyebrow">PDF INTAKE · DEDUPLICATION</p><h2>上传真实 PDF，先验证和去重，再进入抽取队列</h2></div>
+          <div><p class="eyebrow">PDF INTAKE · DEDUPLICATION</p><h2>导入真实 PDF，验证和去重后进入当前文章处理</h2></div>
           <span class="ai-state" id="deepseek-status">DeepSeek 状态载入中…</span>
         </div>
         <div class="upload-layout">
@@ -434,7 +446,7 @@
             <label class="span-2">第一作者（可选）<input name="first_author" placeholder="用于辅助判断标题相近的论文"></label>
             <label class="span-2">通讯作者（可选）<input name="corresponding_author" placeholder="用于检索和重复文献辅助判断"></label>
             <div class="manual-note"><i>i</i><span>上传后会检查文件指纹、DOI、题目/年份/作者和正文指纹；重复论文不会重复入库。</span></div>
-            <button class="primary" id="pdf-upload-submit" type="submit">验证并上传</button>
+            <button class="primary" id="pdf-upload-submit" type="submit">验证并加入文献处理</button>
           </form>
           <aside class="upload-result" id="upload-result">
             <div class="blank"><span>↑</span><h3>等待上传</h3><p>验证结果、重复原因以及下一步处理状态会显示在这里。</p></div>

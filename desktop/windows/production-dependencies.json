@@ -24,6 +24,7 @@
     "package_input_window",
     "personal_file_selection",
     "personal_import_bridge",
+    "personal_ai_model",
     "librarian_bridge",
     "readiness_service",
     "runtime_lifecycle",
@@ -43,6 +44,7 @@
     "auto_research.evidence.federated_search",
     "auto_research.evidence.federated_search_session",
     "auto_research.personal.import_service",
+    "auto_research.personal.ai_import_suggestions",
     "auto_research.personal.private_repository",
     "auto_research.personal.search_source"
   ],

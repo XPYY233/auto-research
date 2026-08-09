@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from http import HTTPStatus
 from pathlib import Path
 
 from auto_research.personal.import_service import (
@@ -34,6 +35,26 @@ class _Result:
         }
 
 
+class _Suggestion:
+    def public_dict(self):
+        return {
+            "schema_version": "personal-import-suggestion-v1",
+            "provider": "DeepSeek",
+            "columns": [
+                {
+                    "source_name": "Hardness [GPa]",
+                    "role": "dependent",
+                    "meaning": "硬度",
+                    "unit": "GPa",
+                    "confidence": 0.96,
+                    "rationale": "列名与单位明确",
+                }
+            ],
+            "series": [],
+            "requires_human_review": True,
+        }
+
+
 class _Service:
     def __init__(self) -> None:
         self.calls = []
@@ -61,6 +82,14 @@ class _Service:
 
     def confirm(self, import_id, *, expected_revision):
         self.calls.append(("confirm", import_id, expected_revision))
+        return _Result("indexable")
+
+    def suggest(self, import_id, *, sheet_index):
+        self.calls.append(("suggest", import_id, sheet_index))
+        return _Suggestion()
+
+    def import_reviewed(self, import_id, payload, *, reviewed):
+        self.calls.append(("reviewed", import_id, payload, reviewed))
         return _Result("indexable")
 
     def private_search_snapshot(self):
@@ -122,6 +151,45 @@ class PersonalImportBridgeTests(unittest.TestCase):
         self.assertEqual(public["message"], error.message)
         self.assertNotIn("details", public)
         self.assertNotIn("expected_revision", str(public))
+        self.assertEqual(
+            MODULE.PersonalImportBridgeAdapter.error_http_status(
+                "personal_ai_consent_required"
+            ),
+            HTTPStatus.PRECONDITION_REQUIRED,
+        )
+        self.assertEqual(
+            MODULE.PersonalImportBridgeAdapter.error_http_status(
+                "personal_ai_invalid_response"
+            ),
+            HTTPStatus.BAD_GATEWAY,
+        )
+
+    def test_ai_suggestion_and_reviewed_import_remain_thin_and_path_free(self) -> None:
+        service = _Service()
+        search = _Search()
+        bridge = MODULE.PersonalImportBridgeAdapter(
+            service,  # type: ignore[arg-type]
+            search_service=search,
+        )
+        suggestion = bridge.suggest(
+            "personal_import_0123456789abcdef",
+            sheet_index=0,
+        )
+        self.assertEqual(suggestion["schema_version"], "personal-import-suggestion-v1")
+        self.assertTrue(suggestion["requires_human_review"])
+        self.assertNotIn("path", str(suggestion).casefold())
+        draft = {"sheet_index": 0, "columns": []}
+        imported = bridge.import_reviewed(
+            "personal_import_0123456789abcdef",
+            draft,
+            reviewed=True,
+        )
+        self.assertTrue(imported["indexable"])
+        self.assertIn(
+            ("reviewed", "personal_import_0123456789abcdef", draft, True),
+            service.calls,
+        )
+        self.assertEqual(search.calls[-1], (service.snapshot, "private-source", "f" * 64))
 
     def test_windows_snapshot_runs_shared_preview_draft_confirm_status(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

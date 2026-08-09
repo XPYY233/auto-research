@@ -9,12 +9,11 @@
     personalImportStatus: null,
     importingPackage: false,
     importingPersonal: false,
+    suggestingPersonal: false,
     confirmingPersonal: false,
     seriesCounter: 0,
-    personalDraftDirty: true,
-    personalDraftGeneration: 0,
-    reviewedImportId: null,
-    reviewedRevision: null,
+    personalSuggestion: null,
+    personalSuggestionRequest: 0,
   };
 
   const stageLabels = {
@@ -444,16 +443,39 @@
         <label>列角色<select data-column-role>${roleOptions(column.role || "ignore")}</select></label>
         <label>具体意义<input data-column-meaning maxlength="500" value="${esc(column.meaning || "")}" placeholder="例如：纳米硬度"></label>
         <label>单位<input data-column-unit maxlength="80" value="${esc(column.unit || "")}" placeholder="无单位可留空"></label>
-        <div class="personal-column-confirmations">
-          <label><input type="checkbox" data-confirm-role>角色已确认</label>
-          <label><input type="checkbox" data-confirm-meaning>意义已确认</label>
-          <label><input type="checkbox" data-confirm-unit>单位已确认</label>
-        </div>
+        <div class="personal-ai-column-note" data-column-ai-note hidden></div>
       </article>`;
     }).join("");
     el("personal-series-list").innerHTML = "";
     product.seriesCounter = 0;
     markPersonalDraftDirty();
+  }
+
+  function filenameStem(name) {
+    return String(name || "").replace(/\.[^.]+$/, "").trim();
+  }
+
+  function setInputValue(id, value, fallback = "") {
+    const input = el(id);
+    if (input) input.value = value == null ? fallback : String(value);
+  }
+
+  function conditionsText(conditions) {
+    if (!conditions || typeof conditions !== "object" || Array.isArray(conditions)) return "";
+    return Object.entries(conditions).map(([key, value]) => `${key}=${value}`).join("\n");
+  }
+
+  function applyLocalPersonalDefaults() {
+    const sheet = selectedSheet();
+    const stem = filenameStem(product.personalPreview?.source_file?.original_name) || "个人实验数据";
+    const sheetName = String(sheet?.sheet_name || "实验数据");
+    setInputValue("personal-project-name", stem);
+    setInputValue("personal-sample-name", sheetName);
+    setInputValue("personal-sample-material", "");
+    setInputValue("personal-run-name", sheetName);
+    setInputValue("personal-run-method", "未注明");
+    setInputValue("personal-run-conditions", "");
+    setInputValue("personal-run-note", "");
   }
 
   function renderPersonalPreview() {
@@ -465,9 +487,11 @@
       : "未发现额外预览警告";
     el("personal-preview-summary").innerHTML = `<strong>${esc(preview.detected_format?.toUpperCase() || "表格")} · ${preview.sheets?.length || 0} 个工作表</strong><span>${esc(warnings)}</span><small>检测到 ${Number(preview.formula_cell_count || 0)} 个公式单元格；只显示保存值，不会执行公式。</small>`;
     el("personal-import-sheet").innerHTML = (preview.sheets || []).map((sheet, index) => `<option value="${index}">${esc(sheet.sheet_name)} · ${Number(sheet.row_count || 0)} 行 · ${(sheet.columns || []).length} 列</option>`).join("");
+    applyLocalPersonalDefaults();
     renderPreviewSheet();
-    setPersonalProgress("预览完成。请填写实验信息，并逐列确认角色、意义和单位。");
-    el("personal-confirm-import").disabled = true;
+    setPersonalProgress("安全预览完成，正在请 DeepSeek 生成待核验建议…");
+    const button = el("personal-reviewed-import");
+    if (button) button.disabled = false;
   }
 
   function availableColumns() {
@@ -488,34 +512,32 @@
     });
   }
 
-  function addSeries() {
+  function addSeries(initial = null, { quiet = false } = {}) {
     if (availableColumns().length < 2) {
-      toast("至少保留两列非忽略数据，再添加测量序列。", true);
-      return;
+      if (!quiet) toast("至少保留两列非忽略数据，再添加测量序列。", true);
+      return null;
     }
+    const value = initial && typeof initial === "object" ? initial : {};
     product.seriesCounter += 1;
     const row = document.createElement("article");
     row.className = "personal-series-row";
     row.dataset.seriesNumber = String(product.seriesCounter);
-    row.innerHTML = `<label>序列名称<input data-series-name required maxlength="500" placeholder="例如：硬度随剂量变化"></label>
-      <label>横轴<select data-series-x>${columnOptions("", false)}</select></label>
-      <label>纵轴<select data-series-y>${columnOptions("", false)}</select></label>
-      <label>误差列<select data-series-uncertainty>${columnOptions("", true)}</select></label>
-      <label class="personal-series-description">说明（可选）<input data-series-description maxlength="1000"></label>
+    row.innerHTML = `<label>序列名称<input data-series-name required maxlength="500" value="${esc(value.name || "")}" placeholder="例如：硬度随剂量变化"></label>
+      <label>横轴<select data-series-x>${columnOptions(value.x_column || "", false)}</select></label>
+      <label>纵轴<select data-series-y>${columnOptions(value.y_column || "", false)}</select></label>
+      <label>误差列<select data-series-uncertainty>${columnOptions(value.uncertainty_column || "", true)}</select></label>
+      <label class="personal-series-description">说明（可选）<input data-series-description maxlength="1000" value="${esc(value.description || "")}"></label>
       <button type="button" class="personal-remove-series">移除</button>`;
     el("personal-series-list").appendChild(row);
     markPersonalDraftDirty();
+    return row;
   }
 
   function markPersonalDraftDirty() {
-    product.personalDraftDirty = true;
-    product.personalDraftGeneration += 1;
-    product.reviewedImportId = null;
-    product.reviewedRevision = null;
-    const confirm = el("personal-confirm-import");
-    if (confirm) confirm.disabled = true;
-    if (product.personalImportStatus?.stage === "draft_saved") {
-      setPersonalProgress("内容已修改，请重新保存确认草稿后再确认。");
+    const button = el("personal-reviewed-import");
+    if (button && !product.confirmingPersonal) button.disabled = false;
+    if (product.personalImportStatus?.import_id && !product.suggestingPersonal) {
+      setPersonalProgress("请浏览识别结果；有误时直接修改，确认无误后一次导入。");
     }
   }
 
@@ -529,7 +551,6 @@
       if (!key || !value || Object.prototype.hasOwnProperty.call(conditions, key)) throw new Error("实验条件名称不能为空或重复。");
       conditions[key] = value;
     });
-    if (!Object.keys(conditions).length) throw new Error("请至少填写一项实验条件。");
     return conditions;
   }
 
@@ -541,19 +562,12 @@
       const role = row.querySelector("[data-column-role]").value;
       const meaning = row.querySelector("[data-column-meaning]").value.trim();
       const unit = row.querySelector("[data-column-unit]").value.trim();
-      const roleConfirmed = row.querySelector("[data-confirm-role]").checked;
-      const meaningConfirmed = row.querySelector("[data-confirm-meaning]").checked;
-      const unitConfirmed = row.querySelector("[data-confirm-unit]").checked;
-      if (!roleConfirmed || !meaningConfirmed || !unitConfirmed) throw new Error(`请完整确认“${row.dataset.sourceName}”的角色、意义和单位。`);
       if (role !== "ignore" && !meaning) throw new Error(`请填写“${row.dataset.sourceName}”的具体意义。`);
       return {
         source_name: row.dataset.sourceName,
         role,
-        role_confirmed: true,
         meaning: meaning || null,
-        meaning_confirmed: true,
         unit: unit || null,
-        unit_confirmed: true,
       };
     });
     const allowed = new Set(columns.filter(column => column.role !== "ignore").map(column => column.source_name));
@@ -573,7 +587,6 @@
         ...(row.querySelector("[data-series-description]").value.trim() ? { description: row.querySelector("[data-series-description]").value.trim() } : {}),
       };
     });
-    if (!series.length) throw new Error("请至少添加一个测量序列，明确横轴和纵轴。");
     const payload = {
       sheet_index: sheetIndex,
       project: { name: el("personal-project-name").value.trim() },
@@ -590,8 +603,80 @@
     const note = el("personal-run-note").value.trim();
     if (material) payload.sample.material = material;
     if (note) payload.run.user_note = note;
-    if (Number.isInteger(product.personalImportStatus?.revision)) payload.expected_revision = product.personalImportStatus.revision;
+    if (Number.isInteger(product.personalImportStatus?.revision)) {
+      payload.expected_revision = product.personalImportStatus.revision;
+    }
     return payload;
+  }
+
+  function applyPersonalSuggestion(suggestion) {
+    if (!suggestion || suggestion.schema_version !== "personal-import-suggestion-v1") return;
+    product.personalSuggestion = suggestion;
+    setInputValue("personal-project-name", suggestion.project?.name, el("personal-project-name")?.value || "个人实验数据");
+    setInputValue("personal-sample-name", suggestion.sample?.name, el("personal-sample-name")?.value || "实验样品");
+    setInputValue("personal-sample-material", suggestion.sample?.material, "");
+    setInputValue("personal-run-name", suggestion.run?.name, el("personal-run-name")?.value || "实验批次");
+    setInputValue("personal-run-method", suggestion.run?.method, "未注明");
+    setInputValue("personal-run-conditions", conditionsText(suggestion.run?.conditions), "");
+    setInputValue("personal-run-note", suggestion.run?.user_note, "");
+
+    const byName = new Map((suggestion.columns || []).map(column => [column.source_name, column]));
+    document.querySelectorAll(".personal-column-row").forEach(row => {
+      const column = byName.get(row.dataset.sourceName);
+      if (!column) return;
+      row.querySelector("[data-column-role]").value = column.role || "ignore";
+      row.querySelector("[data-column-meaning]").value = column.meaning || "";
+      row.querySelector("[data-column-unit]").value = column.unit || "";
+      const note = row.querySelector("[data-column-ai-note]");
+      const confidence = Number(column.confidence || 0);
+      row.classList.toggle("ai-low-confidence", confidence < 0.65);
+      if (note) {
+        note.hidden = false;
+        note.innerHTML = `<strong>${confidence >= 0.8 ? "AI 高置信" : confidence >= 0.65 ? "AI 建议" : "建议重点检查"}</strong><span>${esc(column.rationale || "基于表头和有限样例识别")}</span>`;
+      }
+    });
+    refreshSeriesOptions();
+    el("personal-series-list").innerHTML = "";
+    product.seriesCounter = 0;
+    (suggestion.series || []).forEach(series => addSeries(series, { quiet: true }));
+    const warningText = (suggestion.warnings || []).length
+      ? `；另有 ${suggestion.warnings.length} 项识别提示，请重点检查低置信字段`
+      : "";
+    setPersonalProgress(`DeepSeek 已完成预填${warningText}。请浏览一遍，有误时直接修改。`);
+    markPersonalDraftDirty();
+  }
+
+  async function requestPersonalSuggestion() {
+    const importId = product.personalImportStatus?.import_id;
+    const sheetIndex = Number(el("personal-import-sheet")?.value || 0);
+    if (!importId) return;
+    const requestId = ++product.personalSuggestionRequest;
+    product.suggestingPersonal = true;
+    const retry = el("personal-ai-retry");
+    if (retry) retry.hidden = true;
+    setPersonalProgress("DeepSeek 正在识别项目、样品、列意义、单位和变量关系…");
+    try {
+      const suggestion = await api(`/api/desktop/personal-imports/${encodeURIComponent(importId)}/ai-suggestion`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sheet_index: sheetIndex, consent: true }),
+      });
+      if (
+        requestId !== product.personalSuggestionRequest
+        || importId !== product.personalImportStatus?.import_id
+        || sheetIndex !== Number(el("personal-import-sheet")?.value || 0)
+      ) return;
+      applyPersonalSuggestion(suggestion);
+    } catch (error) {
+      if (requestId !== product.personalSuggestionRequest) return;
+      const fallback = error.code === "personal_ai_not_configured"
+        ? "尚未配置 DeepSeek。已保留本地识别结果，你仍可直接检查并导入；如需 AI 预填，请先在右上角配置密钥后重新选择文件。"
+        : `${error.message} 已保留本地识别结果，可直接检查并导入。`;
+      setPersonalProgress(fallback, error.code !== "personal_ai_not_configured");
+      if (retry) retry.hidden = false;
+    } finally {
+      if (requestId === product.personalSuggestionRequest) product.suggestingPersonal = false;
+    }
   }
 
   async function choosePersonalFile() {
@@ -614,11 +699,10 @@
       });
       product.personalPreview = response.preview;
       product.personalImportStatus = response.status;
-      product.personalDraftDirty = true;
-      product.reviewedImportId = null;
-      product.reviewedRevision = null;
+      product.personalSuggestion = null;
       renderPersonalPreview();
       revealSearchWorkspace();
+      await requestPersonalSuggestion();
     } catch (error) {
       setPersonalProgress(error.message, true);
       toast(error.message, true);
@@ -627,104 +711,32 @@
     }
   }
 
-  async function savePersonalDraft(event) {
+  async function importReviewedPersonal(event) {
     event.preventDefault();
-    const button = el("personal-save-draft");
-    if (!product.personalImportStatus?.import_id || button.disabled) return;
-    try {
-      const payload = collectDraftPayload();
-      const draftImportId = product.personalImportStatus.import_id;
-      const draftGeneration = product.personalDraftGeneration;
-      button.disabled = true;
-      setPersonalProgress("正在保存确认草稿…");
-      product.personalImportStatus = await api(`/api/desktop/personal-imports/${encodeURIComponent(draftImportId)}/draft`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const savedReviewedDraft = product.personalDraftGeneration === draftGeneration
-        && product.personalImportStatus.stage === "draft_saved"
-        && product.personalImportStatus.import_id === draftImportId
-        && Number.isInteger(product.personalImportStatus.revision);
-      product.personalDraftDirty = !savedReviewedDraft;
-      product.reviewedImportId = savedReviewedDraft ? draftImportId : null;
-      product.reviewedRevision = savedReviewedDraft ? product.personalImportStatus.revision : null;
-      setPersonalProgress(savedReviewedDraft
-        ? "草稿已保存。请最后确认，确认后才会加入“我的实验”搜索。"
-        : "保存期间内容发生变化，请重新检查并保存后再确认。");
-      el("personal-confirm-import").disabled = !savedReviewedDraft;
-    } catch (error) {
-      setPersonalProgress(error.message, true);
-      toast(error.message, true);
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  async function readLatestImportStatus() {
+    const button = el("personal-reviewed-import");
     const importId = product.personalImportStatus?.import_id;
-    if (!importId) return null;
-    return api(`/api/desktop/personal-imports/${encodeURIComponent(importId)}`);
-  }
-
-  async function confirmPersonalImport() {
-    const button = el("personal-confirm-import");
-    const reviewedImportId = product.reviewedImportId;
-    const reviewedRevision = product.reviewedRevision;
-    if (
-      product.confirmingPersonal
-      || button.disabled
-      || product.personalDraftDirty
-      || !reviewedImportId
-      || !Number.isInteger(reviewedRevision)
-      || product.personalImportStatus?.import_id !== reviewedImportId
-    ) return;
+    if (!importId || product.confirmingPersonal || button.disabled) return;
     product.confirmingPersonal = true;
     button.disabled = true;
     try {
-      const latest = await readLatestImportStatus();
-      if (
-        latest?.stage !== "draft_saved"
-        || latest.import_id !== reviewedImportId
-        || latest.revision !== reviewedRevision
-        || product.personalDraftDirty
-        || product.reviewedImportId !== reviewedImportId
-        || product.reviewedRevision !== reviewedRevision
-      ) {
-        product.personalImportStatus = latest || product.personalImportStatus;
-        product.reviewedImportId = null;
-        product.reviewedRevision = null;
-        throw new Error("草稿状态已经变化，请重新检查并保存后再确认。");
-      }
-      setPersonalProgress("正在确认实验数据并准备私人搜索…");
-      product.personalImportStatus = await api(`/api/desktop/personal-imports/${encodeURIComponent(reviewedImportId)}/confirm`, {
+      const payload = collectDraftPayload();
+      setPersonalProgress("正在保存核验结果并更新“我的实验”搜索…");
+      product.personalImportStatus = await api(`/api/desktop/personal-imports/${encodeURIComponent(importId)}/reviewed-import`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expected_revision: reviewedRevision }),
+        body: JSON.stringify({ reviewed: true, draft: payload }),
       });
-      product.personalDraftDirty = false;
-      product.reviewedImportId = null;
-      product.reviewedRevision = null;
       await loadPersonalSearchStatus();
-      setPersonalProgress("实验数据已确认并加入“我的实验”搜索。");
+      setPersonalProgress("实验数据已导入，并加入“我的实验”搜索。");
       showPrivateSearchResults();
-      toast("实验数据已确认，正在显示“我的实验”搜索结果。");
+      toast("实验数据已导入，正在显示“我的实验”搜索结果。");
     } catch (error) {
       if (error.code === "personal_search_refresh_failed") {
-        try { product.personalImportStatus = await readLatestImportStatus(); } catch (_statusError) { /* Search status remains authoritative. */ }
-        product.reviewedImportId = null;
-        product.reviewedRevision = null;
         await loadPersonalSearchStatus();
-        setPersonalProgress("数据已经确认，但搜索刷新未完成。请使用“重试刷新搜索”，不要重复确认。", true);
+        setPersonalProgress("数据已经保存，但搜索刷新未完成。请点击“重试刷新搜索”，不要重复导入。", true);
       } else {
-        try { product.personalImportStatus = await readLatestImportStatus(); } catch (_statusError) { /* Keep the fixed public error. */ }
         setPersonalProgress(error.message, true);
-        const reviewedStateStillCurrent = product.personalImportStatus?.stage === "draft_saved"
-          && product.personalImportStatus.import_id === reviewedImportId
-          && product.personalImportStatus.revision === reviewedRevision
-          && product.reviewedImportId === reviewedImportId
-          && product.reviewedRevision === reviewedRevision;
-        if (reviewedStateStillCurrent) button.disabled = false;
+        button.disabled = false;
       }
       toast(error.message, true);
     } finally {
@@ -784,15 +796,22 @@
     }
   }
 
+  async function changePersonalSheet() {
+    product.personalSuggestion = null;
+    applyLocalPersonalDefaults();
+    renderPreviewSheet();
+    await requestPersonalSuggestion();
+  }
+
   el("desktop-package-import")?.addEventListener("click", importPackage);
   el("desktop-personal-import")?.addEventListener("click", () => switchView("personal"));
   el("personal-import-choose")?.addEventListener("click", choosePersonalFile);
-  el("personal-import-sheet")?.addEventListener("change", renderPreviewSheet);
-  el("personal-import-form")?.addEventListener("submit", savePersonalDraft);
+  el("personal-ai-retry")?.addEventListener("click", () => void requestPersonalSuggestion());
+  el("personal-import-sheet")?.addEventListener("change", () => void changePersonalSheet());
+  el("personal-import-form")?.addEventListener("submit", importReviewedPersonal);
   el("personal-import-form")?.addEventListener("input", markPersonalDraftDirty);
   el("personal-import-form")?.addEventListener("change", markPersonalDraftDirty);
-  el("personal-add-series")?.addEventListener("click", addSeries);
-  el("personal-confirm-import")?.addEventListener("click", confirmPersonalImport);
+  el("personal-add-series")?.addEventListener("click", () => addSeries());
   el("personal-search-refresh")?.addEventListener("click", retryPersonalSearch);
   el("personal-import-columns")?.addEventListener("change", event => {
     if (event.target.matches("[data-column-role]")) refreshSeriesOptions();

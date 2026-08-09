@@ -82,6 +82,25 @@ class _Service:
         self.calls.append(("draft", import_id, payload))
         return _Result("draft_saved")
 
+    def suggest(self, import_id: str, *, sheet_index: int):
+        self.calls.append(("suggest", import_id, sheet_index))
+        return SimpleNamespace(
+            public_dict=lambda: {
+                "schema_version": "personal-import-suggestion-v1",
+                "import_id": import_id,
+                "sheet_index": sheet_index,
+                "provider": "DeepSeek",
+                "columns": [],
+                "series": [],
+                "warnings": [],
+                "requires_human_review": True,
+            }
+        )
+
+    def import_reviewed(self, import_id: str, payload, *, reviewed: bool):
+        self.calls.append(("reviewed", import_id, payload, reviewed))
+        return _Result("indexable")
+
     def confirm(self, import_id: str, *, expected_revision: int):
         self.calls.append(("confirm", import_id, expected_revision))
         return _Result("indexable")
@@ -172,6 +191,51 @@ class PersonalImportAPITests(unittest.TestCase):
                 self.assertNotIn(forbidden, serialized)
             self.assertIn(IMPORT_ID, serialized)
             self.assertIn("revision", serialized)
+
+    def test_ai_suggestion_requires_explicit_consent_and_stays_unconfirmed(self) -> None:
+        denied = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/ai-suggestion",
+            {"sheet_index": 0, "consent": False},
+        )
+        accepted = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/ai-suggestion",
+            {"sheet_index": 0, "consent": True},
+        )
+
+        self.assertTrue(self.api.handle_post(denied))
+        self.assertEqual(denied.responses[0][1], HTTPStatus.PRECONDITION_REQUIRED)
+        self.assertEqual(denied.responses[0][0]["code"], "personal_ai_consent_required")
+        self.assertEqual(self.service.calls, [])
+
+        self.assertTrue(self.api.handle_post(accepted))
+        payload, status = accepted.responses[0]
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertEqual(payload["schema_version"], "personal-import-suggestion-v1")
+        self.assertTrue(payload["requires_human_review"])
+        self.assertEqual(self.service.calls, [("suggest", IMPORT_ID, 0)])
+
+    def test_single_reviewed_import_runs_one_shared_orchestration_and_refresh(self) -> None:
+        search_service = _SearchService()
+        api = PersonalImportAPI(self.service, search_service=search_service)  # type: ignore[arg-type]
+        draft = {"sheet_index": 0, "columns": [], "series": []}
+        handler = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/reviewed-import",
+            {"reviewed": True, "draft": draft},
+        )
+
+        self.assertTrue(api.handle_post(handler))
+
+        payload, status = handler.responses[0]
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertTrue(payload["indexable"])
+        self.assertEqual(
+            self.service.calls,
+            [
+                ("reviewed", IMPORT_ID, draft, True),
+                ("private_search_snapshot",),
+            ],
+        )
+        self.assertEqual(len(search_service.calls), 1)
 
     def test_confirm_refreshes_immutable_private_search_snapshot(self) -> None:
         search_service = _SearchService()

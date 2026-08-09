@@ -1,8 +1,9 @@
-const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchExperience: "agent", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, librarianMessages: [], librarianResults: [], librarianBusy: false, librarianResultType: "item", librarianSessions: [], librarianSessionId: null, librarianHistoryQuery: "", librarianMeta: {}, librarianResearchContexts: new Map(), librarianBriefAuth: null, librarianProgressTimer: null, librarianProgressStarted: 0, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", paperStage: "review", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchExperience: "agent", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, librarianMessages: [], librarianResults: [], librarianBusy: false, librarianResultType: "item", librarianSessions: [], librarianSessionId: null, librarianHistoryQuery: "", librarianMeta: {}, librarianResearchContexts: new Map(), librarianBriefAuth: null, librarianProgressTimer: null, librarianProgressStarted: 0, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const contextChat = { entity: null, conversations: new Map(), busy: false };
 const defaultContextQuestion = "说明这个数据本身的含义，并总结该数据在文章中的具体含义";
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
 const viewCopy = {
+  paper: { kicker: "LITERATURE WORKFLOW", title: "文献处理", subtitle: "导入真实 PDF，在同一流程内完成去重、自动提取和必要的证据检查。" },
   review: { kicker: "EVIDENCE CHECK", title: "检查自动提取结果", subtitle: "自动质量门决定是否收录；本页用于检查证据和修正少量异常。" },
   search: { kicker: "EXPERIMENTAL EVIDENCE LIBRARY", title: "实验文献证据检索平台", subtitle: "数据、图表、结论与 PDF 原文证据的统一检索入口。" },
   upload: { kicker: "PDF INTAKE", title: "导入实验文献", subtitle: "验证真实 PDF、识别重复论文，并加入待处理队列。" },
@@ -114,7 +115,7 @@ function applyUiMode() {
     state.uiMode?.release?.version,
     state.uiMode?.release?.evidence_schema ? `证据库结构 v${state.uiMode.release.evidence_schema}` : "",
   ].filter(Boolean).join(" · ");
-  document.querySelectorAll('[data-view="upload"],[data-view="personal"],[data-write-action]').forEach(el => {
+  document.querySelectorAll('[data-view="paper"],[data-view="upload"],[data-view="personal"],[data-write-action]').forEach(el => {
     el.hidden = readonly;
   });
   document.querySelectorAll(".nav").forEach(btn => {
@@ -297,6 +298,7 @@ async function loadCurrentPaper() {
   state.audit = null;
   state.reviewVisibleLimit = reviewPageSize;
   state.calibrationActive = false;
+  state.reviewObject = state.qualityCandidates.length ? "quality" : "data";
   if (state.reviewFilter === "calibration") state.reviewFilter = "all";
   const reviewFilter = document.querySelector("#review-filter");
   if (reviewFilter) reviewFilter.value = state.reviewFilter;
@@ -1395,7 +1397,7 @@ function openSelectedSource() {
 }
 
 function handleReviewKeyboard(event) {
-  if (document.body.dataset.view !== "review") return;
+  if (document.body.dataset.view !== "paper" || state.paperStage !== "review") return;
   if (event.key === "Escape" && state.focusReview) {
     event.preventDefault();
     setFocusReview(false);
@@ -3461,23 +3463,55 @@ function resetViewportTop() {
   }
 }
 
+function initializePaperWorkflow() {
+  const intake = document.querySelector("#view-upload");
+  const mount = document.querySelector("#paper-upload-mount");
+  if (intake && mount && intake.parentElement !== mount) mount.appendChild(intake);
+  if (intake) intake.hidden = false;
+  setPaperWorkflowStage(state.paperStage, { refresh: false, resetScroll: false });
+}
+
+function setPaperWorkflowStage(stage, options = {}) {
+  const next = stage === "upload" ? "upload" : "review";
+  state.paperStage = next;
+  document.body.dataset.paperStage = next;
+  const workspace = document.querySelector("#view-review");
+  if (workspace) workspace.dataset.paperStage = next;
+  document.querySelectorAll('.paper-workflow-actions [data-paper-stage]').forEach(button => {
+    const active = button.dataset.paperStage === next;
+    button.classList.toggle("active", active);
+    if (button.getAttribute("role") === "tab") button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  if (next === "upload" && options.refresh !== false) refreshUploadWorkspace();
+  if (options.resetScroll !== false) resetViewportTop();
+}
+
 function switchView(name, options = {}) {
+  let paperStage = options.paperStage;
+  if (name === "upload") {
+    name = "paper";
+    paperStage = "upload";
+  } else if (name === "review") {
+    name = "paper";
+    paperStage = "review";
+  }
   if (isReadOnly() && name !== "search") name = "search";
-  if (name !== "review" && state.focusReview) setFocusReview(false);
+  if (name !== "paper" && state.focusReview) setFocusReview(false);
+  const viewName = name === "paper" ? "review" : name;
   document.querySelectorAll(".nav,.view").forEach(el => el.classList.remove("active"));
   document.querySelector(`.nav[data-view="${name}"]`)?.classList.add("active");
-  document.querySelector(`#view-${name}`)?.classList.add("active");
+  document.querySelector(`#view-${viewName}`)?.classList.add("active");
   document.body.dataset.view = name;
   renderViewHeader(name);
-  resetViewportTop();
+  if (name === "paper") setPaperWorkflowStage(paperStage || state.paperStage);
+  else resetViewportTop();
   if (name === "search" && !options.skipSearch && !document.querySelector("#search-results").children.length) runSearch();
-  if (name === "upload") refreshUploadWorkspace();
   if (name === "personal") globalThis.AutoResearchDesktopProduct?.openPersonalImport?.();
   else globalThis.AutoResearchDesktopProduct?.applySearchUI?.();
 }
 
 function setFocusReview(enabled) {
-  const active = Boolean(enabled) && document.body.dataset.view === "review" && !isReadOnly();
+  const active = Boolean(enabled) && document.body.dataset.view === "paper" && state.paperStage === "review" && !isReadOnly();
   state.focusReview = active;
   document.body.dataset.focusReview = active ? "true" : "false";
   const button = document.querySelector("#focus-review");
@@ -3532,11 +3566,15 @@ function renderUploadResult(result) {
   const details = duplicate
     ? `匹配类型：${esc(result.match_type)}${result.similarity != null ? ` · 相似度 ${esc(Math.round(result.similarity * 100))}%` : ""}`
     : `${esc(result.page_count)} 页 · 提取文字 ${esc(result.text_char_count)} 字符${result.needs_ocr ? " · 需要 OCR" : ""}`;
-  box.innerHTML = `<div class="upload-result-card ${duplicate ? "duplicate" : "accepted"}"><span>${duplicate ? "DUPLICATE" : "ACCEPTED"}</span><h3>${esc(result.matched_title || result.title || "上传结果")}</h3><p>${esc(result.message)}</p><small>${details}</small><button type="button" data-open-upload-paper="${esc(result.paper_id)}">切换到这篇文章</button></div>`;
+  box.innerHTML = `<div class="upload-result-card ${duplicate ? "duplicate" : "accepted"}"><span>${duplicate ? "DUPLICATE" : "ACCEPTED"}</span><h3>${esc(result.matched_title || result.title || "上传结果")}</h3><p>${esc(result.message)}</p><small>${details}</small><em>上传不会自动调用 DeepSeek。进入当前文章后，由你决定是否开始自动提取与核验。</em><button type="button" data-open-upload-paper="${esc(result.paper_id)}">设为当前文章并继续</button></div>`;
   box.querySelector("[data-open-upload-paper]")?.addEventListener("click", async () => {
-    const switched = await switchCurrentPaper({ paperId: result.paper_id });
-    if (!switched) return;
-    switchView("review");
+    try {
+      const switched = await switchCurrentPaper({ paperId: result.paper_id });
+      if (!switched) return;
+      switchView("paper", { paperStage: "review" });
+    } catch (error) {
+      toast(`文献已入库，但切换当前文章失败：${error.message}`, true);
+    }
   });
 }
 
@@ -3601,7 +3639,19 @@ async function uploadPdf(event) {
     renderPaperOptions();
     renderSearchScope();
     await refreshUploadWorkspace();
-    toast(result.message, result.outcome === "rejected");
+    if (result.outcome !== "rejected" && result.paper_id && !hasUnsavedEdits()) {
+      try {
+        const switched = await switchCurrentPaper({ paperId: result.paper_id, silent: true });
+        if (switched) {
+          switchView("paper", { paperStage: "review" });
+          toast("文献已设为当前文章。需要处理时，请点击“开始自动提取与核验”；系统不会自动调用 DeepSeek。");
+        }
+      } catch (switchError) {
+        toast(`文献已入库，但切换当前文章失败：${switchError.message}`, true);
+      }
+    } else {
+      toast(result.message, result.outcome === "rejected");
+    }
   } catch (error) {
     document.querySelector("#upload-result").innerHTML = `<div class="upload-result-card rejected"><span>REJECTED</span><h3>上传未通过</h3><p>${esc(error.message)}</p></div>`;
     await refreshUploadWorkspace();
@@ -3746,6 +3796,9 @@ async function submitPaperSwitch(event) {
 }
 
 document.querySelectorAll(".nav").forEach(btn => btn.addEventListener("click", () => switchView(btn.dataset.view)));
+document.querySelectorAll('.paper-workflow-actions [data-paper-stage]').forEach(button => button.addEventListener("click", () => {
+  switchView("paper", { paperStage: button.dataset.paperStage });
+}));
 document.querySelectorAll("[data-review-object]").forEach(button => button.addEventListener("click", () => setReviewObject(button.dataset.reviewObject)));
 document.querySelector("#paper-picker-query").addEventListener("input", event => {
   state.paperFilters.query = event.target.value;
@@ -3922,6 +3975,7 @@ window.addEventListener("beforeunload", event => {
 renderSearchSuggestions();
 renderActiveFilters();
 async function initializeApplication() {
+  initializePaperWorkflow();
   state.uiMode = await api('/api/ui-mode');
   applyUiMode();
   await globalThis.AutoResearchDesktopProduct?.initialize();

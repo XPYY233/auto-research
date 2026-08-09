@@ -29,6 +29,12 @@ _PERSONAL_DRAFT_RE = re.compile(
 _PERSONAL_CONFIRM_RE = re.compile(
     r"^/api/desktop/personal-imports/(personal_import_[A-Za-z0-9_-]{16,96})/confirm$"
 )
+_PERSONAL_SUGGEST_RE = re.compile(
+    r"^/api/desktop/personal-imports/(personal_import_[A-Za-z0-9_-]{16,96})/ai-suggestion$"
+)
+_PERSONAL_REVIEWED_IMPORT_RE = re.compile(
+    r"^/api/desktop/personal-imports/(personal_import_[A-Za-z0-9_-]{16,96})/reviewed-import$"
+)
 MAX_PERSONAL_API_REQUEST_BYTES = 512 * 1024
 _SEARCH_REFRESH_MESSAGE = "数据已保存，搜索刷新待重试。"
 
@@ -143,6 +149,8 @@ class PersonalImportAPI:
             return False
         draft_match = _PERSONAL_DRAFT_RE.fullmatch(parsed.path)
         confirm_match = _PERSONAL_CONFIRM_RE.fullmatch(parsed.path)
+        suggest_match = _PERSONAL_SUGGEST_RE.fullmatch(parsed.path)
+        reviewed_match = _PERSONAL_REVIEWED_IMPORT_RE.fullmatch(parsed.path)
         if not self.is_post_route(parsed.path):
             return False
         try:
@@ -167,6 +175,37 @@ class PersonalImportAPI:
                 response_status = HTTPStatus.CREATED
             elif draft_match is not None:
                 result = self.service.save_draft(draft_match.group(1), body)
+                payload = project_personal_renderer_payload(result.public_dict())
+                response_status = HTTPStatus.OK
+            elif suggest_match is not None:
+                if set(body) != {"sheet_index", "consent"}:
+                    self._invalid_request()
+                if body["consent"] is not True:
+                    raise PersonalImportServiceError(
+                        "personal_ai_consent_required",
+                        "请确认本次将有限表格摘要发送给 DeepSeek 后再继续。",
+                        retryable=False,
+                    )
+                result = self.service.suggest(
+                    suggest_match.group(1),
+                    sheet_index=body["sheet_index"],
+                )
+                payload = project_personal_renderer_payload(result.public_dict())
+                response_status = HTTPStatus.OK
+            elif reviewed_match is not None:
+                if set(body) != {"reviewed", "draft"} or body["reviewed"] is not True:
+                    raise PersonalImportServiceError(
+                        "personal_review_required",
+                        "请先检查当前识别结果，再确认导入。",
+                        retryable=False,
+                    )
+                result = self.service.import_reviewed(
+                    reviewed_match.group(1),
+                    body["draft"],
+                    reviewed=True,
+                )
+                if self.search_service is not None:
+                    self._refresh_private_search(skip_empty=False)
                 payload = project_personal_renderer_payload(result.public_dict())
                 response_status = HTTPStatus.OK
             else:
@@ -201,6 +240,8 @@ class PersonalImportAPI:
             or path == PERSONAL_SEARCH_REFRESH_PATH
             or _PERSONAL_DRAFT_RE.fullmatch(path)
             or _PERSONAL_CONFIRM_RE.fullmatch(path)
+            or _PERSONAL_SUGGEST_RE.fullmatch(path)
+            or _PERSONAL_REVIEWED_IMPORT_RE.fullmatch(path)
         )
 
     def _refresh_private_search(self, *, skip_empty: bool) -> None:
@@ -279,8 +320,18 @@ class PersonalImportAPI:
             "RUN_CONFIRMATION_INCOMPLETE",
             "RUN_REVISION_CONFLICT",
             "RUN_PARENT_IMMUTABLE",
+            "personal_ai_not_configured",
+            "personal_ai_busy",
+            "personal_ai_consent_required",
+            "personal_review_required",
         }:
-            return HTTPStatus.CONFLICT
+            return (
+                HTTPStatus.PRECONDITION_REQUIRED
+                if error.code == "personal_ai_consent_required"
+                else HTTPStatus.CONFLICT
+            )
+        if error.code == "personal_ai_invalid_response":
+            return HTTPStatus.BAD_GATEWAY
         if error.code in {
             "PRIVATE_DB_UNAVAILABLE",
             "PRIVATE_DB_READ_FAILED",
@@ -288,6 +339,9 @@ class PersonalImportAPI:
             "SOURCE_FILE_UNAVAILABLE",
             "personal_preview_failed",
             "personal_search_refresh_failed",
+            "personal_ai_unavailable",
+            "personal_snapshot_failed",
+            "personal_snapshot_unavailable",
         }:
             return HTTPStatus.SERVICE_UNAVAILABLE
         return HTTPStatus.BAD_REQUEST

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from http import HTTPStatus
 from typing import Any, Mapping, Protocol
 
 from auto_research.personal.import_service import (
@@ -57,6 +58,31 @@ class PersonalImportBridgeAdapter:
         return project_personal_renderer_payload(
             self.service.save_draft(import_id, payload).public_dict()
         )
+
+    def suggest(self, import_id: str, *, sheet_index: int) -> dict[str, Any]:
+        """Return a bounded AI suggestion without confirming or indexing it."""
+
+        return project_personal_renderer_payload(
+            self.service.suggest(import_id, sheet_index=sheet_index).public_dict()
+        )
+
+    def import_reviewed(
+        self,
+        import_id: str,
+        payload: Mapping[str, Any],
+        *,
+        reviewed: bool,
+    ) -> dict[str, Any]:
+        """Persist one visibly reviewed form, then refresh the private source."""
+
+        status = self.service.import_reviewed(
+            import_id,
+            payload,
+            reviewed=reviewed,
+        )
+        if self.search_service is not None:
+            self._refresh_private_search(skip_empty=False)
+        return project_personal_renderer_payload(status.public_dict())
 
     def confirm(self, import_id: str, *, expected_revision: int) -> dict[str, Any]:
         status = self.service.confirm(import_id, expected_revision=expected_revision)
@@ -160,3 +186,32 @@ class PersonalImportBridgeAdapter:
             "message": "个人实验导入暂时无法完成。",
             "retryable": True,
         }
+
+    @staticmethod
+    def error_http_status(code: str) -> HTTPStatus:
+        """Keep personal product errors stable without leaking transport details."""
+
+        if code == "personal_ai_consent_required":
+            return HTTPStatus.PRECONDITION_REQUIRED
+        if code in {
+            "personal_ai_not_configured",
+            "personal_ai_busy",
+            "personal_review_required",
+            "personal_import_already_confirmed",
+            "personal_draft_retry_mismatch",
+            "INVALID_IMPORT_TRANSITION",
+            "RUN_CONFIRMATION_INCOMPLETE",
+            "RUN_REVISION_CONFLICT",
+            "RUN_PARENT_IMMUTABLE",
+        }:
+            return HTTPStatus.CONFLICT
+        if code == "personal_ai_invalid_response":
+            return HTTPStatus.BAD_GATEWAY
+        if code in {
+            "personal_search_refresh_failed",
+            "personal_ai_unavailable",
+            "personal_snapshot_failed",
+            "personal_snapshot_unavailable",
+        }:
+            return HTTPStatus.SERVICE_UNAVAILABLE
+        return HTTPStatus.BAD_REQUEST

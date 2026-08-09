@@ -25,6 +25,7 @@ from package_import_service import AutoResearchProductApi, OfficialPackageApi, P
 from package_input import FileSystemProbe, PackageInputBroker
 from package_input_window import PackageInputWindowAdapter, PackageWindowBridge
 from native_desktop_bridge import WindowsNativeDesktopBridge
+from personal_ai_model import WindowsDeepSeekPersonalSuggestionModel
 from personal_file_selection import (
     WindowsPersonalFileInputAdapter,
     WindowsPersonalFileSelectionBroker,
@@ -274,6 +275,9 @@ class WindowsCompositionRoot:
         personal_import_service = PersonalImportService(
             data_root=self.path_runtime.private_data_root,
             selection_provider=personal_selection,
+            suggestion_model=WindowsDeepSeekPersonalSuggestionModel(
+                credential_bridge
+            ),
         )
         search_service = WindowsEvidenceSearchService()
         librarian = LibrarianV3BridgeAdapter(self.librarian_runtime)

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+from auto_research.ai.deepseek import DeepSeekClient
 from auto_research.personal.import_service import PersonalImportService
 
 from federated_search_api import (
@@ -27,6 +29,18 @@ class DesktopProductServices:
     personal_import_api: PersonalImportAPI
 
 
+class RuntimeDeepSeekPersonalSuggestionModel:
+    """Resolve the current BYOK credential for every personal-table AI request.
+
+    The desktop credential route updates process memory after the App starts, so
+    caching a ``DeepSeekClient`` here would keep stale settings.  This adapter
+    contains no secret and never exposes the client to the renderer.
+    """
+
+    def request_json(self, messages, **kwargs: Any):
+        return DeepSeekClient().request_json(messages, **kwargs)
+
+
 def create_desktop_product_services(
     *,
     data_root: Path | str,
@@ -46,6 +60,7 @@ def create_desktop_product_services(
     personal_import_service = PersonalImportService(
         data_root=application_data_root / DEFAULT_PERSONAL_LIBRARY_DIRECTORY,
         selection_provider=personal_file_selection_broker,
+        suggestion_model=RuntimeDeepSeekPersonalSuggestionModel(),
     )
     personal_import_api = PersonalImportAPI(
         personal_import_service,

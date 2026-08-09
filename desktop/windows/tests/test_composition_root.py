@@ -213,6 +213,10 @@ class CompositionRootTests(unittest.TestCase):
             composition.services.personal_import.service,
             composition.personal_import_service,
         )
+        self.assertEqual(
+            type(composition.personal_import_service._suggestion_model).__name__,
+            "WindowsDeepSeekPersonalSuggestionModel",
+        )
         librarian = composition.services.librarian.chat(
             "research",
             conversation_id="conversation-1",
