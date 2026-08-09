@@ -1,7 +1,7 @@
 {
-  "desktop_version": "0.5.1-preview.1",
-  "bundle_short_version": "0.5.1",
-  "build_number": "6",
+  "desktop_version": "0.6.0-preview.1",
+  "bundle_short_version": "0.6.0",
+  "build_number": "7",
   "target": "macOS arm64 internal development preview",
   "product_target": "future Windows production target (not released)",
   "data_mode": "legacy-v12-workspace-plus-signed-official-package-plus-local-private-library-preview",
