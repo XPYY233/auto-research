@@ -7,7 +7,7 @@ const viewCopy = {
   review: { kicker: "EVIDENCE CHECK", title: "检查自动提取结果", subtitle: "自动质量门决定是否收录；本页用于检查证据和修正少量异常。" },
   search: { kicker: "EXPERIMENTAL EVIDENCE LIBRARY", title: "实验文献证据检索平台", subtitle: "数据、图表、结论与 PDF 原文证据的统一检索入口。" },
   upload: { kicker: "PDF INTAKE", title: "导入实验文献", subtitle: "验证真实 PDF、识别重复论文，并加入待处理队列。" },
-  personal: { kicker: "EXPERIMENT DATA INTAKE", title: "上传实验数据", subtitle: "安全预览 CSV、TSV 或 XLSX，逐列确认含义和单位后加入本机私人检索。" },
+  personal: { kicker: "EXPERIMENT DATA INTAKE", title: "上传实验数据", subtitle: "DeepSeek 自动预填 CSV、TSV 或 XLSX；你只需浏览、修正错误并一次确认导入。" },
   manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "历史兼容视图；当前产品不再提供导航入口。" },
   history: { kicker: "REVISION HISTORY", title: "查看修正记录", subtitle: "历史兼容视图；当前产品不再提供导航入口。" },
 };

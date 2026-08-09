@@ -83,7 +83,7 @@
   function personalStatusCopy(status) {
     const state = status?.state || "not_checked";
     if (state === "ready") return [`${status.document_count || 0} 条记录可搜索`, "已确认数据已安全加入本机私人搜索。"];
-    if (state === "empty") return ["尚无已确认数据", "选择实验表格，逐列确认含义和单位后再加入搜索。"];
+    if (state === "empty") return ["尚无已确认数据", "选择实验表格并让 AI 预填；浏览无误后一次确认即可加入搜索。"];
     if (state === "stale") return ["旧记录仍可搜索", "新确认的数据尚未加入搜索，请重试刷新。"];
     if (state === "retry_required") return ["搜索需要重新准备", "数据已保存，请重试刷新；不要重复确认。"];
     return ["正在检查私人数据", "私人记录不会上传，也不会写入官方资料库。"];
