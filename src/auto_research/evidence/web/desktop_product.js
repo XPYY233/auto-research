@@ -295,10 +295,25 @@
   }
 
   function binaryUnavailableLabel(document) {
+    if (document.collection_kind === "literature_collection") return "原文 PDF 未随论文集合提供";
     if (document.source_scope === "private") return "当前搜索记录不含原文件";
     return ["figure", "table"].includes(document.entity_type)
       ? "图片未随资料包提供"
       : "原文 PDF 未随资料包提供";
+  }
+
+  function federatedPdfAction(document) {
+    const sourceId = String(document.source_id || "");
+    const paperUid = String(document.paper_uid || "");
+    const available = document.collection_kind === "literature_collection"
+      && document.pdf_available === true
+      && /^[a-z0-9][a-z0-9._-]{2,119}$/.test(sourceId)
+      && /^paper_[0-9a-f]{32}$/.test(paperUid);
+    if (!available) {
+      return `<button type="button" disabled>${esc(binaryUnavailableLabel(document))}</button>`;
+    }
+    const params = new URLSearchParams({ source_id: sourceId, paper_uid: paperUid });
+    return `<a class="federated-pdf-link" href="/api/desktop/federated-pdf?${esc(params.toString())}" target="_blank" rel="noopener">打开 PDF</a>`;
   }
 
   function renderFederatedResults(page) {
@@ -311,14 +326,17 @@
     }
     container.innerHTML = results.map(hit => {
       const document = hit.document || {};
-      const scope = document.source_scope === "private" ? "private" : "official";
+      const literatureCollection = document.collection_kind === "literature_collection";
+      const scope = document.source_scope === "private" && !literatureCollection ? "private" : "official";
       const metadata = federatedMetadata(document);
       const typeLabel = entityLabels[scope][document.entity_type] || "证据";
-      const sourceLabel = scope === "private" ? "我的实验 · 本机私人" : "官方文献 · 只读";
+      const sourceLabel = literatureCollection
+        ? "导入论文集合 · 本机只读"
+        : scope === "private" ? "我的实验 · 本机私人" : "官方文献 · 只读";
       return `<article class="federated-result-card source-${scope}" data-source-scope="${esc(document.source_scope || "")}" data-source-id="${esc(document.source_id || "")}" data-entity-uid="${esc(document.entity_uid || "")}">
         <header><span>${esc(typeLabel)}</span><small>${esc(sourceLabel)}</small></header>
         <div class="federated-result-copy"><h3>${esc(evidenceTitle(document))}</h3><p>${esc(evidenceContext(document))}</p><strong>${esc(metadata.primary)}</strong><small>${esc(metadata.secondary)}</small><div class="federated-result-detail" hidden></div></div>
-        <aside><b>${Number(hit.score || 0)}</b><span>匹配分</span><button type="button" class="federated-detail-button">查看记录详情</button><button type="button" disabled>${esc(binaryUnavailableLabel(document))}</button></aside>
+        <aside><b>${Number(hit.score || 0)}</b><span>匹配分</span><button type="button" class="federated-detail-button">查看记录详情</button>${federatedPdfAction(document)}</aside>
       </article>`;
     }).join("");
   }
