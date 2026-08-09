@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import tempfile
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -319,6 +321,32 @@ class PersonalImportServiceTests(unittest.TestCase):
                 self._payload(confirmed=True, expected_revision=3),
             )
         self.assertEqual(immutable.exception.code, "personal_import_already_confirmed")
+
+    def test_service_startup_removes_only_expired_owned_staging_files(self) -> None:
+        data_root = self.root / "orphan-cleanup-library"
+        staging = data_root / ".import-staging"
+        staging.mkdir(parents=True)
+        orphan = staging / f"{IMPORT_ID}-abcdefgh.csv"
+        unrelated = staging / "user-kept.csv"
+        fresh = staging / f"{IMPORT_ID}-ijklmnop.csv"
+        for path in (orphan, unrelated, fresh):
+            path.write_text("value", encoding="utf-8")
+        old = time.time() - 600
+        os.utime(orphan, (old, old))
+        os.utime(unrelated, (old, old))
+
+        PersonalImportService(
+            data_root=data_root,
+            selection_provider=self.provider,
+            repository=self.repository,  # type: ignore[arg-type]
+            previewer=lambda path, *, limits: _preview_value(),
+            import_id_factory=lambda: IMPORT_ID,
+            session_ttl_seconds=300,
+        )
+
+        self.assertFalse(orphan.exists())
+        self.assertTrue(unrelated.exists())
+        self.assertTrue(fresh.exists())
 
     def test_concurrent_confirm_only_succeeds_once(self) -> None:
         self.service.preview(SELECTION_ID)

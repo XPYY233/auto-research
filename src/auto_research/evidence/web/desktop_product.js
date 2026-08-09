@@ -14,6 +14,7 @@
     seriesCounter: 0,
     personalSuggestion: null,
     personalSuggestionRequest: 0,
+    personalEditGeneration: 0,
   };
 
   const stageLabels = {
@@ -534,8 +535,9 @@
   }
 
   function markPersonalDraftDirty() {
+    product.personalEditGeneration += 1;
     const button = el("personal-reviewed-import");
-    if (button && !product.confirmingPersonal) button.disabled = false;
+    if (button && !product.confirmingPersonal && !product.suggestingPersonal) button.disabled = false;
     if (product.personalImportStatus?.import_id && !product.suggestingPersonal) {
       setPersonalProgress("请浏览识别结果；有误时直接修改，确认无误后一次导入。");
     }
@@ -651,7 +653,10 @@
     const sheetIndex = Number(el("personal-import-sheet")?.value || 0);
     if (!importId) return;
     const requestId = ++product.personalSuggestionRequest;
+    const editGeneration = product.personalEditGeneration;
     product.suggestingPersonal = true;
+    const reviewedButton = el("personal-reviewed-import");
+    if (reviewedButton) reviewedButton.disabled = true;
     const retry = el("personal-ai-retry");
     if (retry) retry.hidden = true;
     setPersonalProgress("DeepSeek 正在识别项目、样品、列意义、单位和变量关系…");
@@ -666,6 +671,14 @@
         || importId !== product.personalImportStatus?.import_id
         || sheetIndex !== Number(el("personal-import-sheet")?.value || 0)
       ) return;
+      if (
+        editGeneration !== product.personalEditGeneration
+        || product.personalImportStatus?.indexable === true
+      ) {
+        setPersonalProgress("AI 识别已完成，但你已开始修改；系统保留人工内容，不会自动覆盖。需要时可手动重新识别。");
+        if (retry) retry.hidden = false;
+        return;
+      }
       applyPersonalSuggestion(suggestion);
     } catch (error) {
       if (requestId !== product.personalSuggestionRequest) return;
@@ -675,7 +688,12 @@
       setPersonalProgress(fallback, error.code !== "personal_ai_not_configured");
       if (retry) retry.hidden = false;
     } finally {
-      if (requestId === product.personalSuggestionRequest) product.suggestingPersonal = false;
+      if (requestId === product.personalSuggestionRequest) {
+        product.suggestingPersonal = false;
+        if (reviewedButton && product.personalImportStatus?.indexable !== true) {
+          reviewedButton.disabled = false;
+        }
+      }
     }
   }
 
@@ -715,7 +733,7 @@
     event.preventDefault();
     const button = el("personal-reviewed-import");
     const importId = product.personalImportStatus?.import_id;
-    if (!importId || product.confirmingPersonal || button.disabled) return;
+    if (!importId || product.confirmingPersonal || product.suggestingPersonal || button.disabled) return;
     product.confirmingPersonal = true;
     button.disabled = true;
     try {

@@ -81,6 +81,18 @@ class PersonalImportUIContractTests(unittest.TestCase):
         self.assertNotIn("请至少填写一项实验条件", self.product)
         self.assertNotIn("请至少添加一个测量序列", self.product)
 
+    def test_delayed_ai_response_cannot_override_user_edits_or_early_confirm(self) -> None:
+        self.assertIn("personalEditGeneration", self.product)
+        self.assertIn("const editGeneration = product.personalEditGeneration", self.product)
+        self.assertIn("editGeneration !== product.personalEditGeneration", self.product)
+        self.assertIn("系统保留人工内容，不会自动覆盖", self.product)
+        self.assertIn("if (reviewedButton) reviewedButton.disabled = true", self.product)
+        self.assertIn("product.suggestingPersonal || button.disabled", self.product)
+        self.assertLess(
+            self.product.index("editGeneration !== product.personalEditGeneration"),
+            self.product.index("\n      applyPersonalSuggestion(suggestion);"),
+        )
+
     def test_librarian_remains_official_only_and_security_hook_is_preserved(self) -> None:
         librarian = re.search(
             r'<section class="librarian-workspace".*?</section>\s*<section class="desktop-product-panel"',

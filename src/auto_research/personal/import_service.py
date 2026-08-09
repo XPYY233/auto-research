@@ -50,6 +50,9 @@ from auto_research.personal.tabular_preview import (
 DEFAULT_IMPORT_SESSION_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_MAX_IMPORT_SESSIONS = 32
 _IMPORT_ID_RE = re.compile(r"^personal_import_[A-Za-z0-9_-]{16,96}$")
+_STAGED_FILENAME_RE = re.compile(
+    r"^personal_import_[A-Za-z0-9_-]{16,96}-[A-Za-z0-9_-]{8,64}\.(?:csv|tsv|xlsx)$"
+)
 
 
 class SelectionSnapshot(Protocol):
@@ -345,6 +348,7 @@ class PersonalImportService:
         self._sessions: dict[str, _ImportSession] = {}
         self._suggestions_in_flight: set[tuple[str, int]] = set()
         self._lock = threading.RLock()
+        self._cleanup_orphaned_staging()
 
     @staticmethod
     def _new_import_id() -> str:
@@ -875,6 +879,34 @@ class PersonalImportService:
             # The repository and public state never depend on cleanup succeeding.
             # A future session prune can retry without exposing the private path.
             pass
+
+    def _cleanup_orphaned_staging(self) -> None:
+        """Remove only expired, service-owned snapshots left by an earlier process."""
+
+        staging_root = self.data_root / ".import-staging"
+        try:
+            root_status = self.data_root.lstat()
+            staging_status = staging_root.lstat()
+            if (
+                stat.S_ISLNK(root_status.st_mode)
+                or not stat.S_ISDIR(root_status.st_mode)
+                or stat.S_ISLNK(staging_status.st_mode)
+                or not stat.S_ISDIR(staging_status.st_mode)
+            ):
+                return
+            cutoff = time.time() - self._session_ttl_seconds
+            for candidate in staging_root.iterdir():
+                if _STAGED_FILENAME_RE.fullmatch(candidate.name) is None:
+                    continue
+                candidate_status = candidate.lstat()
+                if (
+                    stat.S_ISREG(candidate_status.st_mode)
+                    and candidate_status.st_mtime <= cutoff
+                ):
+                    self._remove_staged_path(candidate)
+        except OSError:
+            # Cleanup is best effort and never weakens repository availability.
+            return
 
     @staticmethod
     def _mark_payload_reviewed(raw_payload: Mapping[str, Any]) -> dict[str, Any]:
