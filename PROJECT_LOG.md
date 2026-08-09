@@ -1,5 +1,20 @@
 # Auto Research Evidence 项目日志
 
+> 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
+
+## 2026-08-09：Librarian V3、私人导入与共享工作台源码收口
+
+- 当前源码检查点为 `64e0592`。Librarian V3 已接入共享前端：系统能力/普通对话走本地零召回路径，研究问题使用官方文献全库，签名 `research_state/state_token` 支持 R#/B# 多轮追问；私人实验和 `all` 不进入 Librarian 综合。
+- `928c186` 完成共享搜索工作区：本地文献工作区继续使用 Search V2/Librarian，离线资料库以单次后端请求搜索 `official/private/all`，结果只使用 `item/table/figure/finding` 和稳定来源身份。私人导入 UI 固定执行选择、受限预览、草稿、明确复核、确认和搜索刷新，不显示路径或哈希，也不使用 `localStorage` 保存私人导入。
+- `64e0592` 进一步绑定 `expected_revision/reviewed_revision`：用户复核后只要修改项目、样品、实验、条件、列定义或测量序列，旧复核即失效；renderer 只接收去路径、去哈希、去内部数据库/导入/草稿 ID 的公共投影。
+- Windows 后端 parity 已在 `a134acd` 接入共享 HTTP bridge、原生资料包/私人表格选择、官方与私人联合搜索、私人导入、Librarian V3 bridge 和 readiness。源码能力不等于可交付安装包：`installer_ready=false`，没有 Setup，也没有 Windows 11 clean-machine 实机验收。
+- 最后已构建的 macOS 制品仍来自 `f34bf68`（`0.4.0-preview.1` / preview-3）。上述 V3、私人导入和共享离线资料库源码晚于该制品；本轮不重写其版本、测试数或 DMG 身份，等待下一次受控构建与实机验收。
+
+### `1b5ae67` 并行写入竞态复盘
+
+- `1b5ae67` 在一次提交中同时落入 Windows 组合根、私人导入、联合搜索、Librarian bridge 和共享 webapp/UI 等多个所有权区域，暴露了并行任务共享工作树时的暂存与提交竞态。功能保留，混合提交方式不作为后续模板。
+- 后续规则固定为：同一共享 checkout 同一时间只有一个 Git 写入者；其他任务保持只读；写入权显式交接；提交前只 stage 声明文件并打印 cached name list。生产数据库、`paper_056` 和现场运行产物默认隔离，除非用户单独授权数据 checkpoint。
+
 ## 2026-08-08：官方与私人联合搜索共享生命周期
 
 - 新增平台中立 `FederatedSearchSession`，统一持有可选官方 source、可选私人 confirmed/indexable source 和既有 `FederatedEvidenceSearch` 不可变快照；macOS/Windows 后续只消费窄 Protocol，不再复制召回、排序、readiness 或 engine swap。

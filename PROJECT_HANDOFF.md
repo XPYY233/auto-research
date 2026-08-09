@@ -1,13 +1,13 @@
 # Auto Research 阶段性交班总览
 
-> 交班快照：2026-08-01
+> 交班快照：2026-08-09
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
-> 本轮改造前保护提交：`6ce9536`
-> 上一推理/呈现功能提交：`8e9c4c1`
-> 当前桌面候选：Auto Research `0.4.0-preview.1`（Apple Silicon macOS，内部开发预览）
+> 当前源码检查点：`64e0592`
+> 最后已构建源码：`f34bf68`
+> 最后已构建桌面候选：Auto Research `0.4.0-preview.1`（Apple Silicon macOS，内部开发预览）
 > 当前制品标签：`evidence-demo-2026-08-01-macos-workbench-preview-3`
-> 联合验证：591 项通过（core 399 / macOS 110 / Windows 82）
-> Windows 交付：OneDrive `Auto-Research-Windows-Internal-Test`（BUILD KIT READY；SETUP_PRESENT=NO）
+> 该制品联合验证：591 项通过（core 399 / macOS 110 / Windows 82）
+> Windows 源码：`a134acd` backend parity；`installer_ready=false`，无 Setup、无 Win11 真机验收
 > 证据库版本：`2026.07.30-librarian-brief-stable.1` / schema v12
 
 本文面向下一位 Codex Agent、工程维护者和未来的项目负责人。它说明项目为何存在、过去完成了什么、当前真正能做什么、日常工作流、禁止触碰的边界、验证与发布方法，以及尚未完成的目标。
@@ -123,14 +123,15 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 - Search V2 使用 SQLite FTS 可重建投影，不改变科学事实表；
 - 搜索覆盖条目、表格、图片、结论，支持题目、DOI、一作/通讯作者、材料、实验条件和中英文元素别名；
 - “具体意义”的搜索权重高于“数据在文中的解释”；
-- 图书管理员在既有固定链路内运行：DeepSeek 查询规划、本地确定性硬条件解析与四类覆盖召回、DeepSeek 有界证据选择/解释、本地完整性门；
+- Librarian V3 先由本地路由区分系统能力、研究检索、宽泛综述、R#/B# 追问、澄清和普通对话；系统能力与普通对话保持零召回、零模型，研究路径才进入有界规划、四类覆盖召回、证据选择和本地完整性门；
+- `research-state-v1` 与当前进程签名 token 绑定 conversation、证据版本、anchor/bundle 和父状态链；共享 UI 只在内存中携带状态，传输失败会清除旧 R#/B#，不会把 token 写入历史；
 - 材料、辐照类型、粒子、温度、剂量/注量、物理量和样品状态是本地硬条件。DeepSeek 不能创建、跨字段注入或改写硬条件，同义词和元素别名只做软扩展；
 - 本地将候选固定分成 `direct`、`adjacent`、`expansion`，并按论文、实际材料和完整实验条件建立 evidence bundle；只允许在同一兼容 bundle 内做定量前后比较；
 - 科学计数法注量保持指数语义并支持等价单位比较；能区分 `300 keV` 与 `300 K`，以及 `Ni/He` 是粒子还是材料；
 - 回答固定为直接结论、证据矩阵、相关证据、数据库空白和建议追问五段；页面显示候选总数和报告引用数，保留所有有界候选；
 - Search V2、图表详情和图书管理员共用公开 DTO，不向只读响应暴露本地路径、Zotero key、本机文章 key、审核者或内部备注；
 - 相同数据库证据版本、问题和有限历史可复用一小时完整结果；
-- 图书管理员固定搜索全库，精确检索才允许限制论文范围；
+- 图书管理员固定搜索官方文献全库，精确检索才允许限制论文或选择私人/全部来源；私人实验当前不进入 Agent 综合；
 - 详情 AI 对话只读取当前选中条目和有限 PDF 相关页，不能写数据库。
 - 当前结构化五段报告只有在同一服务进程 HMAC 签名、不是澄清回答、至少有一条实际引用且通过一致性门时，才能确定性导出为 Markdown 研究简报。
 - 聊天响应顶层的 `research_brief` 信封包含 `snapshot_token`、`answered_at`、`evidence_fingerprint`、`eligible` 和 `ineligible_reason`；签名快照使用 `answered_at` 与 `evidence_version`。导出只接收当前进程签发的 `{snapshot, snapshot_token}`，不接受任意快照或 session id。
@@ -148,12 +149,14 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 - 正式 App 不要求 Auto Research 编辑密码；任何意外系统钥匙串授权窗都视为发布阻断，由桌面层修复后才可交付；
 - 导师只读页、浏览器工作台、`8765`/`8766` 和 ngrok 已退役，不再用于展示或分享。
 - 正式发行采用“桌面 App + 独立证据包”：用户导入经过版本、哈希与签名校验的数据包后离线检索；用户自己的 PDF 与私人库分离。DeepSeek 抽取和图书管理员使用用户自己的 key，并通过平台安全凭据库保存。跨平台契约见 `docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md`。
+- 共享搜索 UI 分为“本地文献工作区”和“离线资料库”；离线资料库对 `official/private/all` 每次只执行一次联合精确查询，结果继续只有 `item/table/figure/finding`。renderer 公共投影不含本机路径、文件哈希、内部数据库/导入/草稿 ID。
+- 私人 CSV/TSV/XLSX 导入固定为 `previewed → draft_saved → confirmed/indexable`。确认必须绑定最新 `expected_revision/reviewed_revision`，并要求纳入列的角色、意义和单位全部由用户复核；复核后修改草稿会使旧确认失效。当前 UI 不支持趋势图附件或曲线读点。
 
-历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。`0.4.0-preview.1` 已在干净工作树完成591项联合测试，并在滚动修复后重建 App/DMG；隔离 smoke、签名、镜像校验以及实机启动/健康检查/退出均通过。它仍是依赖 checkout v12 的内部开发预览，不得表述为可移植正式版。
+历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。最后已构建的 `0.4.0-preview.1` 来自 `f34bf68`，已完成591项联合测试和 App/DMG 实机验收；当前 `64e0592` 源码中的 V3、私人导入与共享离线资料库尚未进入该制品。两者不得混写为同一个已发布状态。
 
 ## 5. 当前真实状态
 
-以2026-08-01内部预览检查点为准：
+科学数据和最后已构建制品仍以2026-08-01内部预览检查点为准；源码能力另列，不据此改写制品测试数或数据库口径：
 
 | 对象 | 数量/状态 |
 |---|---:|
@@ -169,6 +172,13 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 | 图表就绪论文 | 30/50 |
 | 自动测试 | 591 项通过（core 399 / macOS 110 / Windows 82） |
 | 生产 SQLite SHA-256 | `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6` |
+
+| 源码/平台状态 | 当前事实 |
+|---|---|
+| 共享源码 | `64e0592`：Librarian V3 UI、联合精确搜索、私人导入确认门与公共投影安全门 |
+| macOS 制品 | 仍为 `f34bf68` 构建的 preview-3；尚未包含上述后续源码 |
+| Windows 源码 | `a134acd` backend parity；共享 HTTP bridge、原生选择和服务组合已接线 |
+| Windows 制品 | `installer_ready=false`；无 Setup、无 Win11 clean-machine 验收 |
 
 首个内部官方资料包为 `0.1.0-preview.1`，大小约 2.36 MB，SHA-256 为 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`。它包含60篇论文元数据和4,356个只读实体（3,142 item、936 finding、46 table、232 figure），不含 PDF 和二进制图片。官方包与 schema-v12 可编辑工作区是两个数据源，不能 `ATTACH`、覆盖或互相写入。
 
@@ -349,6 +359,7 @@ git fsck --full
 | DeepSeek抽取 | `docs/adversarial_quality_gate.md` | `deepseek_extraction.py`、`quality_pipeline.py`、`prompts.py` |
 | 图表 | `AGENT.md`图表章节 | `visual_evidence.py` |
 | 搜索/Agent/研究简报 | `docs/SEARCH_AND_AGENT_ARCHITECTURE.md`、`docs/LIBRARIAN_RESEARCH_BRIEF.md` | `search_index.py`、`agent_runtime.py`、`librarian_reasoning.py`、`public_dto.py`、`research_brief.py`、`web/librarian_brief.js` |
+| 私人导入/联合搜索 | `docs/PERSONAL_EXPERIMENT_DATA.md`、`docs/SEARCH_AND_AGENT_ARCHITECTURE.md` | `personal/import_service.py`、`personal/public_projection.py`、`personal/search_source.py`、`evidence/federated_search_session.py`、`web/desktop_product.js` |
 | 详情AI对话 | `AGENT.md`证据对话章节 | `context_chat.py` |
 | 网页 | `STABLE_RELEASE.md` | `webapp.py`、`web/index.html`、`web/app.js`、`web/app.css` |
 | 上传/去重 | `README.md`证据上传章节 | `uploads.py`、`document_recognition.py` |
@@ -361,12 +372,14 @@ git fsck --full
 
 当前 `origin` 指向本地历史 bundle，不是可推送的 GitHub 远端。不要把 `git push` 成功与否当作已有线上备份。
 
+共享 checkout 同一时间只能有一个 Git 写入者。其他任务保持只读，直到写入权明确交接；提交前必须显式 stage 声明文件并打印 cached name list。普通代码/文档提交不得纳入生产 SQLite、`paper_056`、用户 PDF 或现场运行产物。
+
 稳定发布顺序：
 
 1. 停止写入任务；
 2. 运行 `evidence-reconcile-runs --older-than-hours 6`，只收口运行元数据；
 3. 复制 `db/experimental_evidence.sqlite` 到仓库外；
-4. 运行全套健康、测试、浏览器和只读权限检查；
+4. 运行全套健康、测试、App 内共享 UI 和历史只读权限回归；
 5. 检查密钥、PDF、数据库和无关个人文件；
 6. 提交 Git；
 7. 创建带日期标签；
@@ -374,19 +387,12 @@ git fsck --full
 9. 记录 SQLite 和 bundle SHA-256；
 10. 确保 `git status --short` 为空。
 
-当前稳定恢复点：
+当前恢复层级：
 
-- 计划 Git 标签：`evidence-demo-2026-07-30-librarian-brief-stable-1`；发布收口时创建
-- SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-brief-stable-2026-07-30-v1.sqlite`；SHA-256 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`
-- Git bundle 计划路径：`/Users/USER/Zotero/auto-research-backups/auto-research-librarian-brief-stable-2026-07-30-v1.bundle`；本轮提交和标签完成后生成并补录 SHA-256
-- 上一稳定标签：`evidence-demo-2026-07-30-librarian-reasoning-stable-1`
-- 上一稳定 SQLite：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite`
-
-本轮改造前保护点：
-
-- 提交：`6ce9536`
-- 标签：`evidence-demo-2026-07-30-pre-research-brief-1`
-- 该保护点同时是上一图书管理员推理/呈现稳定版的发布提交；不要把保护标签误认成本轮稳定标签。
+- 最后已构建 macOS 制品：标签 `evidence-demo-2026-08-01-macos-workbench-preview-3`，源码 `f34bf68`；它不包含 `64e0592` 之后的共享 UI/私人导入功能。
+- 当前源码检查点：`64e0592`；尚未生成新的 App/DMG、发布标签或 Windows Setup。
+- Librarian V3 改造前保护点：标签 `auto-research-pre-librarian-v3-integration-2026-08-08`，提交 `a2b60e1`。
+- 科学 SQLite 快照仍使用已记录的 `2026.07.30-librarian-brief-stable.1` 身份；代码文档收口不得改写其 SHA、数据计数或现场文件。
 
 不要使用破坏性 Git 命令回滚用户工作树。需要恢复时优先新建目录验证 bundle 或快照，再由用户确认切换。
 
@@ -404,13 +410,12 @@ git fsck --full
 
 推荐顺序：
 
-1. 建立30–50个图书管理员问题的人工金标准和自动回归指标；
-2. 每批3–5篇补齐13篇数据就绪论文，使17/50达到至少30/50；
-3. 为材料、粒子、温度、剂量/注量和物理量建立人工金标准词表与边界回归集，重点覆盖科学计数法、单位等价、粒子/材料角色和跨轮继承；
-4. 建立轻量用户反馈，区分漏检、错引和条件理解错误；
-5. 证明需要后再评估向量检索；
-6. 完成私有GitHub或代码+脱敏演示库的发布范围设计；
-7. 设计签名 App 与便携证据包分离的正式产品发行，不依赖开发者 Mac 常驻在线。
+1. 从冻结源码受控重建 macOS App/DMG，实机验收官方/私人/全部搜索、私人导入、Librarian V3 与 BYOK；
+2. 在 Windows 11 生成真实 Setup，完成 clean-machine 安装、资料包/私人表格导入、离线搜索、Librarian、升级和卸载验收；
+3. 建立30–50个图书管理员问题的人工金标准和自动回归指标；
+4. 每批3–5篇补齐13篇数据就绪论文，使17/50达到至少30/50；
+5. 建立轻量用户反馈，区分漏检、错引和条件理解错误；证明需要后再评估向量检索；
+6. 完成私有GitHub或代码+脱敏演示库的发布范围设计。
 
 ## 16. 更换账号后的 Skill 使用
 

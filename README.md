@@ -16,7 +16,9 @@ ln -s /Users/USER/Zotero/auto-research/skills/auto-research-evidence-maintainer 
 
 The older `auto-research-zotero` skill remains specific to lawful PDF acquisition and Zotero corpus maintenance; use the new evidence-maintainer skill for the desktop workbench product, extraction database, quality gate, visuals, search, Librarian, release, and handoff work.
 
-Current desktop checkpoint: **Auto Research `0.4.0-preview.1` for Apple Silicon macOS**, artifact-tagged `evidence-demo-2026-08-01-macos-workbench-preview-3`. It is an internal development preview, not a portable public release: the editable scientific workspace still depends on this checkout and the schema-v12 database. The final clean release worktree passed 591 automated tests (399 shared core, 110 macOS and 82 Windows), isolated App smoke, signing, DMG verification and a real launch/health/clean-shutdown check.
+Last built desktop checkpoint: **Auto Research `0.4.0-preview.1` for Apple Silicon macOS**, artifact-tagged `evidence-demo-2026-08-01-macos-workbench-preview-3` from `f34bf68`. It is an internal development preview, not a portable public release: the editable scientific workspace still depends on this checkout and the schema-v12 database. That release worktree passed 591 automated tests (399 shared core, 110 macOS and 82 Windows), isolated App smoke, signing, DMG verification and a real launch/health/clean-shutdown check.
+
+Current source checkpoint is `64e0592`. It contains Librarian V3 shared-UI transport, official/private federated exact search, the reviewed private-table import gate and the shared offline/private workflow added after the last App/DMG build. Windows backend parity is recorded at `a134acd`, but `installer_ready=false`: there is no Setup and no Windows 11 clean-machine acceptance. Source readiness must not be reported as a newly built desktop release.
 
 The scientific corpus has not become complete merely because the product build is stable: it remains 17/50 data-ready and 30/50 visual-ready. The schema-v12 baseline contains 6,501 raw rows, 5,048 reportable numeric occurrences, 3,142 independent physical facts, 937 qualitative findings and 291 visual assets. The 243-asset count is the preserved historical pre-cloud freeze rather than the current total.
 
@@ -29,6 +31,10 @@ As of 2026-08-01, the only supported product shape is a **personal desktop resea
 The former browser workbench, mentor read-only page, ports `8765`/`8766`, ngrok tunnel and their launchers are retired historical compatibility paths. They are retained only long enough to support rollback, migration and automated permission tests; they are not release, sharing or daily-use entry points.
 
 The intended distribution is the desktop App plus a separately supplied, signed and hashed `.aresearch` evidence package. Import enables offline search; a user's own PDFs and extraction results stay in a separate private library. DeepSeek extraction and Librarian use the user's own API key, stored outside the database and evidence package. The ad-hoc-signed macOS preview deliberately uses Application Support private files with a separate AES-256-GCM key to avoid a misleading Keychain password prompt; a formally signed macOS release must use Keychain, and Windows uses Credential Manager. The complete cross-platform and non-technical onboarding contract is in [`docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md`](docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md).
+
+The shared source UI separates **本地文献工作区** from **离线资料库**. Offline exact search selects official literature, private experiments, or both and makes one federated backend request; it never merges two client-side result lists. Both sources reuse only `item`, `table`, `figure`, and `finding`. Librarian V3 remains official-literature-only and never synthesizes private experiment values.
+
+Private CSV/TSV/XLSX import uses the desktop native picker and the fixed `previewed → draft_saved → confirmed/indexable` flow. Users must review project/sample/run metadata and every included column's role, meaning, and unit. Confirmation binds the latest draft revision to the reviewed revision; editing the draft invalidates the prior review. Renderer-facing cards and errors contain no local path, file hash, internal database ID, import ID, or draft ID. Trend-image attachment is a future capability, not a current UI feature.
 
 It prioritizes open/official sources and your lawful local access path. It does **not** bypass paywalls, crack captchas, use proxy pools, or impersonate institutional access.
 
@@ -153,8 +159,6 @@ search index. DeepSeek enriches captions and nearby extracted text only. The
 discarded MinerU/cloud-visual experiment is not part of the current database,
 search results, interface or runtime configuration.
 
-演示和日常使用均应打开 Auto Research.app。`TEACHER_DEMO.md` 中关于浏览器和公网只读链接的说明只保留为历史记录，不再代表当前产品路线。
-
 The current evidence workflow first classifies what kind of experiment the paper
 contains, then chooses the extraction focus accordingly. Irradiation remains the
 first mature pilot type, but it is no longer the hard-coded project boundary.
@@ -188,10 +192,10 @@ maintainer diagnostics used internally by the App and test suite. The former
 `打开本地编辑工作台.command` and `创建导师公网链接.command` files are migration
 notices only and must not silently start a browser service or public tunnel.
 
-The search page opens with the DeepSeek Librarian. It always searches the full
-evidence library and returns the existing four result types: numeric items,
+The local literature workspace opens with Librarian V3. Research questions search the full official
+evidence library and return the existing four result types: numeric items,
 tables, figures and qualitative findings. Use precise search when a query must
-be limited by paper title, DOI or author. The current ad-hoc macOS preview
+be limited by paper title, DOI or author, or when searching private experiments. System-capability questions and ordinary conversation are answered locally with zero evidence recall and zero model calls. The current ad-hoc macOS preview
 persists Librarian history with AES-GCM and a separate private key under
 Application Support; a formally signed release switches that key to macOS
 Keychain. Historical browser-local
@@ -202,8 +206,8 @@ packaging boundary; this core checkpoint includes the shared-frontend adapter
 contract but does not claim that `desktop/macos/**` source is published in the
 core release commit. Research-brief authorization is transient only and is not
 stored in session meta/messages, `localStorage`, or desktop encrypted history.
-Every new turn uses DeepSeek to plan several short queries, runs a
-coverage search over all four evidence types, and then applies deterministic
+Each research turn uses the V3 local intent router. Focused lookup and broad review may use DeepSeek to plan bounded short queries, then run a
+coverage search over all four official evidence types and apply deterministic
 hard-condition matching for material, irradiation, particle, temperature,
 dose/fluence, property and specimen state. DeepSeek plans queries, selects
 bounded evidence and explains it in Chinese; it cannot create or rewrite hard

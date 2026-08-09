@@ -1,6 +1,6 @@
 # Auto Research 架构治理与扩展规则
 
-更新日期：2026-08-01
+更新日期：2026-08-09
 适用范围：共享核心、macOS 预览、Windows 客户端、官方资料包、私人实验库与 Agent。
 
 ## 1. 产品边界
@@ -37,6 +37,8 @@ platform-neutral utilities
 - 官方仓库与私人仓库永不 `ATTACH`、合并写入或共享内部主键。联合搜索只消费无路径、只读公开投影。
 - `EvidenceDB v12` 是历史可编辑科研工作区；`distribution-sqlite-v1` 是不可变官方分发库。任何桌面导入路径都不得对后者调用 `EvidenceDB.init()`。
 - 搜索结果始终只有 `item`、`table`、`figure`、`finding` 四类。Agent 报告、推荐文章、研究简报与聊天历史均不是第五类科学证据。
+- Librarian V3 固定只读官方文献全库；私人实验和 `all` 只进入联合精确搜索。平台和前端不得把私人测量值送入文献综合，或把用户数据写成论文结论。
+- renderer 只接收中央白名单公开投影。稳定来源身份可以公开，本机路径、文件哈希、内部数据库/导入/草稿 ID、仓库对象和底层异常一律不得进入卡片、错误、历史或日志。
 - DeepSeek 只经受控客户端调用。提取/验证/总结与查询规划可使用不同模型，但模型不得绕过本地硬条件、来源分类、证据定位和质量门。
 
 ## 3. 单一正式实现
@@ -52,8 +54,8 @@ platform-neutral utilities
 
 以下路径当前已冻结：
 
-- `stable`：本地 PyMuPDF 图表资产、DeepSeek 文本语义增强、四类证据搜索、对抗式质量门、签名资料包核心、官方/私人只读联合召回契约。
-- `experimental`：资料包桌面导入产品体验和私人实验 UI，直至 macOS/Windows 实机验收完成。macOS `0.4.0-preview.1` 已完成隔离构建与镜像验证，但仍是 checkout-dependent 内部预览。
+- `stable`：本地 PyMuPDF 图表资产、DeepSeek 文本语义增强、四类证据搜索、对抗式质量门、签名资料包核心、官方/私人只读联合召回契约、私人导入确认门和 Librarian V3 核心契约。
+- `experimental`：共享离线资料库/私人导入 UI 及其桌面产品接线，直至新的 macOS/Windows 实机验收完成。最后已构建 macOS `0.4.0-preview.1` 来自 `f34bf68`；当前 `64e0592` 源码晚于该制品。Windows `a134acd` 只有 backend parity，仍为 `installer_ready=false`。
 - `compatibility`：历史 read-only 权限回归；只用于测试安全边界。
 - `retired`：MinerU 云端视觉替换、浏览器编辑工作台、导师公网链接、ngrok 产品路径、无约束 Librarian 工具循环、重复 DeepSeek 预览按钮。
 
@@ -74,7 +76,9 @@ platform-neutral utilities
 
 ## 5. 文件与所有权
 
-并行开发必须声明文件所有权。共享工作区中未提交文件默认属于创建它的任务；其他任务不得覆盖、格式化或顺手提交。
+并行开发必须声明文件所有权。共享工作区中未提交文件默认属于创建它的任务；其他任务不得覆盖、格式化或顺手提交。同一个共享 checkout 同一时间只能有一个 Git 写入者，其他任务保持只读，直到写入权明确交接。
+
+唯一写入者必须使用显式路径暂存，并在提交前输出 `git diff --cached --name-only`。cached 清单中出现未声明文件时立即停止；不得使用 broad add、reset、rebase 或 amend 吸收其他任务工作。生产 SQLite、`paper_056`、用户 PDF 和现场运行产物不属于普通代码/文档提交，只有用户明确授权的数据 checkpoint 才能纳入。
 
 - 核心组长：`src/auto_research/product/**`、跨源稳定契约、总架构与发布门。
 - 搜索/个人实验：`src/auto_research/personal/**`、联合召回契约及其目标测试。
@@ -113,7 +117,7 @@ platform-neutral utilities
 
 不得用测试通过替代以下声明：语料完成度、科学准确率、版权可分发性或跨平台实机通过。四者分别验收。
 
-当前阶段证据：最终干净 release worktree 已通过591项联合测试，滚动修复后的 macOS App/DMG 已通过隔离构建、镜像校验和实机启动健康检查；Windows 尚无真实 Setup 和 Win11 clean-machine 验收，因此发布序列仍未结束。
+最后已构建制品的阶段证据：`f34bf68` 干净 release worktree 通过591项联合测试，macOS App/DMG 通过隔离构建、镜像校验和实机启动健康检查。当前源码为 `64e0592`，包含尚未进入该制品的 V3/私人导入/共享离线资料库接线。Windows `a134acd` 完成后端组合但仍无真实 Setup 和 Win11 clean-machine 验收，因此发布序列仍未结束。
 
 ## 8. 下一轮分层目标
 

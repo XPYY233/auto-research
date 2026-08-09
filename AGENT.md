@@ -2,7 +2,7 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
-## Handoff entry point (2026-07-30)
+## Handoff entry point (updated 2026-08-09)
 
 - A new account or agent must read `PROJECT_HANDOFF.md` before modifying this repository, then use this file as the durable policy authority.
 - The canonical portable project skill is `skills/auto-research-evidence-maintainer/`; its current-account installation is a symlink under `~/.codex/skills/auto-research-evidence-maintainer`.
@@ -13,22 +13,26 @@ This project is a local literature automation workflow for fusion materials, rad
 - The canonical official package selector is `<app-data>/official-packages/active.json`. A package becomes active only after signature/checksum validation and `OfficialEvidenceRepository` audit; `distribution-sqlite-v1` must never pass through `EvidenceDB.init()` or any writable v12 search-index path.
 - Signing private keys are maintainer-only files outside Git and outside application data packages. Applications trust only reviewed public keys from `auto_research.product.trusted_publishers`; missing keys must never be silently regenerated under an existing `key_id`.
 - Current desktop checkpoint: Apple Silicon macOS `0.4.0-preview.1`, artifact tag `evidence-demo-2026-08-01-macos-workbench-preview-3`. It is an internal development preview that still depends on the checkout schema-v12 workspace, not a portable stable release. The final clean release worktree passed 591 tests (399 core / 110 macOS / 82 Windows); the rebuilt App/DMG passed isolated smoke, signing, image verification and a real launch/health/clean-shutdown check. Final DMG SHA-256: `89766b8efd8e2821abef0d7940dec513cd60ebaf2a36eea042adf784fa1483ee`.
+- Current source checkpoint: `64e0592`. It adds Librarian V3 shared-UI transport, platform-neutral official/private federated exact search, the reviewed private-import confirmation gate and the shared offline/private workbench UI after the last built artifact. These source changes are not present in the `f34bf68` App/DMG and require a new controlled build and real-device acceptance before release claims change.
 - Current internal official package: `0.1.0-preview.1`, SHA-256 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`, about 2.36 MB, 60 paper metadata rows and 4,356 entities (3,142 item / 936 finding / 46 table / 232 figure). It is read-only, contains no PDFs or binary images, and must never replace or write the editable v12 workspace.
-- Windows internal build-kit checkpoint: commit `3632377`, OneDrive folder `Auto-Research-Windows-Internal-Test`, state `BUILD KIT READY` and `SETUP_PRESENT=NO`. It only validates the isolated Windows 11 build toolchain; do not call it an installer or claim search/upload/BYOK are Win11-verified until the production shared bridge is integrated and a real Setup passes Windows smoke tests.
+- Windows backend-parity source checkpoint: `a134acd`. The source now composes the shared HTTP bridge, native selection, official/private exact search, reviewed personal imports, Librarian V3 bridge and readiness contracts. `installer_ready=false`; there is still no Setup and no Windows 11 clean-machine evidence, so the older `3632377` folder remains only a `BUILD KIT READY / SETUP_PRESENT=NO` artifact.
 - Product stability, corpus completion and scientific validity remain separate claims. The fixed corpus is still 17/50 data-ready and 30/50 visual-ready; automatic adversarial agreement is not an independent human physics gold standard.
 
-## Search V2 and in-product agents (2026-07-30)
+## Search V2, federated search and in-product agents (updated 2026-08-09)
 
 - The search page defaults to the DeepSeek-backed `librarian` agent. Precise four-mode search remains a required fallback and must work without DeepSeek.
-- Librarian scope is always the complete evidence library. Paper-title/DOI/author scope controls belong only to precise search; do not add partial-corpus controls back to Agent mode.
+- Librarian scope is always the complete official literature library. Paper-title/DOI/author and private/all source controls belong only to precise search; do not add partial-corpus or private-experiment controls to Agent mode.
 - The librarian may return only the existing `item`, `table`, `figure`, and `finding` result contracts. Do not introduce a fifth AI-owned evidence type or a parallel scientific database.
 - `search_index_documents` and `search_index_fts` are disposable projections. Never treat them as evidence authority or write their content back into six-column/visual records.
-- Preserve `AgentRegistry` and `ToolRegistry` as the extension boundary for future agents. New agents should reuse registered read-only tools before adding code or routes.
+- Preserve `AgentRegistry` as the catalog boundary. `ToolRegistry` is legacy compatibility only: Librarian V3 retrieval is owned by the deterministic local intent/retrieval control plane, and models must never regain an unconstrained tool loop.
 - General agents are read-only. Any future write-capable agent requires a separate user-confirmation, permission and audit design.
 - Increment `INDEX_FORMAT_VERSION` whenever indexed field construction or alias semantics change. Normal evidence edits should refresh only changed papers; release maintenance may use `evidence-search-reindex`.
-- Local editable and public read-only modes must serve the same `web/index.html`, `app.js`, `app.css`, Search V2 and librarian endpoint. Never create a second public frontend. Differences belong only in authorization and hidden write controls.
+- The desktop App and historical internal permission modes must serve the same `web/index.html`, `app.js`, `app.css`, Search V2 and librarian endpoint. Never create a second browser product or public frontend. Compatibility differences belong only in authorization and hidden write controls.
 - Agent answers must retain `[R#]` links to actually returned records. All referenced records must be included in the response; do not truncate below the highest possible reference.
-- Every non-clarification Librarian turn uses the fixed three-stage path: DeepSeek query planning, local coverage recall over all four evidence types, then DeepSeek JSON selection/synthesis. The local fallback plan must still run when model planning fails. Do not return to an unconstrained model-driven tool loop.
+- Librarian V3 routes `system_capability/research_lookup/research_review/followup_ref/followup_bundle/clarification/conversation` locally. System capability and ordinary conversation use zero evidence recall and zero model calls; research lookup/review and signed R#/B# follow-ups use `none/resolve_anchors/focused/review_map` before bounded synthesis. The local fallback plan must still run when model planning fails. Do not return to an unconstrained model-driven tool loop.
+- Librarian remains official-literature-only and full-corpus. The offline exact-search workspace may search `official`, `private`, or both with one federated backend request, but private experiment values must never enter Librarian synthesis.
+- Private table imports follow `previewed → draft_saved → confirmed/indexable`. Confirmation requires the latest `revision`, a matching `reviewed_revision`, and explicit role/meaning/unit confirmation for every included column; editing a reviewed draft invalidates the prior review. Only confirmed/indexable records may refresh the private search source.
+- Public and renderer-facing projections are whitelist copies. They may expose stable `source_scope/source_id/entity_uid` and display metadata, but never local paths, file hashes, internal database IDs, draft/import IDs or raw private repository objects.
 - Before recall, deterministically parse the user's hard constraints into material, irradiation type, particle, temperature, dose/fluence, physical property and specimen state. Synonyms and element-name expansions are recall aids only; they never become additional hard constraints. DeepSeek may plan queries, select bounded evidence and explain it, but it must never create, cross-inject or rewrite hard conditions.
 - Preserve scientific-notation fluence semantics and equivalent-area conversions when matching and bundling. Keep energy distinct from temperature (`300 keV` is not `300 K`) and disambiguate element roles (`Ni`/`He` particle tokens must not become material constraints; `W` as a power unit must not become tungsten).
 - Classify candidates locally: `direct` satisfies every active hard-condition dimension, `adjacent` misses exactly one dimension, and `expansion` misses two or more. Only adjacent evidence may appear as related evidence, and its relaxed condition must be visible. Do not let DeepSeek change this classification.
@@ -492,12 +496,21 @@ As of the `2026.07.30-librarian-brief-stable.1` checkpoint (schema v12):
 
 ### Git checkpoint protocol
 
-After each meaningful implementation or verified data-review milestone:
+The shared checkout has exactly one Git writer at a time. Other tasks remain read-only until ownership is explicitly handed over. Before every commit, the writer must stage an explicit path list, print `git diff --cached --name-only`, and verify that no user-owned or unrelated file is present.
+
+For an ordinary code or documentation checkpoint:
+
+1. Run only the tests and checks authorized for that task.
+2. Stage only the declared files; never use a broad add command in a dirty worktree.
+3. Keep `db/experimental_evidence.sqlite`, production runs, `paper_056`, user PDFs and extraction assets unstaged unless the user explicitly authorized a separate data checkpoint.
+4. Run cached diff/format checks, commit once, then report the exact hash and file list.
+
+For an explicitly authorized scientific-data or release milestone:
 
 1. Run the evidence tests and relevant live workflow checks.
 2. Stop mutable servers/batches, snapshot SQLite, reconcile abandoned run
    metadata, then repeat database health. Do not back up a live WAL state.
-3. Commit the whole project state, including `db/experimental_evidence.sqlite` and tracked extraction outputs.
+3. Stage the reviewed scientific database and tracked extraction outputs explicitly; do not absorb unrelated runtime artifacts.
 4. Create a descriptive local milestone tag using the `evidence-demo-YYYY-MM-DD-<slug>` pattern.
 5. Create and verify a complete Git bundle outside the repository:
 
