@@ -216,6 +216,68 @@ class FederatedSearchSessionTests(unittest.TestCase):
         self.assertEqual(session.status()["private_source"]["source_id"], "private-v1")
         self.assertEqual(session.search("个人趋势图").hits[0].document["entity_uid"], before)
 
+    def test_multiple_private_sources_coexist_and_personal_refresh_preserves_collections(self):
+        session = FederatedSearchSession(private=private_registration("personal-v1"))
+        collection = private_registration("literature-v1")
+        session.upsert_private(collection)
+        self.assertEqual(session.search("", page_size=10).total, 4)
+        self.assertEqual(
+            session.search("", source_ids=("private-literature-v1",)).total,
+            2,
+        )
+
+        session.refresh_private(private_registration("personal-v2"))
+        self.assertEqual(session.search("", page_size=10).total, 4)
+        self.assertEqual(
+            session.search("", source_ids=("private-personal-v1",)).total,
+            0,
+        )
+        self.assertEqual(
+            session.search("", source_ids=("private-literature-v1",)).total,
+            2,
+        )
+
+        session.remove_private("private-literature-v1")
+        self.assertEqual(session.search("", page_size=10).total, 2)
+        self.assertEqual(
+            session.status()["private_source"]["source_id"],
+            "private-personal-v2",
+        )
+
+    def test_failed_private_upsert_preserves_all_existing_sources(self):
+        session = FederatedSearchSession(private=private_registration("personal-v1"))
+        session.upsert_private(private_registration("literature-v1"))
+        before = session.status()
+        broken = SearchSourceRegistration.private(
+            BrokenSource(),
+            source_id="private-literature-v2",
+            fingerprint="sha256:broken",
+        )
+        with self.assertRaises(FederatedSearchSessionError):
+            session.upsert_private(broken)
+        self.assertEqual(session.status(), before)
+        self.assertEqual(session.search("", page_size=10).total, 4)
+
+    def test_collection_first_then_personal_refresh_preserves_collection(self):
+        session = FederatedSearchSession()
+        session.upsert_private(private_registration("literature-v1"))
+        session.refresh_private(private_registration("personal-v1"))
+        self.assertEqual(session.search("", page_size=10).total, 4)
+        self.assertEqual(
+            session.status()["private_source"]["source_id"],
+            "private-personal-v1",
+        )
+        session.refresh_private(private_registration("personal-v2"))
+        self.assertEqual(session.search("", page_size=10).total, 4)
+        self.assertEqual(
+            session.search("", source_ids=("private-literature-v1",)).total,
+            2,
+        )
+        self.assertEqual(
+            session.search("", source_ids=("private-personal-v1",)).total,
+            0,
+        )
+
     def test_failed_clear_rebuild_preserves_both_previous_sources(self):
         private_source = FlakySource((
             document("private", "private-v1", "table", "private-table-v1", "样品硬度表"),

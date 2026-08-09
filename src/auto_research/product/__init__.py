@@ -34,6 +34,7 @@ _EXPORT_MODULES = {
     "PackageExportService": ".package_center",
     "PackageJobService": ".package_center",
     "PackageTransferImportService": ".package_center",
+    "MaterializedPayload": ".package_center_models",
     "PackageCenterError": ".package_center_models",
     "PackageKind": ".package_center_models",
     "PackageScope": ".package_center_models",

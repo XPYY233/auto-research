@@ -10,6 +10,7 @@ from auto_research.product.package_center import (
     PackageCenterError,
     PackageExportService,
     PackageJobService,
+    MaterializedPayload,
     PackageTransferImportService,
     PayloadPlanCandidate,
     RightsRequirement,
@@ -66,6 +67,7 @@ class _Planner:
         self.current_fingerprint = FINGERPRINT
         self.plan_calls = []
         self.materialize_calls = []
+        self.cleanup_calls = 0
 
     def plan(self, *, kind, scope, selection):
         self.plan_calls.append((kind, scope, selection))
@@ -89,7 +91,10 @@ class _Planner:
 
     def materialize(self, candidate, *, rights_confirmations):
         self.materialize_calls.append((candidate, rights_confirmations))
-        return object()
+        return MaterializedPayload(
+            object(),
+            lambda: setattr(self, "cleanup_calls", self.cleanup_calls + 1),
+        )
 
 
 def _risk_ack(*, paper_rights=None):
@@ -201,6 +206,7 @@ class PackageCenterTests(unittest.TestCase):
         self.assertEqual(completed["outcome"], "exported")
         self.assertEqual(jobs.get(completed["job_id"]), completed)
         self.assertEqual(len(planner.materialize_calls), 1)
+        self.assertEqual(planner.cleanup_calls, 1)
 
     def test_export_rejects_stale_plan_before_destination_or_archive_write(self):
         planner = _Planner()
@@ -219,6 +225,50 @@ class PackageCenterTests(unittest.TestCase):
         self.assertEqual(failed["error"]["code"], "package_plan_stale")
         self.assertEqual(destinations.calls, [])
         self.assertEqual(export_calls, [])
+
+    def test_export_cleans_materialized_snapshot_after_failure(self):
+        planner = _Planner()
+        service = PackageExportService(
+            payload_planner=planner,
+            destination_resolver=_Resolver(),
+            exporter=lambda *args, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("archive failed")
+            ),
+            jobs=PackageJobService(),
+        )
+        plan = service.plan("personal_experiments", "all", None)
+        failed = service.start(plan["plan_token"], _risk_ack(), DESTINATION_TOKEN)
+        self.assertEqual(failed["stage"], "failed")
+        self.assertEqual(planner.cleanup_calls, 1)
+
+    def test_oversized_plan_is_visible_but_cannot_start(self):
+        planner = _Planner()
+        original_plan = planner.plan
+
+        def oversized(**kwargs):
+            candidate = original_plan(**kwargs)
+            return PayloadPlanCandidate(
+                package_id=candidate.package_id,
+                package_version=candidate.package_version,
+                content_fingerprint=candidate.content_fingerprint,
+                estimated_bytes=2 * 1024 * 1024 * 1024 + 1,
+                item_count=candidate.item_count,
+                exceeds_size_limit=True,
+                payload=candidate.payload,
+            )
+
+        planner.plan = oversized
+        service = PackageExportService(
+            payload_planner=planner,
+            destination_resolver=_Resolver(),
+            exporter=lambda *args, **kwargs: _Summary(outcome="exported"),
+            jobs=PackageJobService(),
+        )
+        plan = service.plan("personal_experiments", "all", None)
+        self.assertTrue(plan["exceeds_size_limit"])
+        with self.assertRaises(PackageCenterError) as raised:
+            service.start(plan["plan_token"], _risk_ack(), DESTINATION_TOKEN)
+        self.assertEqual(raised.exception.code, "transfer_size")
 
     def test_expired_plan_is_rejected(self):
         now = [10.0]
@@ -262,6 +312,7 @@ class PackageCenterTests(unittest.TestCase):
         self.assertEqual(jobs.get(completed["job_id"]), completed)
         self.assertEqual(calls[0]["expected_kind"], "personal_experiments")
         self.assertTrue(calls[0]["checksum_ack"])
+        self.assertTrue(calls[0]["require_structured_payload"])
 
     def test_import_ack_is_mandatory_and_hash_mismatch_is_terminal_job(self):
         service = PackageTransferImportService(

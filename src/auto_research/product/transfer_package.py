@@ -70,8 +70,17 @@ class TransferPackageKind(str, Enum):
 
 
 _ALLOWED_ROLES: Mapping[TransferPackageKind, frozenset[str]] = {
-    TransferPackageKind.LITERATURE_COLLECTION: frozenset({"paper_pdf"}),
-    TransferPackageKind.PERSONAL_EXPERIMENTS: frozenset({"table"}),
+    TransferPackageKind.LITERATURE_COLLECTION: frozenset(
+        {
+            "structured_repository",
+            "repository_rights",
+            "repository_provenance",
+            "paper_pdf",
+        }
+    ),
+    TransferPackageKind.PERSONAL_EXPERIMENTS: frozenset(
+        {"structured_snapshot", "table"}
+    ),
 }
 
 _PAYLOAD_ROOTS = {
@@ -83,6 +92,20 @@ _PERSONAL_MEDIA_TYPES = {
     ".csv": "text/csv",
     ".tsv": "text/tab-separated-values",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+_STRUCTURED_ROLES = frozenset({"structured_repository", "structured_snapshot"})
+_STRUCTURED_PAYLOAD_ROLES = frozenset(
+    {
+        "structured_repository",
+        "repository_rights",
+        "repository_provenance",
+        "structured_snapshot",
+    }
+)
+_LITERATURE_JSON_ROLES = {
+    "repository_rights": "literature/structured/rights/licenses.json",
+    "repository_provenance": "literature/structured/provenance/sources.json",
 }
 
 
@@ -305,9 +328,18 @@ def _scan_xlsx_for_sensitive_content(handle: Any) -> None:
                 raise TransferPackageError("transfer_personal_file_invalid", "XLSX 文件结构异常")
             for info in infos:
                 name = info.filename.casefold()
+                forbidden_member = (
+                    name.endswith("vbaproject.bin")
+                    or "/embeddings/" in f"/{name}"
+                    or "/oleobjects/" in f"/{name}"
+                    or "/activex/" in f"/{name}"
+                    or "/externallinks/" in f"/{name}"
+                    or "/customui/" in f"/{name}"
+                )
                 if (
                     info.is_dir()
                     or _is_symlink(info)
+                    or forbidden_member
                     or info.flag_bits & 0x1
                     or info.file_size < 0
                     or info.compress_size < 0
@@ -328,9 +360,24 @@ def _scan_xlsx_for_sensitive_content(handle: Any) -> None:
                     raise TransferPackageError(
                         "transfer_sensitive_scan_limit", "XLSX 安全扫描内容超过上限"
                     )
-                _scan_sensitive_chunk(
-                    workbook.read(info), include_field_keys=True
-                )
+                xml = workbook.read(info)
+                lowered_xml = xml.lower()
+                if (
+                    b"<!doctype" in lowered_xml
+                    or b"<!entity" in lowered_xml
+                    or (
+                        name.endswith(".rels")
+                        and (
+                            b'targetmode="external"' in lowered_xml
+                            or b"targetmode='external'" in lowered_xml
+                        )
+                    )
+                ):
+                    raise TransferPackageError(
+                        "transfer_personal_file_invalid",
+                        "XLSX 包含外部关系或不安全 XML",
+                    )
+                _scan_sensitive_chunk(xml, include_field_keys=True)
     except TransferPackageError:
         raise
     except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
@@ -374,14 +421,15 @@ def _inspect_source(
             if not chunk:
                 break
             if not first:
-                first = chunk[:5]
+                first = chunk[:16]
             size += len(chunk)
             digest.update(chunk)
             scan = overlap + chunk
-            _scan_sensitive_chunk(
-                scan,
-                include_field_keys=kind is TransferPackageKind.PERSONAL_EXPERIMENTS,
-            )
+            if media_type != "application/vnd.sqlite3":
+                _scan_sensitive_chunk(
+                    scan,
+                    include_field_keys=kind is TransferPackageKind.PERSONAL_EXPERIMENTS,
+                )
             overlap = scan[-256:]
         if size != source_stat.st_size:
             raise TransferPackageError(
@@ -478,25 +526,46 @@ def _validate_file_semantics(
         )
     declared_pdf = media_type == "application/pdf"
     named_pdf = archive_path.casefold().endswith(".pdf")
-    pdf_magic = file_magic == b"%PDF-"
+    pdf_magic = file_magic.startswith(b"%PDF-")
     if any((declared_pdf, named_pdf, pdf_magic)) and not all(
         (declared_pdf, named_pdf, pdf_magic)
     ):
         raise TransferPackageError(
             "transfer_pdf_invalid", "PDF 的文件名、类型与内容不一致"
         )
-    if (
-        kind is TransferPackageKind.LITERATURE_COLLECTION
-        and (not declared_pdf or role != "paper_pdf")
-    ):
-        raise TransferPackageError(
-            "transfer_role_invalid", "文献传输包首版只允许逐篇审核的 PDF"
-        )
+    if kind is TransferPackageKind.LITERATURE_COLLECTION:
+        expected_paths = {
+            "structured_repository": "literature/structured/evidence/repository.sqlite",
+            **_LITERATURE_JSON_ROLES,
+        }
+        if role == "paper_pdf":
+            if not declared_pdf:
+                raise TransferPackageError("transfer_role_invalid", "文献 PDF 角色与内容不一致")
+        elif role == "structured_repository":
+            if (
+                archive_path != expected_paths[role]
+                or media_type != "application/vnd.sqlite3"
+                or not file_magic.startswith(b"SQLite format 3\x00")
+            ):
+                raise TransferPackageError("transfer_role_invalid", "文献结构化仓库契约无效")
+        elif (
+            archive_path != expected_paths[role]
+            or media_type != "application/json"
+            or not file_magic.lstrip().startswith(b"{")
+        ):
+            raise TransferPackageError("transfer_role_invalid", "文献结构化控制文件契约无效")
     if kind is TransferPackageKind.PERSONAL_EXPERIMENTS and paper_uid is not None:
         raise TransferPackageError(
             "transfer_kind_mismatch", "个人数据包不能携带文献论文身份"
         )
-    if kind is TransferPackageKind.PERSONAL_EXPERIMENTS:
+    if kind is TransferPackageKind.PERSONAL_EXPERIMENTS and role == "structured_snapshot":
+        if (
+            archive_path != "personal/structured/personal_transfer.sqlite"
+            or media_type != "application/vnd.sqlite3"
+            or not file_magic.startswith(b"SQLite format 3\x00")
+        ):
+            raise TransferPackageError("transfer_role_invalid", "个人实验结构化快照契约无效")
+    if kind is TransferPackageKind.PERSONAL_EXPERIMENTS and role == "table":
         suffix = PurePosixPath(archive_path).suffix.casefold()
         expected_media = _PERSONAL_MEDIA_TYPES.get(suffix)
         if expected_media is None or media_type != expected_media:
@@ -538,6 +607,7 @@ def plan_transfer_package(
     package_version: str,
     files: Iterable[TransferFileSpec],
     created_at: str | None = None,
+    require_structured_payload: bool = False,
 ) -> TransferPackagePlan:
     normalized_kind = _normalize_kind(kind)
     _validate_identity(package_id, package_version)
@@ -594,6 +664,17 @@ def plan_transfer_package(
         )
     if not planned:
         raise TransferPackageError("transfer_empty", "传输包至少需要一个文件")
+    if require_structured_payload:
+        roles = [entry.role for entry in planned]
+        required = (
+            {"structured_repository", "repository_rights", "repository_provenance"}
+            if normalized_kind is TransferPackageKind.LITERATURE_COLLECTION
+            else {"structured_snapshot"}
+        )
+        if any(roles.count(role) != 1 for role in required):
+            raise TransferPackageError(
+                "transfer_payload_required", "传输包必须包含唯一且完整的结构化内容"
+            )
     if len(planned) > MAX_TRANSFER_MEMBERS - len(TRANSFER_CONTROL_FILES):
         raise TransferPackageError("transfer_member_count", "传输包文件数量超过上限")
     return TransferPackagePlan(
@@ -901,6 +982,7 @@ def verify_transfer_package(
     package_path: Path | str,
     *,
     expected_kind: TransferPackageKind | str | None = None,
+    require_structured_payload: bool = False,
 ) -> VerifiedTransferPackage:
     path = _absolute_without_resolving(package_path)
     if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".aresearch":
@@ -925,6 +1007,26 @@ def verify_transfer_package(
             kind, manifest_files = _validate_manifest(
                 manifest, expected_kind=normalized_expected
             )
+            if require_structured_payload:
+                roles = [
+                    str(row.get("role") or "")
+                    for row in manifest_files
+                    if isinstance(row, Mapping)
+                ]
+                required_roles = (
+                    {
+                        "structured_repository",
+                        "repository_rights",
+                        "repository_provenance",
+                    }
+                    if kind is TransferPackageKind.LITERATURE_COLLECTION
+                    else {"structured_snapshot"}
+                )
+                if any(roles.count(role) != 1 for role in required_roles):
+                    raise TransferPackageError(
+                        "transfer_payload_required",
+                        "用户资料包缺少唯一且完整的结构化内容",
+                    )
             if checksums_document.get("algorithm") != "sha256" or not isinstance(
                 checksums_document.get("files"), dict
             ):
@@ -977,25 +1079,31 @@ def verify_transfer_package(
                 )
                 try:
                     with archive.open(info, "r") as handle:
-                        first = handle.read(5)
+                        first = handle.read(16)
                         digest.update(first)
                         size += len(first)
                         if xlsx_buffer is not None:
                             xlsx_buffer.write(first)
-                        _scan_sensitive_chunk(
-                            first,
-                            include_field_keys=kind
-                            is TransferPackageKind.PERSONAL_EXPERIMENTS,
+                        is_structured_sqlite = (
+                            str(raw["role"]) in _STRUCTURED_ROLES
+                            and str(raw["media_type"]) == "application/vnd.sqlite3"
                         )
+                        if not is_structured_sqlite:
+                            _scan_sensitive_chunk(
+                                first,
+                                include_field_keys=kind
+                                is TransferPackageKind.PERSONAL_EXPERIMENTS,
+                            )
                         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                             digest.update(chunk)
                             size += len(chunk)
                             scan = overlap + chunk
-                            _scan_sensitive_chunk(
-                                scan,
-                                include_field_keys=kind
-                                is TransferPackageKind.PERSONAL_EXPERIMENTS,
-                            )
+                            if not is_structured_sqlite:
+                                _scan_sensitive_chunk(
+                                    scan,
+                                    include_field_keys=kind
+                                    is TransferPackageKind.PERSONAL_EXPERIMENTS,
+                                )
                             overlap = scan[-256:]
                             if xlsx_buffer is not None:
                                 xlsx_buffer.write(chunk)
@@ -1149,6 +1257,15 @@ def _validate_installed_transfer(target: Path, verified: VerifiedTransferPackage
         digest, size = _sha256_file(actual[name])
         if digest != row["sha256"] or size != int(row["size"]):
             raise TransferPackageError("transfer_install_conflict", "已导入传输包校验失败")
+    structured_roles = {
+        str(row.get("role") or "")
+        for row in verified.manifest.get("files", ())
+        if isinstance(row, Mapping)
+    } & _STRUCTURED_PAYLOAD_ROLES
+    if structured_roles:
+        from .package_transfer_payloads import audit_transfer_payload_tree
+
+        audit_transfer_payload_tree(target, verified.manifest)
 
 
 def import_transfer_package(
@@ -1158,6 +1275,7 @@ def import_transfer_package(
     expected_kind: TransferPackageKind | str,
     expected_package_sha256: str,
     checksum_ack: bool,
+    require_structured_payload: bool = False,
 ) -> ImportedTransferPackage:
     if not SHA256_RE.fullmatch(str(expected_package_sha256)):
         raise TransferPackageError(
@@ -1178,7 +1296,11 @@ def import_transfer_package(
                 "transfer_package_checksum_mismatch",
                 "传输包与发送方提供的 SHA-256 不一致",
             )
-        verified = verify_transfer_package(snapshot, expected_kind=expected_kind)
+        verified = verify_transfer_package(
+            snapshot,
+            expected_kind=expected_kind,
+            require_structured_payload=require_structured_payload,
+        )
         package_parent = _prepare_child_directory(
             root,
             "user-transfer-packages",

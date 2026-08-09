@@ -7,7 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 
 OPAQUE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
@@ -85,7 +85,23 @@ class PayloadPlanCandidate:
     paper_count: int = 0
     missing_pdf_count: int = 0
     rights_requirements: tuple[RightsRequirement, ...] = ()
+    exceeds_size_limit: bool = False
     payload: Any = None
+
+
+@dataclass
+class MaterializedPayload:
+    """Private export value with an explicit, idempotent cleanup owner."""
+
+    export_value: Any
+    cleanup_callback: Callable[[], None]
+    _closed: bool = False
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self.cleanup_callback()
 
 
 class SelectionResolver(Protocol):
@@ -112,7 +128,7 @@ class PayloadPlanner(Protocol):
         candidate: PayloadPlanCandidate,
         *,
         rights_confirmations: Mapping[str, RightsConfirmation],
-    ) -> Any: ...
+    ) -> MaterializedPayload: ...
 
 
 class TransferInspector(Protocol):
@@ -131,6 +147,7 @@ class TransferImporter(Protocol):
         expected_kind: str,
         expected_package_sha256: str,
         checksum_ack: bool,
+        require_structured_payload: bool,
     ) -> Any: ...
 
 
@@ -312,6 +329,7 @@ class PackageExportPlan:
             "confidentiality": "none",
             "trusted_official": False,
             "estimated_bytes": self.candidate.estimated_bytes,
+            "exceeds_size_limit": self.candidate.exceeds_size_limit,
             "item_count": self.candidate.item_count,
             "paper_count": self.candidate.paper_count,
             "selected_count": self.selected_count,
@@ -337,6 +355,7 @@ class PackageExportPlan:
 
 __all__ = [
     "DestinationResolver",
+    "MaterializedPayload",
     "PackageCenterError",
     "PackageExportPlan",
     "PackageKind",

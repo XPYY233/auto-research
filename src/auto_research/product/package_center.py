@@ -26,6 +26,7 @@ from .package_center_models import (
     MAX_TRANSFER_BYTES,
     SHA256_RE,
     DestinationResolver,
+    MaterializedPayload,
     PackageCenterError,
     PackageExportPlan,
     PackageKind,
@@ -234,8 +235,13 @@ class PackageExportService:
         token = normalize_token(plan_token, label="package_plan")
         destination = normalize_token(destination_token, label="package_destination")
         plan = self._get_plan(token)
+        if plan.candidate.exceeds_size_limit:
+            raise PackageCenterError(
+                "transfer_size", "预计传输内容超过 2 GB 上限，请减少选择。"
+            )
         confirmations = self._normalize_confirmations(plan, rights_confirmations)
         job_id = self._jobs._begin(PackageOperation.TRANSFER_EXPORT)
+        materialized: MaterializedPayload | None = None
         try:
             self._jobs._advance(job_id, PackageJobStage.PLAN)
             current_fingerprint = self._planner.current_content_fingerprint(plan.candidate)
@@ -249,6 +255,10 @@ class PackageExportService:
                 plan.candidate,
                 rights_confirmations=confirmations,
             )
+            if not isinstance(materialized, MaterializedPayload):
+                raise PackageCenterError(
+                    "package_materialization_invalid", "资料包内容暂存结果无效。"
+                )
             self._jobs._advance(job_id, PackageJobStage.BUILD_ARCHIVE)
             with self._lock:
                 if destination in self._consumed_destination_tokens:
@@ -259,7 +269,7 @@ class PackageExportService:
                 self._consumed_destination_tokens.add(destination)
             destination_value = self._destination_resolver.resolve(destination)
             exported = self._exporter(
-                materialized,
+                materialized.export_value,
                 destination_value,
                 unencrypted_ack=True,
             )
@@ -278,6 +288,12 @@ class PackageExportService:
                 fallback_message="资料包导出失败。",
             )
             self._jobs._fail(job_id, error)
+        finally:
+            if materialized is not None:
+                try:
+                    materialized.close()
+                except Exception:
+                    pass
         return self._jobs.get(job_id)
 
     def _get_plan(self, token: str) -> PackageExportPlan:
@@ -305,12 +321,16 @@ class PackageExportService:
             or not candidate.package_version
             or not SHA256_RE.fullmatch(candidate.content_fingerprint)
             or candidate.estimated_bytes < 0
-            or candidate.estimated_bytes > MAX_TRANSFER_BYTES
+            or candidate.estimated_bytes > (1 << 50)
             or candidate.item_count < 0
             or candidate.paper_count < 0
             or candidate.missing_pdf_count < 0
         ):
             raise PackageCenterError("package_plan_invalid", "资料包计划内容无效。")
+        if candidate.exceeds_size_limit != (
+            candidate.estimated_bytes > MAX_TRANSFER_BYTES
+        ):
+            raise PackageCenterError("package_plan_invalid", "资料包大小判断不一致。")
         if kind is PackageKind.PERSONAL_EXPERIMENTS and candidate.rights_requirements:
             raise PackageCenterError(
                 "package_plan_invalid", "私人实验包不能包含论文 PDF 权利确认。"
@@ -449,6 +469,7 @@ class PackageTransferImportService:
                 expected_kind=inspected_kind.value,
                 expected_package_sha256=expected,
                 checksum_ack=True,
+                require_structured_payload=True,
             )
             self._jobs._advance(job_id, PackageJobStage.AUDIT_PAYLOAD)
             result = public_result(imported)

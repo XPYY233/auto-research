@@ -104,6 +104,10 @@ class FederatedSearchSessionProtocol(Protocol):
 
     def refresh_private(self, registration: SearchSourceRegistration) -> dict[str, Any]: ...
 
+    def upsert_private(self, registration: SearchSourceRegistration) -> dict[str, Any]: ...
+
+    def remove_private(self, source_id: str) -> dict[str, Any]: ...
+
     def clear_official(self) -> dict[str, Any]: ...
 
     def clear_private(self) -> dict[str, Any]: ...
@@ -157,7 +161,11 @@ class FederatedSearchSession:
         self._mutation_lock = threading.Lock()
         self._engine_factory = engine_factory
         self._official: SearchSourceRegistration | None = None
-        self._private: SearchSourceRegistration | None = None
+        self._privates: dict[str, SearchSourceRegistration] = {}
+        # One compatibility slot is reserved for the user's mutable personal
+        # repository. Imported read-only literature collections are siblings,
+        # never candidates for replacement by refresh_private().
+        self._personal_private_id: str | None = None
         self._engine: FederatedEvidenceSearch | None = None
         if official is not None and official.source_scope != "official":
             raise ValueError("official registration must use official scope")
@@ -165,14 +173,16 @@ class FederatedSearchSession:
             raise ValueError("private registration must use private scope")
         if official is not None or private is not None:
             try:
-                engine = self._build_engine(official, private)
+                private_sources = {private.source_id: private} if private is not None else {}
+                engine = self._build_engine(official, private_sources.values())
             except Exception:
                 raise FederatedSearchSessionError(
                     "federated_source_activation_failed",
                     "离线搜索源未能安全建立。",
                 ) from None
             self._official = official
-            self._private = private
+            self._privates = private_sources
+            self._personal_private_id = private.source_id if private is not None else None
             self._engine = engine
 
     @property
@@ -183,12 +193,15 @@ class FederatedSearchSession:
     def status(self) -> dict[str, Any]:
         with self._lock:
             official = self._official
-            private = self._private
+            private = self._privates.get(self._personal_private_id or "")
+            if private is None and self._privates:
+                private = self._privates[sorted(self._privates)[0]]
             engine = self._engine
+            private_ready = bool(self._privates) and engine is not None
         return {
             "schema_version": "federated-search-readiness-v2",
             "official_ready": official is not None and engine is not None,
-            "private_ready": private is not None and engine is not None,
+            "private_ready": private_ready,
             "federated_ready": engine is not None,
             "document_count": int(engine.document_count) if engine is not None else 0,
             "official_source": official.public_identity() if official is not None else None,
@@ -197,22 +210,60 @@ class FederatedSearchSession:
 
     def install_official(self, registration: SearchSourceRegistration) -> dict[str, Any]:
         self._require_scope(registration, "official")
-        return self._replace(official=registration)
+        return self._mutate(official=registration)
 
     def install_private(self, registration: SearchSourceRegistration) -> dict[str, Any]:
         self._require_scope(registration, "private")
-        return self._replace(private=registration)
+        return self._mutate(
+            replace_privates={registration.source_id: registration},
+            personal_private_id=registration.source_id,
+        )
 
     def refresh_private(self, registration: SearchSourceRegistration) -> dict[str, Any]:
         """Re-index a newly snapshotted confirmed/indexable private source."""
+        self._require_scope(registration, "private")
+        with self._lock:
+            current_personal = self._personal_private_id
+            next_privates = dict(self._privates)
+        if current_personal is not None:
+            next_privates.pop(current_personal, None)
+        next_privates[registration.source_id] = registration
+        return self._mutate(
+            replace_privates=next_privates,
+            personal_private_id=registration.source_id,
+        )
 
-        return self.install_private(registration)
+    def upsert_private(self, registration: SearchSourceRegistration) -> dict[str, Any]:
+        """Add or replace one private collection without removing its siblings."""
+
+        self._require_scope(registration, "private")
+        with self._lock:
+            next_privates = dict(self._privates)
+            personal = self._personal_private_id
+        next_privates[registration.source_id] = registration
+        return self._mutate(
+            replace_privates=next_privates,
+            personal_private_id=personal,
+        )
+
+    def remove_private(self, source_id: str) -> dict[str, Any]:
+        normalized = _stable_identity(source_id, "source_id")
+        with self._lock:
+            next_privates = dict(self._privates)
+            personal = self._personal_private_id
+        next_privates.pop(normalized, None)
+        if personal == normalized:
+            personal = None
+        return self._mutate(
+            replace_privates=next_privates,
+            personal_private_id=personal,
+        )
 
     def clear_official(self) -> dict[str, Any]:
-        return self._replace(clear_official=True)
+        return self._mutate(clear_official=True)
 
     def clear_private(self) -> dict[str, Any]:
-        return self._replace(clear_private=True)
+        return self._mutate(replace_privates={}, personal_private_id=None)
 
     def search(self, query: str = "", **filters: Any) -> FederatedSearchPage:
         engine = self._require_engine()
@@ -231,23 +282,34 @@ class FederatedSearchSession:
         if not isinstance(registration, SearchSourceRegistration) or registration.source_scope != scope:
             raise ValueError(f"registration must use {scope} scope")
 
-    def _replace(
+    def _mutate(
         self,
         *,
         official: SearchSourceRegistration | None = None,
-        private: SearchSourceRegistration | None = None,
+        replace_privates: Mapping[str, SearchSourceRegistration] | None = None,
+        personal_private_id: str | None = None,
         clear_official: bool = False,
-        clear_private: bool = False,
     ) -> dict[str, Any]:
         with self._mutation_lock:
             with self._lock:
                 next_official = None if clear_official else (official or self._official)
-                next_private = None if clear_private else (private or self._private)
-            if next_official is None and next_private is None:
+                next_privates = (
+                    dict(replace_privates)
+                    if replace_privates is not None
+                    else dict(self._privates)
+                )
+                next_personal = (
+                    personal_private_id
+                    if replace_privates is not None
+                    else self._personal_private_id
+                )
+            if next_personal is not None and next_personal not in next_privates:
+                raise ValueError("personal private source is not registered")
+            if next_official is None and not next_privates:
                 rebuilt = None
             else:
                 try:
-                    rebuilt = self._build_engine(next_official, next_private)
+                    rebuilt = self._build_engine(next_official, next_privates.values())
                 except Exception:
                     raise FederatedSearchSessionError(
                         "federated_source_activation_failed",
@@ -255,16 +317,23 @@ class FederatedSearchSession:
                     ) from None
             with self._lock:
                 self._official = next_official
-                self._private = next_private
+                self._privates = next_privates
+                self._personal_private_id = next_personal
                 self._engine = rebuilt
                 return self.status()
 
     def _build_engine(
         self,
         official: SearchSourceRegistration | None,
-        private: SearchSourceRegistration | None,
+        private_sources: Iterable[SearchSourceRegistration],
     ) -> FederatedEvidenceSearch:
-        registrations = tuple(item for item in (official, private) if item is not None)
+        registrations = tuple(
+            item
+            for item in (
+                *((official,) if official is not None else ()),
+                *sorted(private_sources, key=lambda value: value.source_id),
+            )
+        )
         if not registrations:
             raise ValueError("at least one search source is required")
         engine = self._engine_factory(tuple(_IdentityBoundSource(item) for item in registrations))

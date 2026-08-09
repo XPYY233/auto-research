@@ -38,6 +38,7 @@ from .package_center import (
     PackageTransferImportService,
 )
 from .package_center_models import (
+    MaterializedPayload,
     PackageCenterError,
     PackageKind,
     PackageScope,
@@ -79,6 +80,7 @@ __all__ = [
     "PackageKind",
     "PackageScope",
     "PackageTransferImportService",
+    "MaterializedPayload",
     "PayloadPlanCandidate",
     "RightsConfirmation",
     "RightsRequirement",
