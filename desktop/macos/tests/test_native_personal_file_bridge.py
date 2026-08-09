@@ -113,7 +113,13 @@ class NativePersonalFileBridgeTests(unittest.TestCase):
         )
 
     def test_combined_bridge_keeps_package_and_personal_pickers_separate(self) -> None:
-        bridge = NativeDesktopBridge(self.package_broker, self.personal_broker)
+        from package_export_destination_broker import PackageExportDestinationBroker
+
+        bridge = NativeDesktopBridge(
+            self.package_broker,
+            self.personal_broker,
+            PackageExportDestinationBroker(local_volume_probe=lambda _path: True),
+        )
         window = _Window(package=self.package, personal=self.csv)
         bridge.bind_window(window)
 

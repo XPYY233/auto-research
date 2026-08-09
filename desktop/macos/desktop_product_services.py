@@ -12,6 +12,7 @@ from federated_search_api import (
     FederatedSearchAPI,
 )
 from package_api import PackageAPI
+from package_export_destination_broker import PackageExportDestinationBroker
 from package_import_service import PackageImportService
 from personal_file_selection_broker import PersonalFileSelectionBroker
 from personal_import_api import PersonalImportAPI
@@ -22,6 +23,7 @@ from personal_import_service import DEFAULT_PERSONAL_LIBRARY_DIRECTORY
 class DesktopProductServices:
     package_service: PackageImportService
     package_api: PackageAPI
+    package_export_destination_broker: PackageExportDestinationBroker
     federated_search_service: DesktopFederatedSearchService
     federated_search_api: FederatedSearchAPI
     personal_file_selection_broker: PersonalFileSelectionBroker
@@ -57,6 +59,7 @@ def create_desktop_product_services(
         repository_reset=federated_search_service.clear_official_repository,
     )
     personal_file_selection_broker = PersonalFileSelectionBroker()
+    package_export_destination_broker = PackageExportDestinationBroker()
     personal_import_service = PersonalImportService(
         data_root=application_data_root / DEFAULT_PERSONAL_LIBRARY_DIRECTORY,
         selection_provider=personal_file_selection_broker,
@@ -70,6 +73,7 @@ def create_desktop_product_services(
     return DesktopProductServices(
         package_service=package_service,
         package_api=PackageAPI(package_service),
+        package_export_destination_broker=package_export_destination_broker,
         federated_search_service=federated_search_service,
         federated_search_api=FederatedSearchAPI(federated_search_service),
         personal_file_selection_broker=personal_file_selection_broker,

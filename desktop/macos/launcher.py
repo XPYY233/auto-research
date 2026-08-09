@@ -503,6 +503,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
         native_desktop_bridge = NativeDesktopBridge(
             product_services.package_service.broker,
             product_services.personal_file_selection_broker,
+            product_services.package_export_destination_broker,
         )
         server, _ = create_desktop_server(
             database,
