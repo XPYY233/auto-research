@@ -13,14 +13,14 @@ BUILD_STAMP="$(date '+%Y%m%d-%H%M%S')"
 DESKTOP_VERSION="$(/usr/bin/plutil -extract desktop_version raw -o - "${SCRIPT_DIR}/version.json")"
 
 pause_on_error() {
-  local status=$?
-  if (( status != 0 )) && [[ -t 0 ]]; then
+  local exit_code=$?
+  if (( exit_code != 0 )) && [[ -t 0 ]]; then
     echo
     echo "构建没有完成。上面的最后几行是原因；请把它们交给 Codex。"
     read -k 1 "?按任意键关闭窗口。"
     echo
   fi
-  exit ${status}
+  exit ${exit_code}
 }
 trap pause_on_error EXIT
 
