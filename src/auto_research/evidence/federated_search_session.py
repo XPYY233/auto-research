@@ -108,6 +108,8 @@ class FederatedSearchSessionProtocol(Protocol):
 
     def remove_private(self, source_id: str) -> dict[str, Any]: ...
 
+    def resolve_private_pdf(self, source_id: str, paper_uid: str) -> Any: ...
+
     def clear_official(self) -> dict[str, Any]: ...
 
     def clear_private(self) -> dict[str, Any]: ...
@@ -258,6 +260,23 @@ class FederatedSearchSession:
             replace_privates=next_privates,
             personal_private_id=personal,
         )
+
+    def resolve_private_pdf(self, source_id: str, paper_uid: str) -> Any:
+        """Resolve an imported collection PDF without serializing its path."""
+
+        normalized_source = _stable_identity(source_id, "source_id")
+        normalized_paper = _stable_identity(paper_uid, "paper_uid")
+        with self._lock:
+            registration = self._privates.get(normalized_source)
+        if registration is None:
+            raise KeyError("private source not found")
+        resolver = getattr(registration.source, "resolve_pdf", None)
+        if not callable(resolver):
+            raise KeyError("private source has no PDF resolver")
+        resolved = resolver(normalized_paper)
+        if resolved is None:
+            raise KeyError("private PDF not found")
+        return resolved
 
     def clear_official(self) -> dict[str, Any]:
         return self._mutate(clear_official=True)

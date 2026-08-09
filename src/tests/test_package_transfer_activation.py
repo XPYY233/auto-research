@@ -129,7 +129,11 @@ class PackageTransferActivationTests(unittest.TestCase):
             )
             result = service.activate(imported, keep_conflicts=False)
             self.assertTrue(result.public_dict()["search_ready"])
-            self.assertEqual(session.search("激活测试温度").total, 1)
+            page = session.search("激活测试温度")
+            self.assertEqual(page.total, 1)
+            document = page.hits[0].document
+            self.assertEqual(document["collection_kind"], "literature_collection")
+            self.assertTrue(document["pdf_available"])
             self.assertFalse(session.status()["official_ready"])
             self.assertTrue(session.status()["private_ready"])
 
@@ -140,6 +144,10 @@ class PackageTransferActivationTests(unittest.TestCase):
             installed_pdf = reopened.resolve_pdf(paper_uid)
             self.assertIsNotNone(installed_pdf)
             self.assertNotEqual(installed_pdf, pdf)
+            self.assertEqual(
+                session.resolve_private_pdf(result.source_id, paper_uid),
+                installed_pdf,
+            )
             installed_pdf.write_bytes(installed_pdf.read_bytes() + b"tamper")
             with self.assertRaises(TransferPackageError) as changed:
                 reopened.resolve_pdf(paper_uid)

@@ -1085,12 +1085,16 @@ class TransferredLiteratureRepository:
             document = dict(raw)
             document["source_scope"] = "private"
             document["source_id"] = self.source_id
+            document["collection_kind"] = "literature_collection"
+            document["pdf_available"] = str(document.get("paper_uid") or "") in self._pdfs
             yield document
 
     def get_entity(self, entity_uid: str) -> dict[str, Any]:
         document = dict(self._repository.get_entity(entity_uid))
         document["source_scope"] = "private"
         document["source_id"] = self.source_id
+        document["collection_kind"] = "literature_collection"
+        document["pdf_available"] = str(document.get("paper_uid") or "") in self._pdfs
         return document
 
     def resolve_pdf(self, paper_uid: str) -> Path | None:
