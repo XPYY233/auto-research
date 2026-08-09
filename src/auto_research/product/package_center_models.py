@@ -151,6 +151,10 @@ class TransferImporter(Protocol):
     ) -> Any: ...
 
 
+class TransferActivator(Protocol):
+    def activate(self, imported: Any, *, keep_conflicts: bool) -> Any: ...
+
+
 def normalize_token(value: Any, *, label: str) -> str:
     token = str(value or "")
     if not OPAQUE_TOKEN_RE.fullmatch(token):
@@ -292,6 +296,8 @@ def public_result(value: Any, *, expected_schema: str = "package-summary-v1") ->
 def safe_port_error(
     exc: Exception, *, fallback_code: str, fallback_message: str
 ) -> PackageCenterError:
+    if isinstance(exc, PackageCenterError):
+        return exc
     code = getattr(exc, "code", None)
     message = getattr(exc, "safe_message", None)
     if isinstance(code, str) and code and isinstance(message, str) and message:
@@ -300,9 +306,11 @@ def safe_port_error(
         except PackageCenterError:
             return PackageCenterError(fallback_code, fallback_message)
         else:
-            return PackageCenterError(code, message)
-    if isinstance(exc, PackageCenterError):
-        return exc
+            return PackageCenterError(
+                code,
+                message,
+                retryable=bool(getattr(exc, "retryable", False)),
+            )
     return PackageCenterError(fallback_code, fallback_message)
 
 
@@ -367,5 +375,6 @@ __all__ = [
     "SelectionResolver",
     "TransferExporter",
     "TransferImporter",
+    "TransferActivator",
     "TransferInspector",
 ]

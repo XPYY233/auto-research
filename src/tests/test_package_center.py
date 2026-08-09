@@ -97,6 +97,22 @@ class _Planner:
         )
 
 
+class _Activator:
+    def __init__(self, *, fail=False):
+        self.fail = fail
+        self.calls = []
+
+    def activate(self, imported, *, keep_conflicts):
+        self.calls.append((imported, keep_conflicts))
+        if self.fail:
+            raise PackageCenterError(
+                "transfer_activation_failed",
+                "资料包已安装，但搜索激活待重试。",
+                retryable=True,
+            )
+        return _Summary(outcome="imported", extra={"search_ready": True})
+
+
 def _risk_ack(*, paper_rights=None):
     return {
         "unencrypted_ack": True,
@@ -299,6 +315,7 @@ class PackageCenterTests(unittest.TestCase):
             selection_resolver=resolver,
             inspector=lambda source: _Summary(),
             importer=importer,
+            activator=_Activator(),
             jobs=jobs,
         )
         completed = service.start(
@@ -319,6 +336,7 @@ class PackageCenterTests(unittest.TestCase):
             selection_resolver=_Resolver(),
             inspector=lambda source: _Summary(),
             importer=lambda *args, **kwargs: _Summary(outcome="imported"),
+            activator=_Activator(),
             jobs=PackageJobService(),
         )
         with self.assertRaises(PackageCenterError) as no_ack:
@@ -336,6 +354,7 @@ class PackageCenterTests(unittest.TestCase):
             selection_resolver=_Resolver(),
             inspector=lambda source: _Summary(),
             importer=lambda *args, **kwargs: _Summary(outcome="imported"),
+            activator=_Activator(),
             jobs=PackageJobService(),
         )
         first = import_service.start(
@@ -384,6 +403,7 @@ class PackageCenterTests(unittest.TestCase):
             selection_resolver=_Resolver(),
             inspector=lambda source: _Summary(),
             importer=lambda *args, **kwargs: _Summary(outcome="imported"),
+            activator=_Activator(),
             jobs=jobs,
         )
         plan = export_service.plan("personal_experiments", "all", None)
@@ -419,6 +439,7 @@ class PackageCenterTests(unittest.TestCase):
             selection_resolver=_Resolver(),
             inspector=lambda source: _Summary(),
             importer=unsafe_importer,
+            activator=_Activator(),
             jobs=PackageJobService(),
         )
         failed = service.start(
@@ -430,6 +451,25 @@ class PackageCenterTests(unittest.TestCase):
         self.assertEqual(failed["error"]["code"], "transfer_import_failed")
         self.assertNotIn("/Users", encoded)
         self.assertNotIn("secret.sqlite", encoded)
+
+    def test_activation_failure_is_reported_at_activate_and_keeps_install_result(self):
+        activator = _Activator(fail=True)
+        service = PackageTransferImportService(
+            selection_resolver=_Resolver(),
+            inspector=lambda source: _Summary(),
+            importer=lambda *args, **kwargs: _Summary(outcome="imported"),
+            activator=activator,
+            jobs=PackageJobService(),
+        )
+        failed = service.start(
+            SELECTION_TOKEN,
+            checksum_ack=True,
+            expected_sha=CHECKSUM,
+        )
+        self.assertEqual(failed["stage"], "failed")
+        self.assertEqual(failed["error"]["stage"], "activate")
+        self.assertEqual(failed["error"]["code"], "transfer_activation_failed")
+        self.assertTrue(failed["error"]["retryable"])
 
     def test_port_declared_safe_error_cannot_smuggle_a_path(self):
         class UnsafeDeclaredError(RuntimeError):

@@ -38,6 +38,7 @@ from .package_center_models import (
     SelectionResolver,
     TransferExporter,
     TransferImporter,
+    TransferActivator,
     TransferInspector,
     assert_path_free,
     normalize_kind,
@@ -409,11 +410,13 @@ class PackageTransferImportService:
         selection_resolver: SelectionResolver,
         inspector: TransferInspector,
         importer: TransferImporter,
+        activator: TransferActivator,
         jobs: PackageJobService,
     ) -> None:
         self._selection_resolver = selection_resolver
         self._inspector = inspector
         self._importer = importer
+        self._activator = activator
         self._jobs = jobs
         self._lock = threading.RLock()
         self._consumed_selection_tokens: set[str] = set()
@@ -424,7 +427,13 @@ class PackageTransferImportService:
         *,
         checksum_ack: bool,
         expected_sha: str,
+        keep_conflicts: bool = False,
     ) -> dict[str, Any]:
+        if not isinstance(keep_conflicts, bool):
+            raise PackageCenterError(
+                "package_conflict_policy_invalid",
+                "冲突处理选项无效。",
+            )
         token = normalize_token(selection_token, label="package_selection")
         if checksum_ack is not True:
             raise PackageCenterError(
@@ -472,8 +481,12 @@ class PackageTransferImportService:
                 require_structured_payload=True,
             )
             self._jobs._advance(job_id, PackageJobStage.AUDIT_PAYLOAD)
-            result = public_result(imported)
             self._jobs._advance(job_id, PackageJobStage.ACTIVATE)
+            activated = self._activator.activate(
+                imported,
+                keep_conflicts=keep_conflicts,
+            )
+            result = public_result(activated)
             self._jobs._complete(
                 job_id,
                 outcome=str(result.get("outcome") or "imported"),

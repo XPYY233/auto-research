@@ -35,6 +35,7 @@ from .portable_repository import (
 )
 from .transfer_package import (
     MAX_TRANSFER_TOTAL_BYTES,
+    PAPER_UID_RE,
     TransferFileRights,
     TransferFileSpec,
     TransferPackageError,
@@ -45,14 +46,16 @@ from .transfer_package import (
 
 
 PERSONAL_TRANSFER_APPLICATION_ID = 0x41525450  # ``ARTP``
-PERSONAL_TRANSFER_SCHEMA_VERSION = 1
-PERSONAL_TRANSFER_CONTRACT = "personal-transfer-sqlite-v1"
+PERSONAL_TRANSFER_SCHEMA_VERSION = 2
+PERSONAL_TRANSFER_CONTRACT = "personal-transfer-sqlite-v2"
 MAX_PERSONAL_RECORDS = 10_000
 MAX_PERSONAL_NOTES_PER_RUN = 200
 MAX_PERSONAL_MEASUREMENTS_PER_RUN = 5_000
 MAX_PERSONAL_CONDITIONS_TOTAL = 500_000
 MAX_PERSONAL_MEASUREMENTS_TOTAL = 250_000
 MAX_PERSONAL_NOTES_TOTAL = 100_000
+MAX_PERSONAL_COLUMNS_TOTAL = 500_000
+MAX_PERSONAL_SERIES_TOTAL = 250_000
 MAX_TEXT = 4_000
 UID_PATTERNS = {
     "project_uid": re.compile(r"^project_[0-9a-f]{32}$"),
@@ -314,6 +317,20 @@ class LiteratureCollectionPayloadPlanner:
 
     def plan(self, selection: PayloadSelection) -> PayloadPlanCandidate:
         selection = selection if isinstance(selection, PayloadSelection) else PayloadSelection(selection)
+        if selection.mode is PayloadSelectionMode.SELECTED:
+            resolver = getattr(self._source, "resolve_selection_ids", None)
+            if callable(resolver):
+                try:
+                    resolved = tuple(resolver(selection.selected_ids))
+                except Exception:
+                    raise TransferPackageError(
+                        "transfer_selection_invalid",
+                        "无法将所选论文解析为稳定身份",
+                    ) from None
+                selection = PayloadSelection(
+                    PayloadSelectionMode.SELECTED,
+                    selected_ids=resolved,
+                )
         payload = self._source.read_selection(selection)
         source_id = _source_id(self._source.source_id, prefix="literature-")
         if not payload.papers:
@@ -435,7 +452,12 @@ def _normalise_personal_record(raw: Mapping[str, Any]) -> dict[str, Any]:
         "measurements",
         "notes",
     }
-    if not isinstance(raw, Mapping) or set(raw) != required:
+    optional = {"sheet_name", "row_count", "columns", "series"}
+    if (
+        not isinstance(raw, Mapping)
+        or not required.issubset(raw)
+        or set(raw) - required - optional
+    ):
         raise TransferPackageError("transfer_payload_invalid", "个人实验记录字段不符合白名单")
     if raw["confirmation_state"] != "confirmed" or raw["indexable"] is not True:
         raise TransferPackageError("transfer_payload_unconfirmed", "只允许传输已确认且可检索的实验")
@@ -471,6 +493,110 @@ def _normalise_personal_record(raw: Mapping[str, Any]) -> dict[str, Any]:
                 "uncertainty_name": _text(value["uncertainty_name"], "误差列", required=False, limit=500),
             }
         )
+    columns_raw = raw.get("columns")
+    if columns_raw is None:
+        derived: dict[str, dict[str, Any]] = {}
+        for item in measurements:
+            if item["x_name"]:
+                derived.setdefault(
+                    item["x_name"],
+                    {
+                        "source_name": item["x_name"],
+                        "role": "independent",
+                        "data_type": "unknown",
+                        "meaning": item["x_name"],
+                        "unit": "",
+                    },
+                )
+            if item["y_name"]:
+                derived[item["y_name"]] = {
+                    "source_name": item["y_name"],
+                    "role": "dependent",
+                    "data_type": "unknown",
+                    "meaning": item["meaning"],
+                    "unit": item["unit"],
+                }
+            if item["uncertainty_name"]:
+                derived[item["uncertainty_name"]] = {
+                    "source_name": item["uncertainty_name"],
+                    "role": "uncertainty",
+                    "data_type": "unknown",
+                    "meaning": f"{item['meaning']}误差",
+                    "unit": item["unit"],
+                }
+        columns_raw = tuple(derived.values())
+    if not isinstance(columns_raw, Sequence) or isinstance(columns_raw, (str, bytes)):
+        raise TransferPackageError("transfer_payload_invalid", "列定义必须是列表")
+    columns: list[dict[str, str]] = []
+    for value in columns_raw:
+        if not isinstance(value, Mapping) or set(value) != {
+            "source_name", "role", "data_type", "meaning", "unit"
+        }:
+            raise TransferPackageError("transfer_payload_invalid", "列定义字段不符合白名单")
+        role = _text(value["role"], "列角色", limit=40).casefold()
+        data_type = _text(value["data_type"], "列类型", limit=40).casefold()
+        if role not in {"independent", "dependent", "uncertainty", "condition", "identifier", "note", "ignore"}:
+            raise TransferPackageError("transfer_payload_invalid", "列角色无效")
+        if data_type not in {"number", "text", "datetime", "boolean", "unknown"}:
+            raise TransferPackageError("transfer_payload_invalid", "列类型无效")
+        meaning = _text(
+            value["meaning"], "列意义", required=role != "ignore", limit=500
+        )
+        columns.append(
+            {
+                "source_name": _text(value["source_name"], "列名", limit=500),
+                "role": role,
+                "data_type": data_type,
+                "meaning": meaning,
+                "unit": _text(value["unit"], "列单位", required=False, limit=80),
+            }
+        )
+    names = [item["source_name"] for item in columns]
+    if not columns or len(names) != len(set(names)):
+        raise TransferPackageError("transfer_payload_invalid", "列定义为空或包含重复列名")
+
+    series_raw = raw.get("series")
+    if series_raw is None:
+        series_raw = tuple(
+            {
+                "series_uid": item["measurement_uid"],
+                "name": item["name"],
+                "x_column": item["x_name"],
+                "y_column": item["y_name"],
+                "uncertainty_column": item["uncertainty_name"],
+                "description": item["meaning"],
+            }
+            for item in measurements
+            if item["x_name"] and item["y_name"]
+        )
+    if not isinstance(series_raw, Sequence) or isinstance(series_raw, (str, bytes)):
+        raise TransferPackageError("transfer_payload_invalid", "测量序列必须是列表")
+    series: list[dict[str, str]] = []
+    known_columns = set(names)
+    for value in series_raw:
+        if not isinstance(value, Mapping) or set(value) != {
+            "series_uid", "name", "x_column", "y_column", "uncertainty_column", "description"
+        }:
+            raise TransferPackageError("transfer_payload_invalid", "测量序列字段不符合白名单")
+        x_column = _text(value["x_column"], "横轴", limit=500)
+        y_column = _text(value["y_column"], "纵轴", limit=500)
+        uncertainty = _text(
+            value["uncertainty_column"], "误差列", required=False, limit=500
+        )
+        if x_column not in known_columns or y_column not in known_columns or (
+            uncertainty and uncertainty not in known_columns
+        ):
+            raise TransferPackageError("transfer_payload_identity", "测量序列引用了未知列")
+        series.append(
+            {
+                "series_uid": _uid(value["series_uid"], "measurement_uid"),
+                "name": _text(value["name"], "序列名", limit=500),
+                "x_column": x_column,
+                "y_column": y_column,
+                "uncertainty_column": uncertainty,
+                "description": _text(value["description"], "序列说明", required=False, limit=2_000),
+            }
+        )
     notes = []
     for value in notes_raw:
         if not isinstance(value, Mapping) or set(value) != {"note_uid", "text"}:
@@ -488,9 +614,15 @@ def _normalise_personal_record(raw: Mapping[str, Any]) -> dict[str, Any]:
         "confirmation_state": "confirmed",
         "indexable": True,
         "conditions": dict(sorted(conditions.items())),
+        "sheet_name": _text(raw.get("sheet_name") or "导入数据", "工作表名", limit=500),
+        "row_count": int(raw.get("row_count") or 0),
+        "columns": sorted(columns, key=lambda row: row["source_name"]),
+        "series": sorted(series, key=lambda row: row["series_uid"]),
         "measurements": sorted(measurements, key=lambda row: row["measurement_uid"]),
         "notes": sorted(notes, key=lambda row: row["note_uid"]),
     }
+    if result["row_count"] < 0:
+        raise TransferPackageError("transfer_payload_invalid", "表格行数无效")
     _reject_sensitive_value(result)
     return result
 
@@ -528,9 +660,18 @@ CREATE TABLE samples(sample_uid TEXT PRIMARY KEY,project_uid TEXT NOT NULL,name 
   FOREIGN KEY(project_uid) REFERENCES projects(project_uid)) WITHOUT ROWID;
 CREATE TABLE runs(run_uid TEXT PRIMARY KEY,project_uid TEXT NOT NULL,sample_uid TEXT NOT NULL,name TEXT NOT NULL,method TEXT NOT NULL,
   confirmation_state TEXT NOT NULL CHECK(confirmation_state='confirmed'),indexable INTEGER NOT NULL CHECK(indexable=1),
+  sheet_name TEXT NOT NULL,row_count INTEGER NOT NULL CHECK(row_count>=0),
   FOREIGN KEY(project_uid) REFERENCES projects(project_uid),FOREIGN KEY(sample_uid) REFERENCES samples(sample_uid)) WITHOUT ROWID;
 CREATE TABLE conditions(run_uid TEXT NOT NULL,name TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(run_uid,name),
   FOREIGN KEY(run_uid) REFERENCES runs(run_uid)) WITHOUT ROWID;
+CREATE TABLE columns(run_uid TEXT NOT NULL,source_name TEXT NOT NULL,role TEXT NOT NULL,
+  data_type TEXT NOT NULL,meaning TEXT NOT NULL,unit TEXT NOT NULL,PRIMARY KEY(run_uid,source_name),
+  FOREIGN KEY(run_uid) REFERENCES runs(run_uid)) WITHOUT ROWID;
+CREATE TABLE series(series_uid TEXT PRIMARY KEY,run_uid TEXT NOT NULL,name TEXT NOT NULL,
+  x_column TEXT NOT NULL,y_column TEXT NOT NULL,uncertainty_column TEXT NOT NULL,description TEXT NOT NULL,
+  FOREIGN KEY(run_uid) REFERENCES runs(run_uid),
+  FOREIGN KEY(run_uid,x_column) REFERENCES columns(run_uid,source_name),
+  FOREIGN KEY(run_uid,y_column) REFERENCES columns(run_uid,source_name)) WITHOUT ROWID;
 CREATE TABLE measurements(measurement_uid TEXT PRIMARY KEY,run_uid TEXT NOT NULL,name TEXT NOT NULL,meaning TEXT NOT NULL,unit TEXT NOT NULL,
   x_name TEXT NOT NULL,y_name TEXT NOT NULL,uncertainty_name TEXT NOT NULL,FOREIGN KEY(run_uid) REFERENCES runs(run_uid)) WITHOUT ROWID;
 CREATE TABLE notes(note_uid TEXT PRIMARY KEY,run_uid TEXT NOT NULL,text TEXT NOT NULL,FOREIGN KEY(run_uid) REFERENCES runs(run_uid)) WITHOUT ROWID;
@@ -573,7 +714,7 @@ def _create_personal_snapshot(path: Path, *, source_id: str, records: Iterable[M
             sorted(
                 {
                     "contract": PERSONAL_TRANSFER_CONTRACT,
-                    "schema_version": str(PERSONAL_TRANSFER_SCHEMA_VERSION),
+                "schema_version": str(PERSONAL_TRANSFER_SCHEMA_VERSION),
                     "source_id": source_id,
                     "content_fingerprint": fingerprint,
                 }.items()
@@ -597,12 +738,37 @@ def _create_personal_snapshot(path: Path, *, source_id: str, records: Iterable[M
         )
         for row in rows:
             connection.execute(
-                "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
-                (row["run_uid"], row["project_uid"], row["sample_uid"], row["run_name"], row["method"], "confirmed", 1),
+                "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    row["run_uid"], row["project_uid"], row["sample_uid"],
+                    row["run_name"], row["method"], "confirmed", 1,
+                    row["sheet_name"], row["row_count"],
+                ),
             )
             connection.executemany(
                 "INSERT INTO conditions VALUES (?,?,?)",
                 [(row["run_uid"], key, value) for key, value in row["conditions"].items()],
+            )
+            connection.executemany(
+                "INSERT INTO columns VALUES (?,?,?,?,?,?)",
+                [
+                    (
+                        row["run_uid"], item["source_name"], item["role"],
+                        item["data_type"], item["meaning"], item["unit"],
+                    )
+                    for item in row["columns"]
+                ],
+            )
+            connection.executemany(
+                "INSERT INTO series VALUES (?,?,?,?,?,?,?)",
+                [
+                    (
+                        item["series_uid"], row["run_uid"], item["name"],
+                        item["x_column"], item["y_column"],
+                        item["uncertainty_column"], item["description"],
+                    )
+                    for item in row["series"]
+                ],
             )
             connection.executemany(
                 "INSERT INTO measurements VALUES (?,?,?,?,?,?,?,?)",
@@ -647,7 +813,11 @@ def _ro_connection(path: Path) -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
-def audit_personal_transfer_snapshot(path_value: Path | str, *, expected_source_id: str | None = None) -> dict[str, Any]:
+def _read_personal_transfer_snapshot(
+    path_value: Path | str,
+    *,
+    expected_source_id: str | None = None,
+) -> tuple[dict[str, Any], tuple[dict[str, Any], ...]]:
     path = Path(path_value).expanduser()
     if path.is_symlink() or not path.is_file():
         raise TransferPackageError("transfer_payload_audit", "个人实验结构化快照缺失或不安全")
@@ -667,8 +837,12 @@ def audit_personal_transfer_snapshot(path_value: Path | str, *, expected_source_
             }
             if actual_schema != expected_schema or connection.execute("SELECT 1 FROM sqlite_schema WHERE type IN ('view','trigger')").fetchone() is not None:
                 raise TransferPackageError("transfer_payload_schema", "个人实验结构化快照对象不符合白名单")
+            if int(connection.execute("SELECT COUNT(*) FROM transfer_meta").fetchone()[0]) != 4:
+                raise TransferPackageError(
+                    "transfer_payload_schema", "个人实验快照元数据数量无效"
+                )
             meta = {str(row["key"]): str(row["value"]) for row in connection.execute("SELECT key,value FROM transfer_meta")}
-            if set(meta) != {"contract", "schema_version", "source_id", "content_fingerprint"} or meta["contract"] != PERSONAL_TRANSFER_CONTRACT or meta["schema_version"] != "1":
+            if set(meta) != {"contract", "schema_version", "source_id", "content_fingerprint"} or meta["contract"] != PERSONAL_TRANSFER_CONTRACT or meta["schema_version"] != str(PERSONAL_TRANSFER_SCHEMA_VERSION):
                 raise TransferPackageError("transfer_payload_schema", "个人实验结构化快照元数据无效")
             source_id = _source_id(meta["source_id"], prefix="personal-")
             if expected_source_id is not None and source_id != expected_source_id:
@@ -680,6 +854,8 @@ def audit_personal_transfer_snapshot(path_value: Path | str, *, expected_source_
                     "samples",
                     "runs",
                     "conditions",
+                    "columns",
+                    "series",
                     "measurements",
                     "notes",
                 )
@@ -689,6 +865,8 @@ def audit_personal_transfer_snapshot(path_value: Path | str, *, expected_source_
                 or counts["samples"] > MAX_PERSONAL_RECORDS
                 or counts["runs"] > MAX_PERSONAL_RECORDS
                 or counts["conditions"] > MAX_PERSONAL_CONDITIONS_TOTAL
+                or counts["columns"] > MAX_PERSONAL_COLUMNS_TOTAL
+                or counts["series"] > MAX_PERSONAL_SERIES_TOTAL
                 or counts["measurements"] > MAX_PERSONAL_MEASUREMENTS_TOTAL
                 or counts["notes"] > MAX_PERSONAL_NOTES_TOTAL
             ):
@@ -706,6 +884,8 @@ def audit_personal_transfer_snapshot(path_value: Path | str, *, expected_source_
                 "samples",
                 "runs",
                 "conditions",
+                "columns",
+                "series",
                 "measurements",
                 "notes",
             ):
@@ -739,6 +919,35 @@ def audit_personal_transfer_snapshot(path_value: Path | str, *, expected_source_
                     "confirmation_state": "confirmed",
                     "indexable": True,
                     "conditions": {str(row["name"]): str(row["value"]) for row in connection.execute("SELECT name,value FROM conditions WHERE run_uid=? ORDER BY name", (run["run_uid"],))},
+                    "sheet_name": str(run["sheet_name"]),
+                    "row_count": int(run["row_count"]),
+                    "columns": [
+                        {
+                            "source_name": str(row["source_name"]),
+                            "role": str(row["role"]),
+                            "data_type": str(row["data_type"]),
+                            "meaning": str(row["meaning"]),
+                            "unit": str(row["unit"]),
+                        }
+                        for row in connection.execute(
+                            "SELECT * FROM columns WHERE run_uid=? ORDER BY source_name",
+                            (run["run_uid"],),
+                        )
+                    ],
+                    "series": [
+                        {
+                            "series_uid": str(row["series_uid"]),
+                            "name": str(row["name"]),
+                            "x_column": str(row["x_column"]),
+                            "y_column": str(row["y_column"]),
+                            "uncertainty_column": str(row["uncertainty_column"]),
+                            "description": str(row["description"]),
+                        }
+                        for row in connection.execute(
+                            "SELECT * FROM series WHERE run_uid=? ORDER BY series_uid",
+                            (run["run_uid"],),
+                        )
+                    ],
                     "measurements": [
                         {
                             "measurement_uid": str(row["measurement_uid"]), "name": str(row["name"]), "meaning": str(row["meaning"]),
@@ -757,22 +966,119 @@ def audit_personal_transfer_snapshot(path_value: Path | str, *, expected_source_
         raise
     except sqlite3.DatabaseError as exc:
         raise TransferPackageError("transfer_payload_audit", "个人实验结构化快照无法审计") from exc
-    return {
+    summary = {
         "source_id": source_id,
         "content_fingerprint": fingerprint,
         "run_count": len(runs),
         "run_uids": tuple(str(row["run_uid"]) for row in runs),
     }
+    return summary, tuple(records)
+
+
+def audit_personal_transfer_snapshot(
+    path_value: Path | str,
+    *,
+    expected_source_id: str | None = None,
+) -> dict[str, Any]:
+    """Audit a personal transfer snapshot and return only path-free counts."""
+
+    summary, _records = _read_personal_transfer_snapshot(
+        path_value,
+        expected_source_id=expected_source_id,
+    )
+    return summary
+
+
+def read_personal_transfer_snapshot(
+    path_value: Path | str,
+    *,
+    expected_source_id: str | None = None,
+) -> dict[str, Any]:
+    """Return the already-normalized records for the private merge boundary."""
+
+    summary, records = _read_personal_transfer_snapshot(
+        path_value,
+        expected_source_id=expected_source_id,
+    )
+    return {**summary, "records": records}
+
+
+def _audited_file_identity(path: Path) -> tuple[tuple[int, int, int, int, int], str]:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise TransferPackageError(
+            "transfer_payload_changed", "已导入论文 PDF 缺失或发生变化"
+        ) from exc
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise TransferPackageError(
+                "transfer_payload_changed", "已导入论文 PDF 缺失或发生变化"
+            )
+        digest = hashlib.sha256()
+        with os.fdopen(os.dup(descriptor), "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        after = os.fstat(descriptor)
+        identity = (
+            int(after.st_dev),
+            int(after.st_ino),
+            int(after.st_size),
+            int(after.st_mtime_ns),
+            int(after.st_ctime_ns),
+        )
+        before_identity = (
+            int(before.st_dev),
+            int(before.st_ino),
+            int(before.st_size),
+            int(before.st_mtime_ns),
+            int(before.st_ctime_ns),
+        )
+        if before_identity != identity:
+            raise TransferPackageError(
+                "transfer_payload_changed", "已导入论文 PDF 缺失或发生变化"
+            )
+        return identity, digest.hexdigest()
+    finally:
+        os.close(descriptor)
 
 
 class TransferredLiteratureRepository:
     """Private projection over a strictly audited portable repository payload."""
 
-    def __init__(self, repository: OfficialEvidenceRepository, source_id: str) -> None:
+    def __init__(
+        self,
+        repository: OfficialEvidenceRepository,
+        source_id: str,
+        *,
+        install_root: Path,
+        manifest: Mapping[str, Any],
+    ) -> None:
         self._repository = repository
         self.source_scope = "private"
         self.source_id = _source_id(source_id, prefix="literature-")
         self.content_fingerprint = repository.content_fingerprint
+        pdfs: dict[str, tuple[Path, tuple[int, int, int, int, int], str]] = {}
+        for raw in manifest.get("files", ()):
+            if not isinstance(raw, Mapping) or raw.get("role") != "paper_pdf":
+                continue
+            paper_uid = str(raw.get("paper_uid") or "")
+            relative = PurePosixPath(str(raw.get("path") or ""))
+            candidate = install_root.joinpath(*relative.parts)
+            if (
+                not PAPER_UID_RE.fullmatch(paper_uid)
+                or candidate.is_symlink()
+                or not candidate.is_file()
+                or paper_uid in pdfs
+            ):
+                raise TransferPackageError(
+                    "transfer_payload_identity", "PDF 与结构化论文身份不一致"
+                )
+            identity, digest = _audited_file_identity(candidate)
+            pdfs[paper_uid] = (candidate, identity, digest)
+        self._pdfs = pdfs
 
     def iter_search_documents(self, *, entity_types: Iterable[str] | None = None) -> Iterator[dict[str, Any]]:
         for raw in self._repository.iter_search_documents(entity_types=entity_types):
@@ -786,6 +1092,24 @@ class TransferredLiteratureRepository:
         document["source_scope"] = "private"
         document["source_id"] = self.source_id
         return document
+
+    def resolve_pdf(self, paper_uid: str) -> Path | None:
+        """Return an internal audited PDF path; never serialize this value."""
+
+        resolved = self._pdfs.get(str(paper_uid))
+        if resolved is None:
+            return None
+        candidate, expected_identity, expected_digest = resolved
+        if candidate.is_symlink() or not candidate.is_file():
+            raise TransferPackageError(
+                "transfer_payload_changed", "已导入论文 PDF 缺失或发生变化"
+            )
+        actual_identity, actual_digest = _audited_file_identity(candidate)
+        if actual_identity != expected_identity or actual_digest != expected_digest:
+            raise TransferPackageError(
+                "transfer_payload_changed", "已导入论文 PDF 缺失或发生变化"
+            )
+        return candidate
 
 
 def _structured_files_for_manifest(manifest: Mapping[str, Any], role: str) -> list[str]:
@@ -886,7 +1210,12 @@ def open_transferred_literature_repository(
             }
         )
     ).hexdigest()[:32]
-    return TransferredLiteratureRepository(repository, f"literature-{source_digest}")
+    return TransferredLiteratureRepository(
+        repository,
+        f"literature-{source_digest}",
+        install_root=root,
+        manifest=manifest,
+    )
 
 
 def materialize_payload_candidate(

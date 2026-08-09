@@ -1,8 +1,8 @@
 """Narrow, read-side product API shared by desktop applications.
 
-Only package verification/activation, trusted publisher policy, and immutable
-repository reads belong here.  Publisher-side export and package construction
-must stay outside desktop runtime dependency manifests.
+Only package verification/activation, immutable repository reads, and the
+untrusted user-transfer package center belong here.  Official publisher-side
+signing/builders must stay outside desktop runtime dependency manifests.
 """
 
 from __future__ import annotations
@@ -46,12 +46,34 @@ from .package_center_models import (
     RightsConfirmation,
     RightsRequirement,
 )
+from .package_center_payload_adapter import StructuredPackageCenterPayloadAdapter
+from .package_payload_sources import (
+    EvidenceV12LiteraturePayloadSource,
+    LiteratureFilterResolution,
+    LiteratureLicenseVerification,
+    PrivateRepositoryPersonalPayloadSource,
+)
+from .package_transfer_activation import (
+    ActivatedTransferPackage,
+    PackageTransferActivationError,
+    PackageTransferActivationService,
+)
+from .package_transfer_payloads import (
+    LiteratureCollectionPayloadPlanner,
+    PersonalExperimentsPayloadPlanner,
+    audit_transfer_payload_tree,
+    open_transferred_literature_repository,
+    read_personal_transfer_snapshot,
+)
 from .transfer_package import (
     ImportedTransferPackage,
     TransferPackageError,
     TransferPackageKind,
     VerifiedTransferPackage,
+    export_transfer_package,
     import_transfer_package,
+    list_installed_transfer_packages,
+    open_installed_transfer_package,
     verify_transfer_package,
 )
 from .trusted_publishers import (
@@ -80,6 +102,16 @@ __all__ = [
     "PackageKind",
     "PackageScope",
     "PackageTransferImportService",
+    "StructuredPackageCenterPayloadAdapter",
+    "EvidenceV12LiteraturePayloadSource",
+    "LiteratureFilterResolution",
+    "LiteratureLicenseVerification",
+    "PrivateRepositoryPersonalPayloadSource",
+    "ActivatedTransferPackage",
+    "PackageTransferActivationError",
+    "PackageTransferActivationService",
+    "LiteratureCollectionPayloadPlanner",
+    "PersonalExperimentsPayloadPlanner",
     "MaterializedPayload",
     "PayloadPlanCandidate",
     "RightsConfirmation",
@@ -97,6 +129,12 @@ __all__ = [
     "import_official_evidence_package",
     "list_installed_official_packages",
     "import_transfer_package",
+    "export_transfer_package",
+    "list_installed_transfer_packages",
+    "open_installed_transfer_package",
+    "audit_transfer_payload_tree",
+    "open_transferred_literature_repository",
+    "read_personal_transfer_snapshot",
     "open_active_official_repository",
     "rollback_official_evidence_package",
     "trusted_publisher_policy",

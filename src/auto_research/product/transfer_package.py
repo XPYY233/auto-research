@@ -16,7 +16,7 @@ import tempfile
 import unicodedata
 import uuid
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path, PurePosixPath
@@ -250,6 +250,8 @@ class ImportedTransferPackage:
     install_path: Path
     outcome: str
     content_fingerprint: str
+    package_sha256: str
+    manifest: dict[str, Any] = field(repr=False)
 
     def public_dict(self) -> dict[str, Any]:
         return {
@@ -326,6 +328,15 @@ def _scan_xlsx_for_sensitive_content(handle: Any) -> None:
             infos = workbook.infolist()
             if len(infos) > MAX_TRANSFER_MEMBERS:
                 raise TransferPackageError("transfer_personal_file_invalid", "XLSX 文件结构异常")
+            normalized_names = [
+                unicodedata.normalize("NFC", info.filename).casefold()
+                for info in infos
+            ]
+            if len(normalized_names) != len(set(normalized_names)):
+                raise TransferPackageError(
+                    "transfer_personal_file_invalid",
+                    "XLSX 包含重复或大小写冲突成员",
+                )
             for info in infos:
                 name = info.filename.casefold()
                 forbidden_member = (
@@ -1268,6 +1279,113 @@ def _validate_installed_transfer(target: Path, verified: VerifiedTransferPackage
         audit_transfer_payload_tree(target, verified.manifest)
 
 
+def open_installed_transfer_package(
+    destination_root: Path | str,
+    *,
+    kind: TransferPackageKind | str,
+    package_id: str,
+    package_version: str,
+) -> ImportedTransferPackage:
+    """Re-audit one installed user package without trusting directory names alone."""
+
+    try:
+        normalized_kind = TransferPackageKind(kind)
+    except ValueError as exc:
+        raise TransferPackageError("transfer_kind_invalid", "传输包类型无效") from exc
+    if not PACKAGE_ID_RE.fullmatch(str(package_id)) or not PACKAGE_VERSION_RE.fullmatch(
+        str(package_version)
+    ):
+        raise TransferPackageError("transfer_identity_invalid", "传输包身份无效")
+    root = _prepare_transfer_root(destination_root)
+    target = (
+        root
+        / "user-transfer-packages"
+        / normalized_kind.value
+        / str(package_id)
+        / str(package_version)
+    )
+    if target.is_symlink() or not target.is_dir():
+        raise TransferPackageError("transfer_install_missing", "已导入传输包不存在")
+    try:
+        control_paths = {
+            name: target / name
+            for name in (TRANSFER_MANIFEST_NAME, TRANSFER_CHECKSUMS_NAME, TRANSFER_INSTALL_NAME)
+        }
+        controls: dict[str, Any] = {}
+        for name, path in control_paths.items():
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_TRANSFER_CONTROL_BYTES:
+                raise TransferPackageError("transfer_install_conflict", "已导入传输包记录损坏")
+            controls[name] = json.loads(path.read_text(encoding="utf-8"))
+        manifest = controls[TRANSFER_MANIFEST_NAME]
+        checksum_envelope = controls[TRANSFER_CHECKSUMS_NAME]
+        marker = controls[TRANSFER_INSTALL_NAME]
+    except TransferPackageError:
+        raise
+    except (OSError, json.JSONDecodeError) as exc:
+        raise TransferPackageError("transfer_install_conflict", "已导入传输包记录损坏") from exc
+    if (
+        not isinstance(manifest, dict)
+        or not isinstance(checksum_envelope, dict)
+        or checksum_envelope.get("algorithm") != "sha256"
+        or not isinstance(checksum_envelope.get("files"), dict)
+        or not isinstance(marker, dict)
+        or manifest.get("package_kind") != normalized_kind.value
+        or manifest.get("package_id") != package_id
+        or manifest.get("package_version") != package_version
+        or not SHA256_RE.fullmatch(str(marker.get("package_sha256") or ""))
+    ):
+        raise TransferPackageError("transfer_install_conflict", "已导入传输包身份损坏")
+    verified = VerifiedTransferPackage(
+        target,
+        manifest,
+        dict(checksum_envelope["files"]),
+        str(marker["package_sha256"]),
+    )
+    _validate_installed_transfer(target, verified)
+    return ImportedTransferPackage(
+        normalized_kind,
+        str(package_id),
+        str(package_version),
+        target,
+        "already_present",
+        str(manifest["content_fingerprint"]),
+        verified.package_sha256,
+        dict(manifest),
+    )
+
+
+def list_installed_transfer_packages(
+    destination_root: Path | str,
+    *,
+    kind: TransferPackageKind | str,
+) -> tuple[ImportedTransferPackage, ...]:
+    """List only packages that still pass complete installed-tree re-audit."""
+
+    normalized_kind = TransferPackageKind(kind)
+    root = _prepare_transfer_root(destination_root)
+    kind_root = root / "user-transfer-packages" / normalized_kind.value
+    if not kind_root.exists():
+        return ()
+    if kind_root.is_symlink() or not kind_root.is_dir():
+        raise TransferPackageError("transfer_install_unsafe", "传输包安装目录不安全")
+    output: list[ImportedTransferPackage] = []
+    for package_dir in sorted(kind_root.iterdir(), key=lambda path: path.name):
+        if package_dir.is_symlink() or not package_dir.is_dir() or not PACKAGE_ID_RE.fullmatch(package_dir.name):
+            raise TransferPackageError("transfer_install_unsafe", "传输包安装目录包含未知对象")
+        for version_dir in sorted(package_dir.iterdir(), key=lambda path: path.name):
+            if version_dir.is_symlink() or not version_dir.is_dir() or not PACKAGE_VERSION_RE.fullmatch(version_dir.name):
+                raise TransferPackageError("transfer_install_unsafe", "传输包安装版本包含未知对象")
+            output.append(
+                open_installed_transfer_package(
+                    root,
+                    kind=normalized_kind,
+                    package_id=package_dir.name,
+                    package_version=version_dir.name,
+                )
+            )
+    return tuple(output)
+
+
 def import_transfer_package(
     package_path: Path | str,
     *,
@@ -1319,6 +1437,8 @@ def import_transfer_package(
                 target,
                 "already_present",
                 str(verified.manifest["content_fingerprint"]),
+                verified.package_sha256,
+                dict(verified.manifest),
             )
         staging = operation / "install"
         staging.mkdir(mode=0o700)
@@ -1352,6 +1472,8 @@ def import_transfer_package(
             target,
             "imported",
             str(verified.manifest["content_fingerprint"]),
+            verified.package_sha256,
+            dict(verified.manifest),
         )
     except TransferPackageError:
         raise

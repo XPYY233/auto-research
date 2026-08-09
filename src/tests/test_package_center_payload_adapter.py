@@ -63,6 +63,18 @@ class _PersonalSource:
                     "confirmation_state": "confirmed",
                     "indexable": True,
                     "conditions": {},
+                    "sheet_name": "Sheet1",
+                    "row_count": 1,
+                    "columns": (
+                        {
+                            "source_name": "value",
+                            "role": "dependent",
+                            "data_type": "number",
+                            "meaning": "测量值",
+                            "unit": "",
+                        },
+                    ),
+                    "series": (),
                     "measurements": (),
                     "notes": (),
                 },

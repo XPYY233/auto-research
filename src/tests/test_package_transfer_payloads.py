@@ -46,6 +46,15 @@ class LiteratureSource:
         return self.selection
 
 
+class ResolvingLiteratureSource(LiteratureSource):
+    def __init__(self, selection, mapping):
+        super().__init__(selection)
+        self.mapping = mapping
+
+    def resolve_selection_ids(self, selected_ids):
+        return tuple(self.mapping[item] for item in selected_ids)
+
+
 class PersonalSource:
     source_id = "personal-team-experiments"
 
@@ -179,6 +188,17 @@ class PackageTransferPayloadTests(unittest.TestCase):
         self.assertEqual(documents[0]["source_scope"], "private")
         self.assertTrue(documents[0]["source_id"].startswith("literature-"))
         self.assertNotEqual(documents[0]["source_scope"], "official")
+
+    def test_selected_local_ids_are_resolved_before_stable_identity_check(self) -> None:
+        source = ResolvingLiteratureSource(
+            self.literature_payload(),
+            {"42": self.paper_uid},
+        )
+        candidate = LiteratureCollectionPayloadPlanner(source).plan(
+            PayloadSelection("selected", selected_ids=("42",))
+        )
+        self.assertEqual(candidate.selection.selected_ids, (self.paper_uid,))
+        self.assertEqual(source.calls[0].selected_ids, (self.paper_uid,))
 
     def test_literature_pdf_accounting_and_rights_are_default_deny(self) -> None:
         papers = []
@@ -447,6 +467,33 @@ class PackageTransferPayloadTests(unittest.TestCase):
                     raised.exception.code,
                     {"transfer_personal_file_invalid", "transfer_sensitive_content"},
                 )
+
+        collision = self.root / "collision.xlsx"
+        with zipfile.ZipFile(collision, "w") as archive:
+            archive.writestr("[Content_Types].xml", "<Types/>")
+            archive.writestr("XL/workbook.xml", "<workbook/>")
+            archive.writestr("xl/WORKBOOK.xml", "<workbook/>")
+        collision_payload = PersonalPayloadSelection(
+            records=(self.personal_record(),),
+            tables=(
+                PersonalTableCandidate(
+                    collision, "collision.xlsx", uid("run", "3")
+                ),
+            ),
+        )
+        candidate = PersonalExperimentsPayloadPlanner(
+            PersonalSource(collision_payload)
+        ).plan(PayloadSelection("all"))
+        with self.assertRaises(TransferPackageError) as collision_error:
+            materialize_payload_candidate(
+                candidate,
+                self.root / "collision-workspace",
+                package_id="user-personal-collision",
+                package_version="1.0.0",
+            )
+        self.assertEqual(
+            collision_error.exception.code, "transfer_personal_file_invalid"
+        )
 
     def test_personal_snapshot_rejects_sensitive_values_before_sqlite_materialization(self) -> None:
         record = self.personal_record()

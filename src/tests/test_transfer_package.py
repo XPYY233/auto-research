@@ -22,6 +22,8 @@ from auto_research.product.transfer_package import (
     TransferPackageError,
     export_transfer_package,
     import_transfer_package,
+    list_installed_transfer_packages,
+    open_installed_transfer_package,
     plan_transfer_package,
     verify_transfer_package,
 )
@@ -114,6 +116,58 @@ class TransferPackageTests(unittest.TestCase):
             self.assertNotIn(str(self.root), encoded)
             self.assertNotIn("source_path", encoded)
             self.assertFalse(public.get("trusted_official", False))
+
+    def test_installed_transfer_packages_can_be_reopened_and_listed_after_restart(self) -> None:
+        package = self.root / "restart.aresearch"
+        exported = self.export(self.literature_plan(), package)
+        destination = self.root / "recipient"
+        imported = import_transfer_package(
+            package,
+            destination_root=destination,
+            expected_kind="literature_collection",
+            expected_package_sha256=exported.package_sha256,
+            checksum_ack=True,
+        )
+
+        reopened = open_installed_transfer_package(
+            destination,
+            kind="literature_collection",
+            package_id=imported.package_id,
+            package_version=imported.package_version,
+        )
+        listed = list_installed_transfer_packages(
+            destination,
+            kind="literature_collection",
+        )
+
+        self.assertEqual(reopened.outcome, "already_present")
+        self.assertEqual(reopened.package_sha256, exported.package_sha256)
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(listed[0].package_id, imported.package_id)
+        self.assertNotIn(str(destination), json.dumps(reopened.public_dict()))
+
+    def test_reopen_rejects_tampered_installed_tree(self) -> None:
+        package = self.root / "restart-tamper.aresearch"
+        exported = self.export(self.literature_plan(), package)
+        destination = self.root / "recipient"
+        imported = import_transfer_package(
+            package,
+            destination_root=destination,
+            expected_kind="literature_collection",
+            expected_package_sha256=exported.package_sha256,
+            checksum_ack=True,
+        )
+        installed_pdf = imported.install_path / "literature/papers/demo.pdf"
+        installed_pdf.write_bytes(installed_pdf.read_bytes() + b"tamper")
+
+        with self.assertRaises(TransferPackageError) as raised:
+            open_installed_transfer_package(
+                destination,
+                kind="literature_collection",
+                package_id=imported.package_id,
+                package_version=imported.package_version,
+            )
+        self.assertEqual(raised.exception.code, "transfer_install_conflict")
 
     def test_personal_and_literature_packages_cannot_cross_import(self) -> None:
         package = self.root / "personal.aresearch"

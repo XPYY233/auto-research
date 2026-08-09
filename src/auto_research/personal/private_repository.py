@@ -15,7 +15,7 @@ from typing import Any, Iterator, Mapping
 from .experiment_contract import PersonalExperimentDraft, PersonalSourceFile
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DATABASE_NAME = "personal_experiments.sqlite"
 IMPORT_STATES = frozenset({"previewed", "draft_saved", "indexable"})
 _ERROR_DETAIL_KEYS = {
@@ -29,7 +29,7 @@ _ERROR_DETAIL_KEYS = {
     "expected_revision",
     "actual_revision",
 }
-_REQUIRED_TABLES = {
+_CORE_REQUIRED_TABLES = {
     "repository_meta",
     "projects",
     "samples",
@@ -43,6 +43,11 @@ _REQUIRED_TABLES = {
     "attachment_series",
     "notes",
 }
+_TRANSFER_REQUIRED_TABLES = {
+    "transfer_imports",
+    "transfer_entity_lineage",
+}
+_REQUIRED_TABLES = _CORE_REQUIRED_TABLES | _TRANSFER_REQUIRED_TABLES
 
 
 class PrivateRepositoryError(ValueError):
@@ -255,7 +260,7 @@ class PrivateExperimentRepository:
                     "所选位置已有无法识别的数据，请更换位置。",
                     details={"operation": "initialize"},
                 )
-            if version not in {0, 1, SCHEMA_VERSION}:
+            if version not in {0, 1, 2, SCHEMA_VERSION}:
                 raise _failure(
                     "PRIVATE_SCHEMA_FUTURE",
                     "个人实验数据版本与当前软件不兼容。",
@@ -263,6 +268,7 @@ class PrivateExperimentRepository:
                 )
             if version == 0:
                 self._execute_schema_statements(conn, _SCHEMA_V2)
+                self._execute_schema_statements(conn, _SCHEMA_V3_ADDITIONS)
                 conn.execute(
                     "INSERT INTO repository_meta(key,value) VALUES('repository_id',?)",
                     (f"personal-{uuid.uuid4()}",),
@@ -279,13 +285,15 @@ class PrivateExperimentRepository:
                             """ALTER TABLE experiment_runs ADD COLUMN revision INTEGER
                             NOT NULL DEFAULT 1 CHECK(revision>=1)"""
                         )
-                    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 elif "revision" not in columns:
                     raise _failure(
                         "PRIVATE_SCHEMA_INCOMPLETE",
                         "个人实验数据库不完整，未进行任何修改。",
                         details={"schema_version": version},
                     )
+                if version in {1, 2}:
+                    self._execute_schema_statements(conn, _SCHEMA_V3_ADDITIONS)
+                    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             conn.commit()
         except PrivateRepositoryError:
             if conn is not None:
@@ -380,7 +388,8 @@ class PrivateExperimentRepository:
 
     @staticmethod
     def _validate_schema_tables(existing: set[str], version: int) -> None:
-        if not _REQUIRED_TABLES <= existing:
+        required = _REQUIRED_TABLES if version >= 3 else _CORE_REQUIRED_TABLES
+        if not required <= existing:
             raise _failure(
                 "PRIVATE_SCHEMA_INCOMPLETE",
                 "个人实验数据库不完整，未进行任何修改。",
@@ -1576,4 +1585,28 @@ CREATE INDEX idx_columns_run ON column_mappings(run_id);
 CREATE INDEX idx_series_run ON measurement_series(run_id);
 CREATE INDEX idx_attachments_run ON attachments(run_id);
 CREATE INDEX idx_notes_run ON notes(run_id);
+"""
+
+
+_SCHEMA_V3_ADDITIONS = """
+CREATE TABLE transfer_imports(
+    package_sha256 TEXT PRIMARY KEY CHECK(length(package_sha256)=64),
+    source_id TEXT NOT NULL,
+    content_fingerprint TEXT NOT NULL CHECK(length(content_fingerprint)=64),
+    run_count INTEGER NOT NULL CHECK(run_count>=0),
+    imported_at TEXT NOT NULL
+);
+
+CREATE TABLE transfer_entity_lineage(
+    entity_type TEXT NOT NULL CHECK(entity_type IN ('project','sample','run')),
+    source_uid TEXT NOT NULL,
+    content_sha256 TEXT NOT NULL CHECK(length(content_sha256)=64),
+    local_entity_id TEXT NOT NULL,
+    first_package_sha256 TEXT NOT NULL REFERENCES transfer_imports(package_sha256),
+    PRIMARY KEY(entity_type,source_uid,content_sha256),
+    UNIQUE(entity_type,local_entity_id)
+);
+
+CREATE INDEX idx_transfer_lineage_source
+ON transfer_entity_lineage(entity_type,source_uid);
 """
