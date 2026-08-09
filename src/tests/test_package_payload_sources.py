@@ -22,6 +22,7 @@ from auto_research.personal.private_repository import (
 )
 from auto_research.product.package_payload_sources import (
     EvidenceV12LiteraturePayloadSource,
+    ExplicitLiteratureFilterResolver,
     LiteratureFilterResolution,
     LiteratureLicenseVerification,
     PrivateRepositoryPersonalPayloadSource,
@@ -220,6 +221,24 @@ class PackagePayloadSourceTests(unittest.TestCase):
                 self._literature_source(filter_resolver=changed)
             ).plan(selection)
         self.assertEqual(stale.exception.code, "transfer_filter_changed")
+
+    def test_explicit_filter_resolver_freezes_visible_paper_ids(self) -> None:
+        resolver = ExplicitLiteratureFilterResolver()
+        token = json.dumps(
+            {"query": "irradiation", "paper_ids": [2, 1]},
+            ensure_ascii=False,
+        )
+        resolution = resolver.resolve(token)
+        self.assertEqual(resolution.local_paper_ids, (2, 1))
+        self.assertTrue(resolver.is_current(token, resolution))
+        self.assertFalse(
+            resolver.is_current(
+                json.dumps({"query": "irradiation", "paper_ids": [1]}),
+                resolution,
+            )
+        )
+        with self.assertRaises(TransferPackageError):
+            resolver.resolve(json.dumps({"paper_ids": [], "path": "/tmp/db"}))
 
     def test_unverified_license_never_becomes_automatic_open_access(self) -> None:
         plan = LiteratureCollectionPayloadPlanner(

@@ -43,6 +43,7 @@ _EXPORT_MODULES = {
     "RightsRequirement": ".package_center_models",
     "StructuredPackageCenterPayloadAdapter": ".package_center_payload_adapter",
     "EvidenceV12LiteraturePayloadSource": ".package_payload_sources",
+    "ExplicitLiteratureFilterResolver": ".package_payload_sources",
     "LiteratureFilterResolution": ".package_payload_sources",
     "LiteratureLicenseVerification": ".package_payload_sources",
     "PrivateRepositoryPersonalPayloadSource": ".package_payload_sources",

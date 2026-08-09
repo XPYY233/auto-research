@@ -8,6 +8,7 @@ records while keeping filesystem resolution behind injected trusted ports.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import sqlite3
@@ -143,6 +144,59 @@ class LiteratureFilterResolver(Protocol):
     def is_current(
         self, filter_token: str, resolution: LiteratureFilterResolution
     ) -> bool: ...
+
+
+class ExplicitLiteratureFilterResolver:
+    """Freeze the renderer's already-resolved visible paper IDs.
+
+    The desktop UI remains responsible for presenting query/topic/status
+    filters.  The product boundary receives the resulting local paper IDs and
+    binds them to a deterministic fingerprint; it never tries to reproduce
+    browser-only state such as the recent-paper list.
+    """
+
+    _ALLOWED_FIELDS = frozenset(
+        {"paper_ids", "query", "author", "topic", "status", "scope"}
+    )
+
+    def resolve(self, filter_token: str) -> LiteratureFilterResolution:
+        try:
+            value = json.loads(str(filter_token))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raise _fail("transfer_filter_invalid", "当前筛选结果格式无效") from None
+        if (
+            not isinstance(value, Mapping)
+            or not set(value).issubset(self._ALLOWED_FIELDS)
+            or "paper_ids" not in value
+            or not isinstance(value["paper_ids"], list)
+        ):
+            raise _fail("transfer_filter_invalid", "当前筛选结果格式无效")
+        try:
+            identifiers = tuple(int(item) for item in value["paper_ids"])
+        except (TypeError, ValueError):
+            raise _fail("transfer_filter_invalid", "当前筛选结果身份无效") from None
+        if (
+            not identifiers
+            or len(identifiers) > 10_000
+            or any(item <= 0 for item in identifiers)
+            or len(identifiers) != len(set(identifiers))
+        ):
+            raise _fail("transfer_filter_invalid", "当前筛选结果身份无效")
+        canonical = json.dumps(
+            list(identifiers), separators=(",", ":"), ensure_ascii=True
+        ).encode("ascii")
+        return LiteratureFilterResolution(
+            identifiers,
+            hashlib.sha256(canonical).hexdigest(),
+        )
+
+    def is_current(
+        self, filter_token: str, resolution: LiteratureFilterResolution
+    ) -> bool:
+        try:
+            return self.resolve(filter_token) == resolution
+        except TransferPackageError:
+            return False
 
 
 class LiteraturePdfResolver(Protocol):

@@ -49,6 +49,7 @@ from .package_center_models import (
 from .package_center_payload_adapter import StructuredPackageCenterPayloadAdapter
 from .package_payload_sources import (
     EvidenceV12LiteraturePayloadSource,
+    ExplicitLiteratureFilterResolver,
     LiteratureFilterResolution,
     LiteratureLicenseVerification,
     PrivateRepositoryPersonalPayloadSource,
@@ -104,6 +105,7 @@ __all__ = [
     "PackageTransferImportService",
     "StructuredPackageCenterPayloadAdapter",
     "EvidenceV12LiteraturePayloadSource",
+    "ExplicitLiteratureFilterResolver",
     "LiteratureFilterResolution",
     "LiteratureLicenseVerification",
     "PrivateRepositoryPersonalPayloadSource",
