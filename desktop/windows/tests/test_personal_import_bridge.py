@@ -36,7 +36,15 @@ class _Result:
 class _Service:
     def __init__(self) -> None:
         self.calls = []
-        self.source = object()
+        self.snapshot = type(
+            "Snapshot",
+            (),
+            {
+                "source_id": "private-source",
+                "content_fingerprint": "f" * 64,
+                "document_count": 1,
+            },
+        )()
 
     def preview(self, selection_id):
         self.calls.append(("preview", selection_id))
@@ -54,31 +62,46 @@ class _Service:
         self.calls.append(("confirm", import_id, expected_revision))
         return _Result("indexable")
 
-    def private_search_source(self):
-        return self.source
+    def private_search_snapshot(self):
+        return self.snapshot
+
+
+class _Search:
+    def __init__(self) -> None:
+        self.calls = []
+        self.fail = False
+
+    def refresh_private_source(self, source, *, source_id, fingerprint):
+        self.calls.append((source, source_id, fingerprint))
+        if self.fail:
+            raise RuntimeError("private path must not escape")
 
 
 class PersonalImportBridgeTests(unittest.TestCase):
     def test_bridge_delegates_payload_and_refreshes_only_after_confirm(self) -> None:
         service = _Service()
-        refreshed = []
+        search = _Search()
         bridge = MODULE.PersonalImportBridgeAdapter(
             service,  # type: ignore[arg-type]
-            private_source_listener=lambda source, fingerprint: refreshed.append(
-                (source, fingerprint)
-            ),
+            search_service=search,
         )
         payload = {"sheet_index": 0, "columns": [{"meaning_confirmed": True}]}
         self.assertEqual(bridge.preview("personal_selection_0123456789abcdef")["stage"], "previewed")
         self.assertEqual(bridge.save_draft("personal_import_0123456789abcdef", payload)["stage"], "draft_saved")
         self.assertIs(service.calls[1][2], payload)
-        self.assertEqual(refreshed, [])
+        self.assertEqual(search.calls, [])
         confirmed = bridge.confirm(
             "personal_import_0123456789abcdef",
             expected_revision=2,
         )
         self.assertTrue(confirmed["indexable"])
-        self.assertEqual(refreshed, [(service.source, "revision:3")])
+        self.assertEqual(
+            search.calls,
+            [(service.snapshot, "private-source", "f" * 64)],
+        )
+        public_status = bridge.search_status()
+        self.assertTrue(public_status["ready"])
+        self.assertNotIn("active_fingerprint", public_status)
 
     def test_shared_error_schema_passes_through_path_free(self) -> None:
         error = PersonalImportServiceError(
@@ -87,10 +110,11 @@ class PersonalImportBridgeTests(unittest.TestCase):
             retryable=False,
             details={"expected_revision": 1, "actual_revision": 2},
         )
-        self.assertEqual(
-            MODULE.PersonalImportBridgeAdapter.public_error(error),
-            error.public_dict(),
-        )
+        public = MODULE.PersonalImportBridgeAdapter.public_error(error)
+        self.assertEqual(public["code"], error.code)
+        self.assertEqual(public["message"], error.message)
+        self.assertNotIn("details", public)
+        self.assertNotIn("expected_revision", str(public))
 
     def test_windows_snapshot_runs_shared_preview_draft_confirm_status(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -116,11 +140,12 @@ class PersonalImportBridgeTests(unittest.TestCase):
                 import_id_factory=lambda: "personal_import_0123456789abcdef",
             )
             refreshed = []
+            import evidence_search_service as SEARCH
+
+            search = SEARCH.WindowsEvidenceSearchService()
             bridge = MODULE.PersonalImportBridgeAdapter(
                 service,
-                private_source_listener=lambda private, fingerprint: refreshed.append(
-                    (private.source_id, fingerprint)
-                ),
+                search_service=search,
             )
             preview = bridge.preview(selection.selection_id)
             import_id = preview["status"]["import_id"]
@@ -169,8 +194,42 @@ class PersonalImportBridgeTests(unittest.TestCase):
             )
             self.assertEqual(bridge.status(import_id), confirmed)
             self.assertTrue(confirmed["indexable"])
-            self.assertEqual(refreshed[0][1], f"revision:{confirmed['revision']}")
-            self.assertNotIn(str(root), str(preview))
+            search_status = bridge.search_status()
+            self.assertTrue(search_status["ready"])
+            self.assertEqual(search.status()["private_source"]["fingerprint"], service.private_search_snapshot().content_fingerprint)
+            serialized = str(preview)
+            self.assertNotIn(str(root), serialized)
+            self.assertNotIn("sha256", serialized)
+            self.assertNotIn("file_id", serialized)
+
+    def test_refresh_failure_keeps_stale_public_state_without_fingerprint(self) -> None:
+        service = _Service()
+        search = _Search()
+        bridge = MODULE.PersonalImportBridgeAdapter(
+            service,  # type: ignore[arg-type]
+            search_service=search,
+        )
+        bridge.restore_private_search()
+        search.fail = True
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            bridge.refresh_search()
+        self.assertEqual(raised.exception.code, "personal_search_refresh_failed")
+        status = bridge.search_status()
+        self.assertEqual(status["state"], "stale")
+        self.assertTrue(status["ready"])
+        self.assertNotIn("active_fingerprint", status)
+        self.assertNotIn("path", str(status).casefold())
+
+    def test_empty_startup_snapshot_does_not_register_private_source(self) -> None:
+        service = _Service()
+        service.snapshot.document_count = 0
+        search = _Search()
+        bridge = MODULE.PersonalImportBridgeAdapter(
+            service,  # type: ignore[arg-type]
+            search_service=search,
+        )
+        self.assertEqual(bridge.restore_private_search()["state"], "empty")
+        self.assertEqual(search.calls, [])
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 {
   "contract_version": 1,
   "release_status": "internal-development",
-  "dependency_closure_status": "pending-core-narrow-runtime-api-and-wheel-lock",
+  "dependency_closure_status": "backend-parity-ready-pending-win11-build-and-wheel-lock",
   "target": "windows-11-x64",
   "python": "3.12.x-x64-bundled",
   "windows_modules": [
@@ -15,6 +15,7 @@
     "instance_guard",
     "launcher",
     "loopback_server_adapter",
+    "native_desktop_bridge",
     "os_compatibility",
     "package_import_bridge",
     "package_import_progress",
@@ -26,6 +27,7 @@
     "librarian_bridge",
     "readiness_service",
     "runtime_lifecycle",
+    "shared_http_bridge",
     "webview_window_adapter"
   ],
   "build_gate_modules": [
@@ -59,9 +61,8 @@
     "127.0.0.1 OS-selected loopback port"
   ],
   "required_injections": {
-    "shared_desktop_http_bridge": "pending-frozen-contract-v1",
-    "native_package_picker": "pending-production-adapter",
-    "private_search_source": "optional",
+    "shared_desktop_http_bridge": "windows-production-adapter-v1",
+    "native_package_picker": "pywebview-edgechromium-js-api",
     "personal_selection_snapshot_provider": "windows-native",
     "librarian_v3_runtime": "pending-shared-http-injection"
   },

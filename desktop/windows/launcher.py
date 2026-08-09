@@ -19,7 +19,7 @@ def _internal_app_version() -> str:
 
 
 def main() -> int:
-    """Fail-closed launcher until the shared HTTP bridge is injected."""
+    """Launch the internal Windows composition; release gates remain separate."""
 
     try:
         root = WindowsCompositionRoot.from_environment(

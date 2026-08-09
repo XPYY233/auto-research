@@ -162,20 +162,26 @@ class WindowsEvidenceSearchService:
         except FederatedSearchSessionError as exc:
             raise _translate_session_error(exc) from None
 
-    def activate_private_source(
+    def clear_private_source(self) -> None:
+        try:
+            self.session.clear_private()
+        except FederatedSearchSessionError as exc:
+            raise _translate_session_error(exc) from None
+
+    def refresh_private_source(
         self,
         source: object,
-        fingerprint: str = "confirmed-index-v1",
+        *,
+        source_id: str,
+        fingerprint: str,
     ) -> None:
         try:
             registration = SearchSourceRegistration.private(
                 source,  # type: ignore[arg-type]
-                source_id=_private_identity(source),
+                source_id=source_id,
                 fingerprint=fingerprint,
             )
             self.session.refresh_private(registration)
-        except EvidenceSearchError:
-            raise
         except FederatedSearchSessionError as exc:
             raise _translate_session_error(exc) from None
         except (TypeError, ValueError):
@@ -183,6 +189,17 @@ class WindowsEvidenceSearchService:
                 "offline_search_activation_failed",
                 "私人实验搜索源无法安全建立。",
             ) from None
+
+    def activate_private_source(
+        self,
+        source: object,
+        fingerprint: str = "confirmed-index-v1",
+    ) -> None:
+        self.refresh_private_source(
+            source,
+            source_id=_private_identity(source),
+            fingerprint=fingerprint,
+        )
 
     def activate_official_repository(self, *, active_package: Any, repository: Any) -> None:
         try:

@@ -1,0 +1,292 @@
+from __future__ import annotations
+
+import http.client
+import json
+import sys
+import threading
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import urlparse
+
+
+WINDOWS_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(WINDOWS_ROOT))
+try:
+    import shared_http_bridge as MODULE
+finally:
+    sys.path.pop(0)
+
+
+IMPORT_ID = "personal_import_0123456789abcdef"
+
+
+class _Package:
+    def status(self):
+        return {"active": False, "repository_audited": False, "can_search_offline": False}
+
+    def start_import(self, selection_id):
+        return {
+            "job_id": "package-job-0123456789",
+            "operation": "import",
+            "stage": "queued",
+            "progress": 0,
+            "terminal": False,
+        }
+
+    def get_job(self, job_id):
+        return {
+            "job_id": job_id,
+            "operation": "import",
+            "stage": "completed",
+            "progress": 100,
+            "terminal": True,
+        }
+
+
+class _Evidence:
+    def search(self, query="", **kwargs):
+        return {
+            "schema_version": "federated-search-page-v1",
+            "query": query,
+            "page": kwargs["page"],
+            "page_size": kwargs["page_size"],
+            "total": 0,
+            "total_pages": 0,
+            "elapsed_ms": 0,
+            "results": [],
+        }
+
+    def get(self, **identity):
+        return {
+            "entity_type": "finding",
+            **identity,
+            "display_title": "safe",
+        }
+
+
+class _Personal:
+    def preview(self, selection_id):
+        return {
+            "schema_version": "personal-import-preview-v1",
+            "status": {"import_id": IMPORT_ID, "stage": "previewed"},
+            "preview": {"sheets": []},
+        }
+
+    def status(self, import_id):
+        return {"schema_version": "personal-import-status-v1", "import_id": import_id}
+
+    def save_draft(self, import_id, payload):
+        return {"schema_version": "personal-import-status-v1", "import_id": import_id, "stage": "draft_saved"}
+
+    def confirm(self, import_id, *, expected_revision):
+        return {"schema_version": "personal-import-status-v1", "import_id": import_id, "stage": "indexable"}
+
+    def search_status(self):
+        return {"schema_version": "personal-search-readiness-v1", "state": "empty", "ready": False, "document_count": 0}
+
+    def refresh_search(self):
+        return self.search_status()
+
+
+class _Credentials:
+    configured = False
+
+    def status(self):
+        return {"provider": "deepseek", "configured": self.configured, "storage": "windows-credential-manager"}
+
+    def save(self, api_key):
+        self.configured = True
+        return self.status()
+
+    def clear(self):
+        self.configured = False
+        return self.status()
+
+
+class _Readiness:
+    def status(self):
+        return SimpleNamespace(
+            public_dict=lambda: {
+                "schema_version": "desktop-readiness-v2",
+                "official_ready": False,
+                "private_ready": False,
+                "federated_ready": False,
+                "ai_key_configured": False,
+                "librarian_ready": False,
+                "can_search_offline": False,
+                "can_use_ai": False,
+            }
+        )
+
+
+class _Librarian:
+    def chat(self, question, **kwargs):
+        return {"answer": question, "results": [], "research_state": kwargs.get("research_state")}
+
+
+class SharedHttpBridgeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.token = "bootstrap-" + "x" * 40
+        self.services = SimpleNamespace(
+            package_import=_Package(),
+            evidence_search=_Evidence(),
+            personal_import=_Personal(),
+            deepseek_credentials=_Credentials(),
+            readiness=_Readiness(),
+            librarian=_Librarian(),
+        )
+        self.server = MODULE.WindowsSharedHttpBridge().build_server(
+            host="127.0.0.1",
+            port=0,
+            bootstrap_token=self.token,
+            first_run_entry="import-evidence-package",
+            services=self.services,
+        )
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.host, self.port = self.server.server_address
+        self.origin = f"http://{self.host}:{self.port}"
+        self.cookie, self.csrf = self._bootstrap()
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+
+    def _connection(self):
+        return http.client.HTTPConnection(self.host, self.port, timeout=5)
+
+    @staticmethod
+    def _json(response):
+        body = response.read()
+        return json.loads(body) if body else {}
+
+    def _bootstrap(self):
+        connection = self._connection()
+        connection.request("GET", f"/?desktop_token={self.token}")
+        response = connection.getresponse()
+        self.assertEqual(response.status, 303)
+        cookie = response.getheader("Set-Cookie").split(";", 1)[0]
+        response.read()
+        connection.close()
+
+        connection = self._connection()
+        connection.request("GET", "/api/ui-mode", headers={"Cookie": cookie})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 200)
+        csrf = response.getheader(MODULE.CSRF_HEADER)
+        self.assertTrue(csrf)
+        self.assertEqual(response.getheader("Cache-Control"), "no-store")
+        response.read()
+        connection.close()
+        return cookie, csrf
+
+    def _get(self, path):
+        connection = self._connection()
+        connection.request("GET", path, headers={"Cookie": self.cookie})
+        response = connection.getresponse()
+        payload = self._json(response)
+        status = response.status
+        no_store = response.getheader("Cache-Control")
+        connection.close()
+        return status, payload, no_store
+
+    def _post(self, path, payload, *, origin=True, csrf=True):
+        body = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Cookie": self.cookie,
+            "Content-Type": "application/json",
+        }
+        if origin:
+            headers["Origin"] = self.origin
+        if csrf:
+            headers[MODULE.CSRF_HEADER] = self.csrf
+        connection = self._connection()
+        connection.request("POST", path, body=body, headers=headers)
+        response = connection.getresponse()
+        result = self._json(response)
+        status = response.status
+        connection.close()
+        return status, result
+
+    def test_frozen_package_personal_search_credential_and_readiness_routes(self) -> None:
+        get_paths = (
+            "/api/desktop/evidence-packages",
+            "/api/desktop/personal-imports/search-status",
+            f"/api/desktop/personal-imports/{IMPORT_ID}",
+            "/api/desktop/federated-search?q=&page=1&page_size=20&source_scope=private",
+            "/api/desktop/federated-evidence?source_scope=private&source_id=private-1&entity_uid=finding-1",
+            "/api/desktop/credentials/deepseek",
+            "/api/desktop/readiness",
+        )
+        for path in get_paths:
+            with self.subTest(path=path):
+                status, payload, no_store = self._get(path)
+                self.assertEqual(status, 200)
+                self.assertEqual(no_store, "no-store")
+                self.assertNotIn("path", json.dumps(payload).casefold())
+
+        posts = (
+            ("/api/desktop/evidence-packages/import", {"selection_id": "package-selection-0123456789"}, 202),
+            ("/api/desktop/personal-imports/preview", {"selection_id": "personal_selection_0123456789abcdef"}, 201),
+            (f"/api/desktop/personal-imports/{IMPORT_ID}/draft", {"sheet_index": 0}, 200),
+            (f"/api/desktop/personal-imports/{IMPORT_ID}/confirm", {"expected_revision": 1}, 200),
+            ("/api/desktop/personal-imports/search-refresh", {}, 200),
+            ("/api/desktop/credentials/deepseek", {"api_key": "sk-user-owned"}, 200),
+        )
+        for path, payload, expected in posts:
+            with self.subTest(path=path):
+                status, result = self._post(path, payload)
+                self.assertEqual(status, expected)
+                self.assertNotIn("sk-user-owned", json.dumps(result))
+        status, job, _ = self._get("/api/desktop/evidence-package-jobs/package-job-0123456789")
+        self.assertEqual(status, 200)
+        self.assertEqual(job["stage"], "completed")
+
+    def test_session_origin_csrf_and_one_time_bootstrap_are_enforced(self) -> None:
+        connection = self._connection()
+        connection.request("GET", "/api/desktop/readiness")
+        denied = connection.getresponse()
+        self.assertEqual(denied.status, 403)
+        self.assertEqual(self._json(denied)["code"], "desktop_session_required")
+        connection.close()
+
+        self.assertEqual(self._post("/api/desktop/personal-imports/search-refresh", {}, origin=False)[0], 403)
+        self.assertEqual(self._post("/api/desktop/personal-imports/search-refresh", {}, csrf=False)[0], 403)
+
+        connection = self._connection()
+        connection.request("GET", f"/?desktop_token={self.token}")
+        response = connection.getresponse()
+        self.assertEqual(response.status, 403)
+        response.read()
+        connection.close()
+
+    def test_transfer_encoding_duplicate_length_and_body_cap_fail_path_free(self) -> None:
+        for mode in ("transfer", "duplicate", "oversized"):
+            with self.subTest(mode=mode):
+                connection = self._connection()
+                connection.putrequest("POST", "/api/desktop/personal-imports/search-refresh")
+                connection.putheader("Cookie", self.cookie)
+                connection.putheader("Origin", self.origin)
+                connection.putheader(MODULE.CSRF_HEADER, self.csrf)
+                connection.putheader("Content-Type", "application/json")
+                if mode == "transfer":
+                    connection.putheader("Transfer-Encoding", "chunked")
+                    connection.putheader("Content-Length", "2")
+                elif mode == "duplicate":
+                    connection.putheader("Content-Length", "2")
+                    connection.putheader("Content-Length", "2")
+                else:
+                    connection.putheader("Content-Length", str(MODULE.MAX_PERSONAL_REQUEST_BYTES + 1))
+                connection.endheaders(b"{}" if mode != "oversized" else None)
+                response = connection.getresponse()
+                payload = self._json(response)
+                self.assertEqual(response.status, 400)
+                self.assertEqual(payload["code"], "desktop_request_invalid")
+                self.assertNotIn("path", json.dumps(payload).casefold())
+                connection.close()
+
+
+if __name__ == "__main__":
+    unittest.main()

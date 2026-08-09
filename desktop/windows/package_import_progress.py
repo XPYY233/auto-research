@@ -319,11 +319,21 @@ class PackageImportProgressCoordinator:
         handle: PackageInputHandle,
         importer: PackageImporter,
     ) -> PackageImportProgressJob:
-        job = PackageImportProgressJob(
+        job = self.new_job(handle)
+        return self.run_job(job, importer)
+
+    def new_job(self, handle: PackageInputHandle) -> PackageImportProgressJob:
+        return PackageImportProgressJob(
             handle,
             clock=self.clock,
             wait_threshold_seconds=self.wait_threshold_seconds,
         )
+
+    def run_job(
+        self,
+        job: PackageImportProgressJob,
+        importer: PackageImporter,
+    ) -> PackageImportProgressJob:
         self.gate.acquire()
         try:
             try:

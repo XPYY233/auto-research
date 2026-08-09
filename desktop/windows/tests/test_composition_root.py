@@ -198,8 +198,8 @@ class CompositionRootTests(unittest.TestCase):
             composition.services.deepseek_credentials.resolve_for_runtime(), "sk-user-owned"
         )
         self.assertEqual(len(composition.history_key_provider.get_or_create_key()), 32)
-        self.assertTrue(composition.search_service.is_ready)
-        self.assertTrue(composition.search_service.private_ready)
+        self.assertFalse(composition.search_service.is_ready)
+        self.assertFalse(composition.search_service.private_ready)
         self.assertFalse(composition.search_service.official_ready)
         self.assertIs(
             composition.services.package_import.service,
@@ -219,9 +219,12 @@ class CompositionRootTests(unittest.TestCase):
         )
         self.assertEqual(librarian["retrieval_policy"], "focused")
         readiness = composition.services.readiness.status().public_dict()
-        self.assertTrue(readiness["private_ready"])
-        self.assertTrue(readiness["federated_ready"])
+        self.assertFalse(readiness["private_ready"])
+        self.assertFalse(readiness["federated_ready"])
         self.assertTrue(readiness["librarian_ready"])
+        self.assertTrue(
+            callable(composition.native_desktop_bridge.select_personal_data_file)
+        )
 
     def test_launch_injects_services_into_real_loopback_lifecycle_and_cleans_up(self) -> None:
         report = self.root.launch()

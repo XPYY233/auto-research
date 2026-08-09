@@ -24,12 +24,14 @@ from package_import_bridge import PackageImportBridgeAdapter
 from package_import_service import AutoResearchProductApi, OfficialPackageApi, PackageImportService
 from package_input import FileSystemProbe, PackageInputBroker
 from package_input_window import PackageInputWindowAdapter, PackageWindowBridge
+from native_desktop_bridge import WindowsNativeDesktopBridge
 from personal_file_selection import (
     WindowsPersonalFileInputAdapter,
     WindowsPersonalFileSelectionBroker,
 )
 from personal_import_bridge import PersonalImportBridgeAdapter
 from readiness_service import WindowsReadinessV2Service
+from shared_http_bridge import WindowsSharedHttpBridge
 from webview_window_adapter import PyWebViewWindowAdapter
 
 from auto_research.personal.import_service import (
@@ -85,10 +87,6 @@ class SharedDesktopHttpBridge(Protocol):
 class ProductionPackageWindowBridge(PackageWindowBridge, Protocol):
     @property
     def contract_version(self) -> int: ...
-
-
-class StructuredEvidenceSource(Protocol):
-    def iter_search_documents(self) -> Any: ...
 
 
 class WindowAdapter(Protocol):
@@ -176,6 +174,7 @@ class WindowsProductionComposition:
     package_import_service: PackageImportService
     personal_import_service: PersonalImportService
     readiness_service: WindowsReadinessV2Service
+    native_desktop_bridge: WindowsNativeDesktopBridge
     history_key_provider: CredentialKeyProvider
     shell: WindowsAppShellCoordinator
     shared_bridge_contract_version: int
@@ -195,7 +194,6 @@ class WindowsCompositionRoot:
         current_app_version: str,
         shared_http_bridge: SharedDesktopHttpBridge | None = None,
         package_window_bridge: ProductionPackageWindowBridge | None = None,
-        private_search_source: StructuredEvidenceSource | None = None,
         personal_selection_provider: SelectionSnapshotProvider | None = None,
         librarian_runtime: LibrarianV3Runtime | None = None,
         official_api: OfficialPackageApi | None = None,
@@ -210,9 +208,7 @@ class WindowsCompositionRoot:
             raise WindowsCompositionError("Windows 组合根当前只允许 internal development 版本")
         self.path_runtime = path_runtime
         self.current_app_version = current_app_version
-        self.shared_http_bridge = shared_http_bridge or UnavailableSharedDesktopHttpBridge()
-        self.package_window_bridge = package_window_bridge or UnavailablePackageWindowBridge()
-        self.private_search_source = private_search_source
+        self.shared_http_bridge = shared_http_bridge or WindowsSharedHttpBridge()
         self.personal_selection_provider = personal_selection_provider
         self.librarian_runtime = librarian_runtime
         self.official_api = official_api or AutoResearchProductApi()
@@ -220,6 +216,11 @@ class WindowsCompositionRoot:
         self.package_probe = package_probe
         self.native_path_factory = native_path_factory
         self.window = window or PyWebViewWindowAdapter()
+        self.package_window_bridge = package_window_bridge or (
+            self.window
+            if getattr(self.window, "contract_version", 0) == PACKAGE_PICKER_CONTRACT_VERSION
+            else UnavailablePackageWindowBridge()
+        )
         self.guard_factory = guard_factory or (
             lambda identity: WindowsInstanceGuard(identity)
         )
@@ -274,15 +275,7 @@ class WindowsCompositionRoot:
             data_root=self.path_runtime.private_data_root,
             selection_provider=personal_selection,
         )
-        private_source = (
-            self.private_search_source
-            or personal_import_service.private_search_source()
-        )
         search_service = WindowsEvidenceSearchService()
-        search_service.activate_private_source(
-            private_source,
-            fingerprint="confirmed-index-v1",
-        )
         librarian = LibrarianV3BridgeAdapter(self.librarian_runtime)
         readiness = WindowsReadinessV2Service(
             search=search_service,
@@ -296,22 +289,35 @@ class WindowsCompositionRoot:
             official_api=self.official_api,
             search_service=search_service,
         )
+        package_import = PackageImportBridgeAdapter(package_import_service)
+        package_import.startup_readiness()
+        personal_import = PersonalImportBridgeAdapter(
+            personal_import_service,
+            search_service=search_service,
+        )
+        personal_import.restore_private_search()
+        personal_file_input = WindowsPersonalFileInputAdapter(
+            personal_selection,
+            self.package_window_bridge,
+        )
         services = WindowsBridgeServices(
             package_input=package_input,
-            package_import=PackageImportBridgeAdapter(package_import_service),
+            package_import=package_import,
             evidence_search=EvidenceSearchBridgeAdapter(search_service),
             deepseek_credentials=credential_bridge,
-            personal_file_input=WindowsPersonalFileInputAdapter(
-                personal_selection,
-                self.package_window_bridge,
-            ),
-            personal_import=PersonalImportBridgeAdapter(
-                personal_import_service,
-                private_source_listener=search_service.activate_private_source,
-            ),
+            personal_file_input=personal_file_input,
+            personal_import=personal_import,
             librarian=librarian,
             readiness=readiness,
         )
+        native_desktop_bridge = WindowsNativeDesktopBridge(
+            package_input=package_input,
+            package_import=package_import,
+            personal_files=personal_file_input,
+        )
+        bind_native_api = getattr(self.window, "bind_native_api", None)
+        if callable(bind_native_api):
+            bind_native_api(native_desktop_bridge)
 
         def server_builder(**kwargs: Any) -> ServerLike:
             return self.shared_http_bridge.build_server(services=services, **kwargs)
@@ -338,6 +344,7 @@ class WindowsCompositionRoot:
             package_import_service=package_import_service,
             personal_import_service=personal_import_service,
             readiness_service=readiness,
+            native_desktop_bridge=native_desktop_bridge,
             history_key_provider=history_key_provider,
             shell=shell,
             shared_bridge_contract_version=self.shared_http_bridge.contract_version,

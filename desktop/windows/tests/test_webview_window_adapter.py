@@ -27,20 +27,30 @@ class FakeWindow:
         self.events = type("Events", (), {})()
         self.events.loaded = LoadedEvent()
         self.scripts = []
+        self.dialog_calls = []
 
     def evaluate_js(self, value: str) -> None:
         self.scripts.append(value)
 
+    def create_file_dialog(self, mode, **kwargs):
+        self.dialog_calls.append((mode, kwargs))
+        return [r"C:\Users\Researcher\experiment.csv"]
+
 
 class FakeWebView:
+    class FileDialog:
+        OPEN = "open"
+
     def __init__(self) -> None:
         self.settings = {}
         self.window = FakeWindow()
         self.create_kwargs = {}
         self.start_kwargs = {}
+        self.native_api = None
 
     def create_window(self, title, **kwargs):
         self.create_kwargs = {"title": title, **kwargs}
+        self.native_api = kwargs.get("js_api")
         return self.window
 
     def start(self, **kwargs):
@@ -59,6 +69,8 @@ class WebViewWindowAdapterTests(unittest.TestCase):
             return fake
 
         adapter = MODULE.PyWebViewWindowAdapter(module_loader=loader)
+        native_api = object()
+        adapter.bind_native_api(native_api)
         self.assertEqual(loaded, [])
         adapter.show(
             title="Auto Research",
@@ -69,6 +81,32 @@ class WebViewWindowAdapterTests(unittest.TestCase):
         self.assertEqual(fake.start_kwargs["gui"], "edgechromium")
         self.assertTrue(fake.settings["ALLOW_DOWNLOADS"])
         self.assertTrue(fake.window.scripts)
+        self.assertIs(fake.native_api, native_api)
+
+    def test_bound_webview_is_the_actual_native_picker(self) -> None:
+        fake = FakeWebView()
+        adapter = MODULE.PyWebViewWindowAdapter(module_loader=lambda _name: fake)
+        adapter.bind_native_api(object())
+        observed = []
+
+        def start(**kwargs):
+            observed.extend(
+                adapter.choose_files(
+                    title="选择个人实验数据",
+                    extensions=(".csv", ".xlsx"),
+                    multiple=False,
+                )
+            )
+            fake.start_kwargs = kwargs
+
+        fake.start = start
+        adapter.show(
+            title="Auto Research",
+            url="http://127.0.0.1:49300/?desktop_token=secret",
+            first_run_entry="import-evidence-package",
+        )
+        self.assertEqual(observed, [r"C:\Users\Researcher\experiment.csv"])
+        self.assertEqual(fake.window.dialog_calls[0][0], "open")
 
     def test_public_url_or_wrong_entry_is_rejected_before_loading_pywebview(self) -> None:
         adapter = MODULE.PyWebViewWindowAdapter(

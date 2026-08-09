@@ -108,7 +108,7 @@ class AppShellCoordinatorTests(unittest.TestCase):
             query = parse_qs(parsed.query)
             self.assertEqual(parsed.hostname, "127.0.0.1")
             self.assertEqual(parsed.port, 49152)
-            self.assertEqual(query["desktop_entry"], ["import-evidence-package"])
+            self.assertNotIn("desktop_entry", query)
             self.assertEqual(query["desktop_token"], [details["token"]])
             self.assertEqual(report.first_run_entry, "import-evidence-package")
             self.assertFalse(hasattr(report, "bootstrap_token"))

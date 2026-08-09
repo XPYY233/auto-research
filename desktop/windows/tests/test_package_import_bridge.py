@@ -59,6 +59,27 @@ class PackageImportBridgeTests(unittest.TestCase):
         self.assertNotIn(r"C:\secret", str(result))
         self.assertEqual(set(result), {"job", "readiness"})
 
+    def test_registered_selection_runs_as_pollable_shared_ui_job(self) -> None:
+        service = FakeService()
+        scheduled = []
+        bridge = BRIDGE.PackageImportBridgeAdapter(
+            service,
+            scheduler=scheduled.append,
+            job_id_factory=lambda: "package-job-0123456789abcdef",
+        )
+        handle = opaque_handle()
+        selection = bridge.register_selection(handle)
+        started = bridge.start_import(selection["selection_id"])
+        self.assertEqual(started["stage"], "queued")
+        self.assertFalse(started["terminal"])
+        scheduled[0]()
+        completed = bridge.get_job(started["job_id"])
+        self.assertEqual(completed["stage"], "completed")
+        self.assertEqual(completed["progress"], 100)
+        self.assertTrue(completed["terminal"])
+        with self.assertRaises(BRIDGE.PackageBridgeError):
+            bridge.start_import(selection["selection_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

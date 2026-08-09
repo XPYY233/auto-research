@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import importlib
-from typing import Callable
+import threading
+from typing import Any, Callable, Sequence
 from urllib.parse import urlparse
 
 
@@ -12,6 +13,8 @@ class WebViewWindowError(RuntimeError):
 class PyWebViewWindowAdapter:
     """Load pywebview lazily and use the installed Edge WebView2 runtime."""
 
+    contract_version = 1
+
     def __init__(
         self,
         *,
@@ -20,6 +23,47 @@ class PyWebViewWindowAdapter:
     ) -> None:
         self.module_loader = module_loader
         self.debug = debug
+        self._native_api: object | None = None
+        self._window: Any | None = None
+        self._webview: Any | None = None
+        self._lock = threading.RLock()
+
+    def bind_native_api(self, native_api: object) -> None:
+        with self._lock:
+            if self._native_api is not None and self._native_api is not native_api:
+                raise WebViewWindowError("Windows 原生 bridge 已经绑定")
+            self._native_api = native_api
+
+    def choose_files(
+        self,
+        *,
+        title: str,
+        extensions: tuple[str, ...],
+        multiple: bool,
+    ) -> Sequence[str]:
+        with self._lock:
+            window = self._window
+            webview = self._webview
+        if window is None or webview is None:
+            raise WebViewWindowError("Windows 系统文件选择器尚未就绪")
+        labels = {
+            ".aresearch": "Auto Research Evidence Package (*.aresearch)",
+            ".csv": "CSV Data (*.csv)",
+            ".tsv": "TSV Data (*.tsv)",
+            ".xlsx": "Excel Workbook (*.xlsx)",
+        }
+        file_types = tuple(labels[item] for item in extensions if item in labels)
+        selected = window.create_file_dialog(
+            webview.FileDialog.OPEN,
+            allow_multiple=multiple,
+            file_types=file_types,
+            directory="",
+        )
+        if not selected:
+            return ()
+        if isinstance(selected, (str, bytes)):
+            return (str(selected),)
+        return tuple(str(item) for item in selected)
 
     def show(self, *, title: str, url: str, first_run_entry: str) -> None:
         if first_run_entry != "import-evidence-package":
@@ -44,9 +88,14 @@ class PyWebViewWindowAdapter:
             raise WebViewWindowError("安装包缺少内置 pywebview") from exc
         webview.settings["ALLOW_DOWNLOADS"] = True
         webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
+        with self._lock:
+            native_api = self._native_api
+        if native_api is None:
+            raise WebViewWindowError("Windows 原生 bridge 尚未注入")
         window = webview.create_window(
             title,
             url=url,
+            js_api=native_api,
             width=1440,
             height=920,
             min_size=(1040, 700),
@@ -55,4 +104,12 @@ class PyWebViewWindowAdapter:
         window.events.loaded += lambda: window.evaluate_js(
             "window.history.replaceState({}, document.title, '/');"
         )
-        webview.start(gui="edgechromium", debug=self.debug)
+        with self._lock:
+            self._window = window
+            self._webview = webview
+        try:
+            webview.start(gui="edgechromium", debug=self.debug)
+        finally:
+            with self._lock:
+                self._window = None
+                self._webview = None

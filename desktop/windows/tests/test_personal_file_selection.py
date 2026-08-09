@@ -65,6 +65,35 @@ class PersonalFileSelectionTests(unittest.TestCase):
                 with self.assertRaises(MODULE.PersonalFileSelectionError):
                     MODULE._validated_path(candidate)
 
+    def test_shared_ui_native_facade_has_exact_path_free_cancel_envelope(self) -> None:
+        class Window:
+            selected = []
+
+            def choose_files(self, **_kwargs):
+                return self.selected
+
+        window = Window()
+        broker = MODULE.WindowsPersonalFileSelectionBroker(
+            local_volume_probe=lambda _path: True,
+            selection_id_factory=_Ids(),
+            path_validator=_test_path,
+        )
+        adapter = MODULE.WindowsPersonalFileInputAdapter(broker, window)
+        self.assertEqual(
+            adapter.select_personal_data_file(),
+            {"ok": True, "cancelled": True},
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "experiment.csv"
+            source.write_text("x,y\n1,2\n", encoding="utf-8")
+            window.selected = [str(source)]
+            payload = adapter.select_personal_data_file()
+        self.assertEqual(set(payload), {"ok", "cancelled", "selection"})
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["cancelled"])
+        self.assertNotIn(str(source), json.dumps(payload))
+        self.assertNotIn("path", json.dumps(payload).casefold())
+
 
 if __name__ == "__main__":
     unittest.main()

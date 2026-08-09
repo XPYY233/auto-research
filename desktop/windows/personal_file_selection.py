@@ -323,3 +323,34 @@ class WindowsPersonalFileInputAdapter:
         if len(candidates) != 1:
             raise _error("personal_selection_multiple")
         return self.broker.select(candidates[0]).public_dict()
+
+    def select_personal_data_file(self) -> dict[str, Any]:
+        try:
+            candidates = self.window.choose_files(
+                title="选择个人实验数据",
+                extensions=tuple(sorted(SUPPORTED_EXTENSIONS)),
+                multiple=False,
+            )
+            if not candidates:
+                return {"ok": True, "cancelled": True}
+            if isinstance(candidates, (str, bytes)) or len(candidates) != 1:
+                raise _error("personal_selection_multiple")
+            selection = self.broker.select(candidates[0]).public_dict()
+        except PersonalFileSelectionError as exc:
+            return {
+                "ok": False,
+                "cancelled": False,
+                "error": exc.public_dict(),
+            }
+        except Exception:
+            return {
+                "ok": False,
+                "cancelled": False,
+                "error": {
+                    "schema_version": "personal-file-selection-error-v1",
+                    "code": "personal_picker_unavailable",
+                    "message": "系统文件选择器无法打开，请稍后重试。",
+                    "retryable": True,
+                },
+            }
+        return {"ok": True, "cancelled": False, "selection": selection}

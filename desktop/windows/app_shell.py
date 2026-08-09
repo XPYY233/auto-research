@@ -4,7 +4,6 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Protocol
-from urllib.parse import urlencode
 
 from runtime_lifecycle import RuntimeRecovery, WindowsRuntimeSession
 
@@ -97,15 +96,9 @@ class WindowsAppShellCoordinator:
             )
             recovery: RuntimeRecovery = runtime.start()
             port = int(service.port)
-            query = urlencode(
-                {
-                    "desktop_token": bootstrap_token,
-                    "desktop_entry": self.first_run_entry,
-                }
-            )
             self.window.show(
                 title=APP_TITLE,
-                url=f"http://{LOOPBACK_HOST}:{port}/?{query}",
+                url=f"http://{LOOPBACK_HOST}:{port}/?desktop_token={bootstrap_token}",
                 first_run_entry=self.first_run_entry,
             )
             return AppShellReport(
