@@ -63,13 +63,36 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
     from inspect import signature
 
     from auto_research.evidence.webapp import LIBRARIAN_CHAT_FIELDS, WEB_DIR
-    from desktop_server import (
-        CREDENTIAL_PATH,
-        READINESS_PATH,
-        DesktopEvidenceHandler,
-        create_desktop_server,
+    # macOS and Windows intentionally still have a same-named compatibility
+    # module while architecture migration is in progress.  A cross-platform
+    # contract test can leave the Windows module in ``sys.modules`` even after
+    # its sys.path entry is removed.  Scope the frozen check to this launcher's
+    # sibling module, then restore the prior cache entry for later tests.
+    service_name = "package_import_service"
+    expected_service = Path(__file__).resolve().with_name(f"{service_name}.py")
+    cached_service = sys.modules.get(service_name)
+    cached_path = Path(
+        str(getattr(cached_service, "__file__", "") or "/")
+    ).resolve()
+    restore_cached_service = cached_service is not None and cached_path != expected_service
+    if restore_cached_service:
+        sys.modules.pop(service_name, None)
+    try:
+        from desktop_server import (
+            CREDENTIAL_PATH,
+            READINESS_PATH,
+            DesktopEvidenceHandler,
+            create_desktop_server,
+        )
+    finally:
+        if restore_cached_service:
+            sys.modules.pop(service_name, None)
+            sys.modules[service_name] = cached_service
+    from federated_search_api import (
+        FEDERATED_EVIDENCE_PATH,
+        FEDERATED_PDF_PATH,
+        FEDERATED_SEARCH_PATH,
     )
-    from federated_search_api import FEDERATED_EVIDENCE_PATH, FEDERATED_SEARCH_PATH
     from native_desktop_bridge import NativeDesktopBridge
     from personal_import_api import (
         PERSONAL_PREVIEW_PATH,
@@ -91,11 +114,16 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
     index_source = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     app_source = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     product_source = (WEB_DIR / "desktop_product.js").read_text(encoding="utf-8")
+    package_center_source = (WEB_DIR / "package_center.js").read_text(
+        encoding="utf-8"
+    )
     return {
         "primary_personal_import_navigation": bool(
             'data-view="paper">文献处理' in index_source
             and 'data-view="search">搜索数据' in index_source
             and 'data-view="personal">上传实验数据' in index_source
+            and 'data-view="package"' in index_source
+            and 'id="view-package"' in index_source
             and 'data-view="manual"' not in index_source
             and 'data-view="history"' not in index_source
             and 'id="view-personal"' in index_source
@@ -106,6 +134,8 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and "/ai-suggestion" in product_source
             and "/reviewed-import" in product_source
             and 'id="personal-reviewed-import"' in index_source
+            and '<script src="/static/package_center.js"></script>' in index_source
+            and "AutoResearchPackageCenter" in package_center_source
         ),
         "personal_six_routes": bool(
             PERSONAL_SEARCH_STATUS_PATH
@@ -115,10 +145,12 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
         "federated_routes": {
             FEDERATED_SEARCH_PATH,
             FEDERATED_EVIDENCE_PATH,
+            FEDERATED_PDF_PATH,
         }
         == {
             "/api/desktop/federated-search",
             "/api/desktop/federated-evidence",
+            "/api/desktop/federated-pdf",
         },
         "credential_readiness_routes": (
             CREDENTIAL_PATH == "/api/desktop/credentials/deepseek"
@@ -127,12 +159,20 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
         "protected_route_composition": bool(
             callable(getattr(DesktopEvidenceHandler, "_authorize_post", None))
             and callable(getattr(DesktopEvidenceHandler, "_has_session", None))
-            and {"federated_search_api", "personal_import_api", "credential_store"}
+            and {
+                "federated_search_api",
+                "personal_import_api",
+                "package_center_api",
+                "credential_store",
+            }
             <= set(server_parameters)
         ),
         "native_dual_picker": bool(
             callable(getattr(NativeDesktopBridge, "select_evidence_package", None))
             and callable(getattr(NativeDesktopBridge, "select_personal_data_file", None))
+            and callable(
+                getattr(NativeDesktopBridge, "select_package_export_destination", None)
+            )
         ),
         "librarian_v3_backend": {
             "question",
@@ -243,6 +283,7 @@ def _http_smoke_checks(
     binary_routes = {
         "static_js": "/static/app.js",
         "desktop_product_js": "/static/desktop_product.js",
+        "package_center_js": "/static/package_center.js",
         "static_css": "/static/app.css",
         "working_asset": "/static/codex-pet-working.webp",
         "visual_image": f"/api/visual-assets/{visual_id}/image",
@@ -264,6 +305,15 @@ def _http_smoke_checks(
                 "/api/desktop/federated-search",
                 "/api/desktop/federated-evidence",
                 "/api/desktop/credentials/deepseek",
+            ),
+        ),
+        "package_center_frontend_contract": (
+            "/static/package_center.js",
+            (
+                "AutoResearchPackageCenter",
+                "/api/desktop/package-center",
+                "/api/desktop/package-center/jobs/",
+                "select_package_export_destination",
             ),
         ),
         "librarian_v3_frontend_contract": (
@@ -393,6 +443,8 @@ def _run_smoke_test(project_root: Path) -> int:
         product_services = create_desktop_product_services(
             data_root=Path(directory) / "application-support",
             current_app_version=DESKTOP_VERSION,
+            workspace_database=temporary_database,
+            workspace_root=project_root,
         )
         server, _ = create_desktop_server(
             EvidenceDB(temporary_database),
@@ -403,6 +455,11 @@ def _run_smoke_test(project_root: Path) -> int:
             history_store=history_store,
             package_service=product_services.package_service,
             package_api=product_services.package_api,
+            package_center_api=(
+                product_services.package_center.api
+                if product_services.package_center is not None
+                else None
+            ),
             federated_search_api=product_services.federated_search_api,
             personal_import_api=product_services.personal_import_api,
         )
@@ -499,6 +556,8 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
         product_services = create_desktop_product_services(
             data_root=DEFAULT_PACKAGE_DATA_ROOT,
             current_app_version=DESKTOP_VERSION,
+            workspace_database=project_root / "db" / "experimental_evidence.sqlite",
+            workspace_root=project_root,
         )
         native_desktop_bridge = NativeDesktopBridge(
             product_services.package_service.broker,
@@ -515,6 +574,11 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             credential_store=credential_store,
             package_service=product_services.package_service,
             package_api=product_services.package_api,
+            package_center_api=(
+                product_services.package_center.api
+                if product_services.package_center is not None
+                else None
+            ),
             federated_search_api=product_services.federated_search_api,
             personal_import_api=product_services.personal_import_api,
         )

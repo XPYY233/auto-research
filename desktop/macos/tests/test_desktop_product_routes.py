@@ -75,12 +75,40 @@ class _Repository:
         }
 
 
+class _PackageCenterAPI:
+    def __init__(self) -> None:
+        self.posts = 0
+
+    def handle_get(self, handler):
+        if handler.path != "/api/desktop/package-center":
+            return False
+        handler.json_response(
+            {
+                "schema": "package-center-status-v1",
+                "official": {"current": {"active": False}, "installed_versions": []},
+            }
+        )
+        return True
+
+    @staticmethod
+    def is_post_route(path):
+        return path.split("?", 1)[0] == "/api/desktop/package-center/inspect"
+
+    def handle_post(self, handler):
+        self.posts += 1
+        handler.json_response(
+            {"schema": "package-summary-v1", "package_kind": "literature_collection"}
+        )
+        return True
+
+
 class DesktopProductRoutesTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(
             prefix="auto-research-desktop-product-routes-test-"
         )
         self.package_service = _PackageService()
+        self.package_center_api = _PackageCenterAPI()
         search_service = DesktopFederatedSearchService()
         search_service.install_official_repository(
             ActiveOfficialPackage(
@@ -98,6 +126,7 @@ class DesktopProductRoutesTests(unittest.TestCase):
             port=0,
             token=self.token,
             package_api=PackageAPI(self.package_service),
+            package_center_api=self.package_center_api,
             federated_search_api=FederatedSearchAPI(search_service),
         )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -181,6 +210,69 @@ class DesktopProductRoutesTests(unittest.TestCase):
             self.package_service.imports,
             ["selection_0123456789abcdef"],
         )
+
+    def test_package_center_routes_share_desktop_session_origin_and_csrf(self) -> None:
+        with self.opener.open(
+            f"{self.base_url}/api/desktop/package-center", timeout=5
+        ) as response:
+            summary = json.load(response)
+        self.assertEqual(summary["schema"], "package-center-status-v1")
+
+        payload = json.dumps(
+            {"selection_token": "selection_0123456789abcdef"}
+        ).encode("utf-8")
+        missing_security = urllib.request.Request(
+            f"{self.base_url}/api/desktop/package-center/inspect",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            self.opener.open(missing_security, timeout=5)
+        self.assertEqual(raised.exception.code, 403)
+        raised.exception.close()
+        self.assertEqual(self.package_center_api.posts, 0)
+
+        authorized = urllib.request.Request(
+            f"{self.base_url}/api/desktop/package-center/inspect",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Origin": self.base_url,
+                CSRF_HEADER: self.csrf,
+            },
+            method="POST",
+        )
+        with self.opener.open(authorized, timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            json.load(response)
+        self.assertEqual(self.package_center_api.posts, 1)
+
+    def test_read_only_mode_rejects_package_center_before_service_call(self) -> None:
+        payload = json.dumps(
+            {"selection_token": "selection_0123456789abcdef"}
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.base_url}/api/desktop/package-center/inspect",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Origin": self.base_url,
+                CSRF_HEADER: self.csrf,
+            },
+            method="POST",
+        )
+        handler_type = self.server.RequestHandlerClass
+        previous = handler_type.read_only
+        handler_type.read_only = True
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                self.opener.open(request, timeout=5)
+            self.assertEqual(raised.exception.code, 403)
+            raised.exception.close()
+        finally:
+            handler_type.read_only = previous
+        self.assertEqual(self.package_center_api.posts, 0)
 
 
 if __name__ == "__main__":

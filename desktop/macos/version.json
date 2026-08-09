@@ -1,10 +1,10 @@
 {
-  "desktop_version": "0.6.1-preview.1",
-  "bundle_short_version": "0.6.1",
-  "build_number": "8",
+  "desktop_version": "0.7.0-preview.1",
+  "bundle_short_version": "0.7.0",
+  "build_number": "9",
   "target": "macOS arm64 internal development preview",
   "product_target": "future Windows production target (not released)",
-  "data_mode": "legacy-v12-workspace-plus-signed-official-package-plus-local-private-library-preview",
+  "data_mode": "legacy-v12-workspace-plus-signed-official-package-plus-user-package-center-plus-local-private-library-preview",
   "minimum_evidence_schema": 12,
   "official_package_schema": 1
 }

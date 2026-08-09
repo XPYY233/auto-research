@@ -12,6 +12,15 @@ RELEASE_CONTRACT_SCHEMA = "auto-research-release-contract-v1"
 RELEASE_CONTRACT_RELATIVE_PATH = Path("config/release-contract.json")
 _VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.]+)?$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+REQUIRED_WEB_ASSETS = frozenset(
+    {
+        "src/auto_research/evidence/web/index.html",
+        "src/auto_research/evidence/web/app.js",
+        "src/auto_research/evidence/web/app.css",
+        "src/auto_research/evidence/web/desktop_product.js",
+        "src/auto_research/evidence/web/package_center.js",
+    }
+)
 
 
 class ReleaseContractError(RuntimeError):
@@ -104,8 +113,9 @@ def validate_release_contract(value: Mapping[str, Any]) -> ReleaseContract:
         raise ReleaseContractError("用户传输包上限必须为2GB")
 
     assets = _require_mapping(value.get("web_assets"), "web_assets")
-    if not assets:
-        raise ReleaseContractError("必须登记共享前端资产")
+    missing_assets = REQUIRED_WEB_ASSETS.difference(map(str, assets))
+    if missing_assets:
+        raise ReleaseContractError("必须登记全部共享前端资产")
     for path, digest in assets.items():
         if not isinstance(path, str) or _SHA256_RE.fullmatch(str(digest or "")) is None:
             raise ReleaseContractError("共享前端资产哈希无效")

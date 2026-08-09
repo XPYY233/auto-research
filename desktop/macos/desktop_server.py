@@ -29,6 +29,7 @@ from first_use_state import (
 )
 from federated_search_api import FederatedSearchAPI
 from package_api import PackageAPI
+from package_center_api import PackageCenterAPI
 from package_import_service import PackageImportService, PackageImportServiceError
 from personal_import_api import PersonalImportAPI
 
@@ -112,6 +113,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     active_package_status_path: Path | None = None
     package_service: PackageImportService | None = None
     package_api: PackageAPI | None = None
+    package_center_api: PackageCenterAPI | None = None
     federated_search_api: FederatedSearchAPI | None = None
     personal_import_api: PersonalImportAPI | None = None
     _issue_desktop_cookie: bool = False
@@ -408,6 +410,11 @@ class DesktopEvidenceHandler(EvidenceHandler):
         if self.package_api is not None and self.package_api.handle_get(self):
             return
         if (
+            self.package_center_api is not None
+            and self.package_center_api.handle_get(self)
+        ):
+            return
+        if (
             self.federated_search_api is not None
             and self.federated_search_api.handle_get(self)
         ):
@@ -431,6 +438,18 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._save_credential()
         if self.package_api is not None and self.package_api.handle_post(self):
             return
+        if self.package_center_api is not None and self.package_center_api.is_post_route(
+            self.path
+        ):
+            if self.read_only:
+                return self.json_response(
+                    {
+                        "error": "当前为只读模式，不允许导入或导出资料包。",
+                        "code": "read_only",
+                    },
+                    HTTPStatus.FORBIDDEN,
+                )
+            return self.package_center_api.handle_post(self)
         if (
             self.personal_import_api is not None
             and self.personal_import_api.is_post_route(path)
@@ -482,6 +501,7 @@ def create_desktop_server(
     active_package_status_path: Path | None = None,
     package_service: PackageImportService | None = None,
     package_api: PackageAPI | None = None,
+    package_center_api: PackageCenterAPI | None = None,
     federated_search_api: FederatedSearchAPI | None = None,
     personal_import_api: PersonalImportAPI | None = None,
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
@@ -510,6 +530,7 @@ def create_desktop_server(
             "active_package_status_path": active_package_status_path,
             "package_service": package_service,
             "package_api": package_api,
+            "package_center_api": package_center_api,
             "federated_search_api": federated_search_api,
             "personal_import_api": personal_import_api,
         },

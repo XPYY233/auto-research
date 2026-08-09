@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import io
 import json
 import sys
 import unittest
@@ -16,6 +17,7 @@ for path in (PROJECT_ROOT / "src", DESKTOP_ROOT):
         sys.path.insert(0, str(path))
 
 from auto_research.product import ActiveOfficialPackage  # noqa: E402
+from auto_research.evidence.federated_search_session import SearchSourceRegistration  # noqa: E402
 from federated_search_api import (  # noqa: E402
     DesktopFederatedSearchError,
     DesktopFederatedSearchService,
@@ -90,6 +92,66 @@ class _BrokenSource:
         yield
 
 
+class _PdfLease:
+    source_id = "literature-test"
+    paper_uid = "paper-test"
+    media_type = "application/pdf"
+
+    def __init__(self) -> None:
+        self._payload = io.BytesIO(b"%PDF-1.7\n%%EOF\n")
+        self.size_bytes = len(self._payload.getvalue())
+        self.closed = False
+
+    def read(self, size=1024 * 1024):
+        return self._payload.read(size)
+
+    def close(self):
+        self.closed = True
+
+    def public_metadata(self):
+        return {
+            "schema_version": "private-pdf-lease-v1",
+            "source_scope": "private",
+            "source_id": self.source_id,
+            "paper_uid": self.paper_uid,
+            "size_bytes": self.size_bytes,
+            "media_type": self.media_type,
+        }
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
+
+
+class _PdfSource:
+    def __init__(self) -> None:
+        self.last_lease = None
+
+    def iter_search_documents(self):
+        document = _document(
+            "item",
+            "private-item-pdf",
+            source_scope="private",
+            source_id="literature-test",
+        )
+        document.update(
+            {
+                "paper_uid": "paper-test",
+                "collection_kind": "literature_collection",
+                "pdf_available": True,
+            }
+        )
+        yield document
+
+    def open_pdf(self, paper_uid):
+        if paper_uid != "paper-test":
+            return None
+        self.last_lease = _PdfLease()
+        return self.last_lease
+
+
 def _active() -> ActiveOfficialPackage:
     return ActiveOfficialPackage(
         package_id="official-preview",
@@ -103,9 +165,21 @@ class _Handler:
     def __init__(self, path: str) -> None:
         self.path = path
         self.responses: list[tuple[object, HTTPStatus]] = []
+        self.wfile = io.BytesIO()
+        self.status = None
+        self.headers = {}
 
     def json_response(self, payload, status: HTTPStatus = HTTPStatus.OK) -> None:
         self.responses.append((payload, status))
+
+    def send_response(self, status: HTTPStatus) -> None:
+        self.status = status
+
+    def send_header(self, name: str, value: str) -> None:
+        self.headers[name] = value
+
+    def end_headers(self) -> None:
+        return None
 
 
 class DesktopFederatedSearchTests(unittest.TestCase):
@@ -284,6 +358,32 @@ class DesktopFederatedSearchTests(unittest.TestCase):
         self.assertEqual(
             repeated.responses[0][0]["code"], "federated_identity_invalid"
         )
+
+    def test_imported_collection_pdf_streams_from_descriptor_lease(self) -> None:
+        source = _PdfSource()
+        self.service.session.upsert_private(
+            SearchSourceRegistration.literature_collection(
+                source,
+                source_id="literature-test",
+                fingerprint="pdf-fingerprint-1",
+            )
+        )
+        handler = _Handler(
+            "/api/desktop/federated-pdf?source_id=literature-test&paper_uid=paper-test"
+        )
+        self.assertTrue(self.api.handle_get(handler))
+        self.assertEqual(handler.status, HTTPStatus.OK)
+        self.assertEqual(handler.headers["Content-Type"], "application/pdf")
+        self.assertEqual(handler.headers["Cache-Control"], "no-store")
+        self.assertEqual(handler.wfile.getvalue(), b"%PDF-1.7\n%%EOF\n")
+        self.assertTrue(source.last_lease.closed)
+        self.assertNotIn("path", json.dumps(source.last_lease.public_metadata()))
+
+        invalid = _Handler(
+            "/api/desktop/federated-pdf?source_id=literature-test"
+        )
+        self.assertTrue(self.api.handle_get(invalid))
+        self.assertEqual(invalid.responses[0][1], HTTPStatus.BAD_REQUEST)
 
     def test_invalid_filters_and_unknown_routes_are_bounded(self) -> None:
         self.service.install_official_repository(_active(), _Repository())

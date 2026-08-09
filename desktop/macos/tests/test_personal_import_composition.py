@@ -55,6 +55,10 @@ class PersonalImportCompositionTests(unittest.TestCase):
                 services.personal_import_api.search_service,
                 services.federated_search_service,
             )
+            self.assertIs(
+                services.personal_import_service._repository_value,
+                services.personal_repository,
+            )
             self.assertTrue(expected.exists())
             self.assertFalse(
                 services.federated_search_service.status()["private_ready"]
@@ -64,7 +68,14 @@ class PersonalImportCompositionTests(unittest.TestCase):
         snapshot = _PrivateSource()
 
         class _PersonalService:
-            def __init__(self, *, data_root, selection_provider, suggestion_model=None) -> None:
+            def __init__(
+                self,
+                *,
+                data_root,
+                selection_provider,
+                repository=None,
+                suggestion_model=None,
+            ) -> None:
                 self.data_root = Path(data_root).absolute()
                 self.selection_provider = selection_provider
                 self.suggestion_model = suggestion_model
@@ -95,7 +106,14 @@ class PersonalImportCompositionTests(unittest.TestCase):
 
     def test_startup_private_restore_failure_keeps_composition_available(self) -> None:
         class _FailingPersonalService:
-            def __init__(self, *, data_root, selection_provider, suggestion_model=None) -> None:
+            def __init__(
+                self,
+                *,
+                data_root,
+                selection_provider,
+                repository=None,
+                suggestion_model=None,
+            ) -> None:
                 self.data_root = Path(data_root).absolute()
                 self.selection_provider = selection_provider
                 self.suggestion_model = suggestion_model

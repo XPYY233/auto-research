@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from auto_research.ai.deepseek import DeepSeekClient
 from auto_research.personal.import_service import PersonalImportService
+from auto_research.personal.private_repository import PrivateExperimentRepository
 
 from federated_search_api import (
     DesktopFederatedSearchService,
@@ -18,6 +19,22 @@ from personal_file_selection_broker import PersonalFileSelectionBroker
 from personal_import_api import PersonalImportAPI
 from personal_import_service import DEFAULT_PERSONAL_LIBRARY_DIRECTORY
 
+from package_center_services import DesktopPackageCenterServices
+from package_center_runtime import DesktopPackageCenterRuntimeBuilder
+from package_selection_broker import PackageSelectionBroker
+
+
+class PackageCenterServicesBuilder(Protocol):
+    def __call__(
+        self,
+        *,
+        package_service: PackageImportService,
+        package_broker: PackageSelectionBroker,
+        destination_broker: PackageExportDestinationBroker,
+        data_root: Path,
+        current_app_version: str,
+    ) -> DesktopPackageCenterServices: ...
+
 
 @dataclass(frozen=True)
 class DesktopProductServices:
@@ -29,6 +46,8 @@ class DesktopProductServices:
     personal_file_selection_broker: PersonalFileSelectionBroker
     personal_import_service: PersonalImportService
     personal_import_api: PersonalImportAPI
+    personal_repository: PrivateExperimentRepository
+    package_center: DesktopPackageCenterServices | None
 
 
 class RuntimeDeepSeekPersonalSuggestionModel:
@@ -47,6 +66,9 @@ def create_desktop_product_services(
     *,
     data_root: Path | str,
     current_app_version: str,
+    workspace_database: Path | str | None = None,
+    workspace_root: Path | str | None = None,
+    package_center_builder: PackageCenterServicesBuilder | None = None,
 ) -> DesktopProductServices:
     """Compose product services after the launcher has configured core imports."""
 
@@ -60,9 +82,13 @@ def create_desktop_product_services(
     )
     personal_file_selection_broker = PersonalFileSelectionBroker()
     package_export_destination_broker = PackageExportDestinationBroker()
+    personal_repository = PrivateExperimentRepository(
+        application_data_root / DEFAULT_PERSONAL_LIBRARY_DIRECTORY
+    )
     personal_import_service = PersonalImportService(
         data_root=application_data_root / DEFAULT_PERSONAL_LIBRARY_DIRECTORY,
         selection_provider=personal_file_selection_broker,
+        repository=personal_repository,
         suggestion_model=RuntimeDeepSeekPersonalSuggestionModel(),
     )
     personal_import_api = PersonalImportAPI(
@@ -70,6 +96,28 @@ def create_desktop_product_services(
         search_service=federated_search_service,
     )
     personal_import_api.restore_private_search()
+    if package_center_builder is None and workspace_database is not None:
+        package_center_builder = DesktopPackageCenterRuntimeBuilder(
+            workspace_database=workspace_database,
+            workspace_root=(
+                workspace_root
+                if workspace_root is not None
+                else Path(workspace_database).expanduser().absolute().parent
+            ),
+            private_repository=personal_repository,
+            search_session=federated_search_service.session,
+        )
+    package_center = (
+        package_center_builder(
+            package_service=package_service,
+            package_broker=package_service.broker,
+            destination_broker=package_export_destination_broker,
+            data_root=application_data_root,
+            current_app_version=str(current_app_version),
+        )
+        if package_center_builder is not None
+        else None
+    )
     return DesktopProductServices(
         package_service=package_service,
         package_api=PackageAPI(package_service),
@@ -79,4 +127,6 @@ def create_desktop_product_services(
         personal_file_selection_broker=personal_file_selection_broker,
         personal_import_service=personal_import_service,
         personal_import_api=personal_import_api,
+        personal_repository=personal_repository,
+        package_center=package_center,
     )

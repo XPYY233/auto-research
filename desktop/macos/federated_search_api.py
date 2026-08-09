@@ -15,12 +15,21 @@ from auto_research.product.runtime_api import ActiveOfficialPackage, OfficialEvi
 
 FEDERATED_SEARCH_PATH = "/api/desktop/federated-search"
 FEDERATED_EVIDENCE_PATH = "/api/desktop/federated-evidence"
+FEDERATED_PDF_PATH = "/api/desktop/federated-pdf"
+PDF_STREAM_CHUNK_BYTES = 1024 * 1024
 
 
 class FederatedHTTPHandler(Protocol):
     path: str
+    wfile: Any
 
     def json_response(self, payload: Any, status: HTTPStatus = HTTPStatus.OK) -> None: ...
+
+    def send_response(self, status: HTTPStatus) -> None: ...
+
+    def send_header(self, name: str, value: str) -> None: ...
+
+    def end_headers(self) -> None: ...
 
 
 class DesktopFederatedSearchError(RuntimeError):
@@ -142,6 +151,30 @@ class DesktopFederatedSearchService:
                 status=HTTPStatus.NOT_FOUND,
             ) from exc
 
+    def open_private_pdf(self, *, source_id: str, paper_uid: str):
+        try:
+            return self.session.open_private_pdf(source_id, paper_uid)
+        except ValueError as exc:
+            raise DesktopFederatedSearchError(
+                "federated_identity_invalid",
+                "论文集合身份无效。",
+                status=HTTPStatus.BAD_REQUEST,
+            ) from exc
+        except FederatedSearchSessionError as exc:
+            if exc.code in {"private_source_not_found", "private_pdf_unavailable"}:
+                status = HTTPStatus.NOT_FOUND
+                code = "federated_pdf_not_found"
+                message = "该论文集合没有可打开的 PDF。"
+            else:
+                status = HTTPStatus.CONFLICT
+                code = "federated_pdf_changed"
+                message = "论文 PDF 缺失或发生变化，请重新导入资料包。"
+            raise DesktopFederatedSearchError(
+                code,
+                message,
+                status=status,
+            ) from None
+
     @staticmethod
     def _session_unavailable(
         error: FederatedSearchSessionError,
@@ -165,19 +198,68 @@ class FederatedSearchAPI:
 
     def handle_get(self, handler: FederatedHTTPHandler) -> bool:
         parsed = urlparse(handler.path)
-        if parsed.path not in {FEDERATED_SEARCH_PATH, FEDERATED_EVIDENCE_PATH}:
+        if parsed.path not in {
+            FEDERATED_SEARCH_PATH,
+            FEDERATED_EVIDENCE_PATH,
+            FEDERATED_PDF_PATH,
+        }:
             return False
         query = parse_qs(parsed.query, keep_blank_values=True)
         try:
             if parsed.path == FEDERATED_SEARCH_PATH:
                 payload = self.service.search(**self._search_arguments(query))
-            else:
+            elif parsed.path == FEDERATED_EVIDENCE_PATH:
                 payload = self.service.get(**self._identity_arguments(query))
+            else:
+                lease = self.service.open_private_pdf(
+                    **self._pdf_arguments(query)
+                )
+                self._serve_pdf(handler, lease)
+                return True
         except DesktopFederatedSearchError as exc:
             handler.json_response(exc.public_dict(), exc.status)
         else:
             handler.json_response(payload)
         return True
+
+    @classmethod
+    def _pdf_arguments(cls, query: dict[str, list[str]]) -> dict[str, str]:
+        required = {"source_id", "paper_uid"}
+        if set(query) != required:
+            cls._invalid_identity()
+        return {key: cls._single(query, key) for key in sorted(required)}
+
+    @staticmethod
+    def _serve_pdf(handler: FederatedHTTPHandler, lease: Any) -> None:
+        try:
+            metadata = lease.public_metadata()
+            size = int(metadata["size_bytes"])
+            media_type = str(metadata["media_type"])
+            if size < 5 or media_type != "application/pdf":
+                raise ValueError("invalid private PDF lease")
+            handler.send_response(HTTPStatus.OK)
+            handler.send_header("Content-Type", media_type)
+            handler.send_header("Content-Length", str(size))
+            handler.send_header("Content-Disposition", 'inline; filename="evidence.pdf"')
+            handler.send_header("Cache-Control", "no-store")
+            handler.send_header("X-Content-Type-Options", "nosniff")
+            handler.end_headers()
+            with lease:
+                while True:
+                    chunk = lease.read(PDF_STREAM_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    handler.wfile.write(chunk)
+        except (KeyError, TypeError, ValueError):
+            try:
+                lease.close()
+            except Exception:
+                pass
+            raise DesktopFederatedSearchError(
+                "federated_pdf_unavailable",
+                "论文 PDF 无法安全打开。",
+                status=HTTPStatus.CONFLICT,
+            ) from None
 
     @classmethod
     def _search_arguments(cls, query: dict[str, list[str]]) -> dict[str, Any]:
