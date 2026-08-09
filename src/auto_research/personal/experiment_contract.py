@@ -152,6 +152,7 @@ class TabularImportPreview:
     sheet_name: str
     row_count: int
     columns: tuple[ColumnMapping, ...]
+    sample_rows: tuple[Mapping[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "sheet_name", _required_text(self.sheet_name, "sheet_name"))
@@ -160,6 +161,18 @@ class TabularImportPreview:
         names = [column.source_name.casefold() for column in self.columns]
         if len(names) != len(set(names)):
             raise ValueError("column source names must be unique within a sheet")
+        exact_names = {column.source_name for column in self.columns}
+        clean_rows: list[dict[str, str]] = []
+        for row in self.sample_rows[:5]:
+            if not isinstance(row, Mapping) or set(row) - exact_names:
+                raise ValueError("sample rows must contain only known columns")
+            clean_rows.append(
+                {
+                    str(name): str(value)[:200]
+                    for name, value in row.items()
+                }
+            )
+        object.__setattr__(self, "sample_rows", tuple(clean_rows))
 
     @property
     def unresolved_columns(self) -> tuple[str, ...]:
@@ -172,6 +185,7 @@ class TabularImportPreview:
             "sheet_name": self.sheet_name,
             "row_count": int(self.row_count),
             "columns": [column.as_dict() for column in self.columns],
+            "sample_rows": [dict(row) for row in self.sample_rows],
             "unresolved_columns": list(self.unresolved_columns),
         }
 

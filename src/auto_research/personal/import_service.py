@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
 import secrets
+import stat
 import threading
 import time
 from contextlib import AbstractContextManager
@@ -9,6 +13,14 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
+
+from auto_research.personal.ai_import_suggestions import (
+    PersonalImportSuggestion,
+    PersonalImportSuggestionError,
+    PersonalSuggestionModel,
+    build_suggestion_messages,
+    validate_suggestion_payload,
+)
 
 from auto_research.personal.experiment_contract import (
     ColumnMapping,
@@ -144,6 +156,9 @@ class _ImportSession:
     project_created: bool = False
     sample_created: bool = False
     file_registered: bool = False
+    staged_path: Path | None = None
+    suggestions: dict[int, PersonalImportSuggestion] | None = None
+    reviewed_payload_fingerprint: str | None = None
 
 
 Clock = Callable[[], float]
@@ -304,6 +319,8 @@ class PersonalImportService:
         clock: Clock = time.monotonic,
         session_ttl_seconds: float = DEFAULT_IMPORT_SESSION_TTL_SECONDS,
         max_sessions: int = DEFAULT_MAX_IMPORT_SESSIONS,
+        suggestion_model: PersonalSuggestionModel | None = None,
+        suggestion_provider_label: str = "DeepSeek",
     ) -> None:
         if data_root is None or not str(data_root).strip():
             raise ValueError("personal data root is required")
@@ -321,7 +338,12 @@ class PersonalImportService:
         self._clock = clock
         self._session_ttl_seconds = float(session_ttl_seconds)
         self._max_sessions = max_sessions
+        self._suggestion_model = suggestion_model
+        self._suggestion_provider_label = " ".join(
+            str(suggestion_provider_label or "DeepSeek").split()
+        )[:80] or "DeepSeek"
         self._sessions: dict[str, _ImportSession] = {}
+        self._suggestions_in_flight: set[tuple[str, int]] = set()
         self._lock = threading.RLock()
 
     @staticmethod
@@ -338,11 +360,18 @@ class PersonalImportService:
                     "待处理的个人实验导入过多，请稍后再试。",
                     retryable=True,
                 )
+            staged_path: Path | None = None
             try:
                 with self.selection_provider.snapshot(selection_id) as selected:
                     preview = self._previewer(
                         selected.path,
                         limits=self._preview_limits,
+                    )
+                    import_id = self._validated_new_import_id()
+                    staged_path = self._stage_snapshot(
+                        selected.path,
+                        preview=preview,
+                        import_id=import_id,
                     )
             except SelectionSnapshotProviderError as exc:
                 raise _translate_selection(exc) from exc
@@ -358,18 +387,10 @@ class PersonalImportService:
                     "表格预览暂时无法完成，请重新选择。",
                     retryable=True,
                 ) from exc
-
-            import_id = self._import_id_factory()
-            if not isinstance(import_id, str) or _IMPORT_ID_RE.fullmatch(import_id) is None:
-                raise _service_error(
-                    "personal_import_identity_invalid",
-                    "个人实验导入身份无效。",
-                )
-            if import_id in self._sessions:
-                raise _service_error(
-                    "personal_import_identity_invalid",
-                    "个人实验导入身份无效。",
-                )
+            except PersonalImportServiceError:
+                if staged_path is not None:
+                    self._remove_staged_path(staged_path)
+                raise
             token = import_id.removeprefix("personal_import_")
             session = _ImportSession(
                 import_id=import_id,
@@ -380,13 +401,187 @@ class PersonalImportService:
                 draft_id=f"run-{token}",
                 created_at=now,
                 expires_at=now + self._session_ttl_seconds,
+                staged_path=staged_path,
+                suggestions={},
             )
             self._sessions[import_id] = session
+            # The native selection is no longer authoritative after this point.
+            # Every later operation uses the one private immutable snapshot above.
+            self.selection_provider.revoke(selection_id)
             return PersonalImportPreview(self._status(session), preview)
 
     def status(self, import_id: str) -> PersonalImportStatus:
         with self._lock:
             return self._status(self._require_session(import_id))
+
+    def suggest(
+        self,
+        import_id: str,
+        *,
+        sheet_index: int,
+    ) -> PersonalImportSuggestion:
+        """Return one bounded AI candidate; this never confirms or writes data."""
+
+        with self._lock:
+            session = self._require_session(import_id)
+            if (
+                isinstance(sheet_index, bool)
+                or not isinstance(sheet_index, int)
+                or not 0 <= sheet_index < len(session.preview.sheets)
+            ):
+                raise _service_error(
+                    "personal_request_invalid",
+                    "工作表选择无效。",
+                    details={"field": "sheet_index"},
+                )
+            if session.suggestions is not None and sheet_index in session.suggestions:
+                return session.suggestions[sheet_index]
+            if self._suggestion_model is None:
+                raise _service_error(
+                    "personal_ai_not_configured",
+                    "尚未配置 DeepSeek；仍可使用本地预览并手动检查。",
+                    retryable=False,
+                )
+            key = (import_id, sheet_index)
+            if key in self._suggestions_in_flight:
+                raise _service_error(
+                    "personal_ai_busy",
+                    "该表格正在生成识别建议，请稍候。",
+                    retryable=True,
+                )
+            sheet = session.preview.sheets[sheet_index]
+            messages, prompt_warnings = build_suggestion_messages(sheet)
+            self._suggestions_in_flight.add(key)
+            model = self._suggestion_model
+
+        try:
+            payload = model.request_json(
+                messages,
+                task="analysis",
+                max_tokens=6_000,
+                thinking=False,
+                temperature=0.1,
+            )
+        except Exception as exc:
+            with self._lock:
+                self._suggestions_in_flight.discard(key)
+            if type(exc).__name__ == "DeepSeekNotConfigured":
+                raise _service_error(
+                    "personal_ai_not_configured",
+                    "尚未配置 DeepSeek；仍可使用本地预览并手动检查。",
+                    retryable=False,
+                ) from exc
+            raise _service_error(
+                "personal_ai_unavailable",
+                "DeepSeek 暂时无法完成识别；本地预览不受影响。",
+                retryable=True,
+            ) from exc
+        try:
+            suggestion = validate_suggestion_payload(
+                import_id=import_id,
+                sheet_index=sheet_index,
+                sheet=sheet,
+                payload=payload,
+                inherited_warnings=prompt_warnings,
+                provider=self._suggestion_provider_label,
+            )
+        except PersonalImportSuggestionError as exc:
+            with self._lock:
+                self._suggestions_in_flight.discard(key)
+            raise _service_error(
+                "personal_ai_invalid_response",
+                "DeepSeek 返回的识别建议未通过本地校验，请重试或直接检查本地预览。",
+                retryable=True,
+            ) from exc
+        with self._lock:
+            self._suggestions_in_flight.discard(key)
+            current = self._require_session(import_id)
+            if current.suggestions is None:
+                current.suggestions = {}
+            current.suggestions[sheet_index] = suggestion
+            return suggestion
+
+    def import_reviewed(
+        self,
+        import_id: str,
+        payload: Mapping[str, Any],
+        *,
+        reviewed: bool,
+    ) -> PersonalImportStatus:
+        """Persist then confirm one user-reviewed form as a single product action.
+
+        The model can populate the form, but only the literal ``reviewed=True``
+        supplied by the user's final action marks the currently visible fields as
+        reviewed.  The repository still observes the existing draft -> confirm CAS.
+        """
+
+        if reviewed is not True:
+            raise _service_error(
+                "personal_review_required",
+                "请先检查当前识别结果，再确认导入。",
+                details={"field": "reviewed"},
+            )
+        reviewed_payload = self._mark_payload_reviewed(payload)
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                reviewed_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        with self._lock:
+            session = self._require_session(import_id)
+            if session.stage is PersonalImportStage.INDEXABLE:
+                if session.reviewed_payload_fingerprint == fingerprint:
+                    return self._status(session)
+                raise _service_error(
+                    "personal_import_already_confirmed",
+                    "该实验数据已经确认，不能被其他内容覆盖。",
+                    details={"stage": session.stage.value},
+                )
+
+            if session.stage is PersonalImportStage.DRAFT_SAVED and session.draft is not None:
+                candidate, project, sample, requested_revision = self._build_draft(
+                    session,
+                    reviewed_payload,
+                )
+                if (
+                    requested_revision is not None
+                    and requested_revision != session.revision
+                ):
+                    raise _service_error(
+                        "RUN_REVISION_CONFLICT",
+                        "实验草稿已被更新，请重新加载后再确认。",
+                        details={
+                            "expected_revision": requested_revision,
+                            "actual_revision": session.revision,
+                        },
+                    )
+                if (
+                    candidate == session.draft
+                    and project == session.project
+                    and sample == session.sample
+                    and session.revision is not None
+                ):
+                    confirmed = self.confirm(import_id, expected_revision=session.revision)
+                    session.reviewed_payload_fingerprint = fingerprint
+                    return confirmed
+                reviewed_payload["expected_revision"] = session.revision
+
+            draft_status = self.save_draft(import_id, reviewed_payload)
+            if draft_status.revision is None:
+                raise _service_error(
+                    "personal_draft_save_failed",
+                    "实验草稿未能安全保存。",
+                    retryable=True,
+                )
+            confirmed = self.confirm(
+                import_id,
+                expected_revision=draft_status.revision,
+            )
+            session.reviewed_payload_fingerprint = fingerprint
+            return confirmed
 
     def save_draft(
         self,
@@ -452,12 +647,19 @@ class PersonalImportService:
                     repository.add_sample(sample)
                     session.sample_created = True
                 if not session.file_registered:
-                    with self.selection_provider.snapshot(session.selection_id) as selected:
-                        repository.register_source_file(
-                            draft.preview.source_file,
-                            selected.path,
+                    if session.staged_path is None:
+                        raise _service_error(
+                            "personal_snapshot_unavailable",
+                            "导入快照已失效，请重新选择文件。",
+                            retryable=True,
                         )
+                    repository.register_source_file(
+                        draft.preview.source_file,
+                        session.staged_path,
+                    )
                     session.file_registered = True
+                    self._remove_staged_path(session.staged_path)
+                    session.staged_path = None
                 result = repository.save_experiment(
                     draft,
                     project_id=session.project_id,
@@ -468,8 +670,6 @@ class PersonalImportService:
                         else None
                     ),
                 )
-            except SelectionSnapshotProviderError as exc:
-                raise _translate_selection(exc) from exc
             except PrivateRepositoryError as exc:
                 raise _translate_repository(exc) from exc
 
@@ -477,7 +677,6 @@ class PersonalImportService:
             session.project = project
             session.sample = sample
             session.pending_draft = draft
-            self.selection_provider.revoke(session.selection_id)
             return self._status(session)
 
     def confirm(
@@ -564,6 +763,139 @@ class PersonalImportService:
 
         return self.private_search_source().snapshot()
 
+    def _validated_new_import_id(self) -> str:
+        import_id = self._import_id_factory()
+        if (
+            not isinstance(import_id, str)
+            or _IMPORT_ID_RE.fullmatch(import_id) is None
+            or import_id in self._sessions
+        ):
+            raise _service_error(
+                "personal_import_identity_invalid",
+                "个人实验导入身份无效。",
+            )
+        return import_id
+
+    def _stage_snapshot(
+        self,
+        source_path: Path,
+        *,
+        preview: TabularFilePreview,
+        import_id: str,
+    ) -> Path:
+        """Persist the provider snapshot once, then verify it against the preview."""
+
+        staging_root = self.data_root / ".import-staging"
+        try:
+            self.data_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            root_status = self.data_root.lstat()
+            if stat.S_ISLNK(root_status.st_mode) or not stat.S_ISDIR(root_status.st_mode):
+                raise OSError("unsafe personal data root")
+            staging_root.mkdir(mode=0o700, exist_ok=True)
+            staging_status = staging_root.lstat()
+            if stat.S_ISLNK(staging_status.st_mode) or not stat.S_ISDIR(staging_status.st_mode):
+                raise OSError("unsafe personal staging root")
+            os.chmod(staging_root, 0o700)
+        except OSError as exc:
+            raise _service_error(
+                "personal_snapshot_failed",
+                "无法建立私有导入快照，请稍后重试。",
+                retryable=True,
+            ) from exc
+
+        suffix = Path(preview.source_file.original_name).suffix.casefold()
+        destination = staging_root / f"{import_id}-{secrets.token_urlsafe(8)}{suffix}"
+        source_fd = -1
+        output_fd = -1
+        copied = 0
+        digest = hashlib.sha256()
+        try:
+            source_fd = os.open(
+                source_path,
+                os.O_RDONLY
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+            source_status = os.fstat(source_fd)
+            if not stat.S_ISREG(source_status.st_mode):
+                raise OSError("snapshot source is not a regular file")
+            output_fd = os.open(
+                destination,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            while chunk := os.read(source_fd, 1024 * 1024):
+                copied += len(chunk)
+                if copied > self._preview_limits.max_file_bytes:
+                    raise OSError("snapshot exceeds bounded preview limit")
+                digest.update(chunk)
+                view = memoryview(chunk)
+                while view:
+                    written = os.write(output_fd, view)
+                    if written <= 0:
+                        raise OSError("snapshot write did not progress")
+                    view = view[written:]
+            os.fsync(output_fd)
+            if (
+                copied != preview.source_file.size_bytes
+                or copied != source_status.st_size
+                or digest.hexdigest() != preview.source_file.sha256
+            ):
+                raise _service_error(
+                    "personal_selection_changed",
+                    "文件在预览过程中发生变化，请重新选择。",
+                    retryable=True,
+                )
+            return destination
+        except PersonalImportServiceError:
+            self._remove_staged_path(destination)
+            raise
+        except OSError as exc:
+            self._remove_staged_path(destination)
+            raise _service_error(
+                "personal_snapshot_failed",
+                "无法保存私有导入快照，请重新选择文件。",
+                retryable=True,
+            ) from exc
+        finally:
+            if output_fd >= 0:
+                os.close(output_fd)
+            if source_fd >= 0:
+                os.close(source_fd)
+
+    @staticmethod
+    def _remove_staged_path(path: Path) -> None:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            # The repository and public state never depend on cleanup succeeding.
+            # A future session prune can retry without exposing the private path.
+            pass
+
+    @staticmethod
+    def _mark_payload_reviewed(raw_payload: Mapping[str, Any]) -> dict[str, Any]:
+        payload = _require_object(raw_payload, "request")
+        columns = payload.get("columns")
+        if not isinstance(columns, list):
+            raise _service_error(
+                "personal_request_invalid",
+                "列映射必须完整对应预览列。",
+                details={"field": "columns"},
+            )
+        reviewed_columns: list[dict[str, Any]] = []
+        for position, raw in enumerate(columns):
+            column = _require_object(raw, f"columns[{position}]")
+            column["role_confirmed"] = True
+            column["meaning_confirmed"] = True
+            column["unit_confirmed"] = True
+            reviewed_columns.append(column)
+        payload["columns"] = reviewed_columns
+        return payload
+
     def _repository(self) -> PrivateExperimentRepository:
         if self._repository_value is not None:
             return self._repository_value
@@ -593,8 +925,15 @@ class PersonalImportService:
 
     def _prune(self, now: float) -> None:
         for import_id in tuple(self._sessions):
-            if self._sessions[import_id].expires_at <= now:
+            session = self._sessions[import_id]
+            if session.expires_at <= now:
                 self._sessions.pop(import_id, None)
+                self._suggestions_in_flight = {
+                    key for key in self._suggestions_in_flight if key[0] != import_id
+                }
+                if session.staged_path is not None:
+                    self._remove_staged_path(session.staged_path)
+                self.selection_provider.revoke(session.selection_id)
 
     @staticmethod
     def _status(session: _ImportSession) -> PersonalImportStatus:

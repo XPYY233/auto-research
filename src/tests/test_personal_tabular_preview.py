@@ -92,6 +92,27 @@ class PersonalTabularPreviewTests(unittest.TestCase):
         self.assertFalse(columns["Dose (dpa)"].unit_confirmed)
         self.assertTrue(columns["Dose (dpa)"].needs_user_confirmation)
         self.assertEqual(columns["Sample ID"].role, "identifier")
+        self.assertEqual(
+            sheet.sample_rows,
+            (
+                {
+                    "Dose (dpa)": "0",
+                    "Hardness [GPa]": "3.2",
+                    "Sample ID": "W-01",
+                    "Note": "before irradiation",
+                },
+                {
+                    "Dose (dpa)": "1",
+                    "Hardness [GPa]": "4.0",
+                    "Sample ID": "W-01",
+                    "Note": "after irradiation",
+                },
+            ),
+        )
+        self.assertEqual(
+            sheet.as_dict()["sample_rows"][1]["Hardness [GPa]"],
+            "4.0",
+        )
 
     def test_csv_formula_like_text_is_preserved_and_never_executed(self):
         path = self.root / "notes.csv"
@@ -130,6 +151,19 @@ class PersonalTabularPreviewTests(unittest.TestCase):
         preview = preview_tabular_file(path, limits=PreviewLimits(max_scan_rows=2))
         self.assertEqual(preview.sheets[0].row_count, 2)
         self.assertIn("row_scan_truncated", preview.warnings)
+
+    def test_aligned_sample_rows_never_exceed_five(self):
+        path = self.root / "aligned.csv"
+        path.write_text(
+            "x,y\n" + "\n".join(f"{index},{index * 10}" for index in range(8)) + "\n",
+            encoding="utf-8",
+        )
+        sheet = preview_tabular_file(
+            path,
+            limits=PreviewLimits(max_sample_rows=8),
+        ).sheets[0]
+        self.assertEqual(len(sheet.sample_rows), 5)
+        self.assertEqual(sheet.sample_rows[4], {"x": "4", "y": "40"})
 
     def test_xlsx_shared_strings_and_cached_formula_are_previewed_without_evaluation(self):
         path = self.root / "measurements.xlsx"

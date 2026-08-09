@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import tempfile
 import unittest
@@ -32,12 +33,13 @@ IMPORT_ID = "personal_import_0123456789abcdef"
 
 
 def _preview_value() -> TabularFilePreview:
+    raw = b"x" * 42
     source = PersonalSourceFile(
         file_id="personal-file-0123456789abcdef",
         original_name="experiment.csv",
         media_type="text/csv",
-        sha256="1" * 64,
-        size_bytes=42,
+        sha256=hashlib.sha256(raw).hexdigest(),
+        size_bytes=len(raw),
     )
     sheet = TabularImportPreview(
         source_file=source,
@@ -68,7 +70,8 @@ def _preview_value() -> TabularFilePreview:
 
 
 class _MemorySelectionProvider:
-    def __init__(self) -> None:
+    def __init__(self, path: Path) -> None:
+        self.path = path
         self.revoked: list[str] = []
         self.error: SelectionSnapshotProviderError | None = None
 
@@ -82,7 +85,7 @@ class _MemorySelectionProvider:
                 "文件选择无效，请重新选择。",
                 retryable=True,
             )
-        yield SimpleNamespace(path=Path("/ignored/private/experiment.csv"))
+        yield SimpleNamespace(path=self.path)
 
     def revoke(self, selection_id: str) -> None:
         self.revoked.append(selection_id)
@@ -185,7 +188,9 @@ class PersonalImportServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        self.provider = _MemorySelectionProvider()
+        self.source = self.root / "experiment.csv"
+        self.source.write_bytes(b"x" * 42)
+        self.provider = _MemorySelectionProvider(self.source)
         self.repository = _MemoryRepository()
         self.previewer_calls: list[Path] = []
 
@@ -255,9 +260,9 @@ class PersonalImportServiceTests(unittest.TestCase):
         self.assertEqual(result.status.stage.value, "previewed")
         self.assertEqual(
             self.previewer_calls,
-            [Path("/ignored/private/experiment.csv")],
+            [self.source],
         )
-        self.assertNotIn("/ignored/private", serialized)
+        self.assertNotIn(str(self.root), serialized)
         self.assertEqual(self.repository.operations, [])
 
     def test_provider_error_is_translated_without_platform_dependency(self) -> None:
@@ -376,6 +381,94 @@ class PersonalImportServiceTests(unittest.TestCase):
             str(self.root),
             json.dumps(confirmed.public_dict(), ensure_ascii=False),
         )
+
+    def test_preview_snapshot_survives_original_file_changes(self) -> None:
+        source = self.root / "changing.csv"
+        source.write_text(
+            "Dose (dpa),Hardness [GPa]\n0,3.2\n1,4.0\n",
+            encoding="utf-8",
+        )
+        provider = _FileSelectionProvider(source)
+        service = PersonalImportService(
+            data_root=self.root / "snapshot-private-library",
+            selection_provider=provider,
+            import_id_factory=lambda: IMPORT_ID,
+        )
+        service.preview(SELECTION_ID)
+        source.write_text("this file changed after preview\n", encoding="utf-8")
+        confirmed = service.import_reviewed(
+            IMPORT_ID,
+            self._payload(confirmed=False),
+            reviewed=True,
+        )
+        self.assertTrue(confirmed.indexable)
+        self.assertEqual(provider.revoked, [SELECTION_ID])
+        self.assertEqual(
+            list((service.data_root / ".import-staging").glob("*")),
+            [],
+        )
+
+    def test_one_review_action_marks_visible_fields_and_is_idempotent(self) -> None:
+        self.service.preview(SELECTION_ID)
+        payload = self._payload(confirmed=False)
+        payload["run"]["conditions"] = {}
+        payload["series"] = []
+        first = self.service.import_reviewed(
+            IMPORT_ID,
+            payload,
+            reviewed=True,
+        )
+        second = self.service.import_reviewed(
+            IMPORT_ID,
+            payload,
+            reviewed=True,
+        )
+        self.assertTrue(first.indexable)
+        self.assertEqual(first, second)
+        self.assertEqual(first.revision, 2)
+
+    def test_review_action_preserves_revision_cas_after_partial_draft(self) -> None:
+        self.service.preview(SELECTION_ID)
+        self.service.save_draft(IMPORT_ID, self._payload(confirmed=True))
+        stale = self._payload(confirmed=False, expected_revision=99)
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            self.service.import_reviewed(
+                IMPORT_ID,
+                stale,
+                reviewed=True,
+            )
+        self.assertEqual(raised.exception.code, "RUN_REVISION_CONFLICT")
+        self.assertEqual(self.service.status(IMPORT_ID).stage.value, "draft_saved")
+
+    def test_review_action_requires_literal_user_confirmation(self) -> None:
+        self.service.preview(SELECTION_ID)
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            self.service.import_reviewed(
+                IMPORT_ID,
+                self._payload(confirmed=False),
+                reviewed=False,
+            )
+        self.assertEqual(raised.exception.code, "personal_review_required")
+        self.assertEqual(self.service.status(IMPORT_ID).stage.value, "previewed")
+
+    def test_expired_preview_removes_private_staging_snapshot(self) -> None:
+        clock = [100.0]
+        service = PersonalImportService(
+            data_root=self.root / "expiring-private-library",
+            selection_provider=self.provider,
+            previewer=lambda _path, *, limits: _preview_value(),
+            import_id_factory=lambda: IMPORT_ID,
+            clock=lambda: clock[0],
+            session_ttl_seconds=300,
+        )
+        service.preview(SELECTION_ID)
+        staging = service.data_root / ".import-staging"
+        self.assertEqual(len(list(staging.glob("*"))), 1)
+        clock[0] += 301
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            service.status(IMPORT_ID)
+        self.assertEqual(raised.exception.code, "personal_import_session_expired")
+        self.assertEqual(list(staging.glob("*")), [])
 
 
 if __name__ == "__main__":

@@ -470,11 +470,23 @@ def _rows_to_sheet(
                 sample_values=samples,
             )
         )
+    sample_rows = tuple(
+        {
+            name: (
+                str(row[index]).strip()[: min(limits.max_cell_chars, 200)]
+                if index < len(row)
+                else ""
+            )
+            for index, name in enumerate(names)
+        }
+        for row in data_rows[: min(limits.max_sample_rows, 5)]
+    )
     return TabularImportPreview(
         source_file=source,
         sheet_name=sheet_name,
         row_count=len(data_rows),
         columns=tuple(columns),
+        sample_rows=sample_rows,
     )
 
 
