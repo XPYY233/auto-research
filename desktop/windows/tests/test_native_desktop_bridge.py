@@ -53,6 +53,18 @@ class _Personal:
         return {"ok": True, "cancelled": True}
 
 
+class _Exports:
+    def select_package_export_destination(self, suggested_name):
+        return {
+            "ok": True,
+            "cancelled": False,
+            "destination": {
+                "destination_token": "destination_0123456789",
+                "expires_in_seconds": 300,
+            },
+        }
+
+
 class NativeDesktopBridgeTests(unittest.TestCase):
     def test_shared_ui_names_return_path_free_envelopes(self) -> None:
         window = _Window()
@@ -60,11 +72,15 @@ class NativeDesktopBridgeTests(unittest.TestCase):
             package_input=_PackageInput(window),  # type: ignore[arg-type]
             package_import=_PackageImport(),  # type: ignore[arg-type]
             personal_files=_Personal(),  # type: ignore[arg-type]
+            package_exports=_Exports(),  # type: ignore[arg-type]
         )
         self.assertEqual(
             bridge.select_evidence_package(),
             {"ok": True, "cancelled": True},
         )
+        destination = bridge.select_package_export_destination("export.aresearch")
+        self.assertTrue(destination["ok"])
+        self.assertNotIn("path", str(destination).casefold())
         window.values = [r"C:\Users\Researcher\evidence.aresearch"]
         selected = bridge.select_evidence_package()
         self.assertEqual(set(selected), {"ok", "cancelled", "selection"})

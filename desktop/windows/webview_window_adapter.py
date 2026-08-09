@@ -65,6 +65,32 @@ class PyWebViewWindowAdapter:
             return (str(selected),)
         return tuple(str(item) for item in selected)
 
+    def choose_save_file(
+        self,
+        *,
+        title: str,
+        extension: str,
+        suggested_name: str,
+    ) -> str | None:
+        if extension != ".aresearch":
+            raise WebViewWindowError("Windows 保存窗口只接受 .aresearch")
+        with self._lock:
+            window = self._window
+            webview = self._webview
+        if window is None or webview is None:
+            raise WebViewWindowError("Windows 系统保存窗口尚未就绪")
+        selected = window.create_file_dialog(
+            webview.FileDialog.SAVE,
+            save_filename=suggested_name,
+            file_types=("Auto Research Package (*.aresearch)",),
+            directory="",
+        )
+        if not selected:
+            return None
+        if isinstance(selected, (tuple, list)):
+            return str(selected[0]) if selected else None
+        return str(selected)
+
     def show(self, *, title: str, url: str, first_run_entry: str) -> None:
         if first_run_entry != "import-evidence-package":
             raise WebViewWindowError("Windows 首次窗口入口必须是资料包导入")

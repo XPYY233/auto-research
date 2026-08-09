@@ -9,6 +9,7 @@ from auto_research.evidence.federated_search_session import (
     FederatedSearchSession,
     FederatedSearchSessionError,
     FederatedSearchSessionProtocol,
+    PrivatePdfLeaseProtocol,
     SearchSourceRegistration,
 )
 
@@ -201,6 +202,28 @@ class WindowsEvidenceSearchService:
             fingerprint=fingerprint,
         )
 
+    def activate_literature_collection(
+        self,
+        source: object,
+        *,
+        source_id: str,
+        fingerprint: str,
+    ) -> None:
+        try:
+            registration = SearchSourceRegistration.literature_collection(
+                source,  # type: ignore[arg-type]
+                source_id=source_id,
+                fingerprint=fingerprint,
+            )
+            self.session.upsert_private(registration)
+        except FederatedSearchSessionError as exc:
+            raise _translate_session_error(exc) from None
+        except (TypeError, ValueError):
+            raise EvidenceSearchError(
+                "offline_search_activation_failed",
+                "论文集合搜索源无法安全建立。",
+            ) from None
+
     def activate_official_repository(self, *, active_package: Any, repository: Any) -> None:
         try:
             identity = _public_active_identity(active_package)
@@ -266,3 +289,43 @@ class WindowsEvidenceSearchService:
             raise EvidenceSearchError("search_request_invalid", "证据身份无效。") from None
         except Exception:
             raise EvidenceSearchError("search_failed", "离线证据读取未能完成。") from None
+
+    def open_private_pdf(
+        self,
+        *,
+        source_id: str,
+        paper_uid: str,
+    ) -> PrivatePdfLeaseProtocol:
+        """Return only the shared same-descriptor lease, never a filesystem path."""
+
+        try:
+            lease = self.session.open_private_pdf(source_id, paper_uid)
+            if not isinstance(lease, PrivatePdfLeaseProtocol):
+                try:
+                    lease.close()
+                except Exception:
+                    pass
+                raise EvidenceSearchError(
+                    "federated_pdf_unavailable",
+                    "论文 PDF 无法安全打开。",
+                )
+            return lease
+        except EvidenceSearchError:
+            raise
+        except (TypeError, ValueError):
+            raise EvidenceSearchError(
+                "federated_identity_invalid", "论文集合身份无效。"
+            ) from None
+        except FederatedSearchSessionError as exc:
+            if exc.code in {"private_source_not_found", "private_pdf_unavailable"}:
+                raise EvidenceSearchError(
+                    "federated_pdf_not_found", "该论文集合没有可打开的 PDF。"
+                ) from None
+            raise EvidenceSearchError(
+                "federated_pdf_changed",
+                "论文 PDF 缺失或发生变化，请重新导入资料包。",
+            ) from None
+        except Exception:
+            raise EvidenceSearchError(
+                "federated_pdf_unavailable", "论文 PDF 无法安全打开。"
+            ) from None

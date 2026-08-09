@@ -64,6 +64,12 @@
       "package.status",
       "package.import",
       "package.job.get",
+      "package_center.status",
+      "package_center.inspect",
+      "package_center.export_plan",
+      "package_center.export",
+      "package_center.import",
+      "package_center.job_get",
       "personal.preview",
       "personal.search_status",
       "personal.search_refresh",
@@ -74,6 +80,7 @@
       "personal.reviewed_import",
       "federated.search",
       "federated.evidence",
+      "federated.pdf",
       "librarian.chat"
     ]
   },

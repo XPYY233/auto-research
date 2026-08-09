@@ -13,7 +13,9 @@ from typing import Any, Mapping
 from urllib.parse import parse_qs, urlparse
 
 from evidence_search_bridge import EvidenceSearchBridgeAdapter
+from evidence_search_service import EvidenceSearchError
 from librarian_bridge import LibrarianBridgeError
+from package_center_bridge import WindowsPackageCenterBridgeAdapter
 from package_import_bridge import PackageBridgeError
 from personal_import_bridge import PersonalImportBridgeAdapter
 from auto_research.personal.import_service import PersonalImportServiceError
@@ -26,6 +28,8 @@ MAX_PACKAGE_REQUEST_BYTES = 8_192
 MAX_CREDENTIAL_REQUEST_BYTES = 8_192
 MAX_PERSONAL_REQUEST_BYTES = 512 * 1024
 MAX_LIBRARIAN_REQUEST_BYTES = 256_000
+MAX_PACKAGE_CENTER_REQUEST_BYTES = 512 * 1024
+PDF_STREAM_CHUNK_BYTES = 1024 * 1024
 
 _IMPORT_STATUS_RE = re.compile(
     r"^/api/desktop/personal-imports/(personal_import_[A-Za-z0-9_-]{16,96})$"
@@ -45,11 +49,18 @@ _IMPORT_REVIEWED_RE = re.compile(
 _PACKAGE_JOB_RE = re.compile(
     r"^/api/desktop/evidence-package-jobs/([A-Za-z0-9_-]{16,128})$"
 )
+_PACKAGE_CENTER_JOB_RE = re.compile(
+    r"^/api/desktop/package-center/jobs/([A-Za-z0-9_-]{16,128})$"
+)
 _STATIC_FILES = {
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
     "/static/app.js": ("app.js", "application/javascript; charset=utf-8"),
     "/static/desktop_product.js": (
         "desktop_product.js",
+        "application/javascript; charset=utf-8",
+    ),
+    "/static/package_center.js": (
+        "package_center.js",
         "application/javascript; charset=utf-8",
     ),
     "/static/librarian_brief.js": (
@@ -215,6 +226,7 @@ class WindowsSharedHttpBridge:
                 *,
                 issue_cookie: bool = False,
                 issue_csrf: bool = False,
+                content_disposition: str | None = None,
             ) -> None:
                 self.send_response(status)
                 self.send_header("Content-Type", content_type)
@@ -229,6 +241,8 @@ class WindowsSharedHttpBridge:
                     )
                 if issue_csrf:
                     self.send_header(CSRF_HEADER, state.csrf_token)
+                if content_disposition is not None:
+                    self.send_header("Content-Disposition", content_disposition)
                 self.end_headers()
 
             def json_response(
@@ -360,6 +374,50 @@ class WindowsSharedHttpBridge:
                 )
                 self.json_response(payload)
 
+            def _federated_pdf(self, parsed: Any) -> None:
+                query = parse_qs(parsed.query, keep_blank_values=True)
+                if set(query) != {"source_id", "paper_uid"}:
+                    raise EvidenceSearchError(
+                        "federated_identity_invalid", "论文集合身份无效。"
+                    )
+                lease = services.evidence_search.open_private_pdf(
+                    source_id=(source_id := self._single_query(query, "source_id")),
+                    paper_uid=(paper_uid := self._single_query(query, "paper_uid")),
+                )
+                try:
+                    metadata = lease.public_metadata()
+                    size = int(metadata["size_bytes"])
+                    media_type = str(metadata["media_type"])
+                    if (
+                        metadata.get("schema_version") != "private-pdf-lease-v1"
+                        or metadata.get("source_scope") != "private"
+                        or metadata.get("source_id") != source_id
+                        or metadata.get("paper_uid") != paper_uid
+                        or size < 5
+                        or media_type != "application/pdf"
+                    ):
+                        raise ValueError("invalid PDF lease")
+                    self._send_headers(
+                        HTTPStatus.OK,
+                        media_type,
+                        size,
+                        content_disposition='inline; filename="evidence.pdf"',
+                    )
+                    # A fixed safe name prevents the package title from becoming
+                    # response-header input.
+                    remaining = size
+                    while remaining:
+                        chunk = lease.read(min(PDF_STREAM_CHUNK_BYTES, remaining))
+                        if not chunk or len(chunk) > remaining:
+                            self.close_connection = True
+                            return
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+                except OSError:
+                    self.close_connection = True
+                finally:
+                    lease.close()
+
             def do_GET(self) -> None:
                 parsed = urlparse(self.path)
                 if parsed.path == "/api/desktop/healthz" and not parsed.query:
@@ -401,6 +459,13 @@ class WindowsSharedHttpBridge:
                     job_match = _PACKAGE_JOB_RE.fullmatch(parsed.path)
                     if job_match is not None and not parsed.query:
                         return self.json_response(services.package_import.get_job(job_match.group(1)))
+                    if parsed.path == "/api/desktop/package-center" and not parsed.query:
+                        return self.json_response(services.package_center.status())
+                    package_center_job = _PACKAGE_CENTER_JOB_RE.fullmatch(parsed.path)
+                    if package_center_job is not None and not parsed.query:
+                        return self.json_response(
+                            services.package_center.get_job(package_center_job.group(1))
+                        )
                     if parsed.path == "/api/desktop/personal-imports/search-status" and not parsed.query:
                         return self.json_response(services.personal_import.search_status())
                     import_match = _IMPORT_STATUS_RE.fullmatch(parsed.path)
@@ -410,6 +475,8 @@ class WindowsSharedHttpBridge:
                         return self._federated_search(parsed)
                     if parsed.path == "/api/desktop/federated-evidence":
                         return self._federated_get(parsed)
+                    if parsed.path == "/api/desktop/federated-pdf":
+                        return self._federated_pdf(parsed)
                     if parsed.path == "/api/desktop/credentials/deepseek" and not parsed.query:
                         return self.json_response(services.deepseek_credentials.status())
                     if parsed.path == "/api/desktop/readiness" and not parsed.query:
@@ -417,13 +484,17 @@ class WindowsSharedHttpBridge:
                 except PackageBridgeError as exc:
                     return self.json_response(exc.public_dict(), HTTPStatus.NOT_FOUND)
                 except Exception as exc:
+                    if parsed.path.startswith("/api/desktop/package-center"):
+                        payload, status = WindowsPackageCenterBridgeAdapter.public_error(exc)
+                        return self.json_response(payload, status)
                     if parsed.path.startswith("/api/desktop/federated-"):
                         payload = EvidenceSearchBridgeAdapter.public_error(exc)
-                        status = (
-                            HTTPStatus.NOT_FOUND
-                            if payload["code"] == "evidence_not_found"
-                            else HTTPStatus.BAD_REQUEST
-                        )
+                        if payload["code"] in {"evidence_not_found", "federated_pdf_not_found"}:
+                            status = HTTPStatus.NOT_FOUND
+                        elif payload["code"] in {"federated_pdf_changed", "federated_pdf_unavailable"}:
+                            status = HTTPStatus.CONFLICT
+                        else:
+                            status = HTTPStatus.BAD_REQUEST
                         return self.json_response(payload, status)
                     if parsed.path.startswith("/api/desktop/personal-imports/"):
                         return self.json_response(
@@ -452,6 +523,56 @@ class WindowsSharedHttpBridge:
                             raise ValueError("invalid package fields")
                         return self.json_response(
                             services.package_import.start_import(body["selection_id"]),
+                            HTTPStatus.ACCEPTED,
+                        )
+                    if parsed.path == "/api/desktop/package-center/inspect":
+                        body = self._read_json(MAX_PACKAGE_CENTER_REQUEST_BYTES)
+                        if set(body) != {"selection_token"}:
+                            raise ValueError("invalid package-center inspect fields")
+                        return self.json_response(
+                            services.package_center.inspect(body["selection_token"])
+                        )
+                    if parsed.path == "/api/desktop/package-center/export-plan":
+                        body = self._read_json(MAX_PACKAGE_CENTER_REQUEST_BYTES)
+                        if set(body) != {"kind", "scope", "selection"}:
+                            raise ValueError("invalid package-center plan fields")
+                        return self.json_response(
+                            services.package_center.plan_export(
+                                body["kind"], body["scope"], body["selection"]
+                            )
+                        )
+                    if parsed.path == "/api/desktop/package-center/export":
+                        body = self._read_json(MAX_PACKAGE_CENTER_REQUEST_BYTES)
+                        if set(body) != {
+                            "plan_token",
+                            "rights_confirmations",
+                            "destination_token",
+                        }:
+                            raise ValueError("invalid package-center export fields")
+                        return self.json_response(
+                            services.package_center.start_export(
+                                body["plan_token"],
+                                body["rights_confirmations"],
+                                body["destination_token"],
+                            ),
+                            HTTPStatus.ACCEPTED,
+                        )
+                    if parsed.path == "/api/desktop/package-center/import":
+                        body = self._read_json(MAX_PACKAGE_CENTER_REQUEST_BYTES)
+                        if set(body) != {
+                            "selection_token",
+                            "checksum_ack",
+                            "expected_sha",
+                            "keep_conflicts",
+                        }:
+                            raise ValueError("invalid package-center import fields")
+                        return self.json_response(
+                            services.package_center.start_import(
+                                body["selection_token"],
+                                checksum_ack=body["checksum_ack"],
+                                expected_sha=body["expected_sha"],
+                                keep_conflicts=body["keep_conflicts"],
+                            ),
                             HTTPStatus.ACCEPTED,
                         )
                     if parsed.path == "/api/desktop/personal-imports/preview":
@@ -559,6 +680,9 @@ class WindowsSharedHttpBridge:
                         HTTPStatus.BAD_REQUEST,
                     )
                 except Exception as exc:
+                    if parsed.path.startswith("/api/desktop/package-center"):
+                        payload, status = WindowsPackageCenterBridgeAdapter.public_error(exc)
+                        return self.json_response(payload, status)
                     if parsed.path.startswith("/api/desktop/personal-imports/"):
                         payload = PersonalImportBridgeAdapter.public_error(exc)
                         status = PersonalImportBridgeAdapter.error_http_status(

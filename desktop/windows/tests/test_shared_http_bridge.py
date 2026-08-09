@@ -64,6 +64,87 @@ class _Evidence:
             "display_title": "safe",
         }
 
+    def open_private_pdf(self, **identity):
+        return _PdfLease(identity["source_id"], identity["paper_uid"])
+
+
+class _PdfLease:
+    def __init__(self, source_id, paper_uid):
+        self.source_id = source_id
+        self.paper_uid = paper_uid
+        self.body = b"%PDF-1.7\n%%EOF"
+        self.offset = 0
+        self.closed = False
+
+    def public_metadata(self):
+        return {
+            "schema_version": "private-pdf-lease-v1",
+            "source_scope": "private",
+            "source_id": self.source_id,
+            "paper_uid": self.paper_uid,
+            "size_bytes": len(self.body),
+            "media_type": "application/pdf",
+        }
+
+    def read(self, size):
+        value = self.body[self.offset : self.offset + size]
+        self.offset += len(value)
+        return value
+
+    def close(self):
+        self.closed = True
+
+
+class _PackageCenter:
+    def status(self):
+        return {"schema": "package-center-status-v1", "capabilities": {}}
+
+    def inspect(self, selection_token):
+        return {
+            "schema": "package-summary-v1",
+            "package_kind": "literature_collection",
+            "selection_token": selection_token,
+        }
+
+    def plan_export(self, kind, scope, selection):
+        return {
+            "schema": "package-plan-v1",
+            "plan_token": "plan_token_0123456789",
+            "package_kind": kind,
+            "scope": scope,
+            "selection": selection,
+        }
+
+    def start_export(self, plan_token, rights_confirmations, destination_token):
+        return {
+            "schema": "package-job-v1",
+            "job_id": "package_export_0123456789",
+            "operation": "transfer_export",
+            "stage": "queued",
+            "progress": 0,
+            "terminal": False,
+        }
+
+    def start_import(self, selection_token, **kwargs):
+        return {
+            "schema": "package-job-v1",
+            "job_id": "package_import_0123456789",
+            "operation": "transfer_import",
+            "stage": "queued",
+            "progress": 0,
+            "terminal": False,
+        }
+
+    def get_job(self, job_id):
+        return {
+            "schema": "package-job-v1",
+            "job_id": job_id,
+            "operation": "transfer_import",
+            "stage": "completed",
+            "progress": 100,
+            "terminal": True,
+        }
+
 
 class _Personal:
     def preview(self, selection_id):
@@ -154,6 +235,7 @@ class SharedHttpBridgeTests(unittest.TestCase):
             deepseek_credentials=_Credentials(),
             readiness=_Readiness(),
             librarian=_Librarian(),
+            package_center=_PackageCenter(),
         )
         self.server = MODULE.WindowsSharedHttpBridge().build_server(
             host="127.0.0.1",
@@ -221,6 +303,18 @@ class SharedHttpBridgeTests(unittest.TestCase):
         connection.close()
         return status, body, no_store
 
+    def _get_bytes(self, path):
+        connection = self._connection()
+        connection.request("GET", path, headers={"Cookie": self.cookie})
+        response = connection.getresponse()
+        body = response.read()
+        status = response.status
+        media_type = response.getheader("Content-Type")
+        disposition = response.getheader("Content-Disposition")
+        no_store = response.getheader("Cache-Control")
+        connection.close()
+        return status, body, media_type, disposition, no_store
+
     def _post(self, path, payload, *, origin=True, csrf=True):
         body = json.dumps(payload).encode("utf-8")
         headers = {
@@ -242,6 +336,7 @@ class SharedHttpBridgeTests(unittest.TestCase):
     def test_frozen_package_personal_search_credential_and_readiness_routes(self) -> None:
         get_paths = (
             "/api/desktop/evidence-packages",
+            "/api/desktop/package-center",
             "/api/desktop/personal-imports/search-status",
             f"/api/desktop/personal-imports/{IMPORT_ID}",
             "/api/desktop/federated-search?q=&page=1&page_size=20&source_scope=private",
@@ -275,6 +370,59 @@ class SharedHttpBridgeTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(job["stage"], "completed")
 
+    def test_package_center_routes_preserve_shared_dto_and_async_polling(self) -> None:
+        status, inspected = self._post(
+            "/api/desktop/package-center/inspect",
+            {"selection_token": "selection_0123456789"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(inspected["schema"], "package-summary-v1")
+        status, plan = self._post(
+            "/api/desktop/package-center/export-plan",
+            {"kind": "literature_collection", "scope": "all", "selection": None},
+        )
+        self.assertEqual(status, 200)
+        status, queued = self._post(
+            "/api/desktop/package-center/export",
+            {
+                "plan_token": plan["plan_token"],
+                "rights_confirmations": {
+                    "unencrypted_ack": True,
+                    "unauthenticated_source_ack": True,
+                    "internal_use_only_ack": True,
+                    "paper_rights": {},
+                },
+                "destination_token": "destination_0123456789",
+            },
+        )
+        self.assertEqual(status, 202)
+        self.assertEqual(queued["stage"], "queued")
+        status, completed, no_store = self._get(
+            f"/api/desktop/package-center/jobs/{queued['job_id']}"
+        )
+        self.assertEqual((status, completed["stage"], no_store), (200, "completed", "no-store"))
+        status, imported = self._post(
+            "/api/desktop/package-center/import",
+            {
+                "selection_token": "selection_0123456789",
+                "checksum_ack": True,
+                "expected_sha": "a" * 64,
+                "keep_conflicts": True,
+            },
+        )
+        self.assertEqual(status, 202)
+        self.assertEqual(imported["stage"], "queued")
+
+    def test_federated_pdf_streams_only_from_lease(self) -> None:
+        status, body, media_type, disposition, no_store = self._get_bytes(
+            "/api/desktop/federated-pdf?source_id=literature-test&paper_uid=paper-test"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(media_type, "application/pdf")
+        self.assertEqual(disposition, 'inline; filename="evidence.pdf"')
+        self.assertEqual(no_store, "no-store")
+        self.assertTrue(body.startswith(b"%PDF-"))
+
     def test_shared_workbench_exposes_three_primary_destinations_and_personal_picker(self) -> None:
         status, index, no_store = self._get_text("/index.html")
         self.assertEqual(status, 200)
@@ -302,6 +450,10 @@ class SharedHttpBridgeTests(unittest.TestCase):
         self.assertIn("ai-suggestion", product)
         self.assertIn("reviewed-import", product)
         self.assertNotIn("selected.selection.path", product)
+        status, package_center, no_store = self._get_text("/static/package_center.js")
+        self.assertEqual((status, no_store), (200, "no-store"))
+        self.assertIn("AutoResearchPackageCenter", package_center)
+        self.assertIn("/api/desktop/package-center/export", package_center)
 
     def test_personal_ai_requires_explicit_consent_and_human_review(self) -> None:
         status, payload = self._post(

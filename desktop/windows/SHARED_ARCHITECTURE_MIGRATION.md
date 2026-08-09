@@ -2,6 +2,13 @@
 
 状态：共享契约已冻结，Windows 黄金子集已对齐；运行时尚未迁移，`installer_ready=false`。
 
+2026-08-09 增量：Windows 安全 HTTP 外壳已对齐共享资料包中心路由、
+`package_center.js`、异步 `package-job-v1` 轮询及只接受
+`PrivatePdfLease` 的用户论文 PDF 流。平台层仅转发共享
+`PackageCenter/PackageExportService/PackageTransferImportService/PackageJobService`；
+在安全 v12 快照、私人仓库解析器和 transfer activation 生产组合注入前，
+`UnavailablePackageCenterBridge` 固定失败关闭，不把源码契约误报成可用功能。
+
 ## 目的
 
 Windows 不应通过复制 macOS 或旧 `webapp` 的路由、资料包任务、搜索或个人导入算法来获得功能一致性。共享核心现已提供四项正式契约，Windows 候选只消费这些契约：

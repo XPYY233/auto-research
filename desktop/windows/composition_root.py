@@ -24,6 +24,14 @@ from package_import_bridge import PackageImportBridgeAdapter
 from package_import_service import AutoResearchProductApi, OfficialPackageApi, PackageImportService
 from package_input import FileSystemProbe, PackageInputBroker
 from package_input_window import PackageInputWindowAdapter, PackageWindowBridge
+from package_center_bridge import (
+    PackageCenterBridge,
+    UnavailablePackageCenterBridge,
+)
+from package_export_destination import (
+    WindowsPackageExportDestinationAdapter,
+    WindowsPackageExportDestinationBroker,
+)
 from native_desktop_bridge import WindowsNativeDesktopBridge
 from personal_ai_model import WindowsDeepSeekPersonalSuggestionModel
 from personal_file_selection import (
@@ -165,6 +173,7 @@ class WindowsBridgeServices:
     personal_import: PersonalImportBridgeAdapter
     librarian: LibrarianV3BridgeAdapter
     readiness: WindowsReadinessV2Service
+    package_center: PackageCenterBridge
 
 
 @dataclass(frozen=True)
@@ -198,6 +207,8 @@ class WindowsCompositionRoot:
         personal_selection_provider: SelectionSnapshotProvider | None = None,
         librarian_runtime: LibrarianV3Runtime | None = None,
         official_api: OfficialPackageApi | None = None,
+        package_center_bridge: PackageCenterBridge | None = None,
+        package_export_destination_broker: WindowsPackageExportDestinationBroker | None = None,
         credential_backend: CredentialBackend | None = None,
         package_probe: FileSystemProbe | None = None,
         native_path_factory: Callable[[str], object] = Path,
@@ -213,6 +224,16 @@ class WindowsCompositionRoot:
         self.personal_selection_provider = personal_selection_provider
         self.librarian_runtime = librarian_runtime
         self.official_api = official_api or AutoResearchProductApi()
+        # A complete shared package-center graph needs a safe v12 snapshot,
+        # private repository resolver and transfer activation root.  Windows
+        # must receive that graph by injection; it never guesses or copies it.
+        self.package_center_bridge = (
+            package_center_bridge or UnavailablePackageCenterBridge()
+        )
+        self.package_export_destination_broker = (
+            package_export_destination_broker
+            or WindowsPackageExportDestinationBroker()
+        )
         self.credential_backend = credential_backend
         self.package_probe = package_probe
         self.native_path_factory = native_path_factory
@@ -313,11 +334,16 @@ class WindowsCompositionRoot:
             personal_import=personal_import,
             librarian=librarian,
             readiness=readiness,
+            package_center=self.package_center_bridge,
         )
         native_desktop_bridge = WindowsNativeDesktopBridge(
             package_input=package_input,
             package_import=package_import,
             personal_files=personal_file_input,
+            package_exports=WindowsPackageExportDestinationAdapter(
+                self.package_export_destination_broker,
+                self.window,  # type: ignore[arg-type]
+            ),
         )
         bind_native_api = getattr(self.window, "bind_native_api", None)
         if callable(bind_native_api):

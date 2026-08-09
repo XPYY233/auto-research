@@ -12,6 +12,10 @@ PUBLIC_ERROR_MESSAGES = {
     "search_request_invalid": "搜索条件无效。",
     "evidence_not_found": "未找到指定证据。",
     "search_failed": "离线搜索未能完成。",
+    "federated_pdf_not_found": "该论文集合没有可打开的 PDF。",
+    "federated_pdf_changed": "论文 PDF 缺失或发生变化，请重新导入资料包。",
+    "federated_pdf_unavailable": "论文 PDF 无法安全打开。",
+    "federated_identity_invalid": "论文集合身份无效。",
 }
 
 
@@ -45,6 +49,12 @@ class EvidenceSearchBridgeAdapter:
             source_scope=source_scope,
             source_id=source_id,
             entity_uid=entity_uid,
+        )
+
+    def open_private_pdf(self, *, source_id: str, paper_uid: str):
+        return self.service.open_private_pdf(
+            source_id=source_id,
+            paper_uid=paper_uid,
         )
 
     @staticmethod

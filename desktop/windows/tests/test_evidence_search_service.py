@@ -36,6 +36,34 @@ class FakeSource:
         return iter(self.documents)
 
 
+class FakePdfLease:
+    def __init__(self, source_id, paper_uid):
+        self.source_id = source_id
+        self.paper_uid = paper_uid
+        self.size_bytes = 14
+        self.media_type = "application/pdf"
+        self.closed = False
+
+    def read(self, size=1024 * 1024):
+        return b""
+
+    def close(self):
+        self.closed = True
+
+    def public_metadata(self):
+        return {
+            "source_id": self.source_id,
+            "paper_uid": self.paper_uid,
+            "size_bytes": self.size_bytes,
+            "media_type": self.media_type,
+        }
+
+
+class FakeLiteratureSource(FakeSource):
+    def open_pdf(self, paper_uid):
+        return FakePdfLease(self.source_id, paper_uid)
+
+
 def document(entity_type: str, index: int, *, scope: str = "official"):
     return {
         "entity_type": entity_type,
@@ -210,6 +238,30 @@ class EvidenceSearchServiceTests(unittest.TestCase):
             )
         )
         self.assertNotIn("C:\\private", str(typed))
+
+    def test_imported_collection_pdf_returns_shared_lease_not_path(self) -> None:
+        source = FakeLiteratureSource(
+            [
+                {
+                    **document("item", 12, scope="private"),
+                    "source_id": "literature-collection",
+                }
+            ],
+            source_id="literature-collection",
+        )
+        service = self.service()
+        service.activate_literature_collection(
+            source,
+            source_id="literature-collection",
+            fingerprint="d" * 64,
+        )
+        lease = BRIDGE.EvidenceSearchBridgeAdapter(service).open_private_pdf(
+            source_id="literature-collection",
+            paper_uid="paper-uid",
+        )
+        self.assertEqual(lease.public_metadata()["media_type"], "application/pdf")
+        self.assertFalse(isinstance(lease, Path))
+        self.assertFalse(hasattr(lease, "path"))
 
 
 if __name__ == "__main__":

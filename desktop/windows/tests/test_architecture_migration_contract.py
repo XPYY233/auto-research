@@ -106,6 +106,10 @@ class ArchitectureMigrationContractTests(unittest.TestCase):
                 WINDOWS_HTTP._PACKAGE_JOB_RE,
                 "/api/desktop/evidence-package-jobs/job_1234567890123456",
             ),
+            "package_center.job_get": (
+                WINDOWS_HTTP._PACKAGE_CENTER_JOB_RE,
+                "/api/desktop/package-center/jobs/job_1234567890123456",
+            ),
             "personal.status": (
                 WINDOWS_HTTP._IMPORT_STATUS_RE,
                 "/api/desktop/personal-imports/personal_import_0123456789abcdef",

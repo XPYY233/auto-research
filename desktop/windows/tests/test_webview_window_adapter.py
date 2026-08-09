@@ -40,6 +40,7 @@ class FakeWindow:
 class FakeWebView:
     class FileDialog:
         OPEN = "open"
+        SAVE = "save"
 
     def __init__(self) -> None:
         self.settings = {}
@@ -107,6 +108,35 @@ class WebViewWindowAdapterTests(unittest.TestCase):
         )
         self.assertEqual(observed, [r"C:\Users\Researcher\experiment.csv"])
         self.assertEqual(fake.window.dialog_calls[0][0], "open")
+
+    def test_bound_webview_exposes_aresearch_save_picker(self) -> None:
+        fake = FakeWebView()
+        adapter = MODULE.PyWebViewWindowAdapter(module_loader=lambda _name: fake)
+        adapter.bind_native_api(object())
+        observed = []
+
+        def start(**kwargs):
+            fake.window.create_file_dialog = lambda mode, **dialog: (
+                fake.window.dialog_calls.append((mode, dialog))
+                or [r"C:\\Users\\Researcher\\collection.aresearch"]
+            )
+            observed.append(
+                adapter.choose_save_file(
+                    title="导出资料包",
+                    extension=".aresearch",
+                    suggested_name="collection.aresearch",
+                )
+            )
+            fake.start_kwargs = kwargs
+
+        fake.start = start
+        adapter.show(
+            title="Auto Research",
+            url="http://127.0.0.1:49300/?desktop_token=secret",
+            first_run_entry="import-evidence-package",
+        )
+        self.assertEqual(observed, [r"C:\\Users\\Researcher\\collection.aresearch"])
+        self.assertEqual(fake.window.dialog_calls[0][0], "save")
 
     def test_public_url_or_wrong_entry_is_rejected_before_loading_pywebview(self) -> None:
         adapter = MODULE.PyWebViewWindowAdapter(

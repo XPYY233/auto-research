@@ -21,6 +21,8 @@
     "package_import_bridge",
     "package_import_progress",
     "package_import_service",
+    "package_center_bridge",
+    "package_export_destination",
     "package_input",
     "package_input_window",
     "personal_file_selection",
@@ -46,6 +48,10 @@
     "auto_research.product.official_package_store",
     "auto_research.product.portable_repository",
     "auto_research.product.package_job_contract",
+    "auto_research.product.package_center",
+    "auto_research.product.package_center_models",
+    "auto_research.product.package_center_payload_adapter",
+    "auto_research.product.package_transfer_payloads",
     "auto_research.product.trusted_publishers",
     "auto_research.evidence.federated_search",
     "auto_research.evidence.federated_search_session",
@@ -53,6 +59,14 @@
     "auto_research.personal.ai_import_suggestions",
     "auto_research.personal.private_repository",
     "auto_research.personal.search_source"
+  ],
+  "shared_web_assets": [
+    "index.html",
+    "app.css",
+    "app.js",
+    "desktop_product.js",
+    "package_center.js",
+    "librarian_brief.js"
   ],
   "external_runtime_components": [
     "cryptography",
@@ -72,7 +86,9 @@
     "shared_desktop_http_bridge": "windows-production-adapter-v1",
     "native_package_picker": "pywebview-edgechromium-js-api",
     "personal_selection_snapshot_provider": "windows-native",
-    "librarian_v3_runtime": "pending-shared-http-injection"
+    "librarian_v3_runtime": "pending-shared-http-injection",
+    "package_center_runtime": "fail-closed-pending-safe-v12-private-resolvers-and-transfer-activation",
+    "package_center_shared_web_asset": "package_center.js-frozen-shared-resource"
   },
   "must_exclude_before_candidate": [
     "auto_research.product.internal_preview_builder",

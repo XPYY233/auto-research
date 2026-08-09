@@ -6,6 +6,7 @@ from package_import_bridge import PackageBridgeError, PackageImportBridgeAdapter
 from package_input import PACKAGE_EXTENSION, PackageInputError
 from package_input_window import PackageInputWindowAdapter
 from personal_file_selection import WindowsPersonalFileInputAdapter
+from package_export_destination import WindowsPackageExportDestinationAdapter
 
 
 class WindowsNativeDesktopBridge:
@@ -17,10 +18,12 @@ class WindowsNativeDesktopBridge:
         package_input: PackageInputWindowAdapter,
         package_import: PackageImportBridgeAdapter,
         personal_files: WindowsPersonalFileInputAdapter,
+        package_exports: WindowsPackageExportDestinationAdapter | None = None,
     ) -> None:
         self.package_input = package_input
         self.package_import = package_import
         self.personal_files = personal_files
+        self.package_exports = package_exports
 
     def select_evidence_package(self) -> dict[str, Any]:
         try:
@@ -57,3 +60,18 @@ class WindowsNativeDesktopBridge:
 
     def select_personal_data_file(self) -> dict[str, Any]:
         return self.personal_files.select_personal_data_file()
+
+    def select_package_export_destination(
+        self, suggested_name: str = ""
+    ) -> dict[str, Any]:
+        if self.package_exports is None:
+            return {
+                "ok": False,
+                "cancelled": False,
+                "error": {
+                    "code": "package_destination_unavailable",
+                    "message": "系统保存窗口暂时不可用。",
+                    "retryable": True,
+                },
+            }
+        return self.package_exports.select_package_export_destination(suggested_name)

@@ -229,6 +229,17 @@ class CompositionRootTests(unittest.TestCase):
         self.assertTrue(
             callable(composition.native_desktop_bridge.select_personal_data_file)
         )
+        self.assertTrue(
+            callable(
+                composition.native_desktop_bridge.select_package_export_destination
+            )
+        )
+        with self.assertRaises(Exception) as raised:
+            composition.services.package_center.status()
+        self.assertEqual(
+            getattr(raised.exception, "code", None),
+            "package_center_unavailable",
+        )
 
     def test_launch_injects_services_into_real_loopback_lifecycle_and_cleans_up(self) -> None:
         report = self.root.launch()
@@ -292,6 +303,19 @@ class CompositionRootTests(unittest.TestCase):
             "auto_research.evidence.federated_search",
             manifest["shared_runtime_modules"],
         )
+        self.assertIn("auto_research.product.package_center", manifest["shared_runtime_modules"])
+        self.assertIn("package_center.js", manifest["shared_web_assets"])
+        self.assertEqual(
+            set(manifest["shared_web_assets"]),
+            {
+                "index.html",
+                "app.css",
+                "app.js",
+                "desktop_product.js",
+                "package_center.js",
+                "librarian_brief.js",
+            },
+        )
         self.assertNotIn(
             "auto_research.product.internal_preview_builder",
             manifest["shared_runtime_modules"],
@@ -300,6 +324,7 @@ class CompositionRootTests(unittest.TestCase):
             self.assertTrue((WINDOWS_ROOT / f"{module}.py").is_file(), module)
         for module in manifest["build_gate_modules"]:
             self.assertTrue((WINDOWS_ROOT / f"{module}.py").is_file(), module)
+        self.assertIn("pending", manifest["required_injections"]["package_center_runtime"])
 
 
 if __name__ == "__main__":
