@@ -26,6 +26,11 @@ trap pause_on_error EXIT
 
 cd "${PROJECT_ROOT}"
 
+if ! "${PYTHON_BIN}" "${PROJECT_ROOT}/scripts/sync_release_contract.py"; then
+  echo "发布契约与平台版本或共享前端哈希不一致，请先同步后再构建。"
+  exit 2
+fi
+
 echo "Auto Research macOS 开发预览构建器"
 echo "桌面版本: ${DESKTOP_VERSION}"
 echo "当前构建设备: Apple Silicon Mac（正式用户端目标为 Windows）"

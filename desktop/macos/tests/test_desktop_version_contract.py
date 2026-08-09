@@ -14,14 +14,22 @@ import launcher  # noqa: E402
 
 
 class DesktopVersionContractTests(unittest.TestCase):
-    def test_launcher_uses_version_json_as_single_source(self) -> None:
+    def test_launcher_uses_release_contract_generated_version_json(self) -> None:
         metadata = json.loads(
             (DESKTOP_ROOT / "version.json").read_text(encoding="utf-8")
         )
+        contract = json.loads(
+            (DESKTOP_ROOT.parents[1] / "config" / "release-contract.json").read_text(
+                encoding="utf-8"
+            )
+        )
         self.assertEqual(launcher.DESKTOP_VERSION, metadata["desktop_version"])
-        self.assertEqual(launcher.DESKTOP_VERSION, "0.6.0-preview.1")
-        self.assertEqual(metadata["bundle_short_version"], "0.6.0")
-        self.assertEqual(metadata["build_number"], "7")
+        self.assertEqual(metadata["desktop_version"], contract["desktop"]["macos"]["desktop_version"])
+        self.assertEqual(metadata["bundle_short_version"], contract["desktop"]["macos"]["bundle_short_version"])
+        self.assertEqual(metadata["build_number"], contract["desktop"]["macos"]["build_number"])
+        self.assertEqual(launcher.DESKTOP_VERSION, "0.6.1-preview.1")
+        self.assertEqual(metadata["bundle_short_version"], "0.6.1")
+        self.assertEqual(metadata["build_number"], "8")
         self.assertEqual(metadata["target"], "macOS arm64 internal development preview")
         self.assertIn("legacy-v12-workspace", metadata["data_mode"])
         self.assertIn("signed-official-package", metadata["data_mode"])
@@ -43,6 +51,7 @@ class DesktopVersionContractTests(unittest.TestCase):
 
     def test_build_output_reads_the_same_version_metadata(self) -> None:
         command = (DESKTOP_ROOT / "build_app.command").read_text(encoding="utf-8")
+        self.assertIn("scripts/sync_release_contract.py", command)
         self.assertIn("plutil -extract desktop_version", command)
         self.assertIn('echo "桌面版本: ${DESKTOP_VERSION}"', command)
         self.assertNotIn('echo "桌面版本: 0.3.0-preview.1"', command)

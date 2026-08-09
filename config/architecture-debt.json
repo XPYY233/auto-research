@@ -1,0 +1,81 @@
+{
+  "schema": "auto-research-architecture-debt-v1",
+  "generated_at": "2026-08-09",
+  "policy": {
+    "allowed_statuses": ["stable", "experimental", "compatibility", "retired"],
+    "owner_required": true,
+    "removal_requires_contract_tests": true
+  },
+  "items": [
+    {
+      "id": "ARCH-P0-001",
+      "priority": "P0",
+      "area": "desktop-routes",
+      "owner": "shared-core",
+      "status": "experimental",
+      "problem": "macOS继承核心EvidenceHandler而Windows维护独立业务路由，接口与安全语义可能漂移",
+      "target": "DesktopApplicationFacade与RouteSpec registry成为唯一业务路由权威",
+      "removal_gate": "macOS实机通过且Windows黄金route/DTO契约通过"
+    },
+    {
+      "id": "ARCH-P0-002",
+      "priority": "P0",
+      "area": "package-jobs",
+      "owner": "product-runtime",
+      "status": "experimental",
+      "problem": "macOS与Windows分别维护资料包stage/error/progress/import编排",
+      "target": "共享package job运行时；平台仅负责选择器、线程与安全投影",
+      "removal_gate": "升级、重复导入、失败原子性和回退跨平台契约通过"
+    },
+    {
+      "id": "ARCH-P0-003",
+      "priority": "P0",
+      "area": "release-identity",
+      "owner": "release-lead",
+      "status": "stable",
+      "problem": "core、macOS、Windows、HTTP和资料包版本曾分散维护",
+      "target": "config/release-contract.json为单一发布权威",
+      "removal_gate": "平台版本文件和构建清单均由契约生成或验证"
+    },
+    {
+      "id": "ARCH-P1-001",
+      "priority": "P1",
+      "area": "frontend",
+      "owner": "shared-frontend",
+      "status": "stable",
+      "problem": "app.js约3992行、desktop_product.js约857行，状态与视图职责集中",
+      "target": "无构建器ES模块：api-store、literature、search-librarian、personal、package-center、evidence、history",
+      "removal_gate": "原DOM ID和endpoint黄金契约、macOS/Windows共享资源哈希一致"
+    },
+    {
+      "id": "ARCH-P1-002",
+      "priority": "P1",
+      "area": "python-large-modules",
+      "owner": "shared-core",
+      "status": "stable",
+      "problem": "portable/private/import/evidence_package/webapp等模块超过1000行",
+      "target": "保持facade和DTO不变，按schema、storage、transaction、projection、controller拆分",
+      "removal_gate": "模块依赖方向检查和全部契约回归通过"
+    },
+    {
+      "id": "ARCH-P2-001",
+      "priority": "P2",
+      "area": "retired-browser-product",
+      "owner": "maintenance",
+      "status": "compatibility",
+      "problem": "browser/read-only/ngrok/固定端口仍有历史代码与文档引用",
+      "target": "权限测试迁移后物理退役用户入口，合法Browser PDF获取能力独立保留",
+      "removal_gate": "桌面权限测试不再依赖历史启动器和read_only分支"
+    },
+    {
+      "id": "ARCH-P2-002",
+      "priority": "P2",
+      "area": "repository-artifacts",
+      "owner": "release-lead",
+      "status": "compatibility",
+      "problem": "源码树内历史App/DMG约1.06GB，影响搜索、备份和维护负载",
+      "target": "迁移到仓库外制品目录，Git仅保留manifest、SHA、tag和回退说明",
+      "removal_gate": "所有制品哈希与恢复路径核验后分批移出"
+    }
+  ]
+}
