@@ -3,18 +3,27 @@
 ## 版本身份
 
 - 科学数据基线：`2026.07.30-librarian-brief-stable.1`
-- 桌面候选：Auto Research `0.6.0-preview.1`（Apple Silicon macOS）
-- 制品源码：`7909100`
-- 制品标签：`evidence-demo-2026-08-09-macos-workbench-preview-6`
+- 当前源码候选：Auto Research `0.7.0-preview.1`（Apple Silicon macOS；共享前端 `c2f2c06`、macOS运行时 `6c00ca9`、Windows契约 `f649532`；尚未构建或实机发布验收）
+- 最后已构建制品：Auto Research `0.6.1-preview.1`，源码 `48a30e1`，标签 `evidence-demo-2026-08-09-macos-package-0.6.1-preview-1`，DMG SHA-256 `f22c6c588ad73f8d9fba31c7b0e4a02a6f543140aa1766f0c6bd205f5ca0b98a`
 - 改造前保护提交：`6ce9536`
 - 改造前保护标签：`evidence-demo-2026-07-30-pre-research-brief-1`
-- 当前状态：内部开发预览；联合测试、隔离 App 构建、冻结二进制 smoke、DMG 镜像验证和隔离 GUI 进程启动/关闭均已通过，但本地文献工作区仍依赖 checkout v12
+- 当前状态：`0.7.0-preview.1` 为已接线源码候选；其 DMG、联合全测和真实导出/隔离导入/PDF 打开验收尚未完成。最后可运行回退为 `0.6.1-preview.1`，且该制品仍依赖 checkout v12
 - 证据库结构：`v12`
 - 固定验收语料：`config/evidence_test_set_50.json`
 - 当前用户入口：Auto Research.app（macOS 内部开发预览）
 - 已退役入口：浏览器工作台、导师只读页、`8765`/`8766`、ngrok 公网链接
 
 本阶段在 `2026.07.30-librarian-reasoning-stable.1` 上完成图书管理员研究简报、签名官方资料包、联合只读检索和 macOS 桌面接线。它保留既有数据、图表、原文定位、质量门、DeepSeek 证据对话和校对历史，没有重新提取论文、重新查询 PDF、生成稳定截图或猜测图中曲线点。HTML/JavaScript 与 loopback webapp 仍是 App 内部实现，不再作为独立网页版产品交付。
+
+## 0.7.0-preview.1 源码候选（未发布）
+
+- 新增一级“导出 / 导入资料包”，统一展示官方资料库当前版本、导入、已安装版本和回退，以及论文集合导出、私人实验导出、用户包导入和后台任务进度。共享前端已把资料包业务从 `desktop_product.js` 拆入独立 `package_center.js`，这是前端 P1 治理的第一个落地点。
+- 用户包严格分为 `literature_collection` 与 `personal_experiments`，不能混装、不能写入官方库，也不进入 Librarian。论文集合支持逐篇、当前筛选和全部论文；私人实验只包含 confirmed/indexable 投影与受控原始 CSV/TSV/XLSX。
+- 用户包固定为 `sha256-only`：未加密、来源未认证、仅限课题组内部。导出只要求一次明确风险确认；论文 PDF 分享权限仍逐篇确认。导入必须确认已通过其他渠道核对校验码。
+- 共享 `package-job-v1` 已把规划、权限检查、归档、完整性审计、导入和失败投影改为后台任务；页面显示 `code/stage/outcome/progress`，失败不应改变既有活动库。
+- macOS 已接入资料包中心 API、原生 opaque token、后台运行时和联合搜索刷新。论文集合 PDF 只通过 `source_id/paper_uid` 解析，并以受审计、无路径、同一文件描述符 lease 分块发送；私人实验结果不获得该入口。
+- 新版官方包身份为 `0.2.0-preview.1`，兼容 `>=0.6.0,<1.0.0`；旧 `0.1.0-preview.1` 保持不可变回退点。应用与资料包继续独立更新。
+- 当前禁止把本节描述为已发布：尚无 `0.7.0-preview.1` DMG、发布标签、联合全测或真实 Mac“导出→新数据根导入→搜索→PDF 打开→私人包导出/导入”证据；Windows 仍为 `installer_ready=false`。
 
 ## 0.6.0-preview.1 验收摘要
 

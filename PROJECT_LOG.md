@@ -2,6 +2,17 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-09：0.7.0-preview.1 资料包中心源码候选与首轮架构拆分
+
+- 共享 product 已落地官方包与两类用户包的统一资料包中心契约。`literature_collection` 和 `personal_experiments` 严格分离；用户包只做 SHA-256 完整性校验，明确未加密、来源未认证、仅限课题组内部，不能写入官方 active selector 或进入 Librarian。
+- `package-job-v1` 将导出计划、权限确认、归档、检查、导入、完成和失败投影收敛为共享后台任务；平台只持原生 opaque token、任务调度和安全 HTTP 投影。发布身份由 `config/release-contract.json` 统一为 macOS `0.7.0-preview.1`、官方包 `0.2.0-preview.1` 与用户包 schema v1。
+- 共享 UI 新增一级“导出 / 导入资料包”，覆盖官方版本/导入/回退、论文集合 selected/filtered/all、PDF逐篇权限、私人实验导出、用户包校验导入和 `code/stage/outcome/progress`。提交 `c2f2c06` 将资料包专属状态和行为从 `desktop_product.js` 拆入独立 `package_center.js`，不引入 Node 构建器，也不复制全局状态。
+- macOS 提交 `6c00ca9` 已接入资料包中心 API、原生文件/目标 token、后台 runtime、官方/用户包服务与搜索刷新。导入论文集合后，搜索结果只按 `collection_kind/pdf_available/source_id/paper_uid` 显示 PDF 能力；PDF 通过受保护、无路径、同一文件描述符 lease 分块读取，私人实验不获得论文 PDF 入口。
+- Windows 提交 `f649532` 复用同一共享 UI、资料包中心 DTO、后台任务和 PDF lease，并补齐原生保存位置 token；因为尚缺 Win11 安全 v12/private resolver 与真实 Setup，生产组合明确返回 `package_center_unavailable`，继续 `installer_ready=false`，没有复制共享打包或激活算法。
+- `DesktopApplicationFacade + RouteSpec` 已有平台中立实现和契约测试，但仍是实验性迁移层，尚未替换 macOS/Windows 全部历史路由；不能因为类型已存在就宣称桌面路由治理完成。
+- 本节仅记录源码候选。没有生成或验收 `0.7.0-preview.1` DMG，没有完成真实 Mac 导出/隔离导入/搜索/PDF/私人包全流程，也没有 Windows Setup。Windows 继续 `installer_ready=false`；最后已构建、可回退的制品仍为 `0.6.1-preview.1`。
+- 本阶段没有重新抽取论文或改变科学数据完成度：固定50篇仍为17/50数据就绪、30/50图表就绪。
+
 ## 2026-08-09：macOS 0.6.0-preview.1 AI 辅助导入与文献处理发布
 
 - 将“数据检查”和“上传文献”合并为“文献处理”，复用原有上传/当前文章 DOM、状态和后端；上传不自动产生模型费用，唯一收费动作仍需用户点击“开始自动提取与核验”。主导航固定为“文献处理、搜索数据、上传实验数据”。

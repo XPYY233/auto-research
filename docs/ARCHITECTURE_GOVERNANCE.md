@@ -12,6 +12,8 @@ Auto Research 只有一个用户产品：桌面个人工作台。macOS 是当前
 1. 桌面 App：代码、界面、只读搜索、PDF 上传、质量抽取、Agent 与平台安全凭据适配。
 2. `.aresearch` 官方资料包：经过清洗、签名、校验且可回退的只读结构化证据；与用户私人库、PDF 和 API key 分离。
 
+用户自行导出的 `.aresearch` 是独立传输层，不是第三种官方库：论文集合包与私人实验包严格分开，只做 SHA-256 完整性校验，不加密、不认证发送者身份，仅限课题组内部。二者不得进入官方 active selector；私人实验和论文集合也不得进入 Librarian。
+
 ## 2. 依赖方向
 
 依赖只能向下，不允许反向引用或跨层直接访问实现细节。
@@ -57,8 +59,8 @@ platform-neutral utilities
 
 以下路径当前已冻结：
 
-- `stable`：本地 PyMuPDF 图表资产、DeepSeek 文本语义增强、四类证据搜索、对抗式质量门、签名资料包核心、官方/私人只读联合召回契约、私人导入确认门、个人表格 AI 待核验建议契约、单次整页核验编排、Librarian V3 核心契约，以及共享离线资料库/私人导入 UI。
-- `experimental`：当前 macOS App 仍依赖 checkout v12，私人/官方资料库是内部预览；Windows 后端 parity 已对齐但仍为 `installer_ready=false`，没有 Setup 或 Win11 clean-machine 验收。跨平台可移植发行在真实 Windows 验收前不能升级为 stable。
+- `stable`：本地 PyMuPDF 图表资产、DeepSeek 文本语义增强、四类证据搜索、对抗式质量门、签名资料包核心、官方/私人只读联合召回契约、共享 `package-job-v1`、私人导入确认门、个人表格 AI 待核验建议契约、单次整页核验编排、Librarian V3 核心契约，以及共享离线资料库/私人导入 UI。
+- `experimental`：用户论文/私人实验传输包、资料包中心、`DesktopApplicationFacade + RouteSpec` 迁移层，以及当前仍依赖 checkout v12 的 macOS App。macOS `0.7.0-preview.1` 只有完成真实导出/隔离导入/搜索/PDF打开验收后，资料包中心才可提升为 stable；Windows 仍为 `installer_ready=false`，没有 Setup 或 Win11 clean-machine 验收。
 - `compatibility`：历史 read-only 权限回归；只用于测试安全边界。
 - `retired`：MinerU 云端视觉替换、浏览器编辑工作台、导师公网链接、ngrok 产品路径、无约束 Librarian 工具循环、重复 DeepSeek 预览按钮。
 
@@ -74,6 +76,8 @@ platform-neutral utilities
 - 私人读取：仅 confirmed 且 indexable 的 path-free projection。
 - 联合搜索：按 `source_scope/source_id/entity_uid` 保留来源身份，不改变四类 payload。
 - 平台凭据：macOS Keychain/预览本机加密存储、Windows Credential Manager；API key 不进 SQLite、包、日志、诊断或 Git。
+- 用户包任务：共享 `PackageCenter`/`PackageJobService` 决定 plan、stage、outcome、错误和原子语义；平台只能投影任务、提供 opaque selection/destination token，不得复制打包、权限或 merge 规则。
+- 论文集合 PDF：公开 DTO 只携带 `collection_kind/pdf_available/source_id/paper_uid`；打开时必须使用受审计、无路径、绑定同一文件描述符的短期 lease，禁止把安装路径交给 UI 或重新按路径打开文件。
 
 新增接口必须先写消费者无关的契约测试，再由 macOS 和 Windows 分别接入。平台实现不得用临时分支字段迫使共享核心猜测平台行为。
 
@@ -103,6 +107,7 @@ platform-neutral utilities
 6. 可观测但不泄漏：进度和错误对用户清楚，对日志只记录稳定状态码、计数和耗时，不记录路径、密钥或原始载荷。
 7. 可删除：实验功能必须有独立模块、开关和删除条件；不得在稳定核心中散落分支。
 8. 可迁移：schema 与数据包均显式版本化；升级失败保留旧版本并支持回退。
+9. 单一发布身份：`config/release-contract.json` 是 core、桌面版本、HTTP、包 schema/兼容范围和共享 Web 哈希的权威；平台版本文件只能由它同步生成。
 
 当单文件接近约 800–1000 行或同时承担三种以上职责时，新增功能前先拆分服务、DTO、存储和路由。不得仅用注释掩盖耦合。
 
@@ -120,7 +125,7 @@ platform-neutral utilities
 
 不得用测试通过替代以下声明：语料完成度、科学准确率、版权可分发性或跨平台实机通过。四者分别验收。
 
-最后已构建制品的阶段证据：`7909100` 干净 release worktree 通过745项联合测试，macOS `0.6.0-preview.1` App/DMG 通过冻结二进制 smoke、ad-hoc 签名、镜像校验和真实安装界面检查。该制品包含合并后的文献处理、个人表格 AI 待核验建议、单次整页确认、V3、私人导入和共享离线资料库。Windows 源码契约已同步但仍无真实 Setup 和 Win11 clean-machine 验收，因此跨平台发布序列仍未结束。
+最后可运行的回退制品是 macOS `0.6.1-preview.1`（`48a30e1` / `evidence-demo-2026-08-09-macos-package-0.6.1-preview-1`），它在 `0.6.0-preview.1` 的745项联合测试基线上补入官方包幂等导入结果与 `0.2.0-preview.1` 发布套件。当前 `0.7.0-preview.1` 只是包含资料包中心接线的源码候选，尚未构建或实机发布验收。Windows 仍无真实 Setup 和 Win11 clean-machine 验收，因此跨平台发布序列未结束。
 
 ## 8. 下一轮分层目标
 
@@ -131,6 +136,8 @@ platform-neutral utilities
 3. 保持 `federated_search` 只读；官方、私人和历史v12适配为搜索源，不允许搜索层反向写任何仓库。
 4. 将 `desktop_server` 收缩为受保护的路由组合层；session/CSRF、history、credential、readiness、package jobs 分离为可单测服务。
 5. 对超过约800–1000行或承担三种以上职责的 package/repository 模块分步拆分；每一步保持公开API、包字节和攻击回归兼容，禁止一次性大重写。
+
+前端拆分已开始：`package_center.js` 是从 `desktop_product.js` 提取的第一个业务模块，独立拥有资料包状态、事件和渲染，通过窄 ports 读取选择/筛选快照与调用平台能力。下一模块继续采用同样模式，不得复制全局 store、API 安全封装或业务规则。
 
 ## 9. 架构决定记录
 

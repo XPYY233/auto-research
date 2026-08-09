@@ -10,14 +10,15 @@
 `config/module-ownership.json`，发布身份权威见 `config/release-contract.json`。
 
 本轮已经把官方包、用户传输包、资料包中心、结构化 payload source、用户包激活、
-私人实验 merge 和联合搜索生命周期放回共享核心。平台层只消费这些契约。用户包仍标记
-为 `experimental`，只有 macOS 0.7.0 完成真实导出、隔离导入、搜索和 PDF 打开验收后
-才能提升为 `stable`；Windows 在真实 Setup 验收前继续保持平台实验状态。
+私人实验 merge、共享 `package-job-v1` 和联合搜索生命周期放回共享核心。macOS `6c00ca9`
+已完成薄接线，Windows `f649532` 已对齐共享路由与安全契约；但 `0.7.0-preview.1` 仍只是
+候选待验收：尚无 DMG 和真实导出、隔离导入、搜索、PDF打开证据。用户包与资料包中心
+继续标记为 `experimental`；Windows 在真实 Setup 验收前继续保持 `installer_ready=false`。
 
 ## 规模与热点
 
 - `src/` 与 `desktop/` 的 Python/JavaScript 源码总量约 49,700 行（不含打包制品）。
-- 共享前端约 6,000 行，其中 `app.js` 约 3,992 行，`desktop_product.js` 约 857 行。
+- 共享前端约 6,000 行，其中 `app.js` 约 3,993 行、`desktop_product.js` 约 941 行；首个拆出的 `package_center.js` 为 412 行。
 - 大型 Python 模块包括：`portable_repository.py` 1,846 行、`private_repository.py` 1,579 行、`six_column.py` 1,469 行、`research_brief.py` 1,456 行、`deepseek_extraction.py` 1,362 行、`webapp.py` 1,350 行、`agent_runtime.py` 1,325 行、`personal/import_service.py` 1,228 行、`evidence_package.py` 1,086 行。
 - 浏览器工作台、read-only、ngrok、固定端口与导师模式仍有约数百处兼容引用；它们不是正式产品。
 - 仓库内 `desktop/macos/dist` 约 224 MB、`desktop/macos/releases` 约 836 MB；这些历史制品应迁出源码树。
@@ -36,13 +37,19 @@
 4. Windows 消费同一 facade；
 5. 两端通过后删除重复路由。
 
+当前进度：`DesktopApplicationFacade`、`RouteSpec`、稳定错误 DTO 与契约测试已经存在，但尚未接管两端全部生产路由，继续按 `experimental` 管理；不得把“定义完成”误报为“迁移完成”。
+
 ### 2. 资料包任务
 
 官方包、用户包统一使用共享 `package-job-v1`。stage、error、retryable、outcome 和原子安装/审计/启用顺序由 product runtime 决定；平台只提供文件 token、后台调度和状态展示。
 
+当前进度：共享异步 job 已落地，macOS 资料包中心运行时只做调度和安全投影。论文集合 PDF 以 `source_id/paper_uid` 定位，并通过无路径、同一文件描述符 lease 流式打开；候选仍需真实 App 验收。
+
 ### 3. 发布身份
 
 `config/release-contract.json` 统一记录 core、macOS、Windows、HTTP、官方包、用户包与共享 Web 资产哈希。平台 `version.json` 只作为生成物或本地镜像，不能继续独立决定版本。
+
+当前进度：单一 release contract 已落地，当前声明 macOS `0.7.0-preview.1`、官方包 `0.2.0-preview.1`、用户包 schema v1；这只是候选身份，不代表对应制品已经生成。
 
 ## P1：按 facade 拆分，不重写
 
@@ -59,6 +66,8 @@
 - `history`：仅桌面安全历史。
 
 不引入 Node 构建器；macOS/Windows 继续打包同一份静态资源。
+
+首步已完成：提交 `c2f2c06` 将资料包中心的专属状态、事件、规划、导入导出与任务渲染从 `desktop_product.js` 移入 `package_center.js`，通过窄 ports 读取共享状态，没有复制第二套全局 store。其余前端职责仍待逐项迁移。
 
 ### Python
 

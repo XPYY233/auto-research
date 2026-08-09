@@ -2,11 +2,9 @@
 
 > 交班快照：2026-08-09
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
-> 当前制品源码：`7909100`
-> 最后已构建桌面候选：Auto Research `0.6.0-preview.1`（Apple Silicon macOS，内部开发预览）
-> 当前制品标签：`evidence-demo-2026-08-09-macos-workbench-preview-6`
-> 该制品联合验证：745 项通过（core 479 / macOS 157 / Windows 109），最终 UI 契约另22项通过
-> Windows 源码：已同步至 `7909100`；`installer_ready=false`，无 Setup、无 Win11 真机验收
+> 当前源码候选：Auto Research `0.7.0-preview.1`；共享前端 `c2f2c06`、macOS 运行时 `6c00ca9`、Windows 契约 `f649532` 已接入，尚未构建 DMG 或完成真实全流程验收
+> 最后已构建回退基线：`48a30e1` / Auto Research `0.6.1-preview.1` / `evidence-demo-2026-08-09-macos-package-0.6.1-preview-1`；它随附官方 `0.2.0-preview.1` 包，上一 `0.6.0-preview.1` 仍可回退
+> Windows：继续 `installer_ready=false`，无 Setup、无 Win11 真机验收；不得把源码对齐描述为安装版
 > 证据库版本：`2026.07.30-librarian-brief-stable.1` / schema v12
 
 本文面向下一位 Codex Agent、工程维护者和未来的项目负责人。它说明项目为何存在、过去完成了什么、当前真正能做什么、日常工作流、禁止触碰的边界、验证与发布方法，以及尚未完成的目标。
@@ -151,6 +149,15 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 - 共享搜索 UI 分为“本地文献工作区”和“离线资料库”；离线资料库对 `official/private/all` 每次只执行一次联合精确查询，结果继续只有 `item/table/figure/finding`。renderer 公共投影不含本机路径、文件哈希、内部数据库/导入/草稿 ID。
 - 私人 CSV/TSV/XLSX 在安全预览后由 DeepSeek 生成有界待核验建议；用户只浏览整页、修正错误并点击一次确认。后台仍固定执行 `previewed → draft_saved → confirmed/indexable`、revision/CAS 和私人搜索刷新；AI 不得确认记录。当前 UI 不支持趋势图附件或曲线读点。
 
+### 4.8 资料包中心候选
+
+- `0.7.0-preview.1` 源码候选新增一级“导出 / 导入资料包”，把官方资料库导入、已安装版本与回退，论文集合导出、私人实验导出、用户包导入和后台任务进度放在同一页面；旧官方包导入入口继续复用，没有复制第二套状态。
+- 官方包和用户包严格分流：官方包继续签名、审计并可切换活动版本；用户包固定分为 `literature_collection` 与 `personal_experiments`，不能混合，也不能改变官方 active selector 或进入 Librarian。
+- 用户包仅使用 SHA-256 完整性校验，不加密、不认证发送者身份，只限课题组内部。导出使用一次明确风险确认；论文 PDF 还需逐篇确认组内分享权限。导入要求用户通过其他渠道核对校验码。
+- 论文集合支持逐篇、当前筛选结果和证据库全部论文；只读搜索保留 `source_id/paper_uid`，可用 PDF 通过受保护、无路径、同一文件描述符 lease 流式打开。私人实验包只允许 confirmed/indexable 结构化内容和受控原始表格进入。
+- `package-job-v1` 已把规划、校验、构建、导入和失败状态收敛为共享后台任务；macOS 已完成薄 API、原生 token 和运行时接线。共享前端的资料包业务已从 `desktop_product.js` 首次拆入独立 `package_center.js`。
+- 以上是已提交源码候选，不等于已发布制品。尚未完成 `0.7.0-preview.1` DMG、真实 Mac 导出/隔离导入/搜索/PDF 打开验收，也未完成 Windows 安装版接入。
+
 历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。`0.6.0-preview.1` 已从干净源码 `7909100` 构建，包含合并后的“文献处理”、DeepSeek 辅助个人表格识别、单次核验导入、V3 和共享离线资料库；它完成745项联合测试、冻结 App smoke、DMG 校验和真实安装界面验收。它仍是依赖 checkout v12 的内部预览，不得写成可移植正式版。上一 `0.5.1-preview.1` 制品继续作为回退点。
 
 ## 5. 当前真实状态
@@ -174,12 +181,12 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 
 | 源码/平台状态 | 当前事实 |
 |---|---|
-| macOS 制品源码 | `7909100`：三入口工作台、AI辅助个人表格导入、V3与联合精确搜索 |
-| macOS 制品 | `0.6.0-preview.1` / preview-6；DMG SHA-256 `57f78289...039022` |
-| Windows 源码 | 同步至 `7909100`；共享 UI、AI建议、单次核验和平台薄适配已对齐 |
+| macOS 当前源码候选 | `0.7.0-preview.1`：资料包中心、共享后台任务、用户包与安全 PDF lease 已接线；未构建、未完成实机发布验收 |
+| macOS 最后已构建制品 | `0.6.1-preview.1` / `48a30e1`；DMG SHA-256 `f22c6c58...5ca0b98a` |
+| Windows 源码 | `f649532` 已对齐共享资料包中心、后台任务和安全 PDF 契约；安全生产 resolver 仍 fail-closed |
 | Windows 制品 | `installer_ready=false`；无 Setup、无 Win11 clean-machine 验收 |
 
-首个内部官方资料包为 `0.1.0-preview.1`，大小约 2.36 MB，SHA-256 为 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`。它包含60篇论文元数据和4,356个只读实体（3,142 item、936 finding、46 table、232 figure），不含 PDF 和二进制图片。官方包与 schema-v12 可编辑工作区是两个数据源，不能 `ATTACH`、覆盖或互相写入。
+首个内部官方资料包 `0.1.0-preview.1` 继续作为不可变回退金标准；新版交付候选为 `0.2.0-preview.1`，兼容 App `>=0.6.0,<1.0.0`。官方包不含 PDF、截图、私人实验、路径、Zotero key 或 API 密钥。官方包与 schema-v12 可编辑工作区是两个数据源，不能 `ATTACH`、覆盖或互相写入。旧包的既有内容口径保持：60篇论文元数据、4,356个只读实体（3,142 item、936 finding、46 table、232 figure）。
 
 重点 DOI `10.1016/j.jnucmat.2018.08.031` 当前有231个独立事实，403/403处自动记录可回到 PDF 定位。
 
@@ -410,11 +417,11 @@ git fsck --full
 
 推荐顺序：
 
-1. 在真实 Windows 11 上生成 Setup，完成 clean-machine 安装、资料包/私人表格导入、离线搜索、Librarian、升级和卸载验收；
-2. 建立30–50个图书管理员问题的人工金标准和自动回归指标；
-3. 每批3–5篇补齐13篇数据就绪论文，使17/50达到至少30/50；
-4. 建立轻量用户反馈，区分漏检、错引和条件理解错误；证明需要后再评估向量检索；
-5. 完成私有GitHub或代码+脱敏演示库的发布范围设计。
+1. 完成 `0.7.0-preview.1` macOS 真实候选构建与“论文选择→导出→隔离导入→联合搜索→PDF 打开→私人实验导出/导入”验收；
+2. 让 Windows 消费冻结的资料包中心与共享路由，生成 Setup 并完成 clean-machine 安装、导包、离线搜索、Librarian、升级和卸载验收；
+3. 建立30–50个图书管理员问题的人工金标准和自动回归指标；
+4. 每批3–5篇补齐13篇数据就绪论文，使17/50达到至少30/50；
+5. 建立轻量用户反馈并完成私有GitHub或代码+脱敏演示库的发布范围设计。
 
 ## 16. 更换账号后的 Skill 使用
 
