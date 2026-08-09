@@ -14,6 +14,9 @@ from .federated_search import (
 
 
 SOURCE_SCOPES = frozenset({"official", "private"})
+SOURCE_KINDS = frozenset(
+    {"official_repository", "personal_experiments", "literature_collection"}
+)
 _WINDOWS_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 
@@ -55,10 +58,17 @@ class SearchSourceRegistration:
     source_id: str
     fingerprint: str
     source: StructuredEvidenceSource
+    source_kind: str
 
     def __post_init__(self) -> None:
         if self.source_scope not in SOURCE_SCOPES:
             raise ValueError("unsupported source scope")
+        if self.source_kind not in SOURCE_KINDS:
+            raise ValueError("unsupported source kind")
+        if (self.source_scope == "official") != (
+            self.source_kind == "official_repository"
+        ):
+            raise ValueError("source scope and kind do not match")
         object.__setattr__(self, "source_id", _stable_identity(self.source_id, "source_id"))
         object.__setattr__(self, "fingerprint", _stable_identity(self.fingerprint, "fingerprint"))
         if not callable(getattr(self.source, "iter_search_documents", None)):
@@ -72,7 +82,7 @@ class SearchSourceRegistration:
         source_id: str,
         fingerprint: str,
     ) -> "SearchSourceRegistration":
-        return cls("official", source_id, fingerprint, source)
+        return cls("official", source_id, fingerprint, source, "official_repository")
 
     @classmethod
     def private(
@@ -82,7 +92,17 @@ class SearchSourceRegistration:
         source_id: str,
         fingerprint: str,
     ) -> "SearchSourceRegistration":
-        return cls("private", source_id, fingerprint, source)
+        return cls("private", source_id, fingerprint, source, "personal_experiments")
+
+    @classmethod
+    def literature_collection(
+        cls,
+        source: StructuredEvidenceSource,
+        *,
+        source_id: str,
+        fingerprint: str,
+    ) -> "SearchSourceRegistration":
+        return cls("private", source_id, fingerprint, source, "literature_collection")
 
     def public_identity(self) -> dict[str, str]:
         return {
@@ -108,7 +128,9 @@ class FederatedSearchSessionProtocol(Protocol):
 
     def remove_private(self, source_id: str) -> dict[str, Any]: ...
 
-    def resolve_private_pdf(self, source_id: str, paper_uid: str) -> Any: ...
+    def open_private_pdf(
+        self, source_id: str, paper_uid: str
+    ) -> "PrivatePdfLeaseProtocol": ...
 
     def clear_official(self) -> dict[str, Any]: ...
 
@@ -117,6 +139,29 @@ class FederatedSearchSessionProtocol(Protocol):
     def search(self, query: str = "", **filters: Any) -> FederatedSearchPage: ...
 
     def get(self, *, source_scope: str, source_id: str, entity_uid: str) -> dict[str, Any]: ...
+
+
+@runtime_checkable
+class PrivatePdfLeaseProtocol(Protocol):
+    """Path-free, same-file-descriptor lease used only by protected PDF streaming."""
+
+    @property
+    def source_id(self) -> str: ...
+
+    @property
+    def paper_uid(self) -> str: ...
+
+    @property
+    def size_bytes(self) -> int: ...
+
+    @property
+    def media_type(self) -> str: ...
+
+    def read(self, size: int = 1024 * 1024) -> bytes: ...
+
+    def close(self) -> None: ...
+
+    def public_metadata(self) -> Mapping[str, Any]: ...
 
 
 class _IdentityBoundSource:
@@ -173,6 +218,8 @@ class FederatedSearchSession:
             raise ValueError("official registration must use official scope")
         if private is not None and private.source_scope != "private":
             raise ValueError("private registration must use private scope")
+        if private is not None and private.source_kind != "personal_experiments":
+            raise ValueError("constructor private source must be personal experiments")
         if official is not None or private is not None:
             try:
                 private_sources = {private.source_id: private} if private is not None else {}
@@ -216,6 +263,7 @@ class FederatedSearchSession:
 
     def install_private(self, registration: SearchSourceRegistration) -> dict[str, Any]:
         self._require_scope(registration, "private")
+        self._require_kind(registration, "personal_experiments")
         return self._mutate(
             replace_privates={registration.source_id: registration},
             personal_private_id=registration.source_id,
@@ -224,59 +272,73 @@ class FederatedSearchSession:
     def refresh_private(self, registration: SearchSourceRegistration) -> dict[str, Any]:
         """Re-index a newly snapshotted confirmed/indexable private source."""
         self._require_scope(registration, "private")
-        with self._lock:
-            current_personal = self._personal_private_id
-            next_privates = dict(self._privates)
-        if current_personal is not None:
-            next_privates.pop(current_personal, None)
-        next_privates[registration.source_id] = registration
+        self._require_kind(registration, "personal_experiments")
         return self._mutate(
-            replace_privates=next_privates,
-            personal_private_id=registration.source_id,
+            refresh_personal=registration,
         )
 
     def upsert_private(self, registration: SearchSourceRegistration) -> dict[str, Any]:
         """Add or replace one private collection without removing its siblings."""
 
         self._require_scope(registration, "private")
-        with self._lock:
-            next_privates = dict(self._privates)
-            personal = self._personal_private_id
-        next_privates[registration.source_id] = registration
+        self._require_kind(registration, "literature_collection")
         return self._mutate(
-            replace_privates=next_privates,
-            personal_private_id=personal,
+            upsert_collection=registration,
         )
 
     def remove_private(self, source_id: str) -> dict[str, Any]:
-        normalized = _stable_identity(source_id, "source_id")
-        with self._lock:
-            next_privates = dict(self._privates)
-            personal = self._personal_private_id
-        next_privates.pop(normalized, None)
-        if personal == normalized:
-            personal = None
-        return self._mutate(
-            replace_privates=next_privates,
-            personal_private_id=personal,
-        )
+        return self._mutate(remove_private_id=_stable_identity(source_id, "source_id"))
 
-    def resolve_private_pdf(self, source_id: str, paper_uid: str) -> Any:
-        """Resolve an imported collection PDF without serializing its path."""
+    def open_private_pdf(
+        self, source_id: str, paper_uid: str
+    ) -> PrivatePdfLeaseProtocol:
+        """Open an imported PDF as a path-free, same-descriptor lease."""
 
         normalized_source = _stable_identity(source_id, "source_id")
         normalized_paper = _stable_identity(paper_uid, "paper_uid")
         with self._lock:
             registration = self._privates.get(normalized_source)
         if registration is None:
-            raise KeyError("private source not found")
-        resolver = getattr(registration.source, "resolve_pdf", None)
+            raise FederatedSearchSessionError(
+                "private_source_not_found", "找不到所选的私人文献来源。"
+            )
+        if registration.source_kind != "literature_collection":
+            raise FederatedSearchSessionError(
+                "private_pdf_unavailable", "该私人来源不提供论文 PDF。"
+            )
+        resolver = getattr(registration.source, "open_pdf", None)
         if not callable(resolver):
-            raise KeyError("private source has no PDF resolver")
-        resolved = resolver(normalized_paper)
-        if resolved is None:
-            raise KeyError("private PDF not found")
-        return resolved
+            raise FederatedSearchSessionError(
+                "private_pdf_unavailable", "该私人来源不提供论文 PDF。"
+            )
+        try:
+            lease = resolver(normalized_paper)
+        except Exception as exc:
+            code = str(getattr(exc, "code", "private_pdf_changed"))
+            if code == "transfer_payload_changed":
+                code = "private_pdf_changed"
+            raise FederatedSearchSessionError(
+                code if code in {"private_pdf_changed", "private_pdf_unavailable"} else "private_pdf_changed",
+                "论文 PDF 缺失或发生变化，请重新导入资料包。",
+            ) from None
+        if lease is None:
+            raise FederatedSearchSessionError(
+                "private_pdf_unavailable", "该论文没有可用的 PDF。"
+            )
+        if not isinstance(lease, PrivatePdfLeaseProtocol):
+            try:
+                lease.close()
+            except Exception:
+                pass
+            raise FederatedSearchSessionError(
+                "private_pdf_unavailable", "该论文 PDF 无法安全打开。"
+            )
+        if lease.source_id != normalized_source or lease.paper_uid != normalized_paper:
+            lease.close()
+            raise FederatedSearchSessionError(
+                "private_pdf_unavailable", "论文 PDF 来源身份不一致。"
+            )
+        return lease
 
     def clear_official(self) -> dict[str, Any]:
         return self._mutate(clear_official=True)
@@ -301,12 +363,20 @@ class FederatedSearchSession:
         if not isinstance(registration, SearchSourceRegistration) or registration.source_scope != scope:
             raise ValueError(f"registration must use {scope} scope")
 
+    @staticmethod
+    def _require_kind(registration: SearchSourceRegistration, kind: str) -> None:
+        if registration.source_kind != kind:
+            raise ValueError(f"registration must use {kind} kind")
+
     def _mutate(
         self,
         *,
         official: SearchSourceRegistration | None = None,
         replace_privates: Mapping[str, SearchSourceRegistration] | None = None,
         personal_private_id: str | None = None,
+        refresh_personal: SearchSourceRegistration | None = None,
+        upsert_collection: SearchSourceRegistration | None = None,
+        remove_private_id: str | None = None,
         clear_official: bool = False,
     ) -> dict[str, Any]:
         with self._mutation_lock:
@@ -322,6 +392,17 @@ class FederatedSearchSession:
                     if replace_privates is not None
                     else self._personal_private_id
                 )
+            if refresh_personal is not None:
+                if next_personal is not None:
+                    next_privates.pop(next_personal, None)
+                next_privates[refresh_personal.source_id] = refresh_personal
+                next_personal = refresh_personal.source_id
+            if upsert_collection is not None:
+                next_privates[upsert_collection.source_id] = upsert_collection
+            if remove_private_id is not None:
+                next_privates.pop(remove_private_id, None)
+                if next_personal == remove_private_id:
+                    next_personal = None
             if next_personal is not None and next_personal not in next_privates:
                 raise ValueError("personal private source is not registered")
             if next_official is None and not next_privates:

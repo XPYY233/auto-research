@@ -1045,6 +1045,132 @@ def _audited_file_identity(path: Path) -> tuple[tuple[int, int, int, int, int], 
         os.close(descriptor)
 
 
+class PrivatePdfLease:
+    """An internal, path-free lease over one already-audited PDF descriptor."""
+
+    __slots__ = (
+        "_descriptor",
+        "_closed",
+        "source_id",
+        "paper_uid",
+        "size_bytes",
+        "media_type",
+    )
+
+    def __init__(
+        self,
+        descriptor: int,
+        *,
+        source_id: str,
+        paper_uid: str,
+        size_bytes: int,
+    ) -> None:
+        self._descriptor = int(descriptor)
+        self._closed = False
+        self.source_id = _source_id(source_id, prefix="literature-")
+        self.paper_uid = str(paper_uid)
+        self.size_bytes = int(size_bytes)
+        self.media_type = "application/pdf"
+
+    def __repr__(self) -> str:
+        return (
+            "PrivatePdfLease("
+            f"source_id={self.source_id!r}, paper_uid={self.paper_uid!r}, "
+            f"size_bytes={self.size_bytes}, closed={self._closed})"
+        )
+
+    def read(self, size: int = 1024 * 1024) -> bytes:
+        if self._closed:
+            raise ValueError("PDF lease is closed")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 1 or size > 4 * 1024 * 1024:
+            raise ValueError("PDF lease read size is invalid")
+        return os.read(self._descriptor, size)
+
+    def close(self) -> None:
+        if not self._closed:
+            os.close(self._descriptor)
+            self._closed = True
+
+    def public_metadata(self) -> dict[str, Any]:
+        return {
+            "schema_version": "private-pdf-lease-v1",
+            "source_scope": "private",
+            "source_id": self.source_id,
+            "paper_uid": self.paper_uid,
+            "size_bytes": self.size_bytes,
+            "media_type": self.media_type,
+        }
+
+    def __enter__(self) -> "PrivatePdfLease":
+        if self._closed:
+            raise ValueError("PDF lease is closed")
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self.close()
+
+    def __del__(self) -> None:  # pragma: no cover - defensive descriptor cleanup
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+def _open_audited_pdf_lease(
+    path: Path,
+    *,
+    expected_identity: tuple[int, int, int, int, int],
+    expected_digest: str,
+    source_id: str,
+    paper_uid: str,
+) -> PrivatePdfLease:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise TransferPackageError(
+            "transfer_payload_changed", "已导入论文 PDF 缺失或发生变化"
+        ) from exc
+    try:
+        before = os.fstat(descriptor)
+        actual_identity = (
+            int(before.st_dev),
+            int(before.st_ino),
+            int(before.st_size),
+            int(before.st_mtime_ns),
+            int(before.st_ctime_ns),
+        )
+        if not stat.S_ISREG(before.st_mode) or actual_identity != expected_identity:
+            raise TransferPackageError(
+                "transfer_payload_changed", "已导入论文 PDF 缺失或发生变化"
+            )
+        digest = hashlib.sha256()
+        while chunk := os.read(descriptor, 1024 * 1024):
+            digest.update(chunk)
+        after = os.fstat(descriptor)
+        after_identity = (
+            int(after.st_dev),
+            int(after.st_ino),
+            int(after.st_size),
+            int(after.st_mtime_ns),
+            int(after.st_ctime_ns),
+        )
+        if after_identity != expected_identity or digest.hexdigest() != expected_digest:
+            raise TransferPackageError(
+                "transfer_payload_changed", "已导入论文 PDF 缺失或发生变化"
+            )
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        return PrivatePdfLease(
+            descriptor,
+            source_id=source_id,
+            paper_uid=paper_uid,
+            size_bytes=int(after.st_size),
+        )
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
 class TransferredLiteratureRepository:
     """Private projection over a strictly audited portable repository payload."""
 
@@ -1059,7 +1185,12 @@ class TransferredLiteratureRepository:
         self._repository = repository
         self.source_scope = "private"
         self.source_id = _source_id(source_id, prefix="literature-")
-        self.content_fingerprint = repository.content_fingerprint
+        transfer_fingerprint = str(manifest.get("content_fingerprint") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", transfer_fingerprint):
+            raise TransferPackageError(
+                "transfer_payload_identity", "文献传输包内容指纹无效"
+            )
+        self.content_fingerprint = transfer_fingerprint
         pdfs: dict[str, tuple[Path, tuple[int, int, int, int, int], str]] = {}
         for raw in manifest.get("files", ()):
             if not isinstance(raw, Mapping) or raw.get("role") != "paper_pdf":
@@ -1097,23 +1228,20 @@ class TransferredLiteratureRepository:
         document["pdf_available"] = str(document.get("paper_uid") or "") in self._pdfs
         return document
 
-    def resolve_pdf(self, paper_uid: str) -> Path | None:
-        """Return an internal audited PDF path; never serialize this value."""
+    def open_pdf(self, paper_uid: str) -> PrivatePdfLease | None:
+        """Open one verified PDF without returning or re-opening its path."""
 
         resolved = self._pdfs.get(str(paper_uid))
         if resolved is None:
             return None
         candidate, expected_identity, expected_digest = resolved
-        if candidate.is_symlink() or not candidate.is_file():
-            raise TransferPackageError(
-                "transfer_payload_changed", "已导入论文 PDF 缺失或发生变化"
-            )
-        actual_identity, actual_digest = _audited_file_identity(candidate)
-        if actual_identity != expected_identity or actual_digest != expected_digest:
-            raise TransferPackageError(
-                "transfer_payload_changed", "已导入论文 PDF 缺失或发生变化"
-            )
-        return candidate
+        return _open_audited_pdf_lease(
+            candidate,
+            expected_identity=expected_identity,
+            expected_digest=expected_digest,
+            source_id=self.source_id,
+            paper_uid=str(paper_uid),
+        )
 
 
 def _structured_files_for_manifest(manifest: Mapping[str, Any], role: str) -> list[str]:
@@ -1210,7 +1338,7 @@ def open_transferred_literature_repository(
             {
                 "package_id": str(manifest["package_id"]),
                 "package_version": str(manifest["package_version"]),
-                "content_fingerprint": str(audit["content_fingerprint"]),
+                "content_fingerprint": str(manifest["content_fingerprint"]),
             }
         )
     ).hexdigest()[:32]

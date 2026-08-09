@@ -115,7 +115,7 @@ class PackageTransferActivationService:
                 imported.install_path,
                 imported.manifest,
             )
-            registration = SearchSourceRegistration.private(
+            registration = SearchSourceRegistration.literature_collection(
                 source,
                 source_id=source.source_id,
                 fingerprint=source.content_fingerprint,

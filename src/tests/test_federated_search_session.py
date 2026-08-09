@@ -95,6 +95,17 @@ def private_registration(version: str = "v1", *, source: object | None = None):
     )
 
 
+def literature_registration(version: str = "v1", *, source: object | None = None):
+    source_id = f"private-{version}"
+    source = source or MemorySource((
+        document("private", source_id, "table", f"private-table-{version}", "文献数据表"),
+        document("private", source_id, "figure", f"private-figure-{version}", "文献趋势图"),
+    ))
+    return SearchSourceRegistration.literature_collection(
+        source, source_id=source_id, fingerprint=f"sha256:literature-{version}"
+    )
+
+
 class FederatedSearchSessionTests(unittest.TestCase):
     def test_protocol_and_no_source_fail_closed(self):
         session = FederatedSearchSession()
@@ -218,7 +229,7 @@ class FederatedSearchSessionTests(unittest.TestCase):
 
     def test_multiple_private_sources_coexist_and_personal_refresh_preserves_collections(self):
         session = FederatedSearchSession(private=private_registration("personal-v1"))
-        collection = private_registration("literature-v1")
+        collection = literature_registration("literature-v1")
         session.upsert_private(collection)
         self.assertEqual(session.search("", page_size=10).total, 4)
         self.assertEqual(
@@ -246,9 +257,9 @@ class FederatedSearchSessionTests(unittest.TestCase):
 
     def test_failed_private_upsert_preserves_all_existing_sources(self):
         session = FederatedSearchSession(private=private_registration("personal-v1"))
-        session.upsert_private(private_registration("literature-v1"))
+        session.upsert_private(literature_registration("literature-v1"))
         before = session.status()
-        broken = SearchSourceRegistration.private(
+        broken = SearchSourceRegistration.literature_collection(
             BrokenSource(),
             source_id="private-literature-v2",
             fingerprint="sha256:broken",
@@ -260,7 +271,7 @@ class FederatedSearchSessionTests(unittest.TestCase):
 
     def test_collection_first_then_personal_refresh_preserves_collection(self):
         session = FederatedSearchSession()
-        session.upsert_private(private_registration("literature-v1"))
+        session.upsert_private(literature_registration("literature-v1"))
         session.refresh_private(private_registration("personal-v1"))
         self.assertEqual(session.search("", page_size=10).total, 4)
         self.assertEqual(
@@ -354,6 +365,80 @@ class FederatedSearchSessionTests(unittest.TestCase):
         self.assertEqual(session.search("钨").total, 0)
         self.assertEqual(session.search("钽").total, 1)
         self.assertEqual(session.status()["official_source"]["source_id"], "official-v2")
+
+    def test_concurrent_collection_upsert_and_personal_refresh_do_not_lose_sources(self):
+        session = FederatedSearchSession(private=private_registration("personal-v1"))
+        started = threading.Event()
+        release = threading.Event()
+        collection_id = "private-literature-race"
+        collection = literature_registration(
+            "literature-race",
+            source=BlockingSource(
+                (
+                    document(
+                        "private",
+                        collection_id,
+                        "finding",
+                        "literature-race-finding",
+                        "并发文献集合",
+                    ),
+                ),
+                started,
+                release,
+            ),
+        )
+        errors: list[BaseException] = []
+
+        def upsert() -> None:
+            try:
+                session.upsert_private(collection)
+            except BaseException as exc:  # pragma: no cover - asserted below
+                errors.append(exc)
+
+        def refresh() -> None:
+            try:
+                session.refresh_private(private_registration("personal-v2"))
+            except BaseException as exc:  # pragma: no cover - asserted below
+                errors.append(exc)
+
+        upsert_worker = threading.Thread(target=upsert)
+        refresh_worker = threading.Thread(target=refresh)
+        upsert_worker.start()
+        self.assertTrue(started.wait(timeout=1))
+        refresh_worker.start()
+        release.set()
+        upsert_worker.join(timeout=2)
+        refresh_worker.join(timeout=2)
+        self.assertEqual(errors, [])
+        self.assertEqual(session.search("并发文献集合").total, 1)
+        self.assertEqual(
+            session.search("", source_ids=("private-personal-v2",)).total,
+            2,
+        )
+
+    def test_personal_source_cannot_claim_pdf_capability(self):
+        class UnsafePersonalSource(MemorySource):
+            def open_pdf(self, _paper_uid):
+                raise AssertionError("personal PDF resolver must not be called")
+
+        registration = private_registration(
+            "personal-pdf",
+            source=UnsafePersonalSource(
+                (
+                    document(
+                        "private",
+                        "private-personal-pdf",
+                        "table",
+                        "private-personal-pdf-table",
+                        "私人表格",
+                    ),
+                )
+            ),
+        )
+        session = FederatedSearchSession(private=registration)
+        with self.assertRaises(FederatedSearchSessionError) as raised:
+            session.open_private_pdf("private-personal-pdf", "paper_" + "1" * 32)
+        self.assertEqual(raised.exception.code, "private_pdf_unavailable")
 
 
 if __name__ == "__main__":

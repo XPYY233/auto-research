@@ -4,7 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from auto_research.evidence.federated_search_session import FederatedSearchSession
+from auto_research.evidence.federated_search_session import (
+    FederatedSearchSession,
+    FederatedSearchSessionError,
+)
 from auto_research.personal.private_repository import PrivateExperimentRepository
 from auto_research.personal.transfer_merge import PersonalTransferMergeService
 from auto_research.product.package_transfer_activation import (
@@ -141,17 +144,41 @@ class PackageTransferActivationTests(unittest.TestCase):
                 imported.install_path,
                 imported.manifest,
             )
-            installed_pdf = reopened.resolve_pdf(paper_uid)
-            self.assertIsNotNone(installed_pdf)
-            self.assertNotEqual(installed_pdf, pdf)
             self.assertEqual(
-                session.resolve_private_pdf(result.source_id, paper_uid),
-                installed_pdf,
+                reopened.content_fingerprint,
+                imported.manifest["content_fingerprint"],
             )
+            lease = session.open_private_pdf(result.source_id, paper_uid)
+            metadata = lease.public_metadata()
+            self.assertEqual(
+                set(metadata),
+                {
+                    "schema_version",
+                    "source_scope",
+                    "source_id",
+                    "paper_uid",
+                    "size_bytes",
+                    "media_type",
+                },
+            )
+            self.assertNotIn("path", str(metadata).casefold())
+            streamed = bytearray()
+            while chunk := lease.read(7):
+                streamed.extend(chunk)
+            lease.close()
+            self.assertEqual(bytes(streamed), pdf.read_bytes())
+            pdf_row = next(
+                row for row in imported.manifest["files"] if row["role"] == "paper_pdf"
+            )
+            installed_pdf = imported.install_path.joinpath(*Path(pdf_row["path"]).parts)
             installed_pdf.write_bytes(installed_pdf.read_bytes() + b"tamper")
             with self.assertRaises(TransferPackageError) as changed:
-                reopened.resolve_pdf(paper_uid)
+                reopened.open_pdf(paper_uid)
             self.assertEqual(changed.exception.code, "transfer_payload_changed")
+            with self.assertRaises(FederatedSearchSessionError) as session_changed:
+                session.open_private_pdf(result.source_id, paper_uid)
+            self.assertEqual(session_changed.exception.code, "private_pdf_changed")
+            self.assertNotIn(str(imported.install_path), session_changed.exception.safe_message)
 
     def test_personal_activation_merges_then_refreshes_search_atomically(self):
         with tempfile.TemporaryDirectory(prefix="personal-transfer-activation-") as temporary:
