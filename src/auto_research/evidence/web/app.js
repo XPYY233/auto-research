@@ -8,6 +8,7 @@ const viewCopy = {
   search: { kicker: "EXPERIMENTAL EVIDENCE LIBRARY", title: "实验文献证据检索平台", subtitle: "数据、图表、结论与 PDF 原文证据的统一检索入口。" },
   upload: { kicker: "PDF INTAKE", title: "导入实验文献", subtitle: "验证真实 PDF、识别重复论文，并加入待处理队列。" },
   personal: { kicker: "EXPERIMENT DATA INTAKE", title: "上传实验数据", subtitle: "DeepSeek 自动预填 CSV、TSV 或 XLSX；你只需浏览、修正错误并一次确认导入。" },
+  package: { kicker: "PACKAGE CENTER", title: "资料包中心", subtitle: "管理官方资料库，导出或导入课题组内部论文集合与私人实验资料包。" },
   manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "历史兼容视图；当前产品不再提供导航入口。" },
   history: { kicker: "REVISION HISTORY", title: "查看修正记录", subtitle: "历史兼容视图；当前产品不再提供导航入口。" },
 };
@@ -115,7 +116,7 @@ function applyUiMode() {
     state.uiMode?.release?.version,
     state.uiMode?.release?.evidence_schema ? `证据库结构 v${state.uiMode.release.evidence_schema}` : "",
   ].filter(Boolean).join(" · ");
-  document.querySelectorAll('[data-view="paper"],[data-view="upload"],[data-view="personal"],[data-write-action]').forEach(el => {
+  document.querySelectorAll('[data-view="paper"],[data-view="upload"],[data-view="personal"],[data-view="package"],[data-write-action]').forEach(el => {
     el.hidden = readonly;
   });
   document.querySelectorAll(".nav").forEach(btn => {

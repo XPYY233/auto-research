@@ -15,6 +15,7 @@
         <button class="nav active" data-view="paper">文献处理 <b id="nav-count">0</b></button>
         <button class="nav" data-view="search">搜索数据</button>
         <button class="nav" data-view="personal">上传实验数据</button>
+        <button class="nav" data-view="package">导出 / 导入资料包</button>
       </nav>
       <div class="article-mini">
         <span>当前文章</span>
@@ -291,10 +292,10 @@
           <section class="desktop-product-panel" id="desktop-product-panel" hidden aria-label="桌面资料与 AI 设置">
             <div class="desktop-product-copy">
               <span>DESKTOP PREVIEW · LOCAL FIRST</span>
-              <h3>把文献证据和自己的实验记录放在同一工作台</h3>
-              <p>官方资料包保持只读，我的实验数据只保存在本机私人库；两者不会覆盖本地文献工作区。</p>
+              <h3>本机实验数据与 AI 设置</h3>
+              <p>官方版本和用户资料包统一放在“资料包中心”；我的实验数据只保存在本机私人库，不会覆盖文献工作区。</p>
             </div>
-            <div class="desktop-product-status">
+            <div class="desktop-product-status" id="desktop-official-package-status">
               <i id="desktop-package-dot"></i>
               <div><small>官方资料库</small><strong id="desktop-package-title">尚未导入</strong><p id="desktop-package-note">选择我们提供的 .aresearch 资料包即可离线搜索。</p></div>
               <button type="button" id="desktop-package-import">选择资料包</button>
@@ -431,6 +432,77 @@
       </section>
 
       <section class="view" id="view-personal" aria-label="上传实验数据"></section>
+
+      <section class="view package-center" id="view-package" aria-label="资料包中心">
+        <header class="package-center-hero">
+          <div><p class="eyebrow">PACKAGE CENTER · LOCAL TRANSFER</p><h2>资料包中心</h2><p>管理课题组官方资料库，并按需导出论文集合或已确认的私人实验。官方包和用户包始终分开。</p></div>
+          <div class="package-center-safety"><strong>用户包安全边界</strong><span>未加密</span><span>来源未认证</span><span>仅限课题组内部</span><small>SHA-256 只能发现文件损坏，不能证明发送者身份，也不能阻止文件泄露。</small></div>
+        </header>
+
+        <section class="package-center-card package-official-card" aria-labelledby="package-official-heading">
+          <header><div><span>OFFICIAL LIBRARY</span><h3 id="package-official-heading">官方资料库</h3><p>官方包经过签名、完整性检查和只读仓库审计；导入失败不会改变当前活动版本。</p></div></header>
+          <div id="package-official-status-mount"></div>
+          <div class="package-installed" aria-live="polite">
+            <div class="package-section-heading"><strong>已安装版本</strong><small>可回退到通过复核的旧版本</small></div>
+            <div id="package-installed-list"><p class="package-empty">正在读取已安装版本…</p></div>
+          </div>
+        </section>
+
+        <div class="package-center-columns">
+          <section class="package-center-card" aria-labelledby="package-literature-heading">
+            <header><div><span>LITERATURE COLLECTION</span><h3 id="package-literature-heading">导出论文集合</h3><p>可导出结构化证据和符合权限要求的原始 PDF；首版不包含图表截图。</p></div></header>
+            <form id="package-literature-plan-form" class="package-form">
+              <fieldset class="package-scope-picker">
+                <legend>选择论文范围</legend>
+                <label><input type="radio" name="literature-scope" value="selected" checked><span><strong>逐篇选择</strong><small>使用“搜索数据”中已选择的论文</small></span></label>
+                <label><input type="radio" name="literature-scope" value="filtered"><span><strong>当前筛选结果</strong><small>使用文献处理页当前筛选条件</small></span></label>
+                <label><input type="radio" name="literature-scope" value="all"><span><strong>全部论文</strong><small>证据库当前登记的全部论文</small></span></label>
+              </fieldset>
+              <p class="package-scope-status" id="package-literature-scope-status">尚未读取选择范围</p>
+              <button type="submit" class="package-primary">生成导出计划</button>
+            </form>
+            <div class="package-plan" id="package-literature-plan" hidden>
+              <div class="package-plan-metrics" id="package-literature-metrics"></div>
+              <div class="package-rights" id="package-literature-rights"></div>
+              <div class="package-limit-note"><strong>单包上限 2 GB</strong><span>系统会先估算大小；超限时请减少论文，不会自动拆包。</span></div>
+              <button type="button" class="package-primary" id="package-literature-export">选择保存位置并导出</button>
+            </div>
+          </section>
+
+          <section class="package-center-card" aria-labelledby="package-personal-export-heading">
+            <header><div><span>MY EXPERIMENTS</span><h3 id="package-personal-export-heading">导出我的实验</h3><p>只包含已确认并可检索的结构化记录及原始 CSV、TSV、XLSX；不包含草稿、AI 建议、路径或实验图片。</p></div></header>
+            <div class="package-personal-export">
+              <ul><li>项目、样品、实验批次与条件</li><li>测量定义和已确认备注</li><li>对应原始表格文件</li></ul>
+              <button type="button" class="package-primary" id="package-personal-plan">生成私人实验导出计划</button>
+            </div>
+            <div class="package-plan" id="package-personal-export-plan" hidden>
+              <div class="package-plan-metrics" id="package-personal-metrics"></div>
+              <button type="button" class="package-primary" id="package-personal-export">选择保存位置并导出</button>
+            </div>
+          </section>
+        </div>
+
+        <section class="package-center-card package-import-card" aria-labelledby="package-user-import-heading">
+          <header><div><span>USER TRANSFER PACKAGE</span><h3 id="package-user-import-heading">导入用户资料包</h3><p>用户包只会进入私人只读来源或私人实验库，绝不会改变官方资料库，也不会进入图书管理员。</p></div><button type="button" class="package-primary" id="package-user-select">选择用户资料包</button></header>
+          <div id="package-user-inspection" class="package-user-inspection" hidden>
+            <div class="package-inspection-summary" id="package-user-summary"></div>
+            <label class="package-sha-input">发送者提供的 SHA-256<input id="package-user-sha" inputmode="text" autocomplete="off" maxlength="64" placeholder="粘贴通过其他渠道收到的 64 位校验码"></label>
+            <div class="package-risk-checks">
+              <label><input type="checkbox" id="package-checksum-ack"><span>我已通过其他渠道与发送者核对 SHA-256</span></label>
+              <label><input type="checkbox" id="package-unencrypted-ack"><span>我知道该资料包未加密，获得文件的人可以读取内容</span></label>
+              <label><input type="checkbox" id="package-unauthenticated-ack"><span>我知道 SHA-256 不能证明资料包来自谁</span></label>
+              <label><input type="checkbox" id="package-internal-ack"><span>我确认仅在课题组内部使用该资料包</span></label>
+            </div>
+            <label class="package-conflict-option" id="package-keep-conflicts-row" hidden><input type="checkbox" id="package-keep-conflicts"><span><strong>遇到同身份但内容不同的私人实验时保留两份</strong><small>可选；不会覆盖本机已有实验。</small></span></label>
+            <button type="button" class="package-primary" id="package-user-import" disabled>核对并导入</button>
+          </div>
+        </section>
+
+        <section class="package-center-card package-jobs-card" aria-labelledby="package-jobs-heading">
+          <header><div><span>TRANSFER JOBS</span><h3 id="package-jobs-heading">任务进度</h3><p>导出和导入结果会显示稳定的操作、阶段、结果和错误码；失败不会留下半成品或覆盖旧资料。</p></div></header>
+          <div class="package-job-list" id="package-job-list"><p class="package-empty">本次还没有资料包任务。</p></div>
+        </section>
+      </section>
 
       <section class="paper-workflow-intake" id="view-upload" hidden>
         <div class="view-head">
