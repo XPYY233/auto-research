@@ -36,6 +36,8 @@ from .package_center import (
     PackageExportService,
     PackageJobService,
     PackageTransferImportService,
+    run_package_job_in_background,
+    run_package_job_inline,
 )
 from .package_center_models import (
     MaterializedPayload,
@@ -104,6 +106,8 @@ __all__ = [
     "PackageKind",
     "PackageScope",
     "PackageTransferImportService",
+    "run_package_job_in_background",
+    "run_package_job_inline",
     "StructuredPackageCenterPayloadAdapter",
     "EvidenceV12LiteraturePayloadSource",
     "ExplicitLiteratureFilterResolver",

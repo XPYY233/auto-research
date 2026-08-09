@@ -52,6 +52,25 @@ from .package_center_models import (
 
 MAX_PLAN_CACHE = 128
 MAX_JOB_CACHE = 128
+JobSubmitter = Callable[[Callable[[], None]], None]
+
+
+def run_package_job_inline(callback: Callable[[], None]) -> None:
+    """Default deterministic executor used by core tests and maintenance tools."""
+
+    callback()
+
+
+def run_package_job_in_background(callback: Callable[[], None]) -> None:
+    """Start one bounded daemon worker after PackageJobService grants single flight."""
+
+    if not callable(callback):
+        raise TypeError("package job callback must be callable")
+    threading.Thread(
+        target=callback,
+        name="auto-research-package-job",
+        daemon=True,
+    ).start()
 
 
 @dataclass
@@ -175,6 +194,7 @@ class PackageExportService:
         jobs: PackageJobService,
         plan_ttl_seconds: int = 600,
         clock: Callable[[], float] = time.monotonic,
+        job_submitter: JobSubmitter = run_package_job_inline,
     ) -> None:
         if not 30 <= int(plan_ttl_seconds) <= 3600:
             raise ValueError("plan_ttl_seconds must be between 30 and 3600")
@@ -184,6 +204,9 @@ class PackageExportService:
         self._jobs = jobs
         self._ttl = int(plan_ttl_seconds)
         self._clock = clock
+        if not callable(job_submitter):
+            raise TypeError("job_submitter must be callable")
+        self._job_submitter = job_submitter
         self._lock = threading.RLock()
         self._plans: dict[str, PackageExportPlan] = {}
         self._consumed_destination_tokens: set[str] = set()
@@ -242,6 +265,34 @@ class PackageExportService:
             )
         confirmations = self._normalize_confirmations(plan, rights_confirmations)
         job_id = self._jobs._begin(PackageOperation.TRANSFER_EXPORT)
+        try:
+            self._job_submitter(
+                lambda: self._run_export_job(
+                    job_id,
+                    plan=plan,
+                    confirmations=confirmations,
+                    destination=destination,
+                )
+            )
+        except Exception as exc:
+            self._jobs._fail(
+                job_id,
+                safe_port_error(
+                    exc,
+                    fallback_code="package_job_start_failed",
+                    fallback_message="资料包任务无法启动。",
+                ),
+            )
+        return self._jobs.get(job_id)
+
+    def _run_export_job(
+        self,
+        job_id: str,
+        *,
+        plan: PackageExportPlan,
+        confirmations: Mapping[str, RightsConfirmation],
+        destination: str,
+    ) -> None:
         materialized: MaterializedPayload | None = None
         try:
             self._jobs._advance(job_id, PackageJobStage.PLAN)
@@ -295,7 +346,6 @@ class PackageExportService:
                     materialized.close()
                 except Exception:
                     pass
-        return self._jobs.get(job_id)
 
     def _get_plan(self, token: str) -> PackageExportPlan:
         now = self._clock()
@@ -412,12 +462,16 @@ class PackageTransferImportService:
         importer: TransferImporter,
         activator: TransferActivator,
         jobs: PackageJobService,
+        job_submitter: JobSubmitter = run_package_job_inline,
     ) -> None:
         self._selection_resolver = selection_resolver
         self._inspector = inspector
         self._importer = importer
         self._activator = activator
         self._jobs = jobs
+        if not callable(job_submitter):
+            raise TypeError("job_submitter must be callable")
+        self._job_submitter = job_submitter
         self._lock = threading.RLock()
         self._consumed_selection_tokens: set[str] = set()
 
@@ -446,6 +500,34 @@ class PackageTransferImportService:
                 "transfer_expected_checksum_invalid", "请输入完整的 64 位 SHA-256。"
             )
         job_id = self._jobs._begin(PackageOperation.TRANSFER_IMPORT)
+        try:
+            self._job_submitter(
+                lambda: self._run_import_job(
+                    job_id,
+                    token=token,
+                    expected=expected,
+                    keep_conflicts=keep_conflicts,
+                )
+            )
+        except Exception as exc:
+            self._jobs._fail(
+                job_id,
+                safe_port_error(
+                    exc,
+                    fallback_code="package_job_start_failed",
+                    fallback_message="资料包任务无法启动。",
+                ),
+            )
+        return self._jobs.get(job_id)
+
+    def _run_import_job(
+        self,
+        job_id: str,
+        *,
+        token: str,
+        expected: str,
+        keep_conflicts: bool,
+    ) -> None:
         try:
             with self._lock:
                 if token in self._consumed_selection_tokens:
@@ -499,7 +581,6 @@ class PackageTransferImportService:
                 fallback_message="用户资料包导入失败。",
             )
             self._jobs._fail(job_id, error)
-        return self._jobs.get(job_id)
 
 
 __all__ = [
@@ -516,8 +597,11 @@ __all__ = [
     "PayloadPlanner",
     "RightsConfirmation",
     "RightsRequirement",
+    "JobSubmitter",
     "SelectionResolver",
     "TransferExporter",
     "TransferImporter",
     "TransferInspector",
+    "run_package_job_in_background",
+    "run_package_job_inline",
 ]

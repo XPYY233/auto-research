@@ -31,6 +31,8 @@ _EXPORT_MODULES = {
     "fail_package_job": ".package_job_contract",
     "package_job_stages": ".package_job_contract",
     "PackageCenter": ".package_center",
+    "run_package_job_in_background": ".package_center",
+    "run_package_job_inline": ".package_center",
     "PackageExportService": ".package_center",
     "PackageJobService": ".package_center",
     "PackageTransferImportService": ".package_center",

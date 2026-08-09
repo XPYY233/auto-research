@@ -24,12 +24,14 @@ class ProductRuntimeApiTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
-    def test_runtime_api_does_not_load_publisher_exporters(self) -> None:
+    def test_runtime_api_loads_read_planners_but_not_publisher_builder(self) -> None:
         self.run_isolated(
             "import sys\n"
-            "from auto_research.product.runtime_api import open_active_official_repository\n"
+            "from auto_research.product.runtime_api import "
+            "open_active_official_repository, EvidenceV12LiteraturePayloadSource\n"
             "assert callable(open_active_official_repository)\n"
-            "assert 'auto_research.product.evidence_v12_export' not in sys.modules\n"
+            "assert EvidenceV12LiteraturePayloadSource is not None\n"
+            "assert 'auto_research.product.evidence_v12_export' in sys.modules\n"
             "assert 'auto_research.product.internal_preview_builder' not in sys.modules\n"
         )
 

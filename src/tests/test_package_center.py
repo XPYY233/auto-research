@@ -452,6 +452,51 @@ class PackageCenterTests(unittest.TestCase):
         self.assertNotIn("/Users", encoded)
         self.assertNotIn("secret.sqlite", encoded)
 
+    def test_background_submitter_returns_queued_jobs_before_heavy_io(self):
+        export_callbacks = []
+        export_jobs = PackageJobService()
+        export_service = PackageExportService(
+            payload_planner=_Planner(),
+            destination_resolver=_Resolver(),
+            exporter=lambda *args, **kwargs: _Summary(outcome="exported"),
+            jobs=export_jobs,
+            job_submitter=export_callbacks.append,
+        )
+        plan = export_service.plan("personal_experiments", "all", None)
+        queued_export = export_service.start(
+            plan["plan_token"], _risk_ack(), DESTINATION_TOKEN
+        )
+        self.assertEqual(queued_export["stage"], "queued")
+        self.assertFalse(queued_export["terminal"])
+        self.assertEqual(len(export_callbacks), 1)
+        export_callbacks.pop()()
+        self.assertEqual(
+            export_jobs.get(queued_export["job_id"])["stage"], "completed"
+        )
+
+        import_callbacks = []
+        import_jobs = PackageJobService()
+        import_service = PackageTransferImportService(
+            selection_resolver=_Resolver(),
+            inspector=lambda source: _Summary(),
+            importer=lambda *args, **kwargs: _Summary(outcome="imported"),
+            activator=_Activator(),
+            jobs=import_jobs,
+            job_submitter=import_callbacks.append,
+        )
+        queued_import = import_service.start(
+            SELECTION_TOKEN,
+            checksum_ack=True,
+            expected_sha=CHECKSUM,
+        )
+        self.assertEqual(queued_import["stage"], "queued")
+        self.assertFalse(queued_import["terminal"])
+        self.assertEqual(len(import_callbacks), 1)
+        import_callbacks.pop()()
+        self.assertEqual(
+            import_jobs.get(queued_import["job_id"])["stage"], "completed"
+        )
+
     def test_activation_failure_is_reported_at_activate_and_keeps_install_result(self):
         activator = _Activator(fail=True)
         service = PackageTransferImportService(
