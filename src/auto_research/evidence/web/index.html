@@ -267,7 +267,7 @@
                 <label class="visually-hidden" for="librarian-input">向图书管理员描述问题</label>
                 <textarea id="librarian-input" maxlength="2000" rows="3" placeholder="例如：帮我找高熵合金在中子辐照后硬度如何变化，并给出对应论文和原文证据"></textarea>
                 <div>
-                  <small id="librarian-status">检索范围：整个文献库</small>
+                  <small id="librarian-status">检索范围：官方文献全库（不含我的实验）</small>
                   <span class="librarian-form-actions">
                     <button type="button" id="librarian-brief-export" disabled>导出研究简报</button>
                     <button type="submit" id="librarian-send">交给图书管理员</button>
@@ -280,13 +280,18 @@
           <section class="desktop-product-panel" id="desktop-product-panel" hidden aria-label="桌面资料与 AI 设置">
             <div class="desktop-product-copy">
               <span>DESKTOP PREVIEW · LOCAL FIRST</span>
-              <h3>把官方资料装进自己的电脑</h3>
-              <p>资料包经签名与完整性检查后，以只读方式独立安装；不会覆盖本机可编辑工作区。</p>
+              <h3>把文献证据和自己的实验记录放在同一工作台</h3>
+              <p>官方资料包保持只读，我的实验数据只保存在本机私人库；两者不会覆盖本地文献工作区。</p>
             </div>
             <div class="desktop-product-status">
               <i id="desktop-package-dot"></i>
               <div><small>官方资料库</small><strong id="desktop-package-title">尚未导入</strong><p id="desktop-package-note">选择我们提供的 .aresearch 资料包即可离线搜索。</p></div>
               <button type="button" id="desktop-package-import">选择资料包</button>
+            </div>
+            <div class="desktop-product-status desktop-personal-status">
+              <i id="desktop-personal-dot"></i>
+              <div><small>我的实验数据</small><strong id="desktop-personal-title">尚未检查</strong><p id="desktop-personal-note">导入 CSV、TSV 或 XLSX，确认含义后才会加入私人搜索。</p></div>
+              <button type="button" id="desktop-personal-import">导入实验表格</button>
             </div>
             <details class="desktop-ai-settings" id="desktop-ai-settings">
               <summary><span>AI 功能</span><strong id="desktop-ai-title">检查密钥状态</strong><small>图书管理员与新文献提取使用</small></summary>
@@ -298,11 +303,60 @@
             </details>
           </section>
           <div id="precise-search-workspace" hidden>
-          <div class="search-repository-switch" id="search-repository-switch" hidden role="tablist" aria-label="搜索资料来源">
-            <div><span>搜索位置</span><small>两个来源互不覆盖</small></div>
-            <button type="button" class="active" role="tab" aria-selected="true" data-search-repository="workspace"><strong>本机工作区</strong><small>上传、提取、校对中的私人文献</small></button>
-            <button type="button" role="tab" aria-selected="false" data-search-repository="official" disabled><strong>官方资料库</strong><small>签名资料包 · 只读离线搜索</small></button>
+          <div class="search-repository-switch" id="search-repository-switch" hidden role="tablist" aria-label="搜索工作区">
+            <div><span>搜索工作区</span><small>两类数据互不写入</small></div>
+            <button type="button" class="active" role="tab" aria-selected="true" data-search-repository="workspace"><strong>本地文献工作区</strong><small>上传、提取、校对与导出</small></button>
+            <button type="button" role="tab" aria-selected="false" data-search-repository="offline"><strong>离线资料库</strong><small>官方文献与我的实验联合搜索</small></button>
           </div>
+          <div class="offline-source-scope" id="offline-source-scope" hidden aria-label="离线资料来源">
+            <div><span>离线资料范围</span><small>“全部”由后端一次联合检索，不在页面合并结果</small></div>
+            <div role="group" aria-label="选择离线资料范围">
+              <button type="button" data-source-scope="official" aria-pressed="false"><strong>官方文献</strong><small>签名资料包 · 只读</small></button>
+              <button type="button" data-source-scope="private" aria-pressed="false"><strong>我的实验</strong><small>当前电脑 · 私人</small></button>
+              <button type="button" data-source-scope="all" aria-pressed="true" class="active"><strong>全部</strong><small>官方与私人联合召回</small></button>
+            </div>
+          </div>
+          <section class="personal-import-panel" id="personal-import-panel" hidden aria-label="导入个人实验数据">
+            <header>
+              <div><span>MY EXPERIMENT DATA</span><h3>导入实验表格</h3><p>只预览 CSV、TSV、XLSX；不会执行公式、宏或外链，也不会自动读取曲线或生成趋势图。</p></div>
+              <button type="button" id="personal-import-choose">选择数据文件</button>
+            </header>
+            <div class="personal-search-notice" id="personal-search-notice" aria-live="polite"><span id="personal-search-notice-text"></span><button type="button" id="personal-search-refresh" hidden>重试刷新搜索</button></div>
+            <div class="personal-import-workflow" id="personal-import-workflow" hidden>
+              <div class="personal-import-progress" id="personal-import-progress" role="status" aria-live="polite">等待选择文件</div>
+              <div class="personal-preview-summary" id="personal-preview-summary"></div>
+              <label class="personal-sheet-selector">选择工作表<select id="personal-import-sheet"></select></label>
+              <form id="personal-import-form">
+                <fieldset>
+                  <legend>实验信息</legend>
+                  <div class="personal-form-grid">
+                    <label>项目名称<input id="personal-project-name" required maxlength="500" placeholder="例如：W-Ta 辐照实验"></label>
+                    <label>样品名称<input id="personal-sample-name" required maxlength="500" placeholder="例如：W-5Ta-01"></label>
+                    <label>材料<input id="personal-sample-material" maxlength="500" placeholder="例如：W-5Ta"></label>
+                    <label>实验批次<input id="personal-run-name" required maxlength="500" placeholder="例如：室温纳米压痕"></label>
+                    <label>测试方法<input id="personal-run-method" required maxlength="500" placeholder="例如：纳米压痕"></label>
+                    <label class="personal-wide">实验条件（每行“名称=数值或说明”）<textarea id="personal-run-conditions" required rows="3" placeholder="temperature=300 K&#10;dose=1 dpa"></textarea></label>
+                    <label class="personal-wide">实验备注（可选）<textarea id="personal-run-note" rows="2" placeholder="只记录自己确认过的说明"></textarea></label>
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend>确认每一列</legend>
+                  <p class="personal-field-help">逐列确认角色、物理意义和单位。没有单位时可留空，但仍需勾选“单位已确认”；忽略列也要明确确认不适用。</p>
+                  <div class="personal-column-list" id="personal-import-columns"></div>
+                </fieldset>
+                <fieldset>
+                  <legend>测量序列</legend>
+                  <p class="personal-field-help">手动指定横轴、纵轴和可选误差列。被标记为“忽略”的列不会出现在这里。</p>
+                  <div class="personal-series-list" id="personal-series-list"></div>
+                  <button type="button" class="personal-secondary" id="personal-add-series">＋ 添加测量序列</button>
+                </fieldset>
+                <div class="personal-import-actions">
+                  <button type="submit" id="personal-save-draft">保存确认草稿</button>
+                  <button type="button" id="personal-confirm-import" disabled>确认并加入“我的实验”搜索</button>
+                </div>
+              </form>
+            </div>
+          </section>
           <div class="search-scope-selector" aria-label="检索文章范围">
             <div class="search-scope-switch" role="group" aria-label="检索范围">
               <button type="button" class="active" data-search-scope="all" aria-pressed="true">全部文章</button>

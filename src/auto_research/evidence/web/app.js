@@ -2931,6 +2931,7 @@ function setSearchMode(mode, options = {}) {
   });
   renderSearchSuggestions();
   renderActiveFilters();
+  globalThis.AutoResearchDesktopProduct?.applySearchUI?.();
   if (options.run !== false) runSearch();
 }
 
