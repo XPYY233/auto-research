@@ -62,7 +62,7 @@ Facade 根据目录解析路由，依次复核 session、mode、body cap、CSRF�
 - DeepSeek credential 与 Librarian history；
 - 官方资料包状态、导入、回退与 job；
 - 私人实验 preview、draft、confirm、AI suggestion、单次核验导入及搜索刷新；
-- official/private 联合精确搜索与详情；
+- official/private 联合精确搜索、详情与已审计论文集合 PDF 流；
 - Librarian V3 chat、研究简报和选中证据对话；
 - 文献工作区的论文、六列、图表、上传、处理状态和主要核验动作。
 

@@ -140,6 +140,10 @@ class RouteRegistryTests(unittest.TestCase):
             by_id["package_center.export"]["path"],
             "/api/desktop/package-center/export",
         )
+        self.assertEqual(
+            by_id["federated.pdf"]["path"],
+            "/api/desktop/federated-pdf",
+        )
         self.assertEqual(by_id["personal.preview"]["body_cap_bytes"], 512 * 1024)
         self.assertFalse(by_id["librarian.chat"]["mutation"])
         self.assertTrue(by_id["workspace.upload_pdf"]["csrf_required"])
