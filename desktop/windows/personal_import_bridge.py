@@ -1,44 +1,19 @@
 from __future__ import annotations
 
 import threading
-import copy
 from typing import Any, Mapping, Protocol
 
 from auto_research.personal.import_service import (
     PersonalImportService,
     PersonalImportServiceError,
 )
+from auto_research.personal.public_projection import (
+    project_personal_renderer_payload,
+)
 from auto_research.personal.search_source import PrivateSearchSnapshot
 
 
 _REFRESH_MESSAGE = "数据已保存，搜索刷新待重试。"
-_RENDERER_FORBIDDEN_KEYS = frozenset(
-    {
-        "file_id",
-        "sha256",
-        "source_file_id",
-        "absolute_path",
-        "database_path",
-        "file_path",
-        "path",
-        "relative_path",
-    }
-)
-
-
-def _renderer_safe(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {
-            str(key): _renderer_safe(item)
-            for key, item in value.items()
-            if str(key).casefold() not in _RENDERER_FORBIDDEN_KEYS
-            and not str(key).casefold().endswith("_path")
-        }
-    if isinstance(value, (list, tuple)):
-        return [_renderer_safe(item) for item in value]
-    return copy.deepcopy(value)
-
-
 class PrivateSearchRefreshService(Protocol):
     def refresh_private_source(
         self,
@@ -69,19 +44,25 @@ class PersonalImportBridgeAdapter:
         self._lock = threading.RLock()
 
     def preview(self, selection_id: str) -> dict[str, Any]:
-        return _renderer_safe(self.service.preview(selection_id).public_dict())
+        return project_personal_renderer_payload(
+            self.service.preview(selection_id).public_dict()
+        )
 
     def status(self, import_id: str) -> dict[str, Any]:
-        return _renderer_safe(self.service.status(import_id).public_dict())
+        return project_personal_renderer_payload(
+            self.service.status(import_id).public_dict()
+        )
 
     def save_draft(self, import_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-        return _renderer_safe(self.service.save_draft(import_id, payload).public_dict())
+        return project_personal_renderer_payload(
+            self.service.save_draft(import_id, payload).public_dict()
+        )
 
     def confirm(self, import_id: str, *, expected_revision: int) -> dict[str, Any]:
         status = self.service.confirm(import_id, expected_revision=expected_revision)
         if self.search_service is not None:
             self._refresh_private_search(skip_empty=False)
-        return _renderer_safe(status.public_dict())
+        return project_personal_renderer_payload(status.public_dict())
 
     def restore_private_search(self) -> dict[str, Any]:
         if self.search_service is None:
@@ -103,8 +84,7 @@ class PersonalImportBridgeAdapter:
             value = dict(self._search_status)
             if isinstance(value.get("error"), dict):
                 value["error"] = dict(value["error"])
-            value.pop("active_fingerprint", None)
-            return _renderer_safe(value)
+            return project_personal_renderer_payload(value)
 
     def _refresh_private_search(self, *, skip_empty: bool) -> PrivateSearchSnapshot:
         assert self.search_service is not None

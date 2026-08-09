@@ -11,6 +11,9 @@ from auto_research.personal.import_service import (
     PersonalImportService,
     PersonalImportServiceError,
 )
+from auto_research.personal.public_projection import (
+    project_personal_renderer_payload,
+)
 from auto_research.personal.search_source import PrivateSearchSnapshot
 
 
@@ -104,7 +107,7 @@ class PersonalImportAPI:
             value = dict(self._search_status)
             if isinstance(value.get("error"), dict):
                 value["error"] = dict(value["error"])
-            return value
+            return project_personal_renderer_payload(value)
 
     def handle_get(self, handler: PersonalImportHTTPHandler) -> bool:
         parsed = urlparse(handler.path)
@@ -121,7 +124,9 @@ class PersonalImportAPI:
         except PersonalImportServiceError as exc:
             handler.json_response(exc.public_dict(), self._error_status(exc))
         else:
-            handler.json_response(status.public_dict())
+            handler.json_response(
+                project_personal_renderer_payload(status.public_dict())
+            )
         return True
 
     def handle_post(self, handler: PersonalImportHTTPHandler) -> bool:
@@ -158,11 +163,11 @@ class PersonalImportAPI:
                 if set(body) != {"selection_id"}:
                     self._invalid_request()
                 result = self.service.preview(body["selection_id"])
-                payload = result.public_dict()
+                payload = project_personal_renderer_payload(result.public_dict())
                 response_status = HTTPStatus.CREATED
             elif draft_match is not None:
                 result = self.service.save_draft(draft_match.group(1), body)
-                payload = result.public_dict()
+                payload = project_personal_renderer_payload(result.public_dict())
                 response_status = HTTPStatus.OK
             else:
                 assert confirm_match is not None
@@ -174,7 +179,7 @@ class PersonalImportAPI:
                 )
                 if self.search_service is not None:
                     self._refresh_private_search(skip_empty=False)
-                payload = result.public_dict()
+                payload = project_personal_renderer_payload(result.public_dict())
                 response_status = HTTPStatus.OK
         except PersonalImportServiceError as exc:
             handler.json_response(exc.public_dict(), self._error_status(exc))

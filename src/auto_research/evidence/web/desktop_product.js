@@ -9,8 +9,12 @@
     personalImportStatus: null,
     importingPackage: false,
     importingPersonal: false,
+    confirmingPersonal: false,
     seriesCounter: 0,
     personalDraftDirty: true,
+    personalDraftGeneration: 0,
+    reviewedImportId: null,
+    reviewedRevision: null,
   };
 
   const stageLabels = {
@@ -482,6 +486,9 @@
 
   function markPersonalDraftDirty() {
     product.personalDraftDirty = true;
+    product.personalDraftGeneration += 1;
+    product.reviewedImportId = null;
+    product.reviewedRevision = null;
     const confirm = el("personal-confirm-import");
     if (confirm) confirm.disabled = true;
     if (product.personalImportStatus?.stage === "draft_saved") {
@@ -585,6 +592,8 @@
       product.personalPreview = response.preview;
       product.personalImportStatus = response.status;
       product.personalDraftDirty = true;
+      product.reviewedImportId = null;
+      product.reviewedRevision = null;
       renderPersonalPreview();
       revealSearchWorkspace();
     } catch (error) {
@@ -601,16 +610,26 @@
     if (!product.personalImportStatus?.import_id || button.disabled) return;
     try {
       const payload = collectDraftPayload();
+      const draftImportId = product.personalImportStatus.import_id;
+      const draftGeneration = product.personalDraftGeneration;
       button.disabled = true;
       setPersonalProgress("正在保存确认草稿…");
-      product.personalImportStatus = await api(`/api/desktop/personal-imports/${encodeURIComponent(product.personalImportStatus.import_id)}/draft`, {
+      product.personalImportStatus = await api(`/api/desktop/personal-imports/${encodeURIComponent(draftImportId)}/draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      product.personalDraftDirty = false;
-      setPersonalProgress("草稿已保存。请最后确认，确认后才会加入“我的实验”搜索。");
-      el("personal-confirm-import").disabled = product.personalImportStatus.stage !== "draft_saved";
+      const savedReviewedDraft = product.personalDraftGeneration === draftGeneration
+        && product.personalImportStatus.stage === "draft_saved"
+        && product.personalImportStatus.import_id === draftImportId
+        && Number.isInteger(product.personalImportStatus.revision);
+      product.personalDraftDirty = !savedReviewedDraft;
+      product.reviewedImportId = savedReviewedDraft ? draftImportId : null;
+      product.reviewedRevision = savedReviewedDraft ? product.personalImportStatus.revision : null;
+      setPersonalProgress(savedReviewedDraft
+        ? "草稿已保存。请最后确认，确认后才会加入“我的实验”搜索。"
+        : "保存期间内容发生变化，请重新检查并保存后再确认。");
+      el("personal-confirm-import").disabled = !savedReviewedDraft;
     } catch (error) {
       setPersonalProgress(error.message, true);
       toast(error.message, true);
@@ -622,24 +641,47 @@
   async function readLatestImportStatus() {
     const importId = product.personalImportStatus?.import_id;
     if (!importId) return null;
-    product.personalImportStatus = await api(`/api/desktop/personal-imports/${encodeURIComponent(importId)}`);
-    return product.personalImportStatus;
+    return api(`/api/desktop/personal-imports/${encodeURIComponent(importId)}`);
   }
 
   async function confirmPersonalImport() {
     const button = el("personal-confirm-import");
-    if (button.disabled || product.personalDraftDirty || !product.personalImportStatus?.import_id) return;
+    const reviewedImportId = product.reviewedImportId;
+    const reviewedRevision = product.reviewedRevision;
+    if (
+      product.confirmingPersonal
+      || button.disabled
+      || product.personalDraftDirty
+      || !reviewedImportId
+      || !Number.isInteger(reviewedRevision)
+      || product.personalImportStatus?.import_id !== reviewedImportId
+    ) return;
+    product.confirmingPersonal = true;
     button.disabled = true;
     try {
       const latest = await readLatestImportStatus();
-      if (latest?.stage !== "draft_saved" || !Number.isInteger(latest.revision)) throw new Error("草稿状态已经变化，请重新检查后再确认。");
+      if (
+        latest?.stage !== "draft_saved"
+        || latest.import_id !== reviewedImportId
+        || latest.revision !== reviewedRevision
+        || product.personalDraftDirty
+        || product.reviewedImportId !== reviewedImportId
+        || product.reviewedRevision !== reviewedRevision
+      ) {
+        product.personalImportStatus = latest || product.personalImportStatus;
+        product.reviewedImportId = null;
+        product.reviewedRevision = null;
+        throw new Error("草稿状态已经变化，请重新检查并保存后再确认。");
+      }
       setPersonalProgress("正在确认实验数据并准备私人搜索…");
-      product.personalImportStatus = await api(`/api/desktop/personal-imports/${encodeURIComponent(latest.import_id)}/confirm`, {
+      product.personalImportStatus = await api(`/api/desktop/personal-imports/${encodeURIComponent(reviewedImportId)}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expected_revision: latest.revision }),
+        body: JSON.stringify({ expected_revision: reviewedRevision }),
       });
       product.personalDraftDirty = false;
+      product.reviewedImportId = null;
+      product.reviewedRevision = null;
       await loadPersonalSearchStatus();
       setPersonalProgress("实验数据已确认并加入“我的实验”搜索。");
       product.searchRepository = "offline";
@@ -648,15 +690,24 @@
       runSearch(null, { remember: false });
     } catch (error) {
       if (error.code === "personal_search_refresh_failed") {
-        try { await readLatestImportStatus(); } catch (_statusError) { /* Search status remains authoritative. */ }
+        try { product.personalImportStatus = await readLatestImportStatus(); } catch (_statusError) { /* Search status remains authoritative. */ }
+        product.reviewedImportId = null;
+        product.reviewedRevision = null;
         await loadPersonalSearchStatus();
         setPersonalProgress("数据已经确认，但搜索刷新未完成。请使用“重试刷新搜索”，不要重复确认。", true);
       } else {
-        try { await readLatestImportStatus(); } catch (_statusError) { /* Keep the fixed public error. */ }
+        try { product.personalImportStatus = await readLatestImportStatus(); } catch (_statusError) { /* Keep the fixed public error. */ }
         setPersonalProgress(error.message, true);
-        if (product.personalImportStatus?.stage === "draft_saved") button.disabled = false;
+        const reviewedStateStillCurrent = product.personalImportStatus?.stage === "draft_saved"
+          && product.personalImportStatus.import_id === reviewedImportId
+          && product.personalImportStatus.revision === reviewedRevision
+          && product.reviewedImportId === reviewedImportId
+          && product.reviewedRevision === reviewedRevision;
+        if (reviewedStateStillCurrent) button.disabled = false;
       }
       toast(error.message, true);
+    } finally {
+      product.confirmingPersonal = false;
     }
   }
 

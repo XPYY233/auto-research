@@ -9,6 +9,7 @@ from auto_research.personal.import_service import (
     PersonalImportService,
     PersonalImportServiceError,
 )
+from auto_research.personal.public_projection import project_personal_renderer_payload
 
 
 WINDOWS_ROOT = Path(__file__).resolve().parents[1]
@@ -78,6 +79,12 @@ class _Search:
 
 
 class PersonalImportBridgeTests(unittest.TestCase):
+    def test_bridge_reuses_shared_renderer_projection(self) -> None:
+        self.assertIs(
+            MODULE.project_personal_renderer_payload,
+            project_personal_renderer_payload,
+        )
+
     def test_bridge_delegates_payload_and_refreshes_only_after_confirm(self) -> None:
         service = _Service()
         search = _Search()

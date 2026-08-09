@@ -55,6 +55,14 @@ class _Result:
             "import_id": IMPORT_ID,
             "stage": self.stage,
             "indexable": self.stage == "indexable",
+            "revision": 3,
+            "source_file": {
+                "file_id": "private-file",
+                "source_file_id": "private-source-file",
+                "sha256": "a" * 64,
+                "relative_path": "files/private.csv",
+                "original_name": "private.csv",
+            },
         }
 
 
@@ -120,7 +128,16 @@ class PersonalImportAPITests(unittest.TestCase):
             [("preview", "personal_selection_0123456789abcdef")],
         )
         self.assertEqual(handler.responses[0][1], HTTPStatus.CREATED)
-        self.assertNotIn("path", json.dumps(handler.responses[0][0]).lower())
+        serialized = json.dumps(handler.responses[0][0]).lower()
+        for forbidden in (
+            "path",
+            "sha256",
+            "file_id",
+            "source_file_id",
+        ):
+            self.assertNotIn(forbidden, serialized)
+        self.assertIn(IMPORT_ID, serialized)
+        self.assertIn("revision", serialized)
 
     def test_status_draft_and_confirm_routes(self) -> None:
         status = _Handler(f"/api/desktop/personal-imports/{IMPORT_ID}")
@@ -144,6 +161,17 @@ class PersonalImportAPITests(unittest.TestCase):
             ],
         )
         self.assertTrue(confirm.responses[0][0]["indexable"])
+        for handler in (status, draft, confirm):
+            serialized = json.dumps(handler.responses[0][0]).casefold()
+            for forbidden in (
+                "path",
+                "sha256",
+                "file_id",
+                "source_file_id",
+            ):
+                self.assertNotIn(forbidden, serialized)
+            self.assertIn(IMPORT_ID, serialized)
+            self.assertIn("revision", serialized)
 
     def test_confirm_refreshes_immutable_private_search_snapshot(self) -> None:
         search_service = _SearchService()
@@ -175,7 +203,6 @@ class PersonalImportAPITests(unittest.TestCase):
                 "state": "ready",
                 "ready": True,
                 "document_count": 2,
-                "active_fingerprint": "f" * 64,
             },
         )
 
@@ -260,7 +287,7 @@ class PersonalImportAPITests(unittest.TestCase):
         self.assertEqual(status["state"], "stale")
         self.assertTrue(status["ready"])
         self.assertEqual(status["document_count"], 2)
-        self.assertEqual(status["active_fingerprint"], "f" * 64)
+        self.assertNotIn("active_fingerprint", status)
         self.assertEqual(status["error"]["code"], "personal_search_refresh_failed")
 
     def test_search_refresh_route_recovers_without_repeating_confirmation(self) -> None:
@@ -284,7 +311,7 @@ class PersonalImportAPITests(unittest.TestCase):
         self.assertEqual(status, HTTPStatus.OK)
         self.assertEqual(payload["state"], "ready")
         self.assertTrue(payload["ready"])
-        self.assertEqual(payload["active_fingerprint"], "f" * 64)
+        self.assertNotIn("active_fingerprint", payload)
         self.assertEqual(
             [call[0] for call in self.service.calls].count("confirm"),
             1,

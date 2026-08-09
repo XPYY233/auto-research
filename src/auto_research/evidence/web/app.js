@@ -2009,6 +2009,7 @@ function setSearchExperience(mode) {
     runSearch(null, { remember: false });
     window.requestAnimationFrame(() => document.querySelector('#search-query')?.focus());
   }
+  globalThis.AutoResearchDesktopProduct?.applySearchUI?.();
 }
 
 function librarianSessionId() {
@@ -2220,7 +2221,7 @@ function resetLibrarian(options = {}) {
   renderLibrarianConversation();
   renderLibrarianResults([]);
   renderLibrarianHistory();
-  setText('librarian-status', '检索范围：整个文献库');
+  setText('librarian-status', '检索范围：官方文献全库（不含我的实验）');
   if (options.focus !== false) window.requestAnimationFrame(() => document.querySelector('#librarian-input')?.focus());
 }
 

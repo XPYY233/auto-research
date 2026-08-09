@@ -70,6 +70,14 @@ class DesktopProductUIContractTests(unittest.TestCase):
         self.assertIn("AutoResearchDesktopProduct?.handleSearch", self.app)
         self.assertIn("AutoResearchDesktopProduct?.applySearchUI", self.app)
         self.assertIn("body.error || body.message", self.app)
+        self.assertIn(
+            "检索范围：官方文献全库（不含我的实验）",
+            self.app,
+        )
+        experience = self.app.split("function setSearchExperience(mode)", 1)[1].split(
+            "function librarianSessionId()", 1
+        )[0]
+        self.assertIn("AutoResearchDesktopProduct?.applySearchUI?.()", experience)
 
     def test_successful_package_import_enters_precise_official_search(self) -> None:
         success = self.product.index('toast("官方资料包已安全导入')
