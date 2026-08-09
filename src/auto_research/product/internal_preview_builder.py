@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 import json
 import os
 import re
@@ -31,6 +32,7 @@ from .portable_repository import (
     IDENTITY_VERSION,
     PROVENANCE_PATH,
     RIGHTS_PATH,
+    PortableExportPlan,
     ReleasePolicy,
     materialize_portable_repository,
     provenance_for_papers,
@@ -72,6 +74,10 @@ class InternalPreviewBuildReport:
 
 
 PAPER_UID_RE = re.compile(r"^paper_[0-9a-f]{32}$")
+EXCERPT_KEYS = frozenset({"source_excerpt", "source_context", "caption"})
+MAX_EXCERPT_CHARS = 1000
+MAX_EXCERPT_CHARS_PER_PAPER = 5000
+MAX_EXCERPT_CHARS_TOTAL = 200_000
 
 
 def normalize_approved_paper_uids(values: Iterable[str]) -> frozenset[str]:
@@ -86,6 +92,59 @@ def normalize_approved_paper_uids(values: Iterable[str]) -> frozenset[str]:
     if not normalized:
         raise RuntimeError("必须显式提供至少一篇已批准论文")
     return frozenset(normalized)
+
+
+def _budget_official_excerpts(plan: PortableExportPlan) -> PortableExportPlan:
+    """Apply the published excerpt budget without changing scientific fields."""
+
+    seen_by_paper: dict[str, set[str]] = {}
+    totals_by_paper: dict[str, int] = {}
+    total = 0
+
+    def visit(value: object, *, paper_uid: str) -> object:
+        nonlocal total
+        if isinstance(value, dict):
+            result: dict[object, object] = {}
+            for key, child in value.items():
+                if key in EXCERPT_KEYS and child:
+                    excerpt = " ".join(str(child).split())[:MAX_EXCERPT_CHARS]
+                    if not excerpt:
+                        result[key] = ""
+                        continue
+                    known = seen_by_paper.setdefault(paper_uid, set())
+                    if excerpt in known:
+                        result[key] = excerpt
+                        continue
+                    paper_total = totals_by_paper.get(paper_uid, 0)
+                    if (
+                        paper_total + len(excerpt) > MAX_EXCERPT_CHARS_PER_PAPER
+                        or total + len(excerpt) > MAX_EXCERPT_CHARS_TOTAL
+                    ):
+                        result[key] = ""
+                        continue
+                    known.add(excerpt)
+                    totals_by_paper[paper_uid] = paper_total + len(excerpt)
+                    total += len(excerpt)
+                    result[key] = excerpt
+                else:
+                    result[key] = visit(child, paper_uid=paper_uid)
+            return result
+        if isinstance(value, list):
+            return [visit(child, paper_uid=paper_uid) for child in value]
+        return value
+
+    entities: list[dict[str, object]] = []
+    for source in plan.entities:
+        entity = copy.deepcopy(dict(source))
+        paper_uid = str(entity.get("paper_uid") or "")
+        entity["payload"] = visit(entity.get("payload") or {}, paper_uid=paper_uid)
+        entities.append(entity)
+    return PortableExportPlan(
+        papers=plan.papers,
+        entities=tuple(entities),
+        dropped_by_reason=plan.dropped_by_reason,
+        private_source_sha256=plan.private_source_sha256,
+    )
 
 
 def load_approved_paper_uids(path: Path | str) -> frozenset[str]:
@@ -285,6 +344,7 @@ def _build_internal_preview_package_in_directory(
         raise RuntimeError(
             f"批准论文清单与待发布论文不一致（缺少 {missing}，多出 {extra}）"
         )
+    plan = _budget_official_excerpts(plan)
     repository = materialize_portable_repository(
         plan,
         repository_root,
@@ -295,9 +355,9 @@ def _build_internal_preview_package_in_directory(
             allowed_paper_uids=approved,
             allow_structured_evidence=True,
             allow_short_excerpts=True,
-            maximum_excerpt_chars=1000,
-            maximum_excerpt_chars_per_paper=5000,
-            maximum_excerpt_chars_total=200_000,
+            maximum_excerpt_chars=MAX_EXCERPT_CHARS,
+            maximum_excerpt_chars_per_paper=MAX_EXCERPT_CHARS_PER_PAPER,
+            maximum_excerpt_chars_total=MAX_EXCERPT_CHARS_TOTAL,
             accepted_dropped_by_reason={},
         ),
         provenance=provenance_for_papers(

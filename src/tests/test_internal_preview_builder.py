@@ -18,8 +18,9 @@ from auto_research.product.internal_preview_builder import (
     main,
     normalize_approved_paper_uids,
     preview_public_key_base64,
+    _budget_official_excerpts,
 )
-from auto_research.product.portable_repository import stable_paper_uid
+from auto_research.product.portable_repository import PortableExportPlan, stable_paper_uid
 
 
 SYNTHETIC_UID = stable_paper_uid(
@@ -164,6 +165,35 @@ class InternalPreviewBuilderTests(unittest.TestCase):
         self.assertEqual(policy.maximum_excerpt_chars_per_paper, 5000)
         self.assertEqual(policy.maximum_excerpt_chars_total, 200_000)
         self.assertEqual(policy.accepted_dropped_by_reason, {})
+
+    def test_realistic_long_context_is_trimmed_without_changing_scientific_fields(self) -> None:
+        uid = SYNTHETIC_UID
+        plan = PortableExportPlan(
+            papers=self.synthetic_plan().papers,
+            entities=(
+                {
+                    "paper_uid": uid,
+                    "entity_type": "item",
+                    "identity_key": "item-1",
+                    "payload": {
+                        "value_text": "300",
+                        "unit": "K",
+                        "source_context": "x" * 5000,
+                        "occurrences": [
+                            {"source_excerpt": "y" * 900},
+                            {"source_excerpt": "z" * 900},
+                        ],
+                    },
+                },
+            ),
+            private_source_sha256="a" * 64,
+        )
+        budgeted = _budget_official_excerpts(plan)
+        payload = budgeted.entities[0]["payload"]
+        self.assertEqual(payload["value_text"], "300")
+        self.assertEqual(payload["unit"], "K")
+        self.assertEqual(len(payload["source_context"]), 1000)
+        self.assertEqual(len(payload["occurrences"][0]["source_excerpt"]), 900)
 
     def test_public_report_and_cli_are_path_free_and_use_v06_compatibility(self) -> None:
         report = InternalPreviewBuildReport(
