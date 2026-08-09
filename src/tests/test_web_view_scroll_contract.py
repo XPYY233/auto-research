@@ -24,13 +24,13 @@ class WebViewScrollContractTests(unittest.TestCase):
     def test_repository_changes_reveal_search_without_smooth_scrolling(self) -> None:
         self.assertIn("function revealSearchWorkspace()", self.product)
         reveal_start = self.product.index("function revealSearchWorkspace()")
-        reveal_end = self.product.index("function officialTitle", reveal_start)
+        reveal_end = self.product.index("function evidenceTitle", reveal_start)
         reveal = self.product[reveal_start:reveal_end]
         self.assertIn('behavior: "auto"', reveal)
         self.assertNotIn('behavior: "smooth"', reveal)
 
         repository_start = self.product.index("function setSearchRepository")
-        repository_end = self.product.index("function officialTitle", repository_start)
+        repository_end = self.product.index("function evidenceTitle", repository_start)
         self.assertIn(
             "revealSearchWorkspace();",
             self.product[repository_start:repository_end],
