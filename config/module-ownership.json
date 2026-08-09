@@ -1,0 +1,91 @@
+{
+  "schema": "auto-research-module-ownership-v1",
+  "updated_at": "2026-08-09",
+  "allowed_statuses": ["stable", "experimental", "compatibility", "retired"],
+  "modules": [
+    {
+      "id": "scientific-evidence-core",
+      "paths": ["src/auto_research/evidence"],
+      "owner": "shared-evidence-core",
+      "status": "stable",
+      "authority": "schema-v12 evidence, four public evidence types, extraction and quality gates"
+    },
+    {
+      "id": "librarian-v3",
+      "paths": ["src/auto_research/evidence/agent_runtime.py", "src/auto_research/evidence/librarian_*.py"],
+      "owner": "shared-librarian-core",
+      "status": "stable",
+      "authority": "intent, bounded recall, signed research state and evidence-only synthesis"
+    },
+    {
+      "id": "federated-search",
+      "paths": ["src/auto_research/evidence/federated_search.py", "src/auto_research/evidence/federated_search_session.py"],
+      "owner": "shared-search-core",
+      "status": "stable",
+      "authority": "official and private immutable source lifecycle and ranking"
+    },
+    {
+      "id": "official-package-runtime",
+      "paths": ["src/auto_research/product/evidence_package.py", "src/auto_research/product/official_package_store.py", "src/auto_research/product/portable_repository.py"],
+      "owner": "shared-product-runtime",
+      "status": "stable",
+      "authority": "signed official package verification, immutable repository audit, activation and rollback"
+    },
+    {
+      "id": "user-transfer-runtime",
+      "paths": ["src/auto_research/product/transfer_package.py", "src/auto_research/product/package_transfer_*.py", "src/auto_research/product/package_payload_sources.py"],
+      "owner": "shared-product-runtime",
+      "status": "experimental",
+      "authority": "untrusted user transfer planning, sanitization, archive, integrity and activation"
+    },
+    {
+      "id": "package-center",
+      "paths": ["src/auto_research/product/package_center.py", "src/auto_research/product/package_center_models.py"],
+      "owner": "shared-product-runtime",
+      "status": "experimental",
+      "authority": "path-free package plans, jobs, export and import orchestration"
+    },
+    {
+      "id": "personal-data-core",
+      "paths": ["src/auto_research/personal"],
+      "owner": "shared-personal-core",
+      "status": "stable",
+      "authority": "bounded tabular preview, AI suggestions, reviewed import, private repository and transfer merge"
+    },
+    {
+      "id": "desktop-application-facade",
+      "paths": ["src/auto_research/desktop"],
+      "owner": "shared-desktop-contract",
+      "status": "experimental",
+      "authority": "platform-neutral route catalog, request context and error projection"
+    },
+    {
+      "id": "shared-desktop-ui",
+      "paths": ["src/auto_research/evidence/web"],
+      "owner": "shared-frontend",
+      "status": "stable",
+      "authority": "single macOS and Windows workbench UI; platforms must not fork HTML or business state"
+    },
+    {
+      "id": "macos-shell",
+      "paths": ["desktop/macos"],
+      "owner": "macos-platform",
+      "status": "experimental",
+      "authority": "native lifecycle, protected loopback, file tokens, credential adapter and App packaging only"
+    },
+    {
+      "id": "windows-shell",
+      "paths": ["desktop/windows"],
+      "owner": "windows-platform",
+      "status": "experimental",
+      "authority": "Windows lifecycle, native file tokens, Credential Manager and installer only"
+    },
+    {
+      "id": "browser-workbench-compatibility",
+      "paths": ["scripts/start_evidence_ui.command", "scripts/start_readonly_ngrok.command"],
+      "owner": "maintenance",
+      "status": "retired",
+      "authority": "migration notices and permission regression only; never a user product"
+    }
+  ]
+}

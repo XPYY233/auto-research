@@ -6,7 +6,13 @@
 
 本轮治理遵循“先冻结契约、再迁移调用者、最后删除旧实现”，不做一次性重写。科学数据库、四类证据 DTO、`FederatedSearchSession`、`PersonalImportService` 和官方仓库审计继续作为稳定边界。
 
-机器可读清单见 `config/architecture-debt.json`；发布身份权威见 `config/release-contract.json`。
+机器可读债务清单见 `config/architecture-debt.json`，模块所有权与状态见
+`config/module-ownership.json`，发布身份权威见 `config/release-contract.json`。
+
+本轮已经把官方包、用户传输包、资料包中心、结构化 payload source、用户包激活、
+私人实验 merge 和联合搜索生命周期放回共享核心。平台层只消费这些契约。用户包仍标记
+为 `experimental`，只有 macOS 0.7.0 完成真实导出、隔离导入、搜索和 PDF 打开验收后
+才能提升为 `stable`；Windows 在真实 Setup 验收前继续保持平台实验状态。
 
 ## 规模与热点
 
@@ -63,6 +69,13 @@
 - webapp：security envelope / route registry / controllers。
 
 每次只移动一个职责，并以旧 facade 保持导入路径和 DTO 稳定。
+
+### 新增模块的拆分门
+
+用户传输能力现已按“资料选择 source → 结构化 payload → archive/integrity → activation”
+分层，禁止再次塞回桌面 server。`transfer_package.py` 与私人 transfer merge 已接近治理阈值；
+下一次扩展格式、加密或附件类型之前，必须先把纯契约/规划与 archive/install、clone/storage
+分别拆开，不能继续在同一文件追加第三种职责。
 
 ## P2：兼容与制品清理
 

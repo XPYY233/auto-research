@@ -42,7 +42,7 @@
       "priority": "P1",
       "area": "frontend",
       "owner": "shared-frontend",
-      "status": "stable",
+      "status": "experimental",
       "problem": "app.js约3992行、desktop_product.js约857行，状态与视图职责集中",
       "target": "无构建器ES模块：api-store、literature、search-librarian、personal、package-center、evidence、history",
       "removal_gate": "原DOM ID和endpoint黄金契约、macOS/Windows共享资源哈希一致"
@@ -52,10 +52,20 @@
       "priority": "P1",
       "area": "python-large-modules",
       "owner": "shared-core",
-      "status": "stable",
+      "status": "experimental",
       "problem": "portable/private/import/evidence_package/webapp等模块超过1000行",
       "target": "保持facade和DTO不变，按schema、storage、transaction、projection、controller拆分",
       "removal_gate": "模块依赖方向检查和全部契约回归通过"
+    },
+    {
+      "id": "ARCH-P1-003",
+      "priority": "P1",
+      "area": "user-transfer-modules",
+      "owner": "product-runtime",
+      "status": "experimental",
+      "problem": "transfer_package与personal transfer merge已接近单文件治理阈值",
+      "target": "保持公开DTO不变，拆分contract/plan、archive/install与clone/storage",
+      "removal_gate": "0.7真实往返验收后，在下一次格式扩展前完成职责拆分"
     },
     {
       "id": "ARCH-P2-001",
