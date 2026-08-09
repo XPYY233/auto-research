@@ -1,0 +1,138 @@
+{
+  "schema_version": "windows-architecture-migration-v1",
+  "status": "shared-contracts-frozen-adapter-pending",
+  "installer_ready": false,
+  "current_bridge_contract_version": 1,
+  "target_bridge_contract_version": 2,
+  "required_shared_contracts": {
+    "desktop_application_facade": {
+      "status": "frozen",
+      "target_module": "auto_research.desktop.application_facade",
+      "windows_role": "thin-adapter-only",
+      "owns": [
+        "workspace queries and mutations",
+        "literature workflow operations",
+        "stable path-free response DTOs"
+      ]
+    },
+    "route_spec": {
+      "status": "frozen",
+      "target_module": "auto_research.desktop.routing",
+      "windows_role": "security-envelope-and-dispatch-only",
+      "owns": [
+        "method and path identity",
+        "request body limits",
+        "stable controller identity",
+        "stable error projection identity"
+      ]
+    },
+    "shared_package_jobs": {
+      "status": "frozen",
+      "target_module": "auto_research.product.package_job_contract",
+      "windows_role": "native-scheduler-and-renderer-projection-only",
+      "owns": [
+        "stage order",
+        "progress snapshot schema",
+        "stable error code and retryability",
+        "install audit activate lifecycle"
+      ]
+    },
+    "release_contract": {
+      "status": "frozen",
+      "target_module": "auto_research.release_contract",
+      "target_file": "config/release-contract.json",
+      "windows_role": "consume-and-verify-only",
+      "owns": [
+        "core and platform release identities",
+        "desktop bridge contract version",
+        "package schema compatibility",
+        "shared web asset fingerprint"
+      ]
+    }
+  },
+  "windows_adapter_adoption": {
+    "application_facade": "not-runtime-wired",
+    "route_catalog": "golden-subset-validated-not-runtime-wired",
+    "shared_package_jobs": "stage-compatible-progress-projection-pending",
+    "release_contract": "version-validated-runtime-injection-pending",
+    "route_ids": [
+      "ui.mode",
+      "desktop.readiness",
+      "credential.deepseek.get",
+      "credential.deepseek.save",
+      "credential.deepseek.delete",
+      "package.status",
+      "package.import",
+      "package.job.get",
+      "personal.preview",
+      "personal.search_status",
+      "personal.search_refresh",
+      "personal.status",
+      "personal.draft",
+      "personal.confirm",
+      "personal.ai_suggestion",
+      "personal.reviewed_import",
+      "federated.search",
+      "federated.evidence",
+      "librarian.chat"
+    ]
+  },
+  "windows_owned_after_migration": [
+    "Windows Credential Manager secret resolution",
+    "Windows native file pickers",
+    "single-instance and process lifecycle",
+    "127.0.0.1 loopback security envelope",
+    "WebView2 window composition",
+    "Windows build and installer verification"
+  ],
+  "forbidden_windows_ownership": [
+    "scientific extraction algorithms",
+    "search ranking algorithms",
+    "personal import prompt or validation logic",
+    "official package signature or repository audit logic",
+    "shared HTML JavaScript or CSS copies",
+    "independent workspace route semantics"
+  ],
+  "current_debt_inventory": {
+    "hardcoded_release_literals": [
+      {
+        "file": "shared_http_bridge.py",
+        "literal": "0.4.0-internal",
+        "replacement": "release_contract.desktop_version"
+      }
+    ],
+    "duplicated_package_job_modules": [
+      "package_import_progress.py",
+      "package_import_service.py",
+      "package_import_bridge.py"
+    ],
+    "duplicated_route_module": "shared_http_bridge.py",
+    "package_progress_projection": "noncanonical-index-fraction-pending-shared-dto",
+    "current_package_stages": [
+      "queued",
+      "snapshot_source",
+      "verify_archive",
+      "verify_signature",
+      "verify_checksums",
+      "extract_staging",
+      "audit_repository",
+      "activate",
+      "refresh_readiness",
+      "completed"
+    ]
+  },
+  "delete_or_shrink_after_adoption": {
+    "shared_http_bridge.py": "retain security envelope and generic RouteSpec dispatch only",
+    "package_import_progress.py": "remove shared stage error and progress semantics",
+    "package_import_service.py": "retain Windows scheduler and runtime dependency injection only",
+    "package_import_bridge.py": "retain path-free renderer projection only"
+  },
+  "migration_order": [
+    "freeze current route DTO security and package job golden tests",
+    "consume the frozen shared contracts without changing current URLs or DTOs",
+    "migrate and validate macOS against the shared contracts",
+    "switch Windows thin adapters to the identical contracts",
+    "delete duplicated Windows route and job semantics",
+    "perform Windows 11 clean-machine acceptance before installer_ready"
+  ]
+}

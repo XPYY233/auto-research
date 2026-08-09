@@ -1,5 +1,6 @@
 {
   "contract_version": 1,
+  "architecture_migration_contract": "architecture-migration-contract.json",
   "release_status": "internal-development",
   "dependency_closure_status": "backend-parity-ready-pending-win11-build-and-wheel-lock",
   "target": "windows-11-x64",
@@ -37,9 +38,14 @@
     "runtime_bundle"
   ],
   "shared_runtime_modules": [
+    "auto_research.desktop.application_facade",
+    "auto_research.desktop.route_catalog",
+    "auto_research.desktop.routing",
+    "auto_research.release_contract",
     "auto_research.product.evidence_package",
     "auto_research.product.official_package_store",
     "auto_research.product.portable_repository",
+    "auto_research.product.package_job_contract",
     "auto_research.product.trusted_publishers",
     "auto_research.evidence.federated_search",
     "auto_research.evidence.federated_search_session",
