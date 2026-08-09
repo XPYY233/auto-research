@@ -2,6 +2,16 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-09：macOS 0.5.1-preview.1 四入口工作台发布
+
+- 新增独立一级入口“上传实验数据”，与“上传文献”同级；左栏现在固定为数据检查、搜索数据、上传文献、上传实验数据。“人工补录”和“修正历史”仅移除导航，底层旧数据与兼容处理器未删除。
+- 新页面直接复用既有 CSV/TSV/XLSX 私人导入、逐列确认、revision/CAS、私人快照和联合搜索流程。确认或刷新成功后会切到可见的“我的实验”结果，不会后台搜索后留在空白页；官方资料包状态失败也不再阻止个人导入页面挂载。
+- 功能提交 `12b253c`，版本提交 `7fa19f9`，测试契约修正 `63b34f2`。干净 release worktree 串行通过726项测试：共享核心467、macOS 154、Windows 105。
+- 冻结 App smoke 验证 `primary_personal_import_navigation`、六路个人导入、联合检索、双原生选择器、Librarian V3、会话安全和旧工作区均进入二进制。随后在真实安装 App 中看到四入口，并点击验证独立上传页与“选择数据文件”按钮。
+- 唯一安装入口为 `/Applications/Auto Research.app`（bundle `0.5.1`，build `6`）。上一 0.5.0 安装副本移至 `.app.rollback`，构建副本改为非 `.app` 后缀，避免系统重复识别。
+- DMG：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.5.1-preview.1-macOS-arm64.dmg`；SHA-256 `7646527a9d7e59a64a11fdb9beb91f36b49b0eea12ae4d11b459db7e946b4529`。可执行文件 SHA-256 `7af68cc5933e2819c223cc41e81d986720f235ed70ecea50d1db4646bbe8c8bf`。
+- Windows 未来制品会直接打包相同共享 UI，静态契约已验证四入口、同名原生选择器和去路径 DTO；但 Windows 仍无 Setup，且数据检查/上传文献生产路由未完成，继续保持 `installer_ready=false`。
+
 ## 2026-08-09：macOS 0.5.0-preview.1 内部预览发布
 
 - 从干净源码 `9985386` 构建 Auto Research `0.5.0-preview.1`（bundle `0.5.0`，build `5`），并创建制品标签 `evidence-demo-2026-08-09-macos-workbench-preview-4`。旧 `0.4.0-preview.1` App/DMG 与 preview-3 标签继续保留为回退点。
