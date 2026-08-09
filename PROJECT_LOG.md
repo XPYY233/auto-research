@@ -2,6 +2,15 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-09：macOS 0.5.0-preview.1 内部预览发布
+
+- 从干净源码 `9985386` 构建 Auto Research `0.5.0-preview.1`（bundle `0.5.0`，build `5`），并创建制品标签 `evidence-demo-2026-08-09-macos-workbench-preview-4`。旧 `0.4.0-preview.1` App/DMG 与 preview-3 标签继续保留为回退点。
+- 干净 release worktree 串行通过722项测试：共享核心467、macOS 151、Windows契约104；另通过 Python 编译、`app.js`/`desktop_product.js` 语法、macOS脚本语法和差异检查。
+- 冻结 App smoke 验证桌面会话/CSRF、加密历史、Search V2、导出、Librarian V3 状态字段、官方/私人联合检索、个人导入六路契约、BYOK readiness/credential 路由及双原生选择器均进入制品；临时 SQLite 前后哈希一致。
+- App 通过 ad-hoc codesign、Info.plist 版本检查、DMG完整性校验与隔离 GUI 进程启动六秒无错误后关闭。DMG SHA-256：`cad6c8b8f2769b9006a0820fabf9ee22f03ca36ae5593f6f2e96adc88f2374a1`；可执行文件 SHA-256：`45db994969851ded745611899da4961a8964cbb5eae6c0cd530b91bc3bde947e`。
+- 本次程序发布没有把科学数据库、PDF、截图、模型历史或开发者API密钥烘焙进 App。主工作区既有生产数据库与 `paper_056` 现场数据全程未暂存、未提交，也未作为构建测试数据。
+- 该制品仍是依赖本机 checkout v12 的内部 macOS 预览；Windows 保持 `installer_ready=false`，没有 Setup 或 Win11 clean-machine 验收。程序稳定、语料完成度与科学准确率继续分别报告。
+
 ## 2026-08-09：Librarian V3、私人导入与共享工作台源码收口
 
 - 当前源码检查点为 `64e0592`。Librarian V3 已接入共享前端：系统能力/普通对话走本地零召回路径，研究问题使用官方文献全库，签名 `research_state/state_token` 支持 R#/B# 多轮追问；私人实验和 `all` 不进入 Librarian 综合。

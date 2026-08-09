@@ -1,21 +1,23 @@
 # Auto Research macOS 开发预览
 
-这是 Auto Research 桌面产品的 macOS 开发与验证外壳。正式用户端预计是 Windows；核心、`.aresearch` 资料包、私人库和凭据接口必须保持跨平台。用户唯一入口是 App，不再使用浏览器工作台、导师只读或 ngrok。
+这是 Auto Research 桌面产品的 macOS 开发与验证外壳。核心、`.aresearch` 资料包、私人库和凭据接口保持跨平台，但本页只描述当前 macOS 内部预览。用户唯一入口是 App，不再使用浏览器工作台、导师只读或 ngrok。
 
 ## 当前阶段
 
-- 开发中版本：`0.4.0-preview.1`（尚未构建，等待联合发布门）
-- 稳定回退版本：`0.3.0-preview.1`
+- 当前候选：`0.5.0-preview.1`（bundle `0.5.0`，build `5`）
+- 制品源码/标签：`9985386` / `evidence-demo-2026-08-09-macos-workbench-preview-4`
+- 回退版本：`0.4.0-preview.1`，旧 App 与 DMG 均保留
 - 当前构建：macOS arm64（Apple Silicon）开发预览
-- 正式目标：Windows 桌面客户端
 - 界面：继续使用项目唯一的 `src/auto_research/evidence/web/` 前端
 - 核心：继续使用项目现有 Python、SQLite、PyMuPDF 和 DeepSeek 运行边界
-- 数据：v12 开发工作区继续可编辑；官方 `.aresearch` 作为第二个独立只读来源安装，不复制回 v12
+- 数据：v12 本地文献工作区继续可编辑；官方 `.aresearch` 和本机私人实验库作为相互隔离的只读检索来源，不复制回 v12
 - 分发：本机开发预览，尚未 Developer ID 签名或 Apple 公证
 
 桌面壳不复制第二套搜索、Agent 或证据逻辑。核心功能完成测试与提交后，通过一次受控重建进入 App。
 
-`0.4.0-preview.1` 的界面与后端已经接入原生资料包选择、签名资料包导入、官方/本机来源切换、四类只读证据搜索和 BYOK 引导。当前仍是依赖本机 checkout 的开发候选；在完成一次联合构建与实机验收前，不应替换 `0.3.0-preview.1` 回退版。
+`0.5.0-preview.1` 已接入 Librarian V3、原生资料包选择、签名资料包导入、官方/私人/全部联合精确搜索、私人 CSV/TSV/XLSX 的预览—草稿—逐列复核—确认—检索刷新，以及 BYOK 引导。图书管理员只查官方文献，不读取私人实验。当前仍是依赖本机 checkout 的内部开发预览，不是可移植正式发行版。
+
+发布验证在干净 release worktree 完成：共享核心467项、macOS 151项、Windows契约104项，共722项通过。冻结 App smoke、ad-hoc codesign、DMG校验和隔离 GUI 进程启动/关闭通过。DMG SHA-256：`cad6c8b8f2769b9006a0820fabf9ee22f03ca36ae5593f6f2e96adc88f2374a1`。
 
 ## 文件入口
 
@@ -30,11 +32,11 @@
 | 查看安全边界 | 阅读 `SECURITY.md` |
 | 查看数据包路线 | 阅读 `../PRODUCT_DATA_PACKAGE_PLAN.md` |
 
-生成物位于 `desktop/macos/dist/Auto Research.app`，上一版保存在 `desktop/macos/releases/`。二者都不进入 Git，应用更新与科学数据更新分离。
+生成物位于 `desktop/macos/dist/Auto Research.app` 和 `desktop/macos/dist/Auto-Research-0.5.0-preview.1-macOS-arm64.dmg`，上一版保存在 `desktop/macos/releases/`。二者都不进入 Git，应用更新与科学数据更新分离。
 
 ## 为什么当前预览不读取钥匙串历史
 
-临时 ad-hoc 签名每次重建可能改变程序身份，导致 macOS 为旧历史密钥弹出“登录钥匙串密码”。`0.3.0-preview.1` 不读取也不删除旧 Keychain 项；历史仍由 AES-256-GCM 加密，但预览期随机密钥保存在 Application Support 私有目录并限制为当前账户读取。
+临时 ad-hoc 签名每次重建可能改变程序身份，导致 macOS 为旧历史密钥弹出“登录钥匙串密码”。当前 ad-hoc 预览不读取也不删除旧 Keychain 项；历史仍由 AES-256-GCM 加密，但预览期随机密钥保存在 Application Support 私有目录并限制为当前账户读取。
 
 这是预览期稳定性例外，不是正式安全方案。正式签名发行必须切回操作系统安全凭据库：macOS Keychain / Windows Credential Manager。
 

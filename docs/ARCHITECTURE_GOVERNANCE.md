@@ -54,8 +54,8 @@ platform-neutral utilities
 
 以下路径当前已冻结：
 
-- `stable`：本地 PyMuPDF 图表资产、DeepSeek 文本语义增强、四类证据搜索、对抗式质量门、签名资料包核心、官方/私人只读联合召回契约、私人导入确认门和 Librarian V3 核心契约。
-- `experimental`：共享离线资料库/私人导入 UI 及其桌面产品接线，直至新的 macOS/Windows 实机验收完成。最后已构建 macOS `0.4.0-preview.1` 来自 `f34bf68`；当前 `64e0592` 源码晚于该制品。Windows `a134acd` 只有 backend parity，仍为 `installer_ready=false`。
+- `stable`：本地 PyMuPDF 图表资产、DeepSeek 文本语义增强、四类证据搜索、对抗式质量门、签名资料包核心、官方/私人只读联合召回契约、私人导入确认门、Librarian V3 核心契约，以及已进入 macOS `0.5.0-preview.1` 的共享离线资料库/私人导入 UI。
+- `experimental`：当前 macOS App 仍依赖 checkout v12，私人/官方资料库是内部预览；Windows 后端 parity 已对齐但仍为 `installer_ready=false`，没有 Setup 或 Win11 clean-machine 验收。跨平台可移植发行在真实 Windows 验收前不能升级为 stable。
 - `compatibility`：历史 read-only 权限回归；只用于测试安全边界。
 - `retired`：MinerU 云端视觉替换、浏览器编辑工作台、导师公网链接、ngrok 产品路径、无约束 Librarian 工具循环、重复 DeepSeek 预览按钮。
 
@@ -117,7 +117,7 @@ platform-neutral utilities
 
 不得用测试通过替代以下声明：语料完成度、科学准确率、版权可分发性或跨平台实机通过。四者分别验收。
 
-最后已构建制品的阶段证据：`f34bf68` 干净 release worktree 通过591项联合测试，macOS App/DMG 通过隔离构建、镜像校验和实机启动健康检查。当前源码为 `64e0592`，包含尚未进入该制品的 V3/私人导入/共享离线资料库接线。Windows `a134acd` 完成后端组合但仍无真实 Setup 和 Win11 clean-machine 验收，因此发布序列仍未结束。
+最后已构建制品的阶段证据：`9985386` 干净 release worktree 通过722项联合测试，macOS `0.5.0-preview.1` App/DMG 通过冻结二进制 smoke、ad-hoc 签名、镜像校验和隔离 GUI 进程启动/关闭。该制品已包含 V3、私人导入和共享离线资料库。Windows 后端组合仍无真实 Setup 和 Win11 clean-machine 验收，因此跨平台发布序列仍未结束。
 
 ## 8. 下一轮分层目标
 

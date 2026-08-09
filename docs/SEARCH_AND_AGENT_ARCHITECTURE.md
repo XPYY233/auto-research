@@ -76,7 +76,7 @@ V3 在既有四类证据和五段报告外增加一层本地控制平面；旧�
 
 缓存键加入意图、研究状态指纹和 `evidence_version`。DeepSeek 超时、非法/超长 JSON 或不可用时，系统能力回答、稳定 anchor 解析和确定性报告仍工作。候选论文文本中的提示词只作为有界证据字符串，不能改变本地意图、硬条件、候选、引用、预算或写权限。
 
-共享前端已经原样转发 `conversation_id/research_state/state_token`，展示意图、review map、可回答建议和安全恢复动作。研究状态只保存在当前页面内存，不进入浏览器 `localStorage` 或桌面加密历史；传输失败会清除旧 R#/B#。该源码接线位于 `64e0592`，晚于最后一次从 `f34bf68` 构建的 macOS App/DMG，必须经过新制品构建和实机验收后才能称为已发布。
+共享前端已经原样转发 `conversation_id/research_state/state_token`，展示意图、review map、可回答建议和安全恢复动作。研究状态只保存在当前页面内存，不进入浏览器 `localStorage` 或桌面加密历史；传输失败会清除旧 R#/B#。该接线已进入从 `9985386` 构建的 macOS `0.5.0-preview.1` 内部预览，并通过冻结 smoke 与隔离 GUI 启动验证。
 
 ## 不变量
 

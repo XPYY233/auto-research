@@ -2,11 +2,10 @@
 
 > 交班快照：2026-08-09
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
-> 当前源码检查点：`64e0592`
-> 最后已构建源码：`f34bf68`
-> 最后已构建桌面候选：Auto Research `0.4.0-preview.1`（Apple Silicon macOS，内部开发预览）
-> 当前制品标签：`evidence-demo-2026-08-01-macos-workbench-preview-3`
-> 该制品联合验证：591 项通过（core 399 / macOS 110 / Windows 82）
+> 当前制品源码：`9985386`
+> 最后已构建桌面候选：Auto Research `0.5.0-preview.1`（Apple Silicon macOS，内部开发预览）
+> 当前制品标签：`evidence-demo-2026-08-09-macos-workbench-preview-4`
+> 该制品联合验证：722 项通过（core 467 / macOS 151 / Windows 104）
 > Windows 源码：`a134acd` backend parity；`installer_ready=false`，无 Setup、无 Win11 真机验收
 > 证据库版本：`2026.07.30-librarian-brief-stable.1` / schema v12
 
@@ -152,11 +151,11 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 - 共享搜索 UI 分为“本地文献工作区”和“离线资料库”；离线资料库对 `official/private/all` 每次只执行一次联合精确查询，结果继续只有 `item/table/figure/finding`。renderer 公共投影不含本机路径、文件哈希、内部数据库/导入/草稿 ID。
 - 私人 CSV/TSV/XLSX 导入固定为 `previewed → draft_saved → confirmed/indexable`。确认必须绑定最新 `expected_revision/reviewed_revision`，并要求纳入列的角色、意义和单位全部由用户复核；复核后修改草稿会使旧确认失效。当前 UI 不支持趋势图附件或曲线读点。
 
-历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。最后已构建的 `0.4.0-preview.1` 来自 `f34bf68`，已完成591项联合测试和 App/DMG 实机验收；当前 `64e0592` 源码中的 V3、私人导入与共享离线资料库尚未进入该制品。两者不得混写为同一个已发布状态。
+历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。`0.5.0-preview.1` 已从干净源码 `9985386` 构建，包含 V3、私人导入和共享离线资料库；它完成722项联合测试、冻结 App smoke、DMG 校验和隔离 GUI 进程启动/关闭。它仍是依赖 checkout v12 的内部预览，不得写成可移植正式版。上一 `0.4.0-preview.1` 制品继续作为回退点。
 
 ## 5. 当前真实状态
 
-科学数据和最后已构建制品仍以2026-08-01内部预览检查点为准；源码能力另列，不据此改写制品测试数或数据库口径：
+科学数据仍使用既有证据库口径；桌面制品已更新到2026-08-09内部预览。程序验收不得改写数据库计数、语料完成度或科学准确率：
 
 | 对象 | 数量/状态 |
 |---|---:|
@@ -170,13 +169,13 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 | 固定验收 PDF | 50/50 身份与内容有效 |
 | 数据就绪论文 | 17/50 |
 | 图表就绪论文 | 30/50 |
-| 自动测试 | 591 项通过（core 399 / macOS 110 / Windows 82） |
+| 自动测试 | 722 项通过（core 467 / macOS 151 / Windows 104） |
 | 生产 SQLite SHA-256 | `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6` |
 
 | 源码/平台状态 | 当前事实 |
 |---|---|
-| 共享源码 | `64e0592`：Librarian V3 UI、联合精确搜索、私人导入确认门与公共投影安全门 |
-| macOS 制品 | 仍为 `f34bf68` 构建的 preview-3；尚未包含上述后续源码 |
+| macOS 制品源码 | `9985386`：Librarian V3 UI、联合精确搜索、私人导入确认门、公共投影安全门与0.5发布契约 |
+| macOS 制品 | `0.5.0-preview.1` / preview-4；DMG SHA-256 `cad6c8b8f...2374a1` |
 | Windows 源码 | `a134acd` backend parity；共享 HTTP bridge、原生选择和服务组合已接线 |
 | Windows 制品 | `installer_ready=false`；无 Setup、无 Win11 clean-machine 验收 |
 
@@ -389,8 +388,9 @@ git fsck --full
 
 当前恢复层级：
 
-- 最后已构建 macOS 制品：标签 `evidence-demo-2026-08-01-macos-workbench-preview-3`，源码 `f34bf68`；它不包含 `64e0592` 之后的共享 UI/私人导入功能。
-- 当前源码检查点：`64e0592`；尚未生成新的 App/DMG、发布标签或 Windows Setup。
+- 当前 macOS 制品：标签 `evidence-demo-2026-08-09-macos-workbench-preview-4`，源码 `9985386`，版本 `0.5.0-preview.1`；App/DMG 已生成并验收。
+- 上一 macOS 回退制品：标签 `evidence-demo-2026-08-01-macos-workbench-preview-3`，源码 `f34bf68`，版本 `0.4.0-preview.1`。
+- Windows 仍未生成真实 Setup，也未完成 Win11 clean-machine 验收。
 - Librarian V3 改造前保护点：标签 `auto-research-pre-librarian-v3-integration-2026-08-08`，提交 `a2b60e1`。
 - 科学 SQLite 快照仍使用已记录的 `2026.07.30-librarian-brief-stable.1` 身份；代码文档收口不得改写其 SHA、数据计数或现场文件。
 
@@ -410,12 +410,11 @@ git fsck --full
 
 推荐顺序：
 
-1. 从冻结源码受控重建 macOS App/DMG，实机验收官方/私人/全部搜索、私人导入、Librarian V3 与 BYOK；
-2. 在 Windows 11 生成真实 Setup，完成 clean-machine 安装、资料包/私人表格导入、离线搜索、Librarian、升级和卸载验收；
-3. 建立30–50个图书管理员问题的人工金标准和自动回归指标；
-4. 每批3–5篇补齐13篇数据就绪论文，使17/50达到至少30/50；
-5. 建立轻量用户反馈，区分漏检、错引和条件理解错误；证明需要后再评估向量检索；
-6. 完成私有GitHub或代码+脱敏演示库的发布范围设计。
+1. 在真实 Windows 11 上生成 Setup，完成 clean-machine 安装、资料包/私人表格导入、离线搜索、Librarian、升级和卸载验收；
+2. 建立30–50个图书管理员问题的人工金标准和自动回归指标；
+3. 每批3–5篇补齐13篇数据就绪论文，使17/50达到至少30/50；
+4. 建立轻量用户反馈，区分漏检、错引和条件理解错误；证明需要后再评估向量检索；
+5. 完成私有GitHub或代码+脱敏演示库的发布范围设计。
 
 ## 16. 更换账号后的 Skill 使用
 
