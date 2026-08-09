@@ -1,6 +1,6 @@
 # Desktop Application Facade 与共享路由契约
 
-状态：`experimental`（P0 架构收敛骨架）  
+状态：`experimental`（P0 架构收敛骨架）
 更新：2026-08-09
 
 ## 目标
@@ -83,4 +83,3 @@ Facade 根据目录解析路由，依次复核 session、mode、body cap、CSRF�
 - pattern 只返回命名的稳定参数；
 - 未注册 controller 与内部异常只返回 path-free 固定错误；
 - package、personal、federated、readiness、credential、Librarian、workspace 七个家族均在黄金目录中。
-

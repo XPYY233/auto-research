@@ -293,4 +293,3 @@ DEFAULT_DESKTOP_ROUTES: tuple[RouteSpec, ...] = (
 
 def build_default_route_registry() -> RouteRegistry:
     return RouteRegistry(list(DEFAULT_DESKTOP_ROUTES))
-

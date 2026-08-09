@@ -97,4 +97,3 @@ class DesktopApplicationFacade:
         raise DesktopFacadeError(
             DesktopErrorDTO(code, message, status, retryable=retryable)
         )
-
