@@ -3,9 +3,9 @@
 ## 版本身份
 
 - 科学数据基线：`2026.07.30-librarian-brief-stable.1`
-- 桌面候选：Auto Research `0.5.1-preview.1`（Apple Silicon macOS）
-- 制品源码：`63b34f2`
-- 制品标签：`evidence-demo-2026-08-09-macos-workbench-preview-5`
+- 桌面候选：Auto Research `0.6.0-preview.1`（Apple Silicon macOS）
+- 制品源码：`7909100`
+- 制品标签：`evidence-demo-2026-08-09-macos-workbench-preview-6`
 - 改造前保护提交：`6ce9536`
 - 改造前保护标签：`evidence-demo-2026-07-30-pre-research-brief-1`
 - 当前状态：内部开发预览；联合测试、隔离 App 构建、冻结二进制 smoke、DMG 镜像验证和隔离 GUI 进程启动/关闭均已通过，但本地文献工作区仍依赖 checkout v12
@@ -15,6 +15,17 @@
 - 已退役入口：浏览器工作台、导师只读页、`8765`/`8766`、ngrok 公网链接
 
 本阶段在 `2026.07.30-librarian-reasoning-stable.1` 上完成图书管理员研究简报、签名官方资料包、联合只读检索和 macOS 桌面接线。它保留既有数据、图表、原文定位、质量门、DeepSeek 证据对话和校对历史，没有重新提取论文、重新查询 PDF、生成稳定截图或猜测图中曲线点。HTML/JavaScript 与 loopback webapp 仍是 App 内部实现，不再作为独立网页版产品交付。
+
+## 0.6.0-preview.1 验收摘要
+
+- 一级入口收敛为“文献处理、搜索数据、上传实验数据”。“文献处理”复用原上传与当前文章校对页面作为两个阶段，没有复制第二套状态；上传 PDF 只验证、去重和入库，DeepSeek 只由“开始自动提取与核验”明确触发。
+- CSV/TSV/XLSX 先做安全预览，再由 DeepSeek 基于工作表名、行数、列名、类型、已有单位/本地角色与含义及最多5行对齐样例生成待核验建议。用户只需浏览、修正错误并点击一次“我已检查，确认导入”；后台仍执行 draft、revision/CAS、confirm 和私人搜索刷新，AI 永远不能确认数据。
+- 延迟 AI 响应不会覆盖用户已编辑字段；AI 运行期间最终确认被禁用。私人暂存只清理受控命名、超过 TTL 的普通文件，不跟随符号链接。
+- 干净 release worktree 联合验证745项（共享核心479、macOS 157、Windows 109），最终文案与导航另通过22项契约检查；Python/JavaScript/差异检查、冻结 App smoke、ad-hoc codesign、DMG校验和真实安装界面检查通过。
+- 唯一可启动副本为 `/Applications/Auto Research.app`，Info.plist 为 `0.6.0` / build `7`。DMG SHA-256：`57f782897fdd84262c1e1bf5553c7b0e81efaed707d064ebbfa8fa5aff039022`；可执行文件 SHA-256：`128627d8708c573c563313fb53503d2bf2ae984e39680d34ef5f13778f61d834`。
+- Windows 源码已同步相同共享 UI、AI 建议、单次核验编排和凭据解析薄适配，并通过109项平台契约；但 `installer_ready=false`，没有 Setup 或 Win11 真机验收，不得称为 Windows 安装版。
+
+上一回退制品为 `0.5.1-preview.1`、标签 `evidence-demo-2026-08-09-macos-workbench-preview-5`。旧安装副本均改为非 `.app` 后缀，仅保留回退文件，不会形成系统重复 App。
 
 ## 0.5.1-preview.1 验收摘要
 
@@ -94,7 +105,7 @@
 
 ## 本次体检和修复
 
-- 最新已完成的联合候选验证为 726 项自动测试全部通过；除既有硬条件、证据分级、五段报告、公开 DTO 和兼容权限回归外，还覆盖签名资料包、发布者策略、官方/私人联合召回、私人导入复核版本、独立实验数据入口、macOS 安全 bridge、Windows 共享界面对齐、多词覆盖门与 WebView 滚动状态回归。
+- 最新已完成的联合候选验证为745项自动测试全部通过；除既有硬条件、证据分级、五段报告、公开 DTO 和兼容权限回归外，还覆盖签名资料包、发布者策略、官方/私人联合召回、AI辅助个人表格识别、单次核验导入、合并文献处理、macOS 安全 bridge、Windows共享契约、多词覆盖门与 WebView 状态回归。
 - 历史只读兼容验收曾使用“钨”问题召回 65 项：0 条直接、5 条相关、60 条扩展，报告实际引用 5 条；研究简报 POST 返回 200。该结果保留为权限回归证据，不代表仍发布浏览器只读产品。
 - 真实 DeepSeek `deepseek-v4-pro` 查询返回四类共 71 项候选，分为 4 条直接、8 条相关和 59 条扩展；生成 3 行证据矩阵、6 项相关证据和 3 个建议追问。关键含糊问题返回澄清而不猜测。
 - 研究简报导出不产生新的 DeepSeek 调用，不重新召回证据；生产 SQLite 导出前后 SHA-256 均为 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`。
@@ -135,7 +146,7 @@
 
 - 本轮改造前保护提交：`6ce9536`。
 - 本轮改造前保护标签：`evidence-demo-2026-07-30-pre-research-brief-1`。
-- 当前制品标签为 `evidence-demo-2026-08-09-macos-workbench-preview-5`；它明确是内部开发预览，不得重命名为稳定正式版。
+- 当前制品标签为 `evidence-demo-2026-08-09-macos-workbench-preview-6`；它明确是内部开发预览，不得重命名为稳定正式版。
 - 最终 SQLite 快照：`/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-brief-stable-2026-07-30-v1.sqlite`；SHA-256 为 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`。
 - Git bundle 在最终 App 联合提交和标签完成后生成；本共享核心提交不单独打包。
 - 上一稳定恢复点仍为标签 `evidence-demo-2026-07-30-librarian-reasoning-stable-1`、SQLite `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-reasoning-stable-2026-07-30-v1.sqlite` 和相邻 Git bundle。

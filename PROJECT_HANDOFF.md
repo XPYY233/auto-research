@@ -2,11 +2,11 @@
 
 > 交班快照：2026-08-09
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
-> 当前制品源码：`63b34f2`
-> 最后已构建桌面候选：Auto Research `0.5.1-preview.1`（Apple Silicon macOS，内部开发预览）
-> 当前制品标签：`evidence-demo-2026-08-09-macos-workbench-preview-5`
-> 该制品联合验证：726 项通过（core 467 / macOS 154 / Windows 105）
-> Windows 源码：`a134acd` backend parity；`installer_ready=false`，无 Setup、无 Win11 真机验收
+> 当前制品源码：`7909100`
+> 最后已构建桌面候选：Auto Research `0.6.0-preview.1`（Apple Silicon macOS，内部开发预览）
+> 当前制品标签：`evidence-demo-2026-08-09-macos-workbench-preview-6`
+> 该制品联合验证：745 项通过（core 479 / macOS 157 / Windows 109），最终 UI 契约另22项通过
+> Windows 源码：已同步至 `7909100`；`installer_ready=false`，无 Setup、无 Win11 真机验收
 > 证据库版本：`2026.07.30-librarian-brief-stable.1` / schema v12
 
 本文面向下一位 Codex Agent、工程维护者和未来的项目负责人。它说明项目为何存在、过去完成了什么、当前真正能做什么、日常工作流、禁止触碰的边界、验证与发布方法，以及尚未完成的目标。
@@ -149,9 +149,9 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 - 导师只读页、浏览器工作台、`8765`/`8766` 和 ngrok 已退役，不再用于展示或分享。
 - 正式发行采用“桌面 App + 独立证据包”：用户导入经过版本、哈希与签名校验的数据包后离线检索；用户自己的 PDF 与私人库分离。DeepSeek 抽取和图书管理员使用用户自己的 key，并通过平台安全凭据库保存。跨平台契约见 `docs/DESKTOP_PRODUCT_AND_EVIDENCE_PACKAGE.md`。
 - 共享搜索 UI 分为“本地文献工作区”和“离线资料库”；离线资料库对 `official/private/all` 每次只执行一次联合精确查询，结果继续只有 `item/table/figure/finding`。renderer 公共投影不含本机路径、文件哈希、内部数据库/导入/草稿 ID。
-- 私人 CSV/TSV/XLSX 导入固定为 `previewed → draft_saved → confirmed/indexable`。确认必须绑定最新 `expected_revision/reviewed_revision`，并要求纳入列的角色、意义和单位全部由用户复核；复核后修改草稿会使旧确认失效。当前 UI 不支持趋势图附件或曲线读点。
+- 私人 CSV/TSV/XLSX 在安全预览后由 DeepSeek 生成有界待核验建议；用户只浏览整页、修正错误并点击一次确认。后台仍固定执行 `previewed → draft_saved → confirmed/indexable`、revision/CAS 和私人搜索刷新；AI 不得确认记录。当前 UI 不支持趋势图附件或曲线读点。
 
-历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。`0.5.1-preview.1` 已从干净源码 `63b34f2` 构建，包含 V3、私人导入、共享离线资料库与独立“上传实验数据”入口；它完成726项联合测试、冻结 App smoke、DMG 校验和真实安装界面验收。它仍是依赖 checkout v12 的内部预览，不得写成可移植正式版。上一 `0.5.0-preview.1` 制品继续作为回退点。
+历史只读浏览器验收仍保留为权限回归证据，但不代表当前仍发布网页版。`0.6.0-preview.1` 已从干净源码 `7909100` 构建，包含合并后的“文献处理”、DeepSeek 辅助个人表格识别、单次核验导入、V3 和共享离线资料库；它完成745项联合测试、冻结 App smoke、DMG 校验和真实安装界面验收。它仍是依赖 checkout v12 的内部预览，不得写成可移植正式版。上一 `0.5.1-preview.1` 制品继续作为回退点。
 
 ## 5. 当前真实状态
 
@@ -169,14 +169,14 @@ Zotero 是论文和 PDF 来源；`db/experimental_evidence.sqlite` 是独立证�
 | 固定验收 PDF | 50/50 身份与内容有效 |
 | 数据就绪论文 | 17/50 |
 | 图表就绪论文 | 30/50 |
-| 自动测试 | 726 项通过（core 467 / macOS 154 / Windows 105） |
+| 自动测试 | 745 项通过（core 479 / macOS 157 / Windows 109）；最终 UI 契约另22项通过 |
 | 生产 SQLite SHA-256 | `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6` |
 
 | 源码/平台状态 | 当前事实 |
 |---|---|
-| macOS 制品源码 | `63b34f2`：Librarian V3、联合精确搜索、私人导入确认门与四入口工作台 |
-| macOS 制品 | `0.5.1-preview.1` / preview-5；DMG SHA-256 `7646527a...b4529` |
-| Windows 源码 | `a134acd` backend parity；共享 HTTP bridge、原生选择和服务组合已接线 |
+| macOS 制品源码 | `7909100`：三入口工作台、AI辅助个人表格导入、V3与联合精确搜索 |
+| macOS 制品 | `0.6.0-preview.1` / preview-6；DMG SHA-256 `57f78289...039022` |
+| Windows 源码 | 同步至 `7909100`；共享 UI、AI建议、单次核验和平台薄适配已对齐 |
 | Windows 制品 | `installer_ready=false`；无 Setup、无 Win11 clean-machine 验收 |
 
 首个内部官方资料包为 `0.1.0-preview.1`，大小约 2.36 MB，SHA-256 为 `73672f94335604609d729671ab4a950e361b8cb569523a18980f0112c7c9f91d`。它包含60篇论文元数据和4,356个只读实体（3,142 item、936 finding、46 table、232 figure），不含 PDF 和二进制图片。官方包与 schema-v12 可编辑工作区是两个数据源，不能 `ATTACH`、覆盖或互相写入。
@@ -388,8 +388,8 @@ git fsck --full
 
 当前恢复层级：
 
-- 当前 macOS 制品：标签 `evidence-demo-2026-08-09-macos-workbench-preview-5`，源码 `63b34f2`，版本 `0.5.1-preview.1`；唯一安装入口为 `/Applications/Auto Research.app`，App/DMG 已生成并验收。
-- 上一 macOS 回退制品：标签 `evidence-demo-2026-08-09-macos-workbench-preview-4`，源码 `9985386`，版本 `0.5.0-preview.1`。
+- 当前 macOS 制品：标签 `evidence-demo-2026-08-09-macos-workbench-preview-6`，源码 `7909100`，版本 `0.6.0-preview.1`；唯一安装入口为 `/Applications/Auto Research.app`，App/DMG 已生成并验收。
+- 上一 macOS 回退制品：标签 `evidence-demo-2026-08-09-macos-workbench-preview-5`，源码 `63b34f2`，版本 `0.5.1-preview.1`。
 - Windows 仍未生成真实 Setup，也未完成 Win11 clean-machine 验收。
 - Librarian V3 改造前保护点：标签 `auto-research-pre-librarian-v3-integration-2026-08-08`，提交 `a2b60e1`。
 - 科学 SQLite 快照仍使用已记录的 `2026.07.30-librarian-brief-stable.1` 身份；代码文档收口不得改写其 SHA、数据计数或现场文件。

@@ -40,6 +40,9 @@ platform-neutral utilities
 - Librarian V3 固定只读官方文献全库；私人实验和 `all` 只进入联合精确搜索。平台和前端不得把私人测量值送入文献综合，或把用户数据写成论文结论。
 - renderer 只接收中央白名单公开投影。稳定来源身份可以公开，本机路径、文件哈希、内部数据库/导入/草稿 ID、仓库对象和底层异常一律不得进入卡片、错误、历史或日志。
 - DeepSeek 只经受控客户端调用。提取/验证/总结与查询规划可使用不同模型，但模型不得绕过本地硬条件、来源分类、证据定位和质量门。
+- 个人表格的 AI 识别属于平台中立的待核验建议层：只接收有界表头、类型、已有单位和最多 5 行对齐样例；不得接收路径、哈希、完整表格、私人库主键或用户密钥。macOS/Windows 只动态提供各自安全凭据解析器，不复制 prompt、校验、缓存或单飞逻辑。
+- 用户对个人表格只执行一次可见的整页确认。内部仍保留 `previewed → draft_saved → confirmed/indexable`、revision/CAS 和仓库确认门，但平台与前端不得把这些安全状态拆成逐列勾选、保存草稿、再次确认等重复用户步骤。AI 永远不能产生确认标志。
+- “导入 PDF”和“检查当前文章”是同一个“文献处理”工作流的两个阶段，必须复用同一 upload/review DOM 和既有状态；不得建立第二套上传、抽取、质量或当前文章状态。上传成功不自动触发收费模型，唯一模型入口必须由用户明确点击。
 
 ## 3. 单一正式实现
 
@@ -54,7 +57,7 @@ platform-neutral utilities
 
 以下路径当前已冻结：
 
-- `stable`：本地 PyMuPDF 图表资产、DeepSeek 文本语义增强、四类证据搜索、对抗式质量门、签名资料包核心、官方/私人只读联合召回契约、私人导入确认门、Librarian V3 核心契约，以及已进入 macOS `0.5.0-preview.1` 的共享离线资料库/私人导入 UI。
+- `stable`：本地 PyMuPDF 图表资产、DeepSeek 文本语义增强、四类证据搜索、对抗式质量门、签名资料包核心、官方/私人只读联合召回契约、私人导入确认门、个人表格 AI 待核验建议契约、单次整页核验编排、Librarian V3 核心契约，以及共享离线资料库/私人导入 UI。
 - `experimental`：当前 macOS App 仍依赖 checkout v12，私人/官方资料库是内部预览；Windows 后端 parity 已对齐但仍为 `installer_ready=false`，没有 Setup 或 Win11 clean-machine 验收。跨平台可移植发行在真实 Windows 验收前不能升级为 stable。
 - `compatibility`：历史 read-only 权限回归；只用于测试安全边界。
 - `retired`：MinerU 云端视觉替换、浏览器编辑工作台、导师公网链接、ngrok 产品路径、无约束 Librarian 工具循环、重复 DeepSeek 预览按钮。
@@ -117,7 +120,7 @@ platform-neutral utilities
 
 不得用测试通过替代以下声明：语料完成度、科学准确率、版权可分发性或跨平台实机通过。四者分别验收。
 
-最后已构建制品的阶段证据：`9985386` 干净 release worktree 通过722项联合测试，macOS `0.5.0-preview.1` App/DMG 通过冻结二进制 smoke、ad-hoc 签名、镜像校验和隔离 GUI 进程启动/关闭。该制品已包含 V3、私人导入和共享离线资料库。Windows 后端组合仍无真实 Setup 和 Win11 clean-machine 验收，因此跨平台发布序列仍未结束。
+最后已构建制品的阶段证据：`7909100` 干净 release worktree 通过745项联合测试，macOS `0.6.0-preview.1` App/DMG 通过冻结二进制 smoke、ad-hoc 签名、镜像校验和真实安装界面检查。该制品包含合并后的文献处理、个人表格 AI 待核验建议、单次整页确认、V3、私人导入和共享离线资料库。Windows 源码契约已同步但仍无真实 Setup 和 Win11 clean-machine 验收，因此跨平台发布序列仍未结束。
 
 ## 8. 下一轮分层目标
 
