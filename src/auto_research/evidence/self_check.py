@@ -44,6 +44,9 @@ def _web_ui_contract() -> dict[str, Any]:
     js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
     source_viewer_js = js.split("async function openSourceViewer", 1)[-1].split("function collectRowFields", 1)[0]
+    librarian_request_js = js.split(
+        "function librarianResearchRequest", 1
+    )[-1].split("function librarianStateFailureCode", 1)[0]
     expectations = [
         ("editable_table", "class=\"edit-table\"" in html and "id=\"edit-rows\"" in html),
         ("six_columns_visible", all(label in html for label in ("具体数值", "具体意义", "单位", "文章题目", "DOI", "数据在文中的解释"))),
@@ -75,7 +78,16 @@ def _web_ui_contract() -> dict[str, Any]:
         ("search_guidance_and_shortcut", "search-suggestions" in html and "renderSearchSuggestions" in js and "focusSearchShortcut" in js and "recentSearches" in js),
         ("four_mode_evidence_search", all(mode in html for mode in ("数据条目", "原始表格", "论文图片", "实验结论")) and "/api/visual-search" in js and "/api/qualitative-search" in js and "setSearchMode" in js),
         ("librarian_agent_primary", 'data-search-experience="agent"' in html and "问图书管理员" in html and "/api/agents/librarian/chat" in js and "setSearchExperience('agent')" in js),
-        ("librarian_full_corpus_scope", "检索范围：整个文献库" in html and "paper_ids: []" in js and "不接受论文范围限制" in Path(__file__).with_name("agent_runtime.py").read_text(encoding="utf-8")),
+        (
+            "librarian_full_corpus_scope",
+            "检索范围：官方文献全库（不含我的实验）" in js
+            and "conversation_id: state.librarianSessionId" in librarian_request_js
+            and "paper_ids" not in librarian_request_js
+            and "不接受论文范围限制"
+            in Path(__file__).with_name("agent_runtime.py").read_text(
+                encoding="utf-8"
+            ),
+        ),
         ("librarian_progress_feedback", 'id="librarian-progress"' in html and "startLibrarianProgress" in js and "codexPetWork" in css and "codex-pet-working.webp" in css),
         ("librarian_typed_results", all(f'data-librarian-result-type="{kind}"' in html for kind in ("item", "table", "figure", "finding")) and "setLibrarianResultType" in js),
         ("librarian_local_history", 'id="librarian-history-list"' in html and "librarianHistoryStorageKey" in js and "restoreLibrarianSession" in js),
