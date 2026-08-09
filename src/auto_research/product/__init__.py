@@ -94,6 +94,7 @@ _EXPORT_MODULES = {
     "TransferPackagePlan": ".transfer_package",
     "VerifiedTransferPackage": ".transfer_package",
     "export_transfer_package": ".transfer_package",
+    "export_transfer_package_with_checksum": ".transfer_package",
     "import_transfer_package": ".transfer_package",
     "list_installed_transfer_packages": ".transfer_package",
     "open_installed_transfer_package": ".transfer_package",

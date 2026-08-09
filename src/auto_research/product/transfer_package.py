@@ -286,6 +286,28 @@ def _absolute_without_resolving(value: Path | str) -> Path:
     return Path(os.path.abspath(os.fspath(Path(value).expanduser())))
 
 
+def _assert_directory_chain_no_symlinks(path: Path) -> None:
+    trusted_anchors = {
+        _absolute_without_resolving(Path.home()),
+        _absolute_without_resolving(Path(tempfile.gettempdir())),
+    }
+    current = path
+    while True:
+        try:
+            metadata = current.lstat()
+        except OSError as exc:
+            raise TransferPackageError(
+                "transfer_output_invalid", "目标目录无法安全访问"
+            ) from exc
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise TransferPackageError(
+                "transfer_output_invalid", "目标目录不能包含链接"
+            )
+        if current in trusted_anchors or current.parent == current:
+            return
+        current = current.parent
+
+
 def _scan_sensitive_chunk(data: bytes, *, include_field_keys: bool) -> None:
     lowered = data.lower()
     if any(marker in lowered for marker in SENSITIVE_MARKERS) or API_KEY_RE.search(data):
@@ -823,6 +845,7 @@ def export_transfer_package(
     if output.is_symlink() or output.exists():
         raise TransferPackageError("transfer_output_exists", "目标传输包已经存在")
     output.parent.mkdir(parents=True, exist_ok=True)
+    _assert_directory_chain_no_symlinks(output.parent)
     workspace = Path(tempfile.mkdtemp(prefix=".transfer-build-", dir=output.parent))
     os.chmod(workspace, 0o700)
     temporary = workspace / "candidate.aresearch"
@@ -861,6 +884,75 @@ def export_transfer_package(
         raise TransferPackageError("transfer_export_failed", "传输包生成失败") from exc
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
+
+
+def export_transfer_package_with_checksum(
+    plan: TransferPackagePlan,
+    output_path: Path | str,
+    *,
+    unencrypted_ack: bool = False,
+) -> ExportedTransferPackage:
+    """Atomically publish a user package plus an out-of-band checksum sidecar.
+
+    The final ``.aresearch`` name is installed last.  A crash may leave only a
+    harmless checksum sidecar, but never a final package without its sidecar.
+    """
+
+    output = _absolute_without_resolving(output_path)
+    if output.suffix.casefold() != ".aresearch":
+        raise TransferPackageError("transfer_output_invalid", "传输包必须使用 .aresearch 后缀")
+    sidecar = output.with_name(f"{output.name}.sha256")
+    if sidecar.is_symlink() or sidecar.exists():
+        raise TransferPackageError("transfer_output_exists", "目标校验码文件已经存在")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    _assert_directory_chain_no_symlinks(output.parent)
+    temporary = output.parent / f".{output.name}.{uuid.uuid4().hex}.aresearch"
+    temporary_sidecar = output.parent / f".{output.name}.{uuid.uuid4().hex}.sha256"
+    published_sidecar = False
+    try:
+        exported = export_transfer_package(
+            plan,
+            temporary,
+            unencrypted_ack=unencrypted_ack,
+        )
+        line = f"{exported.package_sha256}  {output.name}\n".encode("ascii")
+        descriptor = os.open(
+            temporary_sidecar,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
+            0o600,
+        )
+        try:
+            view = memoryview(line)
+            while view:
+                view = view[os.write(descriptor, view) :]
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.replace(temporary_sidecar, sidecar)
+        published_sidecar = True
+        os.replace(temporary, output)
+        return ExportedTransferPackage(
+            package_path=output,
+            package_sha256=exported.package_sha256,
+            plan=exported.plan,
+        )
+    except TransferPackageError:
+        raise
+    except OSError as exc:
+        raise TransferPackageError(
+            "transfer_export_failed", "资料包与校验码文件生成失败"
+        ) from exc
+    finally:
+        for candidate in (temporary, temporary_sidecar):
+            try:
+                candidate.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if published_sidecar and not output.exists():
+            try:
+                sidecar.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _archive_inventory(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:

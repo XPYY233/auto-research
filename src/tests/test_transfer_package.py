@@ -21,6 +21,7 @@ from auto_research.product.transfer_package import (
     TransferFileSpec,
     TransferPackageError,
     export_transfer_package,
+    export_transfer_package_with_checksum,
     import_transfer_package,
     list_installed_transfer_packages,
     open_installed_transfer_package,
@@ -145,6 +146,18 @@ class TransferPackageTests(unittest.TestCase):
         self.assertEqual(len(listed), 1)
         self.assertEqual(listed[0].package_id, imported.package_id)
         self.assertNotIn(str(destination), json.dumps(reopened.public_dict()))
+
+    def test_export_bundle_writes_matching_checksum_sidecar(self) -> None:
+        package = self.root / "portable.aresearch"
+        exported = export_transfer_package_with_checksum(
+            self.personal_plan(), package, unencrypted_ack=True
+        )
+        sidecar = self.root / "portable.aresearch.sha256"
+        self.assertTrue(package.is_file())
+        self.assertEqual(
+            sidecar.read_text(encoding="ascii"),
+            f"{exported.package_sha256}  portable.aresearch\n",
+        )
 
     def test_reopen_rejects_tampered_installed_tree(self) -> None:
         package = self.root / "restart-tamper.aresearch"
