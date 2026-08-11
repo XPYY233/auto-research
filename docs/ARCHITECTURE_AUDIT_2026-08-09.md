@@ -11,9 +11,10 @@
 
 本轮已经把官方包、用户传输包、资料包中心、结构化 payload source、用户包激活、
 私人实验 merge、共享 `package-job-v1` 和联合搜索生命周期放回共享核心。macOS `6c00ca9`
-已完成薄接线，Windows `f649532` 已对齐共享路由与安全契约；但 `0.7.0-preview.1` 仍只是
-候选待验收：尚无 DMG 和真实导出、隔离导入、搜索、PDF打开证据。用户包与资料包中心
-继续标记为 `experimental`；Windows 在真实 Setup 验收前继续保持 `installer_ready=false`。
+已完成薄接线，Windows `f649532` 已对齐共享路由与安全契约；`0.7.0-preview.1` 已于
+2026-08-11 从干净源码构建并完成 DMG、官方包升级/幂等/回退、用户包隔离和 PDF lease
+发布门。资料包中心由 `experimental` 升为 `stable-internal-preview`；Windows 在真实 Setup
+验收前继续保持 `installer_ready=false`。
 
 ## 规模与热点
 
@@ -43,13 +44,13 @@
 
 官方包、用户包统一使用共享 `package-job-v1`。stage、error、retryable、outcome 和原子安装/审计/启用顺序由 product runtime 决定；平台只提供文件 token、后台调度和状态展示。
 
-当前进度：共享异步 job 已落地，macOS 资料包中心运行时只做调度和安全投影。论文集合 PDF 以 `source_id/paper_uid` 定位，并通过无路径、同一文件描述符 lease 流式打开；候选仍需真实 App 验收。
+当前进度：共享异步 job 已落地，macOS 资料包中心运行时只做调度和安全投影。论文集合 PDF 以 `source_id/paper_uid` 定位，并通过无路径、同一文件描述符 lease 流式打开；相关端到端临时库与冻结 App 契约已通过发布验收。
 
 ### 3. 发布身份
 
 `config/release-contract.json` 统一记录 core、macOS、Windows、HTTP、官方包、用户包与共享 Web 资产哈希。平台 `version.json` 只作为生成物或本地镜像，不能继续独立决定版本。
 
-当前进度：单一 release contract 已落地，当前声明 macOS `0.7.0-preview.1`、官方包 `0.2.0-preview.1`、用户包 schema v1；这只是候选身份，不代表对应制品已经生成。
+当前进度：单一 release contract 已落地并生成对应制品：macOS `0.7.0-preview.1`、官方包 `0.2.0-preview.1`、用户包 schema v1。构建清单锁定源码 `4d1f4c8`，Windows 仍保持未发布状态。
 
 ## P1：按 facade 拆分，不重写
 

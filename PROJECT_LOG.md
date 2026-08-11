@@ -2,6 +2,14 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-11：macOS 0.7.0-preview.1 资料包中心内部发布
+
+- 从干净源码 `4d1f4c8` 构建 Auto Research `0.7.0-preview.1`（bundle `0.7.0`，build `9`），并创建标签 `evidence-demo-2026-08-11-macos-package-center-0.7.0-preview-1`。冻结 App 冒烟、ad-hoc codesign、DMG 校验和构建清单均通过。
+- 干净 worktree 串行通过 912 项联合测试（共享核心 605、macOS 182、Windows 125）；最终资料包与攻击回归另通过 92 项。生产 SQLite 与 `paper_056` 现场未进入测试、构建、资料包或 Git。
+- 官方 `0.2.0-preview.1` 包 SHA-256 为 `89ec7f8dcdeea2d862d91aaf798674fd600c21fd75c4553d270a0c0b806f999e`，包含 60 篇论文和 4356 条四类证据，不含 PDF、图片、私人实验、路径或密钥。真实临时数据根完成 `0.1→0.2→重复0.2→回退0.1` 验收。
+- DMG SHA-256 为 `968aa5936c90dfac5f0b50e8c96c6080ff87527e6d24e0cb7e08752b1958e133`。发布 ZIP 位于 `/Users/USER/Zotero/auto-research-releases/Auto-Research-0.7.0-preview.1-Kit.zip`，SHA-256 为 `baa03692a14665e6e1e4bc81b84564810183ec65a1024541c3bbb37c73282a18`。
+- `/Applications` 中只保留一个当前 App；旧 `0.4.0` 与 `0.6.1` 移到仓库外备份。Windows 共享源码契约 125 项通过，但 `installer_ready=false / SETUP_PRESENT=NO`。
+
 ## 2026-08-09：0.7.0-preview.1 资料包中心源码候选与首轮架构拆分
 
 - 共享 product 已落地官方包与两类用户包的统一资料包中心契约。`literature_collection` 和 `personal_experiments` 严格分离；用户包只做 SHA-256 完整性校验，明确未加密、来源未认证、仅限课题组内部，不能写入官方 active selector 或进入 Librarian。
@@ -10,7 +18,7 @@
 - macOS 提交 `6c00ca9` 已接入资料包中心 API、原生文件/目标 token、后台 runtime、官方/用户包服务与搜索刷新。导入论文集合后，搜索结果只按 `collection_kind/pdf_available/source_id/paper_uid` 显示 PDF 能力；PDF 通过受保护、无路径、同一文件描述符 lease 分块读取，私人实验不获得论文 PDF 入口。
 - Windows 提交 `f649532` 复用同一共享 UI、资料包中心 DTO、后台任务和 PDF lease，并补齐原生保存位置 token；因为尚缺 Win11 安全 v12/private resolver 与真实 Setup，生产组合明确返回 `package_center_unavailable`，继续 `installer_ready=false`，没有复制共享打包或激活算法。
 - `DesktopApplicationFacade + RouteSpec` 已有平台中立实现和契约测试，但仍是实验性迁移层，尚未替换 macOS/Windows 全部历史路由；不能因为类型已存在就宣称桌面路由治理完成。
-- 本节仅记录源码候选。没有生成或验收 `0.7.0-preview.1` DMG，没有完成真实 Mac 导出/隔离导入/搜索/PDF/私人包全流程，也没有 Windows Setup。Windows 继续 `installer_ready=false`；最后已构建、可回退的制品仍为 `0.6.1-preview.1`。
+- 本节是当时的源码候选记录；对应能力已在 2026-08-11 的 `0.7.0-preview.1` 内部发布中完成构建与验收。Windows 仍继续 `installer_ready=false`，没有 Setup。
 - 本阶段没有重新抽取论文或改变科学数据完成度：固定50篇仍为17/50数据就绪、30/50图表就绪。
 
 ## 2026-08-09：macOS 0.6.0-preview.1 AI 辅助导入与文献处理发布
