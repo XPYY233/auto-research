@@ -3,9 +3,9 @@
   "core_version": "0.1.0",
   "desktop": {
     "macos": {
-      "desktop_version": "0.7.0-preview.1",
+      "desktop_version": "0.7.0-preview.2",
       "bundle_short_version": "0.7.0",
-      "build_number": "9",
+      "build_number": "10",
       "target": "macOS arm64 internal development preview"
     },
     "windows": {
@@ -49,7 +49,7 @@
     "src/auto_research/evidence/web/index.html": "94915128ebc6f1af775b4dce677623c35c09344a2f09747ab5c754198c497cdc",
     "src/auto_research/evidence/web/app.js": "3cdfd797bad31f001b54612c932c7108bb601de91973401541cd87be8d7704a6",
     "src/auto_research/evidence/web/app.css": "404f263c72f9731e6be18c37aa1223e4f2dbfef18cc64a121d31fe0fbcb17f51",
-    "src/auto_research/evidence/web/desktop_product.js": "df34ef16d383610ddbabf0def585b63f148b162483f8728d0cfd53654e093697",
+    "src/auto_research/evidence/web/desktop_product.js": "557b062a14d6c761c0a83a389b8bd706dda6ec5d6388f4186ea4f4ce3f9121fb",
     "src/auto_research/evidence/web/package_center.js": "ecee4879c3ff451c55153ecbd67e107ce23119a618a4695366eb89ed6298c30f"
   }
 }

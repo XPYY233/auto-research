@@ -9,9 +9,109 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_CENTER_JS = (
     PROJECT_ROOT / "src" / "auto_research" / "evidence" / "web" / "package_center.js"
 )
+DESKTOP_PRODUCT_JS = (
+    PROJECT_ROOT / "src" / "auto_research" / "evidence" / "web" / "desktop_product.js"
+)
 
 
 class PackageCenterJavaScriptRuntimeTests(unittest.TestCase):
+    def test_desktop_product_loads_before_shared_app_runtime_without_eager_port_access(self) -> None:
+        script = r"""
+const fs = require("fs");
+const assert = require("assert");
+const vm = require("vm");
+
+const elements = new Map();
+function element(id) {
+  if (!elements.has(id)) {
+    elements.set(id, {
+      id,
+      hidden: false,
+      disabled: false,
+      value: "",
+      checked: false,
+      textContent: "",
+      innerHTML: "",
+      dataset: {},
+      parentElement: null,
+      classList: { toggle() {}, add() {}, remove() {} },
+      addEventListener() {},
+      appendChild(child) { child.parentElement = this; },
+      setAttribute() {},
+      toggleAttribute() {},
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+    });
+  }
+  return elements.get(id);
+}
+
+let createCalls = 0;
+let initCalls = 0;
+const context = vm.createContext({
+  console,
+  document: {
+  body: { dataset: {} },
+  getElementById: element,
+  querySelector() { return null; },
+  querySelectorAll() { return []; },
+  },
+  window: {},
+});
+context.AutoResearchPackageCenter = {
+  create() {
+    createCalls += 1;
+    return {
+      init() { initCalls += 1; },
+      loadStatus: async () => {},
+      refreshView() {},
+    };
+  },
+};
+
+// The production page loads desktop_product.js before app.js declares api/toast/state.
+// Loading this script must therefore register its facade without touching those ports.
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
+assert(context.AutoResearchDesktopProduct);
+assert.strictEqual(createCalls, 0);
+
+// app.js declares the shared ports later and then initializes the desktop facade.
+// Repeated initialization may refresh state, but must not duplicate the controller.
+vm.runInContext(`
+  const state = { searchScope: "all", searchExperience: "precise", searchMode: "item" };
+  const api = async route => {
+    if (route === "/api/desktop/evidence-packages") return { active: false };
+    if (route === "/api/desktop/credentials/deepseek") return { configured: false };
+    if (route === "/api/desktop/personal-imports/search-status") {
+      return { state: "empty", ready: false, document_count: 0 };
+    }
+    throw new Error("unexpected route: " + route);
+  };
+  const toast = () => {};
+  const esc = value => String(value);
+  const paperMatchesFilters = () => true;
+  const switchView = () => {};
+  const waitForJob = async () => {};
+  globalThis.__runtimePromise = (async () => {
+    await globalThis.AutoResearchDesktopProduct.initialize();
+    await globalThis.AutoResearchDesktopProduct.initialize();
+  })();
+`, context);
+context.__runtimePromise.then(() => {
+  assert.strictEqual(createCalls, 1);
+  assert.strictEqual(initCalls, 1);
+  assert.strictEqual(element("personal-import-panel").parentElement, element("view-personal"));
+}).catch(error => { console.error(error); process.exitCode = 1; });
+"""
+        completed = subprocess.run(
+            ["node", "-e", script, str(DESKTOP_PRODUCT_JS)],
+            cwd=PROJECT_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+
     def test_cancelled_risk_confirmation_sends_no_export_request_and_full_ack_is_sent_once(self) -> None:
         script = r"""
 const fs = require("fs");

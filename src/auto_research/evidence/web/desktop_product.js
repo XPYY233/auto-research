@@ -125,6 +125,7 @@
   }
 
   async function initialize() {
+    initializePackageCenter();
     const personalView = el("view-personal");
     const personalPanel = el("personal-import-panel");
     if (personalView && personalPanel && personalPanel.parentElement !== personalView) {
@@ -887,23 +888,27 @@
     await requestPersonalSuggestion();
   }
 
-  packageCenter = globalThis.AutoResearchPackageCenter?.create({
-    api,
-    toast,
-    esc,
-    el,
-    query: selector => document.querySelector(selector),
-    queryAll: selector => [...document.querySelectorAll(selector)],
-    getLiteratureSnapshot: packageCenterLiteratureSnapshot,
-    getOfficialStatus: () => product.packageStatus,
-    officialReady,
-    refreshOfficialStatus: loadPackageStatus,
-    refreshPrivateStatus: loadPersonalSearchStatus,
-    runOfficialRollback: runPackageCenterRollback,
-    selectEvidencePackage: selectPackageForCenter,
-    selectExportDestination: selectPackageExportDestination,
-  }) || null;
-  packageCenter?.init();
+  function initializePackageCenter() {
+    if (packageCenter) return packageCenter;
+    packageCenter = globalThis.AutoResearchPackageCenter?.create({
+      api,
+      toast,
+      esc,
+      el,
+      query: selector => document.querySelector(selector),
+      queryAll: selector => [...document.querySelectorAll(selector)],
+      getLiteratureSnapshot: packageCenterLiteratureSnapshot,
+      getOfficialStatus: () => product.packageStatus,
+      officialReady,
+      refreshOfficialStatus: loadPackageStatus,
+      refreshPrivateStatus: loadPersonalSearchStatus,
+      runOfficialRollback: runPackageCenterRollback,
+      selectEvidencePackage: selectPackageForCenter,
+      selectExportDestination: selectPackageExportDestination,
+    }) || null;
+    packageCenter?.init();
+    return packageCenter;
+  }
 
   el("desktop-package-import")?.addEventListener("click", importPackage);
   el("desktop-personal-import")?.addEventListener("click", () => switchView("personal"));
