@@ -64,6 +64,16 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertTrue(checks)
         self.assertTrue(all(checks.values()), checks)
         self.assertTrue(checks["primary_personal_import_navigation"])
+        package_center = (
+            DESKTOP_ROOT.parents[1]
+            / "src"
+            / "auto_research"
+            / "evidence"
+            / "web"
+            / "package_center.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("selectExportDestination", package_center)
+        self.assertNotIn("select_package_export_destination", package_center)
 
 
 if __name__ == "__main__":

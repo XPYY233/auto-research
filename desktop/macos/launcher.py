@@ -313,7 +313,7 @@ def _http_smoke_checks(
                 "AutoResearchPackageCenter",
                 "/api/desktop/package-center",
                 "/api/desktop/package-center/jobs/",
-                "select_package_export_destination",
+                "selectExportDestination",
             ),
         ),
         "librarian_v3_frontend_contract": (
