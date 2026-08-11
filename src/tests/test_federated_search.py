@@ -358,6 +358,31 @@ class FederatedEvidenceSearchTests(unittest.TestCase):
         self.assertEqual(result["source_id"], "source_id-remains-public")
         self.assertEqual(result["entity_uid"], "entity_uid-remains-public")
 
+    def test_scientific_capsule_identifier_does_not_weaken_private_id_guard(self) -> None:
+        table = official_document(
+            "table",
+            "table-with-capsule-identifier",
+            title="Irradiation capsule conditions",
+            meaning="Table 1 · Capsule conditions",
+        )
+        table["variables"] = {
+            "capsule_id": "未指定",
+            "design_temperature": "400°C",
+        }
+        service = FederatedEvidenceSearch((MappingSource((table,)),))
+        self.assertEqual(service.document_count, 1)
+        self.assertEqual(
+            service.search("400°C").hits[0].document["variables"]["capsule_id"],
+            "未指定",
+        )
+
+        for forbidden_key in ("run_id", "file_id", "pdf_path"):
+            with self.subTest(forbidden_key=forbidden_key):
+                unsafe = dict(table, entity_uid=f"unsafe-{forbidden_key}")
+                unsafe["variables"] = {forbidden_key: "private-internal-value"}
+                with self.assertRaisesRegex(ValueError, "private field"):
+                    FederatedEvidenceSearch((MappingSource((unsafe,)),))
+
     def test_page_and_query_bounds_are_enforced(self) -> None:
         with self.assertRaises(ValueError):
             self.service.search("x", page=0)

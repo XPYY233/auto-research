@@ -29,6 +29,9 @@ _LOCAL_REFERENCE_RE = re.compile(
     re.IGNORECASE,
 )
 _PUBLIC_ID_KEYS = frozenset({"source_id"})
+_PUBLIC_SCIENTIFIC_ID_KEYS_BY_FIELD = {
+    "variables": frozenset({"capsule_id"}),
+}
 _FORBIDDEN_KEYS = frozenset(
     {
         "data_root",
@@ -260,7 +263,12 @@ def validate_public_source_id(value: Any) -> str:
     return source_id
 
 
-def _validate_public_value(value: Any, *, depth: int) -> None:
+def _validate_public_value(
+    value: Any,
+    *,
+    depth: int,
+    parent_field: str = "",
+) -> None:
     if depth > 8:
         raise ValueError("public evidence document nesting is too deep")
     if isinstance(value, Mapping):
@@ -270,20 +278,28 @@ def _validate_public_value(value: Any, *, depth: int) -> None:
             if not isinstance(raw_key, str):
                 raise ValueError("public evidence document keys must be strings")
             key = str(raw_key).strip().casefold()
+            scientific_id_keys = _PUBLIC_SCIENTIFIC_ID_KEYS_BY_FIELD.get(
+                parent_field,
+                frozenset(),
+            )
             if (
                 not key
                 or key in _FORBIDDEN_KEYS
                 or key.endswith("_path")
-                or (key.endswith("_id") and key not in _PUBLIC_ID_KEYS)
+                or (
+                    key.endswith("_id")
+                    and key not in _PUBLIC_ID_KEYS
+                    and key not in scientific_id_keys
+                )
             ):
                 raise ValueError("public evidence document contains a private field")
-            _validate_public_value(item, depth=depth + 1)
+            _validate_public_value(item, depth=depth + 1, parent_field=key)
         return
     if isinstance(value, (list, tuple)):
         if len(value) > 500:
             raise ValueError("public evidence document list is too long")
         for item in value:
-            _validate_public_value(item, depth=depth + 1)
+            _validate_public_value(item, depth=depth + 1, parent_field=parent_field)
         return
     if value is None or isinstance(value, (bool, int, float)):
         return

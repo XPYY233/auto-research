@@ -29,7 +29,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertEqual(metadata["build_number"], contract["desktop"]["macos"]["build_number"])
         self.assertEqual(launcher.DESKTOP_VERSION, "0.7.0-preview.2")
         self.assertEqual(metadata["bundle_short_version"], "0.7.0")
-        self.assertEqual(metadata["build_number"], "10")
+        self.assertEqual(metadata["build_number"], "11")
         self.assertEqual(metadata["target"], "macOS arm64 internal development preview")
         self.assertIn("legacy-v12-workspace", metadata["data_mode"])
         self.assertIn("signed-official-package", metadata["data_mode"])
