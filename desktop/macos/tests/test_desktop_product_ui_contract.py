@@ -87,6 +87,7 @@ class DesktopProductUIContractTests(unittest.TestCase):
         self.assertIn('mount.appendChild(intake)', self.app)
         self.assertIn('系统不会自动调用 DeepSeek', self.app)
         self.assertIn("openPersonalImport", self.product)
+        self.assertIn('function mountPersonalImportPanel()', self.product)
         self.assertIn('personalView.appendChild(personalPanel)', self.product)
         self.assertIn('switchView("search", { skipSearch: true })', self.product)
         self.assertIn('setSearchExperience("precise")', self.product)
@@ -98,7 +99,11 @@ class DesktopProductUIContractTests(unittest.TestCase):
             "function applySearchUI()", 1
         )[0]
         self.assertLess(
-            initialize.index("personalView.appendChild(personalPanel)"),
+            initialize.index("mountPersonalImportPanel()"),
+            initialize.index("initializePackageCenter()"),
+        )
+        self.assertLess(
+            initialize.index("mountPersonalImportPanel()"),
             initialize.index("loadPackageStatus()"),
         )
         self.assertIn("Promise.allSettled", initialize)

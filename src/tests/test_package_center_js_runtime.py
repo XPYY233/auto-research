@@ -112,6 +112,72 @@ context.__runtimePromise.then(() => {
         )
         self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
 
+    def test_personal_import_mount_is_not_blocked_by_package_center_failure(self) -> None:
+        script = r"""
+const fs = require("fs");
+const assert = require("assert");
+const vm = require("vm");
+
+const elements = new Map();
+function element(id) {
+  if (!elements.has(id)) {
+    elements.set(id, {
+      id, hidden: true, disabled: false, value: "", checked: false,
+      textContent: "", innerHTML: "", dataset: {}, parentElement: null,
+      classList: { toggle() {}, add() {}, remove() {} },
+      addEventListener() {}, setAttribute() {}, toggleAttribute() {},
+      appendChild(child) { child.parentElement = this; },
+      querySelector() { return null; }, querySelectorAll() { return []; },
+    });
+  }
+  return elements.get(id);
+}
+
+const context = vm.createContext({
+  console,
+  document: {
+    body: { dataset: { view: "personal" } },
+    getElementById: element,
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+  },
+  window: {},
+});
+context.AutoResearchPackageCenter = {
+  create() { throw new Error("package center unavailable"); },
+};
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
+vm.runInContext(`
+  const state = { searchScope: "all", searchExperience: "precise", searchMode: "item" };
+  const api = async route => {
+    if (route === "/api/desktop/evidence-packages") return { active: false };
+    if (route === "/api/desktop/credentials/deepseek") return { configured: false };
+    if (route === "/api/desktop/personal-imports/search-status") return { state: "empty", ready: false, document_count: 0 };
+    throw new Error("unexpected route: " + route);
+  };
+  const toast = () => {};
+  const esc = value => String(value);
+  const paperMatchesFilters = () => true;
+  const switchView = () => {};
+  const waitForJob = async () => {};
+  globalThis.__runtimePromise = globalThis.AutoResearchDesktopProduct.initialize();
+`, context);
+context.__runtimePromise.then(() => {
+  const panel = element("personal-import-panel");
+  assert.strictEqual(panel.parentElement, element("view-personal"));
+  context.AutoResearchDesktopProduct.openPersonalImport();
+  assert.strictEqual(panel.hidden, false);
+}).catch(error => { console.error(error); process.exitCode = 1; });
+"""
+        completed = subprocess.run(
+            ["node", "-e", script, str(DESKTOP_PRODUCT_JS)],
+            cwd=PROJECT_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+
     def test_cancelled_risk_confirmation_sends_no_export_request_and_full_ack_is_sent_once(self) -> None:
         script = r"""
 const fs = require("fs");

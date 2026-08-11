@@ -124,12 +124,24 @@
     }
   }
 
-  async function initialize() {
-    initializePackageCenter();
+  function mountPersonalImportPanel() {
     const personalView = el("view-personal");
     const personalPanel = el("personal-import-panel");
     if (personalView && personalPanel && personalPanel.parentElement !== personalView) {
       personalView.appendChild(personalPanel);
+    }
+    return personalPanel;
+  }
+
+  async function initialize() {
+    // Personal import is an independent first-class workflow.  Mount it before
+    // optional Package Center setup so one product surface can never blank the
+    // other during startup.
+    mountPersonalImportPanel();
+    try {
+      initializePackageCenter();
+    } catch (_error) {
+      packageCenter = null;
     }
     product.available = true;
     el("desktop-product-panel").hidden = false;
@@ -178,7 +190,8 @@
   }
 
   function openPersonalImport() {
-    if (!product.available) return;
+    const panel = mountPersonalImportPanel();
+    if (panel) panel.hidden = false;
     applySearchUI();
     void loadPersonalSearchStatus();
   }
