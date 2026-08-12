@@ -20,6 +20,17 @@ from .capability_verifier import (
     BackendCredentialResolver,
     OpenAICompatibleCapabilityVerifier,
 )
+from .consent import (
+    AI_CONSENT_SCOPES,
+    AI_CONSENT_TTL_SECONDS,
+    DISCLOSURE_VERSIONS,
+    AIConsentError,
+    AIConsentService,
+    ConsentClock,
+    RuntimeProviderAuthority,
+    SystemConsentClock,
+    canonical_action_digest,
+)
 
 __all__ = [
     "DeepSeekClient",
@@ -37,4 +48,13 @@ __all__ = [
     "trusted_provider_public_catalog",
     "BackendCredentialResolver",
     "OpenAICompatibleCapabilityVerifier",
+    "AI_CONSENT_SCOPES",
+    "AI_CONSENT_TTL_SECONDS",
+    "DISCLOSURE_VERSIONS",
+    "AIConsentError",
+    "AIConsentService",
+    "ConsentClock",
+    "RuntimeProviderAuthority",
+    "SystemConsentClock",
+    "canonical_action_digest",
 ]

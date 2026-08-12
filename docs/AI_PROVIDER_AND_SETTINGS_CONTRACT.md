@@ -80,6 +80,27 @@ generation、registry version 和 selection revision 一起进入签名 claims�
 `ai_desktop_test_busy`，不会启动第二组收费调用。前端 consent nonce 属于下一阶段，不在本
 契约中伪造。
 
+## AI 知情同意
+
+共享 `AIConsentService` 是所有外发 AI 动作的服务端一次性门，scope 固定为
+`librarian`、`literature_extraction`、`personal_suggestion` 和
+`selected_evidence_chat`，每个 scope 都有独立版本化 disclosure。平台只有在用户明确
+同意后调用 `issue()`；取消时不调用，因此不生成 nonce、不写状态且零网络。provider 与
+内部 revision 每次都从 `AIRuntimeStateService` 权威状态读取，不接受 renderer 自报；因此
+provider 切换或 A→B→A 后旧 nonce 均不能复活。
+
+nonce 是进程内随机不透明句柄，TTL 固定 5 分钟。进程随机 HMAC claims 绑定 session、
+provider/revision、scope、disclosure version、issued/expires 和一次性 action digest；
+`consume()` 必须在模型调用前对同一实际外发 DTO 重新计算 digest，以恒时比较验签并原子
+消费。过期、重放、篡改、跨 session/scope/provider/version 全部使用稳定 path-free 错误
+拒绝；nonce 不持久化到数据库、历史或 localStorage。localStorage 最多记录用户已看过某个
+`provider+scope+version` 的披露，用于避免重复展示，永远不能替代本次 action nonce。
+
+`canonical_action_digest()` 只接受有限深度/节点数、规范 JSON 基本类型，总规范载荷上限
+64 KiB；拒绝非有限数字、敏感键、本机绝对路径以及 file/sqlite URI。`issue()` 公开字段仅
+为 schema、scope、provider、disclosure version、nonce 和 expires_at，不包含 session、
+action digest、披露内容、key、endpoint、路径或内部 ID。
+
 现有 `DeepSeekClient` 与 `DeepSeekSettings` 保持兼容，当前 DeepSeek 产品路径不会因新增
 通用提供商契约而改变。`DeepSeekClient` 已成为 `OpenAICompatibleClient` 的薄兼容层；
 endpoint、禁止 redirect、HTTP 重试、payload 和响应解析只有通用客户端一套实现。
