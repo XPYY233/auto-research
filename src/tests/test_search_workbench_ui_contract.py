@@ -67,6 +67,9 @@ class SearchWorkbenchUIContractTests(unittest.TestCase):
         ):
             self.assertIn(marker, self.styles)
         self.assertEqual(self.app.count("function showEvidenceWorkspace()"), 1)
+        self.assertIn("function invalidateEvidenceInspector()", self.app)
+        self.assertIn("evidenceInspectorRequest", self.app)
+        self.assertIn("contextChat.conversations.clear()", self.app)
 
     def test_public_evidence_classes_and_source_identity_are_preserved(self) -> None:
         for marker in (

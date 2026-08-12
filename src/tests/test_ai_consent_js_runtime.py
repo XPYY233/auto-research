@@ -44,9 +44,9 @@ vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
             """
 assert.strictEqual(context.AutoResearchAIConsent.ensure("personal_suggestion"), false);
 assert.strictEqual(values.size, 0);
-assert.strictEqual(prompts.length, 1);
+assert.strictEqual(prompts.length, 0);
 assert.strictEqual(context.AutoResearchAIConsent.ensure("unknown"), false);
-assert.strictEqual(prompts.length, 1);
+assert.strictEqual(prompts.length, 0);
 """
         )
         self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
@@ -55,16 +55,19 @@ assert.strictEqual(prompts.length, 1);
         completed = self._run(
             """
 context.__accept = true;
-for (const scope of ["librarian", "literature_extraction", "personal_suggestion"]) {
-  assert.strictEqual(context.AutoResearchAIConsent.ensure(scope), true);
-  assert.strictEqual(context.AutoResearchAIConsent.ensure(scope), true);
+context.AutoResearchAIConsent.updateTrustedProviders([{provider_id: "openai", display_name: "OpenAI"}]);
+for (const scope of ["librarian", "literature_extraction", "personal_suggestion", "selected_evidence_chat"]) {
+  const disclosure_version = context.AutoResearchAIConsent.disclosureVersions[scope];
+  const info = {provider_id: "openai", label: "OpenAI", disclosure_version};
+  assert.strictEqual(context.AutoResearchAIConsent.ensure(scope, info), true);
+  assert.strictEqual(context.AutoResearchAIConsent.ensure(scope, info), true);
 }
-assert.strictEqual(prompts.length, 3);
-const saved = JSON.parse(values.get("auto-research-ai-consent-v1"));
-assert.strictEqual(saved.schema, "auto-research-ai-consent-v1");
-assert.deepStrictEqual([...saved.accepted_scopes].sort(), ["librarian", "literature_extraction", "personal_suggestion"]);
+assert.strictEqual(prompts.length, 4);
+const saved = JSON.parse(values.get("auto-research-ai-consent-v2"));
+assert.strictEqual(saved.schema, "auto-research-ai-consent-v2");
+assert.strictEqual(saved.accepted_disclosures.length, 4);
 for (const message of prompts) {
-  assert(message.includes("DeepSeek"));
+  assert(message.includes("OpenAI"));
   assert(message.includes("可能产生少量 API 费用"));
   assert(message.includes("安全凭据存储"));
   assert(message.includes("不会发送本机文件路径"));
@@ -72,6 +75,9 @@ for (const message of prompts) {
 assert(prompts.some(message => message.includes("研究问题")));
 assert(prompts.some(message => message.includes("当前论文 PDF")));
 assert(prompts.some(message => message.includes("最多 5 行样例")));
+assert(prompts.some(message => message.includes("当前选中的一条证据")));
+const other = {provider_id: "openai", label: "伪造名称", disclosure_version: context.AutoResearchAIConsent.disclosureVersions.librarian};
+assert.strictEqual(context.AutoResearchAIConsent.ensure("librarian", other), false);
 """
         )
         self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)

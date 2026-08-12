@@ -112,9 +112,11 @@
 
   async function loadCredentialStatus() {
     try {
-      const status = await api("/api/desktop/credentials/deepseek");
+      const publicState = await globalThis.AutoResearchDesktopPorts?.loadAIPublicState?.();
+      const status = publicState?.settings;
+      if (!status) throw new Error("AI 设置不可用");
       const title = el("desktop-ai-title");
-      if (title) title.textContent = status.configured ? "已安全保存" : "需要时再配置";
+      if (title) title.textContent = status.configured ? `${status.provider_label} 已安全配置` : "请在设置中配置 AI";
       el("desktop-ai-settings")?.classList.toggle("configured", Boolean(status.configured));
       const deleteButton = el("desktop-ai-delete");
       if (deleteButton) deleteButton.disabled = !status.configured;
@@ -293,6 +295,7 @@
 
   function setSearchRepository(repository, options = {}) {
     if (!product.available || !["workspace", "offline"].includes(repository)) return;
+    globalThis.AutoResearchDesktopPorts?.invalidateEvidenceInspector?.();
     product.searchRepository = repository;
     applySearchUI();
     revealSearchWorkspace();
@@ -302,6 +305,7 @@
   function setSourceScope(scope, options = {}) {
     if (!product.available || !["official", "private", "all"].includes(scope)) return;
     if (scope === "official" && !officialReady()) return;
+    globalThis.AutoResearchDesktopPorts?.invalidateEvidenceInspector?.();
     product.sourceScope = scope;
     applySearchUI();
     if (options.run !== false) runSearch(null, { remember: false });
@@ -751,7 +755,8 @@
     const warningText = (suggestion.warnings || []).length
       ? `；另有 ${suggestion.warnings.length} 项识别提示，请重点检查低置信字段`
       : "";
-    setPersonalProgress(`DeepSeek 已完成预填${warningText}。请浏览一遍，有误时直接修改。`);
+    const provider = globalThis.AutoResearchDesktopPorts?.currentAIConsentContext?.("personal_suggestion")?.label || "AI 提供商";
+    setPersonalProgress(`${provider} 已完成预填${warningText}。请浏览一遍，有误时直接修改。`);
     markPersonalDraftDirty();
   }
 
@@ -760,17 +765,25 @@
     const sheetIndex = Number(el("personal-import-sheet")?.value || 0);
     if (!importId) return;
     const requestId = ++product.personalSuggestionRequest;
-    const consent = await globalThis.AutoResearchAIConsent?.ensure?.("personal_suggestion");
+    const action = { import_id: importId, sheet_index: sheetIndex };
+    let authorization;
+    try {
+      authorization = await globalThis.AutoResearchDesktopPorts?.authorizePreparedAIAction?.("personal_suggestion", "personal_suggestion", action);
+    } catch (error) {
+      setPersonalProgress(error.message, true);
+      return;
+    }
     if (
       requestId !== product.personalSuggestionRequest
       || importId !== product.personalImportStatus?.import_id
       || sheetIndex !== Number(el("personal-import-sheet")?.value || 0)
     ) return;
-    if (consent !== true) {
-      setPersonalProgress("已取消，未向 DeepSeek 发送任何工作表内容。你仍可直接核验本地识别结果。");
+    if (!authorization) {
+      const provider = globalThis.AutoResearchDesktopPorts?.currentAIConsentContext?.("personal_suggestion")?.label || "AI 提供商";
+      setPersonalProgress(`已取消，未向 ${provider} 发送任何工作表内容。你仍可直接核验本地识别结果。`);
       const retry = el("personal-ai-retry");
       if (retry) retry.hidden = false;
-      toast("已取消，未向 DeepSeek 发送任何工作表内容。");
+      toast(`已取消，未向 ${provider} 发送任何工作表内容。`);
       return;
     }
     const editGeneration = product.personalEditGeneration;
@@ -779,13 +792,10 @@
     if (reviewedButton) reviewedButton.disabled = true;
     const retry = el("personal-ai-retry");
     if (retry) retry.hidden = true;
-    setPersonalProgress("DeepSeek 正在识别项目、样品、列意义、单位和变量关系…");
+    const provider = globalThis.AutoResearchDesktopPorts?.currentAIConsentContext?.("personal_suggestion")?.label || "AI 提供商";
+    setPersonalProgress(`${provider} 正在识别项目、样品、列意义、单位和变量关系…`);
     try {
-      const suggestion = await api(`/api/desktop/personal-imports/${encodeURIComponent(importId)}/ai-suggestion`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sheet_index: sheetIndex, consent: true }),
-      });
+      const suggestion = await globalThis.AutoResearchDesktopPorts.executePreparedAIAction("personal_suggestion", authorization.action_id, authorization.consent_nonce);
       if (
         requestId !== product.personalSuggestionRequest
         || importId !== product.personalImportStatus?.import_id
@@ -906,32 +916,17 @@
   }
 
   async function saveCredential() {
-    const input = el("desktop-ai-key");
-    const apiKey = input.value.trim();
-    if (!apiKey) return toast("请先粘贴 API 密钥。", true);
-    try {
-      await api("/api/desktop/credentials/deepseek", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: apiKey }),
-      });
-      input.value = "";
-      await loadCredentialStatus();
-      toast("AI 密钥已安全保存在当前电脑。");
-    } catch (error) {
-      toast(error.message, true);
-    }
+    if (el("desktop-ai-key")) el("desktop-ai-key").value = "";
+    switchView("settings");
+    globalThis.AutoResearchWorkbench?.selectSettingsSection?.("ai");
+    toast("请在设置中选择受信提供商并安全保存密钥。 ");
   }
 
   async function deleteCredential() {
-    try {
-      await api("/api/desktop/credentials/deepseek", { method: "DELETE" });
-      el("desktop-ai-key").value = "";
-      await loadCredentialStatus();
-      toast("本机 AI 密钥已删除。");
-    } catch (error) {
-      toast(error.message, true);
-    }
+    if (el("desktop-ai-key")) el("desktop-ai-key").value = "";
+    switchView("settings");
+    globalThis.AutoResearchWorkbench?.selectSettingsSection?.("ai");
+    toast("请在设置中管理本机 AI 密钥。 ");
   }
 
   function changePersonalSheet() {

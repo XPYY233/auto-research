@@ -104,7 +104,7 @@ if (root.dataset.theme !== "dark" || root.dataset.density !== "compact") process
         self.assertIn('简体中文', self.index)
         self.assertIn('English', self.index)
         self.assertIn('计划支持', self.index)
-        self.assertIn('模型服务接口正在接入', self.index)
+        self.assertIn('只连接内置受信提供商', self.index)
         self.assertIn('不会显示密钥片段', self.index)
         self.assertIn('aria-keyshortcuts="Meta+K Control+K"', self.index)
         self.assertIn('role="listbox"', self.index)

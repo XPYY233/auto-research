@@ -360,9 +360,9 @@
             <details class="desktop-ai-settings" id="desktop-ai-settings">
               <summary><span>AI 功能</span><strong id="desktop-ai-title">检查密钥状态</strong><small>图书管理员与新文献提取使用</small></summary>
               <div>
-                <p>官方资料库搜索不需要 AI 密钥。图书管理员、新文献提取和实验表格 AI 识别会使用你保存在本机安全凭据存储中的 DeepSeek API 密钥，并可能产生少量费用；每类功能首次使用前会说明实际发送的有界内容并请你确认。</p>
-                <label>DeepSeek API 密钥<input id="desktop-ai-key" type="password" autocomplete="off" placeholder="粘贴你获得的 API 密钥"></label>
-                <div class="desktop-ai-actions"><button type="button" id="desktop-ai-save">安全保存</button><button type="button" id="desktop-ai-delete">删除本机密钥</button></div>
+                <p>官方资料库搜索不需要 AI 密钥。需要 AI 的功能会使用你在设置页选择的受信提供商；每类功能首次使用前会说明有界发送范围和可能费用。</p>
+                <label hidden>旧密钥入口<input id="desktop-ai-key" type="password" autocomplete="off" disabled></label>
+                <div class="desktop-ai-actions"><button type="button" id="desktop-ai-save">打开 AI 设置</button><button type="button" id="desktop-ai-delete" hidden>管理本机密钥</button></div>
               </div>
             </details>
           </section>
@@ -588,6 +588,7 @@
                 <label><input type="radio" name="workbench-density" value="comfortable"><span><strong>舒适</strong><small>适合触控板和初次使用</small></span></label>
                 <label><input type="radio" name="workbench-density" value="compact"><span><strong>紧凑</strong><small>同屏显示更多文献与数据</small></span></label>
               </div></fieldset>
+              <p id="settings-appearance-status" class="settings-inline-status" role="status" aria-live="polite">正在读取当前设备设置…</p>
             </section>
             <section class="settings-section" id="settings-panel-language" role="tabpanel" data-settings-panel="language" aria-labelledby="settings-tab-language" hidden>
               <h3 id="settings-language-title">语言与区域</h3>
@@ -596,8 +597,25 @@
             </section>
             <section class="settings-section" id="settings-panel-ai" role="tabpanel" data-settings-panel="ai" aria-labelledby="settings-tab-ai" hidden>
               <h3 id="settings-ai-title">AI 与 API 密钥</h3>
-              <div class="settings-notice"><strong>模型服务接口正在接入</strong><p>0.8 将支持经过能力与安全审计的模型提供商。密钥只进入操作系统安全存储；这里不会显示密钥片段，也不会允许任意网址接收论文或实验内容。</p></div>
-              <div class="settings-row"><div><strong>模型服务</strong><small>提供商、模型分工与连接状态</small></div><span class="settings-state">等待核心接口</span></div>
+              <div class="settings-notice"><strong>只连接内置受信提供商</strong><p>密钥只进入操作系统安全凭据存储；本页不会显示密钥片段、保存密钥副本或允许任意网址接收论文与实验内容。</p></div>
+              <p id="settings-ai-status" class="settings-inline-status" role="status" aria-live="polite">正在读取 AI 设置…</p>
+              <label class="settings-field">模型提供商<select id="settings-ai-provider" aria-describedby="settings-ai-status" disabled><option>正在载入…</option></select></label>
+              <div class="settings-choice-grid two" id="settings-ai-model-grid">
+                <label class="settings-field">文献抽取<select data-ai-model-task="extraction" disabled></select></label>
+                <label class="settings-field">证据分析<select data-ai-model-task="analysis" disabled></select></label>
+                <label class="settings-field">图书管理员规划<select data-ai-model-task="librarian_planning" disabled></select></label>
+                <label class="settings-field">图书管理员回答<select data-ai-model-task="librarian_synthesis" disabled></select></label>
+              </div>
+              <button type="button" id="settings-ai-model-save" disabled>保存模型分工</button>
+              <div class="settings-row"><div><strong>安全凭据</strong><small id="settings-ai-credential-note">尚未读取</small></div><span id="settings-ai-configured" class="settings-state">未知</span></div>
+              <div class="settings-row"><div><strong>连接验证</strong><small id="settings-ai-test-plan">尚未读取能力测试计划</small></div><span id="settings-ai-verified" class="settings-state">未知</span></div>
+              <div class="settings-row"><div><strong>当前可用性</strong><small>状态来自本机桌面服务，不由网页自行推断</small></div><span id="settings-ai-availability" class="settings-state">未知</span></div>
+              <label class="settings-field">API 密钥<input id="settings-ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴后安全保存；页面不会保留"></label>
+              <div class="settings-actions">
+                <button type="button" id="settings-ai-key-save" disabled>安全保存</button>
+                <button type="button" id="settings-ai-test" disabled>测试连接</button>
+                <button type="button" id="settings-ai-key-delete" disabled>删除本机密钥</button>
+              </div>
             </section>
             <section class="settings-section" id="settings-panel-data" role="tabpanel" data-settings-panel="data" aria-labelledby="settings-tab-data" hidden>
               <h3 id="settings-data-title">数据与资料库</h3>

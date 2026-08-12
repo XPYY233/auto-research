@@ -1,4 +1,4 @@
-const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", paperStage: "review", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchExperience: "agent", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, librarianMessages: [], librarianResults: [], librarianBusy: false, librarianResultType: "item", librarianSessions: [], librarianSessionId: null, librarianHistoryQuery: "", librarianMeta: {}, librarianResearchContexts: new Map(), librarianBriefAuth: null, librarianProgressTimer: null, librarianProgressStarted: 0, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", paperStage: "review", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchExperience: "agent", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, evidenceInspectorRequest: 0, librarianMessages: [], librarianResults: [], librarianBusy: false, librarianResultType: "item", librarianSessions: [], librarianSessionId: null, librarianHistoryQuery: "", librarianMeta: {}, librarianResearchContexts: new Map(), librarianBriefAuth: null, librarianProgressTimer: null, librarianProgressStarted: 0, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, aiCatalog: null, aiPublicState: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 const contextChat = { entity: null, conversations: new Map(), busy: false };
 const defaultContextQuestion = "说明这个数据本身的含义，并总结该数据在文章中的具体含义";
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
@@ -38,6 +38,16 @@ const librarianMatchOrder = { direct: 0, adjacent: 1, expansion: 2 };
 const reviewPageSize = 80;
 const desktopCsrfHeader = "X-Auto-Research-CSRF";
 let desktopCsrfToken = "";
+const DESKTOP_API_ROUTES = Object.freeze({
+  settings: "/api/desktop/settings",
+  preferences: "/api/desktop/settings/preferences",
+  aiProviders: "/api/desktop/ai-providers",
+  aiSettings: "/api/desktop/ai-settings",
+  aiCredential: providerId => `/api/desktop/ai-credentials/${encodeURIComponent(providerId)}`,
+  // Prepared-action HTTP routes are filled only after every domain controller
+  // freezes its public URI. Renderer code must never sign an arbitrary action.
+  aiPreparedActions: null,
+});
 
 function desktopRequestOptions(options = {}) {
   const method = String(options.method || "GET").toUpperCase();
@@ -52,6 +62,123 @@ function captureDesktopCsrf(response) {
   const token = response.headers.get(desktopCsrfHeader);
   if (token) desktopCsrfToken = token;
 }
+
+async function loadDesktopSettings() {
+  return api(DESKTOP_API_ROUTES.settings);
+}
+
+async function patchDesktopPreferences(preferences, expectedRevision) {
+  try {
+    return await api(DESKTOP_API_ROUTES.preferences, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expected_revision: expectedRevision, preferences }),
+    });
+  } catch (error) {
+    if (error.code === "settings_revision_conflict") {
+      error.latest = await loadDesktopSettings();
+    }
+    throw error;
+  }
+}
+
+async function loadAIPublicState() {
+  const [catalog, settings] = await Promise.all([
+    api(DESKTOP_API_ROUTES.aiProviders),
+    api(DESKTOP_API_ROUTES.aiSettings),
+  ]);
+  if (catalog?.schema_version !== "ai-desktop-catalog-v1" || !Array.isArray(catalog.providers)) throw new Error("AI 提供商目录不可用。");
+  if (settings?.schema_version !== "ai-runtime-public-state-v1") throw new Error("AI 运行设置不可用。");
+  const profile = catalog.providers.find(provider => provider.provider_id === settings.provider_id);
+  if (!profile) throw new Error("当前 AI 提供商不在受信目录中。");
+  globalThis.AutoResearchAIConsent?.updateTrustedProviders?.(catalog.providers);
+  state.aiCatalog = catalog;
+  state.aiPublicState = { ...settings, provider_label: profile.display_name };
+  return { catalog, settings: state.aiPublicState };
+}
+
+async function patchAISettings(providerId, taskModels, expectedRevision) {
+  return api(DESKTOP_API_ROUTES.aiSettings, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider_id: providerId, task_models: taskModels, expected_revision: expectedRevision }),
+  });
+}
+
+async function saveAICredential(providerId, apiKey) {
+  return api(DESKTOP_API_ROUTES.aiCredential(providerId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+}
+
+async function deleteAICredential(providerId) {
+  return api(DESKTOP_API_ROUTES.aiCredential(providerId), { method: "DELETE" });
+}
+
+function currentAIConsentContext(scope) {
+  const runtime = state.aiPublicState;
+  const disclosureVersion = globalThis.AutoResearchAIConsent?.disclosureVersions?.[scope];
+  if (!runtime?.provider_id || !runtime?.provider_label || !disclosureVersion) return null;
+  return { provider_id: runtime.provider_id, label: runtime.provider_label, disclosure_version: disclosureVersion };
+}
+
+function aiProviderLabel() {
+  return state.aiPublicState?.provider_label || "AI 提供商";
+}
+
+async function authorizePreparedAIAction(domain, scope, domainRequest) {
+  const context = currentAIConsentContext(scope);
+  if (!context || typeof globalThis.AutoResearchAIConsent?.ensure !== "function") {
+    const error = new Error("受信 AI 提供商状态尚未就绪，请稍后重试。");
+    error.code = "ai_public_state_unavailable";
+    throw error;
+  }
+  const prepared = await globalThis.AutoResearchDesktopPorts.prepareAIAction(domain, domainRequest);
+  if (!prepared || typeof prepared.action_id !== "string" || !prepared.action_id || prepared.scope !== scope || prepared.provider_id !== context.provider_id || prepared.disclosure_version !== context.disclosure_version || typeof prepared.summary !== "object" || !prepared.summary) {
+    throw new Error("AI 操作准备结果无效，请重试。");
+  }
+  if (globalThis.AutoResearchAIConsent.ensure(scope, context) !== true) return null;
+  const issued = await globalThis.AutoResearchDesktopPorts.issuePreparedConsent(prepared.action_id);
+  if (issued?.schema_version !== "ai-consent-v1" || issued.scope !== scope || issued.provider_id !== context.provider_id || issued.disclosure_version !== context.disclosure_version || typeof issued.nonce !== "string" || !issued.nonce) {
+    throw new Error("AI 知情同意凭证无效，请重试。");
+  }
+  return { action_id: prepared.action_id, consent_nonce: issued.nonce };
+}
+
+async function prepareAIAction(_domain, _domainRequest) {
+  const error = new Error("AI 知情同意服务正在接入，请稍后重试。");
+  error.code = "ai_consent_service_unavailable";
+  throw error;
+}
+
+async function issuePreparedConsent(_actionId) {
+  const error = new Error("AI 知情同意服务正在接入，请稍后重试。");
+  error.code = "ai_consent_service_unavailable";
+  throw error;
+}
+
+async function executePreparedAIAction(_domain, _actionId, _consentNonce) {
+  const error = new Error("AI 执行服务正在接入，请稍后重试。");
+  error.code = "ai_execution_service_unavailable";
+  throw error;
+}
+
+globalThis.AutoResearchDesktopPorts = Object.freeze({
+  loadDesktopSettings,
+  patchDesktopPreferences,
+  loadAIPublicState,
+  patchAISettings,
+  saveAICredential,
+  deleteAICredential,
+  prepareAIAction,
+  issuePreparedConsent,
+  executePreparedAIAction,
+  currentAIConsentContext,
+  authorizePreparedAIAction,
+  invalidateEvidenceInspector,
+});
 
 async function api(url, options = {}) {
   const response = await fetch(url, desktopRequestOptions(options));
@@ -1873,6 +2000,7 @@ function renderSearchScope() {
 
 function setSearchScope(mode) {
   if (!["all", "selected"].includes(mode)) return;
+  invalidateEvidenceInspector();
   state.searchScope = mode;
   renderSearchScope();
   if (state.searchExperience === 'precise') runSearch(null, { remember: false });
@@ -1916,6 +2044,7 @@ function rememberSearch(query) {
 }
 
 function useSearchQuery(query, remember = true) {
+  invalidateEvidenceInspector();
   const input = document.querySelector("#search-query");
   input.value = query;
   document.querySelector("#search-clear").hidden = !query;
@@ -1973,6 +2102,7 @@ function resetSearchWorkspace() {
 let searchInputTimer = null;
 function scheduleSearchFromInput() {
   const input = document.querySelector("#search-query");
+  invalidateEvidenceInspector();
   document.querySelector("#search-clear").hidden = !input.value;
   if (state.searchComposing) return;
   clearTimeout(searchInputTimer);
@@ -1991,6 +2121,7 @@ function focusSearchShortcut(event) {
 async function runSearch(event, options = {}) {
   event?.preventDefault();
   if (state.searchExperience !== "precise") return;
+  invalidateEvidenceInspector();
   if (globalThis.AutoResearchDesktopProduct?.handleSearch(event, options)) return;
   const q = document.querySelector("#search-query").value.trim();
   const requestId = ++state.searchRequest;
@@ -2056,6 +2187,7 @@ async function runSearch(event, options = {}) {
 
 function setSearchExperience(mode, options = {}) {
   if (!['agent', 'precise'].includes(mode)) return;
+  invalidateEvidenceInspector();
   state.searchExperience = mode;
   document.querySelectorAll('[data-search-experience]').forEach(button => {
     const active = button.dataset.searchExperience === mode;
@@ -2815,10 +2947,16 @@ async function submitLibrarian(event) {
   const input = document.querySelector('#librarian-input');
   const question = input.value.trim();
   if (!question) return toast('请先描述你想查找的问题。', true);
-  const consent = await globalThis.AutoResearchAIConsent?.ensure?.('librarian');
-  if (consent !== true) return toast('已取消，未向 DeepSeek 发送任何内容。');
-  clearLibrarianBriefAuthorization();
   const history = state.librarianMessages.slice(-8).map(message => ({ role: message.role, content: message.content }));
+  const requestPayload = librarianResearchRequest(question, history);
+  let authorization;
+  try {
+    authorization = await authorizePreparedAIAction('librarian', 'librarian', requestPayload);
+  } catch (_error) {
+    return toast('图书管理员暂时无法开始 AI 请求；精确检索仍可正常使用。', true);
+  }
+  if (!authorization) return toast(`已取消，未向 ${aiProviderLabel()} 发送任何内容。`);
+  clearLibrarianBriefAuthorization();
   const recoveryQuestion = [...history].reverse().find(message => message.role === 'user')?.content || '';
   state.librarianMessages.push({ role: 'user', content: question });
   state.librarianResults = [];
@@ -2834,10 +2972,7 @@ async function submitLibrarian(event) {
   startLibrarianProgress();
   let success = false;
   try {
-    const result = await api('/api/agents/librarian/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(librarianResearchRequest(question, history)),
-    });
+    const result = await globalThis.AutoResearchDesktopPorts.executePreparedAIAction('librarian', authorization.action_id, authorization.consent_nonce);
     const stateFailureCode = librarianStateFailureCode(result);
     if (stateFailureCode) clearLibrarianResearchContext();
     else rememberLibrarianResearchContext(result);
@@ -3008,6 +3143,7 @@ globalThis.autoResearchLibrarianBrief = Object.freeze({
 
 function setSearchMode(mode, options = {}) {
   if (!searchModeCopy[mode]) return;
+  invalidateEvidenceInspector();
   state.searchMode = mode;
   document.querySelectorAll("[data-search-mode]").forEach(button => {
     const active = button.dataset.searchMode === mode;
@@ -3123,7 +3259,7 @@ function renderContextChatMessages() {
     const evidence = message.role === "assistant" && message.meta
       ? `<div class="context-chat-evidence">${(message.meta.evidence_pages || []).map(page => `<span>PDF第${esc(page)}页</span>`).join("")}${(message.meta.evidence_notes || []).map(value => `<small class="evidence-note">证据：${esc(value)}</small>`).join("")}${(message.meta.limitations || []).map(value => `<small class="limitation">边界：${esc(value)}</small>`).join("")}</div>`
       : "";
-    return `<article class="context-chat-message ${esc(message.role)}"><small>${message.role === "user" ? "你" : "DeepSeek"}</small><p>${esc(message.content)}</p>${evidence}</article>`;
+    return `<article class="context-chat-message ${esc(message.role)}"><small>${message.role === "user" ? "你" : esc(aiProviderLabel())}</small><p>${esc(message.content)}</p>${evidence}</article>`;
   }).join("");
   container.scrollTop = container.scrollHeight;
 }
@@ -3169,34 +3305,38 @@ async function submitContextChat(event) {
   }
   const conversation = currentContextConversation();
   const history = conversation.map(message => ({ role: message.role, content: message.content }));
+  const entity = { ...contextChat.entity };
+  const requestGeneration = state.evidenceInspectorRequest;
+  const requestPayload = { entity_type: entity.type, entity_id: entity.id, question, history };
+  let authorization;
+  try {
+    authorization = await authorizePreparedAIAction("selected_evidence_chat", "selected_evidence_chat", requestPayload);
+  } catch (error) {
+    return toast(error.message, true);
+  }
+  if (!authorization) return toast(`已取消，未向 ${aiProviderLabel()} 发送当前证据。`);
   conversation.push({ role: "user", content: question });
   input.value = "";
   contextChat.busy = true;
   document.querySelector("#context-chat-send").disabled = true;
   document.querySelector("#context-chat").classList.add("thinking");
-  setText("context-chat-status", "DeepSeek 正在阅读当前证据与 PDF 相关页…");
+  setText("context-chat-status", `${aiProviderLabel()} 正在阅读当前证据与 PDF 相关页…`);
   renderContextChatMessages();
   try {
-    const result = await api("/api/context-chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        entity_type: contextChat.entity.type,
-        entity_id: contextChat.entity.id,
-        question,
-        history,
-      }),
-    });
+    const result = await globalThis.AutoResearchDesktopPorts.executePreparedAIAction("selected_evidence_chat", authorization.action_id, authorization.consent_nonce);
+    if (requestGeneration !== state.evidenceInspectorRequest || !contextChat.entity || contextChatKey(contextChat.entity) !== contextChatKey(entity)) return;
     conversation.push({
       role: "assistant",
       content: result.answer,
       meta: { evidence_pages: result.evidence_pages || [], evidence_notes: result.evidence_notes || [], limitations: result.limitations || [] },
     });
-    setText("context-chat-status", `${result.model || "DeepSeek Pro"} · 参考 PDF 第 ${(result.context_pages || []).join("、") || "相关"} 页`);
+    setText("context-chat-status", `${result.model || aiProviderLabel()} · 参考 PDF 第 ${(result.context_pages || []).join("、") || "相关"} 页`);
   } catch (error) {
+    if (requestGeneration !== state.evidenceInspectorRequest) return;
     conversation.push({ role: "assistant", content: `本次回答失败：${error.message}`, meta: { limitations: ["未写入任何科学数据"] } });
     setText("context-chat-status", "回答失败，可修改问题后重试");
   } finally {
+    if (requestGeneration !== state.evidenceInspectorRequest) return;
     contextChat.busy = false;
     document.querySelector("#context-chat-send").disabled = false;
     document.querySelector("#context-chat").classList.remove("thinking");
@@ -3401,6 +3541,8 @@ function formatVisualVariables(variables) {
 }
 
 async function openVisualAsset(assetId) {
+  state.evidenceInspectorRequest += 1;
+  const requestGeneration = state.evidenceInspectorRequest;
   state.detailItem = null;
   document.querySelector("#item-detail-panel").hidden = true;
   document.querySelector("#visual-detail-panel").hidden = false;
@@ -3409,6 +3551,7 @@ async function openVisualAsset(assetId) {
   showEvidenceWorkspace();
   try {
     const asset = await api(`/api/visual-assets/${assetId}`);
+    if (requestGeneration !== state.evidenceInspectorRequest) return;
     state.visualAsset = asset;
     setText("visual-dialog-type", asset.asset_type === "table" ? "ORIGINAL TABLE" : "ORIGINAL FIGURE");
     const title = visualTitleParts(asset);
@@ -3443,6 +3586,20 @@ async function openVisualAsset(assetId) {
     setText("visual-context", error.message);
     toast(error.message, true);
   }
+}
+
+function invalidateEvidenceInspector() {
+  state.evidenceInspectorRequest += 1;
+  contextChat.conversations.clear();
+  contextChat.busy = false;
+  closeVisualAsset();
+  const input = document.querySelector("#context-chat-input");
+  if (input) input.value = defaultContextQuestion;
+  document.querySelector("#context-chat")?.classList.remove("thinking");
+  const send = document.querySelector("#context-chat-send");
+  if (send) send.disabled = false;
+  setText("context-chat-status", "请选择一条证据后开始解读");
+  renderContextChatMessages();
 }
 
 function closeVisualAsset() {
@@ -3812,9 +3969,16 @@ async function runCurrentExtraction() {
   }
   const willCallDeepSeek = status.action === 'deepseek_extract'
     || Boolean(forceRescan && status.pdf_ready && status.deepseek_ready);
+  const requestPayload = { paper_id: state.paper.id, force_rescan: forceRescan };
   if (willCallDeepSeek) {
-    const consent = await globalThis.AutoResearchAIConsent?.ensure?.('literature_extraction');
-    if (consent !== true) return toast('已取消，未向 DeepSeek 发送任何论文内容。');
+    try {
+      const authorization = await authorizePreparedAIAction('literature_extraction', 'literature_extraction', requestPayload);
+      if (!authorization) return toast(`已取消，未向 ${aiProviderLabel()} 发送任何论文内容。`);
+      requestPayload.action_id = authorization.action_id;
+      requestPayload.consent_nonce = authorization.consent_nonce;
+    } catch (error) {
+      return toast(error.message, true);
+    }
   }
   const previous = button.textContent;
   button.disabled = true;
@@ -3826,11 +3990,13 @@ async function runCurrentExtraction() {
     startProgress("一键提取并核验");
   }
   try {
-    const result = await api("/api/current-paper/run-workflow", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paper_id: state.paper.id, force_rescan: forceRescan }),
-    });
+    const result = willCallDeepSeek
+      ? await globalThis.AutoResearchDesktopPorts.executePreparedAIAction("literature_extraction", requestPayload.action_id, requestPayload.consent_nonce)
+      : await api("/api/current-paper/run-workflow", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestPayload),
+        });
     await loadCurrentPaper();
     if (result.action === "prepare_packet") {
       finishProgress("抽取包已生成，等待导入结构化结果。");
@@ -4123,6 +4289,13 @@ async function initializeApplication() {
   initializePaperWorkflow();
   state.uiMode = await api('/api/ui-mode');
   applyUiMode();
+  try {
+    await loadAIPublicState();
+    state.runtimeWarnings.delete("AI 设置");
+  } catch (error) {
+    state.runtimeWarnings.set("AI 设置", `AI 设置：${error.message}`);
+    renderRuntimeWarnings();
+  }
   await globalThis.AutoResearchDesktopProduct?.initialize();
   await loadLibrarianHistory();
   setSearchExperience('agent');

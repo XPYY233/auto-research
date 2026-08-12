@@ -27,10 +27,10 @@ class AIConsentUIContractTests(unittest.TestCase):
             self.app.index("async function submitLibrarian"):
             self.app.index("function getLatestLibrarianBriefSnapshot")
         ]
-        consent = submit.index("AutoResearchAIConsent?.ensure?.('librarian')")
-        cancel = submit.index("未向 DeepSeek 发送任何内容")
+        consent = submit.index("authorizePreparedAIAction('librarian', 'librarian'")
+        cancel = submit.index("未向 ${aiProviderLabel()} 发送任何内容")
         mutation = submit.index("state.librarianMessages.push")
-        request = submit.index("/api/agents/librarian/chat")
+        request = submit.index("executePreparedAIAction('librarian'")
         self.assertLess(consent, cancel)
         self.assertLess(cancel, mutation)
         self.assertLess(cancel, request)
@@ -40,9 +40,9 @@ class AIConsentUIContractTests(unittest.TestCase):
             self.app.index("async function runCurrentExtraction"):
             self.app.index("async function saveCurrentSnapshot")
         ]
-        consent = extraction.index("AutoResearchAIConsent?.ensure?.('literature_extraction')")
-        cancel = extraction.index("未向 DeepSeek 发送任何论文内容")
-        request = extraction.index("/api/current-paper/run-workflow")
+        consent = extraction.index("authorizePreparedAIAction('literature_extraction'")
+        cancel = extraction.index("未向 ${aiProviderLabel()} 发送任何论文内容")
+        request = extraction.index('executePreparedAIAction("literature_extraction"')
         self.assertIn("status.action === 'deepseek_extract'", extraction)
         self.assertIn("forceRescan && status.pdf_ready && status.deepseek_ready", extraction)
         self.assertLess(consent, cancel)
@@ -53,11 +53,17 @@ class AIConsentUIContractTests(unittest.TestCase):
             self.product.index("async function requestPersonalSuggestion"):
             self.product.index("async function choosePersonalFile")
         ]
-        consent = suggestion.index('AutoResearchAIConsent?.ensure?.("personal_suggestion")')
-        cancel = suggestion.index("未向 DeepSeek 发送任何工作表内容")
-        request = suggestion.index("/ai-suggestion")
+        consent = suggestion.index('authorizePreparedAIAction?.("personal_suggestion"')
+        cancel = suggestion.index("未向 ${provider} 发送任何工作表内容")
+        request = suggestion.index('executePreparedAIAction("personal_suggestion"')
         self.assertLess(consent, cancel)
         self.assertLess(cancel, request)
+
+    def test_selected_evidence_chat_uses_prepared_action_and_no_boolean_consent(self) -> None:
+        chat = self.app[self.app.index("async function submitContextChat"):self.app.index("function showEvidenceWorkspace")]
+        self.assertIn('authorizePreparedAIAction("selected_evidence_chat"', chat)
+        self.assertIn('executePreparedAIAction("selected_evidence_chat"', chat)
+        self.assertNotIn("consent: true", self.app + self.product)
 
 
 if __name__ == "__main__":

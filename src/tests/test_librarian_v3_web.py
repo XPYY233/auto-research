@@ -256,15 +256,15 @@ class LibrarianV3WebUIContractTests(unittest.TestCase):
             self.app_js.index("async function submitLibrarian"):
             self.app_js.index("function getLatestLibrarianBriefSnapshot")
         ]
-        self.assertEqual(submit.count("/api/agents/librarian/chat"), 1)
-        self.assertIn("JSON.stringify(librarianResearchRequest(question, history))", submit)
+        self.assertEqual(submit.count("/api/agents/librarian/chat"), 0)
+        self.assertIn("librarianResearchRequest(question, history)", submit)
         self.assertNotIn("paper_ids", submit)
         self.assertNotIn("console.log", submit)
         self.assertLess(
-            submit.index("AutoResearchAIConsent?.ensure?.('librarian')"),
-            submit.index("/api/agents/librarian/chat"),
+            submit.index("authorizePreparedAIAction('librarian', 'librarian'"),
+            submit.index("executePreparedAIAction('librarian'"),
         )
-        self.assertIn("未向 DeepSeek 发送任何内容", submit)
+        self.assertIn("未向 ${aiProviderLabel()} 发送任何内容", submit)
 
     def test_transport_canary_cannot_enter_librarian_history_meta_or_toast(self) -> None:
         submit = self.app_js[
@@ -273,6 +273,10 @@ class LibrarianV3WebUIContractTests(unittest.TestCase):
         ]
         catch = submit[submit.index("} catch (error) {"):]
         self.assertNotIn("error.message", catch)
+        self.assertIn(
+            "图书管理员暂时无法开始 AI 请求；精确检索仍可正常使用。",
+            submit,
+        )
         self.assertIn("content: librarianTransportFailureMessage", catch)
         self.assertIn("error: true", catch)
         self.assertIn("safe_failure_code: failureCode", catch)
