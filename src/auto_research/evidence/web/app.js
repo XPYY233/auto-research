@@ -1996,6 +1996,7 @@ function setSearchExperience(mode, options = {}) {
     const active = button.dataset.searchExperience === mode;
     button.classList.toggle('active', active);
     button.setAttribute('aria-selected', active ? 'true' : 'false');
+    button.tabIndex = active ? 0 : -1;
   });
   document.querySelector('#librarian-workspace').hidden = mode !== 'agent';
   document.querySelector('#precise-search-workspace').hidden = mode !== 'precise';
@@ -2015,6 +2016,24 @@ function setSearchExperience(mode, options = {}) {
     window.requestAnimationFrame(() => document.querySelector('#search-query')?.focus());
   }
   globalThis.AutoResearchDesktopProduct?.applySearchUI?.();
+}
+
+function moveTabFocus(button, selector, direction) {
+  const tabs = [...document.querySelectorAll(selector)].filter(tab => !tab.disabled && !tab.hidden);
+  const current = tabs.indexOf(button);
+  if (current < 0 || !tabs.length) return;
+  const next = direction === "home" ? tabs[0]
+    : direction === "end" ? tabs[tabs.length - 1]
+    : tabs[(current + direction + tabs.length) % tabs.length];
+  next.focus();
+  next.click();
+}
+
+function handleSearchTabKeydown(event, selector) {
+  const direction = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1, Home: "home", End: "end" }[event.key];
+  if (direction === undefined) return;
+  event.preventDefault();
+  moveTabFocus(event.currentTarget, selector, direction);
 }
 
 function librarianSessionId() {
@@ -2633,6 +2652,7 @@ function renderLibrarianResults(rows) {
     const active = type === state.librarianResultType;
     button.classList.toggle('active', active);
     button.setAttribute('aria-selected', active ? 'true' : 'false');
+    button.tabIndex = active ? 0 : -1;
     button.disabled = groups[type].length === 0;
     const directCount = groups[type].filter(row => row.agent_match_class === 'direct').length;
     const relatedCount = groups[type].filter(row => row.agent_match_class === 'adjacent').length;
@@ -2928,6 +2948,7 @@ function setSearchMode(mode, options = {}) {
     const active = button.dataset.searchMode === mode;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", active ? "true" : "false");
+    button.tabIndex = active ? 0 : -1;
   });
   const input = document.querySelector("#search-query");
   input.placeholder = searchModeCopy[mode].placeholder;
@@ -3121,6 +3142,18 @@ async function submitContextChat(event) {
 
 function showEvidenceWorkspace() {
   const dialog = document.querySelector("#visual-dialog");
+  const wasDocked = dialog.classList.contains("is-docked");
+  const docked = document.body.dataset.view === "search"
+    && globalThis.matchMedia?.("(min-width: 1280px)")?.matches;
+  dialog.classList.toggle("is-docked", Boolean(docked));
+  document.querySelector("#view-search")?.classList.toggle("has-evidence-inspector", Boolean(docked));
+  if (docked) {
+    dialog.setAttribute("open", "open");
+    dialog.setAttribute("aria-modal", "false");
+    return;
+  }
+  if (wasDocked) dialog.removeAttribute("open");
+  dialog.setAttribute("aria-modal", "true");
   if (typeof dialog.showModal === "function") {
     if (!dialog.open) dialog.showModal();
   } else {
@@ -3351,7 +3384,12 @@ function closeVisualAsset() {
   state.visualAsset = null;
   state.detailItem = null;
   contextChat.entity = null;
-  document.querySelector("#visual-dialog")?.close();
+  const dialog = document.querySelector("#visual-dialog");
+  document.querySelector("#view-search")?.classList.remove("has-evidence-inspector");
+  dialog?.classList.remove("is-docked");
+  dialog?.setAttribute("aria-modal", "true");
+  if (dialog?.open && typeof dialog.close === "function") dialog.close();
+  else dialog?.removeAttribute("open");
 }
 
 function showVisualRelatedItems() {
@@ -3500,6 +3538,10 @@ function switchView(name, options = {}) {
     paperStage = "review";
   }
   if (isReadOnly() && name !== "search") name = "search";
+  if (name !== "search") {
+    const inspector = document.querySelector("#visual-dialog");
+    if (inspector?.open || inspector?.classList.contains("is-docked")) closeVisualAsset();
+  }
   if (name !== "paper" && state.focusReview) setFocusReview(false);
   const viewName = name === "paper" ? "review" : name;
   document.querySelectorAll(".nav,.view").forEach(el => el.classList.remove("active"));
@@ -3869,21 +3911,30 @@ document.querySelector("#focus-review").addEventListener("click", () => setFocus
 document.querySelector("#exit-focus-review").addEventListener("click", () => setFocusReview(false));
 document.addEventListener("keydown", handleReviewKeyboard);
 document.querySelector("#search-form").addEventListener("submit", runSearch);
-document.querySelectorAll('[data-search-experience]').forEach(button => button.addEventListener('click', () => setSearchExperience(button.dataset.searchExperience)));
+document.querySelectorAll('[data-search-experience]').forEach(button => {
+  button.addEventListener('click', () => setSearchExperience(button.dataset.searchExperience));
+  button.addEventListener('keydown', event => handleSearchTabKeydown(event, '[data-search-experience]'));
+});
 document.querySelector('#librarian-form').addEventListener('submit', submitLibrarian);
 document.querySelector('#librarian-reset').addEventListener('click', resetLibrarian);
 document.querySelector('#librarian-history-query').addEventListener('input', event => {
   state.librarianHistoryQuery = event.target.value;
   renderLibrarianHistory();
 });
-document.querySelectorAll('[data-librarian-result-type]').forEach(button => button.addEventListener('click', () => setLibrarianResultType(button.dataset.librarianResultType)));
+document.querySelectorAll('[data-librarian-result-type]').forEach(button => {
+  button.addEventListener('click', () => setLibrarianResultType(button.dataset.librarianResultType));
+  button.addEventListener('keydown', event => handleSearchTabKeydown(event, '[data-librarian-result-type]'));
+});
 document.querySelector('#librarian-input').addEventListener('keydown', event => {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault();
     document.querySelector('#librarian-form').requestSubmit();
   }
 });
-document.querySelectorAll("[data-search-mode]").forEach(button => button.addEventListener("click", () => setSearchMode(button.dataset.searchMode)));
+document.querySelectorAll("[data-search-mode]").forEach(button => {
+  button.addEventListener("click", () => setSearchMode(button.dataset.searchMode));
+  button.addEventListener("keydown", event => handleSearchTabKeydown(event, '[data-search-mode]'));
+});
 document.querySelector("#search-query").addEventListener("input", scheduleSearchFromInput);
 document.querySelector("#search-query").addEventListener("compositionstart", () => { state.searchComposing = true; });
 document.querySelector("#search-query").addEventListener("compositionend", () => { state.searchComposing = false; scheduleSearchFromInput(); });
@@ -3952,6 +4003,10 @@ document.querySelector("#visual-dialog")?.addEventListener("close", () => {
   state.detailItem = null;
   contextChat.entity = null;
   document.querySelector("#context-chat")?.classList.remove("thinking");
+});
+globalThis.matchMedia?.("(min-width: 1280px)")?.addEventListener?.("change", () => {
+  const inspector = document.querySelector("#visual-dialog");
+  if (inspector?.open || inspector?.classList.contains("is-docked")) closeVisualAsset();
 });
 document.querySelector("#visual-related-items")?.addEventListener("click", showVisualRelatedItems);
 document.querySelector("#item-detail-linked-visual")?.addEventListener("click", event => {

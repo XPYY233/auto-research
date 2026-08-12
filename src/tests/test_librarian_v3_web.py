@@ -210,7 +210,10 @@ class LibrarianV3WebUIContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
-        cls.app_css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
+        cls.app_css = "\n".join(
+            (WEB_DIR / name).read_text(encoding="utf-8")
+            for name in ("app.css", "workbench.css")
+        )
 
     def test_conversation_state_is_memory_only_and_resettable(self) -> None:
         self.assertIn("librarianResearchContexts: new Map()", self.app_js)

@@ -266,21 +266,25 @@
       </section>
 
       <section class="view" id="view-search">
-        <div class="search-hero">
+        <div class="search-workbench">
+        <aside class="search-context-sidebar" aria-label="搜索上下文">
           <div class="search-experience-layout">
             <div class="search-experience-switch" role="tablist" aria-label="检索方式">
-              <button type="button" class="active" role="tab" aria-selected="true" data-search-experience="agent"><span>推荐</span><strong>问图书管理员</strong><small>用自然语言检索整个证据库</small></button>
-              <button type="button" role="tab" aria-selected="false" data-search-experience="precise"><span>进阶</span><strong>精确检索</strong><small>自行组合类型、字段与文章范围</small></button>
+              <button type="button" class="active" role="tab" aria-selected="true" aria-controls="librarian-workspace" tabindex="0" data-search-experience="agent"><span>推荐</span><strong>问图书管理员</strong><small>用自然语言检索整个证据库</small></button>
+              <button type="button" role="tab" aria-selected="false" aria-controls="precise-search-workspace" tabindex="-1" data-search-experience="precise"><span>进阶</span><strong>精确检索</strong><small>自行组合类型、字段与文章范围</small></button>
             </div>
             <aside class="search-experience-guide" id="search-experience-guide"><strong>直接描述研究问题</strong><p>图书管理员默认检索完整文献库。需要限制论文范围或逐字段筛选时，再切换到精确检索。</p></aside>
           </div>
+          <aside class="librarian-history" aria-label="图书管理员对话历史">
+            <div class="librarian-history-head"><div><span>LIBRARY LOG</span><strong>对话记录</strong></div><button type="button" id="librarian-reset">＋ 新对话</button></div>
+            <label class="librarian-history-search"><span class="visually-hidden">搜索历史对话</span><input id="librarian-history-query" type="search" placeholder="搜索过去的问题" autocomplete="off"></label>
+            <div class="librarian-history-list" id="librarian-history-list"></div>
+            <small id="librarian-history-privacy">记录仅保存在当前设备，不写入科学数据库；打开旧对话不会再次调用模型。</small>
+          </aside>
+        </aside>
+        <div class="search-workbench-center">
+        <div class="search-hero">
           <section class="librarian-workspace" id="librarian-workspace" aria-label="图书管理员 Agent">
-            <aside class="librarian-history" aria-label="图书管理员对话历史">
-              <div class="librarian-history-head"><div><span>LIBRARY LOG</span><strong>对话记录</strong></div><button type="button" id="librarian-reset">＋ 新对话</button></div>
-              <label class="librarian-history-search"><span class="visually-hidden">搜索历史对话</span><input id="librarian-history-query" type="search" placeholder="搜索过去的问题" autocomplete="off"></label>
-              <div class="librarian-history-list" id="librarian-history-list"></div>
-              <small id="librarian-history-privacy">记录仅保存在当前设备，不写入科学数据库；打开旧对话不会再次调用模型。</small>
-            </aside>
             <div class="librarian-main">
               <div class="librarian-intro">
                 <div class="librarian-avatar" aria-hidden="true">馆</div>
@@ -359,10 +363,10 @@
             <div class="search-paper-list" id="search-paper-list" aria-live="polite"></div>
           </div>
           <div class="search-mode-switch" id="search-mode-switch" role="tablist" aria-label="检索对象">
-            <button type="button" class="active" role="tab" aria-selected="true" data-search-mode="item"><i>01</i><span>数据条目</span><small>查数值、性质与条件</small></button>
-            <button type="button" role="tab" aria-selected="false" data-search-mode="table"><i>02</i><span>原始表格</span><small>查完整表格及上下文</small></button>
-            <button type="button" role="tab" aria-selected="false" data-search-mode="figure"><i>03</i><span>论文图片</span><small>查图像、变量与结论</small></button>
-            <button type="button" role="tab" aria-selected="false" data-search-mode="finding"><i>04</i><span>实验结论</span><small>查趋势、存在与未观察结果</small></button>
+            <button type="button" class="active" role="tab" aria-selected="true" aria-controls="search-results" tabindex="0" data-search-mode="item"><i>01</i><span>数据条目</span><small>查数值、性质与条件</small></button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-search-mode="table"><i>02</i><span>原始表格</span><small>查完整表格及上下文</small></button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-search-mode="figure"><i>03</i><span>论文图片</span><small>查图像、变量与结论</small></button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-search-mode="finding"><i>04</i><span>实验结论</span><small>查趋势、存在与未观察结果</small></button>
           </div>
           <div class="search-box-wrap">
             <form id="search-form" role="search">
@@ -384,10 +388,10 @@
         </div>
         <nav class="librarian-result-tabs" id="librarian-result-tabs" role="tablist" aria-label="图书管理员结果类型" hidden>
           <span id="librarian-result-overview">本次检索证据</span>
-          <button type="button" class="active" role="tab" aria-selected="true" aria-controls="search-results" data-librarian-result-type="item">条目 <b id="librarian-count-item">0</b></button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" data-librarian-result-type="finding">结论 <b id="librarian-count-finding">0</b></button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" data-librarian-result-type="table">表格 <b id="librarian-count-table">0</b></button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" data-librarian-result-type="figure">图片 <b id="librarian-count-figure">0</b></button>
+          <button type="button" class="active" role="tab" aria-selected="true" aria-controls="search-results" tabindex="0" data-librarian-result-type="item">条目 <b id="librarian-count-item">0</b></button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-librarian-result-type="finding">结论 <b id="librarian-count-finding">0</b></button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-librarian-result-type="table">表格 <b id="librarian-count-table">0</b></button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-librarian-result-type="figure">图片 <b id="librarian-count-figure">0</b></button>
         </nav>
         <div class="search-controls" id="search-filter-bar">
           <div class="search-control-copy"><span>精确结果</span><small>筛选会同步应用到 CSV 和 Excel 导出</small></div>
@@ -400,7 +404,9 @@
           <div><span class="search-live-dot" aria-hidden="true"></span><strong id="search-summary">等待搜索</strong><div id="search-active-filters"></div></div>
           <span id="search-exports"><small>导出全部匹配</small><a id="search-export" href="/api/six-export.csv">CSV</a><a id="search-export-xlsx" href="/api/six-export.xlsx">Excel</a></span>
         </div>
-        <div class="result-list" id="search-results" aria-live="polite"></div>
+        <div class="result-list" id="search-results" aria-live="polite" tabindex="-1"></div>
+        </div>
+        </div>
       </section>
 
       <section class="view" id="view-personal" aria-label="上传实验数据">
