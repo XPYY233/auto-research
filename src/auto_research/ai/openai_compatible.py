@@ -1,0 +1,334 @@
+from __future__ import annotations
+
+import json
+import re
+import time
+from dataclasses import dataclass, field
+from typing import Any, Mapping
+
+import requests
+
+from .provider_registry import (
+    CAPABILITY_AGENT,
+    CAPABILITY_STRUCTURED_JSON,
+    CAPABILITY_TOOL_CALLING,
+    CAPABILITY_VENDOR_THINKING,
+    KNOWN_CAPABILITIES,
+    MODEL_VALIDATION_BUILTIN,
+    TASK_ANALYSIS,
+    TASK_EXTRACTION,
+    TASK_IDS,
+    TASK_LIBRARIAN_PLANNING,
+    TASK_LIBRARIAN_SYNTHESIS,
+    trusted_chat_endpoint,
+    trusted_provider_profile,
+    TrustedProviderRegistryError,
+    validated_task_models,
+)
+
+
+_CREDENTIAL_REF_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+
+
+class AIProviderError(RuntimeError):
+    code = "ai_provider_error"
+    retryable = False
+
+    def __init__(self, safe_message: str):
+        super().__init__(safe_message)
+        self.safe_message = safe_message
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": "ai-provider-error-v1",
+            "code": self.code,
+            "message": self.safe_message,
+            "retryable": self.retryable,
+        }
+
+
+class AIProviderNotConfigured(AIProviderError):
+    code = "ai_provider_not_configured"
+
+
+class AIProviderResponseError(AIProviderError):
+    code = "ai_provider_response_invalid"
+
+
+class AIProviderUnavailableError(AIProviderResponseError):
+    code = "ai_provider_unavailable"
+    retryable = True
+
+
+class AIProviderCapabilityError(AIProviderResponseError):
+    def __init__(self, capability: str):
+        super().__init__("所选 AI 提供商不支持当前任务所需能力。")
+        self.code = "ai_provider_capability_missing"
+        self.capability = capability if capability in KNOWN_CAPABILITIES else "unknown"
+
+    def public_dict(self) -> dict[str, object]:
+        value = super().public_dict()
+        value["details"] = {"capability": self.capability}
+        return value
+
+
+@dataclass(frozen=True)
+class OpenAICompatibleSettings:
+    provider_id: str
+    task_models: Mapping[str, str]
+    api_key: str | None = field(default=None, repr=False)
+    credential_ref: str | None = None
+    timeout_seconds: int = 180
+    max_attempts: int = 2
+    retry_base_seconds: int = 0
+    verification_mode: bool = field(default=False, repr=False)
+
+    def __post_init__(self) -> None:
+        try:
+            profile = trusted_provider_profile(self.provider_id)
+            models = validated_task_models(self.task_models)
+        except TrustedProviderRegistryError as exc:
+            raise AIProviderResponseError(exc.safe_message) from exc
+        if self.credential_ref is not None and _CREDENTIAL_REF_RE.fullmatch(
+            str(self.credential_ref)
+        ) is None:
+            raise AIProviderResponseError("AI 凭据引用格式无效。")
+        if self.api_key is not None and (
+            not isinstance(self.api_key, str) or not self.api_key.strip()
+        ):
+            raise AIProviderResponseError("AI 凭据格式无效。")
+        try:
+            timeout_seconds = int(self.timeout_seconds)
+            max_attempts = int(self.max_attempts)
+            retry_base_seconds = int(self.retry_base_seconds)
+        except (TypeError, ValueError) as exc:
+            raise AIProviderResponseError("AI 运行参数格式无效。") from exc
+        object.__setattr__(self, "provider_id", profile.provider_id)
+        object.__setattr__(self, "task_models", models)
+        object.__setattr__(self, "timeout_seconds", min(max(timeout_seconds, 10), 1800))
+        object.__setattr__(self, "max_attempts", min(max(max_attempts, 1), 8))
+        object.__setattr__(self, "retry_base_seconds", min(max(retry_base_seconds, 0), 30))
+        if not isinstance(self.verification_mode, bool):
+            raise AIProviderResponseError("AI 验证模式格式无效。")
+
+    @property
+    def models_verified(self) -> bool:
+        return trusted_provider_profile(self.provider_id).model_validation == MODEL_VALIDATION_BUILTIN
+
+    @property
+    def available(self) -> bool:
+        return bool(self.api_key) and self.models_verified
+
+    def model_for_task(self, task: str) -> str:
+        aliases = {"verification": TASK_EXTRACTION}
+        normalized = aliases.get(task, task)
+        if normalized not in TASK_IDS:
+            raise AIProviderResponseError("AI 任务类型无法识别。")
+        return self.task_models[normalized]
+
+    def public_status(self) -> dict[str, Any]:
+        profile = trusted_provider_profile(self.provider_id)
+        return {
+            "schema_version": "ai-provider-runtime-status-v1",
+            "provider_id": profile.provider_id,
+            "display_name": profile.display_name,
+            "configured": self.available,
+            "available": self.available,
+            "credential_configured": bool(self.api_key),
+            "verified": self.models_verified,
+            "availability": "available" if self.available else (
+                "verification_required" if not self.models_verified else "credential_required"
+            ),
+            "task_models": dict(self.task_models),
+            "capabilities": profile.capabilities.public_dict(),
+            "timeout_seconds": self.timeout_seconds,
+            "max_attempts": self.max_attempts,
+        }
+
+class OpenAICompatibleClient:
+    """OpenAI Chat Completions adapter for audited, fixed-endpoint providers."""
+
+    def __init__(self, settings: OpenAICompatibleSettings, session=None):
+        profile = trusted_provider_profile(settings.provider_id)
+        if not profile.capabilities.supports(CAPABILITY_AGENT):
+            raise AIProviderCapabilityError(CAPABILITY_AGENT)
+        self.settings = settings
+        self.profile = profile
+        self.session = session if session is not None else requests
+
+    def _require(self, capability: str) -> None:
+        if not self.profile.capabilities.supports(capability):
+            raise AIProviderCapabilityError(capability)
+
+    def _post(self, payload: dict[str, Any], *, verification_request: bool = False):
+        if not self.settings.api_key:
+            raise AIProviderNotConfigured("AI 提供商尚未配置本机凭据。")
+        if not self.settings.models_verified and not (
+            self.settings.verification_mode and verification_request
+        ):
+            raise AIProviderCapabilityError("model_set_verification")
+        endpoint = trusted_chat_endpoint(self.profile.provider_id)
+        last_error: Exception | None = None
+        for attempt in range(self.settings.max_attempts):
+            try:
+                response = self.session.post(
+                    endpoint,
+                    headers={
+                        "Authorization": f"Bearer {self.settings.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=(20, self.settings.timeout_seconds),
+                    allow_redirects=False,
+                )
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt + 1 < self.settings.max_attempts:
+                    self._wait(attempt)
+                    continue
+                raise AIProviderUnavailableError("AI 提供商网络请求未能完成。") from exc
+            if 300 <= response.status_code < 400:
+                raise AIProviderResponseError("AI 提供商返回了不允许的重定向。")
+            if not response.ok:
+                transient = response.status_code == 429 or response.status_code >= 500
+                if transient and attempt + 1 < self.settings.max_attempts:
+                    last_error = AIProviderResponseError("transient provider response")
+                    self._wait(attempt)
+                    continue
+                error_type = AIProviderUnavailableError if transient else AIProviderResponseError
+                raise error_type(f"AI 提供商请求失败：HTTP {response.status_code}")
+            return response
+        raise AIProviderResponseError("AI 提供商连续返回不可用响应。") from last_error
+
+    def _wait(self, attempt: int) -> None:
+        delay = min(self.settings.retry_base_seconds * (2**attempt), 30)
+        if delay:
+            time.sleep(delay)
+
+    def request_json(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        task: str = TASK_EXTRACTION,
+        max_tokens: int = 16_000,
+        thinking: bool | None = None,
+        temperature: float | None = None,
+    ) -> dict[str, Any]:
+        return self._request_json(
+            messages,
+            task=task,
+            max_tokens=max_tokens,
+            thinking=thinking,
+            temperature=temperature,
+            verification_request=False,
+        )
+
+    def _request_json(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        task: str,
+        max_tokens: int,
+        thinking: bool | None,
+        temperature: float | None,
+        verification_request: bool,
+    ) -> dict[str, Any]:
+        self._require(CAPABILITY_STRUCTURED_JSON)
+        if thinking is not None:
+            self._require(CAPABILITY_VENDOR_THINKING)
+        payload: dict[str, Any] = {
+            "model": self.settings.model_for_task(task),
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+            "stream": False,
+        }
+        payload[
+            "max_completion_tokens"
+            if self.profile.provider_id == "openai"
+            else "max_tokens"
+        ] = max_tokens
+        if thinking is not None:
+            payload["thinking"] = {"type": "enabled" if thinking else "disabled"}
+        if temperature is not None:
+            payload["temperature"] = min(max(float(temperature), 0.0), 1.5)
+        response = self._post(payload, verification_request=verification_request)
+        try:
+            content = response.json()["choices"][0]["message"]["content"]
+            if not str(content or "").strip():
+                raise AIProviderResponseError("AI 提供商返回了空内容。")
+            try:
+                value = json.loads(content)
+            except json.JSONDecodeError:
+                value = json.loads(content, strict=False)
+            if not isinstance(value, dict):
+                raise AIProviderResponseError("AI 提供商未返回 JSON 对象。")
+            return value
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise AIProviderResponseError("AI 提供商返回格式无效。") from exc
+
+    def request_tool_message(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        task: str = TASK_ANALYSIS,
+        max_tokens: int = 3_200,
+        temperature: float = 0.1,
+    ) -> dict[str, Any]:
+        if tools:
+            self._require(CAPABILITY_TOOL_CALLING)
+        payload: dict[str, Any] = {
+            "model": self.settings.model_for_task(task),
+            "messages": messages,
+            "temperature": min(max(float(temperature), 0.0), 1.5),
+            "stream": False,
+        }
+        payload[
+            "max_completion_tokens"
+            if self.profile.provider_id == "openai"
+            else "max_tokens"
+        ] = max_tokens
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        response = self._post(payload)
+        try:
+            message = response.json()["choices"][0]["message"]
+            if not isinstance(message, dict):
+                raise TypeError("assistant message is not an object")
+            content = message.get("content") or ""
+            tool_calls = message.get("tool_calls") or []
+            if not isinstance(tool_calls, list) or not all(
+                isinstance(call, dict) for call in tool_calls
+            ):
+                raise TypeError("tool calls are not an array of objects")
+            if not str(content).strip() and not tool_calls:
+                raise AIProviderResponseError("AI 提供商返回了空消息。")
+            return {"role": "assistant", "content": content, "tool_calls": tool_calls}
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise AIProviderResponseError("AI 提供商返回格式无效。") from exc
+
+    def smoke_test(self) -> dict[str, Any]:
+        if not self.settings.models_verified and not self.settings.verification_mode:
+            raise AIProviderCapabilityError("model_set_verification")
+        result = self._request_json(
+            [
+                {
+                    "role": "system",
+                    "content": 'Return json only: {"status":"ok"}.',
+                },
+                {"role": "user", "content": "Return the requested connection check."},
+            ],
+            task=TASK_ANALYSIS,
+            max_tokens=64,
+            thinking=None,
+            temperature=None,
+            verification_request=True,
+        )
+        if result.get("status") != "ok":
+            raise AIProviderResponseError("AI 提供商连通测试返回了非预期状态。")
+        return {
+            "ok": True,
+            "provider_id": self.profile.provider_id,
+            "model": self.settings.model_for_task(TASK_ANALYSIS),
+        }
