@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+WEB_ROOT = PROJECT_ROOT / "src" / "auto_research" / "evidence" / "web"
+
+
+class AIConsentUIContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+        cls.app = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+        cls.product = (WEB_ROOT / "desktop_product.js").read_text(encoding="utf-8")
+
+    def test_consent_runtime_loads_before_all_ai_actions(self) -> None:
+        consent = self.index.index('<script src="/static/ai_consent.js"></script>')
+        product = self.index.index('<script src="/static/desktop_product.js"></script>')
+        app = self.index.index('<script src="/static/app.js"></script>')
+        self.assertLess(consent, product)
+        self.assertLess(consent, app)
+
+    def test_librarian_cancel_precedes_state_mutation_and_network(self) -> None:
+        submit = self.app[
+            self.app.index("async function submitLibrarian"):
+            self.app.index("function getLatestLibrarianBriefSnapshot")
+        ]
+        consent = submit.index("AutoResearchAIConsent?.ensure?.('librarian')")
+        cancel = submit.index("未向 DeepSeek 发送任何内容")
+        mutation = submit.index("state.librarianMessages.push")
+        request = submit.index("/api/agents/librarian/chat")
+        self.assertLess(consent, cancel)
+        self.assertLess(cancel, mutation)
+        self.assertLess(cancel, request)
+
+    def test_literature_extraction_cancel_precedes_workflow_request(self) -> None:
+        extraction = self.app[
+            self.app.index("async function runCurrentExtraction"):
+            self.app.index("async function saveCurrentSnapshot")
+        ]
+        consent = extraction.index("AutoResearchAIConsent?.ensure?.('literature_extraction')")
+        cancel = extraction.index("未向 DeepSeek 发送任何论文内容")
+        request = extraction.index("/api/current-paper/run-workflow")
+        self.assertIn("status.action === 'deepseek_extract'", extraction)
+        self.assertIn("forceRescan && status.pdf_ready && status.deepseek_ready", extraction)
+        self.assertLess(consent, cancel)
+        self.assertLess(cancel, request)
+
+    def test_personal_suggestion_cancel_precedes_model_request(self) -> None:
+        suggestion = self.product[
+            self.product.index("async function requestPersonalSuggestion"):
+            self.product.index("async function choosePersonalFile")
+        ]
+        consent = suggestion.index('AutoResearchAIConsent?.ensure?.("personal_suggestion")')
+        cancel = suggestion.index("未向 DeepSeek 发送任何工作表内容")
+        request = suggestion.index("/ai-suggestion")
+        self.assertLess(consent, cancel)
+        self.assertLess(cancel, request)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -90,7 +90,7 @@ class DesktopProductUIContractTests(unittest.TestCase):
         self.assertIn('function mountPersonalImportPanel()', self.product)
         self.assertIn('personalView.appendChild(personalPanel)', self.product)
         self.assertIn('switchView("search", { skipSearch: true })', self.product)
-        self.assertIn('setSearchExperience("precise")', self.product)
+        self.assertIn('setSearchExperience("precise", { run: false })', self.product)
         self.assertIn('body[data-view="personal"] #personal-import-panel', self.styles)
         self.assertNotIn(".search-hero .personal-import-panel", self.styles)
 
@@ -118,7 +118,7 @@ class DesktopProductUIContractTests(unittest.TestCase):
             "检索范围：官方文献全库（不含我的实验）",
             self.app,
         )
-        experience = self.app.split("function setSearchExperience(mode)", 1)[1].split(
+        experience = self.app.split("function setSearchExperience(mode, options = {})", 1)[1].split(
             "function librarianSessionId()", 1
         )[0]
         self.assertIn("AutoResearchDesktopProduct?.applySearchUI?.()", experience)
@@ -127,10 +127,14 @@ class DesktopProductUIContractTests(unittest.TestCase):
         success = self.product.index("toast(packageOutcomeLabels[completed.outcome]")
         repository = self.product.rfind('product.searchRepository = "offline"', 0, success)
         scope = self.product.rfind('product.sourceScope = "official"', 0, success)
-        precise = self.product.rfind('setSearchExperience("precise")', 0, success)
+        view = self.product.rfind('switchView("search", { skipSearch: true })', 0, success)
+        precise = self.product.rfind('setSearchExperience("precise", { run: false })', 0, success)
+        search = self.product.rfind("await runFederatedSearch(null)", 0, success)
         self.assertGreater(repository, 0)
         self.assertGreater(scope, repository)
-        self.assertGreater(precise, scope)
+        self.assertGreater(view, scope)
+        self.assertGreater(precise, view)
+        self.assertGreater(search, precise)
 
 
 if __name__ == "__main__":

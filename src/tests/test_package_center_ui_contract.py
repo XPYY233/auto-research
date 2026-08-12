@@ -90,6 +90,12 @@ class PackageCenterUIContractTests(unittest.TestCase):
             self.assertIn(field, self.package_center)
         self.assertIn("package-job-track", self.styles)
 
+    def test_status_failure_is_not_misreported_as_no_installed_package(self) -> None:
+        self.assertIn("state.packageCenterStatus = { unavailable: true }", self.package_center)
+        self.assertIn("资料包中心暂时不可用", self.package_center)
+        self.assertIn("data-package-status-retry", self.package_center)
+        self.assertIn("void loadStatus();", self.package_center)
+
     def test_package_center_owns_its_state_and_business_implementation(self) -> None:
         for field in (
             "packageCenterStatus",

@@ -1988,7 +1988,7 @@ async function runSearch(event, options = {}) {
   }
 }
 
-function setSearchExperience(mode) {
+function setSearchExperience(mode, options = {}) {
   if (!['agent', 'precise'].includes(mode)) return;
   state.searchExperience = mode;
   document.querySelectorAll('[data-search-experience]').forEach(button => {
@@ -2010,7 +2010,7 @@ function setSearchExperience(mode) {
     window.requestAnimationFrame(() => document.querySelector('#librarian-input')?.focus());
   } else {
     document.querySelector('#librarian-result-tabs').hidden = true;
-    runSearch(null, { remember: false });
+    if (options.run !== false) runSearch(null, { remember: false });
     window.requestAnimationFrame(() => document.querySelector('#search-query')?.focus());
   }
   globalThis.AutoResearchDesktopProduct?.applySearchUI?.();
@@ -2729,6 +2729,8 @@ async function submitLibrarian(event) {
   const input = document.querySelector('#librarian-input');
   const question = input.value.trim();
   if (!question) return toast('请先描述你想查找的问题。', true);
+  const consent = await globalThis.AutoResearchAIConsent?.ensure?.('librarian');
+  if (consent !== true) return toast('已取消，未向 DeepSeek 发送任何内容。');
   clearLibrarianBriefAuthorization();
   const history = state.librarianMessages.slice(-8).map(message => ({ role: message.role, content: message.content }));
   const recoveryQuestion = [...history].reverse().find(message => message.role === 'user')?.content || '';
@@ -3692,6 +3694,12 @@ async function runCurrentExtraction() {
   if (status.scanned && !forceRescan) {
     toast("已取消再次扫描；当前仍显示本地已保存数据。");
     return;
+  }
+  const willCallDeepSeek = status.action === 'deepseek_extract'
+    || Boolean(forceRescan && status.pdf_ready && status.deepseek_ready);
+  if (willCallDeepSeek) {
+    const consent = await globalThis.AutoResearchAIConsent?.ensure?.('literature_extraction');
+    if (consent !== true) return toast('已取消，未向 DeepSeek 发送任何论文内容。');
   }
   const previous = button.textContent;
   button.disabled = true;

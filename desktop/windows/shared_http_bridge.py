@@ -54,6 +54,10 @@ _PACKAGE_CENTER_JOB_RE = re.compile(
 )
 _STATIC_FILES = {
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
+    "/static/ai_consent.js": (
+        "ai_consent.js",
+        "application/javascript; charset=utf-8",
+    ),
     "/static/app.js": ("app.js", "application/javascript; charset=utf-8"),
     "/static/desktop_product.js": (
         "desktop_product.js",

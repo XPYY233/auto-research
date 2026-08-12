@@ -305,11 +305,13 @@ class CompositionRootTests(unittest.TestCase):
         )
         self.assertIn("auto_research.product.package_center", manifest["shared_runtime_modules"])
         self.assertIn("package_center.js", manifest["shared_web_assets"])
+        self.assertIn("ai_consent.js", manifest["shared_web_assets"])
         self.assertEqual(
             set(manifest["shared_web_assets"]),
             {
                 "index.html",
                 "app.css",
+                "ai_consent.js",
                 "app.js",
                 "desktop_product.js",
                 "package_center.js",

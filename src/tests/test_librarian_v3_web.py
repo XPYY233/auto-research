@@ -257,6 +257,11 @@ class LibrarianV3WebUIContractTests(unittest.TestCase):
         self.assertIn("JSON.stringify(librarianResearchRequest(question, history))", submit)
         self.assertNotIn("paper_ids", submit)
         self.assertNotIn("console.log", submit)
+        self.assertLess(
+            submit.index("AutoResearchAIConsent?.ensure?.('librarian')"),
+            submit.index("/api/agents/librarian/chat"),
+        )
+        self.assertIn("未向 DeepSeek 发送任何内容", submit)
 
     def test_transport_canary_cannot_enter_librarian_history_meta_or_toast(self) -> None:
         submit = self.app_js[

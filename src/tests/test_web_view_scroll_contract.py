@@ -38,10 +38,26 @@ class WebViewScrollContractTests(unittest.TestCase):
 
         import_start = self.product.index("async function importPackage()")
         import_end = self.product.index("async function saveCredential", import_start)
-        self.assertIn(
-            "revealSearchWorkspace();",
-            self.product[import_start:import_end],
-        )
+        package_import = self.product[import_start:import_end]
+        self.assertIn('switchView("search", { skipSearch: true })', package_import)
+        self.assertIn('setSearchExperience("precise", { run: false })', package_import)
+        self.assertEqual(package_import.count("await runFederatedSearch(null);"), 1)
+        self.assertIn("revealSearchResults();", package_import)
+
+    def test_completed_personal_import_runs_once_and_reveals_results(self) -> None:
+        show_start = self.product.index("async function showPrivateSearchResults()")
+        show_end = self.product.index("function revealSearchWorkspace", show_start)
+        show = self.product[show_start:show_end]
+        self.assertIn('switchView("search", { skipSearch: true })', show)
+        self.assertIn('setSearchExperience("precise", { run: false })', show)
+        self.assertEqual(show.count("await runFederatedSearch(null);"), 1)
+        self.assertIn("revealSearchResults();", show)
+
+        choose_start = self.product.index("async function choosePersonalFile()")
+        choose_end = self.product.index("async function importReviewedPersonal", choose_start)
+        choose = self.product[choose_start:choose_end]
+        self.assertIn("revealPersonalImportWorkflow();", choose)
+        self.assertNotIn("revealSearchWorkspace();", choose)
 
 
 if __name__ == "__main__":

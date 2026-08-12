@@ -29,7 +29,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertEqual(metadata["build_number"], contract["desktop"]["macos"]["build_number"])
         self.assertEqual(launcher.DESKTOP_VERSION, "0.7.0-preview.2")
         self.assertEqual(metadata["bundle_short_version"], "0.7.0")
-        self.assertEqual(metadata["build_number"], "12")
+        self.assertEqual(metadata["build_number"], "13")
         self.assertEqual(metadata["target"], "macOS arm64 internal development preview")
         self.assertIn("legacy-v12-workspace", metadata["data_mode"])
         self.assertIn("signed-official-package", metadata["data_mode"])
@@ -64,6 +64,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertTrue(checks)
         self.assertTrue(all(checks.values()), checks)
         self.assertTrue(checks["primary_personal_import_navigation"])
+        self.assertTrue(checks["ai_consent_scope_contract"])
         package_center = (
             DESKTOP_ROOT.parents[1]
             / "src"
@@ -74,6 +75,11 @@ class DesktopVersionContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("selectExportDestination", package_center)
         self.assertNotIn("select_package_export_destination", package_center)
+
+    def test_pyinstaller_bundles_the_complete_shared_web_directory(self) -> None:
+        spec = (DESKTOP_ROOT / "AutoResearch.spec").read_text(encoding="utf-8")
+        self.assertIn('str(project_root / "src" / "auto_research" / "evidence" / "web")', spec)
+        self.assertIn('"auto_research/evidence/web"', spec)
 
 
 if __name__ == "__main__":

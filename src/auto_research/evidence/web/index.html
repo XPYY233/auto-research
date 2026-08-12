@@ -308,7 +308,7 @@
             <details class="desktop-ai-settings" id="desktop-ai-settings">
               <summary><span>AI 功能</span><strong id="desktop-ai-title">检查密钥状态</strong><small>图书管理员与新文献提取使用</small></summary>
               <div>
-                <p>官方资料库搜索不需要 AI 密钥。只有使用图书管理员或提取自己的新文献时才需要；密钥只保存在本机安全凭据存储中。</p>
+                <p>官方资料库搜索不需要 AI 密钥。图书管理员、新文献提取和实验表格 AI 识别会使用你保存在本机安全凭据存储中的 DeepSeek API 密钥，并可能产生少量费用；每类功能首次使用前会说明实际发送的有界内容并请你确认。</p>
                 <label>DeepSeek API 密钥<input id="desktop-ai-key" type="password" autocomplete="off" placeholder="粘贴你获得的 API 密钥"></label>
                 <div class="desktop-ai-actions"><button type="button" id="desktop-ai-save">安全保存</button><button type="button" id="desktop-ai-delete">删除本机密钥</button></div>
               </div>
@@ -330,12 +330,12 @@
           </div>
           <section class="personal-import-panel" id="personal-import-panel" hidden aria-label="导入个人实验数据">
             <header>
-              <div><span>MY EXPERIMENT DATA</span><h3>AI 辅助导入实验数据</h3><p>选择后，DeepSeek 只接收工作表名、行数、列名、数据类型、已有单位/本地初步角色与含义和最多 5 行样例，用于生成待核验建议；完整表格不会上传。</p></div>
+              <div><span>MY EXPERIMENT DATA</span><h3>AI 辅助导入实验数据</h3><p>选择后可使用本机保存的 DeepSeek API 密钥进行识别，并可能产生少量费用。实际只发送工作表名、行数、列名、数据类型、已有单位/本地初步角色与含义和最多 5 行样例；完整表格不会上传，文件路径和密钥也不会发送。</p></div>
               <button type="button" id="personal-import-choose">选择文件并自动识别</button>
             </header>
             <div class="personal-search-notice" id="personal-search-notice" aria-live="polite"><span id="personal-search-notice-text"></span><button type="button" id="personal-search-refresh" hidden>重试刷新搜索</button></div>
             <div class="personal-import-workflow" id="personal-import-workflow" hidden>
-              <div class="personal-import-progress-row"><div class="personal-import-progress" id="personal-import-progress" role="status" aria-live="polite">等待选择文件</div><button type="button" class="personal-secondary" id="personal-ai-retry" hidden>重新让 AI 识别</button></div>
+              <div class="personal-import-progress-row"><div class="personal-import-progress" id="personal-import-progress" role="status" aria-live="polite">等待选择文件</div><button type="button" class="personal-secondary" id="personal-ai-retry" hidden>使用 DeepSeek 识别当前工作表（可能产生费用）</button></div>
               <div class="personal-preview-summary" id="personal-preview-summary"></div>
               <label class="personal-sheet-selector">选择工作表<select id="personal-import-sheet"></select></label>
               <form id="personal-import-form">
@@ -694,6 +694,7 @@
       </div>
     </form>
   </dialog>
+  <script src="/static/ai_consent.js"></script>
   <script src="/static/package_center.js"></script>
   <script src="/static/desktop_product.js"></script>
   <script src="/static/app.js"></script>

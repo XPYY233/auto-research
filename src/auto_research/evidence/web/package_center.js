@@ -65,6 +65,10 @@
     function renderInstalledPackages() {
       const container = ports.el("package-installed-list");
       if (!container) return;
+      if (state.packageCenterStatus?.unavailable === true) {
+        container.innerHTML = '<div class="package-empty"><p>资料包中心暂时不可用；已启用的官方资料库和私人实验导入不受影响。</p><button type="button" class="package-primary" data-package-status-retry>重试读取</button></div>';
+        return;
+      }
       const packages = installedPackages();
       const current = ports.getOfficialStatus() || {};
       if (!packages.length) {
@@ -365,7 +369,7 @@
       try {
         state.packageCenterStatus = await ports.api("/api/desktop/package-center");
       } catch (_error) {
-        state.packageCenterStatus = null;
+        state.packageCenterStatus = { unavailable: true };
       }
       renderInstalledPackages();
     }
@@ -399,6 +403,12 @@
       ports.queryAll(".package-risk-checks input").forEach(input => input.addEventListener("change", updateUserImportButton));
       ports.el("package-user-import")?.addEventListener("click", importUserPackage);
       ports.el("package-installed-list")?.addEventListener("click", event => {
+        const retry = event.target.closest("[data-package-status-retry]");
+        if (retry) {
+          retry.disabled = true;
+          void loadStatus();
+          return;
+        }
         const button = event.target.closest("[data-package-rollback]");
         if (button) void rollbackOfficialPackage(button);
       });

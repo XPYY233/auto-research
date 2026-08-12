@@ -117,6 +117,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
     package_center_source = (WEB_DIR / "package_center.js").read_text(
         encoding="utf-8"
     )
+    ai_consent_source = (WEB_DIR / "ai_consent.js").read_text(encoding="utf-8")
     return {
         "primary_personal_import_navigation": bool(
             'data-view="paper">文献处理' in index_source
@@ -136,6 +137,21 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and 'id="personal-reviewed-import"' in index_source
             and '<script src="/static/package_center.js"></script>' in index_source
             and "AutoResearchPackageCenter" in package_center_source
+        ),
+        "ai_consent_scope_contract": bool(
+            '<script src="/static/ai_consent.js"></script>' in index_source
+            and index_source.index('<script src="/static/ai_consent.js"></script>')
+            < index_source.index('<script src="/static/desktop_product.js"></script>')
+            and "auto-research-ai-consent-v1" in ai_consent_source
+            and all(
+                scope in ai_consent_source
+                for scope in (
+                    "librarian",
+                    "literature_extraction",
+                    "personal_suggestion",
+                )
+            )
+            and "AutoResearchAIConsent" in ai_consent_source
         ),
         "personal_six_routes": bool(
             PERSONAL_SEARCH_STATUS_PATH
@@ -282,6 +298,7 @@ def _http_smoke_checks(
         )
     binary_routes = {
         "static_js": "/static/app.js",
+        "ai_consent_js": "/static/ai_consent.js",
         "desktop_product_js": "/static/desktop_product.js",
         "package_center_js": "/static/package_center.js",
         "static_css": "/static/app.css",
@@ -295,6 +312,16 @@ def _http_smoke_checks(
             checks[name] = response.status == 200 and bool(response.read(32))
 
     text_contracts = {
+        "ai_consent_frontend_contract": (
+            "/static/ai_consent.js",
+            (
+                "AutoResearchAIConsent",
+                "auto-research-ai-consent-v1",
+                "librarian",
+                "literature_extraction",
+                "personal_suggestion",
+            ),
+        ),
         "desktop_product_contract": (
             "/static/desktop_product.js",
             (

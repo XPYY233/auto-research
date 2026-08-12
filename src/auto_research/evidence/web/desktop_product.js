@@ -245,11 +245,33 @@
     return window.pywebview.api.select_package_export_destination(filename);
   }
 
-  function showPrivateSearchResults() {
+  function revealElement(target) {
+    if (typeof target?.scrollIntoView !== "function") return false;
+    try {
+      target.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function revealSearchResults() {
+    if (revealElement(el("search-summary"))) return;
+    revealSearchWorkspace();
+  }
+
+  function revealPersonalImportWorkflow() {
+    revealElement(el("personal-import-workflow") || el("personal-import-panel"));
+  }
+
+  async function showPrivateSearchResults() {
     product.searchRepository = "offline";
     product.sourceScope = "private";
     switchView("search", { skipSearch: true });
-    setSearchExperience("precise");
+    setSearchExperience("precise", { run: false });
+    applySearchUI();
+    await runFederatedSearch(null);
+    revealSearchResults();
   }
 
   function revealSearchWorkspace() {
@@ -482,10 +504,11 @@
       await loadPackageStatus();
       product.searchRepository = "offline";
       product.sourceScope = "official";
-      setSearchExperience("precise");
+      switchView("search", { skipSearch: true });
+      setSearchExperience("precise", { run: false });
       applySearchUI();
-      revealSearchWorkspace();
-      runSearch(null, { remember: false });
+      await runFederatedSearch(null);
+      revealSearchResults();
       toast(packageOutcomeLabels[completed.outcome] || "官方资料包已安全导入，可离线搜索。");
     } catch (error) {
       setPackageNote(error.message);
@@ -570,7 +593,7 @@
     el("personal-import-sheet").innerHTML = (preview.sheets || []).map((sheet, index) => `<option value="${index}">${esc(sheet.sheet_name)} · ${Number(sheet.row_count || 0)} 行 · ${(sheet.columns || []).length} 列</option>`).join("");
     applyLocalPersonalDefaults();
     renderPreviewSheet();
-    setPersonalProgress("安全预览完成，正在请 DeepSeek 生成待核验建议…");
+    setPersonalProgress("安全预览完成；继续使用 DeepSeek 前会先说明发送范围和可能费用。");
     const button = el("personal-reviewed-import");
     if (button) button.disabled = false;
   }
@@ -733,6 +756,19 @@
     const sheetIndex = Number(el("personal-import-sheet")?.value || 0);
     if (!importId) return;
     const requestId = ++product.personalSuggestionRequest;
+    const consent = await globalThis.AutoResearchAIConsent?.ensure?.("personal_suggestion");
+    if (
+      requestId !== product.personalSuggestionRequest
+      || importId !== product.personalImportStatus?.import_id
+      || sheetIndex !== Number(el("personal-import-sheet")?.value || 0)
+    ) return;
+    if (consent !== true) {
+      setPersonalProgress("已取消，未向 DeepSeek 发送任何工作表内容。你仍可直接核验本地识别结果。");
+      const retry = el("personal-ai-retry");
+      if (retry) retry.hidden = false;
+      toast("已取消，未向 DeepSeek 发送任何工作表内容。");
+      return;
+    }
     const editGeneration = product.personalEditGeneration;
     product.suggestingPersonal = true;
     const reviewedButton = el("personal-reviewed-import");
@@ -782,7 +818,7 @@
     product.importingPersonal = true;
     setSearchRepository("offline", { run: false });
     setSourceScope("private", { run: false });
-    setSearchExperience("precise");
+    setSearchExperience("precise", { run: false });
     applySearchUI();
     try {
       if (typeof window.pywebview?.api?.select_personal_data_file !== "function") throw new Error("请在 Auto Research 桌面 App 中使用系统文件选择器。");
@@ -799,7 +835,7 @@
       product.personalImportStatus = response.status;
       product.personalSuggestion = null;
       renderPersonalPreview();
-      revealSearchWorkspace();
+      revealPersonalImportWorkflow();
       await requestPersonalSuggestion();
     } catch (error) {
       setPersonalProgress(error.message, true);
@@ -826,7 +862,7 @@
       });
       await loadPersonalSearchStatus();
       setPersonalProgress("实验数据已导入，并加入“我的实验”搜索。");
-      showPrivateSearchResults();
+      await showPrivateSearchResults();
       toast("实验数据已导入，正在显示“我的实验”搜索结果。");
     } catch (error) {
       if (error.code === "personal_search_refresh_failed") {
@@ -854,7 +890,7 @@
       renderPersonalSearchStatus();
       if (privateReady()) {
         setPersonalProgress("私人搜索已刷新，可以检索最新确认数据。");
-        showPrivateSearchResults();
+        await showPrivateSearchResults();
         toast("私人搜索已刷新，正在显示最新结果。");
       }
     } catch (error) {
@@ -894,11 +930,18 @@
     }
   }
 
-  async function changePersonalSheet() {
+  function changePersonalSheet() {
+    product.personalSuggestionRequest += 1;
+    product.suggestingPersonal = false;
     product.personalSuggestion = null;
     applyLocalPersonalDefaults();
     renderPreviewSheet();
-    await requestPersonalSuggestion();
+    setPersonalProgress("已切换工作表并载入本地识别结果。需要 AI 预填时，请明确点击下方 DeepSeek 识别按钮。");
+    const retry = el("personal-ai-retry");
+    if (retry) retry.hidden = false;
+    const reviewedButton = el("personal-reviewed-import");
+    if (reviewedButton && product.personalImportStatus?.indexable !== true) reviewedButton.disabled = false;
+    revealPersonalImportWorkflow();
   }
 
   function initializePackageCenter() {
@@ -927,7 +970,7 @@
   el("desktop-personal-import")?.addEventListener("click", () => switchView("personal"));
   el("personal-import-choose")?.addEventListener("click", choosePersonalFile);
   el("personal-ai-retry")?.addEventListener("click", () => void requestPersonalSuggestion());
-  el("personal-import-sheet")?.addEventListener("change", () => void changePersonalSheet());
+  el("personal-import-sheet")?.addEventListener("change", changePersonalSheet);
   el("personal-import-form")?.addEventListener("submit", importReviewedPersonal);
   el("personal-import-form")?.addEventListener("input", markPersonalDraftDirty);
   el("personal-import-form")?.addEventListener("change", markPersonalDraftDirty);

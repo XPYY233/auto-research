@@ -454,6 +454,12 @@ class SharedHttpBridgeTests(unittest.TestCase):
         self.assertEqual((status, no_store), (200, "no-store"))
         self.assertIn("AutoResearchPackageCenter", package_center)
         self.assertIn("/api/desktop/package-center/export", package_center)
+        status, ai_consent, media_type, _disposition, no_store = self._get_bytes(
+            "/static/ai_consent.js"
+        )
+        self.assertEqual((status, no_store), (200, "no-store"))
+        self.assertEqual(media_type, "application/javascript; charset=utf-8")
+        self.assertIn(b"AutoResearchAIConsent", ai_consent)
 
     def test_personal_ai_requires_explicit_consent_and_human_review(self) -> None:
         status, payload = self._post(

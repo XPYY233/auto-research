@@ -93,6 +93,33 @@ class PersonalImportUIContractTests(unittest.TestCase):
             self.product.index("\n      applyPersonalSuggestion(suggestion);"),
         )
 
+    def test_sheet_change_is_local_and_ai_retry_is_explicit(self) -> None:
+        change = self.product[
+            self.product.index("function changePersonalSheet()"):
+            self.product.index("function initializePackageCenter()")
+        ]
+        self.assertIn("applyLocalPersonalDefaults();", change)
+        self.assertIn("renderPreviewSheet();", change)
+        self.assertIn("DeepSeek 识别按钮", change)
+        self.assertNotIn("requestPersonalSuggestion()", change)
+        self.assertIn("product.suggestingPersonal = false", change)
+        self.assertIn("可能产生费用", self.index)
+
+    def test_personal_ai_consent_precedes_model_request(self) -> None:
+        suggestion = self.product[
+            self.product.index("async function requestPersonalSuggestion()"):
+            self.product.index("async function choosePersonalFile()")
+        ]
+        consent = suggestion.index('AutoResearchAIConsent?.ensure?.("personal_suggestion")')
+        request = suggestion.index("/ai-suggestion")
+        self.assertLess(consent, request)
+        self.assertIn("if (consent !== true)", suggestion)
+        self.assertIn("未向 DeepSeek 发送任何工作表内容", suggestion)
+        self.assertIn('<script src="/static/ai_consent.js"></script>', self.index)
+        self.assertIn("本机保存的 DeepSeek API 密钥", self.index)
+        self.assertIn("可能产生少量费用", self.index)
+        self.assertIn("完整表格不会上传，文件路径和密钥也不会发送", self.index)
+
     def test_librarian_remains_official_only_and_security_hook_is_preserved(self) -> None:
         librarian = re.search(
             r'<section class="librarian-workspace".*?</section>\s*<section class="desktop-product-panel"',
