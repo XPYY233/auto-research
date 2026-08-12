@@ -84,9 +84,19 @@ class PackageExportDestinationBroker:
 
             url = NSURL.fileURLWithPath_(str(path))
             values, error = url.resourceValuesForKeys_error_([NSURLVolumeIsLocalKey], None)
-            if error is not None or not isinstance(values, dict):
+            if error is not None or values is None:
                 return False
-            return values.get(NSURLVolumeIsLocalKey) is True
+            value = values.get(NSURLVolumeIsLocalKey)
+            if isinstance(value, bool):
+                return value
+            bool_value = getattr(value, "boolValue", None)
+            if callable(bool_value):
+                converted = bool_value()
+                if isinstance(converted, bool):
+                    return converted
+                if type(converted) is int and converted in (0, 1):
+                    return bool(converted)
+            return False
         except Exception:
             return False
 

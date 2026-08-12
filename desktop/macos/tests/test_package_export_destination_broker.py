@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import tempfile
+import sys
+import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from package_export_destination_broker import (
     PackageExportDestinationBroker,
@@ -11,6 +14,48 @@ from package_export_destination_broker import (
 
 
 class PackageExportDestinationBrokerTests(unittest.TestCase):
+    def test_native_volume_probe_accepts_foundation_mapping_and_nsnumber(self) -> None:
+        key = "volume-is-local"
+
+        class Number:
+            def __init__(self, value: bool) -> None:
+                self.value = value
+
+            def boolValue(self) -> bool:
+                return self.value
+
+        class FoundationMapping:
+            def __init__(self, value: object) -> None:
+                self.value = value
+
+            def get(self, requested: object) -> object | None:
+                return self.value if requested == key else None
+
+        class URL:
+            def __init__(self, value: object) -> None:
+                self.value = value
+
+            def resourceValuesForKeys_error_(self, _keys, _error):
+                return FoundationMapping(self.value), None
+
+        for value, expected in (
+            (Number(True), True),
+            (Number(False), False),
+            (Number(1.0), False),
+            ("yes", False),
+            (None, False),
+        ):
+            with self.subTest(value=value):
+                foundation = types.SimpleNamespace(
+                    NSURL=types.SimpleNamespace(fileURLWithPath_=lambda _path: URL(value)),
+                    NSURLVolumeIsLocalKey=key,
+                )
+                with patch.dict(sys.modules, {"Foundation": foundation}):
+                    self.assertIs(
+                        PackageExportDestinationBroker._probe_local_volume(Path("/tmp")),
+                        expected,
+                    )
+
     def test_renderer_receives_only_opaque_token_and_resolve_is_one_time(self) -> None:
         with tempfile.TemporaryDirectory(prefix="package-destination-test-") as temporary:
             root = Path(temporary)
