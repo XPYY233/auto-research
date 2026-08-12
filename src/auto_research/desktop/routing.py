@@ -6,7 +6,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Protocol
 
 
-ALLOWED_HTTP_METHODS = frozenset({"GET", "POST", "DELETE"})
+ALLOWED_HTTP_METHODS = frozenset({"GET", "POST", "PATCH", "DELETE"})
 ALLOWED_DESKTOP_MODES = frozenset(
     {"desktop", "maintenance", "search_only_compat"}
 )
@@ -114,8 +114,8 @@ class RouteSpec:
             raise ValueError("route body cap is invalid")
         if method in {"GET", "DELETE"} and self.body_cap_bytes != 0:
             raise ValueError("GET and DELETE routes cannot accept request bodies")
-        if method == "POST" and self.body_cap_bytes <= 0:
-            raise ValueError("POST routes require a positive body cap")
+        if method in {"POST", "PATCH"} and self.body_cap_bytes <= 0:
+            raise ValueError("POST and PATCH routes require a positive body cap")
         if self.mutation and method == "GET":
             raise ValueError("GET routes cannot be mutations")
         if self.csrf_required and not self.mutation:

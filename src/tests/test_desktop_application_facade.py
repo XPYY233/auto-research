@@ -20,7 +20,7 @@ class RouteSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "method"):
             RouteSpec(
                 "bad.method",
-                "PATCH",
+                "PUT",
                 "bad.controller",
                 10,
                 True,
@@ -28,6 +28,17 @@ class RouteSpecTests(unittest.TestCase):
                 frozenset({"desktop"}),
                 path="/api/bad",
             )
+        patch = RouteSpec(
+            "settings.patch",
+            "PATCH",
+            "settings.patch",
+            1_024,
+            True,
+            True,
+            frozenset({"desktop"}),
+            path="/api/desktop/settings/preferences",
+        )
+        self.assertEqual(patch.method, "PATCH")
         with self.assertRaisesRegex(ValueError, "GET"):
             RouteSpec(
                 "bad.get_body",
@@ -145,6 +156,15 @@ class RouteRegistryTests(unittest.TestCase):
             "/api/desktop/federated-pdf",
         )
         self.assertEqual(by_id["personal.preview"]["body_cap_bytes"], 512 * 1024)
+        self.assertEqual(
+            by_id["settings.preferences.patch"]["method"], "PATCH"
+        )
+        self.assertTrue(by_id["settings.preferences.patch"]["csrf_required"])
+        self.assertEqual(
+            by_id["credential.provider.get"]["pattern"],
+            r"^/api/desktop/ai-credentials/(?P<provider_id>deepseek|openai)$",
+        )
+        self.assertTrue(by_id["ai.provider.test"]["csrf_required"])
         self.assertFalse(by_id["librarian.chat"]["mutation"])
         self.assertTrue(by_id["workspace.upload_pdf"]["csrf_required"])
 
@@ -158,6 +178,8 @@ class RouteRegistryTests(unittest.TestCase):
                 "federated",
                 "readiness",
                 "credential",
+                "settings",
+                "ai",
                 "librarian",
                 "workspace",
             }.issubset(families)
