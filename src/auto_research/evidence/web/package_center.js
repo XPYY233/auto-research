@@ -412,7 +412,6 @@
         const button = event.target.closest("[data-package-rollback]");
         if (button) void rollbackOfficialPackage(button);
       });
-      ports.query('.nav[data-view="package"]')?.addEventListener("click", open);
     }
 
     return Object.freeze({ init, loadStatus, refreshView, open, rememberJob, stageLabel });

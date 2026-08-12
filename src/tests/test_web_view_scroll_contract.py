@@ -42,7 +42,9 @@ class WebViewScrollContractTests(unittest.TestCase):
         self.assertIn('switchView("search", { skipSearch: true })', package_import)
         self.assertIn('setSearchExperience("precise", { run: false })', package_import)
         self.assertEqual(package_import.count("await runFederatedSearch(null);"), 1)
-        self.assertIn("revealSearchResults();", package_import)
+        self.assertIn('document.body.dataset.view === "search"', package_import)
+        self.assertIn('product.sourceScope === "official"', package_import)
+        self.assertIn(") revealSearchResults();", package_import)
 
     def test_completed_personal_import_runs_once_and_reveals_results(self) -> None:
         show_start = self.product.index("async function showPrivateSearchResults()")
@@ -51,7 +53,9 @@ class WebViewScrollContractTests(unittest.TestCase):
         self.assertIn('switchView("search", { skipSearch: true })', show)
         self.assertIn('setSearchExperience("precise", { run: false })', show)
         self.assertEqual(show.count("await runFederatedSearch(null);"), 1)
-        self.assertIn("revealSearchResults();", show)
+        self.assertIn('document.body.dataset.view === "search"', show)
+        self.assertIn('product.sourceScope === "private"', show)
+        self.assertIn(") revealSearchResults();", show)
 
         choose_start = self.product.index("async function choosePersonalFile()")
         choose_end = self.product.index("async function importReviewedPersonal", choose_start)

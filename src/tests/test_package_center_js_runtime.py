@@ -15,6 +15,100 @@ DESKTOP_PRODUCT_JS = (
 
 
 class PackageCenterJavaScriptRuntimeTests(unittest.TestCase):
+    def test_package_view_remains_visible_when_private_search_finishes_late(self) -> None:
+        script = r"""
+const fs = require("fs");
+const assert = require("assert");
+const vm = require("vm");
+
+let resolveSearch;
+let reveals = 0;
+const elements = new Map();
+function element(id) {
+  if (!elements.has(id)) {
+    elements.set(id, {
+      id, hidden: false, disabled: false, value: "", checked: false,
+      textContent: "", innerHTML: "", dataset: {}, parentElement: null,
+      children: [],
+      classList: { toggle() {}, add() {}, remove() {} },
+      addEventListener() {}, setAttribute() {}, toggleAttribute() {},
+      appendChild(child) { child.parentElement = this; this.children.push(child); },
+      querySelector() { return null; }, querySelectorAll() { return []; },
+      scrollIntoView() { reveals += 1; },
+    });
+  }
+  return elements.get(id);
+}
+
+const context = vm.createContext({
+  console,
+  URLSearchParams,
+  document: {
+    body: { dataset: { view: "personal" } },
+    getElementById: element,
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+  },
+  window: {},
+});
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
+context.assert = assert;
+context.element = element;
+context.setResolveSearch = resolve => { resolveSearch = resolve; };
+context.finishSearch = () => resolveSearch({ results: [], total: 0 });
+vm.runInContext(`
+  const state = { searchScope: "all", searchExperience: "precise", searchMode: "item", searchRequest: 0 };
+  const api = async route => {
+    if (route === "/api/desktop/evidence-packages") return { active: false };
+    if (route === "/api/desktop/credentials/deepseek") return { configured: false };
+    if (route === "/api/desktop/personal-imports/search-status") return { state: "ready", ready: true, document_count: 1 };
+    if (route.startsWith("/api/desktop/federated-search?")) return new Promise(resolve => { setResolveSearch(resolve); });
+    throw new Error("unexpected route: " + route);
+  };
+  const toast = () => {};
+  const esc = value => String(value);
+  const paperMatchesFilters = () => true;
+  const setSearchExperience = () => {};
+  const setText = () => {};
+  const setSearchBusy = () => {};
+  const switchView = name => { document.body.dataset.view = name; };
+  const waitForJob = async () => {};
+  globalThis.__runtimePromise = (async () => {
+    await globalThis.AutoResearchDesktopProduct.initialize();
+    element("personal-import-panel").hidden = false;
+    const pending = globalThis.__showPrivateSearchResultsForTest();
+    assert.strictEqual(document.body.dataset.view, "search");
+    switchView("package");
+    finishSearch();
+    await pending;
+    assert.strictEqual(document.body.dataset.view, "package");
+  })();
+`, context);
+context.__runtimePromise.then(() => {
+  assert.strictEqual(reveals, 0);
+}).catch(error => { console.error(error); process.exitCode = 1; });
+"""
+        source = DESKTOP_PRODUCT_JS.read_text(encoding="utf-8")
+        marker = "globalThis.AutoResearchDesktopProduct = { initialize, handleSearch, applySearchUI, openPersonalImport, openPackageCenter };"
+        instrumented = source.replace(
+            marker,
+            "globalThis.__showPrivateSearchResultsForTest = showPrivateSearchResults;\n  " + marker,
+        )
+        with self.subTest("late private search"):
+            import tempfile
+
+            with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8") as handle:
+                handle.write(instrumented)
+                handle.flush()
+                completed = subprocess.run(
+                    ["node", "-e", script, handle.name],
+                    cwd=PROJECT_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+
     def test_desktop_product_loads_before_shared_app_runtime_without_eager_port_access(self) -> None:
         script = r"""
 const fs = require("fs");

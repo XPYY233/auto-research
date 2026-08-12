@@ -31,6 +31,13 @@ class PackageCenterUIContractTests(unittest.TestCase):
             self.index.index('<script src="/static/desktop_product.js"></script>'),
         )
 
+    def test_shared_view_router_is_the_only_package_navigation_owner(self) -> None:
+        self.assertIn(
+            'name === "package") globalThis.AutoResearchDesktopProduct?.openPackageCenter?.()',
+            self.app,
+        )
+        self.assertNotIn('.nav[data-view="package"]', self.package_center)
+
     def test_existing_official_status_is_moved_not_duplicated(self) -> None:
         self.assertEqual(self.index.count('id="desktop-official-package-status"'), 1)
         self.assertEqual(self.index.count('id="desktop-package-import"'), 1)

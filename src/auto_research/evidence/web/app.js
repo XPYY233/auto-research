@@ -3510,6 +3510,7 @@ function switchView(name, options = {}) {
   else resetViewportTop();
   if (name === "search" && !options.skipSearch && !document.querySelector("#search-results").children.length) runSearch();
   if (name === "personal") globalThis.AutoResearchDesktopProduct?.openPersonalImport?.();
+  else if (name === "package") globalThis.AutoResearchDesktopProduct?.openPackageCenter?.();
   else globalThis.AutoResearchDesktopProduct?.applySearchUI?.();
 }
 

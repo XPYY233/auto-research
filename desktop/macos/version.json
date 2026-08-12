@@ -1,7 +1,7 @@
 {
   "desktop_version": "0.7.0-preview.2",
   "bundle_short_version": "0.7.0",
-  "build_number": "13",
+  "build_number": "14",
   "target": "macOS arm64 internal development preview",
   "product_target": "future Windows production target (not released)",
   "data_mode": "legacy-v12-workspace-plus-signed-official-package-plus-user-package-center-plus-local-private-library-preview",

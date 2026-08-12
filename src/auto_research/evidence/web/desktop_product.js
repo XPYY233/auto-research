@@ -271,7 +271,11 @@
     setSearchExperience("precise", { run: false });
     applySearchUI();
     await runFederatedSearch(null);
-    revealSearchResults();
+    if (
+      document.body.dataset.view === "search"
+      && product.searchRepository === "offline"
+      && product.sourceScope === "private"
+    ) revealSearchResults();
   }
 
   function revealSearchWorkspace() {
@@ -508,7 +512,11 @@
       setSearchExperience("precise", { run: false });
       applySearchUI();
       await runFederatedSearch(null);
-      revealSearchResults();
+      if (
+        document.body.dataset.view === "search"
+        && product.searchRepository === "offline"
+        && product.sourceScope === "official"
+      ) revealSearchResults();
       toast(packageOutcomeLabels[completed.outcome] || "官方资料包已安全导入，可离线搜索。");
     } catch (error) {
       setPackageNote(error.message);
