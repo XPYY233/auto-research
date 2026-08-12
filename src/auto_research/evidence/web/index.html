@@ -3,15 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>实验数据工作台</title>
+  <title>Auto Research · 科研工作台</title>
+  <script>
+    (() => {
+      try {
+        const cached = JSON.parse(localStorage.getItem("auto-research-appearance-v1") || "null");
+        const valid = cached && cached.version === 1;
+        const theme = valid && ["system", "light", "dark"].includes(cached.theme) ? cached.theme : "system";
+        const density = valid && ["comfortable", "compact"].includes(cached.density) ? cached.density : "comfortable";
+        const resolved = theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : theme === "system" ? "light" : theme;
+        document.documentElement.dataset.themePreference = theme;
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.dataset.density = density;
+        document.documentElement.style.colorScheme = resolved;
+      } catch (_error) {}
+    })();
+  </script>
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/workbench.css">
 </head>
 <body data-view="paper" data-paper-stage="review">
   <a class="skip-link" href="#main">跳到主要内容</a>
   <div class="shell">
-    <aside class="sidebar">
-      <div class="brand"><span class="beam">→</span><div><strong>实验数据工作台</strong><small>ARTICLE → DATA → EVIDENCE</small></div></div>
-      <nav aria-label="工作区">
+    <aside class="sidebar" aria-label="Auto Research 活动栏">
+      <div class="brand"><span class="beam" aria-hidden="true">AR</span><div><strong>Auto Research</strong><small>科研证据工作台</small></div></div>
+      <nav aria-label="工作区" id="workbench-navigation">
         <button class="nav active" data-view="paper">文献处理 <b id="nav-count">0</b></button>
         <button class="nav" data-view="search">搜索数据</button>
         <button class="nav" data-view="personal">上传实验数据</button>
@@ -22,7 +38,8 @@
         <p id="mini-title">载入中…</p>
         <code id="mini-doi"></code>
       </div>
-      <div class="save-rule"><i></i><p>表格修改需逐行确认后写入数据库；原始抽取记录保留用于追溯。</p></div>
+      <div class="save-rule"><i></i><p>表格修改需确认后写入；原始证据始终保留。</p></div>
+      <button class="workbench-settings-button" id="workbench-settings-open" type="button" data-view="settings" aria-keyshortcuts="Meta+, Control+," aria-label="打开设置"><span aria-hidden="true">⚙</span><span>设置</span></button>
     </aside>
 
     <main id="main">
@@ -33,6 +50,7 @@
           <p class="workspace-subtitle" id="workspace-subtitle">导入真实 PDF，在同一流程内完成去重、自动提取和必要的证据检查。</p>
         </div>
         <div class="topbar-status">
+          <button type="button" class="workbench-command-trigger" id="workbench-command-open" aria-keyshortcuts="Meta+K Control+K"><span>快速跳转</span><kbd>⌘K</kbd></button>
           <div class="runtime-warning" id="runtime-warning" hidden></div>
           <div class="release-badge" id="release-badge"><i></i><span>正在读取版本…</span></div>
           <div class="readonly-badge" id="readonly-badge" hidden><i></i>只读模式</div>
@@ -295,11 +313,6 @@
               <h3>本机实验数据与 AI 设置</h3>
               <p>官方版本和用户资料包统一放在“资料包中心”；我的实验数据只保存在本机私人库，不会覆盖文献工作区。</p>
             </div>
-            <div class="desktop-product-status" id="desktop-official-package-status">
-              <i id="desktop-package-dot"></i>
-              <div><small>官方资料库</small><strong id="desktop-package-title">尚未导入</strong><p id="desktop-package-note">选择我们提供的 .aresearch 资料包即可离线搜索。</p></div>
-              <button type="button" id="desktop-package-import">选择资料包</button>
-            </div>
             <div class="desktop-product-status desktop-personal-status">
               <i id="desktop-personal-dot"></i>
               <div><small>我的实验数据</small><strong id="desktop-personal-title">尚未检查</strong><p id="desktop-personal-note">导入 CSV、TSV 或 XLSX，确认含义后才会加入私人搜索。</p></div>
@@ -328,47 +341,6 @@
               <button type="button" data-source-scope="all" aria-pressed="true" class="active"><strong>全部</strong><small>官方与私人联合召回</small></button>
             </div>
           </div>
-          <section class="personal-import-panel" id="personal-import-panel" hidden aria-label="导入个人实验数据">
-            <header>
-              <div><span>MY EXPERIMENT DATA</span><h3>AI 辅助导入实验数据</h3><p>选择后可使用本机保存的 DeepSeek API 密钥进行识别，并可能产生少量费用。实际只发送工作表名、行数、列名、数据类型、已有单位/本地初步角色与含义和最多 5 行样例；完整表格不会上传，文件路径和密钥也不会发送。</p></div>
-              <button type="button" id="personal-import-choose">选择文件并自动识别</button>
-            </header>
-            <div class="personal-search-notice" id="personal-search-notice" aria-live="polite"><span id="personal-search-notice-text"></span><button type="button" id="personal-search-refresh" hidden>重试刷新搜索</button></div>
-            <div class="personal-import-workflow" id="personal-import-workflow" hidden>
-              <div class="personal-import-progress-row"><div class="personal-import-progress" id="personal-import-progress" role="status" aria-live="polite">等待选择文件</div><button type="button" class="personal-secondary" id="personal-ai-retry" hidden>使用 DeepSeek 识别当前工作表（可能产生费用）</button></div>
-              <div class="personal-preview-summary" id="personal-preview-summary"></div>
-              <label class="personal-sheet-selector">选择工作表<select id="personal-import-sheet"></select></label>
-              <form id="personal-import-form">
-                <fieldset>
-                  <legend>实验信息</legend>
-                  <div class="personal-form-grid">
-                    <label>项目名称<input id="personal-project-name" required maxlength="500" placeholder="例如：W-Ta 辐照实验"></label>
-                    <label>样品名称<input id="personal-sample-name" required maxlength="500" placeholder="例如：W-5Ta-01"></label>
-                    <label>材料<input id="personal-sample-material" maxlength="500" placeholder="例如：W-5Ta"></label>
-                    <label>实验批次<input id="personal-run-name" required maxlength="500" placeholder="例如：室温纳米压痕"></label>
-                    <label>测试方法<input id="personal-run-method" required maxlength="500" placeholder="例如：纳米压痕"></label>
-                    <label class="personal-wide">实验条件（可选；每行“名称=数值或说明”）<textarea id="personal-run-conditions" rows="3" placeholder="temperature=300 K&#10;dose=1 dpa"></textarea></label>
-                    <label class="personal-wide">实验备注（可选）<textarea id="personal-run-note" rows="2" placeholder="只记录自己确认过的说明"></textarea></label>
-                  </div>
-                </fieldset>
-                <fieldset>
-                  <legend>AI 识别结果</legend>
-                  <p class="personal-field-help">请浏览列角色、物理意义和单位；只有识别错误时才需要修改。最终点击一次“我已检查，确认导入”即可。</p>
-                  <div class="personal-column-list" id="personal-import-columns"></div>
-                </fieldset>
-                <fieldset class="personal-advanced-series">
-                  <legend>变量关系（AI 可自动识别，可选）</legend>
-                  <p class="personal-field-help">只有表格明确表达横纵轴关系时才需要测量序列；普通数据表可以不填写。</p>
-                  <div class="personal-series-list" id="personal-series-list"></div>
-                  <button type="button" class="personal-secondary" id="personal-add-series">＋ 添加测量序列</button>
-                </fieldset>
-                <div class="personal-import-actions">
-                  <div><strong>最终核验</strong><small>点击即表示你已经浏览当前页面；系统会在后台完成保存、版本核对和搜索更新。</small></div>
-                  <button type="submit" id="personal-reviewed-import">我已检查，确认导入</button>
-                </div>
-              </form>
-            </div>
-          </section>
           <div class="search-scope-selector" aria-label="检索文章范围">
             <div class="search-scope-switch" role="group" aria-label="检索范围">
               <button type="button" class="active" data-search-scope="all" aria-pressed="true">全部文章</button>
@@ -431,7 +403,49 @@
         <div class="result-list" id="search-results" aria-live="polite"></div>
       </section>
 
-      <section class="view" id="view-personal" aria-label="上传实验数据"></section>
+      <section class="view" id="view-personal" aria-label="上传实验数据">
+        <section class="personal-import-panel" id="personal-import-panel" hidden aria-label="导入个人实验数据">
+          <header>
+            <div><span>MY EXPERIMENT DATA</span><h3>AI 辅助导入实验数据</h3><p>选择后可使用本机保存的 DeepSeek API 密钥进行识别，并可能产生少量费用。实际只发送工作表名、行数、列名、数据类型、已有单位/本地初步角色与含义和最多 5 行样例；完整表格不会上传，文件路径和密钥也不会发送。</p></div>
+            <button type="button" id="personal-import-choose">选择文件并自动识别</button>
+          </header>
+          <div class="personal-search-notice" id="personal-search-notice" aria-live="polite"><span id="personal-search-notice-text"></span><button type="button" id="personal-search-refresh" hidden>重试刷新搜索</button></div>
+          <div class="personal-import-workflow" id="personal-import-workflow" hidden>
+            <div class="personal-import-progress-row"><div class="personal-import-progress" id="personal-import-progress" role="status" aria-live="polite">等待选择文件</div><button type="button" class="personal-secondary" id="personal-ai-retry" hidden>使用 DeepSeek 识别当前工作表（可能产生费用）</button></div>
+            <div class="personal-preview-summary" id="personal-preview-summary"></div>
+            <label class="personal-sheet-selector">选择工作表<select id="personal-import-sheet"></select></label>
+            <form id="personal-import-form">
+              <fieldset>
+                <legend>实验信息</legend>
+                <div class="personal-form-grid">
+                  <label>项目名称<input id="personal-project-name" required maxlength="500" placeholder="例如：W-Ta 辐照实验"></label>
+                  <label>样品名称<input id="personal-sample-name" required maxlength="500" placeholder="例如：W-5Ta-01"></label>
+                  <label>材料<input id="personal-sample-material" maxlength="500" placeholder="例如：W-5Ta"></label>
+                  <label>实验批次<input id="personal-run-name" required maxlength="500" placeholder="例如：室温纳米压痕"></label>
+                  <label>测试方法<input id="personal-run-method" required maxlength="500" placeholder="例如：纳米压痕"></label>
+                  <label class="personal-wide">实验条件（可选；每行“名称=数值或说明”）<textarea id="personal-run-conditions" rows="3" placeholder="temperature=300 K&#10;dose=1 dpa"></textarea></label>
+                  <label class="personal-wide">实验备注（可选）<textarea id="personal-run-note" rows="2" placeholder="只记录自己确认过的说明"></textarea></label>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>AI 识别结果</legend>
+                <p class="personal-field-help">请浏览列角色、物理意义和单位；只有识别错误时才需要修改。最终点击一次“我已检查，确认导入”即可。</p>
+                <div class="personal-column-list" id="personal-import-columns"></div>
+              </fieldset>
+              <fieldset class="personal-advanced-series">
+                <legend>变量关系（AI 可自动识别，可选）</legend>
+                <p class="personal-field-help">只有表格明确表达横纵轴关系时才需要测量序列；普通数据表可以不填写。</p>
+                <div class="personal-series-list" id="personal-series-list"></div>
+                <button type="button" class="personal-secondary" id="personal-add-series">＋ 添加测量序列</button>
+              </fieldset>
+              <div class="personal-import-actions">
+                <div><strong>最终核验</strong><small>点击即表示你已经浏览当前页面；系统会在后台完成保存、版本核对和搜索更新。</small></div>
+                <button type="submit" id="personal-reviewed-import">我已检查，确认导入</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </section>
 
       <section class="view package-center" id="view-package" aria-label="资料包中心">
         <header class="package-center-hero">
@@ -441,7 +455,13 @@
 
         <section class="package-center-card package-official-card" aria-labelledby="package-official-heading">
           <header><div><span>OFFICIAL LIBRARY</span><h3 id="package-official-heading">官方资料库</h3><p>官方包经过签名、完整性检查和只读仓库审计；导入失败不会改变当前活动版本。</p></div></header>
-          <div id="package-official-status-mount"></div>
+          <div id="package-official-status-mount">
+            <div class="desktop-product-status" id="desktop-official-package-status">
+              <i id="desktop-package-dot"></i>
+              <div><small>官方资料库</small><strong id="desktop-package-title">尚未导入</strong><p id="desktop-package-note">选择我们提供的 .aresearch 资料包即可离线搜索。</p></div>
+              <button type="button" id="desktop-package-import">选择资料包</button>
+            </div>
+          </div>
           <div class="package-installed" aria-live="polite">
             <div class="package-section-heading"><strong>已安装版本</strong><small>可回退到通过复核的旧版本</small></div>
             <div id="package-installed-list"><p class="package-empty">正在读取已安装版本…</p></div>
@@ -528,6 +548,49 @@
         <div class="queue-list" id="processing-queue"></div>
         <div class="queue-head uploads-head"><div><p class="eyebrow">UPLOAD TRAIL</p><h2>最近上传记录</h2></div></div>
         <div class="queue-list" id="upload-events"></div>
+      </section>
+
+      <section class="view workbench-settings" id="view-settings" aria-labelledby="settings-heading">
+        <header class="settings-heading">
+          <div><p class="eyebrow">WORKBENCH SETTINGS</p><h2 id="settings-heading">设置</h2><p>外观偏好只保存在当前设备。API 密钥由系统安全凭据存储管理，不会写入网页存储。</p></div>
+        </header>
+        <div class="settings-layout">
+          <nav class="settings-navigation" role="tablist" aria-label="设置类别" aria-orientation="vertical">
+            <button type="button" id="settings-tab-appearance" class="active" role="tab" aria-selected="true" aria-controls="settings-panel-appearance" tabindex="0" data-settings-section="appearance">外观</button>
+            <button type="button" id="settings-tab-language" role="tab" aria-selected="false" aria-controls="settings-panel-language" tabindex="-1" data-settings-section="language">语言与区域</button>
+            <button type="button" id="settings-tab-ai" role="tab" aria-selected="false" aria-controls="settings-panel-ai" tabindex="-1" data-settings-section="ai">AI 与 API 密钥</button>
+            <button type="button" id="settings-tab-data" role="tab" aria-selected="false" aria-controls="settings-panel-data" tabindex="-1" data-settings-section="data">数据与资料库</button>
+          </nav>
+          <div class="settings-content">
+            <section class="settings-section active" id="settings-panel-appearance" role="tabpanel" data-settings-panel="appearance" aria-labelledby="settings-tab-appearance">
+              <h3 id="settings-appearance-title">外观</h3>
+              <fieldset><legend>颜色模式</legend><div class="settings-choice-grid">
+                <label><input type="radio" name="workbench-theme" value="system"><span><strong>跟随系统</strong><small>随 macOS 或 Windows 外观切换</small></span></label>
+                <label><input type="radio" name="workbench-theme" value="light"><span><strong>日间</strong><small>明亮、中性的科研工作台</small></span></label>
+                <label><input type="radio" name="workbench-theme" value="dark"><span><strong>夜间</strong><small>低眩光深色工作台</small></span></label>
+              </div></fieldset>
+              <fieldset><legend>界面密度</legend><div class="settings-choice-grid two">
+                <label><input type="radio" name="workbench-density" value="comfortable"><span><strong>舒适</strong><small>适合触控板和初次使用</small></span></label>
+                <label><input type="radio" name="workbench-density" value="compact"><span><strong>紧凑</strong><small>同屏显示更多文献与数据</small></span></label>
+              </div></fieldset>
+            </section>
+            <section class="settings-section" id="settings-panel-language" role="tabpanel" data-settings-panel="language" aria-labelledby="settings-tab-language" hidden>
+              <h3 id="settings-language-title">语言与区域</h3>
+              <div class="settings-row"><div><strong>简体中文</strong><small>当前界面语言</small></div><span class="settings-state ready">使用中</span></div>
+              <div class="settings-row disabled" aria-disabled="true"><div><strong>English</strong><small>English interface</small></div><span class="settings-state">计划支持</span></div>
+            </section>
+            <section class="settings-section" id="settings-panel-ai" role="tabpanel" data-settings-panel="ai" aria-labelledby="settings-tab-ai" hidden>
+              <h3 id="settings-ai-title">AI 与 API 密钥</h3>
+              <div class="settings-notice"><strong>模型服务接口正在接入</strong><p>0.8 将支持经过能力与安全审计的模型提供商。密钥只进入操作系统安全存储；这里不会显示密钥片段，也不会允许任意网址接收论文或实验内容。</p></div>
+              <div class="settings-row"><div><strong>模型服务</strong><small>提供商、模型分工与连接状态</small></div><span class="settings-state">等待核心接口</span></div>
+            </section>
+            <section class="settings-section" id="settings-panel-data" role="tabpanel" data-settings-panel="data" aria-labelledby="settings-tab-data" hidden>
+              <h3 id="settings-data-title">数据与资料库</h3>
+              <button type="button" class="settings-link" data-settings-view="package"><span><strong>资料包中心</strong><small>查看官方资料库、导入和导出任务</small></span><span aria-hidden="true">›</span></button>
+              <button type="button" class="settings-link" data-settings-view="personal"><span><strong>我的实验</strong><small>导入并核验本机 CSV、TSV 或 XLSX</small></span><span aria-hidden="true">›</span></button>
+            </section>
+          </div>
+        </div>
       </section>
 
       <section class="view" id="view-manual">
@@ -694,10 +757,24 @@
       </div>
     </form>
   </dialog>
+  <dialog class="workbench-command-palette" id="workbench-command-palette" aria-labelledby="workbench-command-title">
+    <form method="dialog">
+      <header><strong id="workbench-command-title">快速跳转</strong><button value="cancel" aria-label="关闭快速跳转">关闭</button></header>
+      <label><span class="visually-hidden">筛选命令</span><input id="workbench-command-query" type="search" autocomplete="off" aria-controls="workbench-command-list" aria-activedescendant="workbench-command-paper" placeholder="输入文献、搜索、实验、资料包或设置"></label>
+      <div class="workbench-command-list" id="workbench-command-list" role="listbox" aria-label="可用命令">
+        <button type="button" id="workbench-command-paper" role="option" aria-selected="true" tabindex="0" data-command-view="paper"><span>文献</span><kbd>⌘1</kbd></button>
+        <button type="button" id="workbench-command-search" role="option" aria-selected="false" tabindex="-1" data-command-view="search"><span>搜索</span><kbd>⌘2</kbd></button>
+        <button type="button" id="workbench-command-personal" role="option" aria-selected="false" tabindex="-1" data-command-view="personal"><span>实验</span><kbd>⌘3</kbd></button>
+        <button type="button" id="workbench-command-package" role="option" aria-selected="false" tabindex="-1" data-command-view="package"><span>资料包</span><kbd>⌘4</kbd></button>
+        <button type="button" id="workbench-command-settings" role="option" aria-selected="false" tabindex="-1" data-command-view="settings"><span>设置</span><kbd>⌘,</kbd></button>
+      </div>
+    </form>
+  </dialog>
   <script src="/static/ai_consent.js"></script>
   <script src="/static/package_center.js"></script>
   <script src="/static/desktop_product.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/workbench.js"></script>
   <script src="/static/librarian_brief.js"></script>
 </body>
 </html>

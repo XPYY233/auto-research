@@ -142,6 +142,7 @@ function element(id) {
 
 let createCalls = 0;
 let initCalls = 0;
+element("personal-import-panel").parentElement = element("view-personal");
 const context = vm.createContext({
   console,
   document: {
@@ -237,6 +238,7 @@ const context = vm.createContext({
   },
   window: {},
 });
+element("personal-import-panel").parentElement = element("view-personal");
 context.AutoResearchPackageCenter = {
   create() { throw new Error("package center unavailable"); },
 };
@@ -348,6 +350,7 @@ const ports = {
 };
 
 (async () => {
+  element("desktop-official-package-status").parentElement = element("package-official-status-mount");
   const controller = globalThis.AutoResearchPackageCenter.create(ports);
   controller.init();
   await element("package-personal-plan").handlers.click();

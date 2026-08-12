@@ -15,7 +15,7 @@ class PackageCenterUIContractTests(unittest.TestCase):
         cls.app = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
         cls.product = (WEB_ROOT / "desktop_product.js").read_text(encoding="utf-8")
         cls.package_center = (WEB_ROOT / "package_center.js").read_text(encoding="utf-8")
-        cls.styles = (WEB_ROOT / "app.css").read_text(encoding="utf-8")
+        cls.styles = (WEB_ROOT / "app.css").read_text(encoding="utf-8") + (WEB_ROOT / "workbench.css").read_text(encoding="utf-8")
 
     def test_package_center_is_a_primary_desktop_view(self) -> None:
         self.assertIn(
@@ -38,11 +38,12 @@ class PackageCenterUIContractTests(unittest.TestCase):
         )
         self.assertNotIn('.nav[data-view="package"]', self.package_center)
 
-    def test_existing_official_status_is_moved_not_duplicated(self) -> None:
+    def test_existing_official_status_has_one_static_owner(self) -> None:
         self.assertEqual(self.index.count('id="desktop-official-package-status"'), 1)
         self.assertEqual(self.index.count('id="desktop-package-import"'), 1)
         self.assertIn('id="package-official-status-mount"', self.index)
-        self.assertIn("officialMount.appendChild(officialStatus)", self.package_center)
+        self.assertNotIn("officialMount.appendChild(officialStatus)", self.package_center)
+        self.assertIn('officialStatus?.parentElement !== officialMount', self.package_center)
         self.assertIn("runOfficialRollback", self.package_center)
 
     def test_transfer_export_offers_all_frozen_scopes_and_kinds(self) -> None:

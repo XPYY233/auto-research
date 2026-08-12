@@ -124,20 +124,16 @@
     }
   }
 
-  function mountPersonalImportPanel() {
+  function personalImportPanel() {
     const personalView = el("view-personal");
     const personalPanel = el("personal-import-panel");
-    if (personalView && personalPanel && personalPanel.parentElement !== personalView) {
-      personalView.appendChild(personalPanel);
-    }
-    return personalPanel;
+    return personalView && personalPanel?.parentElement === personalView ? personalPanel : null;
   }
 
   async function initialize() {
-    // Personal import is an independent first-class workflow.  Mount it before
-    // optional Package Center setup so one product surface can never blank the
-    // other during startup.
-    mountPersonalImportPanel();
+    // The personal workflow has one static DOM owner. Missing or misplaced
+    // markup fails closed instead of moving nodes across product views.
+    const personalPanel = personalImportPanel();
     try {
       initializePackageCenter();
     } catch (_error) {
@@ -182,7 +178,7 @@
     if (el("search-exports")) {
       el("search-exports").hidden = offline || !["item", "finding"].includes(state.searchMode);
     }
-    el("personal-import-panel")?.toggleAttribute("hidden", !personalPage);
+    personalImportPanel()?.toggleAttribute("hidden", !personalPage);
     const help = el("search-help");
     if (help) help.textContent = offline
       ? "离线资料库统一检索四类公开记录；官方文献和我的实验保持来源标识，不会互相写入。"
@@ -190,7 +186,7 @@
   }
 
   function openPersonalImport() {
-    const panel = mountPersonalImportPanel();
+    const panel = personalImportPanel();
     if (panel) panel.hidden = false;
     applySearchUI();
     void loadPersonalSearchStatus();

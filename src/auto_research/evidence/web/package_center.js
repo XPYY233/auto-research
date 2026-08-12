@@ -390,9 +390,7 @@
       state.initialized = true;
       const officialMount = ports.el("package-official-status-mount");
       const officialStatus = ports.el("desktop-official-package-status");
-      if (officialMount && officialStatus && officialStatus.parentElement !== officialMount) {
-        officialMount.appendChild(officialStatus);
-      }
+      if (!officialMount || officialStatus?.parentElement !== officialMount) return;
       ports.el("package-literature-plan-form")?.addEventListener("submit", planLiteratureExport);
       ports.queryAll('input[name="literature-scope"]').forEach(input => input.addEventListener("change", updateLiteratureScopeStatus));
       ports.el("package-literature-export")?.addEventListener("click", () => void exportPlannedPackage("literature_collection"));
