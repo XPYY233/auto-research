@@ -16,6 +16,10 @@ from .provider_registry import (
     trusted_provider_profile,
     trusted_provider_public_catalog,
 )
+from .capability_verifier import (
+    BackendCredentialResolver,
+    OpenAICompatibleCapabilityVerifier,
+)
 
 __all__ = [
     "DeepSeekClient",
@@ -31,4 +35,6 @@ __all__ = [
     "TrustedProviderProfile",
     "trusted_provider_profile",
     "trusted_provider_public_catalog",
+    "BackendCredentialResolver",
+    "OpenAICompatibleCapabilityVerifier",
 ]

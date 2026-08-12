@@ -302,6 +302,27 @@ class OpenAICompatibleClient:
         max_tokens: int = 3_200,
         temperature: float = 0.1,
     ) -> dict[str, Any]:
+        return self._request_tool_message(
+            messages,
+            tools,
+            task=task,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            tool_choice="auto",
+            verification_request=False,
+        )
+
+    def _request_tool_message(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        task: str,
+        max_tokens: int,
+        temperature: float,
+        tool_choice: str | Mapping[str, Any],
+        verification_request: bool,
+    ) -> dict[str, Any]:
         if tools:
             self._require(CAPABILITY_TOOL_CALLING)
         payload: dict[str, Any] = {
@@ -317,7 +338,7 @@ class OpenAICompatibleClient:
         ] = max_tokens
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = tool_choice
         def parse(response: Any) -> dict[str, Any]:
             try:
                 message = response.json()["choices"][0]["message"]
@@ -341,27 +362,89 @@ class OpenAICompatibleClient:
             except (KeyError, IndexError, TypeError, ValueError) as exc:
                 raise AIProviderResponseError("AI 提供商返回格式无效。") from exc
 
-        return self._execute(payload, parse)
+        return self._execute(
+            payload,
+            parse,
+            verification_request=verification_request,
+        )
 
-    def smoke_test(self) -> dict[str, Any]:
-        if not self.settings.models_verified and not self.settings.verification_mode:
-            raise AIProviderCapabilityError("model_set_verification")
+    def verify_structured_json_capability(self) -> bool:
+        """Run the one fixed structured-output capability probe."""
+
         result = self._request_json(
             [
                 {
                     "role": "system",
-                    "content": 'Return json only: {"status":"ok"}.',
+                    "content": 'Return only this JSON object: {"status":"ok"}.',
                 },
-                {"role": "user", "content": "Return the requested connection check."},
+                {"role": "user", "content": "Run the fixed capability check."},
             ],
             task=TASK_ANALYSIS,
-            max_tokens=64,
+            max_tokens=32,
             thinking=None,
-            temperature=None,
+            temperature=0.0,
             verification_request=True,
         )
-        if result.get("status") != "ok":
-            raise AIProviderResponseError("AI 提供商连通测试返回了非预期状态。")
+        if result != {"status": "ok"}:
+            raise AIProviderResponseError("AI 提供商结构化输出验证未通过。")
+        return True
+
+    def verify_tool_calling_capability(self) -> bool:
+        """Run the one fixed tool-call probe without executing the tool."""
+
+        tool_name = "auto_research_capability_check"
+        message = self._request_tool_message(
+            [
+                {
+                    "role": "system",
+                    "content": "Call the required capability-check tool exactly once.",
+                },
+                {"role": "user", "content": "Run the fixed capability check."},
+            ],
+            [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": "Verify tool calling without executing a tool.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "verification": {
+                                    "type": "string",
+                                    "enum": ["tool_calling"],
+                                }
+                            },
+                            "required": ["verification"],
+                            "additionalProperties": False,
+                        },
+                    },
+                }
+            ],
+            task=TASK_ANALYSIS,
+            max_tokens=32,
+            temperature=0.0,
+            tool_choice={"type": "function", "function": {"name": tool_name}},
+            verification_request=True,
+        )
+        calls = message.get("tool_calls")
+        if not isinstance(calls, list) or len(calls) != 1:
+            raise AIProviderResponseError("AI 提供商工具调用验证未通过。")
+        try:
+            function = calls[0]["function"]
+            arguments = json.loads(function["arguments"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise AIProviderResponseError("AI 提供商工具调用验证未通过。") from exc
+        if function.get("name") != tool_name or arguments != {"verification": "tool_calling"}:
+            raise AIProviderResponseError("AI 提供商工具调用验证未通过。")
+        return True
+
+    def smoke_test(self) -> dict[str, Any]:
+        """Compatibility alias for the fixed structured-output probe."""
+
+        if not self.settings.models_verified and not self.settings.verification_mode:
+            raise AIProviderCapabilityError("model_set_verification")
+        self.verify_structured_json_capability()
         return {
             "ok": True,
             "provider_id": self.profile.provider_id,

@@ -48,6 +48,14 @@ credential generation、credential ref 或 token。
 generation provider 和安全 signer；公开 DTO 永不包含 credential ref/generation、token、
 路径、密钥或内部 ID。
 
+共享 `OpenAICompatibleCapabilityVerifier` 提供默认生产验证实现，但不会自动运行。每个
+唯一模型固定且最多调用两次：一次要求精确的极小 JSON 对象，一次要求唯一
+`auto_research_capability_check` 工具及固定参数；工具永不执行。两次调用都使用 32 token
+上限、禁重试和统一 `OpenAICompatibleClient` 的固定 endpoint/禁重定向网络实现。
+`verification_mode` 只给这两个内部固定动作放行，普通 JSON 或工具请求仍 fail closed。
+验证器通过后端 credential resolver/ref 延迟取得 key；公开结果只返回 provider、model 和
+两项能力布尔值，不保存或返回请求、响应、key、credential ref、endpoint 或 token。
+
 现有 `DeepSeekClient` 与 `DeepSeekSettings` 保持兼容，当前 DeepSeek 产品路径不会因新增
 通用提供商契约而改变。`DeepSeekClient` 已成为 `OpenAICompatibleClient` 的薄兼容层；
 endpoint、禁止 redirect、HTTP 重试、payload 和响应解析只有通用客户端一套实现。

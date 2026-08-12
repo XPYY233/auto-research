@@ -63,7 +63,7 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         self.assertEqual(endpoint, "https://api.openai.com/v1/chat/completions")
         self.assertFalse(kwargs["allow_redirects"])
         self.assertEqual(kwargs["json"]["response_format"], {"type": "json_object"})
-        self.assertEqual(kwargs["json"]["max_completion_tokens"], 64)
+        self.assertEqual(kwargs["json"]["max_completion_tokens"], 32)
         self.assertNotIn("max_tokens", kwargs["json"])
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer sk-test-secret")
 
@@ -183,6 +183,11 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         client = OpenAICompatibleClient(self.settings(), session=session)
         with self.assertRaises(AIProviderCapabilityError):
             client.request_json([])
+        with self.assertRaises(AIProviderCapabilityError):
+            client.request_tool_message(
+                [],
+                [{"type": "function", "function": {"name": "unsafe", "parameters": {}}}],
+            )
         self.assertTrue(client.smoke_test()["ok"])
         self.assertEqual(len(session.calls), 1)
 
