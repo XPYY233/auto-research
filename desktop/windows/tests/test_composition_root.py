@@ -112,6 +112,18 @@ class FakeSharedBridge:
         return FakeServer(self.events)
 
 
+class FakeReleaseContract:
+    windows_version = "0.8.0-internal.1"
+
+    def platform_version(self, platform):
+        if platform != "windows":
+            raise KeyError(platform)
+        return {
+            "desktop_version": self.windows_version,
+            "installer_ready": False,
+        }
+
+
 class FakeWindow:
     def __init__(self, events) -> None:
         self.events = events
@@ -173,7 +185,8 @@ class CompositionRootTests(unittest.TestCase):
         self.backend = FakeCredentialBackend()
         self.root = MODULE.WindowsCompositionRoot(
             path_runtime=self.paths,
-            current_app_version="0.4.0-internal.1",
+            current_app_version="0.8.0-internal.1",
+            release_contract=FakeReleaseContract(),
             shared_http_bridge=self.shared,
             package_window_bridge=FakePicker(),
             official_api=FakeOfficialApi(),
@@ -214,6 +227,10 @@ class CompositionRootTests(unittest.TestCase):
             composition.personal_import_service,
         )
         self.assertEqual(
+            composition.services.settings.get()["schema_version"],
+            "desktop-settings-v1",
+        )
+        self.assertEqual(
             type(composition.personal_import_service._suggestion_model).__name__,
             "WindowsDeepSeekPersonalSuggestionModel",
         )
@@ -248,6 +265,10 @@ class CompositionRootTests(unittest.TestCase):
         self.assertEqual(self.shared.calls[0]["host"], "127.0.0.1")
         self.assertEqual(self.shared.calls[0]["port"], 0)
         self.assertEqual(self.shared.calls[0]["first_run_entry"], "import-evidence-package")
+        self.assertEqual(
+            self.shared.calls[0]["release"]["version"],
+            "0.8.0-internal.1",
+        )
         self.assertGreaterEqual(len(self.shared.calls[0]["bootstrap_token"]), 32)
         self.assertIn("window-show", self.events)
         self.assertEqual(self.events[-1], "guard-close")
@@ -256,7 +277,8 @@ class CompositionRootTests(unittest.TestCase):
     def test_unfrozen_shared_bridge_fails_before_credentials_server_or_window(self) -> None:
         root = MODULE.WindowsCompositionRoot(
             path_runtime=self.paths,
-            current_app_version="0.4.0-internal.1",
+            current_app_version="0.8.0-internal.1",
+            release_contract=FakeReleaseContract(),
             credential_backend=self.backend,
             package_probe=FakeProbe(),
             window=self.window,
@@ -271,7 +293,8 @@ class CompositionRootTests(unittest.TestCase):
     def test_unfrozen_package_picker_fails_before_server_or_window(self) -> None:
         root = MODULE.WindowsCompositionRoot(
             path_runtime=self.paths,
-            current_app_version="0.4.0-internal.1",
+            current_app_version="0.8.0-internal.1",
+            release_contract=FakeReleaseContract(),
             shared_http_bridge=self.shared,
             credential_backend=self.backend,
             package_probe=FakeProbe(),
@@ -289,6 +312,15 @@ class CompositionRootTests(unittest.TestCase):
             MODULE.WindowsCompositionRoot(
                 path_runtime=self.paths,
                 current_app_version="0.4.0",
+                release_contract=FakeReleaseContract(),
+            )
+
+    def test_release_contract_mismatch_fails_before_composition(self) -> None:
+        with self.assertRaises(MODULE.WindowsCompositionError):
+            MODULE.WindowsCompositionRoot(
+                path_runtime=self.paths,
+                current_app_version="0.7.0-internal.1",
+                release_contract=FakeReleaseContract(),
             )
 
     def test_machine_readable_dependency_manifest_is_internal_and_complete(self) -> None:
@@ -306,6 +338,8 @@ class CompositionRootTests(unittest.TestCase):
         self.assertIn("auto_research.product.package_center", manifest["shared_runtime_modules"])
         self.assertIn("package_center.js", manifest["shared_web_assets"])
         self.assertIn("ai_consent.js", manifest["shared_web_assets"])
+        self.assertIn("workbench.css", manifest["shared_web_assets"])
+        self.assertIn("workbench.js", manifest["shared_web_assets"])
         self.assertEqual(
             set(manifest["shared_web_assets"]),
             {
@@ -316,6 +350,8 @@ class CompositionRootTests(unittest.TestCase):
                 "desktop_product.js",
                 "package_center.js",
                 "librarian_brief.js",
+                "workbench.css",
+                "workbench.js",
             },
         )
         self.assertNotIn(

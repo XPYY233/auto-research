@@ -2,7 +2,7 @@
   "contract_version": 1,
   "architecture_migration_contract": "architecture-migration-contract.json",
   "release_status": "internal-development",
-  "dependency_closure_status": "backend-parity-ready-pending-win11-build-and-wheel-lock",
+  "dependency_closure_status": "0.8-settings-parity-ready-pending-shared-release-freeze-ai-routes-win11-build-and-wheel-lock",
   "target": "windows-11-x64",
   "python": "3.12.x-x64-bundled",
   "windows_modules": [
@@ -30,6 +30,8 @@
     "personal_ai_model",
     "librarian_bridge",
     "readiness_service",
+    "settings_bridge",
+    "settings_store",
     "runtime_lifecycle",
     "shared_http_bridge",
     "webview_window_adapter"
@@ -44,6 +46,7 @@
     "auto_research.desktop.route_catalog",
     "auto_research.desktop.routing",
     "auto_research.release_contract",
+    "auto_research.settings.desktop_settings",
     "auto_research.product.evidence_package",
     "auto_research.product.official_package_store",
     "auto_research.product.portable_repository",
@@ -67,6 +70,8 @@
     "app.js",
     "desktop_product.js",
     "package_center.js",
+    "workbench.css",
+    "workbench.js",
     "librarian_brief.js"
   ],
   "external_runtime_components": [
@@ -89,7 +94,9 @@
     "personal_selection_snapshot_provider": "windows-native",
     "librarian_v3_runtime": "pending-shared-http-injection",
     "package_center_runtime": "fail-closed-pending-safe-v12-private-resolvers-and-transfer-activation",
-    "package_center_shared_web_asset": "package_center.js-frozen-shared-resource"
+    "package_center_shared_web_asset": "package_center.js-frozen-shared-resource",
+    "desktop_settings_runtime": "desktop-settings-v1-windows-atomic-store-wired",
+    "shared_release_contract": "pending-windows-0.8.0-internal.1-freeze"
   },
   "must_exclude_before_candidate": [
     "auto_research.product.internal_preview_builder",

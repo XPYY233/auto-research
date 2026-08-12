@@ -40,6 +40,8 @@ from personal_file_selection import (
 )
 from personal_import_bridge import PersonalImportBridgeAdapter
 from readiness_service import WindowsReadinessV2Service
+from settings_bridge import WindowsSettingsBridge
+from settings_store import WindowsAtomicDesktopSettingsStore
 from shared_http_bridge import WindowsSharedHttpBridge
 from webview_window_adapter import PyWebViewWindowAdapter
 
@@ -47,6 +49,8 @@ from auto_research.personal.import_service import (
     PersonalImportService,
     SelectionSnapshotProvider,
 )
+from auto_research.release_contract import ReleaseContract, load_release_contract
+from auto_research.settings.desktop_settings import DesktopSettingsService
 
 
 SHARED_BRIDGE_CONTRACT_VERSION = 1
@@ -90,6 +94,7 @@ class SharedDesktopHttpBridge(Protocol):
         bootstrap_token: str,
         first_run_entry: str,
         services: "WindowsBridgeServices",
+        release: Mapping[str, object],
     ) -> ServerLike: ...
 
 
@@ -174,6 +179,7 @@ class WindowsBridgeServices:
     librarian: LibrarianV3BridgeAdapter
     readiness: WindowsReadinessV2Service
     package_center: PackageCenterBridge
+    settings: WindowsSettingsBridge
 
 
 @dataclass(frozen=True)
@@ -202,6 +208,7 @@ class WindowsCompositionRoot:
         *,
         path_runtime: ApplicationPathRuntime,
         current_app_version: str,
+        release_contract: ReleaseContract | None = None,
         shared_http_bridge: SharedDesktopHttpBridge | None = None,
         package_window_bridge: ProductionPackageWindowBridge | None = None,
         personal_selection_provider: SelectionSnapshotProvider | None = None,
@@ -220,6 +227,13 @@ class WindowsCompositionRoot:
             raise WindowsCompositionError("Windows 组合根当前只允许 internal development 版本")
         self.path_runtime = path_runtime
         self.current_app_version = current_app_version
+        self.release_contract = release_contract or self._load_release_contract()
+        windows_release = self.release_contract.platform_version("windows")
+        if (
+            self.release_contract.windows_version != current_app_version
+            or windows_release.get("installer_ready") is not False
+        ):
+            raise WindowsCompositionError("Windows 版本与共享发布契约不一致")
         self.shared_http_bridge = shared_http_bridge or WindowsSharedHttpBridge()
         self.personal_selection_provider = personal_selection_provider
         self.librarian_runtime = librarian_runtime
@@ -247,6 +261,14 @@ class WindowsCompositionRoot:
             lambda identity: WindowsInstanceGuard(identity)
         )
         self.compatibility_detector = compatibility_detector
+
+    @staticmethod
+    def _load_release_contract() -> ReleaseContract:
+        path = Path(__file__).resolve().parents[2] / "config" / "release-contract.json"
+        try:
+            return load_release_contract(path)
+        except Exception as exc:
+            raise WindowsCompositionError("共享发布契约当前不可用") from exc
 
     @classmethod
     def from_environment(
@@ -300,6 +322,11 @@ class WindowsCompositionRoot:
                 credential_bridge
             ),
         )
+        settings = WindowsSettingsBridge(
+            DesktopSettingsService(
+                WindowsAtomicDesktopSettingsStore(self.path_runtime.state_directory)
+            )
+        )
         search_service = WindowsEvidenceSearchService()
         librarian = LibrarianV3BridgeAdapter(self.librarian_runtime)
         readiness = WindowsReadinessV2Service(
@@ -335,6 +362,7 @@ class WindowsCompositionRoot:
             librarian=librarian,
             readiness=readiness,
             package_center=self.package_center_bridge,
+            settings=settings,
         )
         native_desktop_bridge = WindowsNativeDesktopBridge(
             package_input=package_input,
@@ -350,7 +378,15 @@ class WindowsCompositionRoot:
             bind_native_api(native_desktop_bridge)
 
         def server_builder(**kwargs: Any) -> ServerLike:
-            return self.shared_http_bridge.build_server(services=services, **kwargs)
+            return self.shared_http_bridge.build_server(
+                services=services,
+                release={
+                    "label": "Windows internal development",
+                    "version": self.release_contract.windows_version,
+                    "evidence_schema": "distribution-sqlite-v1",
+                },
+                **kwargs,
+            )
 
         def service_factory(*, bootstrap_token: str, first_run_entry: str) -> LoopbackServerAdapter:
             return LoopbackServerAdapter(

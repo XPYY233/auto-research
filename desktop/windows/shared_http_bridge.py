@@ -18,6 +18,8 @@ from librarian_bridge import LibrarianBridgeError
 from package_center_bridge import WindowsPackageCenterBridgeAdapter
 from package_import_bridge import PackageBridgeError
 from personal_import_bridge import PersonalImportBridgeAdapter
+from settings_bridge import WindowsSettingsBridge
+from auto_research.settings.desktop_settings import DesktopSettingsError
 from auto_research.personal.import_service import PersonalImportServiceError
 
 
@@ -29,6 +31,7 @@ MAX_CREDENTIAL_REQUEST_BYTES = 8_192
 MAX_PERSONAL_REQUEST_BYTES = 512 * 1024
 MAX_LIBRARIAN_REQUEST_BYTES = 256_000
 MAX_PACKAGE_CENTER_REQUEST_BYTES = 512 * 1024
+MAX_SETTINGS_REQUEST_BYTES = 32_768
 PDF_STREAM_CHUNK_BYTES = 1024 * 1024
 
 _IMPORT_STATUS_RE = re.compile(
@@ -54,6 +57,7 @@ _PACKAGE_CENTER_JOB_RE = re.compile(
 )
 _STATIC_FILES = {
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
+    "/static/workbench.css": ("workbench.css", "text/css; charset=utf-8"),
     "/static/ai_consent.js": (
         "ai_consent.js",
         "application/javascript; charset=utf-8",
@@ -69,6 +73,10 @@ _STATIC_FILES = {
     ),
     "/static/librarian_brief.js": (
         "librarian_brief.js",
+        "application/javascript; charset=utf-8",
+    ),
+    "/static/workbench.js": (
+        "workbench.js",
         "application/javascript; charset=utf-8",
     ),
 }
@@ -123,19 +131,30 @@ class WindowsSharedHttpBridge:
         bootstrap_token: str,
         first_run_entry: str,
         services: Any,
+        release: Mapping[str, object],
     ) -> ThreadingHTTPServer:
         if host != "127.0.0.1" or int(port) != 0:
             raise WindowsHttpBridgeError("Windows desktop bridge requires 127.0.0.1:0")
         if first_run_entry != "import-evidence-package":
             raise WindowsHttpBridgeError("Windows desktop entry is invalid")
+        if (
+            not isinstance(release, Mapping)
+            or set(release) != {"label", "version", "evidence_schema"}
+            or not all(isinstance(release[key], str) and release[key] for key in release)
+        ):
+            raise WindowsHttpBridgeError("Windows release contract is invalid")
         state = _SecurityState(bootstrap_token)
-        handler = self._handler_type(state, services)
+        handler = self._handler_type(state, services, release)
         server = ThreadingHTTPServer((host, 0), handler)
         state.expected_authority = f"127.0.0.1:{server.server_address[1]}"
         return server
 
     @staticmethod
-    def _handler_type(state: _SecurityState, services: Any) -> type[BaseHTTPRequestHandler]:
+    def _handler_type(
+        state: _SecurityState,
+        services: Any,
+        release: Mapping[str, object],
+    ) -> type[BaseHTTPRequestHandler]:
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
 
@@ -450,11 +469,7 @@ class WindowsSharedHttpBridge:
                             {
                                 "read_only": False,
                                 "desktop": True,
-                                "release": {
-                                    "label": "Windows internal development",
-                                    "version": "0.4.0-internal",
-                                    "evidence_schema": "distribution-sqlite-v1",
-                                },
+                                "release": dict(release),
                             },
                             issue_csrf=True,
                         )
@@ -485,8 +500,13 @@ class WindowsSharedHttpBridge:
                         return self.json_response(services.deepseek_credentials.status())
                     if parsed.path == "/api/desktop/readiness" and not parsed.query:
                         return self.json_response(services.readiness.status().public_dict())
+                    if parsed.path == "/api/desktop/settings" and not parsed.query:
+                        return self.json_response(services.settings.get())
                 except PackageBridgeError as exc:
                     return self.json_response(exc.public_dict(), HTTPStatus.NOT_FOUND)
+                except DesktopSettingsError as exc:
+                    payload, status = WindowsSettingsBridge.public_error(exc)
+                    return self.json_response(payload, status)
                 except Exception as exc:
                     if parsed.path.startswith("/api/desktop/package-center"):
                         payload, status = WindowsPackageCenterBridgeAdapter.public_error(exc)
@@ -513,6 +533,43 @@ class WindowsSharedHttpBridge:
                     {"error": "桌面接口不存在", "code": "desktop_endpoint_not_found"},
                     HTTPStatus.NOT_FOUND,
                 )
+
+            def do_PATCH(self) -> None:
+                if not self._authorize_mutation():
+                    return
+                parsed = urlparse(self.path)
+                try:
+                    if parsed.path != "/api/desktop/settings/preferences" or parsed.query:
+                        self.close_connection = True
+                        return self.json_response(
+                            {"error": "桌面接口不存在", "code": "desktop_endpoint_not_found"},
+                            HTTPStatus.NOT_FOUND,
+                        )
+                    body = self._read_json(MAX_SETTINGS_REQUEST_BYTES)
+                    if set(body) != {"expected_revision", "preferences"}:
+                        raise DesktopSettingsError(
+                            "settings_invalid",
+                            "桌面设置内容无效。",
+                            retryable=False,
+                        )
+                    return self.json_response(
+                        services.settings.patch_preferences(
+                            body["preferences"],
+                            expected_revision=body["expected_revision"],
+                        )
+                    )
+                except DesktopSettingsError as exc:
+                    payload, status = WindowsSettingsBridge.public_error(exc)
+                    return self.json_response(payload, status)
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+                    self.close_connection = True
+                    error = DesktopSettingsError(
+                        "settings_invalid",
+                        "桌面设置内容无效。",
+                        retryable=False,
+                    )
+                    payload, status = WindowsSettingsBridge.public_error(error)
+                    return self.json_response(payload, status)
 
             def do_POST(self) -> None:
                 if not self._authorize_mutation():

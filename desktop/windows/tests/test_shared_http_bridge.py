@@ -14,11 +14,50 @@ WINDOWS_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WINDOWS_ROOT))
 try:
     import shared_http_bridge as MODULE
+    from settings_bridge import WindowsSettingsBridge
 finally:
     sys.path.pop(0)
 
 
 IMPORT_ID = "personal_import_0123456789abcdef"
+
+
+class _Settings:
+    def __init__(self) -> None:
+        self.revision = 0
+        self.theme = "system"
+        self.density = "comfortable"
+
+    def get(self):
+        return {
+            "schema_version": "desktop-settings-v1",
+            "revision": self.revision,
+            "appearance": {"theme": self.theme, "density": self.density},
+            "locale": {"selected": "zh-CN", "supported": ["zh-CN"]},
+        }
+
+    def patch_preferences(self, preferences, *, expected_revision):
+        from auto_research.settings.desktop_settings import DesktopSettingsError
+
+        if expected_revision != self.revision:
+            raise DesktopSettingsError(
+                "settings_revision_conflict",
+                "桌面设置已在其他操作中更新，请重新加载后再试。",
+                retryable=True,
+            )
+        appearance = preferences.get("appearance", {})
+        if set(preferences) - {"appearance", "locale"} or not preferences:
+            raise DesktopSettingsError(
+                "settings_invalid", "桌面设置内容无效。", retryable=False
+            )
+        if "theme" in appearance:
+            if appearance["theme"] not in {"system", "light", "dark"}:
+                raise DesktopSettingsError(
+                    "settings_invalid", "桌面设置内容无效。", retryable=False
+                )
+            self.theme = appearance["theme"]
+        self.revision += 1
+        return self.get()
 
 
 class _Package:
@@ -236,6 +275,7 @@ class SharedHttpBridgeTests(unittest.TestCase):
             readiness=_Readiness(),
             librarian=_Librarian(),
             package_center=_PackageCenter(),
+            settings=_Settings(),
         )
         self.server = MODULE.WindowsSharedHttpBridge().build_server(
             host="127.0.0.1",
@@ -243,6 +283,11 @@ class SharedHttpBridgeTests(unittest.TestCase):
             bootstrap_token=self.token,
             first_run_entry="import-evidence-package",
             services=self.services,
+            release={
+                "label": "Windows internal development",
+                "version": "0.8.0-internal.1",
+                "evidence_schema": "distribution-sqlite-v1",
+            },
         )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -333,6 +378,22 @@ class SharedHttpBridgeTests(unittest.TestCase):
         connection.close()
         return status, result
 
+    def _patch(self, path, payload, *, origin=True, csrf=True):
+        body = json.dumps(payload).encode("utf-8")
+        headers = {"Cookie": self.cookie, "Content-Type": "application/json"}
+        if origin:
+            headers["Origin"] = self.origin
+        if csrf:
+            headers[MODULE.CSRF_HEADER] = self.csrf
+        connection = self._connection()
+        connection.request("PATCH", path, body=body, headers=headers)
+        response = connection.getresponse()
+        result = self._json(response)
+        status = response.status
+        no_store = response.getheader("Cache-Control")
+        connection.close()
+        return status, result, no_store
+
     def test_frozen_package_personal_search_credential_and_readiness_routes(self) -> None:
         get_paths = (
             "/api/desktop/evidence-packages",
@@ -343,6 +404,7 @@ class SharedHttpBridgeTests(unittest.TestCase):
             "/api/desktop/federated-evidence?source_scope=private&source_id=private-1&entity_uid=finding-1",
             "/api/desktop/credentials/deepseek",
             "/api/desktop/readiness",
+            "/api/desktop/settings",
         )
         for path in get_paths:
             with self.subTest(path=path):
@@ -440,13 +502,24 @@ class SharedHttpBridgeTests(unittest.TestCase):
         self.assertIn('id="view-upload"', index)
         self.assertIn('id="paper-upload-mount"', index)
         self.assertIn('id="view-personal"', index)
+        self.assertIn('<section class="personal-import-panel" id="personal-import-panel"', index)
+        self.assertIn('id="view-package"', index)
+        self.assertLess(
+            index.index('<script src="/static/desktop_product.js"></script>'),
+            index.index('<script src="/static/app.js"></script>'),
+        )
+        self.assertLess(
+            index.index('<script src="/static/app.js"></script>'),
+            index.index('<script src="/static/workbench.js"></script>'),
+        )
 
         status, product, no_store = self._get_text("/static/desktop_product.js")
         self.assertEqual(status, 200)
         self.assertEqual(no_store, "no-store")
         self.assertIn("select_personal_data_file", product)
         self.assertIn("openPersonalImport", product)
-        self.assertIn("personalView.appendChild(personalPanel)", product)
+        self.assertIn("personalPanel?.parentElement === personalView", product)
+        self.assertNotIn("personalView.appendChild(personalPanel)", product)
         self.assertIn("ai-suggestion", product)
         self.assertIn("reviewed-import", product)
         self.assertNotIn("selected.selection.path", product)
@@ -460,6 +533,77 @@ class SharedHttpBridgeTests(unittest.TestCase):
         self.assertEqual((status, no_store), (200, "no-store"))
         self.assertEqual(media_type, "application/javascript; charset=utf-8")
         self.assertIn(b"AutoResearchAIConsent", ai_consent)
+        for path, media_type in (
+            ("/static/workbench.css", "text/css; charset=utf-8"),
+            ("/static/workbench.js", "application/javascript; charset=utf-8"),
+        ):
+            status, body, actual_type, _disposition, no_store = self._get_bytes(path)
+            self.assertEqual((status, actual_type, no_store), (200, media_type, "no-store"))
+            self.assertTrue(body)
+
+    def test_ui_mode_uses_injected_release_and_settings_patch_is_cas_protected(self) -> None:
+        status, ui_mode, no_store = self._get("/api/ui-mode")
+        self.assertEqual((status, no_store), (200, "no-store"))
+        self.assertEqual(ui_mode["release"]["version"], "0.8.0-internal.1")
+
+        status, settings, no_store = self._get("/api/desktop/settings")
+        self.assertEqual((status, no_store), (200, "no-store"))
+        self.assertEqual(settings["schema_version"], "desktop-settings-v1")
+        status, updated, no_store = self._patch(
+            "/api/desktop/settings/preferences",
+            {
+                "expected_revision": 0,
+                "preferences": {"appearance": {"theme": "dark"}},
+            },
+        )
+        self.assertEqual((status, no_store), (200, "no-store"))
+        self.assertEqual(updated["revision"], 1)
+        self.assertEqual(updated["appearance"]["theme"], "dark")
+        status, conflict, _ = self._patch(
+            "/api/desktop/settings/preferences",
+            {
+                "expected_revision": 0,
+                "preferences": {"appearance": {"theme": "light"}},
+            },
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(conflict["code"], "settings_revision_conflict")
+        self.assertNotIn("path", json.dumps(conflict).casefold())
+
+    def test_settings_patch_requires_exact_security_and_32k_body(self) -> None:
+        payload = {
+            "expected_revision": 0,
+            "preferences": {"appearance": {"theme": "dark"}},
+        }
+        self.assertEqual(
+            self._patch("/api/desktop/settings/preferences", payload, origin=False)[0],
+            403,
+        )
+        self.assertEqual(
+            self._patch("/api/desktop/settings/preferences", payload, csrf=False)[0],
+            403,
+        )
+        status, invalid, _ = self._patch(
+            "/api/desktop/settings/preferences",
+            {**payload, "api_key": "never-store-this"},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(invalid["code"], "settings_invalid")
+        self.assertNotIn("never-store-this", json.dumps(invalid))
+
+        connection = self._connection()
+        connection.putrequest("PATCH", "/api/desktop/settings/preferences")
+        connection.putheader("Cookie", self.cookie)
+        connection.putheader("Origin", self.origin)
+        connection.putheader(MODULE.CSRF_HEADER, self.csrf)
+        connection.putheader("Content-Type", "application/json")
+        connection.putheader("Content-Length", str(MODULE.MAX_SETTINGS_REQUEST_BYTES + 1))
+        connection.endheaders()
+        response = connection.getresponse()
+        oversized = self._json(response)
+        self.assertEqual(response.status, 400)
+        self.assertEqual(oversized["code"], "settings_invalid")
+        connection.close()
 
     def test_personal_ai_requires_explicit_consent_and_human_review(self) -> None:
         status, payload = self._post(
