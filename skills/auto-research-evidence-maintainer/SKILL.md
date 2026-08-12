@@ -40,13 +40,23 @@ Keep these invariants:
 - The local PyMuPDF visual pipeline is production authority. DeepSeek only enriches caption/nearby-text semantics.
 - New automatic publication passes the two-branch adversarial gate and optional third review; low-confidence records remain quarantined.
 - Search V2 is a disposable projection. Never write index content back into scientific records.
-- The Librarian uses DeepSeek planning, local four-type coverage recall, then DeepSeek evidence synthesis. It remains read-only and full-corpus.
+- The Librarian uses a code-reviewed trusted Agent-capable provider for planning and evidence synthesis around local four-type coverage recall. It remains read-only and full-corpus; provider choice cannot change local hard conditions or source scope.
 - The product is one personal desktop workbench. The current preview is macOS and the intended end-user target is Windows. The embedded frontend, loopback service and historical read-only permissions remain internal implementation/test boundaries, not separate browser products.
-- Distribution separates the signed desktop App from versioned, verified evidence packages and from each user's private library. End-user DeepSeek extraction and Librarian calls are BYOK through the platform secure credential store; never package a developer key.
+- Distribution separates the signed desktop App from versioned, verified evidence packages and from each user's private library. End-user AI extraction and Librarian calls are BYOK through provider-separated platform secure credential envelopes; never package a developer key or accept an arbitrary provider URL.
 - The official distribution database is `distribution-sqlite-v1`, not EvidenceDB v12. Its canonical activity selector is `<app-data>/official-packages/active.json`; only signature/checksum verification followed by `OfficialEvidenceRepository` audit may atomically change it.
 - Applications trust only reviewed public keys in `auto_research.product.trusted_publishers`. Maintainer signing private keys stay outside Git, App data, logs and `.aresearch` files; never silently regenerate a missing key under an existing `key_id`.
 - Keep platform logic thin. macOS and Windows may implement lifecycle, native selection, credentials and a protected bridge, but must reuse product package, identity, audit and federated-search contracts rather than copy them.
-- Codex develops the project; application runtime AI is DeepSeek.
+- Codex develops the project. Application runtime AI is limited to the audited provider registry (initially DeepSeek and OpenAI), with fixed endpoints/models and server-prepared informed actions.
+
+## Recover interrupted 0.8 work
+
+Before editing 0.8, read the top `PROJECT_HANDOFF.md` pause section. Treat `228942a` as the committed development baseline and `888aae5`/build15 as the user rollback release until a later handoff supersedes them.
+
+- Preserve the uncommitted evidence-detail workbench files and user production DB/paper_056 artifacts; never reset, clean or broadly stage them.
+- Use existing project Codex threads for frontend/macOS, core, Windows and security. Root is the only Git writer; every other thread receives an exact file list and returns a no-stage/no-commit handoff.
+- Freeze shared AI/settings/route DTOs first, wire and validate macOS second, synchronize Windows last. Do not implement provider, prompt, search, package or private-repository algorithms in platform folders.
+- On a hot machine, run at most two development threads and only small targeted tests. Run the shared full suite, build and real App flow serially once after interfaces freeze.
+- Do not sync release web hashes or increment final build identity until all shared web assets are frozen. Windows remains `installer_ready=false` until real Win11 acceptance.
 
 ## Choose the safe action level
 

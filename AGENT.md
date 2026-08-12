@@ -70,6 +70,16 @@ This project is a local literature automation workflow for fusion materials, rad
 - The product distribution model is a signed desktop App plus separately delivered, versioned evidence packages. Import must verify package version and hash, keep official packages separate from the user's private library, and provide rollback on failure. Packages exclude restricted PDFs, local paths, Zotero keys, private conversations and developer credentials by default.
 - DeepSeek extraction and Librarian calls are BYOK. A user may paste a key supplied to them or use their own, but the key must be stored only in the platform credential store and never in SQLite, evidence packages, logs, prompts shown in diagnostics or Git. The first AI action must explain in plain language what the key is, which DeepSeek service receives requests, possible cost, and whether bounded paper text or structured evidence leaves the computer.
 
+## 0.8 恢复与协作纪律（2026-08-13）
+
+- 0.8 当前是开发基线而不是发布版；以 `PROJECT_HANDOFF.md` 顶部暂停点为权威。已安装可用回退仍为 `0.7.0-preview.2` build 15。
+- 运行时 AI 不接受任意“OpenAI-compatible URL”，也不再长期限定 DeepSeek。只允许代码内受信 provider 注册表（首批 DeepSeek/OpenAI）、固定 HTTPS endpoint、固定模型目录、禁 redirect；新增 provider 必须代码评审和能力回归。
+- renderer 不能提交最终外发 DTO、scope、provider、content hash、credential generation 或 consent 布尔值。业务 assembler 在服务端准备不可变 job envelope；用户确认后只提交 opaque action_id + one-time nonce；executor 只能使用 envelope 内的科研内容和本 job 的模型输出。
+- API key 与 generation 必须在平台凭据 envelope 中原子更新。旧 DeepSeek route 如保留，只能委托同一 provider manager/AIDesktopService，不得有第二套 secret、generation、状态或环境变量权威。
+- 共享接口顺序固定为 core freeze → macOS thin wiring/targeted acceptance → Windows thin parity。Windows 在真实 Win11 Setup/安装/导包/搜索/上传/BYOK 验收前保持 `installer_ready=false / SETUP_PRESENT=NO`。
+- 多对话协作使用项目已有 Codex 对话，不由 root 随意新建子 agent。root 唯一 stage/commit；其他对话只编辑明确文件并停手报告。电脑发热时最多两个开发对话，禁止并行全测、构建、App 和模型调用。
+- 前端重构必须删除被新工作台取代的旧选择器/DOM 所有权，不能在 `app.css` 尾部叠加第三套皮肤。personal/package 静态归位；主导航唯一 owner；异步完成不得抢页或滚动。
+
 ## Current acquisition capability summary
 
 ### Paths that can directly yield article metadata + a real local PDF
@@ -534,7 +544,7 @@ Deduplication runs in this order:
 
 An exact file is not saved twice. A non-identical PDF that matches an existing paper is stored as an `alternate` document and creates a blocked `duplicate_review` job; it must not create another extraction job. A genuinely new readable PDF creates one `extract` job. A text-poor but readable PDF creates an `ocr` job. Upload attempts are audited in `upload_events`.
 
-Runtime AI in the released project is DeepSeek-only. Codex is for project development, not an application dependency. End users configure their own key through the App. The current ad-hoc macOS preview uses a private AES-GCM Application Support store; a formally signed macOS release uses Keychain, and Windows uses Credential Manager. Environment variables documented in `.env.example` are maintainer-only fallback. Until a user key is configured, B1 upload, validation, deduplication, queueing, review, package import and search must continue to work, while DeepSeek jobs remain queued.
+Runtime AI in the 0.8 development line uses only code-reviewed trusted providers (initially DeepSeek and OpenAI) selected in the App; arbitrary compatible URLs are forbidden. Codex is for project development, not an application dependency. End users configure their own provider key through the App. The current ad-hoc macOS preview uses provider-separated AES-GCM Application Support records; a formally signed macOS release uses provider-separated Keychain items, and Windows uses Credential Manager. Environment variables documented in `.env.example` are maintainer-only legacy fallback and must not become a second desktop credential authority. Until a user key is configured and, where required, its model set is explicitly verified, upload, validation, deduplication, queueing, review, package import and exact search must continue to work while AI jobs remain unavailable or queued.
 
 On this Mac, the development preview may read service `auto-research-deepseek`; this is not an end-user distribution mechanism. Never print a credential, return it through `/api/ai/status`, reuse the developer key for another user, package it, or place it in a Git-tracked file.
 

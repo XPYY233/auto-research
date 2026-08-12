@@ -75,6 +75,18 @@ Run real HTTP checks for editable and read-only modes. Verify a read-only write 
 
 Do not mark a release stable if required work remains or if the fixed-corpus failure is unexplained.
 
+## Interrupted-development checkpoint
+
+When budget, heat, time or an external interruption stops a multi-thread change:
+
+1. Tell every project thread to stop new edits/tests/builds and return an exact file/status handoff.
+2. Commit only independently complete, reviewed slices. Never commit an unverified UI/platform half-route just to make the tree clean.
+3. Record remaining modified/untracked code separately from user DB/run artifacts in `PROJECT_HANDOFF.md`.
+4. Update `PROJECT_LOG.md`, `AGENT.md`, this Skill and current-state with the exact committed HEAD, last usable release, test evidence and first next step.
+5. Create a maintainer-private Git bundle for committed history and a separate text/diff snapshot for uncommitted code only. Never put production SQLite, paper_056, PDFs, API keys or the complete-history bundle into a user kit.
+6. Hash and verify the recovery artifacts. Do not call the interrupted checkpoint stable or buildable.
+7. On resume, inspect `git status`, restore no files destructively, finish the earliest shared contract, then proceed macOS before Windows.
+
 ## New-account skill installation
 
 The project-local folder is canonical:

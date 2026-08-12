@@ -2,6 +2,16 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-13：0.8 科研工作台开发暂停与可恢复检查点
+
+- 视觉采用 Workbench A 骨架与中性工作台配色，吸收 B 的文献题名/阅读层级和 C 的实验数值/单位表现。共享前端已落地 light/dark/system、comfortable/compact、设置中心、单一活动栏/导航、键盘与 ARIA 基础，并迁移搜索和文献工作区；personal/package 已静态归位，不再跨页面 appendChild。
+- 设置中心以 `desktop-settings-v1` 为后端权威，localStorage 只作首帧无闪烁缓存；语言首版仅 `zh-CN`。Windows 已消费相同 workbench 资产与设置 DTO，版本为 `0.8.0-internal.1`，但仍 `installer_ready=false`。
+- 运行时 AI 从 DeepSeek 单一实现迁移为代码内受信 provider：首批 DeepSeek 与 OpenAI，endpoint/model 目录固定且禁止自定义 URL/redirect。OpenAI 普通业务只有在短时能力证明有效时才激活；DeepSeek 保留旧兼容激活。
+- 所有 AI 知情同意升级为服务端 prepared action：不可变 job envelope 绑定 provider/revision/credential generation、模型、内容快照、executor 与调用/token 预算；renderer 只拿 action_id 与安全摘要。能力测试也走 prepare→consent→execute，一次性 nonce、冷却和缓存限制重复费用。
+- macOS 已新增双 provider 原子凭据 envelope：每 provider 独立 Keychain/preview AES 记录，密钥与 generation 同一次原子写，删除为 generation++ tombstone；旧 DeepSeek route 只能成为同一 manager 的兼容视图。
+- 本日小型验证证据：共享 prepared/provider 定向 70 项通过；前端第五批 36 项通过；macOS 凭据与旧 route/readiness 邻接 30 项通过。没有联网、模型调用、全测、构建、App 或生产数据库操作。
+- 当前开发 HEAD 为 `228942a`；0.7 build15/`888aae5` 保持唯一稳定回退。0.8 暂停点、未提交前端第六批和恢复顺序见 `PROJECT_HANDOFF.md` 顶部，不能描述为已完成 App。
+
 ## 2026-08-12：0.7.0-preview.2 最终用户路径收口
 
 - 增加版本化首次 AI 知情同意门，覆盖 Librarian、实际 DeepSeek 论文提取和私人表格建议；取消保持零网络请求，纯本地文献步骤不弹收费提示。

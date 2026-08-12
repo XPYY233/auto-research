@@ -1,5 +1,30 @@
 # Auto Research 阶段性交班总览
 
+## 0.8 开发暂停点（2026-08-13，优先阅读）
+
+- 当前 Git 开发基线：`228942a`（不是发布版）。已提交 A 骨架的日/夜/系统主题、舒适/紧凑密度、工作台设置、搜索与文献工作区、桌面偏好契约、DeepSeek/OpenAI 受信提供商注册表、服务端 prepared-action 知情同意核心、macOS 原子 AI 状态与多提供商凭据管理、Windows 0.8 外观设置薄适配。
+- 唯一可回退用户版仍是 Auto Research `0.7.0-preview.2` / build `15`，源码 `888aae5`，标签 `evidence-demo-2026-08-12-macos-package-center-0.7.0-preview-2-build15`。不要从 0.8 当前 checkout 构建或覆盖它。
+- 0.8 尚未形成可用 App：AI 业务 assembler/executor、macOS AI HTTP/组合根、Windows AI 第二批、release-contract 最终哈希、0.8 版本文件、全测、构建和实机验收均未完成。前端遇到未冻结 AI 业务 route 会明确 fail closed。
+- 未提交的开发暂停件只有 `web/app.css`、`web/index.html`、`web/workbench.css` 和新增 `test_evidence_detail_workbench_contract.py`：这是“证据详情/原文/审核 dialog → Workbench pane/drawer”的半成品，未运行测试、不可提交或构建；恢复时先由前端对话自审并完成定向测试。
+- `src/auto_research/release_contract.py` 与 `src/tests/test_release_contract.py` 是 root 保留的 0.8 发布契约草稿；`config/release-contract.json` 的 workbench 哈希仍是占位值。只能在共享前端完全冻结后统一同步哈希。
+- 永远保留未暂存用户现场：`db/experimental_evidence.sqlite`、`paper_056` 的 deepseek/quality/visual 产物。不要清理、还原、暂存、测试或打包它们。
+
+### 恢复顺序
+
+1. 读本节、`AGENT.md` 的“0.8 恢复与协作纪律”和项目 Skill 的 current-state/operations。
+2. 运行 `git status --short`，确认上述暂停件与用户现场仍在；禁止 `git reset/checkout/clean`。
+3. 先让 macOS 平台对话消费已冻结的 `AIDesktopService`、`PreparedActionService`、`RuntimeAIClientFactory` 与 `ProviderCredentialManager`，完成统一 AI 路由、业务 assembler/executor 和旧 DeepSeek route 单权威迁移。
+4. macOS 源码契约通过后，再让 Windows 对话只做同接口薄适配；继续 `installer_ready=false / SETUP_PRESENT=NO`。
+5. 恢复并完成前端第六批，再做 CSS/DOM 债务清扫；不得在旧 `app.css` 文件尾继续追加整套皮肤。
+6. 最后同步 release-contract/web hashes/macOS build identity，串行跑全套、干净 worktree 构建和真实用户流程。科学数据库与官方/用户资料包格式不变。
+
+### 多对话协作纪律
+
+- 使用用户已有的同项目 Codex 对话，不新建子 agent：前端/macOS、共享核心、Windows、安全四个职责位。
+- root 是唯一 Git 暂存/提交者。其他对话只在明确文件范围内编辑，完成后停手并报告，不得 stage/commit。
+- 同一文件只能有一个对话所有者；接口先由共享核心冻结，macOS 先消费并验证，Windows 最后薄同步。
+- 电脑发热时最多保留两个开发对话；禁止并行全测、构建、模型调用或 App 实机。目标测试小步串行，全套只在接口冻结后运行一次。
+
 > 交班快照：2026-08-12
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
 > 当前发布候选：Auto Research `0.7.0-preview.2` / build `15`；最终 DMG、套件与验收哈希见仓库外发布目录的 `RELEASE_ACCEPTANCE.json`
