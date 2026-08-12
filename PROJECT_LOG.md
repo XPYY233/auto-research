@@ -2,6 +2,13 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-12：0.7.0-preview.2 最终用户路径收口
+
+- 增加版本化首次 AI 知情同意门，覆盖 Librarian、实际 DeepSeek 论文提取和私人表格建议；取消保持零网络请求，纯本地文献步骤不弹收费提示。
+- 修复个人实验确认后的迟到搜索响应影响资料包视图，并将资料包导航收敛到共享 `switchView` 单一所有者；延迟 promise 运行时回归覆盖用户切页后不再滚动隐藏结果。
+- 实机确认旧版空白截图不是数据删除；build 14 往返等待门通过。随后发现并修复 macOS 本机导出目录被 PyObjC Foundation mapping 误判为非本机的真实阻断，最终候选提升为 build 15。
+- 共享核心 619、macOS 186、Windows 源码契约 125 项串行通过；生产 SQLite 和 `paper_056` 现场未进入测试、Git 或制品。最终制品、包和哈希记录在仓库外发布套件。
+
 ## 2026-08-11：macOS 0.7.0-preview.1 资料包中心内部发布
 
 - 从干净源码 `4d1f4c8` 构建 Auto Research `0.7.0-preview.1`（bundle `0.7.0`，build `9`），并创建标签 `evidence-demo-2026-08-11-macos-package-center-0.7.0-preview-1`。冻结 App 冒烟、ad-hoc codesign、DMG 校验和构建清单均通过。

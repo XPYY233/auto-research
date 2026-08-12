@@ -1,9 +1,9 @@
 # Auto Research 阶段性交班总览
 
-> 交班快照：2026-08-11
+> 交班快照：2026-08-12
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
-> 当前已构建源码：`4d1f4c8` / Auto Research `0.7.0-preview.1` / build `9` / `evidence-demo-2026-08-11-macos-package-center-0.7.0-preview-1`
-> 当前发布套件：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.7.0-preview.1-Kit.zip`，SHA-256 `baa03692a14665e6e1e4bc81b84564810183ec65a1024541c3bbb37c73282a18`
+> 当前发布候选：Auto Research `0.7.0-preview.2` / build `15`；最终 DMG、套件与验收哈希见仓库外发布目录的 `RELEASE_ACCEPTANCE.json`
+> 当前保护提交：`ad40a31`；最终候选在完成文档收口后从干净 release worktree 构建，构建清单中的 `core_commit` 为制品权威
 > 官方资料包：`0.2.0-preview.1`，SHA-256 `89ec7f8dcdeea2d862d91aaf798674fd600c21fd75c4553d270a0c0b806f999e`；旧 `0.1.0-preview.1` 保持不可变回退点
 > Windows：继续 `installer_ready=false`，无 Setup、无 Win11 真机验收；不得把源码对齐描述为安装版
 > 证据库版本：`2026.07.30-librarian-brief-stable.1` / schema v12

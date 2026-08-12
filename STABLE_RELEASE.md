@@ -3,6 +3,7 @@
 ## 版本身份
 
 - 科学数据基线：`2026.07.30-librarian-brief-stable.1`
+- 当前发布候选：Auto Research `0.7.0-preview.2` / build `15`。新增首次 AI 知情同意门，修复个人实验/资料包视图异步竞态与 macOS 本机导出位置误判；最终 DMG、ZIP 和验收哈希以仓库外发布套件为准
 - 当前已构建制品：Auto Research `0.7.0-preview.1`，源码 `4d1f4c8`，标签 `evidence-demo-2026-08-11-macos-package-center-0.7.0-preview-1`，DMG SHA-256 `968aa5936c90dfac5f0b50e8c96c6080ff87527e6d24e0cb7e08752b1958e133`
 - 当前发布套件：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.7.0-preview.1-Kit.zip`，SHA-256 `baa03692a14665e6e1e4bc81b84564810183ec65a1024541c3bbb37c73282a18`
 - 改造前保护提交：`6ce9536`
@@ -14,6 +15,13 @@
 - 已退役入口：浏览器工作台、导师只读页、`8765`/`8766`、ngrok 公网链接
 
 本阶段在 `2026.07.30-librarian-reasoning-stable.1` 上完成图书管理员研究简报、签名官方资料包、联合只读检索和 macOS 桌面接线。它保留既有数据、图表、原文定位、质量门、DeepSeek 证据对话和校对历史，没有重新提取论文、重新查询 PDF、生成稳定截图或猜测图中曲线点。HTML/JavaScript 与 loopback webapp 仍是 App 内部实现，不再作为独立网页版产品交付。
+
+## 0.7.0-preview.2 macOS 课题组内部候选
+
+- 图书管理员、收费论文提取和私人表格 AI 识别共用版本化的首次知情同意门；取消时不发送请求，也不写入会话状态。纯本地提取路径不会错误提示收费或外发。
+- 私人实验页和资料包中心保持一级入口；导入完成后的迟到搜索响应不得滚动用户已经离开的页面，资料包导航由共享视图路由唯一管理。
+- macOS 导出目标继续要求本机普通目录、一次性 opaque token、目录身份复核和目标不存在；修复 PyObjC Foundation mapping/NSNumber 被误判为非本机的兼容问题，未放宽网络盘或未知卷。
+- 发布门串行通过共享核心 619、macOS 186、Windows 源码契约 125，共 930 项。Windows 仍为 `installer_ready=false`，无 Setup 或 Win11 真机验收。
 
 ## 0.7.0-preview.1 macOS 课题组内部预览
 
