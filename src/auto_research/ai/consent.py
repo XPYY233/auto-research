@@ -3,23 +3,20 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import math
-import re
 import secrets
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Protocol
 
 
 AI_CONSENT_SCHEMA_VERSION = "ai-consent-v1"
 AI_CONSENT_ERROR_SCHEMA_VERSION = "ai-consent-error-v1"
 AI_CONSENT_TTL_SECONDS = 5 * 60
-MAX_ACTION_BYTES = 64 * 1024
-MAX_ACTION_DEPTH = 12
-MAX_ACTION_NODES = 2_000
-
+MAX_ACTIVE_CONSENTS = 64
+MAX_ACTIVE_CONSENTS_PER_SESSION = 16
 DISCLOSURE_VERSIONS = {
+    "capability_test": "capability-test-disclosure-v1",
     "librarian": "librarian-disclosure-v1",
     "literature_extraction": "literature-extraction-disclosure-v1",
     "personal_suggestion": "personal-suggestion-disclosure-v1",
@@ -27,15 +24,6 @@ DISCLOSURE_VERSIONS = {
 }
 AI_CONSENT_SCOPES = frozenset(DISCLOSURE_VERSIONS)
 
-_SESSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
-_SENSITIVE_KEY_RE = re.compile(
-    r"(?:^|_)(?:api_?key|secret|password|credential|token|nonce|path)(?:$|_)",
-    re.IGNORECASE,
-)
-_LOCAL_VALUE_RE = re.compile(
-    r"(?:^|[\s='\"])(?:~[/\\]|/(?:Users|private|tmp|var|etc|usr|root|srv|mnt|media|opt|Applications|Library|System)(?:[/\\]|$)|/[^/\s]+[/\\][^\s]*|[A-Za-z]:[\\/]|\\\\|file:|sqlite:)",
-    re.IGNORECASE,
-)
 _ERRORS = {
     "ai_consent_invalid": ("AI 知情同意凭证无效。", False),
     "ai_consent_scope_invalid": ("AI 使用场景无法识别。", False),
@@ -65,10 +53,6 @@ class AIConsentError(RuntimeError):
         }
 
 
-class RuntimeProviderAuthority(Protocol):
-    def get(self) -> Any: ...
-
-
 class ConsentClock(Protocol):
     def now(self) -> int: ...
 
@@ -80,9 +64,11 @@ class SystemConsentClock:
 
 @dataclass(frozen=True)
 class _ConsentRecord:
+    action_id: str
     session_id: str
     provider_id: str
     provider_revision: int
+    credential_generation: int
     scope: str
     disclosure_version: str
     issued_at: int
@@ -91,67 +77,34 @@ class _ConsentRecord:
     signature: str
 
 
-def _canonical_action(value: Any, *, depth: int, counter: list[int]) -> Any:
-    counter[0] += 1
-    if counter[0] > MAX_ACTION_NODES or depth > MAX_ACTION_DEPTH:
-        raise AIConsentError("ai_consent_action_invalid")
-    if value is None or isinstance(value, (str, bool, int)):
-        if isinstance(value, str) and _LOCAL_VALUE_RE.search(value):
-            raise AIConsentError("ai_consent_action_invalid")
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise AIConsentError("ai_consent_action_invalid")
-        return value
-    if isinstance(value, Mapping):
-        normalized: dict[str, Any] = {}
-        for key, item in value.items():
-            if not isinstance(key, str) or not key or _SENSITIVE_KEY_RE.search(key):
-                raise AIConsentError("ai_consent_action_invalid")
-            normalized[key] = _canonical_action(
-                item, depth=depth + 1, counter=counter
-            )
-        return normalized
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        return [
-            _canonical_action(item, depth=depth + 1, counter=counter)
-            for item in value
-        ]
-    raise AIConsentError("ai_consent_action_invalid")
-
-
-def canonical_action_digest(action: Any) -> str:
-    """Hash one bounded, path-free DTO exactly as it will be sent externally."""
-
-    normalized = _canonical_action(action, depth=0, counter=[0])
-    try:
-        payload = json.dumps(
-            normalized,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
-    except (TypeError, ValueError) as exc:
-        raise AIConsentError("ai_consent_action_invalid") from exc
-    if len(payload) > MAX_ACTION_BYTES:
-        raise AIConsentError("ai_consent_action_invalid")
-    return hashlib.sha256(payload).hexdigest()
+@dataclass(frozen=True)
+class PreparedConsentBinding:
+    action_id: str
+    session_id: str
+    provider_id: str
+    provider_revision: int
+    credential_generation: int
+    scope: str
+    disclosure_version: str
+    manifest_digest: str
+    prepared_expires_at: int
 
 
 def _claims_bytes(nonce: str, record: _ConsentRecord) -> bytes:
     return json.dumps(
         {
             "schema_version": AI_CONSENT_SCHEMA_VERSION,
+            "action_id": record.action_id,
             "nonce": nonce,
             "session_id": record.session_id,
             "provider_id": record.provider_id,
             "provider_revision": record.provider_revision,
+            "credential_generation": record.credential_generation,
             "scope": record.scope,
             "disclosure_version": record.disclosure_version,
             "issued_at": record.issued_at,
             "expires_at": record.expires_at,
-            "action_digest": record.action_digest,
+            "manifest_digest": record.action_digest,
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -165,14 +118,12 @@ class AIConsentService:
     def __init__(
         self,
         *,
-        runtime_state: RuntimeProviderAuthority,
         clock: ConsentClock | None = None,
         secret_key: bytes | None = None,
     ) -> None:
         key = secret_key if secret_key is not None else secrets.token_bytes(32)
         if not isinstance(key, bytes) or len(key) < 32:
             raise ValueError("AI consent key must contain at least 32 bytes")
-        self._runtime_state = runtime_state
         self._clock = clock or SystemConsentClock()
         self._key = key
         self._lock = threading.Lock()
@@ -182,26 +133,28 @@ class AIConsentService:
     def issue(
         self,
         *,
-        session_id: str,
-        scope: str,
-        action: Any,
+        binding: PreparedConsentBinding,
     ) -> dict[str, object]:
-        session = self._session(session_id)
-        disclosure_version = self._disclosure(scope)
-        provider_id, provider_revision = self._provider_state()
-        action_digest = canonical_action_digest(action)
+        self._validate_binding(binding)
         issued_at = self._now()
-        expires_at = issued_at + AI_CONSENT_TTL_SECONDS
+        expires_at = min(
+            issued_at + AI_CONSENT_TTL_SECONDS,
+            binding.prepared_expires_at,
+        )
+        if expires_at <= issued_at:
+            raise AIConsentError("ai_consent_expired")
         nonce = secrets.token_urlsafe(32)
         unsigned = _ConsentRecord(
-            session,
-            provider_id,
-            provider_revision,
-            scope,
-            disclosure_version,
+            binding.action_id,
+            binding.session_id,
+            binding.provider_id,
+            binding.provider_revision,
+            binding.credential_generation,
+            binding.scope,
+            binding.disclosure_version,
             issued_at,
             expires_at,
-            action_digest,
+            binding.manifest_digest,
             "",
         )
         signature = hmac.new(
@@ -210,12 +163,26 @@ class AIConsentService:
         record = _ConsentRecord(**{**unsigned.__dict__, "signature": signature})
         with self._lock:
             self._cleanup_locked(issued_at)
+            if any(
+                record.action_id == binding.action_id
+                for record in self._records.values()
+            ):
+                raise AIConsentError("ai_consent_replayed")
+            session_count = sum(
+                record.session_id == binding.session_id
+                for record in self._records.values()
+            )
+            if (
+                len(self._records) >= MAX_ACTIVE_CONSENTS
+                or session_count >= MAX_ACTIVE_CONSENTS_PER_SESSION
+            ):
+                raise AIConsentError("ai_consent_state_unavailable")
             self._records[nonce] = record
         return {
             "schema_version": AI_CONSENT_SCHEMA_VERSION,
-            "scope": scope,
-            "provider_id": provider_id,
-            "disclosure_version": disclosure_version,
+            "scope": binding.scope,
+            "provider_id": binding.provider_id,
+            "disclosure_version": binding.disclosure_version,
             "nonce": nonce,
             "expires_at": expires_at,
         }
@@ -224,16 +191,11 @@ class AIConsentService:
         self,
         *,
         nonce: str,
-        session_id: str,
-        scope: str,
-        action: Any,
+        binding: PreparedConsentBinding,
     ) -> None:
         if not isinstance(nonce, str) or not nonce:
             raise AIConsentError("ai_consent_invalid")
-        session = self._session(session_id)
-        disclosure_version = self._disclosure(scope)
-        action_digest = canonical_action_digest(action)
-        provider_id, provider_revision = self._provider_state()
+        self._validate_binding(binding)
         now = self._now()
         with self._lock:
             replay_expiry = self._consumed.get(nonce)
@@ -248,14 +210,16 @@ class AIConsentService:
                 self._records.pop(nonce, None)
                 raise AIConsentError("ai_consent_expired")
             candidate = _ConsentRecord(
-                session,
-                provider_id,
-                provider_revision,
-                scope,
-                disclosure_version,
+                binding.action_id,
+                binding.session_id,
+                binding.provider_id,
+                binding.provider_revision,
+                binding.credential_generation,
+                binding.scope,
+                binding.disclosure_version,
                 record.issued_at,
                 record.expires_at,
-                action_digest,
+                binding.manifest_digest,
                 record.signature,
             )
             expected_signature = hmac.new(
@@ -265,23 +229,6 @@ class AIConsentService:
                 raise AIConsentError("ai_consent_invalid")
             self._records.pop(nonce, None)
             self._consumed[nonce] = record.expires_at
-
-    def _provider_state(self) -> tuple[str, int]:
-        try:
-            state = self._runtime_state.get()
-            provider_id = state.provider_id
-            revision = state.revision
-        except Exception as exc:
-            raise AIConsentError("ai_consent_state_unavailable") from exc
-        if (
-            not isinstance(provider_id, str)
-            or not provider_id
-            or isinstance(revision, bool)
-            or not isinstance(revision, int)
-            or revision < 0
-        ):
-            raise AIConsentError("ai_consent_state_unavailable")
-        return provider_id, revision
 
     def _now(self) -> int:
         try:
@@ -293,16 +240,22 @@ class AIConsentService:
         return value
 
     @staticmethod
-    def _session(session_id: object) -> str:
-        if not isinstance(session_id, str) or _SESSION_RE.fullmatch(session_id) is None:
+    def _validate_binding(binding: object) -> None:
+        if not isinstance(binding, PreparedConsentBinding):
             raise AIConsentError("ai_consent_invalid")
-        return session_id
-
-    @staticmethod
-    def _disclosure(scope: object) -> str:
-        if not isinstance(scope, str) or scope not in DISCLOSURE_VERSIONS:
-            raise AIConsentError("ai_consent_scope_invalid")
-        return DISCLOSURE_VERSIONS[scope]
+        if (
+            not binding.action_id
+            or not binding.session_id
+            or not binding.provider_id
+            or binding.scope not in DISCLOSURE_VERSIONS
+            or binding.disclosure_version != DISCLOSURE_VERSIONS[binding.scope]
+            or isinstance(binding.provider_revision, bool)
+            or binding.provider_revision < 0
+            or isinstance(binding.credential_generation, bool)
+            or binding.credential_generation < 0
+            or len(binding.manifest_digest) != 64
+        ):
+            raise AIConsentError("ai_consent_invalid")
 
     def _cleanup_locked(self, now: int) -> None:
         for nonce, record in tuple(self._records.items()):
@@ -317,11 +270,12 @@ __all__ = [
     "AI_CONSENT_SCHEMA_VERSION",
     "AI_CONSENT_SCOPES",
     "AI_CONSENT_TTL_SECONDS",
+    "MAX_ACTIVE_CONSENTS",
+    "MAX_ACTIVE_CONSENTS_PER_SESSION",
     "DISCLOSURE_VERSIONS",
     "AIConsentError",
     "AIConsentService",
     "ConsentClock",
-    "RuntimeProviderAuthority",
+    "PreparedConsentBinding",
     "SystemConsentClock",
-    "canonical_action_digest",
 ]

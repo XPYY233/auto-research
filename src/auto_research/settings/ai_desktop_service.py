@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import threading
+import time
+import hashlib
 from typing import Any, Mapping, Protocol
 
 from auto_research.ai.provider_registry import (
@@ -25,7 +27,6 @@ _FIXED_CREDENTIAL_REFS = {
     "deepseek": "deepseek.default",
     "openai": "openai.default",
 }
-_TEST_KEYS = frozenset({"consent_version", "expected_revision"})
 _PATCH_KEYS = frozenset({"provider_id", "task_models", "expected_revision"})
 _ERRORS = {
     "ai_desktop_request_invalid": ("AI 设置请求内容无效。", False),
@@ -34,9 +35,21 @@ _ERRORS = {
     "ai_desktop_credential_unavailable": ("本机 AI 密钥暂时无法读取或保存。", True),
     "ai_desktop_consent_required": ("请先确认可能产生费用的能力测试。", False),
     "ai_desktop_test_busy": ("该 AI 设置正在进行能力测试，请稍后再试。", True),
+    "ai_desktop_test_cooldown": ("能力测试请求过于频繁，请稍后再试。", True),
 }
 _TEST_GUARD = threading.Lock()
 _TESTS_IN_PROGRESS: set[tuple[str, int]] = set()
+AI_CAPABILITY_TEST_COOLDOWN_SECONDS = 30
+AI_CAPABILITY_TEST_CACHE_SECONDS = 15 * 60
+
+
+class AIDesktopClock(Protocol):
+    def now(self) -> int: ...
+
+
+class SystemAIDesktopClock:
+    def now(self) -> int:
+        return int(time.time())
 
 
 class AIDesktopServiceError(RuntimeError):
@@ -108,9 +121,17 @@ class AIDesktopService:
         *,
         runtime_state: AIRuntimeStateService,
         credential_manager: CredentialManager,
+        clock: AIDesktopClock | None = None,
     ) -> None:
         self._runtime_state = runtime_state
         self._credentials = credential_manager
+        self._clock = clock or SystemAIDesktopClock()
+        self._rate_lock = threading.Lock()
+        self._attempts: dict[tuple[str, str], int] = {}
+        self._successes: dict[
+            tuple[str, str, int, int, tuple[str, ...]],
+            tuple[int, dict[str, object]],
+        ] = {}
 
     def catalog(self) -> dict[str, object]:
         current = self.get()
@@ -187,32 +208,100 @@ class AIDesktopService:
         self._validate_credential_change(provider, before, after, configured=False)
         return self.credential_status(provider)
 
-    def test(self, provider_id: str, payload: Mapping[str, Any]) -> dict[str, object]:
+    def test(
+        self,
+        provider_id: str,
+        prepared_action: object,
+        *,
+        session_id: str,
+    ) -> dict[str, object]:
+        from auto_research.ai.prepared_actions import PreparedOutbound
+
         provider = _provider(provider_id)
-        if not isinstance(payload, Mapping) or set(payload) != _TEST_KEYS:
+        if not isinstance(prepared_action, PreparedOutbound):
             raise AIDesktopServiceError("ai_desktop_request_invalid")
-        if payload.get("consent_version") != AI_CAPABILITY_TEST_CONSENT_VERSION:
-            raise AIDesktopServiceError("ai_desktop_consent_required")
-        expected_revision = payload.get("expected_revision")
+        action = prepared_action
+        session_digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
         if (
-            isinstance(expected_revision, bool)
-            or not isinstance(expected_revision, int)
-            or expected_revision < 0
+            action.scope != "capability_test"
+            or action.task != "capability_test"
+            or action.provider_id != provider
+            or action.session_digest != session_digest
         ):
             raise AIDesktopServiceError("ai_desktop_request_invalid")
-        key = (provider, expected_revision)
+        binding = self._runtime_state.action_binding()
+        expected_models = tuple(sorted(set(binding.task_models.values())))
+        expected_outbound = {
+            "kind": "capability_test",
+            "provider_id": provider,
+            "runtime_revision": binding.selection_revision,
+            "models": expected_models,
+            "maximum_model_calls": 2 * len(expected_models),
+        }
+        if (
+            binding.provider_id != provider
+            or binding.selection_revision != action.runtime_revision
+            or binding.credential_generation != action.credential_generation
+            or action.models != expected_models
+            or dict(action.outbound) != expected_outbound
+        ):
+            raise AIDesktopServiceError("ai_desktop_request_invalid")
+        now = self._now()
+        cache_key = (
+            session_id,
+            provider,
+            binding.selection_revision,
+            binding.credential_generation,
+            expected_models,
+        )
+        key = (provider, binding.selection_revision)
         with _TEST_GUARD:
             if key in _TESTS_IN_PROGRESS:
                 raise AIDesktopServiceError("ai_desktop_test_busy")
             _TESTS_IN_PROGRESS.add(key)
         try:
-            return self._runtime_state.record_verification(
+            attempt_key = (session_id, provider)
+            with self._rate_lock:
+                cached = self._successes.get(cache_key)
+                if cached is not None and now < cached[0]:
+                    return dict(cached[1])
+                last_attempt = self._attempts.get(attempt_key)
+                if (
+                    last_attempt is not None
+                    and now - last_attempt < AI_CAPABILITY_TEST_COOLDOWN_SECONDS
+                ):
+                    raise AIDesktopServiceError("ai_desktop_test_cooldown")
+                self._attempts[attempt_key] = now
+            result = self._runtime_state.record_verification(
                 expected_provider_id=provider,
-                expected_revision=expected_revision,
+                expected_revision=binding.selection_revision,
             ).public_dict()
+            post_binding = self._runtime_state.action_binding()
+            post_key = (
+                session_id,
+                provider,
+                post_binding.selection_revision,
+                post_binding.credential_generation,
+                tuple(sorted(set(post_binding.task_models.values()))),
+            )
+            with self._rate_lock:
+                self._successes[post_key] = (
+                    now + AI_CAPABILITY_TEST_CACHE_SECONDS,
+                    dict(result),
+                )
+            return result
         finally:
             with _TEST_GUARD:
                 _TESTS_IN_PROGRESS.discard(key)
+
+    def _now(self) -> int:
+        try:
+            value = self._clock.now()
+        except Exception as exc:
+            raise AIDesktopServiceError("ai_desktop_credential_unavailable") from exc
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise AIDesktopServiceError("ai_desktop_credential_unavailable")
+        return value
 
     def _test_plan(self, current: Mapping[str, Any]) -> dict[str, object]:
         models = current.get("task_models")
@@ -221,6 +310,7 @@ class AIDesktopService:
         unique_model_count = len(set(models.values()))
         return {
             "consent_version": AI_CAPABILITY_TEST_CONSENT_VERSION,
+            "prepare_required": True,
             "provider_id": current.get("provider_id"),
             "expected_revision": current.get("revision"),
             "unique_model_count": unique_model_count,
@@ -258,7 +348,11 @@ class AIDesktopService:
 
 __all__ = [
     "AI_CAPABILITY_TEST_CONSENT_VERSION",
+    "AI_CAPABILITY_TEST_COOLDOWN_SECONDS",
+    "AI_CAPABILITY_TEST_CACHE_SECONDS",
+    "AIDesktopClock",
     "AIDesktopService",
     "AIDesktopServiceError",
     "CredentialManager",
+    "SystemAIDesktopClock",
 ]

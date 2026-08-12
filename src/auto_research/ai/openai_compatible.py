@@ -4,7 +4,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Mapping, TypeVar
 
 import requests
 
@@ -30,6 +30,10 @@ from .provider_registry import (
 
 _CREDENTIAL_REF_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _Result = TypeVar("_Result")
+_BACKEND_ACTIVATIONS = frozenset({"legacy_compatible", "connection_verified"})
+
+if TYPE_CHECKING:
+    from auto_research.settings.ai_runtime_state import ResolvedAIRuntime
 
 
 class AIProviderError(RuntimeError):
@@ -84,6 +88,9 @@ class OpenAICompatibleSettings:
     max_attempts: int = 2
     retry_base_seconds: int = 0
     verification_mode: bool = field(default=False, repr=False)
+    _backend_activation: tuple[str, str, tuple[tuple[str, str], ...]] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         try:
@@ -113,13 +120,55 @@ class OpenAICompatibleSettings:
         if not isinstance(self.verification_mode, bool):
             raise AIProviderResponseError("AI 验证模式格式无效。")
 
+    @classmethod
+    def from_resolved_runtime(
+        cls,
+        runtime: "ResolvedAIRuntime",
+        *,
+        api_key: str,
+        timeout_seconds: int = 180,
+        max_attempts: int = 2,
+        retry_base_seconds: int = 0,
+    ) -> "OpenAICompatibleSettings":
+        """Construct ordinary runtime settings from backend authority only."""
+        from auto_research.settings.ai_runtime_state import ResolvedAIRuntime
+
+        if not isinstance(runtime, ResolvedAIRuntime) or runtime.activation not in _BACKEND_ACTIVATIONS:
+            raise AIProviderResponseError("AI 后端激活状态无效。")
+        value = cls(
+            provider_id=runtime.provider_id,
+            task_models=runtime.task_models,
+            api_key=api_key,
+            credential_ref=runtime.credential_ref,
+            timeout_seconds=timeout_seconds,
+            max_attempts=max_attempts,
+            retry_base_seconds=retry_base_seconds,
+        )
+        object.__setattr__(
+            value,
+            "_backend_activation",
+            (
+                runtime.activation,
+                runtime.provider_id,
+                tuple(sorted(runtime.task_models.items())),
+            ),
+        )
+        return value
+
     @property
     def models_verified(self) -> bool:
         profile = trusted_provider_profile(self.provider_id)
-        return (
+        legacy = (
             profile.model_validation == MODEL_VALIDATION_BUILTIN
             and profile.runtime_activation != RUNTIME_ACTIVATION_CONNECTION_REQUIRED
         )
+        activation = self._backend_activation
+        backend_verified = activation == (
+            "connection_verified",
+            self.provider_id,
+            tuple(sorted(self.task_models.items())),
+        )
+        return legacy or backend_verified
 
     @property
     def available(self) -> bool:

@@ -218,6 +218,18 @@ class ResolvedAIRuntime:
     activation: str
 
 
+@dataclass(frozen=True)
+class RuntimeActionBinding:
+    """Backend-only identity used to bind prepared outbound AI actions."""
+
+    provider_id: str
+    task_models: Mapping[str, str]
+    credential_ref: str
+    credential_generation: int
+    selection_revision: int
+    activation: str
+
+
 def _claims(
     selection: AIRuntimeSelection,
     credential_generation: int,
@@ -492,6 +504,27 @@ class AIRuntimeStateService:
             activation,
         )
 
+    def action_binding(self) -> RuntimeActionBinding:
+        selection = self._read()
+        credential = self._credential(selection.provider_id)
+        if not credential.configured:
+            raise _error("ai_runtime_verification_required")
+        profile = trusted_provider_profile(selection.provider_id)
+        if profile.runtime_activation == RUNTIME_ACTIVATION_LEGACY:
+            activation = "legacy_compatible"
+        elif self._attestation_valid(selection, credential):
+            activation = "connection_verified"
+        else:
+            activation = "unverified_configured"
+        return RuntimeActionBinding(
+            selection.provider_id,
+            selection.task_models,
+            credential.credential_ref,
+            credential.generation,
+            selection.revision,
+            activation,
+        )
+
 
 __all__ = [
     "AIRuntimePublicState",
@@ -506,6 +539,7 @@ __all__ = [
     "ModelCapabilityResult",
     "ProviderCapabilityVerifier",
     "ResolvedAIRuntime",
+    "RuntimeActionBinding",
     "SystemClock",
     "VerificationAttestationSigner",
 ]

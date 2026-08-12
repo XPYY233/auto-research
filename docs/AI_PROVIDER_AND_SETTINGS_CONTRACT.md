@@ -44,7 +44,10 @@ credential generation、credential ref 或 token。
 与 tool calling 后才请求 signer 签发 token；验证可能产生模型费用，因此桌面路由/UI 必须
 另行取得用户明确授权。验证过程不保存请求、响应或错误正文。普通 runtime 由
 `resolve_runtime()` 决定：OpenAI 无有效 attestation 时 fail closed；DeepSeek 旧路径公开为
-`legacy_compatible`，不得冒充 `connection_verified`。平台稍后实现原子 CAS store、凭据
+`legacy_compatible`，不得冒充 `connection_verified`。`RuntimeAIClientFactory` 是普通业务
+客户端的唯一共享构造入口：先取得后端 `ResolvedAIRuntime`，再通过凭据管理器解析密钥，
+最后以不可由 renderer、环境变量或普通构造参数设置的 backend activation 创建客户端。
+`verification_mode` 仅允许固定能力探针，绝不能放行普通业务请求。平台稍后实现原子 CAS store、凭据
 generation provider 和安全 signer；公开 DTO 永不包含 credential ref/generation、token、
 路径、密钥或内部 ID。
 
@@ -62,9 +65,9 @@ credential ref 由共享服务按 provider 选择，renderer 永远不能提交�
 `catalog/get/patch/credential_status/credential_save/credential_delete/test`。保存密钥只写
 平台安全存储，不联网；替换或删除都必须令 generation 严格递增，使旧 attestation 在下次
 读取时自动失效。平台的 save/delete 必须把密钥变更与 generation++ 作为同一个原子操作，
-不得出现“密钥已变但 generation 未变”的可见状态。`test` 只接受
-`ai-capability-test-consent-v1` 和当前 revision，并在任何
-可能收费的模型调用前核对 provider/revision；随后复用共享固定 verifier 和
+不得出现“密钥已变但 generation 未变”的可见状态。`test` 只接受服务端准备、用户同意并
+原子消费的 `capability_test` action，并在任何可能收费的模型调用前核对
+provider/revision/generation/模型；随后复用共享固定 verifier 和
 `record_verification()`。公开 catalog、状态、操作结果和错误均不含 key、credential ref、
 generation、endpoint、attestation、token、路径或内部 ID。DeepSeek 旧 alias 后续只能委托
 同一个 manager/service，不能成为第二套凭据权威。
@@ -74,32 +77,73 @@ generation、registry version 和 selection revision 一起进入签名 claims�
 只有 `issued_at <= now < expires_at` 才有效，时钟异常、未来签发或到期均 fail closed 为
 `verification_required`。时钟通过共享核心 `Clock` 注入，平台不得自行解释租约。
 
-`catalog.capability_test` 在用户授权前公开本次测试的 provider、revision、唯一模型数及
+`catalog.capability_test` 标记 `prepare_required`，并公开本次测试的 provider、revision、唯一模型数及
 `maximum_model_calls = 2 × unique_model_count`；这里的两次是每个唯一模型的上限，不是整次
 测试总共两次。共享服务对相同 provider+revision 实施进程内单飞；并发重复请求返回稳定
-`ai_desktop_test_busy`，不会启动第二组收费调用。前端 consent nonce 属于下一阶段，不在本
-契约中伪造。
+`ai_desktop_test_busy`，不会启动第二组收费调用。按 session+provider 另设短冷却；成功结果
+只对同一 revision、generation 和模型集合短时缓存。
 
 ## AI 知情同意
 
 共享 `AIConsentService` 是所有外发 AI 动作的服务端一次性门，scope 固定为
-`librarian`、`literature_extraction`、`personal_suggestion` 和
+`capability_test`、`librarian`、`literature_extraction`、`personal_suggestion` 和
 `selected_evidence_chat`，每个 scope 都有独立版本化 disclosure。平台只有在用户明确
-同意后调用 `issue()`；取消时不调用，因此不生成 nonce、不写状态且零网络。provider 与
-内部 revision 每次都从 `AIRuntimeStateService` 权威状态读取，不接受 renderer 自报；因此
-provider 切换或 A→B→A 后旧 nonce 均不能复活。
+同意后才签发 nonce；取消时不调用，因此不生成 nonce、不写状态且零网络。nonce 只能绑定
+`PreparedActionService` 提供的后端 manifest；renderer 不能提交 scope、provider、action、
+content hash 或最终外发 DTO。
 
-nonce 是进程内随机不透明句柄，TTL 固定 5 分钟。进程随机 HMAC claims 绑定 session、
-provider/revision、scope、disclosure version、issued/expires 和一次性 action digest；
-`consume()` 必须在模型调用前对同一实际外发 DTO 重新计算 digest，以恒时比较验签并原子
+nonce 是进程内随机不透明句柄，TTL 不超过 prepared action 的 5 分钟租约。进程随机 HMAC
+claims 绑定 action id、session、provider/revision/generation、scope、disclosure version、
+issued/expires 和 manifest digest；`consume()` 在模型调用前以恒时比较验签并原子
 消费。过期、重放、篡改、跨 session/scope/provider/version 全部使用稳定 path-free 错误
 拒绝；nonce 不持久化到数据库、历史或 localStorage。localStorage 最多记录用户已看过某个
 `provider+scope+version` 的披露，用于避免重复展示，永远不能替代本次 action nonce。
 
-`canonical_action_digest()` 只接受有限深度/节点数、规范 JSON 基本类型，总规范载荷上限
-64 KiB；拒绝非有限数字、敏感键、本机绝对路径以及 file/sqlite URI。`issue()` 公开字段仅
-为 schema、scope、provider、disclosure version、nonce 和 expires_at，不包含 session、
-action digest、披露内容、key、endpoint、路径或内部 ID。
+`PreparedActionService` 由服务端业务 assembler 一次性装入不可变 job envelope。scope 上限
+分别为：能力测试 64 KiB、个人建议 256 KiB、选中证据对话 1 MiB、Librarian 2 MiB、文献
+抽取 4 MiB；进程最多 32 个、单 session 最多 8 个、总计不超过 16 MiB。内容经过有限深度/
+节点数的规范 JSON 校验，并拒绝敏感键、本机路径与 file/sqlite URI。公开 prepare summary
+只给 action id、scope/provider、显示名、task/model、外发单元计数与字节数、预计/最大调用数、
+最大 token、披露版本和到期时间；不含内容 hash、来源身份、路径、generation 或内部 manifest。
+
+manifest 绑定 provider/runtime revision/credential generation、任务与模型、内容单元的稳定身份
+和 snapshot fingerprint、长度/hash、完整 envelope digest，以及 executor id/version、最大调用数
+与最大 token。个人建议和选中证据对话可绑定单次精确 payload；Librarian 与质量/抽取链允许
+多次模型调用，但 executor 只能从该 envelope 取子集，并追加本 job 内模型刚产生的输出，
+不得重新检索、读取新的科研内容或扩大预算。这一派生闭包使一次授权覆盖有界 Agent 链，而不
+要求授权前虚构后续模型输出。snapshot、runtime、provider/model 或密钥代次变化均使动作失效。
+
+## 共享桌面 AI HTTP 契约
+
+`DesktopAIController` 冻结平台中立、HTTP-shaped 的薄控制层，但不启动服务器、不持有平台
+存储、不读取已有密钥，也不执行 Librarian、抽取、私人建议或证据对话。macOS/Windows 的
+受保护 bridge 只负责认证、CSRF、解析 JSON 和注入 `DesktopAIRequestContext`；其中独立
+`session_id` 必须来自平台会话，不能用 renderer body 或 request tracking ID 替代。controller
+仍会 fail closed 复核 `session_authenticated`，并对 POST/PATCH/DELETE 复核
+`csrf_validated`。
+
+共享路由固定为：
+
+- `GET /api/desktop/ai/providers`
+- `GET|PATCH /api/desktop/ai/settings`
+- `GET|POST|DELETE /api/desktop/ai/credentials/{deepseek|openai}`
+- `POST /api/desktop/ai/providers/{deepseek|openai}/test-actions`
+- `POST /api/desktop/ai/providers/{deepseek|openai}/test`
+- `POST /api/desktop/ai/consents`
+
+每条路由都有冻结 body cap；GET/DELETE 禁止 body，JSON 对象还会按规范编码后的实际字节数
+复核，不能只相信 transport 声明。settings/test 继续由对应 service 执行严格 schema；凭据
+保存 body 只允许 `{api_key}`，controller 立即委托且不回显；test-actions 只允许
+`{expected_revision}`，consent 只允许 `{action_id}`，test 执行只允许
+`{action_id,consent_nonce}`，session 不得由 renderer 提交。成功响应原样采用现有公开 DTO；稳定服务
+错误映射到固定 4xx/5xx 与 `desktop-ai-http-error-v1`，未知异常只返回净化 500，不包含异常
+文本、key、body、endpoint 或路径。
+
+业务 AI endpoint 暂不属于该 controller。所有平台/业务路由必须复用
+`ConsentProtectedAction`：它只接受 `{action_id,consent_nonce}`，原子消费后返回服务端先前
+保存的 immutable `PreparedOutbound`。业务逻辑不得接收 renderer action、重新检索或追加
+新的科研内容。helper 不调用模型、不复制 digest/HMAC 规则，也不替业务路由决定其 CSRF 策略；未
+认证上下文、缺 nonce、超限或消费失败均 fail closed。
 
 现有 `DeepSeekClient` 与 `DeepSeekSettings` 保持兼容，当前 DeepSeek 产品路径不会因新增
 通用提供商契约而改变。`DeepSeekClient` 已成为 `OpenAICompatibleClient` 的薄兼容层；

@@ -27,9 +27,28 @@ from .consent import (
     AIConsentError,
     AIConsentService,
     ConsentClock,
-    RuntimeProviderAuthority,
+    PreparedConsentBinding,
     SystemConsentClock,
-    canonical_action_digest,
+)
+from .prepared_actions import (
+    ContentSnapshotAuthority,
+    ContentUnit,
+    PreparedActionClock,
+    PreparedActionError,
+    PreparedActionService,
+    PreparedOutbound,
+    RuntimeActionAuthority,
+    SystemPreparedActionClock,
+)
+from .runtime_factory import RuntimeAIClientFactory, RuntimeCredentialResolver
+from .desktop_controller import (
+    DESKTOP_AI_ROUTES,
+    ConsentProtectedAction,
+    DesktopAIController,
+    DesktopAIHTTPResponse,
+    DesktopAIRequestContext,
+    DesktopAIRoute,
+    DesktopAISettings,
 )
 
 __all__ = [
@@ -54,7 +73,23 @@ __all__ = [
     "AIConsentError",
     "AIConsentService",
     "ConsentClock",
-    "RuntimeProviderAuthority",
+    "PreparedConsentBinding",
     "SystemConsentClock",
-    "canonical_action_digest",
+    "ContentSnapshotAuthority",
+    "ContentUnit",
+    "PreparedActionClock",
+    "PreparedActionError",
+    "PreparedActionService",
+    "PreparedOutbound",
+    "RuntimeActionAuthority",
+    "SystemPreparedActionClock",
+    "RuntimeAIClientFactory",
+    "RuntimeCredentialResolver",
+    "DESKTOP_AI_ROUTES",
+    "ConsentProtectedAction",
+    "DesktopAIController",
+    "DesktopAIHTTPResponse",
+    "DesktopAIRequestContext",
+    "DesktopAIRoute",
+    "DesktopAISettings",
 ]

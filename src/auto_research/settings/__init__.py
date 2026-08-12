@@ -25,14 +25,19 @@ from .ai_runtime_state import (
     ModelCapabilityResult,
     ProviderCapabilityVerifier,
     ResolvedAIRuntime,
+    RuntimeActionBinding,
     SystemClock,
     VerificationAttestationSigner,
 )
 from .ai_desktop_service import (
+    AI_CAPABILITY_TEST_CACHE_SECONDS,
+    AI_CAPABILITY_TEST_COOLDOWN_SECONDS,
     AI_CAPABILITY_TEST_CONSENT_VERSION,
+    AIDesktopClock,
     AIDesktopService,
     AIDesktopServiceError,
     CredentialManager,
+    SystemAIDesktopClock,
 )
 
 __all__ = [
@@ -56,10 +61,15 @@ __all__ = [
     "ModelCapabilityResult",
     "ProviderCapabilityVerifier",
     "ResolvedAIRuntime",
+    "RuntimeActionBinding",
     "SystemClock",
     "VerificationAttestationSigner",
     "AI_CAPABILITY_TEST_CONSENT_VERSION",
+    "AI_CAPABILITY_TEST_CACHE_SECONDS",
+    "AI_CAPABILITY_TEST_COOLDOWN_SECONDS",
+    "AIDesktopClock",
     "AIDesktopService",
     "AIDesktopServiceError",
     "CredentialManager",
+    "SystemAIDesktopClock",
 ]
