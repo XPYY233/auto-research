@@ -76,30 +76,6 @@
 .edit-table tr.confirmed td:first-child{box-shadow:inset 3px 0 var(--blue)}
 .edit-table tr.dirty td:first-child{box-shadow:inset 3px 0 var(--orange)}
 .edit-table tr.dirty td{background:#fffaf2}
-.ai-state{padding:8px 12px;border-radius:999px;font-size:11px;white-space:nowrap}
-.ai-state.configured{color:var(--green);background:#e8f4ef;border:1px solid #bdd9cd}
-.ai-state.pending{color:#8a5a22;background:#fff4df;border:1px solid #ead3a9}
-.upload-layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(310px,.9fr);gap:16px;align-items:stretch}
-.upload-card{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:24px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
-.upload-drop{position:relative;min-height:125px;place-content:center;text-align:center;padding:25px;border:1px dashed #91aab8;border-radius:8px;background:repeating-linear-gradient(-45deg,#f4f8fa,#f4f8fa 10px,#edf4f7 10px,#edf4f7 20px);cursor:pointer}
-.upload-drop input{position:absolute;inset:0;opacity:0;cursor:pointer}
-.upload-drop strong{color:var(--blue);font:600 17px Georgia,"Songti SC",serif}
-.upload-drop small{margin-top:7px;color:var(--muted)}
-.upload-result{min-height:100%;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#e9f0f4;box-shadow:var(--shadow)}
-.upload-result-card{height:100%;display:flex;flex-direction:column;justify-content:center;padding:28px;background:#fff;border-left:5px solid var(--green)}
-.upload-result-card.duplicate{border-left-color:var(--orange)}.upload-result-card.rejected{border-left-color:var(--red)}
-.upload-result-card>span{color:var(--green);font:700 10px "IBM Plex Mono",monospace;letter-spacing:.13em}
-.upload-result-card.duplicate>span{color:var(--orange)}.upload-result-card.rejected>span{color:var(--red)}
-.upload-result-card h3{margin:10px 0 8px;font:600 20px/1.35 Georgia,"Songti SC",serif}
-.upload-result-card p{margin:0;color:#536572;font-size:12px;line-height:1.65}.upload-result-card small{margin-top:12px;color:var(--muted)}
-.upload-result-card button{align-self:start;margin-top:18px;padding:9px 14px;border:0;border-radius:999px;color:#fff;background:var(--blue);cursor:pointer}
-.queue-head{display:flex;justify-content:space-between;align-items:end;margin:31px 0 11px}.queue-head button{border:1px solid #c4d2d9;border-radius:999px;padding:8px 13px;color:var(--blue);background:#fff;cursor:pointer}
-.uploads-head{margin-top:26px}.queue-list{display:grid;gap:8px}.queue-card{display:grid;grid-template-columns:105px minmax(240px,1fr) minmax(220px,.75fr);gap:15px;align-items:center;padding:14px 16px;background:#fff;border:1px solid var(--line);border-radius:7px}
-.queue-card strong{font-size:12px}.queue-card p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.5}.queue-kind{font:700 10px "IBM Plex Mono",monospace;color:var(--blue)}
-.queue-kind.duplicate,.queue-kind.blocked{color:var(--orange)}.queue-kind.rejected,.queue-kind.failed{color:var(--red)}.queue-kind.accepted,.queue-kind.completed{color:var(--green)}
-.empty-queue{padding:20px;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:7px;font-size:12px;text-align:center}
-@media(max-width:900px){.upload-layout{grid-template-columns:1fr}.upload-result{min-height:250px}.queue-card{grid-template-columns:90px 1fr}.queue-card>div:last-child{grid-column:2}}
-@media(max-width:700px){.upload-card{grid-template-columns:1fr}.upload-card .span-2{grid-column:auto}.ai-state{display:inline-block;margin-top:12px}.queue-card{grid-template-columns:1fr}.queue-card>div:last-child{grid-column:auto}}
 .secondary-action{padding:9px 12px;border:1px solid #bdced7;border-radius:5px;background:#fff;color:var(--blue);cursor:pointer;font-size:11px;white-space:nowrap;text-decoration:none}.secondary-action:hover,.secondary-action:focus-visible{outline:0;border-color:var(--blue);box-shadow:0 0 0 3px rgba(35,76,100,.12)}
 .row-action button.confirm-next{color:#fff;border-color:var(--blue);background:var(--blue)}
 .row-action button.source-action{color:var(--orange);border-color:#efc7ad;background:#fff7f1}.row-action button:disabled{opacity:.45;cursor:not-allowed}
@@ -239,12 +215,3 @@ body[data-readonly="true"] #review-calibration-start{display:none}
 /* Shared offline-library and private-import surfaces. Platform code supplies only the native picker. */
 .offline-source-scope[hidden],.federated-result-detail[hidden]{display:none!important}
 .desktop-personal-status{grid-column:1/-1}.desktop-personal-status>i.ready{background:#65c59e;box-shadow:0 0 0 5px rgba(101,197,158,.14)}
-
-/* One literature workflow reuses the existing upload and review surfaces. */
-.paper-workflow-nav{display:flex;justify-content:space-between;gap:22px;align-items:center;margin:22px 0 16px;padding:17px 19px;border:1px solid #c9d8df;border-radius:13px;background:linear-gradient(120deg,#eef5f7,#fff 72%);box-shadow:0 9px 24px rgba(28,61,78,.06)}
-.paper-workflow-nav>div:first-child{display:grid;gap:4px;max-width:680px}.paper-workflow-nav .eyebrow{margin:0}.paper-workflow-nav>div:first-child>strong{font:600 17px/1.35 Georgia,"Songti SC",serif}.paper-workflow-nav>div:first-child>small{color:#657985;font-size:10px;line-height:1.55}
-.paper-workflow-actions{display:grid;grid-template-columns:repeat(2,minmax(145px,1fr));gap:8px;min-width:min(390px,42vw)}.paper-workflow-actions button{display:grid;grid-template-columns:auto 1fr;gap:2px 9px;align-items:center;padding:10px 12px;border:1px solid #c5d4dc;border-radius:10px;background:#fff;color:#3f5d6d;text-align:left;cursor:pointer}.paper-workflow-actions button>span{grid-row:1/3;color:#e26d2f;font:700 10px "IBM Plex Mono",monospace}.paper-workflow-actions button>strong{font-size:11px}.paper-workflow-actions button>small{color:#7a8d97;font-size:9px}.paper-workflow-actions button.active{border-color:#234c64;background:#234c64;color:#fff;box-shadow:0 7px 18px rgba(35,76,100,.18)}.paper-workflow-actions button.active>small{color:#d8e6ed}
-body:not([data-view="paper"]) .paper-workflow-nav{display:none}body[data-view="paper"][data-paper-stage="review"] .article-picker{display:block}body[data-view="paper"][data-paper-stage="review"] .article-strip{display:grid}body[data-paper-stage="upload"] .article-picker,body[data-paper-stage="upload"] .article-strip{display:none!important}
-#view-review[data-paper-stage="review"]>#paper-upload-mount{display:none}#view-review[data-paper-stage="upload"]>:not(#paper-upload-mount){display:none!important}#paper-upload-mount .paper-workflow-intake{display:block}.paper-workflow-intake[hidden]{display:none!important}.paper-workflow-intake .upload-result-card em{display:block;margin:10px 0;padding:9px 10px;border-radius:7px;background:#f1f6f8;color:#526b78;font-size:10px;font-style:normal;line-height:1.55}
-@media(max-width:900px){.paper-workflow-nav{display:grid}.paper-workflow-actions{width:100%;min-width:0}}
-@media(max-width:700px){.paper-workflow-nav{margin:14px 0 12px;padding:13px}.paper-workflow-actions{grid-template-columns:1fr 1fr}.paper-workflow-actions button{grid-template-columns:auto 1fr;padding:9px}.paper-workflow-nav>div:first-child>small{font-size:9px}}

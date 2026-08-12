@@ -57,6 +57,9 @@
         </div>
       </header>
 
+      <section class="view active" id="view-review">
+      <div class="literature-workbench">
+      <aside class="literature-context-sidebar" aria-label="文献库与当前论文">
       <section class="paper-workflow-nav" aria-label="文献处理流程">
         <div>
           <p class="eyebrow">LITERATURE WORKFLOW</p>
@@ -64,8 +67,8 @@
           <small>上传只进行验证、去重和入库；是否调用 DeepSeek 由你在当前文章页明确决定。</small>
         </div>
         <div class="paper-workflow-actions" role="tablist" aria-label="文献处理阶段">
-          <button type="button" role="tab" aria-selected="false" data-paper-stage="upload"><span>01</span><strong>导入 PDF</strong><small>验证并去重</small></button>
-          <button type="button" class="active" role="tab" aria-selected="true" data-paper-stage="review"><span>02</span><strong>当前文章</strong><small>提取、查看与必要修正</small></button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="literature-workbench-center" tabindex="-1" data-paper-stage="upload"><span>01</span><strong>导入 PDF</strong><small>验证并去重</small></button>
+          <button type="button" class="active" role="tab" aria-selected="true" aria-controls="literature-workbench-center" tabindex="0" data-paper-stage="review"><span>02</span><strong>当前文章</strong><small>提取、查看与必要修正</small></button>
         </div>
       </section>
 
@@ -112,6 +115,7 @@
               <button type="button" data-paper-scope="recent" aria-pressed="false">最近访问</button>
               <strong id="paper-filter-summary">正在载入文章…</strong>
             </div>
+            <div class="paper-library-list" id="paper-library-list" role="listbox" aria-label="筛选后的论文"></div>
             <form id="paper-switch-form">
               <label class="paper-select-label" for="paper-switch-input">筛选后的文章</label>
               <select id="paper-switch-input" aria-describedby="paper-selected-meta"></select>
@@ -157,6 +161,9 @@
         </details>
       </section>
 
+      </aside>
+      <div class="literature-workbench-center" id="literature-workbench-center">
+
       <section class="article-strip">
         <div><small>作者/年份</small><strong id="paper-key">—</strong></div>
         <div class="wide"><small>题目</small><strong id="paper-title">—</strong></div>
@@ -165,8 +172,33 @@
         <a id="open-paper" target="_blank" rel="noopener">打开原文 PDF</a>
       </section>
 
-      <section class="view active" id="view-review">
-        <div id="paper-upload-mount"></div>
+        <div id="paper-upload-mount">
+          <section class="paper-workflow-intake" id="view-upload" hidden>
+            <div class="view-head">
+              <div><p class="eyebrow">PDF INTAKE · DEDUPLICATION</p><h2>导入真实 PDF，验证和去重后进入当前文章处理</h2></div>
+              <span class="ai-state" id="deepseek-status">DeepSeek 状态载入中…</span>
+            </div>
+            <div class="upload-layout">
+              <form class="upload-card" id="pdf-upload-form">
+                <label class="upload-drop span-2">选择 PDF 文件<input id="pdf-upload-file" name="pdf" type="file" accept="application/pdf,.pdf" required><strong id="upload-file-label">点击选择本地 PDF</strong><small>最大 80 MB；文件必须能够正常打开</small></label>
+                <label class="span-2">文章题目（可留空自动读取）<input name="title" placeholder="建议填写正式出版题目"></label>
+                <label>DOI（可选）<input name="doi" placeholder="10.xxxx/xxxxx"></label>
+                <label>年份（可选）<input name="year" inputmode="numeric" placeholder="2024"></label>
+                <label class="span-2">第一作者（可选）<input name="first_author" placeholder="用于辅助判断标题相近的论文"></label>
+                <label class="span-2">通讯作者（可选）<input name="corresponding_author" placeholder="用于检索和重复文献辅助判断"></label>
+                <div class="manual-note"><i>i</i><span>上传后会检查文件指纹、DOI、题目/年份/作者和正文指纹；重复论文不会重复入库。</span></div>
+                <button class="primary" id="pdf-upload-submit" type="submit">验证并加入文献处理</button>
+              </form>
+              <aside class="upload-result" id="upload-result">
+                <div class="blank"><span>↑</span><h3>等待上传</h3><p>验证结果、重复原因以及下一步处理状态会显示在这里。</p></div>
+              </aside>
+            </div>
+            <div class="queue-head"><div><p class="eyebrow">PROCESSING QUEUE</p><h2>处理队列</h2></div><button type="button" id="refresh-upload-queue">刷新</button></div>
+            <div class="queue-list" id="processing-queue"></div>
+            <div class="queue-head uploads-head"><div><p class="eyebrow">UPLOAD TRAIL</p><h2>最近上传记录</h2></div></div>
+            <div class="queue-list" id="upload-events"></div>
+          </section>
+        </div>
         <div class="view-head">
           <div><p class="eyebrow">EVIDENCE WORKBENCH</p><h2>自动提取结果检查</h2></div>
           <div class="view-actions">
@@ -207,10 +239,10 @@
           </div>
         </div>
         <div class="review-object-switch" id="review-object-switch" role="tablist" aria-label="检查对象">
-          <button type="button" class="active" role="tab" aria-selected="true" data-review-object="data"><span>01</span><strong>已收录数据</strong><small id="review-data-count">0 条</small></button>
-          <button type="button" role="tab" aria-selected="false" data-review-object="table"><span>02</span><strong>原始表格</strong><small id="review-table-count">0 张</small></button>
-          <button type="button" role="tab" aria-selected="false" data-review-object="figure"><span>03</span><strong>论文图片</strong><small id="review-figure-count">0 幅</small></button>
-          <button type="button" role="tab" aria-selected="false" data-review-object="quality"><span>04</span><strong>需处理异常</strong><small id="review-quality-count">0 项</small></button>
+          <button type="button" class="active" role="tab" aria-selected="true" aria-controls="data-review-workspace" tabindex="0" data-review-object="data"><span>01</span><strong>已收录数据</strong><small id="review-data-count">0 条</small></button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="visual-review-workspace" tabindex="-1" data-review-object="table"><span>02</span><strong>原始表格</strong><small id="review-table-count">0 张</small></button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="visual-review-workspace" tabindex="-1" data-review-object="figure"><span>03</span><strong>论文图片</strong><small id="review-figure-count">0 幅</small></button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="quality-review-workspace" tabindex="-1" data-review-object="quality"><span>04</span><strong>需处理异常</strong><small id="review-quality-count">0 项</small></button>
         </div>
         <div id="data-review-workspace">
         <div class="review-progress-card" id="review-progress-card" hidden>
@@ -244,7 +276,8 @@
               </table>
             </div>
           </section>
-          <aside class="original-pane" id="original-pane">
+          <button type="button" class="literature-inspector-toggle" id="literature-inspector-toggle" aria-controls="original-pane" aria-expanded="false">显示证据检查器</button>
+          <aside class="original-pane" id="original-pane" aria-label="当前条目证据检查器">
             <div class="blank"><span>↖</span><h3>选择一条数据</h3><p>右侧显示原始抽取值、证据页码和原文定位。</p></div>
           </aside>
         </div>
@@ -263,6 +296,8 @@
           </header>
           <div class="quality-review-grid" id="quality-review-grid"></div>
         </section>
+      </div>
+      </div>
       </section>
 
       <section class="view" id="view-search">
@@ -528,32 +563,6 @@
           <header><div><span>TRANSFER JOBS</span><h3 id="package-jobs-heading">任务进度</h3><p>导出和导入结果会显示稳定的操作、阶段、结果和错误码；失败不会留下半成品或覆盖旧资料。</p></div></header>
           <div class="package-job-list" id="package-job-list"><p class="package-empty">本次还没有资料包任务。</p></div>
         </section>
-      </section>
-
-      <section class="paper-workflow-intake" id="view-upload" hidden>
-        <div class="view-head">
-          <div><p class="eyebrow">PDF INTAKE · DEDUPLICATION</p><h2>导入真实 PDF，验证和去重后进入当前文章处理</h2></div>
-          <span class="ai-state" id="deepseek-status">DeepSeek 状态载入中…</span>
-        </div>
-        <div class="upload-layout">
-          <form class="upload-card" id="pdf-upload-form">
-            <label class="upload-drop span-2">选择 PDF 文件<input id="pdf-upload-file" name="pdf" type="file" accept="application/pdf,.pdf" required><strong id="upload-file-label">点击选择本地 PDF</strong><small>最大 80 MB；文件必须能够正常打开</small></label>
-            <label class="span-2">文章题目（可留空自动读取）<input name="title" placeholder="建议填写正式出版题目"></label>
-            <label>DOI（可选）<input name="doi" placeholder="10.xxxx/xxxxx"></label>
-            <label>年份（可选）<input name="year" inputmode="numeric" placeholder="2024"></label>
-            <label class="span-2">第一作者（可选）<input name="first_author" placeholder="用于辅助判断标题相近的论文"></label>
-            <label class="span-2">通讯作者（可选）<input name="corresponding_author" placeholder="用于检索和重复文献辅助判断"></label>
-            <div class="manual-note"><i>i</i><span>上传后会检查文件指纹、DOI、题目/年份/作者和正文指纹；重复论文不会重复入库。</span></div>
-            <button class="primary" id="pdf-upload-submit" type="submit">验证并加入文献处理</button>
-          </form>
-          <aside class="upload-result" id="upload-result">
-            <div class="blank"><span>↑</span><h3>等待上传</h3><p>验证结果、重复原因以及下一步处理状态会显示在这里。</p></div>
-          </aside>
-        </div>
-        <div class="queue-head"><div><p class="eyebrow">PROCESSING QUEUE</p><h2>处理队列</h2></div><button type="button" id="refresh-upload-queue">刷新</button></div>
-        <div class="queue-list" id="processing-queue"></div>
-        <div class="queue-head uploads-head"><div><p class="eyebrow">UPLOAD TRAIL</p><h2>最近上传记录</h2></div></div>
-        <div class="queue-list" id="upload-events"></div>
       </section>
 
       <section class="view workbench-settings" id="view-settings" aria-labelledby="settings-heading">

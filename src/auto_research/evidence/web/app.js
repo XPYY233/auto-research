@@ -283,6 +283,7 @@ async function load() {
 }
 
 async function loadCurrentPaper() {
+  setLiteratureInspector(false);
   [state.paper, state.rows, state.visualAssets, state.extraction, state.experimentProfile, state.learning, state.allLearning, state.learningReport, state.allLearningReport, state.deepseekRun, state.qualityRun, state.qualityCandidates] = await Promise.all([
     api("/api/current-paper"),
     api("/api/six-data"),
@@ -478,6 +479,54 @@ function renderPaperSelectionMeta() {
   ].join("");
 }
 
+function renderPaperLibraryList(papers) {
+  const list = document.querySelector("#paper-library-list");
+  if (!list) return;
+  if (!papers.length) {
+    list.innerHTML = '<p class="paper-library-empty">没有匹配论文。请调整题目、作者、方向或处理状态筛选。</p>';
+    return;
+  }
+  const hasCurrentPaper = papers.some(paper => String(paper.id) === String(state.paper?.id));
+  list.innerHTML = papers.map((paper, index) => {
+    const active = String(paper.id) === String(state.paper?.id);
+    const keyboardTarget = active || (!hasCurrentPaper && index === 0);
+    const authors = [paper.first_author || "作者待补", paper.year || "年份待补"].join(" · ");
+    const status = paperAutomaticStatus(paper);
+    return `<button type="button" role="option" aria-selected="${active ? "true" : "false"}" tabindex="${keyboardTarget ? "0" : "-1"}" data-paper-library="${esc(paper.id)}"><strong class="wb-literature-title">${esc(paper.title || "未命名论文")}</strong><span class="wb-literature-meta">${esc(authors)}${paper.doi ? ` · ${esc(paper.doi)}` : ""}</span><small>${esc(status)}</small></button>`;
+  }).join("");
+  list.querySelectorAll("[data-paper-library]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const paperId = Number(button.dataset.paperLibrary);
+      const select = document.querySelector("#paper-switch-input");
+      if (select) select.value = String(paperId);
+      renderPaperSelectionMeta();
+      try {
+        const switched = await switchCurrentPaper({ paperId, silent: true });
+        if (!switched) return;
+        rememberRecentPaper(paperId);
+        renderPaperOptions();
+        toast(`已切换到《${state.paper.title || "未命名文章"}》。`);
+      } catch (error) {
+        toast(error.message, true);
+      }
+    });
+    button.addEventListener("keydown", event => handlePaperLibraryKeydown(event));
+  });
+}
+
+function handlePaperLibraryKeydown(event) {
+  const buttons = [...document.querySelectorAll("[data-paper-library]")];
+  const current = buttons.indexOf(event.currentTarget);
+  const direction = { ArrowDown: 1, ArrowUp: -1, Home: "home", End: "end" }[event.key];
+  if (current < 0 || direction === undefined) return;
+  event.preventDefault();
+  const next = direction === "home" ? buttons[0]
+    : direction === "end" ? buttons[buttons.length - 1]
+    : buttons[(current + direction + buttons.length) % buttons.length];
+  buttons.forEach(button => { button.tabIndex = button === next ? 0 : -1; });
+  next?.focus();
+}
+
 function renderPaperOptions() {
   const testOrder = new Map((state.testSet?.papers || []).map(item => [Number(item.paper_id), Number(item.order)]));
   const filteredPapers = state.papers.filter(paperMatchesFilters);
@@ -509,6 +558,7 @@ function renderPaperOptions() {
   if (submit) submit.disabled = !filteredPapers.length;
   const summary = document.querySelector("#paper-filter-summary");
   if (summary) summary.textContent = `找到 ${filteredPapers.length} / ${state.papers.length} 篇`;
+  renderPaperLibraryList(filteredPapers);
   document.querySelectorAll("[data-paper-scope]").forEach(button => {
     const active = button.dataset.paperScope === state.paperFilters.scope;
     button.classList.toggle("active", active);
@@ -1104,11 +1154,11 @@ function renderTable() {
   }).join("");
   body.querySelectorAll("tr[data-item]").forEach(tr => tr.addEventListener("click", event => {
     if (event.target.closest("button[data-confirm],button[data-confirm-next],button[data-source-row]")) return;
-    selectRow(Number(tr.dataset.item));
+    selectRow(Number(tr.dataset.item), { revealInspector: true });
   }));
   body.querySelectorAll("[data-original]").forEach(btn => btn.addEventListener("click", event => {
     event.stopPropagation();
-    selectRow(Number(btn.dataset.original));
+    selectRow(Number(btn.dataset.original), { revealInspector: true });
   }));
   body.querySelectorAll("[data-source-member]").forEach(btn => btn.addEventListener("click", event => {
     event.stopPropagation();
@@ -1124,7 +1174,7 @@ function renderTable() {
   }));
   body.querySelectorAll("[data-source-row]").forEach(btn => btn.addEventListener("click", event => {
     event.stopPropagation();
-    selectRow(Number(btn.dataset.sourceRow));
+    selectRow(Number(btn.dataset.sourceRow), { revealInspector: true });
     openSourceViewer(Number(btn.dataset.sourceRow));
   }));
   body.querySelectorAll("[data-decision]").forEach(btn => btn.addEventListener("click", event => {
@@ -1202,6 +1252,7 @@ function renderReviewObject() {
     const active = button.dataset.reviewObject === state.reviewObject;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", active ? "true" : "false");
+    button.tabIndex = active ? 0 : -1;
   });
   const dataMode = state.reviewObject === "data";
   const qualityMode = state.reviewObject === "quality";
@@ -1337,11 +1388,25 @@ async function saveVisualReview(assetId, decision, form) {
   }
 }
 
-function selectRow(id) {
+function selectRow(id, { revealInspector = false } = {}) {
   state.selected = id;
   const row = state.rows.find(item => item.item_id === id);
   renderOriginal(row);
   document.querySelectorAll("#edit-rows tr[data-item]").forEach(tr => tr.classList.toggle("selected", Number(tr.dataset.item) === id));
+  if (revealInspector && !globalThis.matchMedia?.("(min-width: 1280px)")?.matches) setLiteratureInspector(true);
+}
+
+function setLiteratureInspector(open) {
+  const active = Boolean(open) && document.body.dataset.view === "paper" && state.paperStage === "review";
+  const workspace = document.querySelector("#view-review");
+  const pane = document.querySelector("#original-pane");
+  const toggle = document.querySelector("#literature-inspector-toggle");
+  workspace?.classList.toggle("has-literature-inspector", active);
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", active ? "true" : "false");
+    toggle.textContent = active ? "隐藏证据检查器" : "显示证据检查器";
+  }
+  if (pane) pane.setAttribute("aria-hidden", active || globalThis.matchMedia?.("(min-width: 1280px)")?.matches ? "false" : "true");
 }
 
 function selectNextUnreviewed() {
@@ -3508,7 +3573,7 @@ function resetViewportTop() {
 function initializePaperWorkflow() {
   const intake = document.querySelector("#view-upload");
   const mount = document.querySelector("#paper-upload-mount");
-  if (intake && mount && intake.parentElement !== mount) mount.appendChild(intake);
+  if (!intake || !mount || intake.parentElement !== mount) throw new Error("文献导入界面未静态归入文献工作台");
   if (intake) intake.hidden = false;
   setPaperWorkflowStage(state.paperStage, { refresh: false, resetScroll: false });
 }
@@ -3519,10 +3584,14 @@ function setPaperWorkflowStage(stage, options = {}) {
   document.body.dataset.paperStage = next;
   const workspace = document.querySelector("#view-review");
   if (workspace) workspace.dataset.paperStage = next;
+  if (next !== "review") setLiteratureInspector(false);
   document.querySelectorAll('.paper-workflow-actions [data-paper-stage]').forEach(button => {
     const active = button.dataset.paperStage === next;
     button.classList.toggle("active", active);
-    if (button.getAttribute("role") === "tab") button.setAttribute("aria-selected", active ? "true" : "false");
+    if (button.getAttribute("role") === "tab") {
+      button.setAttribute("aria-selected", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
+    }
   });
   if (next === "upload" && options.refresh !== false) refreshUploadWorkspace();
   if (options.resetScroll !== false) resetViewportTop();
@@ -3538,6 +3607,7 @@ function switchView(name, options = {}) {
     paperStage = "review";
   }
   if (isReadOnly() && name !== "search") name = "search";
+  if (name !== "paper") setLiteratureInspector(false);
   if (name !== "search") {
     const inspector = document.querySelector("#visual-dialog");
     if (inspector?.open || inspector?.classList.contains("is-docked")) closeVisualAsset();
@@ -3850,10 +3920,14 @@ async function submitPaperSwitch(event) {
 }
 
 document.querySelectorAll(".nav").forEach(btn => btn.addEventListener("click", () => switchView(btn.dataset.view)));
-document.querySelectorAll('.paper-workflow-actions [data-paper-stage]').forEach(button => button.addEventListener("click", () => {
-  switchView("paper", { paperStage: button.dataset.paperStage });
-}));
-document.querySelectorAll("[data-review-object]").forEach(button => button.addEventListener("click", () => setReviewObject(button.dataset.reviewObject)));
+document.querySelectorAll('.paper-workflow-actions [data-paper-stage]').forEach(button => {
+  button.addEventListener("click", () => switchView("paper", { paperStage: button.dataset.paperStage }));
+  button.addEventListener("keydown", event => handleSearchTabKeydown(event, '.paper-workflow-actions [data-paper-stage]'));
+});
+document.querySelectorAll("[data-review-object]").forEach(button => {
+  button.addEventListener("click", () => setReviewObject(button.dataset.reviewObject));
+  button.addEventListener("keydown", event => handleSearchTabKeydown(event, "[data-review-object]"));
+});
 document.querySelector("#paper-picker-query").addEventListener("input", event => {
   state.paperFilters.query = event.target.value;
   renderPaperOptions();
@@ -3909,6 +3983,10 @@ document.querySelector("#review-load-more").addEventListener("click", () => {
 document.querySelector("#review-calibration-start").addEventListener("click", toggleCalibrationReview);
 document.querySelector("#focus-review").addEventListener("click", () => setFocusReview(!state.focusReview));
 document.querySelector("#exit-focus-review").addEventListener("click", () => setFocusReview(false));
+document.querySelector("#literature-inspector-toggle")?.addEventListener("click", event => {
+  setLiteratureInspector(event.currentTarget.getAttribute("aria-expanded") !== "true");
+});
+globalThis.matchMedia?.("(min-width: 1280px)")?.addEventListener?.("change", () => setLiteratureInspector(false));
 document.addEventListener("keydown", handleReviewKeyboard);
 document.querySelector("#search-form").addEventListener("submit", runSearch);
 document.querySelectorAll('[data-search-experience]').forEach(button => {
