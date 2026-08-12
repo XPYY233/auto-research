@@ -36,3 +36,18 @@ availability；不得包含 endpoint、credential_ref、API key、文件路径�
 
 现有 `DeepSeekClient` 与 `DeepSeekSettings` 保持兼容，当前 DeepSeek 产品路径不会因新增
 通用提供商契约而改变。桌面与 Web 接线、设置 UI、版本和发布制品属于后续独立阶段。
+
+## 桌面偏好设置
+
+`desktop-settings-v1` 与 AI 提供商及凭据设置完全分离。公开快照只包含递增的
+`revision`、外观主题 `system|light|dark`、界面密度 `comfortable|compact`，以及
+`locale.selected=zh-CN` 和 `locale.supported=[zh-CN]`；不接受额外字段、其他语言、密钥、
+路径或内部身份。
+
+`DesktopSettingsService.get()` 负责读取并验证快照；
+`patch_preferences(payload, expected_revision)` 合并严格白名单 patch，并通过 revision/CAS
+阻止陈旧界面覆盖较新的设置。共享核心不选择文件路径，也不直接写平台文件。macOS 和
+Windows 必须注入实现 `AtomicDesktopSettingsStore` 的原子耐久化存储：`read()` 返回完整
+快照或空值；`compare_and_swap(expected_revision, value)` 必须在同一原子操作中比较当前
+revision 并替换完整快照，写入失败不得破坏旧值。任何底层异常只映射为固定、无路径的
+`settings_store_unavailable`；CAS 失败映射为 `settings_revision_conflict`。
