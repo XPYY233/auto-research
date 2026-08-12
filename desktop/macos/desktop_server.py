@@ -21,6 +21,7 @@ from auto_research.evidence.webapp import (
 )
 from secure_history import SecureHistoryError, SecureHistoryStore
 from secure_credentials import DeepSeekCredentialStore, SecureCredentialError
+from desktop_settings_api import DesktopSettingsAPI
 from first_use_state import (
     ActivePackageStatus,
     FirstUseStateError,
@@ -110,6 +111,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     security_state: DesktopSecurityState
     history_store: SecureHistoryStore | None = None
     credential_store: DeepSeekCredentialStore | None = None
+    desktop_settings_api: DesktopSettingsAPI | None = None
     active_package_status_path: Path | None = None
     package_service: PackageImportService | None = None
     package_api: PackageAPI | None = None
@@ -206,6 +208,24 @@ class DesktopEvidenceHandler(EvidenceHandler):
     def _authorize_delete(self) -> bool:
         if not self._has_session(require_origin=True):
             self._desktop_forbidden()
+            return False
+        if not self._csrf_valid():
+            self.json_response(
+                {"error": "桌面写入授权无效", "code": "desktop_csrf_required"},
+                HTTPStatus.FORBIDDEN,
+            )
+            return False
+        return True
+
+    def _authorize_patch(self) -> bool:
+        if not self._has_session(require_origin=True):
+            self._desktop_forbidden()
+            return False
+        if not self._content_type_is("application/json"):
+            self.json_response(
+                {"error": "桌面请求类型无效", "code": "desktop_media_type_required"},
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+            )
             return False
         if not self._csrf_valid():
             self.json_response(
@@ -407,6 +427,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._credential_status()
         if parsed.path == READINESS_PATH:
             return self._readiness_status()
+        if self.desktop_settings_api is not None and self.desktop_settings_api.handle_get(self):
+            return
         if self.package_api is not None and self.package_api.handle_get(self):
             return
         if (
@@ -475,6 +497,22 @@ class DesktopEvidenceHandler(EvidenceHandler):
             if high_cost:
                 self.security_state.release_high_cost()
 
+    def do_PATCH(self) -> None:
+        path = urlparse(self.path).path
+        if not self._authorize_patch():
+            return
+        if self.read_only:
+            return self.json_response(
+                {"error": "当前为只读模式，不允许修改设置。", "code": "read_only"},
+                HTTPStatus.FORBIDDEN,
+            )
+        if self.desktop_settings_api is not None and self.desktop_settings_api.handle_patch(self):
+            return
+        self.json_response(
+            {"error": "桌面接口不存在", "code": "desktop_endpoint_not_found"},
+            HTTPStatus.NOT_FOUND,
+        )
+
     def do_DELETE(self) -> None:
         if not self._authorize_delete():
             return
@@ -498,6 +536,7 @@ def create_desktop_server(
     read_only: bool = False,
     history_store: SecureHistoryStore | None = None,
     credential_store: DeepSeekCredentialStore | None = None,
+    desktop_settings_api: DesktopSettingsAPI | None = None,
     active_package_status_path: Path | None = None,
     package_service: PackageImportService | None = None,
     package_api: PackageAPI | None = None,
@@ -527,6 +566,7 @@ def create_desktop_server(
             "security_state": security_state,
             "history_store": history_store,
             "credential_store": credential_store,
+            "desktop_settings_api": desktop_settings_api,
             "active_package_status_path": active_package_status_path,
             "package_service": package_service,
             "package_api": package_api,

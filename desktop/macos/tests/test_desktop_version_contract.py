@@ -65,6 +65,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertTrue(all(checks.values()), checks)
         self.assertTrue(checks["primary_personal_import_navigation"])
         self.assertTrue(checks["ai_consent_scope_contract"])
+        self.assertTrue(checks["workbench_appearance_contract"])
         package_center = (
             DESKTOP_ROOT.parents[1]
             / "src"

@@ -41,6 +41,12 @@ from secure_credentials import (  # noqa: E402
     SecureCredentialError,
     default_deepseek_credential_store,
 )
+from auto_research.settings.desktop_settings import DesktopSettingsService  # noqa: E402
+from desktop_settings_api import DesktopSettingsAPI  # noqa: E402
+from desktop_settings_store import (  # noqa: E402
+    DEFAULT_SETTINGS_PATH,
+    MacAtomicDesktopSettingsStore,
+)
 def _desktop_version_metadata() -> dict[str, object]:
     if getattr(sys, "frozen", False):
         bundle_root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
@@ -118,6 +124,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
         encoding="utf-8"
     )
     ai_consent_source = (WEB_DIR / "ai_consent.js").read_text(encoding="utf-8")
+    workbench_source = (WEB_DIR / "workbench.js").read_text(encoding="utf-8")
     return {
         "primary_personal_import_navigation": bool(
             'data-view="paper">文献处理' in index_source
@@ -128,15 +135,26 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and 'data-view="manual"' not in index_source
             and 'data-view="history"' not in index_source
             and 'id="view-personal"' in index_source
+            and 'id="personal-import-panel"' in index_source
             and 'querySelector(`#view-${viewName}`)' in app_source
             and "openPersonalImport" in product_source
-            and "personalView.appendChild(personalPanel)" in product_source
+            and "personalView.appendChild(personalPanel)" not in product_source
             and "select_personal_data_file" in product_source
             and "/ai-suggestion" in product_source
             and "/reviewed-import" in product_source
             and 'id="personal-reviewed-import"' in index_source
             and '<script src="/static/package_center.js"></script>' in index_source
             and "AutoResearchPackageCenter" in package_center_source
+        ),
+        "workbench_appearance_contract": bool(
+            '<link rel="stylesheet" href="/static/workbench.css">' in index_source
+            and '<script src="/static/workbench.js"></script>' in index_source
+            and index_source.index('<script src="/static/app.js"></script>')
+            < index_source.index('<script src="/static/workbench.js"></script>')
+            and "auto-research-appearance-v1" in workbench_source
+            and "appearance" in workbench_source
+            and "density" in workbench_source
+            and "hydratePreferences" in workbench_source
         ),
         "ai_consent_scope_contract": bool(
             '<script src="/static/ai_consent.js"></script>' in index_source
@@ -174,12 +192,14 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
         ),
         "protected_route_composition": bool(
             callable(getattr(DesktopEvidenceHandler, "_authorize_post", None))
+            and callable(getattr(DesktopEvidenceHandler, "_authorize_patch", None))
             and callable(getattr(DesktopEvidenceHandler, "_has_session", None))
             and {
                 "federated_search_api",
                 "personal_import_api",
                 "package_center_api",
                 "credential_store",
+                "desktop_settings_api",
             }
             <= set(server_parameters)
         ),
@@ -301,7 +321,9 @@ def _http_smoke_checks(
         "ai_consent_js": "/static/ai_consent.js",
         "desktop_product_js": "/static/desktop_product.js",
         "package_center_js": "/static/package_center.js",
+        "workbench_js": "/static/workbench.js",
         "static_css": "/static/app.css",
+        "workbench_css": "/static/workbench.css",
         "working_asset": "/static/codex-pet-working.webp",
         "visual_image": f"/api/visual-assets/{visual_id}/image",
         "source_snippet": f"/api/six-data/{item_id}/source-snippet.png",
@@ -341,6 +363,15 @@ def _http_smoke_checks(
                 "/api/desktop/package-center",
                 "/api/desktop/package-center/jobs/",
                 "selectExportDestination",
+            ),
+        ),
+        "workbench_frontend_contract": (
+            "/static/workbench.js",
+            (
+                "auto-research-appearance-v1",
+                "hydratePreferences",
+                "comfortable",
+                "compact",
             ),
         ),
         "librarian_v3_frontend_contract": (
@@ -480,6 +511,13 @@ def _run_smoke_test(project_root: Path) -> int:
             token=token,
             read_only=False,
             history_store=history_store,
+            desktop_settings_api=DesktopSettingsAPI(
+                DesktopSettingsService(
+                    MacAtomicDesktopSettingsStore(
+                        Path(directory) / "application-support" / "State" / "settings-v1.json"
+                    )
+                )
+            ),
             package_service=product_services.package_service,
             package_api=product_services.package_api,
             package_center_api=(
@@ -598,6 +636,9 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             token=token,
             read_only=False,
             history_store=default_secure_history_store(),
+            desktop_settings_api=DesktopSettingsAPI(
+                DesktopSettingsService(MacAtomicDesktopSettingsStore(DEFAULT_SETTINGS_PATH))
+            ),
             credential_store=credential_store,
             package_service=product_services.package_service,
             package_api=product_services.package_api,
