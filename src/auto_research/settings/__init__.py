@@ -13,6 +13,18 @@ from .desktop_settings import (
     DesktopSettingsService,
     DesktopSettingsSnapshot,
 )
+from .ai_runtime_state import (
+    AIRuntimePublicState,
+    AIRuntimeStateError,
+    AIRuntimeStateService,
+    AtomicAIRuntimeStateStore,
+    BackendCredentialState,
+    CredentialStateProvider,
+    ModelCapabilityResult,
+    ProviderCapabilityVerifier,
+    ResolvedAIRuntime,
+    VerificationAttestationSigner,
+)
 
 __all__ = [
     "AIProviderSelection",
@@ -24,4 +36,14 @@ __all__ = [
     "DesktopSettingsError",
     "DesktopSettingsService",
     "DesktopSettingsSnapshot",
+    "AIRuntimePublicState",
+    "AIRuntimeStateError",
+    "AIRuntimeStateService",
+    "AtomicAIRuntimeStateStore",
+    "BackendCredentialState",
+    "CredentialStateProvider",
+    "ModelCapabilityResult",
+    "ProviderCapabilityVerifier",
+    "ResolvedAIRuntime",
+    "VerificationAttestationSigner",
 ]

@@ -33,8 +33,20 @@ availability；不得包含 endpoint、credential_ref、API key、文件路径�
 
 密钥仍由 macOS/Windows 的安全凭据实现管理。共享设置服务只在真正构造运行时客户端时
 通过 `credential_ref` 延迟解析密钥；持久化选择与公开 DTO 都不能序列化密钥。
-下一阶段需由平台安全设置存储保存与 `provider_id + 四任务模型` 绑定的验证凭证，并在
-模型集合变化时原子失效；本核心不会接受 UI 提交的布尔 `verified`。
+`ai-runtime-state-v1` 保存 provider、四任务模型、selection revision 和后端签发的
+attestation。attestation 严格绑定 provider registry version、provider、完整任务模型、
+credential generation 与 selection revision；任一变化都会在读取时自动失效。UI patch
+只接受 provider、task models 和 expected revision，不能提交 verified、attestation、
+credential generation、credential ref 或 token。
+设置变更和验证成功写回都会递增 revision；并发或陈旧验证只能有一个 CAS 成功。
+
+后端 `record_verification()` 只有在注入的 verifier 对每个唯一模型均确认 structured JSON
+与 tool calling 后才请求 signer 签发 token；验证可能产生模型费用，因此桌面路由/UI 必须
+另行取得用户明确授权。验证过程不保存请求、响应或错误正文。普通 runtime 由
+`resolve_runtime()` 决定：OpenAI 无有效 attestation 时 fail closed；DeepSeek 旧路径公开为
+`legacy_compatible`，不得冒充 `connection_verified`。平台稍后实现原子 CAS store、凭据
+generation provider 和安全 signer；公开 DTO 永不包含 credential ref/generation、token、
+路径、密钥或内部 ID。
 
 现有 `DeepSeekClient` 与 `DeepSeekSettings` 保持兼容，当前 DeepSeek 产品路径不会因新增
 通用提供商契约而改变。`DeepSeekClient` 已成为 `OpenAICompatibleClient` 的薄兼容层；
