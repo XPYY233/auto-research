@@ -11,6 +11,8 @@ PROVIDER_REGISTRY_VERSION = 1
 OPENAI_CHAT_COMPLETIONS_PROTOCOL = "openai-chat-completions-v1"
 MODEL_VALIDATION_BUILTIN = "builtin-reviewed"
 MODEL_VALIDATION_CONNECTION_REQUIRED = "connection-test-required"
+RUNTIME_ACTIVATION_LEGACY = "legacy-compatible"
+RUNTIME_ACTIVATION_CONNECTION_REQUIRED = "connection-test-required"
 
 CAPABILITY_AGENT = "agent_capable"
 CAPABILITY_STRUCTURED_JSON = "structured_json"
@@ -84,7 +86,9 @@ class TrustedProviderProfile:
     chat_endpoint: str
     capabilities: ProviderCapabilities
     default_task_models: Mapping[str, str]
+    allowed_task_models: Mapping[str, tuple[str, ...]]
     model_validation: str
+    runtime_activation: str
 
     def __post_init__(self) -> None:
         # ``frozen=True`` does not freeze a caller-owned mapping.  Copy it so a
@@ -93,6 +97,16 @@ class TrustedProviderProfile:
             self,
             "default_task_models",
             MappingProxyType(dict(self.default_task_models)),
+        )
+        object.__setattr__(
+            self,
+            "allowed_task_models",
+            MappingProxyType(
+                {
+                    task: tuple(models)
+                    for task, models in self.allowed_task_models.items()
+                }
+            ),
         )
 
     def public_dict(self) -> dict[str, object]:
@@ -103,6 +117,11 @@ class TrustedProviderProfile:
             "capabilities": self.capabilities.public_dict(),
             "requires_explicit_models": not bool(self.default_task_models),
             "model_validation": self.model_validation,
+            "runtime_activation": self.runtime_activation,
+            "model_options": {
+                task: list(models)
+                for task, models in self.allowed_task_models.items()
+            },
         }
 
 
@@ -113,6 +132,20 @@ _DEEPSEEK_DEFAULT_MODELS = MappingProxyType(
         TASK_LIBRARIAN_PLANNING: "deepseek-v4-flash",
         TASK_LIBRARIAN_SYNTHESIS: "deepseek-v4-pro",
     }
+)
+_DEEPSEEK_MODEL_OPTIONS = MappingProxyType(
+    {
+        task: ("deepseek-v4-pro", "deepseek-v4-flash") for task in TASK_IDS
+    }
+)
+_OPENAI_MODEL_OPTIONS = MappingProxyType(
+    {
+        task: ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna")
+        for task in TASK_IDS
+    }
+)
+_OPENAI_DEFAULT_MODELS = MappingProxyType(
+    {task: "gpt-5.6-terra" for task in TASK_IDS}
 )
 
 _TRUSTED_PROVIDERS: Mapping[str, TrustedProviderProfile] = MappingProxyType(
@@ -129,7 +162,9 @@ _TRUSTED_PROVIDERS: Mapping[str, TrustedProviderProfile] = MappingProxyType(
                 vendor_thinking_control=True,
             ),
             default_task_models=_DEEPSEEK_DEFAULT_MODELS,
+            allowed_task_models=_DEEPSEEK_MODEL_OPTIONS,
             model_validation=MODEL_VALIDATION_BUILTIN,
+            runtime_activation=RUNTIME_ACTIVATION_LEGACY,
         ),
         "openai": TrustedProviderProfile(
             provider_id="openai",
@@ -142,10 +177,10 @@ _TRUSTED_PROVIDERS: Mapping[str, TrustedProviderProfile] = MappingProxyType(
                 tool_calling=True,
                 vendor_thinking_control=False,
             ),
-            # Model availability changes independently of the application. A user
-            # must select reviewed task models instead of inheriting a stale name.
-            default_task_models=MappingProxyType({}),
-            model_validation=MODEL_VALIDATION_CONNECTION_REQUIRED,
+            default_task_models=_OPENAI_DEFAULT_MODELS,
+            allowed_task_models=_OPENAI_MODEL_OPTIONS,
+            model_validation=MODEL_VALIDATION_BUILTIN,
+            runtime_activation=RUNTIME_ACTIVATION_CONNECTION_REQUIRED,
         ),
     }
 )
@@ -186,12 +221,25 @@ def _validate_registry() -> None:
             MODEL_VALIDATION_CONNECTION_REQUIRED,
         }:
             raise RuntimeError("trusted provider registry model validation mismatch")
+        if profile.runtime_activation not in {
+            RUNTIME_ACTIVATION_LEGACY,
+            RUNTIME_ACTIVATION_CONNECTION_REQUIRED,
+        }:
+            raise RuntimeError("trusted provider registry runtime activation mismatch")
         _validate_endpoint(provider_id, profile.chat_endpoint)
         if set(profile.default_task_models) - set(TASK_IDS):
             raise RuntimeError("trusted provider registry contains an unknown task")
+        if set(profile.allowed_task_models) != set(TASK_IDS):
+            raise RuntimeError("trusted provider registry model catalog is incomplete")
         for model in profile.default_task_models.values():
             if _MODEL_NAME_RE.fullmatch(model) is None:
                 raise RuntimeError("trusted provider registry contains an invalid model")
+        for task, model in profile.default_task_models.items():
+            if model not in profile.allowed_task_models[task]:
+                raise RuntimeError("trusted provider registry default model is not allowed")
+        for models in profile.allowed_task_models.values():
+            if not models or any(_MODEL_NAME_RE.fullmatch(model) is None for model in models):
+                raise RuntimeError("trusted provider registry contains an invalid model catalog")
 
 
 _validate_registry()
@@ -214,9 +262,13 @@ def trusted_chat_endpoint(provider_id: str) -> str:
     return trusted_provider_profile(provider_id).chat_endpoint
 
 
-def validated_task_models(task_models: Mapping[str, object]) -> Mapping[str, str]:
+def validated_task_models(
+    provider_id: str,
+    task_models: Mapping[str, object],
+) -> Mapping[str, str]:
     """Return one immutable, complete set of path-free task model names."""
 
+    profile = trusted_provider_profile(provider_id)
     if not isinstance(task_models, Mapping) or set(task_models) != set(TASK_IDS):
         raise TrustedProviderRegistryError(
             "ai_task_models_incomplete", "请为每项 AI 任务选择受支持的模型。"
@@ -224,7 +276,10 @@ def validated_task_models(task_models: Mapping[str, object]) -> Mapping[str, str
     models: dict[str, str] = {}
     for task in TASK_IDS:
         model = str(task_models.get(task) or "").strip()
-        if _MODEL_NAME_RE.fullmatch(model) is None:
+        if (
+            _MODEL_NAME_RE.fullmatch(model) is None
+            or model not in profile.allowed_task_models[task]
+        ):
             raise TrustedProviderRegistryError(
                 "ai_model_invalid", "所选 AI 模型名称格式无效。"
             )

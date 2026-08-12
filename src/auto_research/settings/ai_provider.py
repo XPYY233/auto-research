@@ -10,6 +10,7 @@ from auto_research.ai.provider_registry import (
     CAPABILITY_STRUCTURED_JSON,
     CAPABILITY_TOOL_CALLING,
     MODEL_VALIDATION_BUILTIN,
+    RUNTIME_ACTIVATION_CONNECTION_REQUIRED,
     TASK_IDS,
     TrustedProviderRegistryError,
     trusted_provider_profile,
@@ -59,7 +60,7 @@ class AIProviderSelection:
             )
         try:
             profile = trusted_provider_profile(self.provider_id)
-            models = validated_task_models(self.task_models)
+            models = validated_task_models(profile.provider_id, self.task_models)
         except TrustedProviderRegistryError as exc:
             raise AIProviderSettingsError(exc.code, exc.safe_message) from exc
         credential_ref = str(self.credential_ref or "").strip()
@@ -159,7 +160,10 @@ class AISettingsService:
     ) -> dict[str, object]:
         selection = self.validate(value)
         profile = trusted_provider_profile(selection.provider_id)
-        verified = profile.model_validation == MODEL_VALIDATION_BUILTIN
+        verified = (
+            profile.model_validation == MODEL_VALIDATION_BUILTIN
+            and profile.runtime_activation != RUNTIME_ACTIVATION_CONNECTION_REQUIRED
+        )
         available = bool(credential_configured) and verified
         return {
             "schema_version": SETTINGS_SCHEMA_VERSION,
@@ -187,7 +191,10 @@ class AISettingsService:
         selection = self.validate(value)
         profile = trusted_provider_profile(selection.provider_id)
         if (
-            profile.model_validation != MODEL_VALIDATION_BUILTIN
+            (
+                profile.model_validation != MODEL_VALIDATION_BUILTIN
+                or profile.runtime_activation == RUNTIME_ACTIVATION_CONNECTION_REQUIRED
+            )
             and verification_mode is not True
         ):
             raise AIProviderSettingsError(

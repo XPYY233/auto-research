@@ -11,10 +11,10 @@ from auto_research.ai.openai_compatible import (
 
 
 MODELS = {
-    "extraction": "gpt-5",
-    "analysis": "gpt-5",
-    "librarian_planning": "gpt-5-mini",
-    "librarian_synthesis": "gpt-5",
+    "extraction": "gpt-5.6-terra",
+    "analysis": "gpt-5.6-terra",
+    "librarian_planning": "gpt-5.6-terra",
+    "librarian_synthesis": "gpt-5.6-terra",
 }
 
 
@@ -158,7 +158,7 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         unknown = AIProviderCapabilityError("/Users/private/key").public_dict()
         self.assertEqual(unknown["details"], {"capability": "unknown"})
 
-    def test_openai_public_status_is_unverified_and_omits_internal_recipients(self) -> None:
+    def test_openai_public_status_requires_account_verification(self) -> None:
         status = self.settings().public_status()
         rendered = repr(status)
         self.assertFalse(status["configured"])
@@ -168,25 +168,21 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         self.assertNotIn("endpoint", rendered)
         self.assertNotIn("credential_ref", rendered)
 
-    def test_unverified_openai_regular_client_fails_closed(self) -> None:
-        settings = OpenAICompatibleSettings(
-            provider_id="openai",
-            task_models=MODELS,
-            api_key="sk-test-secret",
-            credential_ref="openai.default",
-            max_attempts=1,
-        )
-        session = _Session(_Response({"content": '{"ok":true}'}))
-        with self.assertRaises(AIProviderCapabilityError):
-            OpenAICompatibleClient(settings, session=session).request_json([])
-        self.assertEqual(session.calls, [])
+    def test_unlisted_openai_model_fails_closed_before_network(self) -> None:
+        with self.assertRaises(AIProviderResponseError):
+            OpenAICompatibleSettings(
+                provider_id="openai",
+                task_models={**MODELS, "analysis": "gpt-arbitrary"},
+                api_key="sk-test-secret",
+                credential_ref="openai.default",
+                max_attempts=1,
+            )
 
-    def test_verification_mode_only_allows_smoke_test(self) -> None:
+    def test_reviewed_openai_allows_only_verification_smoke_until_activated(self) -> None:
         session = _Session(_Response({"content": '{"status":"ok"}'}))
         client = OpenAICompatibleClient(self.settings(), session=session)
         with self.assertRaises(AIProviderCapabilityError):
             client.request_json([])
-        self.assertEqual(session.calls, [])
         self.assertTrue(client.smoke_test()["ok"])
         self.assertEqual(len(session.calls), 1)
 

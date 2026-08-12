@@ -163,7 +163,8 @@ class DeepSeekFrameworkTests(unittest.TestCase):
         )
         status = settings.public_status()
         self.assertFalse(status["endpoint_trusted"])
-        self.assertIsNone(status["base_url"])
+        self.assertNotIn("base_url", status)
+        self.assertNotIn("credential_source", status)
         self.assertNotIn(marker, str(status))
 
     def test_invalid_timeout_environment_uses_safe_bounded_default(self):
@@ -298,7 +299,8 @@ class DeepSeekFrameworkTests(unittest.TestCase):
         self.assertEqual(settings.api_key, "fake-project-secret")
         status = settings.public_status()
         self.assertTrue(status["configured"])
-        self.assertEqual(status["credential_source"], "macOS Keychain:auto-research-deepseek")
+        self.assertNotIn("credential_source", status)
+        self.assertNotIn("base_url", status)
         self.assertNotIn("api_key", status)
 
 

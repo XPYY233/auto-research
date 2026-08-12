@@ -4,7 +4,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, TypeVar
 
 import requests
 
@@ -15,6 +15,7 @@ from .provider_registry import (
     CAPABILITY_VENDOR_THINKING,
     KNOWN_CAPABILITIES,
     MODEL_VALIDATION_BUILTIN,
+    RUNTIME_ACTIVATION_CONNECTION_REQUIRED,
     TASK_ANALYSIS,
     TASK_EXTRACTION,
     TASK_IDS,
@@ -28,6 +29,7 @@ from .provider_registry import (
 
 
 _CREDENTIAL_REF_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+_Result = TypeVar("_Result")
 
 
 class AIProviderError(RuntimeError):
@@ -86,7 +88,7 @@ class OpenAICompatibleSettings:
     def __post_init__(self) -> None:
         try:
             profile = trusted_provider_profile(self.provider_id)
-            models = validated_task_models(self.task_models)
+            models = validated_task_models(profile.provider_id, self.task_models)
         except TrustedProviderRegistryError as exc:
             raise AIProviderResponseError(exc.safe_message) from exc
         if self.credential_ref is not None and _CREDENTIAL_REF_RE.fullmatch(
@@ -113,7 +115,11 @@ class OpenAICompatibleSettings:
 
     @property
     def models_verified(self) -> bool:
-        return trusted_provider_profile(self.provider_id).model_validation == MODEL_VALIDATION_BUILTIN
+        profile = trusted_provider_profile(self.provider_id)
+        return (
+            profile.model_validation == MODEL_VALIDATION_BUILTIN
+            and profile.runtime_activation != RUNTIME_ACTIVATION_CONNECTION_REQUIRED
+        )
 
     @property
     def available(self) -> bool:
@@ -160,7 +166,13 @@ class OpenAICompatibleClient:
         if not self.profile.capabilities.supports(capability):
             raise AIProviderCapabilityError(capability)
 
-    def _post(self, payload: dict[str, Any], *, verification_request: bool = False):
+    def _execute(
+        self,
+        payload: dict[str, Any],
+        parser: Callable[[Any], _Result],
+        *,
+        verification_request: bool = False,
+    ) -> _Result:
         if not self.settings.api_key:
             raise AIProviderNotConfigured("AI 提供商尚未配置本机凭据。")
         if not self.settings.models_verified and not (
@@ -197,7 +209,14 @@ class OpenAICompatibleClient:
                     continue
                 error_type = AIProviderUnavailableError if transient else AIProviderResponseError
                 raise error_type(f"AI 提供商请求失败：HTTP {response.status_code}")
-            return response
+            try:
+                return parser(response)
+            except AIProviderResponseError as exc:
+                last_error = exc
+                if attempt + 1 < self.settings.max_attempts:
+                    self._wait(attempt)
+                    continue
+                raise
         raise AIProviderResponseError("AI 提供商连续返回不可用响应。") from last_error
 
     def _wait(self, attempt: int) -> None:
@@ -251,20 +270,28 @@ class OpenAICompatibleClient:
             payload["thinking"] = {"type": "enabled" if thinking else "disabled"}
         if temperature is not None:
             payload["temperature"] = min(max(float(temperature), 0.0), 1.5)
-        response = self._post(payload, verification_request=verification_request)
-        try:
-            content = response.json()["choices"][0]["message"]["content"]
-            if not str(content or "").strip():
-                raise AIProviderResponseError("AI 提供商返回了空内容。")
+        def parse(response: Any) -> dict[str, Any]:
             try:
-                value = json.loads(content)
-            except json.JSONDecodeError:
-                value = json.loads(content, strict=False)
-            if not isinstance(value, dict):
-                raise AIProviderResponseError("AI 提供商未返回 JSON 对象。")
-            return value
-        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise AIProviderResponseError("AI 提供商返回格式无效。") from exc
+                content = response.json()["choices"][0]["message"]["content"]
+                if not str(content or "").strip():
+                    raise AIProviderResponseError("AI 提供商返回了空内容。")
+                try:
+                    value = json.loads(content)
+                except json.JSONDecodeError:
+                    value = json.loads(content, strict=False)
+                if not isinstance(value, dict):
+                    raise AIProviderResponseError("AI 提供商未返回 JSON 对象。")
+                return value
+            except AIProviderResponseError:
+                raise
+            except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise AIProviderResponseError("AI 提供商返回格式无效。") from exc
+
+        return self._execute(
+            payload,
+            parse,
+            verification_request=verification_request,
+        )
 
     def request_tool_message(
         self,
@@ -291,22 +318,30 @@ class OpenAICompatibleClient:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-        response = self._post(payload)
-        try:
-            message = response.json()["choices"][0]["message"]
-            if not isinstance(message, dict):
-                raise TypeError("assistant message is not an object")
-            content = message.get("content") or ""
-            tool_calls = message.get("tool_calls") or []
-            if not isinstance(tool_calls, list) or not all(
-                isinstance(call, dict) for call in tool_calls
-            ):
-                raise TypeError("tool calls are not an array of objects")
-            if not str(content).strip() and not tool_calls:
-                raise AIProviderResponseError("AI 提供商返回了空消息。")
-            return {"role": "assistant", "content": content, "tool_calls": tool_calls}
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise AIProviderResponseError("AI 提供商返回格式无效。") from exc
+        def parse(response: Any) -> dict[str, Any]:
+            try:
+                message = response.json()["choices"][0]["message"]
+                if not isinstance(message, dict):
+                    raise TypeError("assistant message is not an object")
+                content = message.get("content") or ""
+                tool_calls = message.get("tool_calls") or []
+                if not isinstance(tool_calls, list) or not all(
+                    isinstance(call, dict) for call in tool_calls
+                ):
+                    raise TypeError("tool calls are not an array of objects")
+                if not str(content).strip() and not tool_calls:
+                    raise AIProviderResponseError("AI 提供商返回了空消息。")
+                return {
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": tool_calls,
+                }
+            except AIProviderResponseError:
+                raise
+            except (KeyError, IndexError, TypeError, ValueError) as exc:
+                raise AIProviderResponseError("AI 提供商返回格式无效。") from exc
+
+        return self._execute(payload, parse)
 
     def smoke_test(self) -> dict[str, Any]:
         if not self.settings.models_verified and not self.settings.verification_mode:

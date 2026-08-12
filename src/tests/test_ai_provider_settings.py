@@ -10,10 +10,10 @@ from auto_research.settings.ai_provider import (
 
 
 OPENAI_MODELS = {
-    "extraction": "gpt-5",
-    "analysis": "gpt-5",
-    "librarian_planning": "gpt-5-mini",
-    "librarian_synthesis": "gpt-5",
+    "extraction": "gpt-5.6-terra",
+    "analysis": "gpt-5.6-terra",
+    "librarian_planning": "gpt-5.6-terra",
+    "librarian_synthesis": "gpt-5.6-terra",
 }
 
 
@@ -38,11 +38,10 @@ class AIProviderSettingsTests(unittest.TestCase):
         self.assertEqual(selection.task_models["librarian_planning"], "deepseek-v4-flash")
 
     def test_openai_requires_explicit_complete_task_models(self) -> None:
-        with self.assertRaises(AIProviderSettingsError) as raised:
-            AIProviderSelection.from_mapping(
-                {"provider_id": "openai", "credential_ref": "openai.default"}
-            )
-        self.assertEqual(raised.exception.code, "ai_task_models_incomplete")
+        default = AIProviderSelection.from_mapping(
+            {"provider_id": "openai", "credential_ref": "openai.default"}
+        )
+        self.assertEqual(set(default.task_models.values()), {"gpt-5.6-terra"})
         selection = AIProviderSelection.from_mapping(
             {
                 "provider_id": "openai",
@@ -111,7 +110,20 @@ class AIProviderSettingsTests(unittest.TestCase):
         self.assertNotIn("sk-runtime-secret", repr(settings.public_status()))
         self.assertNotIn("api_key", selection.persistable_dict())
 
-    def test_unverified_openai_runtime_fails_before_resolving_secret(self) -> None:
+    def test_cross_provider_model_names_are_rejected_before_resolving_secret(self) -> None:
+        crossed = dict(OPENAI_MODELS)
+        crossed["analysis"] = "deepseek-v4-pro"
+        with self.assertRaises(AIProviderSettingsError) as raised:
+            AIProviderSelection.from_mapping(
+                {
+                    "provider_id": "openai",
+                    "credential_ref": "openai.default",
+                    "task_models": crossed,
+                }
+            )
+        self.assertEqual(raised.exception.code, "ai_model_invalid")
+
+    def test_reviewed_openai_catalog_still_requires_account_verification(self) -> None:
         selection = AIProviderSelection.from_mapping(
             {
                 "provider_id": "openai",

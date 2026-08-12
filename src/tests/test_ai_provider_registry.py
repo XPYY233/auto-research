@@ -10,6 +10,7 @@ from auto_research.ai.provider_registry import (
     trusted_chat_endpoint,
     trusted_provider_profile,
     trusted_provider_public_catalog,
+    validated_task_models,
 )
 
 
@@ -20,7 +21,11 @@ class TrustedProviderRegistryTests(unittest.TestCase):
         )
         self.assertEqual([item["provider_id"] for item in catalog], ["deepseek", "openai"])
         self.assertTrue(all("endpoint" not in item for item in catalog))
-        self.assertEqual(catalog[1]["model_validation"], "connection-test-required")
+        self.assertEqual(catalog[1]["model_validation"], "builtin-reviewed")
+        self.assertEqual(
+            catalog[1]["model_options"]["analysis"],
+            ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+        )
         self.assertNotIn("api_key", repr(catalog))
 
     def test_endpoints_are_fixed_by_provider_identity(self) -> None:
@@ -57,6 +62,19 @@ class TrustedProviderRegistryTests(unittest.TestCase):
         profile = trusted_provider_profile("deepseek")
         with self.assertRaises(TypeError):
             profile.default_task_models["analysis"] = "changed"  # type: ignore[index]
+
+    def test_model_catalog_is_provider_specific(self) -> None:
+        with self.assertRaises(TrustedProviderRegistryError) as raised:
+            validated_task_models(
+                "openai",
+                {
+                    "extraction": "deepseek-v4-pro",
+                    "analysis": "deepseek-v4-pro",
+                    "librarian_planning": "deepseek-v4-flash",
+                    "librarian_synthesis": "deepseek-v4-pro",
+                },
+            )
+        self.assertEqual(raised.exception.code, "ai_model_invalid")
 
 
 if __name__ == "__main__":
