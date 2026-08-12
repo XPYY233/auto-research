@@ -133,12 +133,13 @@ class LocalPreviewCredentialTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, ERROR_CORRUPTED)
         self.assertNotIn(SECRET, str(raised.exception))
 
-    def test_delete_removes_ciphertext_and_preview_key(self) -> None:
+    def test_delete_writes_unconfigured_tombstone_and_keeps_generation_storage(self) -> None:
         self.store.save(SECRET)
         status = self.store.delete().public_dict()
         self.assertFalse(status["configured"])
-        self.assertFalse(self.ciphertext_path.exists())
-        self.assertFalse(self.key_path.exists())
+        self.assertTrue(self.ciphertext_path.exists())
+        self.assertTrue(self.key_path.exists())
+        self.assertIsNone(self.store.read_for_runtime())
 
 
 class KeychainCredentialTests(unittest.TestCase):

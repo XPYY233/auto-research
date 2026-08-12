@@ -127,7 +127,16 @@ class CredentialAPITests(unittest.TestCase):
             status_code, saved = self.request("POST", {"api_key": SECRET})
             self.assertEqual(status_code, 200)
             self.assertTrue(saved["configured"])
-            self.assertEqual(self.backend.secret, SECRET)
+            persisted = json.loads(self.backend.secret or "")
+            self.assertEqual(
+                persisted,
+                {
+                    "schema": "provider-credential-envelope-v1",
+                    "provider_id": "deepseek",
+                    "generation": 1,
+                    "api_key": SECRET,
+                },
+            )
             self.assertEqual(os.environ.get("DEEPSEEK_API_KEY"), SECRET)
 
             status_code, status = self.request("GET")
@@ -137,7 +146,10 @@ class CredentialAPITests(unittest.TestCase):
             status_code, deleted = self.request("DELETE")
             self.assertEqual(status_code, 200)
             self.assertFalse(deleted["configured"])
-            self.assertIsNone(self.backend.secret)
+            tombstone = json.loads(self.backend.secret or "")
+            self.assertEqual(tombstone["provider_id"], "deepseek")
+            self.assertEqual(tombstone["generation"], 2)
+            self.assertIsNone(tombstone["api_key"])
             self.assertNotIn("DEEPSEEK_API_KEY", os.environ)
 
         combined = json.dumps([initial, saved, status, deleted], ensure_ascii=False)
