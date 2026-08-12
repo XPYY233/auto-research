@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol
@@ -21,6 +22,7 @@ AI_RUNTIME_STATE_SCHEMA_VERSION = "ai-runtime-state-v1"
 AI_RUNTIME_PUBLIC_SCHEMA_VERSION = "ai-runtime-public-state-v1"
 AI_RUNTIME_ERROR_SCHEMA_VERSION = "ai-runtime-state-error-v1"
 AI_VERIFICATION_ATTESTATION_VERSION = "ai-verification-attestation-v1"
+AI_VERIFICATION_TTL_SECONDS = 15 * 60
 
 _PATCH_KEYS = frozenset({"provider_id", "task_models"})
 _STORED_KEYS = frozenset(
@@ -34,9 +36,12 @@ _ATTESTATION_KEYS = frozenset(
         "task_models",
         "credential_generation",
         "selection_revision",
+        "issued_at",
+        "expires_at",
         "token",
     }
 )
+_LEGACY_ATTESTATION_KEYS = _ATTESTATION_KEYS - {"issued_at", "expires_at"}
 _ERROR_CODES = frozenset(
     {
         "ai_runtime_state_invalid",
@@ -136,6 +141,15 @@ class VerificationAttestationSigner(Protocol):
     def verify(self, token: str, claims: bytes) -> bool: ...
 
 
+class Clock(Protocol):
+    def now(self) -> int: ...
+
+
+class SystemClock:
+    def now(self) -> int:
+        return int(time.time())
+
+
 @dataclass(frozen=True)
 class AIRuntimeSelection:
     provider_id: str
@@ -153,7 +167,11 @@ class AIRuntimeSelection:
         object.__setattr__(self, "provider_id", trusted_provider_profile(self.provider_id).provider_id)
         object.__setattr__(self, "task_models", models)
         if self.attestation is not None:
-            if not isinstance(self.attestation, Mapping) or set(self.attestation) != _ATTESTATION_KEYS:
+            if (
+                not isinstance(self.attestation, Mapping)
+                or set(self.attestation)
+                not in {_ATTESTATION_KEYS, _LEGACY_ATTESTATION_KEYS}
+            ):
                 raise _error("ai_runtime_store_unavailable")
             object.__setattr__(self, "attestation", MappingProxyType(dict(self.attestation)))
 
@@ -203,6 +221,9 @@ class ResolvedAIRuntime:
 def _claims(
     selection: AIRuntimeSelection,
     credential_generation: int,
+    *,
+    issued_at: int,
+    expires_at: int,
 ) -> bytes:
     value = {
         "schema_version": AI_VERIFICATION_ATTESTATION_VERSION,
@@ -211,6 +232,8 @@ def _claims(
         "task_models": dict(selection.task_models),
         "credential_generation": credential_generation,
         "selection_revision": selection.revision,
+        "issued_at": issued_at,
+        "expires_at": expires_at,
     }
     return json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -227,11 +250,22 @@ class AIRuntimeStateService:
         credential_states: CredentialStateProvider,
         verifier: ProviderCapabilityVerifier,
         signer: VerificationAttestationSigner,
+        clock: Clock | None = None,
     ) -> None:
         self._store = store
         self._credential_states = credential_states
         self._verifier = verifier
         self._signer = signer
+        self._clock = clock or SystemClock()
+
+    def _now(self) -> int:
+        try:
+            value = self._clock.now()
+        except Exception as exc:
+            raise _error("ai_runtime_store_unavailable") from exc
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise _error("ai_runtime_store_unavailable")
+        return value
 
     def _read(self) -> AIRuntimeSelection:
         try:
@@ -280,11 +314,33 @@ class AIRuntimeStateService:
         }
         if any(value.get(key) != item for key, item in expected.items()):
             return False
+        issued_at = value.get("issued_at")
+        expires_at = value.get("expires_at")
+        if (
+            isinstance(issued_at, bool)
+            or not isinstance(issued_at, int)
+            or isinstance(expires_at, bool)
+            or not isinstance(expires_at, int)
+            or issued_at < 0
+            or expires_at - issued_at != AI_VERIFICATION_TTL_SECONDS
+        ):
+            return False
+        now = self._now()
+        if now < issued_at or now >= expires_at:
+            return False
         token = value.get("token")
         if not isinstance(token, str) or not token:
             return False
         try:
-            return self._signer.verify(token, _claims(selection, credential.generation)) is True
+            return self._signer.verify(
+                token,
+                _claims(
+                    selection,
+                    credential.generation,
+                    issued_at=issued_at,
+                    expires_at=expires_at,
+                ),
+            ) is True
         except Exception:
             return False
 
@@ -343,8 +399,21 @@ class AIRuntimeStateService:
             raise _error("ai_runtime_revision_conflict")
         return self.get()
 
-    def record_verification(self) -> AIRuntimePublicState:
+    def record_verification(
+        self,
+        *,
+        expected_provider_id: str | None = None,
+        expected_revision: int | None = None,
+    ) -> AIRuntimePublicState:
         selection = self._read()
+        if (
+            expected_provider_id is not None
+            and selection.provider_id != expected_provider_id
+        ) or (
+            expected_revision is not None
+            and selection.revision != expected_revision
+        ):
+            raise _error("ai_runtime_revision_conflict")
         credential = self._credential(selection.provider_id)
         if not credential.configured:
             raise _error("ai_runtime_verification_failed")
@@ -368,7 +437,14 @@ class AIRuntimeStateService:
                 selection.task_models,
                 selection.revision + 1,
             )
-            claims = _claims(attested_selection, credential.generation)
+            issued_at = self._now()
+            expires_at = issued_at + AI_VERIFICATION_TTL_SECONDS
+            claims = _claims(
+                attested_selection,
+                credential.generation,
+                issued_at=issued_at,
+                expires_at=expires_at,
+            )
             token = self._signer.issue(claims)
             if not isinstance(token, str) or not token:
                 raise _error("ai_runtime_verification_failed")
@@ -423,10 +499,13 @@ __all__ = [
     "AIRuntimeStateError",
     "AIRuntimeStateService",
     "AtomicAIRuntimeStateStore",
+    "AI_VERIFICATION_TTL_SECONDS",
     "BackendCredentialState",
     "CredentialStateProvider",
+    "Clock",
     "ModelCapabilityResult",
     "ProviderCapabilityVerifier",
     "ResolvedAIRuntime",
+    "SystemClock",
     "VerificationAttestationSigner",
 ]

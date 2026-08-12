@@ -6,6 +6,7 @@ import hmac
 import unittest
 
 from auto_research.settings.ai_runtime_state import (
+    AI_VERIFICATION_TTL_SECONDS,
     AIRuntimeStateError,
     AIRuntimeStateService,
     BackendCredentialState,
@@ -82,16 +83,26 @@ class _Signer:
         return hmac.compare_digest(token, self.issue(claims))
 
 
+class _Clock:
+    def __init__(self, value=1_000_000):
+        self.value = value
+
+    def now(self):
+        return self.value
+
+
 class AIRuntimeStateTests(unittest.TestCase):
     def setUp(self):
         self.store = _Store()
         self.credentials = _Credentials()
         self.verifier = _Verifier()
+        self.clock = _Clock()
         self.service = AIRuntimeStateService(
             store=self.store,
             credential_states=self.credentials,
             verifier=self.verifier,
             signer=_Signer(),
+            clock=self.clock,
         )
 
     def select_openai(self):
@@ -153,6 +164,46 @@ class AIRuntimeStateTests(unittest.TestCase):
         with self.assertRaises(AIRuntimeStateError):
             self.service.resolve_runtime()
 
+    def test_attestation_time_boundaries_and_signed_times_fail_closed(self):
+        self.select_openai()
+        self.service.record_verification()
+        attestation = self.store.value["attestation"]
+        self.assertEqual(attestation["issued_at"], 1_000_000)
+        self.assertEqual(
+            attestation["expires_at"],
+            1_000_000 + AI_VERIFICATION_TTL_SECONDS,
+        )
+
+        self.clock.value = attestation["expires_at"] - 1
+        self.assertTrue(self.service.get().verified)
+        self.clock.value = attestation["expires_at"]
+        state = self.service.get()
+        self.assertFalse(state.verified)
+        self.assertEqual(state.availability, "verification_required")
+        with self.assertRaises(AIRuntimeStateError):
+            self.service.resolve_runtime()
+
+        self.clock.value = attestation["issued_at"] - 1
+        self.assertFalse(self.service.get().verified)
+        self.clock.value = attestation["issued_at"]
+        self.store.value["attestation"]["expires_at"] += 1
+        self.assertFalse(self.service.get().verified)
+
+        self.store.value["attestation"]["expires_at"] -= 1
+        self.store.value["attestation"]["issued_at"] += 1
+        self.store.value["attestation"]["expires_at"] += 1
+        self.clock.value += 1
+        self.assertFalse(self.service.get().verified)
+
+    def test_legacy_attestation_without_lease_requires_reverification(self):
+        self.select_openai()
+        self.service.record_verification()
+        self.store.value["attestation"].pop("issued_at")
+        self.store.value["attestation"].pop("expires_at")
+        state = self.service.get()
+        self.assertFalse(state.verified)
+        self.assertEqual(state.availability, "verification_required")
+
     def test_provider_model_revision_and_registry_changes_invalidate(self):
         self.select_openai()
         self.service.record_verification()
@@ -212,6 +263,19 @@ class AIRuntimeStateTests(unittest.TestCase):
         self.assertFalse(self.service.get().verified)
         with self.assertRaises(AIRuntimeStateError):
             self.service.resolve_runtime()
+
+    def test_verification_preconditions_fail_before_model_calls(self):
+        self.select_openai()
+        for provider_id, revision in (("deepseek", 1), ("openai", 0)):
+            with self.subTest(provider_id=provider_id, revision=revision), self.assertRaises(
+                AIRuntimeStateError
+            ) as raised:
+                self.service.record_verification(
+                    expected_provider_id=provider_id,
+                    expected_revision=revision,
+                )
+            self.assertEqual(raised.exception.code, "ai_runtime_revision_conflict")
+        self.assertEqual(self.verifier.calls, [])
 
     def test_deepseek_is_explicitly_legacy_not_connection_verified(self):
         state = self.service.get()

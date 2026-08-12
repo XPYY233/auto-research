@@ -56,6 +56,30 @@ generation provider 和安全 signer；公开 DTO 永不包含 credential ref/ge
 验证器通过后端 credential resolver/ref 延迟取得 key；公开结果只返回 provider、model 和
 两项能力布尔值，不保存或返回请求、响应、key、credential ref、endpoint 或 token。
 
+`AIDesktopService` 是 macOS/Windows 共用的 `ai-desktop-service-v1` 编排边界。平台只注入
+原子 runtime store、attestation signer 和实现 `CredentialManager` 的安全凭据后端；固定
+credential ref 由共享服务按 provider 选择，renderer 永远不能提交。公开方法固定为
+`catalog/get/patch/credential_status/credential_save/credential_delete/test`。保存密钥只写
+平台安全存储，不联网；替换或删除都必须令 generation 严格递增，使旧 attestation 在下次
+读取时自动失效。平台的 save/delete 必须把密钥变更与 generation++ 作为同一个原子操作，
+不得出现“密钥已变但 generation 未变”的可见状态。`test` 只接受
+`ai-capability-test-consent-v1` 和当前 revision，并在任何
+可能收费的模型调用前核对 provider/revision；随后复用共享固定 verifier 和
+`record_verification()`。公开 catalog、状态、操作结果和错误均不含 key、credential ref、
+generation、endpoint、attestation、token、路径或内部 ID。DeepSeek 旧 alias 后续只能委托
+同一个 manager/service，不能成为第二套凭据权威。
+
+能力证明是固定 15 分钟短租约；`issued_at/expires_at` 与 provider、模型、credential
+generation、registry version 和 selection revision 一起进入签名 claims，但不进入公开 DTO。
+只有 `issued_at <= now < expires_at` 才有效，时钟异常、未来签发或到期均 fail closed 为
+`verification_required`。时钟通过共享核心 `Clock` 注入，平台不得自行解释租约。
+
+`catalog.capability_test` 在用户授权前公开本次测试的 provider、revision、唯一模型数及
+`maximum_model_calls = 2 × unique_model_count`；这里的两次是每个唯一模型的上限，不是整次
+测试总共两次。共享服务对相同 provider+revision 实施进程内单飞；并发重复请求返回稳定
+`ai_desktop_test_busy`，不会启动第二组收费调用。前端 consent nonce 属于下一阶段，不在本
+契约中伪造。
+
 现有 `DeepSeekClient` 与 `DeepSeekSettings` 保持兼容，当前 DeepSeek 产品路径不会因新增
 通用提供商契约而改变。`DeepSeekClient` 已成为 `OpenAICompatibleClient` 的薄兼容层；
 endpoint、禁止 redirect、HTTP 重试、payload 和响应解析只有通用客户端一套实现。
