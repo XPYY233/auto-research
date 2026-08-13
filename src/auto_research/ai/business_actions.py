@@ -35,6 +35,7 @@ _SENSITIVE_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 _PUBLIC_SIGNED_TOKEN_KEYS = frozenset({"state_token", "snapshot_token", "job_token"})
+_OPTIONAL_EMPTY_PUBLIC_SIGNED_TOKEN_KEYS = frozenset({"state_token"})
 MAX_PUBLIC_SIGNED_TOKEN_LENGTH = 16 * 1024
 _LOCAL_VALUE_RE = re.compile(
     r"(?:^|[\s='\"])(?:~[/\\]|/(?:Users|home|private|tmp|var|etc|usr|root|srv|mnt|media|opt|Applications|Library|System)(?:[/\\]|$)|/[^/\s]+[/\\][^\s]*|[A-Za-z]:[\\/]|\\\\|file:|sqlite:)",
@@ -757,7 +758,11 @@ def _public_result(value: object) -> dict[str, object]:
                     raise BusinessActionError("business_action_result_invalid")
                 if key in _PUBLIC_SIGNED_TOKEN_KEYS and (
                     not isinstance(child, str)
-                    or not 1 <= len(child) <= MAX_PUBLIC_SIGNED_TOKEN_LENGTH
+                    or (
+                        child == ""
+                        and key not in _OPTIONAL_EMPTY_PUBLIC_SIGNED_TOKEN_KEYS
+                    )
+                    or len(child) > MAX_PUBLIC_SIGNED_TOKEN_LENGTH
                 ):
                     raise BusinessActionError("business_action_result_invalid")
                 output[key] = normalize(child, depth + 1)

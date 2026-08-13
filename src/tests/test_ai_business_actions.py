@@ -423,6 +423,24 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
         self.assertEqual(result["state_token"], "signed-state")
         self.assertEqual(result["job_token"], "opaque-stage-job")
 
+        # A local-only Librarian answer has no research-state continuation.
+        # Its empty state token is a deliberate public sentinel, while the
+        # other signed-token fields must remain non-empty.
+        self.projectors["personal_suggestion"].project = lambda result: {
+            "state_token": "",
+        }
+        _summary, action = self.prepare_action("personal_suggestion")
+        self.assertEqual(self.registry.execute(action), {"state_token": ""})
+
+        for token_key in ("snapshot_token", "job_token"):
+            self.setUp()
+            self.projectors["personal_suggestion"].project = (
+                lambda result, key=token_key: {key: ""}
+            )
+            _summary, action = self.prepare_action("personal_suggestion")
+            with self.subTest(token_key=token_key), self.assertRaises(BusinessActionError):
+                self.registry.execute(action)
+
         for unsafe in (
             {"consent_nonce": "secret"},
             {"api_key": "secret"},
