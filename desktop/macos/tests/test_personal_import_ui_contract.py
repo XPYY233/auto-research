@@ -48,12 +48,13 @@ class PersonalImportUIContractTests(unittest.TestCase):
             "/api/desktop/personal-imports/preview",
             "/api/desktop/personal-imports/search-status",
             "/api/desktop/personal-imports/search-refresh",
-            "/ai-suggestion",
             "/reviewed-import",
         )
         for route in routes:
             self.assertIn(route, self.product)
-        self.assertIn("consent: true", self.product)
+        self.assertIn('authorizePreparedAIAction?.("personal_suggestion"', self.product)
+        self.assertIn('executePreparedAIAction("personal_suggestion"', self.product)
+        self.assertNotIn("/ai-suggestion", self.product)
         self.assertIn('suggestion.schema_version !== "personal-import-suggestion-v1"', self.product)
         self.assertIn("importReviewedPersonal", self.product)
         self.assertIn("JSON.stringify({ reviewed: true, draft: payload })", self.product)
@@ -100,7 +101,7 @@ class PersonalImportUIContractTests(unittest.TestCase):
         ]
         self.assertIn("applyLocalPersonalDefaults();", change)
         self.assertIn("renderPreviewSheet();", change)
-        self.assertIn("DeepSeek 识别按钮", change)
+        self.assertIn("AI 识别按钮", change)
         self.assertNotIn("requestPersonalSuggestion()", change)
         self.assertIn("product.suggestingPersonal = false", change)
         self.assertIn("可能产生费用", self.index)
@@ -110,13 +111,13 @@ class PersonalImportUIContractTests(unittest.TestCase):
             self.product.index("async function requestPersonalSuggestion()"):
             self.product.index("async function choosePersonalFile()")
         ]
-        consent = suggestion.index('AutoResearchAIConsent?.ensure?.("personal_suggestion")')
-        request = suggestion.index("/ai-suggestion")
+        consent = suggestion.index('authorizePreparedAIAction?.("personal_suggestion"')
+        request = suggestion.index('executePreparedAIAction("personal_suggestion"')
         self.assertLess(consent, request)
-        self.assertIn("if (consent !== true)", suggestion)
-        self.assertIn("未向 DeepSeek 发送任何工作表内容", suggestion)
+        self.assertIn("if (!authorization)", suggestion)
+        self.assertIn("未向 ${provider} 发送任何工作表内容", suggestion)
         self.assertIn('<script src="/static/ai_consent.js"></script>', self.index)
-        self.assertIn("本机保存的 DeepSeek API 密钥", self.index)
+        self.assertIn("设置页选定的受信 AI 提供商", self.index)
         self.assertIn("可能产生少量费用", self.index)
         self.assertIn("完整表格不会上传，文件路径和密钥也不会发送", self.index)
 
@@ -132,13 +133,13 @@ class PersonalImportUIContractTests(unittest.TestCase):
         self.assertIn("librarianTransportFailureCode", self.app)
         self.assertIn("body.error || body.message", self.app)
 
-    def test_hidden_legacy_views_keep_compatibility_without_navigation(self) -> None:
+    def test_legacy_manual_and_history_views_are_retired(self) -> None:
         self.assertNotIn('<button class="nav" data-view="manual">', self.index)
         self.assertNotIn('<button class="nav" data-view="history">', self.index)
-        self.assertIn('<section class="view" id="view-manual">', self.index)
-        self.assertIn('<section class="view" id="view-history">', self.index)
-        self.assertIn('manual: { kicker: "MANUAL ENTRY"', self.app)
-        self.assertIn('history: { kicker: "REVISION HISTORY"', self.app)
+        self.assertNotIn('id="view-manual"', self.index)
+        self.assertNotIn('id="view-history"', self.index)
+        self.assertNotIn('manual: { kicker: "MANUAL ENTRY"', self.app)
+        self.assertNotIn('history: { kicker: "REVISION HISTORY"', self.app)
 
 
 if __name__ == "__main__":

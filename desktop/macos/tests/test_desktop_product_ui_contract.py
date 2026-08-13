@@ -14,7 +14,10 @@ class DesktopProductUIContractTests(unittest.TestCase):
         cls.index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
         cls.app = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
         cls.product = (WEB_ROOT / "desktop_product.js").read_text(encoding="utf-8")
-        cls.styles = (WEB_ROOT / "app.css").read_text(encoding="utf-8")
+        cls.styles = "\n".join(
+            (WEB_ROOT / name).read_text(encoding="utf-8")
+            for name in ("app.css", "workbench.css")
+        )
 
     def test_product_module_is_loaded_without_entering_history_module(self) -> None:
         product_script = '<script src="/static/desktop_product.js"></script>'
@@ -62,7 +65,7 @@ class DesktopProductUIContractTests(unittest.TestCase):
         self.assertIn("离线资料库", self.index)
         for scope in ("official", "private", "all"):
             self.assertIn(f'data-source-scope="{scope}"', self.index)
-        self.assertIn("官方资料库搜索不需要 AI 密钥", self.index)
+        self.assertIn("精确检索无需配置 AI 密钥", self.index)
         self.assertIn(".federated-result-card", self.styles)
 
     def test_personal_import_is_a_primary_navigation_destination(self) -> None:
@@ -84,14 +87,18 @@ class DesktopProductUIContractTests(unittest.TestCase):
         self.assertIn('querySelector(`#view-${viewName}`)', self.app)
         self.assertIn('if (name === "upload")', self.app)
         self.assertIn('name = "paper"', self.app)
-        self.assertIn('mount.appendChild(intake)', self.app)
-        self.assertIn('系统不会自动调用 DeepSeek', self.app)
+        self.assertNotIn('mount.appendChild(intake)', self.app)
+        self.assertIn('只有你逐阶段确认后才会调用当前受信 AI 提供商', self.index)
         self.assertIn("openPersonalImport", self.product)
-        self.assertIn('function mountPersonalImportPanel()', self.product)
-        self.assertIn('personalView.appendChild(personalPanel)', self.product)
+        self.assertIn('function personalImportPanel()', self.product)
+        self.assertNotIn('personalView.appendChild(personalPanel)', self.product)
         self.assertIn('switchView("search", { skipSearch: true })', self.product)
         self.assertIn('setSearchExperience("precise", { run: false })', self.product)
-        self.assertIn('body[data-view="personal"] #personal-import-panel', self.styles)
+        personal_view = self.index.split('<section class="view" id="view-personal"', 1)[1].split(
+            '<section class="view package-center" id="view-package"', 1
+        )[0]
+        self.assertIn('id="personal-import-panel"', personal_view)
+        self.assertIn('.personal-import-panel[hidden]', self.styles)
         self.assertNotIn(".search-hero .personal-import-panel", self.styles)
 
     def test_personal_import_mount_does_not_depend_on_package_status(self) -> None:
@@ -99,13 +106,14 @@ class DesktopProductUIContractTests(unittest.TestCase):
             "function applySearchUI()", 1
         )[0]
         self.assertLess(
-            initialize.index("mountPersonalImportPanel()"),
+            initialize.index("const personalPanel = personalImportPanel()"),
             initialize.index("initializePackageCenter()"),
         )
         self.assertLess(
-            initialize.index("mountPersonalImportPanel()"),
+            initialize.index("const personalPanel = personalImportPanel()"),
             initialize.index("loadPackageStatus()"),
         )
+        self.assertNotIn("appendChild", initialize)
         self.assertIn("Promise.allSettled", initialize)
         self.assertIn("仍可导入和检索本机实验数据", initialize)
 

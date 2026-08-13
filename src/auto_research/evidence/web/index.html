@@ -64,7 +64,7 @@
         <div>
           <p class="eyebrow">LITERATURE WORKFLOW</p>
           <strong>从 PDF 导入到证据检查，在同一流程内完成</strong>
-          <small>上传只进行验证、去重和入库；是否调用 DeepSeek 由你在当前文章页明确决定。</small>
+          <small>上传只进行验证、去重和入库；只有你逐阶段确认后才会调用当前受信 AI 提供商。</small>
         </div>
         <div class="paper-workflow-actions" role="tablist" aria-label="文献处理阶段">
           <button type="button" role="tab" aria-selected="false" aria-controls="literature-workbench-center" tabindex="-1" data-paper-stage="upload"><span>01</span><strong>导入 PDF</strong><small>验证并去重</small></button>
@@ -376,7 +376,7 @@
             <button type="button" role="tab" aria-selected="false" data-search-repository="offline"><strong>离线资料库</strong><small>官方文献与我的实验联合搜索</small></button>
           </div>
           <div class="offline-source-scope" id="offline-source-scope" hidden aria-label="离线资料来源">
-            <div><span>离线资料范围</span><small>“全部”由后端一次联合检索，不在页面合并结果</small></div>
+            <div><span>离线资料范围</span><small>“全部”由后端一次联合检索；精确检索无需配置 AI 密钥</small></div>
             <div role="group" aria-label="选择离线资料范围">
               <button type="button" data-source-scope="official" aria-pressed="false"><strong>官方文献</strong><small>签名资料包 · 只读</small></button>
               <button type="button" data-source-scope="private" aria-pressed="false"><strong>我的实验</strong><small>当前电脑 · 私人</small></button>
