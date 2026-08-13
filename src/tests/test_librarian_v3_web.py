@@ -231,6 +231,12 @@ class LibrarianV3WebUIContractTests(unittest.TestCase):
             self.app_js.index("function bindLibrarianSuggestions")
         ]
         self.assertIn("clearLibrarianResearchContext();", reset_slice)
+        self.assertIn("clearLibrarianPendingSynthesis();", reset_slice)
+        save_slice = self.app_js[
+            self.app_js.index("function saveLibrarianSession"):
+            self.app_js.index("async function loadLibrarianHistory")
+        ]
+        self.assertNotIn("job_token", save_slice)
 
     def test_v3_rendering_and_recovery_are_present(self) -> None:
         for marker in (
@@ -260,11 +266,58 @@ class LibrarianV3WebUIContractTests(unittest.TestCase):
         self.assertIn("librarianResearchRequest(question, history)", submit)
         self.assertNotIn("paper_ids", submit)
         self.assertNotIn("console.log", submit)
-        self.assertLess(
-            submit.index("authorizePreparedAIAction('librarian', 'librarian'"),
-            submit.index("executePreparedAIAction('librarian'"),
-        )
+        self.assertLess(submit.index("authorizePreparedAIAction('librarian', 'librarian'"), submit.index("executePreparedAIAction('librarian'"))
         self.assertIn("未向 ${aiProviderLabel()} 发送任何内容", submit)
+
+    def test_two_stage_librarian_requires_separate_consent_and_keeps_job_token_ephemeral(self) -> None:
+        for marker in (
+            "let librarianPendingSynthesis = null",
+            "librarian-ai-stage-v1",
+            "requires_second_consent !== true",
+            "function showLibrarianSynthesisStage",
+            "function continueLibrarianSynthesis",
+            "{ job_token: pending.jobToken }",
+            "阶段 1/2",
+            "阶段 2/2",
+            "已停止，未进行第二次收费调用",
+        ):
+            self.assertIn(marker, self.app_js)
+        self.assertIn('id="librarian-synthesis-stage"', (WEB_DIR / "index.html").read_text(encoding="utf-8"))
+        self.assertIn('id="librarian-synthesis-continue"', (WEB_DIR / "index.html").read_text(encoding="utf-8"))
+        self.assertNotIn("job_token", self.app_js[self.app_js.index("function saveLibrarianSession"):self.app_js.index("async function loadLibrarianHistory")])
+        persistence = self.app_js[
+            self.app_js.index("function readLocalLibrarianHistory"):
+            self.app_js.index("function resetLibrarian")
+        ]
+        self.assertNotIn("job_token", persistence)
+        for marker in ("toast(`", "toast('", "toast(\""):
+            for line in self.app_js.splitlines():
+                if marker in line:
+                    self.assertNotIn("job_token", line)
+        index = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("job_token", index)
+        search_mode = self.app_js[
+            self.app_js.index("function setSearchExperience"):
+            self.app_js.index("function moveTabFocus")
+        ]
+        self.assertIn("if (mode !== 'agent') clearLibrarianPendingSynthesis();", search_mode)
+
+    def test_local_zero_model_result_skips_consent_and_execution(self) -> None:
+        authorization = self.app_js[
+            self.app_js.index("async function authorizePreparedAIAction"):
+            self.app_js.index("async function prepareAIAction")
+        ]
+        self.assertLess(authorization.index('prepared?.librarian_core_version === "librarian-v3"'), authorization.index("currentAIConsentContext(scope)"))
+        self.assertIn("return { local_result: prepared }", authorization)
+
+    def test_transient_failure_does_not_append_or_persist_a_fake_assistant_answer(self) -> None:
+        failure = self.app_js[
+            self.app_js.index("function failLibrarianRequest"):
+            self.app_js.index("async function submitLibrarian")
+        ]
+        self.assertNotIn("librarianMessages.push", failure)
+        self.assertNotIn("saveLibrarianSession", failure)
+        self.assertIn("safe_failure_code: failureCode", failure)
 
     def test_transport_canary_cannot_enter_librarian_history_meta_or_toast(self) -> None:
         submit = self.app_js[
@@ -277,12 +330,16 @@ class LibrarianV3WebUIContractTests(unittest.TestCase):
             "图书管理员暂时无法开始 AI 请求；精确检索仍可正常使用。",
             submit,
         )
-        self.assertIn("content: librarianTransportFailureMessage", catch)
-        self.assertIn("error: true", catch)
-        self.assertIn("safe_failure_code: failureCode", catch)
+        self.assertIn("failLibrarianRequest(error, context.recoveryQuestion)", catch)
+        failure = self.app_js[
+            self.app_js.index("function failLibrarianRequest"):
+            self.app_js.index("async function submitLibrarian")
+        ]
+        self.assertNotIn("error.message", failure)
+        self.assertIn("safe_failure_code: failureCode", failure)
         self.assertIn(
             "toast('图书管理员暂时无法完成本次请求，请稍后重试。', true)",
-            catch,
+            failure,
         )
         self.assertIn("function librarianTransportFailureCode(error)", self.app_js)
         self.assertIn("'librarian_transport_failed'", self.app_js)

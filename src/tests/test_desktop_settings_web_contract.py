@@ -46,14 +46,37 @@ class DesktopSettingsWebContractTests(unittest.TestCase):
         self.assertIn('input.value = ""', self.workbench)
         self.assertNotIn("localStorage.setItem", self.workbench[self.workbench.index("async function saveAIKey"):])
         self.assertIn("一次性授权接口完成接线后才可测试", self.workbench)
+        for route in (
+            'aiProviders: "/api/desktop/ai/providers"',
+            'aiSettings: "/api/desktop/ai/settings"',
+            "/api/desktop/ai/credentials/${encodeURIComponent(providerId)}",
+        ):
+            self.assertIn(route, self.app)
+        for stale in (
+            '"/api/desktop/ai-providers"',
+            '"/api/desktop/ai-settings"',
+            "/api/desktop/ai-credentials/",
+        ):
+            self.assertNotIn(stale, self.app)
 
     def test_prepared_action_ports_fail_closed_without_guessing_routes(self) -> None:
         self.assertIn("prepareAIAction", self.app)
         self.assertIn("issuePreparedConsent", self.app)
         self.assertIn("executePreparedAIAction", self.app)
         self.assertIn("aiPreparedActions: null", self.app)
+        self.assertIn("ai_consent_service_unavailable", self.app)
+        self.assertIn("ai_execution_service_unavailable", self.app)
         self.assertNotIn("JSON.stringify({ scope:", self.app)
         self.assertNotIn("consent: true", self.app)
+
+    def test_legacy_search_ai_settings_surface_is_removed(self) -> None:
+        for marker in (
+            'id="desktop-ai-settings"',
+            'id="desktop-ai-key"',
+            'id="desktop-ai-save"',
+            'id="desktop-ai-delete"',
+        ):
+            self.assertNotIn(marker, self.index)
 
 
 if __name__ == "__main__":

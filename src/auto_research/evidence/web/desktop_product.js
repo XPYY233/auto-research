@@ -110,22 +110,6 @@
     return product.personalSearchStatus;
   }
 
-  async function loadCredentialStatus() {
-    try {
-      const publicState = await globalThis.AutoResearchDesktopPorts?.loadAIPublicState?.();
-      const status = publicState?.settings;
-      if (!status) throw new Error("AI 设置不可用");
-      const title = el("desktop-ai-title");
-      if (title) title.textContent = status.configured ? `${status.provider_label} 已安全配置` : "请在设置中配置 AI";
-      el("desktop-ai-settings")?.classList.toggle("configured", Boolean(status.configured));
-      const deleteButton = el("desktop-ai-delete");
-      if (deleteButton) deleteButton.disabled = !status.configured;
-    } catch (_error) {
-      const title = el("desktop-ai-title");
-      if (title) title.textContent = "安全存储暂不可用";
-    }
-  }
-
   function personalImportPanel() {
     const personalView = el("view-personal");
     const personalPanel = el("personal-import-panel");
@@ -147,7 +131,6 @@
     const [packageResult] = await Promise.allSettled([
       loadPackageStatus(),
       packageCenter?.loadStatus(),
-      loadCredentialStatus(),
       loadPersonalSearchStatus(),
     ]);
     if (packageResult.status === "rejected") {
@@ -601,7 +584,7 @@
     el("personal-import-sheet").innerHTML = (preview.sheets || []).map((sheet, index) => `<option value="${index}">${esc(sheet.sheet_name)} · ${Number(sheet.row_count || 0)} 行 · ${(sheet.columns || []).length} 列</option>`).join("");
     applyLocalPersonalDefaults();
     renderPreviewSheet();
-    setPersonalProgress("安全预览完成；继续使用 DeepSeek 前会先说明发送范围和可能费用。");
+    setPersonalProgress("安全预览完成；继续使用受信 AI 提供商前会先说明发送范围和可能费用。");
     const button = el("personal-reviewed-import");
     if (button) button.disabled = false;
   }
@@ -813,7 +796,7 @@
     } catch (error) {
       if (requestId !== product.personalSuggestionRequest) return;
       const fallback = error.code === "personal_ai_not_configured"
-        ? "尚未配置 DeepSeek。已保留本地识别结果，你仍可直接检查并导入；如需 AI 预填，请先在右上角配置密钥后重新选择文件。"
+        ? "尚未配置当前 AI 提供商。已保留本地识别结果，你仍可直接检查并导入；如需 AI 预填，请先在设置页保存密钥后重新选择文件。"
         : `${error.message} 已保留本地识别结果，可直接检查并导入。`;
       setPersonalProgress(fallback, error.code !== "personal_ai_not_configured");
       if (retry) retry.hidden = false;
@@ -915,27 +898,13 @@
     }
   }
 
-  async function saveCredential() {
-    if (el("desktop-ai-key")) el("desktop-ai-key").value = "";
-    switchView("settings");
-    globalThis.AutoResearchWorkbench?.selectSettingsSection?.("ai");
-    toast("请在设置中选择受信提供商并安全保存密钥。 ");
-  }
-
-  async function deleteCredential() {
-    if (el("desktop-ai-key")) el("desktop-ai-key").value = "";
-    switchView("settings");
-    globalThis.AutoResearchWorkbench?.selectSettingsSection?.("ai");
-    toast("请在设置中管理本机 AI 密钥。 ");
-  }
-
   function changePersonalSheet() {
     product.personalSuggestionRequest += 1;
     product.suggestingPersonal = false;
     product.personalSuggestion = null;
     applyLocalPersonalDefaults();
     renderPreviewSheet();
-    setPersonalProgress("已切换工作表并载入本地识别结果。需要 AI 预填时，请明确点击下方 DeepSeek 识别按钮。");
+    setPersonalProgress("已切换工作表并载入本地识别结果。需要 AI 预填时，请明确点击下方 AI 识别按钮。");
     const retry = el("personal-ai-retry");
     if (retry) retry.hidden = false;
     const reviewedButton = el("personal-reviewed-import");
@@ -988,8 +957,6 @@
     const button = event.target.closest(".federated-detail-button");
     if (button) void loadFederatedDetail(button);
   });
-  el("desktop-ai-save")?.addEventListener("click", saveCredential);
-  el("desktop-ai-delete")?.addEventListener("click", deleteCredential);
   document.querySelectorAll("[data-search-repository]").forEach(button => {
     button.addEventListener("click", () => setSearchRepository(button.dataset.searchRepository));
   });

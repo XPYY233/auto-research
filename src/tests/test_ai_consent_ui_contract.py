@@ -29,11 +29,10 @@ class AIConsentUIContractTests(unittest.TestCase):
         ]
         consent = submit.index("authorizePreparedAIAction('librarian', 'librarian'")
         cancel = submit.index("未向 ${aiProviderLabel()} 发送任何内容")
-        mutation = submit.index("state.librarianMessages.push")
         request = submit.index("executePreparedAIAction('librarian'")
         self.assertLess(consent, cancel)
-        self.assertLess(cancel, mutation)
         self.assertLess(cancel, request)
+        self.assertNotIn("saveLibrarianSession();", submit[:request])
 
     def test_literature_extraction_cancel_precedes_workflow_request(self) -> None:
         extraction = self.app[
@@ -64,6 +63,26 @@ class AIConsentUIContractTests(unittest.TestCase):
         self.assertIn('authorizePreparedAIAction("selected_evidence_chat"', chat)
         self.assertIn('executePreparedAIAction("selected_evidence_chat"', chat)
         self.assertNotIn("consent: true", self.app + self.product)
+
+    def test_disclosure_cache_does_not_replace_per_action_confirmation(self) -> None:
+        authorization = self.app[
+            self.app.index("async function authorizePreparedAIAction"):
+            self.app.index("async function prepareAIAction")
+        ]
+        self.assertIn("AutoResearchAIConsent.ensure(scope, context)", authorization)
+        self.assertIn("prepared.maximum_calls", authorization)
+        self.assertIn("prepared.model", authorization)
+        self.assertIn("prepared.display", authorization)
+        self.assertNotIn("prepared.summary", authorization)
+        self.assertIn("globalThis.confirm", authorization)
+        self.assertLess(
+            authorization.index("AutoResearchAIConsent.ensure(scope, context)"),
+            authorization.index("issuePreparedConsent(prepared.action_id)"),
+        )
+        self.assertLess(
+            authorization.index("globalThis.confirm"),
+            authorization.index("issuePreparedConsent(prepared.action_id)"),
+        )
 
 
 if __name__ == "__main__":

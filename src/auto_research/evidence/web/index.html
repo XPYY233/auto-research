@@ -323,7 +323,7 @@
             <div class="librarian-main">
               <div class="librarian-intro">
                 <div class="librarian-avatar" aria-hidden="true">馆</div>
-                <div><p class="eyebrow">DEEPSEEK · LIBRARIAN AGENT</p><h3>描述问题，我来查证据</h3><p>自动拆解材料、条件和物理量，并返回可以继续打开核对的数据库记录。</p></div>
+                <div><p class="eyebrow">TRUSTED AI · LIBRARIAN AGENT</p><h3>描述问题，我来查证据</h3><p>自动拆解材料、条件和物理量，并返回可以继续打开核对的数据库记录。</p></div>
               </div>
               <div class="librarian-messages" id="librarian-messages" aria-live="polite">
                 <div class="librarian-welcome"><strong>可以这样问：</strong><button type="button" data-librarian-suggestion="高熵合金在中子辐照后，硬度和缺陷结构有哪些变化？">高熵合金中子辐照后的硬度与缺陷</button><button type="button" data-librarian-suggestion="钨及钨合金在高温离子辐照下报告了哪些空洞或气泡结果？">钨合金高温辐照下的空洞与气泡</button></div>
@@ -332,6 +332,11 @@
                 <div class="library-scene" aria-hidden="true"><i class="shelf shelf-a"></i><i class="shelf shelf-b"></i><div class="codex-pet-librarian"><i></i></div></div>
                 <div class="librarian-progress-copy"><div><strong id="librarian-progress-stage">预计：正在理解研究问题</strong><span id="librarian-progress-time" aria-hidden="true">0 秒</span></div><div class="librarian-progress-track"><i id="librarian-progress-bar"></i></div><small>阶段是预计提示，秒数是真实耗时；页面仍在工作，无需重复提交。</small></div>
               </div>
+              <section class="librarian-synthesis-stage" id="librarian-synthesis-stage" hidden aria-labelledby="librarian-synthesis-heading">
+                <div><p class="eyebrow">STAGE 1 COMPLETE</p><h3 id="librarian-synthesis-heading">检索规划已完成，是否生成回答？</h3><p>阶段 1 已完成候选召回。生成综合回答可能再调用模型 1 次，并产生额外 API 费用。</p></div>
+                <dl><div><dt>候选证据</dt><dd id="librarian-stage-candidates">0</dd></div><div><dt>证据组</dt><dd id="librarian-stage-bundles">0</dd></div><div><dt>研究主题</dt><dd id="librarian-stage-themes">0</dd></div></dl>
+                <div><button type="button" id="librarian-synthesis-cancel">停止，不生成回答</button><button type="button" id="librarian-synthesis-continue">生成回答（可能调用 1 次）</button></div>
+              </section>
               <form id="librarian-form" class="librarian-form">
                 <label class="visually-hidden" for="librarian-input">向图书管理员描述问题</label>
                 <textarea id="librarian-input" maxlength="2000" rows="3" placeholder="例如：帮我找高熵合金在中子辐照后硬度如何变化，并给出对应论文和原文证据"></textarea>
@@ -357,14 +362,6 @@
               <div><small>我的实验数据</small><strong id="desktop-personal-title">尚未检查</strong><p id="desktop-personal-note">导入 CSV、TSV 或 XLSX，确认含义后才会加入私人搜索。</p></div>
               <button type="button" id="desktop-personal-import">导入实验表格</button>
             </div>
-            <details class="desktop-ai-settings" id="desktop-ai-settings">
-              <summary><span>AI 功能</span><strong id="desktop-ai-title">检查密钥状态</strong><small>图书管理员与新文献提取使用</small></summary>
-              <div>
-                <p>官方资料库搜索不需要 AI 密钥。需要 AI 的功能会使用你在设置页选择的受信提供商；每类功能首次使用前会说明有界发送范围和可能费用。</p>
-                <label hidden>旧密钥入口<input id="desktop-ai-key" type="password" autocomplete="off" disabled></label>
-                <div class="desktop-ai-actions"><button type="button" id="desktop-ai-save">打开 AI 设置</button><button type="button" id="desktop-ai-delete" hidden>管理本机密钥</button></div>
-              </div>
-            </details>
           </section>
           <div id="precise-search-workspace" hidden>
           <div class="search-repository-switch" id="search-repository-switch" hidden role="tablist" aria-label="搜索工作区">
@@ -447,12 +444,12 @@
       <section class="view" id="view-personal" aria-label="上传实验数据">
         <section class="personal-import-panel" id="personal-import-panel" hidden aria-label="导入个人实验数据">
           <header>
-            <div><span>MY EXPERIMENT DATA</span><h3>AI 辅助导入实验数据</h3><p>选择后可使用本机保存的 DeepSeek API 密钥进行识别，并可能产生少量费用。实际只发送工作表名、行数、列名、数据类型、已有单位/本地初步角色与含义和最多 5 行样例；完整表格不会上传，文件路径和密钥也不会发送。</p></div>
+            <div><span>MY EXPERIMENT DATA</span><h3>AI 辅助导入实验数据</h3><p>选择后可使用你在设置页选定的受信 AI 提供商进行识别，并可能产生少量费用。实际只发送工作表名、行数、列名、数据类型、已有单位/本地初步角色与含义和最多 5 行样例；完整表格不会上传，文件路径和密钥也不会发送。</p></div>
             <button type="button" id="personal-import-choose">选择文件并自动识别</button>
           </header>
           <div class="personal-search-notice" id="personal-search-notice" aria-live="polite"><span id="personal-search-notice-text"></span><button type="button" id="personal-search-refresh" hidden>重试刷新搜索</button></div>
           <div class="personal-import-workflow" id="personal-import-workflow" hidden>
-            <div class="personal-import-progress-row"><div class="personal-import-progress" id="personal-import-progress" role="status" aria-live="polite">等待选择文件</div><button type="button" class="personal-secondary" id="personal-ai-retry" hidden>使用 DeepSeek 识别当前工作表（可能产生费用）</button></div>
+            <div class="personal-import-progress-row"><div class="personal-import-progress" id="personal-import-progress" role="status" aria-live="polite">等待选择文件</div><button type="button" class="personal-secondary" id="personal-ai-retry" hidden>使用当前 AI 提供商识别（可能产生费用）</button></div>
             <div class="personal-preview-summary" id="personal-preview-summary"></div>
             <label class="personal-sheet-selector">选择工作表<select id="personal-import-sheet"></select></label>
             <form id="personal-import-form">
@@ -697,7 +694,7 @@
       <p class="wb-narrow-inspector-note" id="evidence-workspace-width-note"><strong>桌面宽度受限</strong><span>证据详情与只读解释将上下排列；关闭、原文与 PDF 按钮仍可使用。</span></p>
       <aside class="context-chat" id="context-chat" aria-label="当前证据 AI 对话" aria-hidden="false">
         <header class="context-chat-head">
-          <div><p class="eyebrow">DEEPSEEK PRO · EVIDENCE CHAT</p><h2>围绕当前证据提问</h2></div>
+          <div><p class="eyebrow">TRUSTED AI · EVIDENCE CHAT</p><h2>围绕当前证据提问</h2></div>
           <button type="button" id="context-chat-reset" title="清空当前对话">新对话</button>
         </header>
         <section class="context-chat-target">
@@ -705,12 +702,12 @@
           <strong id="context-chat-entity">尚未选择数据或图表</strong>
           <small id="context-chat-paper">打开一个条目后开始</small>
         </section>
-        <div class="context-chat-disclosure"><i>i</i><span>DeepSeek Pro 读取右侧条目和原始 PDF 的相关页面文字；回答不会写回科学数据。</span></div>
+        <div class="context-chat-disclosure"><i>i</i><span>当前受信 AI 提供商只读取右侧条目和原始 PDF 的相关页面文字；回答不会写回科学数据。</span></div>
         <div class="context-chat-messages" id="context-chat-messages" aria-live="polite">
           <div class="context-chat-empty"><span>AI</span><p>默认问题已填入下方输入框。你可以直接发送，也可以修改后继续追问。</p></div>
         </div>
         <form class="context-chat-form" id="context-chat-form">
-          <label for="context-chat-input">向 DeepSeek Pro 提问</label>
+          <label for="context-chat-input">向当前 AI 提供商提问</label>
           <textarea id="context-chat-input" maxlength="2000">说明这个数据本身的含义，并总结该数据在文章中的具体含义</textarea>
           <div><small id="context-chat-status">基于右侧条目与 PDF 相关页回答</small><button type="submit" id="context-chat-send">发送</button></div>
         </form>
@@ -721,7 +718,7 @@
           <div>
             <p class="eyebrow" id="visual-dialog-type">EVIDENCE DETAIL</p>
             <h3 id="visual-dialog-title">证据详情</h3>
-            <span id="evidence-detail-model">DeepSeek Pro · 只读解释</span>
+            <span id="evidence-detail-model">受信 AI · 只读解释</span>
           </div>
           <button class="dialog-close" type="button" data-close-visual>关闭</button>
         </header>

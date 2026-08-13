@@ -1,4 +1,6 @@
 const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", paperStage: "review", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchExperience: "agent", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, evidenceInspectorRequest: 0, librarianMessages: [], librarianResults: [], librarianBusy: false, librarianResultType: "item", librarianSessions: [], librarianSessionId: null, librarianHistoryQuery: "", librarianMeta: {}, librarianResearchContexts: new Map(), librarianBriefAuth: null, librarianProgressTimer: null, librarianProgressStarted: 0, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, aiCatalog: null, aiPublicState: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+let librarianPendingSynthesis = null;
+let librarianStageGeneration = 0;
 const contextChat = { entity: null, conversations: new Map(), busy: false };
 const defaultContextQuestion = "说明这个数据本身的含义，并总结该数据在文章中的具体含义";
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
@@ -7,7 +9,7 @@ const viewCopy = {
   review: { kicker: "EVIDENCE CHECK", title: "检查自动提取结果", subtitle: "自动质量门决定是否收录；本页用于检查证据和修正少量异常。" },
   search: { kicker: "EXPERIMENTAL EVIDENCE LIBRARY", title: "实验文献证据检索平台", subtitle: "数据、图表、结论与 PDF 原文证据的统一检索入口。" },
   upload: { kicker: "PDF INTAKE", title: "导入实验文献", subtitle: "验证真实 PDF、识别重复论文，并加入待处理队列。" },
-  personal: { kicker: "EXPERIMENT DATA INTAKE", title: "上传实验数据", subtitle: "DeepSeek 自动预填 CSV、TSV 或 XLSX；你只需浏览、修正错误并一次确认导入。" },
+  personal: { kicker: "EXPERIMENT DATA INTAKE", title: "上传实验数据", subtitle: "受信 AI 提供商可预填 CSV、TSV 或 XLSX；你只需浏览、修正错误并一次确认导入。" },
   package: { kicker: "PACKAGE CENTER", title: "资料包中心", subtitle: "管理官方资料库，导出或导入课题组内部论文集合与私人实验资料包。" },
   settings: { kicker: "WORKBENCH SETTINGS", title: "设置", subtitle: "管理当前设备的外观、语言、模型服务和数据入口。" },
   manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "历史兼容视图；当前产品不再提供导航入口。" },
@@ -41,9 +43,9 @@ let desktopCsrfToken = "";
 const DESKTOP_API_ROUTES = Object.freeze({
   settings: "/api/desktop/settings",
   preferences: "/api/desktop/settings/preferences",
-  aiProviders: "/api/desktop/ai-providers",
-  aiSettings: "/api/desktop/ai-settings",
-  aiCredential: providerId => `/api/desktop/ai-credentials/${encodeURIComponent(providerId)}`,
+  aiProviders: "/api/desktop/ai/providers",
+  aiSettings: "/api/desktop/ai/settings",
+  aiCredential: providerId => `/api/desktop/ai/credentials/${encodeURIComponent(providerId)}`,
   // Prepared-action HTTP routes are filled only after every domain controller
   // freezes its public URI. Renderer code must never sign an arbitrary action.
   aiPreparedActions: null,
@@ -129,17 +131,29 @@ function aiProviderLabel() {
 }
 
 async function authorizePreparedAIAction(domain, scope, domainRequest) {
+  const prepared = await globalThis.AutoResearchDesktopPorts.prepareAIAction(domain, domainRequest);
+  if (scope === "librarian" && prepared?.librarian_core_version === "librarian-v3") {
+    return { local_result: prepared };
+  }
   const context = currentAIConsentContext(scope);
   if (!context || typeof globalThis.AutoResearchAIConsent?.ensure !== "function") {
     const error = new Error("受信 AI 提供商状态尚未就绪，请稍后重试。");
     error.code = "ai_public_state_unavailable";
     throw error;
   }
-  const prepared = await globalThis.AutoResearchDesktopPorts.prepareAIAction(domain, domainRequest);
-  if (!prepared || typeof prepared.action_id !== "string" || !prepared.action_id || prepared.scope !== scope || prepared.provider_id !== context.provider_id || prepared.disclosure_version !== context.disclosure_version || typeof prepared.summary !== "object" || !prepared.summary) {
+  if (!prepared || prepared.schema_version !== "server-prepared-ai-action-v1" || typeof prepared.action_id !== "string" || !prepared.action_id || prepared.scope !== scope || prepared.provider_id !== context.provider_id || prepared.disclosure_version !== context.disclosure_version) {
     throw new Error("AI 操作准备结果无效，请重试。");
   }
+  // The versioned disclosure cache only records that the user has read the
+  // data boundary. Every billable prepared action is confirmed separately.
   if (globalThis.AutoResearchAIConsent.ensure(scope, context) !== true) return null;
+  const calls = Number(prepared.maximum_calls);
+  if (!Number.isInteger(calls) || calls < 1 || calls > 8) throw new Error("AI 操作调用预算无效，请重试。");
+  const actionLabel = String(prepared.display || "AI 请求").slice(0, 80);
+  const modelLabel = Array.isArray(prepared.model)
+    ? prepared.model.join("、")
+    : String(prepared.model || "当前已选模型");
+  if (typeof globalThis.confirm !== "function" || !globalThis.confirm(`${actionLabel}\n\n将使用 ${context.label} 的 ${modelLabel}，本次最多调用 ${calls} 次，可能产生 API 费用。\n\n是否授权本次操作？`)) return null;
   const issued = await globalThis.AutoResearchDesktopPorts.issuePreparedConsent(prepared.action_id);
   if (issued?.schema_version !== "ai-consent-v1" || issued.scope !== scope || issued.provider_id !== context.provider_id || issued.disclosure_version !== context.disclosure_version || typeof issued.nonce !== "string" || !issued.nonce) {
     throw new Error("AI 知情同意凭证无效，请重试。");
@@ -259,7 +273,7 @@ function renderPublicSearchOnlyMode() {
   document.querySelector(".brand strong").textContent = "实验数据检索库";
   document.querySelector(".brand small").textContent = "READ-ONLY SEARCH";
   const searchSummary = document.querySelector("#search-summary");
-  if (searchSummary) searchSummary.textContent = "只读模式：支持搜索、条目级 DeepSeek Pro 解读、原文证据和导出";
+  if (searchSummary) searchSummary.textContent = "只读模式：支持搜索、条目级受信 AI 解读、原文证据和导出";
 }
 
 function renderViewHeader(name) {
@@ -2187,6 +2201,7 @@ async function runSearch(event, options = {}) {
 
 function setSearchExperience(mode, options = {}) {
   if (!['agent', 'precise'].includes(mode)) return;
+  if (mode !== 'agent') clearLibrarianPendingSynthesis();
   invalidateEvidenceInspector();
   state.searchExperience = mode;
   document.querySelectorAll('[data-search-experience]').forEach(button => {
@@ -2202,7 +2217,7 @@ function setSearchExperience(mode, options = {}) {
   const guide = document.querySelector('#search-experience-guide');
   if (guide) guide.innerHTML = mode === 'agent'
     ? '<strong>直接描述研究问题</strong><p>图书管理员默认检索完整文献库。需要限制论文范围或逐字段筛选时，再切换到精确检索。</p>'
-    : '<strong>精确控制检索条件</strong><p>选择结果类型、质量来源和文章范围；该模式不调用 DeepSeek，适合快速复核和导出。</p>';
+    : '<strong>精确控制检索条件</strong><p>选择结果类型、质量来源和文章范围；该模式不调用 AI，适合快速复核和导出。</p>';
   renderSearchScope();
   if (mode === 'agent') {
     renderLibrarianResults(state.librarianResults);
@@ -2244,6 +2259,41 @@ function librarianResearchContext(sessionId = state.librarianSessionId) {
 
 function clearLibrarianResearchContext(sessionId = state.librarianSessionId) {
   if (sessionId) state.librarianResearchContexts.delete(sessionId);
+}
+
+function clearLibrarianPendingSynthesis(message = '') {
+  librarianStageGeneration += 1;
+  librarianPendingSynthesis = null;
+  const stage = document.querySelector('#librarian-synthesis-stage');
+  if (stage) stage.hidden = true;
+  if (message) setText('librarian-status', message);
+}
+
+function validLibrarianSynthesisStage(result) {
+  if (!result || result.schema_version !== 'librarian-ai-stage-v1' || result.stage !== 'synthesis_ready' || result.requires_second_consent !== true) return false;
+  if (typeof result.job_token !== 'string' || !result.job_token || result.job_token.length > 4096) return false;
+  const counts = [result.candidate_count, result.bundle_count, result.review_theme_count];
+  return counts.every(value => Number.isInteger(value) && value >= 0 && value <= 100000)
+    && result.next_call?.maximum_calls === 1;
+}
+
+function showLibrarianSynthesisStage(result, context) {
+  if (!validLibrarianSynthesisStage(result)) throw new Error('图书管理员阶段结果无效。');
+  const generation = ++librarianStageGeneration;
+  librarianPendingSynthesis = {
+    generation,
+    sessionId: state.librarianSessionId,
+    jobToken: result.job_token,
+    question: context.question,
+    history: context.history,
+    recoveryQuestion: context.recoveryQuestion,
+  };
+  setText('librarian-stage-candidates', String(result.candidate_count));
+  setText('librarian-stage-bundles', String(result.bundle_count));
+  setText('librarian-stage-themes', String(result.review_theme_count));
+  const stage = document.querySelector('#librarian-synthesis-stage');
+  if (stage) stage.hidden = false;
+  setText('librarian-status', '检索规划已完成 · 尚未生成回答，也未进行第二次模型调用');
 }
 
 function rememberLibrarianResearchContext(result) {
@@ -2432,6 +2482,7 @@ async function loadLibrarianHistory() {
 function resetLibrarian(options = {}) {
   if (state.librarianBusy && options.force !== true) return toast('图书管理员仍在检索，请等待本次任务完成。', true);
   clearLibrarianBriefAuthorization();
+  clearLibrarianPendingSynthesis();
   clearLibrarianResearchContext();
   state.librarianSessionId = librarianSessionId();
   state.librarianMessages = [];
@@ -2724,6 +2775,7 @@ function restoreLibrarianSession(sessionId, options = {}) {
   const session = state.librarianSessions.find(value => value.id === sessionId);
   if (!session) return;
   clearLibrarianBriefAuthorization();
+  clearLibrarianPendingSynthesis();
   state.librarianSessionId = session.id;
   state.librarianMessages = session.messages || [];
   state.librarianResults = withLibrarianCitationFlags(session.results, state.librarianMessages);
@@ -2941,41 +2993,16 @@ function finishLibrarianProgress(success, label = '') {
   }, 700);
 }
 
-async function submitLibrarian(event) {
-  event.preventDefault();
-  if (state.librarianBusy) return;
-  const input = document.querySelector('#librarian-input');
-  const question = input.value.trim();
-  if (!question) return toast('请先描述你想查找的问题。', true);
-  const history = state.librarianMessages.slice(-8).map(message => ({ role: message.role, content: message.content }));
-  const requestPayload = librarianResearchRequest(question, history);
-  let authorization;
-  try {
-    authorization = await authorizePreparedAIAction('librarian', 'librarian', requestPayload);
-  } catch (_error) {
-    return toast('图书管理员暂时无法开始 AI 请求；精确检索仍可正常使用。', true);
-  }
-  if (!authorization) return toast(`已取消，未向 ${aiProviderLabel()} 发送任何内容。`);
-  clearLibrarianBriefAuthorization();
-  const recoveryQuestion = [...history].reverse().find(message => message.role === 'user')?.content || '';
-  state.librarianMessages.push({ role: 'user', content: question });
-  state.librarianResults = [];
-  state.librarianMeta = { pending: true, scope: 'all' };
-  state.librarianResultType = 'item';
-  state.librarianBusy = true;
-  input.value = '';
-  document.querySelector('#librarian-send').disabled = true;
-  setText('librarian-status', '全库检索已开始 · 正在调用证据工具');
-  renderLibrarianConversation();
-  renderLibrarianResults([]);
-  saveLibrarianSession();
-  startLibrarianProgress();
-  let success = false;
-  try {
-    const result = await globalThis.AutoResearchDesktopPorts.executePreparedAIAction('librarian', authorization.action_id, authorization.consent_nonce);
+function applyLibrarianFinalResult(result, context) {
+    if (!result || result.librarian_core_version !== 'librarian-v3' || typeof result.answer !== 'string') {
+      throw new Error('图书管理员最终结果无效。');
+    }
+    const { question, recoveryQuestion } = context;
+    clearLibrarianPendingSynthesis();
     const stateFailureCode = librarianStateFailureCode(result);
     if (stateFailureCode) clearLibrarianResearchContext();
     else rememberLibrarianResearchContext(result);
+    state.librarianMessages.push({ role: 'user', content: question });
     state.librarianMessages.push({
       role: 'assistant',
       content: result.answer,
@@ -3030,7 +3057,7 @@ async function submitLibrarian(event) {
         ? '已复用相同证据版本的稳定结果'
         : result.summary_mode === 'deterministic_fallback'
           ? '总结已降级，候选仍可核对'
-          : 'DeepSeek 已完成筛选总结';
+          : `${aiProviderLabel()} 已完成筛选总结`;
     const matchCounts = result.match_counts || {};
     const matchSummary = Number.isFinite(Number(matchCounts.direct))
       ? `直接 ${Number(matchCounts.direct) || 0} · 相关 ${Number(matchCounts.adjacent) || 0} · 扩展 ${Number(matchCounts.expansion) || 0}`
@@ -3043,30 +3070,108 @@ async function submitLibrarian(event) {
     setText('librarian-progress-stage', '已收到结果，正在组织回答与证据卡片');
     document.querySelector('#librarian-progress-bar').style.width = '96%';
     renderLibrarianResults(state.librarianResults);
-    success = true;
-  } catch (error) {
+}
+
+function failLibrarianRequest(error, recoveryQuestion = '') {
     clearLibrarianBriefAuthorization();
+    clearLibrarianPendingSynthesis();
     clearLibrarianResearchContext();
     const failureCode = librarianTransportFailureCode(error);
-    state.librarianMessages.push({
-      role: 'assistant',
-      content: librarianTransportFailureMessage,
-      recovery_question: recoveryQuestion,
-    });
-    state.librarianMeta = {
-      error: true,
-      safe_failure_code: failureCode,
-    };
+    state.librarianMeta = { error: true, safe_failure_code: failureCode };
     state.librarianResults = [];
     setText('librarian-status', '图书管理员暂时不可用；精确检索仍可正常使用');
     renderLibrarianResults([]);
     toast('图书管理员暂时无法完成本次请求，请稍后重试。', true);
+}
+
+async function submitLibrarian(event) {
+  event.preventDefault();
+  if (state.librarianBusy) return;
+  clearLibrarianPendingSynthesis();
+  const input = document.querySelector('#librarian-input');
+  const question = input.value.trim();
+  if (!question) return toast('请先描述你想查找的问题。', true);
+  const history = state.librarianMessages.slice(-8).map(message => ({ role: message.role, content: message.content }));
+  const context = { question, history, recoveryQuestion: [...history].reverse().find(message => message.role === 'user')?.content || '' };
+  const requestPayload = librarianResearchRequest(question, history);
+  let authorization;
+  try {
+    authorization = await authorizePreparedAIAction('librarian', 'librarian', requestPayload);
+  } catch (_error) {
+    return toast('图书管理员暂时无法开始 AI 请求；精确检索仍可正常使用。', true);
+  }
+  if (!authorization) return toast(`已取消，未向 ${aiProviderLabel()} 发送任何内容。`);
+  clearLibrarianBriefAuthorization();
+  state.librarianBusy = true;
+  document.querySelector('#librarian-send').disabled = true;
+  setText('librarian-status', authorization.local_result ? '正在整理本地回答 · 不调用模型' : '阶段 1/2 · 正在规划检索（最多调用模型 1 次）');
+  startLibrarianProgress();
+  let success = false;
+  let preserveStage = false;
+  let finalApplied = false;
+  try {
+    const result = authorization.local_result
+      || await globalThis.AutoResearchDesktopPorts.executePreparedAIAction('librarian', authorization.action_id, authorization.consent_nonce);
+    if (validLibrarianSynthesisStage(result)) {
+      showLibrarianSynthesisStage(result, context);
+      input.value = '';
+      preserveStage = true;
+      success = true;
+    } else {
+      applyLibrarianFinalResult(result, context);
+      input.value = '';
+      finalApplied = true;
+      success = true;
+    }
+  } catch (error) {
+    failLibrarianRequest(error, context.recoveryQuestion);
   } finally {
     state.librarianBusy = false;
     document.querySelector('#librarian-send').disabled = false;
     renderLibrarianConversation();
-    finishLibrarianProgress(success, success && state.librarianMeta.clarification_required ? '需要补充问题条件' : '');
-    saveLibrarianSession();
+    finishLibrarianProgress(success, preserveStage ? '阶段 1 已完成，等待你决定是否生成回答' : success && state.librarianMeta.clarification_required ? '需要补充问题条件' : '');
+    if (finalApplied) saveLibrarianSession();
+  }
+}
+
+async function continueLibrarianSynthesis() {
+  const pending = librarianPendingSynthesis;
+  if (!pending || state.librarianBusy || pending.sessionId !== state.librarianSessionId) return;
+  const generation = pending.generation;
+  let authorization;
+  try {
+    authorization = await authorizePreparedAIAction('librarian', 'librarian', { job_token: pending.jobToken });
+  } catch (_error) {
+    return toast('回答生成暂时无法开始；阶段 1 结果仍在本页，可稍后重试。', true);
+  }
+  if (!authorization) {
+    clearLibrarianPendingSynthesis('已停止，未进行第二次收费调用。');
+    return toast(`已取消，未向 ${aiProviderLabel()} 发起第二次模型调用。`);
+  }
+  if (generation !== librarianStageGeneration || pending !== librarianPendingSynthesis) return;
+  state.librarianBusy = true;
+  document.querySelector('#librarian-send').disabled = true;
+  document.querySelector('#librarian-synthesis-continue').disabled = true;
+  setText('librarian-status', '阶段 2/2 · 正在生成证据回答（最多调用模型 1 次）');
+  startLibrarianProgress();
+  let success = false;
+  let finalApplied = false;
+  try {
+    const result = await globalThis.AutoResearchDesktopPorts.executePreparedAIAction('librarian', authorization.action_id, authorization.consent_nonce);
+    if (generation !== librarianStageGeneration || pending !== librarianPendingSynthesis) return;
+    applyLibrarianFinalResult(result, pending);
+    finalApplied = true;
+    success = true;
+  } catch (error) {
+    failLibrarianRequest(error, pending.recoveryQuestion);
+  } finally {
+    state.librarianBusy = false;
+    document.querySelector('#librarian-send').disabled = false;
+    const button = document.querySelector('#librarian-synthesis-continue');
+    if (button) button.disabled = false;
+    renderLibrarianConversation();
+    finishLibrarianProgress(success);
+    if (finalApplied) saveLibrarianSession();
   }
 }
 
@@ -3766,6 +3871,7 @@ function switchView(name, options = {}) {
   if (isReadOnly() && name !== "search") name = "search";
   if (name !== "paper") setLiteratureInspector(false);
   if (name !== "search") {
+    clearLibrarianPendingSynthesis();
     const inspector = document.querySelector("#visual-dialog");
     if (inspector?.open || inspector?.classList.contains("is-docked")) closeVisualAsset();
   }
@@ -4160,6 +4266,10 @@ document.querySelectorAll('[data-search-experience]').forEach(button => {
   button.addEventListener('keydown', event => handleSearchTabKeydown(event, '[data-search-experience]'));
 });
 document.querySelector('#librarian-form').addEventListener('submit', submitLibrarian);
+document.querySelector('#librarian-synthesis-continue')?.addEventListener('click', () => void continueLibrarianSynthesis());
+document.querySelector('#librarian-synthesis-cancel')?.addEventListener('click', () => {
+  clearLibrarianPendingSynthesis('已停止，未进行第二次收费调用。');
+});
 document.querySelector('#librarian-reset').addEventListener('click', resetLibrarian);
 document.querySelector('#librarian-history-query').addEventListener('input', event => {
   state.librarianHistoryQuery = event.target.value;
