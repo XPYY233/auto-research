@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -13,11 +15,38 @@ if str(DESKTOP_ROOT) not in sys.path:
 
 from ai_runtime_security import (  # noqa: E402
     MacAtomicAIRuntimeStateStore,
+    MacAIExecutionLeaseAuthority,
     MacVerificationAttestationSigner,
 )
 
 
 class MacAIRuntimeSecurityTests(unittest.TestCase):
+    def test_shared_lease_blocks_cas_and_releases_after_exception(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            lock = threading.RLock()
+            store = MacAtomicAIRuntimeStateStore(
+                Path(temporary) / "state.json",
+                execution_lock=lock,
+            )
+            lease = MacAIExecutionLeaseAuthority(lock)
+            entered = threading.Event()
+            finished = threading.Event()
+
+            def write() -> None:
+                entered.set()
+                store.compare_and_swap(expected_revision=0, value={"revision": 1})
+                finished.set()
+
+            with self.assertRaisesRegex(RuntimeError, "boom"):
+                with lease.acquire(object()):
+                    thread = threading.Thread(target=write)
+                    thread.start()
+                    self.assertTrue(entered.wait(1))
+                    time.sleep(0.02)
+                    self.assertFalse(finished.is_set())
+                    raise RuntimeError("boom")
+            thread.join(1)
+            self.assertTrue(finished.is_set())
     def test_runtime_state_uses_revision_compare_and_swap(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "State" / "ai-runtime-state-v1.json"

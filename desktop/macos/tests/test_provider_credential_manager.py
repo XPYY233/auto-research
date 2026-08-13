@@ -4,6 +4,8 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -129,6 +131,84 @@ def memory_manager(
 
 
 class ProviderCredentialManagerTests(unittest.TestCase):
+    def test_resolve_bound_requires_exact_generation(self) -> None:
+        manager = memory_manager()
+        saved = manager.save(
+            provider_id=OPENAI_PROVIDER,
+            credential_ref=FIXED_CREDENTIAL_REFS[OPENAI_PROVIDER],
+            api_key=OPENAI_SECRET,
+        )
+        self.assertEqual(
+            manager.resolve_bound(
+                FIXED_CREDENTIAL_REFS[OPENAI_PROVIDER], saved.generation
+            ),
+            OPENAI_SECRET,
+        )
+        self.assertIsNone(
+            manager.resolve_bound(
+                FIXED_CREDENTIAL_REFS[OPENAI_PROVIDER], saved.generation + 1
+            )
+        )
+        manager.delete(
+            provider_id=OPENAI_PROVIDER,
+            credential_ref=FIXED_CREDENTIAL_REFS[OPENAI_PROVIDER],
+        )
+        self.assertIsNone(
+            manager.resolve_bound(
+                FIXED_CREDENTIAL_REFS[OPENAI_PROVIDER], saved.generation
+            )
+        )
+
+    def test_shared_execution_lock_blocks_credential_mutation(self) -> None:
+        lock = threading.RLock()
+        manager = ProviderCredentialManager(
+            {
+                DEEPSEEK_PROVIDER: MemoryBackend(),
+                OPENAI_PROVIDER: MemoryBackend(),
+            },
+            execution_lock=lock,
+        )
+        started = threading.Event()
+        finished = threading.Event()
+
+        def save() -> None:
+            started.set()
+            manager.save(
+                provider_id=OPENAI_PROVIDER,
+                credential_ref=FIXED_CREDENTIAL_REFS[OPENAI_PROVIDER],
+                api_key=OPENAI_SECRET,
+            )
+            finished.set()
+
+        with lock:
+            thread = threading.Thread(target=save)
+            thread.start()
+            self.assertTrue(started.wait(1))
+            time.sleep(0.02)
+            self.assertFalse(finished.is_set())
+        thread.join(1)
+        self.assertTrue(finished.is_set())
+
+        started.clear()
+        finished.clear()
+
+        def delete() -> None:
+            started.set()
+            manager.delete(
+                provider_id=OPENAI_PROVIDER,
+                credential_ref=FIXED_CREDENTIAL_REFS[OPENAI_PROVIDER],
+            )
+            finished.set()
+
+        with lock:
+            thread = threading.Thread(target=delete)
+            thread.start()
+            self.assertTrue(started.wait(1))
+            time.sleep(0.02)
+            self.assertFalse(finished.is_set())
+        thread.join(1)
+        self.assertTrue(finished.is_set())
+
     def test_atomic_save_increments_generation_even_for_same_key(self) -> None:
         backend = MemoryBackend()
         manager = memory_manager(deepseek=backend)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hmac
 import json
-import os
 import secrets
 import threading
 from http import HTTPStatus
@@ -33,6 +32,7 @@ from package_api import PackageAPI
 from package_center_api import PackageCenterAPI
 from package_import_service import PackageImportService, PackageImportServiceError
 from personal_import_api import PersonalImportAPI
+from desktop_ai_api import MacDesktopAIAPI
 
 
 COOKIE_NAME = "auto_research_desktop_session"
@@ -118,6 +118,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     package_center_api: PackageCenterAPI | None = None
     federated_search_api: FederatedSearchAPI | None = None
     personal_import_api: PersonalImportAPI | None = None
+    desktop_ai_api: MacDesktopAIAPI | None = None
     _issue_desktop_cookie: bool = False
     _issue_csrf_header: bool = False
 
@@ -197,7 +198,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
             )
             return False
-        if is_read_only_mutation("POST", path) and not self._csrf_valid():
+        ai_mutation = self.desktop_ai_api is not None and self.desktop_ai_api.is_path(path)
+        if (is_read_only_mutation("POST", path) or ai_mutation) and not self._csrf_valid():
             self.json_response(
                 {"error": "桌面写入授权无效", "code": "desktop_csrf_required"},
                 HTTPStatus.FORBIDDEN,
@@ -298,9 +300,6 @@ class DesktopEvidenceHandler(EvidenceHandler):
         try:
             body = self._read_credential_json()
             status = self.credential_store.save(body["api_key"])
-            # Existing core settings read the key from process memory. It is
-            # never returned to the browser, persisted in SQLite, or logged.
-            os.environ["DEEPSEEK_API_KEY"] = body["api_key"].strip()
         except SecureCredentialError as exc:
             return self._credential_error(exc)
         self.json_response(status.public_dict())
@@ -313,7 +312,6 @@ class DesktopEvidenceHandler(EvidenceHandler):
             )
         try:
             status = self.credential_store.delete()
-            os.environ.pop("DEEPSEEK_API_KEY", None)
         except SecureCredentialError as exc:
             return self._credential_error(exc)
         self.json_response(status.public_dict())
@@ -427,6 +425,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._credential_status()
         if parsed.path == READINESS_PATH:
             return self._readiness_status()
+        if self.desktop_ai_api is not None and self.desktop_ai_api.handle(self, "GET"):
+            return
         if self.desktop_settings_api is not None and self.desktop_settings_api.handle_get(self):
             return
         if self.package_api is not None and self.package_api.handle_get(self):
@@ -458,6 +458,13 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._save_desktop_history()
         if path == CREDENTIAL_PATH:
             return self._save_credential()
+        if self.desktop_ai_api is not None and self.desktop_ai_api.is_path(self.path):
+            if self.read_only:
+                return self.json_response(
+                    {"error": "当前为只读模式，不允许修改 AI 设置。", "code": "read_only"},
+                    HTTPStatus.FORBIDDEN,
+                )
+            return self.desktop_ai_api.handle(self, "POST")
         if self.package_api is not None and self.package_api.handle_post(self):
             return
         if self.package_center_api is not None and self.package_center_api.is_post_route(
@@ -508,15 +515,32 @@ class DesktopEvidenceHandler(EvidenceHandler):
             )
         if self.desktop_settings_api is not None and self.desktop_settings_api.handle_patch(self):
             return
+        if self.desktop_ai_api is not None and self.desktop_ai_api.handle(self, "PATCH"):
+            return
         self.json_response(
             {"error": "桌面接口不存在", "code": "desktop_endpoint_not_found"},
             HTTPStatus.NOT_FOUND,
         )
 
     def do_DELETE(self) -> None:
+        path = urlparse(self.path).path
+        if self.desktop_ai_api is not None and self.desktop_ai_api.is_path(self.path):
+            if not self._has_session(require_origin=True):
+                return self._desktop_forbidden()
+            if not self._csrf_valid():
+                return self.json_response(
+                    {"error": "桌面写入授权无效", "code": "desktop_csrf_required"},
+                    HTTPStatus.FORBIDDEN,
+                )
+            if self.read_only:
+                return self.json_response(
+                    {"error": "当前为只读模式，不允许修改 AI 设置。", "code": "read_only"},
+                    HTTPStatus.FORBIDDEN,
+                )
+            return self.desktop_ai_api.handle(self, "DELETE")
         if not self._authorize_delete():
             return
-        if urlparse(self.path).path == CREDENTIAL_PATH:
+        if path == CREDENTIAL_PATH:
             return self._delete_credential()
         self.json_response(
             {"error": "桌面接口不存在", "code": "desktop_endpoint_not_found"},
@@ -543,6 +567,7 @@ def create_desktop_server(
     package_center_api: PackageCenterAPI | None = None,
     federated_search_api: FederatedSearchAPI | None = None,
     personal_import_api: PersonalImportAPI | None = None,
+    desktop_ai_api: MacDesktopAIAPI | None = None,
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
     host = require_loopback_host(host)
     if host != "127.0.0.1":
@@ -573,6 +598,7 @@ def create_desktop_server(
             "package_center_api": package_center_api,
             "federated_search_api": federated_search_api,
             "personal_import_api": personal_import_api,
+            "desktop_ai_api": desktop_ai_api,
         },
     )
     server = ThreadingHTTPServer((host, port), handler)

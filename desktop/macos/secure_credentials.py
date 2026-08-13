@@ -440,14 +440,19 @@ class LocalPreviewCredentialBackend:
 class ProviderCredentialManager:
     """The sole macOS authority for provider secrets and generations."""
 
-    def __init__(self, backends: Mapping[str, CredentialBackend]) -> None:
+    def __init__(
+        self,
+        backends: Mapping[str, CredentialBackend],
+        *,
+        execution_lock: threading.RLock | None = None,
+    ) -> None:
         if not isinstance(backends, Mapping) or not backends:
             raise ValueError("provider credential backends are required")
         unsupported = set(backends) - set(SUPPORTED_PROVIDERS)
         if unsupported:
             raise ValueError("unsupported provider credential backend")
         self._backends = dict(backends)
-        self._lock = threading.RLock()
+        self._lock = execution_lock if execution_lock is not None else threading.RLock()
 
     @staticmethod
     def _provider(provider_id: object) -> str:
@@ -467,6 +472,10 @@ class ProviderCredentialManager:
             return self._backends[provider_id]
         except KeyError as exc:
             raise SecureCredentialError(ERROR_UNAVAILABLE, "本机 AI 凭据存储不可用") from exc
+
+    @property
+    def execution_lock(self) -> threading.RLock:
+        return self._lock
 
     @staticmethod
     def _serialize(record: _ProviderEnvelope) -> str:
@@ -525,32 +534,52 @@ class ProviderCredentialManager:
         return _ProviderEnvelope(provider_id, generation, api_key)
 
     def state_for(self, provider_id: str) -> BackendCredentialState:
-        provider = self._provider(provider_id)
         with self._lock:
+            provider = self._provider(provider_id)
             record = self._read_record(provider)
-        return BackendCredentialState(
-            FIXED_CREDENTIAL_REFS[provider], record.generation, record.configured
-        )
+            return BackendCredentialState(
+                FIXED_CREDENTIAL_REFS[provider], record.generation, record.configured
+            )
 
     def resolve(self, credential_ref: str) -> str | None:
-        providers = [
-            provider
-            for provider, expected in FIXED_CREDENTIAL_REFS.items()
-            if credential_ref == expected
-        ]
-        if len(providers) != 1:
-            raise SecureCredentialError(ERROR_INVALID, "AI 凭据引用无效", http_status=400)
-        provider = providers[0]
         with self._lock:
+            providers = [
+                provider
+                for provider, expected in FIXED_CREDENTIAL_REFS.items()
+                if credential_ref == expected
+            ]
+            if len(providers) != 1:
+                raise SecureCredentialError(ERROR_INVALID, "AI 凭据引用无效", http_status=400)
+            provider = providers[0]
             return self._read_record(provider).api_key
+
+    def resolve_bound(
+        self, credential_ref: str, expected_generation: int
+    ) -> str | None:
+        with self._lock:
+            if (
+                isinstance(expected_generation, bool)
+                or not isinstance(expected_generation, int)
+                or expected_generation < 0
+            ):
+                return None
+            providers = [
+                provider
+                for provider, expected in FIXED_CREDENTIAL_REFS.items()
+                if credential_ref == expected
+            ]
+            if len(providers) != 1:
+                return None
+            record = self._read_record(providers[0])
+            return record.api_key if record.generation == expected_generation else None
 
     def save(
         self, *, provider_id: str, credential_ref: str, api_key: str
     ) -> BackendCredentialState:
-        provider = self._provider(provider_id)
-        self._credential_ref(provider, credential_ref)
-        secret = validate_provider_api_key(api_key)
         with self._lock:
+            provider = self._provider(provider_id)
+            self._credential_ref(provider, credential_ref)
+            secret = validate_provider_api_key(api_key)
             before = self._read_record(provider)
             after = _ProviderEnvelope(provider, before.generation + 1, secret)
             self._backend(provider).write(self._serialize(after))
@@ -559,9 +588,9 @@ class ProviderCredentialManager:
     def delete(
         self, *, provider_id: str, credential_ref: str
     ) -> BackendCredentialState:
-        provider = self._provider(provider_id)
-        self._credential_ref(provider, credential_ref)
         with self._lock:
+            provider = self._provider(provider_id)
+            self._credential_ref(provider, credential_ref)
             before = self._read_record(provider)
             after = _ProviderEnvelope(provider, before.generation + 1, None)
             self._backend(provider).write(self._serialize(after))
@@ -624,7 +653,9 @@ class DeepSeekCredentialStore:
         return self.status()
 
 
-def default_provider_credential_manager() -> ProviderCredentialManager:
+def default_provider_credential_manager(
+    *, execution_lock: threading.RLock | None = None
+) -> ProviderCredentialManager:
     mode = os.environ.get("AUTO_RESEARCH_MACOS_CREDENTIAL_STORE", "local-preview").strip().lower()
     if mode == "keychain":
         return ProviderCredentialManager(
@@ -637,7 +668,8 @@ def default_provider_credential_manager() -> ProviderCredentialManager:
                     service=OPENAI_KEYCHAIN_SERVICE,
                     account=OPENAI_KEYCHAIN_ACCOUNT,
                 ),
-            }
+            },
+            execution_lock=execution_lock,
         )
     if mode != "local-preview":
         raise SecureCredentialError(ERROR_UNAVAILABLE, "桌面凭据存储模式配置无效")
@@ -662,7 +694,8 @@ def default_provider_credential_manager() -> ProviderCredentialManager:
                 aad=OPENAI_AAD,
                 temporary_prefix=".openai-api-key-",
             ),
-        }
+        },
+        execution_lock=execution_lock,
     )
 
 

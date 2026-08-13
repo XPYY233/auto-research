@@ -12,6 +12,7 @@ if str(DESKTOP_ROOT) not in sys.path:
     sys.path.insert(0, str(DESKTOP_ROOT))
 
 from desktop_product_services import create_desktop_product_services  # noqa: E402
+import desktop_product_services  # noqa: E402
 
 
 class _PrivateSource:
@@ -34,6 +35,21 @@ class _PrivateSource:
 
 
 class PersonalImportCompositionTests(unittest.TestCase):
+    def test_ambient_deepseek_key_cannot_activate_legacy_personal_model(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            "os.environ",
+            {"DEEPSEEK_API_KEY": "sk-ambient-must-not-run"},
+        ):
+            services = create_desktop_product_services(
+                data_root=Path(temporary) / "Application Support",
+                current_app_version="0.8.0-preview",
+            )
+        self.assertIsNone(services.personal_import_service._suggestion_model)
+        self.assertFalse(hasattr(desktop_product_services, "DeepSeekClient"))
+        self.assertFalse(
+            hasattr(desktop_product_services, "RuntimeDeepSeekPersonalSuggestionModel")
+        )
+
     def test_composition_uses_separate_private_library_and_wires_refresh(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             data_root = Path(temporary) / "Application Support"

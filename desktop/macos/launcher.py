@@ -37,10 +37,12 @@ from secure_history import (  # noqa: E402
     StaticHistoryKeyProvider,
     default_secure_history_store,
 )
-from secure_credentials import (  # noqa: E402
-    SecureCredentialError,
-    default_deepseek_credential_store,
+from ai_runtime_composition import (  # noqa: E402
+    create_mac_ai_runtime_services,
+    disable_legacy_environment_credentials,
+    mac_ai_runtime_services,
 )
+from desktop_ai_api import MacDesktopAIAPI  # noqa: E402
 from auto_research.settings.desktop_settings import DesktopSettingsService  # noqa: E402
 from desktop_settings_api import DesktopSettingsAPI  # noqa: E402
 from desktop_settings_store import (  # noqa: E402
@@ -261,6 +263,9 @@ def _http_smoke_checks(
         "current_quality_run": "/api/current-paper/quality-run",
         "current_quality_candidates": "/api/current-paper/quality-candidates?status=manual_review",
         "official_package_status": "/api/desktop/evidence-packages",
+        "desktop_ai_providers": "/api/desktop/ai/providers",
+        "desktop_ai_settings": "/api/desktop/ai/settings",
+        "desktop_ai_deepseek_credential": "/api/desktop/ai/credentials/deepseek",
     }
     checks = {
         "unauthorized_blocked": unauthorized_blocked,
@@ -504,6 +509,10 @@ def _run_smoke_test(project_root: Path) -> int:
             workspace_database=temporary_database,
             workspace_root=project_root,
         )
+        ai_services = create_mac_ai_runtime_services(
+            state_path=Path(directory) / "application-support" / "State" / "ai-runtime-state-v1.json",
+            attestation_key_path=Path(directory) / "application-support" / "State" / "ai-attestation-v1.key",
+        )
         server, _ = create_desktop_server(
             EvidenceDB(temporary_database),
             host="127.0.0.1",
@@ -511,6 +520,8 @@ def _run_smoke_test(project_root: Path) -> int:
             token=token,
             read_only=False,
             history_store=history_store,
+            credential_store=ai_services.legacy_deepseek_store,
+            desktop_ai_api=MacDesktopAIAPI(ai_services.controller),
             desktop_settings_api=DesktopSettingsAPI(
                 DesktopSettingsService(
                     MacAtomicDesktopSettingsStore(
@@ -592,6 +603,10 @@ def _run_smoke_test(project_root: Path) -> int:
 
 def _run_desktop(project_root: Path, debug: bool = False) -> int:
     configure_core_paths(project_root)
+    # Desktop runtime AI must resolve only a generation-bound secure credential
+    # under the shared execution lease.  Maintainer shell variables are never a
+    # desktop-product credential source and must not activate legacy clients.
+    disable_legacy_environment_credentials()
 
     from auto_research.evidence.db import EvidenceDB
     from desktop_product_services import create_desktop_product_services
@@ -608,13 +623,8 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     host = "127.0.0.1"
     token = new_session_token()
     server_errors: queue.Queue[BaseException] = queue.Queue(maxsize=1)
-    credential_store = default_deepseek_credential_store()
-    try:
-        saved_api_key = credential_store.read_for_runtime()
-    except SecureCredentialError:
-        saved_api_key = None
-    if saved_api_key:
-        os.environ["DEEPSEEK_API_KEY"] = saved_api_key
+    ai_services = mac_ai_runtime_services()
+    credential_store = ai_services.legacy_deepseek_store
 
     try:
         database = EvidenceDB(project_root / "db" / "experimental_evidence.sqlite")
@@ -640,6 +650,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
                 DesktopSettingsService(MacAtomicDesktopSettingsStore(DEFAULT_SETTINGS_PATH))
             ),
             credential_store=credential_store,
+            desktop_ai_api=MacDesktopAIAPI(ai_services.controller),
             package_service=product_services.package_service,
             package_api=product_services.package_api,
             package_center_api=(

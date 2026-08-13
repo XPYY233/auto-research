@@ -137,7 +137,9 @@ class CredentialAPITests(unittest.TestCase):
                     "api_key": SECRET,
                 },
             )
-            self.assertEqual(os.environ.get("DEEPSEEK_API_KEY"), SECRET)
+            self.assertNotIn("DEEPSEEK_API_KEY", os.environ)
+            manager = self.server.RequestHandlerClass.credential_store.manager
+            self.assertEqual(manager.state_for("deepseek").generation, 1)
 
             status_code, status = self.request("GET")
             self.assertEqual(status_code, 200)
@@ -151,6 +153,7 @@ class CredentialAPITests(unittest.TestCase):
             self.assertEqual(tombstone["generation"], 2)
             self.assertIsNone(tombstone["api_key"])
             self.assertNotIn("DEEPSEEK_API_KEY", os.environ)
+            self.assertEqual(manager.state_for("deepseek").generation, 2)
 
         combined = json.dumps([initial, saved, status, deleted], ensure_ascii=False)
         self.assertNotIn(SECRET, combined)

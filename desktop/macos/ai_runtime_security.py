@@ -5,6 +5,8 @@ import hashlib
 import hmac
 import os
 import stat
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -25,15 +27,22 @@ DEFAULT_AI_ATTESTATION_KEY_PATH = DEFAULT_STATE_DIRECTORY / "ai-attestation-v1.k
 class MacAtomicAIRuntimeStateStore:
     """Use the audited device-local CAS store for non-secret AI selection state."""
 
-    def __init__(self, path: Path | str = DEFAULT_AI_RUNTIME_STATE_PATH) -> None:
+    def __init__(
+        self,
+        path: Path | str = DEFAULT_AI_RUNTIME_STATE_PATH,
+        *,
+        execution_lock: threading.RLock | None = None,
+    ) -> None:
         self._store = MacAtomicDesktopSettingsStore(path)
+        self._lock = execution_lock if execution_lock is not None else threading.RLock()
 
     @property
     def path(self) -> Path:
         return self._store.path
 
     def read(self) -> Mapping[str, Any] | None:
-        return self._store.read()
+        with self._lock:
+            return self._store.read()
 
     def compare_and_swap(
         self,
@@ -41,10 +50,25 @@ class MacAtomicAIRuntimeStateStore:
         expected_revision: int,
         value: Mapping[str, Any],
     ) -> bool:
-        return self._store.compare_and_swap(
-            expected_revision=expected_revision,
-            value=value,
-        )
+        with self._lock:
+            return self._store.compare_and_swap(
+                expected_revision=expected_revision,
+                value=value,
+            )
+
+
+class MacAIExecutionLeaseAuthority:
+    """Hold the shared macOS AI mutation lock for one bound execution."""
+
+    def __init__(self, execution_lock: threading.RLock) -> None:
+        if execution_lock is None:
+            raise ValueError("AI execution lock is required")
+        self._lock = execution_lock
+
+    @contextmanager
+    def acquire(self, _action):
+        with self._lock:
+            yield
 
 
 class MacVerificationAttestationSigner:
@@ -126,5 +150,6 @@ __all__ = [
     "DEFAULT_AI_ATTESTATION_KEY_PATH",
     "DEFAULT_AI_RUNTIME_STATE_PATH",
     "MacAtomicAIRuntimeStateStore",
+    "MacAIExecutionLeaseAuthority",
     "MacVerificationAttestationSigner",
 ]
