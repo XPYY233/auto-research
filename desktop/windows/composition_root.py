@@ -10,10 +10,14 @@ from app_shell import AppShellReport, WindowsAppShellCoordinator
 from credential_manager import (
     CredentialBackend,
     CredentialKeyProvider,
-    CredentialSecretStore,
     Win32CredentialBackend,
 )
-from credential_bridge import DeepSeekCredentialBridgeAdapter
+from ai_runtime_composition import (
+    BusinessActionsFactory,
+    WindowsAIRuntimeServices,
+    create_windows_ai_runtime_services,
+)
+from desktop_ai_bridge import WindowsDesktopAIAPI
 from evidence_search_bridge import EvidenceSearchBridgeAdapter
 from evidence_search_service import WindowsEvidenceSearchService
 from instance_guard import WindowsInstanceGuard
@@ -33,7 +37,6 @@ from package_export_destination import (
     WindowsPackageExportDestinationBroker,
 )
 from native_desktop_bridge import WindowsNativeDesktopBridge
-from personal_ai_model import WindowsDeepSeekPersonalSuggestionModel
 from personal_file_selection import (
     WindowsPersonalFileInputAdapter,
     WindowsPersonalFileSelectionBroker,
@@ -173,7 +176,7 @@ class WindowsBridgeServices:
     package_input: PackageInputWindowAdapter
     package_import: PackageImportBridgeAdapter
     evidence_search: EvidenceSearchBridgeAdapter
-    deepseek_credentials: DeepSeekCredentialBridgeAdapter
+    ai: WindowsDesktopAIAPI
     personal_file_input: WindowsPersonalFileInputAdapter
     personal_import: PersonalImportBridgeAdapter
     librarian: LibrarianV3BridgeAdapter
@@ -189,6 +192,7 @@ class WindowsProductionComposition:
     search_service: WindowsEvidenceSearchService
     package_import_service: PackageImportService
     personal_import_service: PersonalImportService
+    ai_services: WindowsAIRuntimeServices
     readiness_service: WindowsReadinessV2Service
     native_desktop_bridge: WindowsNativeDesktopBridge
     history_key_provider: CredentialKeyProvider
@@ -217,6 +221,7 @@ class WindowsCompositionRoot:
         package_center_bridge: PackageCenterBridge | None = None,
         package_export_destination_broker: WindowsPackageExportDestinationBroker | None = None,
         credential_backend: CredentialBackend | None = None,
+        ai_business_actions_factory: BusinessActionsFactory | None = None,
         package_probe: FileSystemProbe | None = None,
         native_path_factory: Callable[[str], object] = Path,
         window: WindowAdapter | None = None,
@@ -249,6 +254,7 @@ class WindowsCompositionRoot:
             or WindowsPackageExportDestinationBroker()
         )
         self.credential_backend = credential_backend
+        self.ai_business_actions_factory = ai_business_actions_factory
         self.package_probe = package_probe
         self.native_path_factory = native_path_factory
         self.window = window or PyWebViewWindowAdapter()
@@ -304,9 +310,12 @@ class WindowsCompositionRoot:
             raise WindowsCompositionError("Windows 原生资料包选择器尚未冻结或版本不兼容")
 
         backend = self.credential_backend or Win32CredentialBackend()
-        deepseek_credentials = CredentialSecretStore(backend)
         history_key_provider = CredentialKeyProvider(backend)
-        credential_bridge = DeepSeekCredentialBridgeAdapter(deepseek_credentials)
+        ai_services = create_windows_ai_runtime_services(
+            state_directory=self.path_runtime.state_directory,
+            credential_backend=backend,
+            business_actions_factory=self.ai_business_actions_factory,
+        )
         broker = PackageInputBroker(
             self.package_probe,
             native_path_factory=self.native_path_factory,
@@ -318,9 +327,6 @@ class WindowsCompositionRoot:
         personal_import_service = PersonalImportService(
             data_root=self.path_runtime.private_data_root,
             selection_provider=personal_selection,
-            suggestion_model=WindowsDeepSeekPersonalSuggestionModel(
-                credential_bridge
-            ),
         )
         settings = WindowsSettingsBridge(
             DesktopSettingsService(
@@ -331,8 +337,8 @@ class WindowsCompositionRoot:
         librarian = LibrarianV3BridgeAdapter(self.librarian_runtime)
         readiness = WindowsReadinessV2Service(
             search=search_service,
-            credentials=credential_bridge,
-            librarian=librarian,
+            credentials=ai_services.credential_readiness,
+            librarian=ai_services.business_readiness,
         )
         package_import_service = PackageImportService(
             broker=broker,
@@ -356,7 +362,7 @@ class WindowsCompositionRoot:
             package_input=package_input,
             package_import=package_import,
             evidence_search=EvidenceSearchBridgeAdapter(search_service),
-            deepseek_credentials=credential_bridge,
+            ai=ai_services.http_api,
             personal_file_input=personal_file_input,
             personal_import=personal_import,
             librarian=librarian,
@@ -409,6 +415,7 @@ class WindowsCompositionRoot:
             search_service=search_service,
             package_import_service=package_import_service,
             personal_import_service=personal_import_service,
+            ai_services=ai_services,
             readiness_service=readiness,
             native_desktop_bridge=native_desktop_bridge,
             history_key_provider=history_key_provider,

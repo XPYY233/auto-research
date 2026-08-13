@@ -65,6 +65,45 @@ class WindowsCredentialTests(unittest.TestCase):
             with self.assertRaises(MODULE.WindowsCredentialError):
                 MODULE.Win32CredentialBackend()
 
+    def test_provider_slots_are_isolated_and_generation_bound(self) -> None:
+        backend = FakeBackend()
+        manager = MODULE.WindowsProviderCredentialManager(backend)
+        self.assertFalse(manager.state_for("deepseek").configured)
+        deepseek = manager.save(
+            provider_id="deepseek",
+            credential_ref="deepseek.default",
+            api_key="sk-deepseek-owned",
+        )
+        openai = manager.save(
+            provider_id="openai",
+            credential_ref="openai.default",
+            api_key="sk-openai-owned",
+        )
+        self.assertEqual(manager.resolve("deepseek.default"), "sk-deepseek-owned")
+        self.assertEqual(manager.resolve("openai.default"), "sk-openai-owned")
+        self.assertNotEqual(
+            MODULE.PROVIDER_CREDENTIAL_TARGETS["deepseek"],
+            MODULE.PROVIDER_CREDENTIAL_TARGETS["openai"],
+        )
+        self.assertEqual(
+            manager.resolve_bound("deepseek.default", deepseek.generation),
+            "sk-deepseek-owned",
+        )
+        manager.delete(provider_id="deepseek", credential_ref="deepseek.default")
+        self.assertIsNone(manager.resolve_bound("deepseek.default", deepseek.generation))
+        self.assertEqual(manager.resolve_bound("openai.default", openai.generation), "sk-openai-owned")
+
+    def test_unknown_provider_and_cross_slot_reference_fail_closed(self) -> None:
+        manager = MODULE.WindowsProviderCredentialManager(FakeBackend())
+        with self.assertRaises(MODULE.WindowsCredentialError):
+            manager.state_for("untrusted")
+        with self.assertRaises(MODULE.WindowsCredentialError):
+            manager.save(
+                provider_id="deepseek",
+                credential_ref="openai.default",
+                api_key="sk-deepseek-owned",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

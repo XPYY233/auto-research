@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import json
 import sys
+import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ WINDOWS_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WINDOWS_ROOT))
 try:
     import shared_http_bridge as MODULE
+    from ai_runtime_composition import create_windows_ai_runtime_services
     from settings_bridge import WindowsSettingsBridge
 finally:
     sys.path.pop(0)
@@ -243,6 +245,20 @@ class _Credentials:
         return self.status()
 
 
+class _CredentialBackend:
+    def __init__(self):
+        self.values = {}
+
+    def read(self, target):
+        return self.values.get(target)
+
+    def write(self, target, secret):
+        self.values[target] = bytes(secret)
+
+    def delete(self, target):
+        self.values.pop(target, None)
+
+
 class _Readiness:
     def status(self):
         return SimpleNamespace(
@@ -266,12 +282,18 @@ class _Librarian:
 
 class SharedHttpBridgeTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
         self.token = "bootstrap-" + "x" * 40
+        self.ai_services = create_windows_ai_runtime_services(
+            state_directory=Path(self.temporary.name) / "State",
+            credential_backend=_CredentialBackend(),
+        )
         self.services = SimpleNamespace(
             package_import=_Package(),
             evidence_search=_Evidence(),
             personal_import=_Personal(),
-            deepseek_credentials=_Credentials(),
+            ai=self.ai_services.http_api,
             readiness=_Readiness(),
             librarian=_Librarian(),
             package_center=_PackageCenter(),
@@ -402,7 +424,8 @@ class SharedHttpBridgeTests(unittest.TestCase):
             f"/api/desktop/personal-imports/{IMPORT_ID}",
             "/api/desktop/federated-search?q=&page=1&page_size=20&source_scope=private",
             "/api/desktop/federated-evidence?source_scope=private&source_id=private-1&entity_uid=finding-1",
-            "/api/desktop/credentials/deepseek",
+            "/api/desktop/ai/providers",
+            "/api/desktop/ai/settings",
             "/api/desktop/readiness",
             "/api/desktop/settings",
         )
@@ -418,10 +441,10 @@ class SharedHttpBridgeTests(unittest.TestCase):
             ("/api/desktop/personal-imports/preview", {"selection_id": "personal_selection_0123456789abcdef"}, 201),
             (f"/api/desktop/personal-imports/{IMPORT_ID}/draft", {"sheet_index": 0}, 200),
             (f"/api/desktop/personal-imports/{IMPORT_ID}/confirm", {"expected_revision": 1}, 200),
-            (f"/api/desktop/personal-imports/{IMPORT_ID}/ai-suggestion", {"sheet_index": 0, "consent": True}, 200),
+            (f"/api/desktop/personal-imports/{IMPORT_ID}/ai-suggestion", {"sheet_index": 0, "consent": True}, 410),
             (f"/api/desktop/personal-imports/{IMPORT_ID}/reviewed-import", {"reviewed": True, "draft": {"sheet_index": 0}}, 200),
             ("/api/desktop/personal-imports/search-refresh", {}, 200),
-            ("/api/desktop/credentials/deepseek", {"api_key": "sk-user-owned"}, 200),
+            ("/api/desktop/credentials/deepseek", {"api_key": "sk-user-owned"}, 410),
         )
         for path, payload, expected in posts:
             with self.subTest(path=path):
@@ -431,6 +454,107 @@ class SharedHttpBridgeTests(unittest.TestCase):
         status, job, _ = self._get("/api/desktop/evidence-package-jobs/package-job-0123456789")
         self.assertEqual(status, 200)
         self.assertEqual(job["stage"], "completed")
+
+    def test_provider_settings_credentials_and_four_scopes_use_shared_contract(self) -> None:
+        status, catalog, no_store = self._get("/api/desktop/ai/providers")
+        self.assertEqual((status, no_store), (200, "no-store"))
+        self.assertEqual(catalog["schema_version"], "ai-desktop-catalog-v1")
+        self.assertEqual(
+            {item["provider_id"] for item in catalog["providers"]},
+            {"deepseek", "openai"},
+        )
+        status, saved = self._post(
+            "/api/desktop/ai/credentials/openai",
+            {"api_key": "sk-openai-owned"},
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(saved["configured"])
+        self.assertNotIn("sk-openai-owned", json.dumps(saved))
+        status, deepseek, _ = self._get("/api/desktop/ai/credentials/deepseek")
+        self.assertEqual(status, 200)
+        self.assertFalse(deepseek["configured"])
+        for scope in (
+            "personal_suggestion",
+            "selected_evidence_chat",
+            "librarian",
+            "literature_extraction",
+        ):
+            with self.subTest(scope=scope):
+                status, payload = self._post(
+                    f"/api/desktop/ai/actions/{scope}/prepare",
+                    {"request": "opaque"},
+                )
+                self.assertEqual(status, 503)
+                self.assertEqual(payload["code"], "desktop_ai_business_unavailable")
+        before = dict(self.ai_services.credential_manager.backend.values)
+        status, payload = self._post(
+            "/api/desktop/ai/actions/unknown/prepare",
+            {"request": "opaque"},
+        )
+        self.assertEqual(status, 404)
+        self.assertEqual(payload["code"], "desktop_ai_endpoint_not_found")
+        self.assertEqual(before, self.ai_services.credential_manager.backend.values)
+
+    def test_ai_routes_require_origin_csrf_and_enforce_shared_body_cap(self) -> None:
+        backend = self.ai_services.credential_manager.backend
+        before = dict(backend.values)
+        self.assertEqual(
+            self._post(
+                "/api/desktop/ai/credentials/deepseek",
+                {"api_key": "sk-deepseek-owned"},
+                origin=False,
+            )[0],
+            403,
+        )
+        self.assertEqual(
+            self._post(
+                "/api/desktop/ai/credentials/deepseek",
+                {"api_key": "sk-deepseek-owned"},
+                csrf=False,
+            )[0],
+            403,
+        )
+        self.assertEqual(before, backend.values)
+
+        connection = self._connection()
+        connection.putrequest("POST", "/api/desktop/ai/credentials/deepseek")
+        connection.putheader("Cookie", self.cookie)
+        connection.putheader("Origin", self.origin)
+        connection.putheader(MODULE.CSRF_HEADER, self.csrf)
+        connection.putheader("Content-Type", "application/json")
+        connection.putheader("Content-Length", str(8 * 1024 + 1))
+        connection.endheaders()
+        response = connection.getresponse()
+        payload = self._json(response)
+        self.assertEqual(response.status, 413)
+        self.assertEqual(payload["code"], "desktop_ai_request_too_large")
+        self.assertNotIn("path", json.dumps(payload).casefold())
+        connection.close()
+        self.assertEqual(before, backend.values)
+
+    def test_ai_settings_patch_preserves_shared_public_dto(self) -> None:
+        status, catalog, _ = self._get("/api/desktop/ai/providers")
+        self.assertEqual(status, 200)
+        openai = next(
+            item for item in catalog["providers"] if item["provider_id"] == "openai"
+        )
+        models = {
+            task: options[0]
+            for task, options in openai["model_options"].items()
+        }
+        status, updated, no_store = self._patch(
+            "/api/desktop/ai/settings",
+            {
+                "provider_id": "openai",
+                "task_models": models,
+                "expected_revision": 0,
+            },
+        )
+        self.assertEqual((status, no_store), (200, "no-store"))
+        self.assertEqual(updated["schema_version"], "ai-runtime-public-state-v1")
+        self.assertEqual(updated["provider_id"], "openai")
+        self.assertEqual(updated["task_models"], models)
+        self.assertNotIn("credential_ref", updated)
 
     def test_package_center_routes_preserve_shared_dto_and_async_polling(self) -> None:
         status, inspected = self._post(
@@ -520,7 +644,8 @@ class SharedHttpBridgeTests(unittest.TestCase):
         self.assertIn("openPersonalImport", product)
         self.assertIn("personalPanel?.parentElement === personalView", product)
         self.assertNotIn("personalView.appendChild(personalPanel)", product)
-        self.assertIn("ai-suggestion", product)
+        self.assertIn("authorizePreparedAIAction", product)
+        self.assertIn("executePreparedAIAction", product)
         self.assertIn("reviewed-import", product)
         self.assertNotIn("selected.selection.path", product)
         status, package_center, no_store = self._get_text("/static/package_center.js")
@@ -610,8 +735,8 @@ class SharedHttpBridgeTests(unittest.TestCase):
             f"/api/desktop/personal-imports/{IMPORT_ID}/ai-suggestion",
             {"sheet_index": 0, "consent": False},
         )
-        self.assertEqual(status, 428)
-        self.assertEqual(payload["code"], "personal_ai_consent_required")
+        self.assertEqual(status, 410)
+        self.assertEqual(payload["code"], "desktop_legacy_ai_route_disabled")
         status, payload = self._post(
             f"/api/desktop/personal-imports/{IMPORT_ID}/reviewed-import",
             {"reviewed": False, "draft": {"sheet_index": 0}},

@@ -204,11 +204,17 @@ class CompositionRootTests(unittest.TestCase):
         self.assertEqual(composition.compatibility.product_name, "Windows 11")
         selected = composition.services.package_input.choose_package()
         self.assertEqual(selected.source, "file-picker")
-        credential_status = composition.services.deepseek_credentials.save("sk-user-owned")
+        credential_status = composition.ai_services.desktop_service.credential_save(
+            "deepseek", "sk-user-owned"
+        )
         self.assertTrue(credential_status["configured"])
         self.assertNotIn("sk-user-owned", str(credential_status))
         self.assertEqual(
-            composition.services.deepseek_credentials.resolve_for_runtime(), "sk-user-owned"
+            composition.ai_services.credential_manager.resolve("deepseek.default"),
+            "sk-user-owned",
+        )
+        self.assertIsNone(
+            composition.ai_services.credential_manager.resolve("openai.default")
         )
         self.assertEqual(len(composition.history_key_provider.get_or_create_key()), 32)
         self.assertFalse(composition.search_service.is_ready)
@@ -230,10 +236,8 @@ class CompositionRootTests(unittest.TestCase):
             composition.services.settings.get()["schema_version"],
             "desktop-settings-v1",
         )
-        self.assertEqual(
-            type(composition.personal_import_service._suggestion_model).__name__,
-            "WindowsDeepSeekPersonalSuggestionModel",
-        )
+        self.assertIsNone(composition.personal_import_service._suggestion_model)
+        self.assertIsNone(composition.ai_services.business_actions)
         librarian = composition.services.librarian.chat(
             "research",
             conversation_id="conversation-1",
@@ -242,7 +246,7 @@ class CompositionRootTests(unittest.TestCase):
         readiness = composition.services.readiness.status().public_dict()
         self.assertFalse(readiness["private_ready"])
         self.assertFalse(readiness["federated_ready"])
-        self.assertTrue(readiness["librarian_ready"])
+        self.assertFalse(readiness["librarian_ready"])
         self.assertTrue(
             callable(composition.native_desktop_bridge.select_personal_data_file)
         )

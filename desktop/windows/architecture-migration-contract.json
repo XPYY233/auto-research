@@ -1,6 +1,6 @@
 {
   "schema_version": "windows-architecture-migration-v1",
-  "status": "shared-contracts-frozen-adapter-pending",
+  "status": "shared-settings-and-ai-adapters-wired-scientific-workspace-pending",
   "installer_ready": false,
   "current_bridge_contract_version": 1,
   "target_bridge_contract_version": 2,
@@ -54,13 +54,10 @@
     "application_facade": "not-runtime-wired",
     "route_catalog": "golden-subset-validated-not-runtime-wired",
     "shared_package_jobs": "stage-compatible-progress-projection-pending",
-    "release_contract": "version-validated-runtime-injection-pending",
+    "release_contract": "version-validated-runtime-injection-complete",
     "route_ids": [
       "ui.mode",
       "desktop.readiness",
-      "credential.deepseek.get",
-      "credential.deepseek.save",
-      "credential.deepseek.delete",
       "package.status",
       "package.import",
       "package.job.get",
@@ -76,13 +73,25 @@
       "personal.status",
       "personal.draft",
       "personal.confirm",
-      "personal.ai_suggestion",
       "personal.reviewed_import",
       "federated.search",
       "federated.evidence",
-      "federated.pdf",
-      "librarian.chat"
-    ]
+      "federated.pdf"
+    ],
+    "ai_route_ids": [
+      "desktop_ai.providers",
+      "desktop_ai.settings_get",
+      "desktop_ai.settings_patch",
+      "desktop_ai.credential_get",
+      "desktop_ai.credential_save",
+      "desktop_ai.credential_delete",
+      "desktop_ai.provider_test_prepare",
+      "desktop_ai.provider_test",
+      "desktop_ai.consent_issue",
+      "desktop_ai.business_prepare",
+      "desktop_ai.business_execute"
+    ],
+    "legacy_ai_routes": "fixed-410-gone"
   },
   "windows_owned_after_migration": [
     "Windows Credential Manager secret resolution",
@@ -101,13 +110,13 @@
     "independent workspace route semantics"
   ],
   "current_debt_inventory": {
-    "hardcoded_release_literals": [
-      {
-        "file": "shared_http_bridge.py",
-        "literal": "0.4.0-internal",
-        "replacement": "release_contract.desktop_version"
-      }
-    ],
+    "hardcoded_release_literals": [],
+    "ai_business_scope_status": {
+      "personal_suggestion": "503-until-complete-shared-business-graph-injected",
+      "selected_evidence_chat": "503-missing-scientific-workspace-resolver",
+      "librarian": "503-missing-scientific-workspace-resolver",
+      "literature_extraction": "503-missing-scientific-workspace-resolver"
+    },
     "duplicated_package_job_modules": [
       "package_import_progress.py",
       "package_import_service.py",

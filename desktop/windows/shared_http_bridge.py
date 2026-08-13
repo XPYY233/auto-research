@@ -19,6 +19,7 @@ from package_center_bridge import WindowsPackageCenterBridgeAdapter
 from package_import_bridge import PackageBridgeError
 from personal_import_bridge import PersonalImportBridgeAdapter
 from settings_bridge import WindowsSettingsBridge
+from desktop_ai_bridge import WindowsDesktopAIAPI
 from auto_research.settings.desktop_settings import DesktopSettingsError
 from auto_research.personal.import_service import PersonalImportServiceError
 
@@ -233,13 +234,17 @@ class WindowsSharedHttpBridge:
 
             def _read_json(self, maximum: int) -> dict[str, Any]:
                 length = self._content_length(maximum, require_body=True)
-                body = self.rfile.read(length)
-                if len(body) != length:
-                    raise ValueError("incomplete request body")
+                body = self._read_exact_body(length)
                 value = json.loads(body.decode("utf-8"))
                 if not isinstance(value, dict):
                     raise ValueError("request must be a JSON object")
                 return value
+
+            def _read_exact_body(self, length: int) -> bytes:
+                body = self.rfile.read(length)
+                if len(body) != length:
+                    raise ValueError("incomplete request body")
+                return body
 
             def _send_headers(
                 self,
@@ -461,6 +466,13 @@ class WindowsSharedHttpBridge:
                     return
                 if not self._has_session():
                     return self._forbidden()
+                if services.ai.handle(
+                    self,
+                    "GET",
+                    session_id=state.session_token,
+                    csrf_validated=True,
+                ):
+                    return
                 if not parsed.query and self._serve_static(parsed.path):
                     return
                 try:
@@ -497,7 +509,7 @@ class WindowsSharedHttpBridge:
                     if parsed.path == "/api/desktop/federated-pdf":
                         return self._federated_pdf(parsed)
                     if parsed.path == "/api/desktop/credentials/deepseek" and not parsed.query:
-                        return self.json_response(services.deepseek_credentials.status())
+                        return self._legacy_ai_route_disabled()
                     if parsed.path == "/api/desktop/readiness" and not parsed.query:
                         return self.json_response(services.readiness.status().public_dict())
                     if parsed.path == "/api/desktop/settings" and not parsed.query:
@@ -537,6 +549,13 @@ class WindowsSharedHttpBridge:
             def do_PATCH(self) -> None:
                 if not self._authorize_mutation():
                     return
+                if services.ai.handle(
+                    self,
+                    "PATCH",
+                    session_id=state.session_token,
+                    csrf_validated=True,
+                ):
+                    return
                 parsed = urlparse(self.path)
                 try:
                     if parsed.path != "/api/desktop/settings/preferences" or parsed.query:
@@ -573,6 +592,13 @@ class WindowsSharedHttpBridge:
 
             def do_POST(self) -> None:
                 if not self._authorize_mutation():
+                    return
+                if services.ai.handle(
+                    self,
+                    "POST",
+                    session_id=state.session_token,
+                    csrf_validated=True,
+                ):
                     return
                 parsed = urlparse(self.path)
                 try:
@@ -663,21 +689,7 @@ class WindowsSharedHttpBridge:
                         )
                     suggest_match = _IMPORT_SUGGEST_RE.fullmatch(parsed.path)
                     if suggest_match is not None:
-                        body = self._read_json(MAX_PERSONAL_REQUEST_BYTES)
-                        if set(body) != {"sheet_index", "consent"}:
-                            raise ValueError("invalid suggestion fields")
-                        if body["consent"] is not True:
-                            raise PersonalImportServiceError(
-                                "personal_ai_consent_required",
-                                "请确认本次将有限表格摘要发送给 DeepSeek 后再继续。",
-                                retryable=False,
-                            )
-                        return self.json_response(
-                            services.personal_import.suggest(
-                                suggest_match.group(1),
-                                sheet_index=body["sheet_index"],
-                            )
-                        )
+                        return self._legacy_ai_route_disabled()
                     reviewed_match = _IMPORT_REVIEWED_RE.fullmatch(parsed.path)
                     if reviewed_match is not None:
                         body = self._read_json(MAX_PERSONAL_REQUEST_BYTES)
@@ -700,32 +712,9 @@ class WindowsSharedHttpBridge:
                             raise ValueError("refresh body must be empty")
                         return self.json_response(services.personal_import.refresh_search())
                     if parsed.path == "/api/desktop/credentials/deepseek":
-                        body = self._read_json(MAX_CREDENTIAL_REQUEST_BYTES)
-                        if set(body) != {"api_key"}:
-                            raise ValueError("invalid credential fields")
-                        return self.json_response(
-                            services.deepseek_credentials.save(body["api_key"])
-                        )
+                        return self._legacy_ai_route_disabled()
                     if parsed.path == "/api/agents/librarian/chat":
-                        body = self._read_json(MAX_LIBRARIAN_REQUEST_BYTES)
-                        allowed = {
-                            "question",
-                            "history",
-                            "research_state",
-                            "state_token",
-                            "conversation_id",
-                        }
-                        if set(body) - allowed or "question" not in body:
-                            raise ValueError("invalid librarian fields")
-                        return self.json_response(
-                            services.librarian.chat(
-                                body["question"],
-                                history=body.get("history"),
-                                research_state=body.get("research_state"),
-                                state_token=body.get("state_token"),
-                                conversation_id=body.get("conversation_id"),
-                            )
-                        )
+                        return self._legacy_ai_route_disabled()
                 except PackageBridgeError as exc:
                     return self.json_response(exc.public_dict(), HTTPStatus.BAD_REQUEST)
                 except LibrarianBridgeError as exc:
@@ -762,15 +751,16 @@ class WindowsSharedHttpBridge:
             def do_DELETE(self) -> None:
                 if not self._authorize_delete():
                     return
+                if services.ai.handle(
+                    self,
+                    "DELETE",
+                    session_id=state.session_token,
+                    csrf_validated=True,
+                ):
+                    return
                 parsed = urlparse(self.path)
                 if parsed.path == "/api/desktop/credentials/deepseek" and not parsed.query:
-                    try:
-                        return self.json_response(services.deepseek_credentials.clear())
-                    except Exception:
-                        return self.json_response(
-                            {"error": "API key 未能安全删除", "code": "credential_clear_failed"},
-                            HTTPStatus.INTERNAL_SERVER_ERROR,
-                        )
+                    return self._legacy_ai_route_disabled()
                 self.json_response(
                     {"error": "桌面接口不存在", "code": "desktop_endpoint_not_found"},
                     HTTPStatus.NOT_FOUND,
@@ -778,5 +768,17 @@ class WindowsSharedHttpBridge:
 
             def do_OPTIONS(self) -> None:
                 self._forbidden()
+
+            def _legacy_ai_route_disabled(self) -> None:
+                self.close_connection = True
+                self.json_response(
+                    {
+                        "schema_version": "desktop-ai-http-error-v1",
+                        "code": "desktop_legacy_ai_route_disabled",
+                        "message": "旧版 AI 接口已关闭，请使用统一 AI 设置与授权流程。",
+                        "retryable": False,
+                    },
+                    HTTPStatus.GONE,
+                )
 
         return Handler

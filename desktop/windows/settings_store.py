@@ -16,8 +16,15 @@ SETTINGS_FILENAME = "settings-v1.json"
 class WindowsAtomicDesktopSettingsStore:
     """Atomic non-secret settings store under the Windows application State root."""
 
-    def __init__(self, state_directory: Path | str) -> None:
-        self.path = Path(state_directory) / SETTINGS_FILENAME
+    def __init__(
+        self,
+        state_directory: Path | str,
+        *,
+        filename: str = SETTINGS_FILENAME,
+    ) -> None:
+        if not isinstance(filename, str) or not filename or Path(filename).name != filename:
+            raise ValueError("desktop settings filename is invalid")
+        self.path = Path(state_directory) / filename
         self._lock = threading.RLock()
 
     def _directory(self) -> Path:

@@ -8,6 +8,7 @@ from pathlib import Path
 from auto_research.desktop.application_facade import DesktopApplicationFacade
 from auto_research.desktop.route_catalog import build_default_route_registry
 from auto_research.desktop.routing import RouteSpec
+from auto_research.ai.desktop_controller import DESKTOP_AI_ROUTES
 from auto_research.product.package_job_contract import (
     PackageOperation,
     package_job_stages,
@@ -45,7 +46,7 @@ class ArchitectureMigrationContractTests(unittest.TestCase):
         )
         self.assertEqual(
             self.contract["status"],
-            "shared-contracts-frozen-adapter-pending",
+            "shared-settings-and-ai-adapters-wired-scientific-workspace-pending",
         )
         self.assertFalse(self.contract["installer_ready"])
         self.assertFalse(self.dependencies["installer_ready"])
@@ -139,6 +140,13 @@ class ArchitectureMigrationContractTests(unittest.TestCase):
             self.contract["windows_adapter_adoption"]["route_catalog"],
             "golden-subset-validated-not-runtime-wired",
         )
+        ai_routes = {route.route_id: route for route in DESKTOP_AI_ROUTES}
+        adopted_ai = self.contract["windows_adapter_adoption"]["ai_route_ids"]
+        self.assertEqual(set(adopted_ai), set(ai_routes))
+        self.assertEqual(
+            self.contract["windows_adapter_adoption"]["legacy_ai_routes"],
+            "fixed-410-gone",
+        )
 
     def test_release_contract_is_windows_version_authority_but_installer_stays_false(self) -> None:
         project_root = WINDOWS_ROOT.parents[1]
@@ -165,7 +173,7 @@ class ArchitectureMigrationContractTests(unittest.TestCase):
     def test_hardcoded_version_and_duplicate_job_debt_inventory_matches_source(self) -> None:
         debt = self.contract["current_debt_inventory"]
         literals = debt["hardcoded_release_literals"]
-        self.assertEqual(len(literals), 1)
+        self.assertEqual(literals, [])
         for entry in literals:
             source = (WINDOWS_ROOT / entry["file"]).read_text(encoding="utf-8")
             self.assertIn(entry["literal"], source)
