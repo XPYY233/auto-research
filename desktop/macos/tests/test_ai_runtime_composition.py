@@ -22,6 +22,9 @@ from ai_runtime_composition import (  # noqa: E402
     create_mac_ai_runtime_services,
     disable_legacy_environment_credentials,
 )
+from auto_research.ai.business_actions import BUSINESS_ACTION_SCOPES  # noqa: E402
+from auto_research.evidence.db import EvidenceDB  # noqa: E402
+from desktop_product_services import create_desktop_product_services  # noqa: E402
 from secure_credentials import (  # noqa: E402
     DEEPSEEK_PROVIDER,
     OPENAI_PROVIDER,
@@ -66,26 +69,74 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             else:
                 os.environ.pop("DEEPSEEK_API_KEY", None)
 
-    def test_one_graph_reuses_manager_and_has_no_business_adapter(self) -> None:
+    def test_one_graph_reuses_manager_and_installs_all_business_ports(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
             manager = ProviderCredentialManager(
                 {
                     DEEPSEEK_PROVIDER: MemoryBackend(),
                     OPENAI_PROVIDER: MemoryBackend(),
                 }
             )
+            database = EvidenceDB(root / "evidence.sqlite")
+            database.init()
+            product = create_desktop_product_services(
+                data_root=root / "Application Support",
+                current_app_version="0.8.0-preview",
+            )
+            session_id = "desktop-session-" + "s" * 32
             services = create_mac_ai_runtime_services(
-                state_path=Path(temporary) / "state.json",
-                attestation_key_path=Path(temporary) / "attestation.key",
+                state_path=root / "state.json",
+                attestation_key_path=root / "attestation.key",
                 credential_manager=manager,
                 verifier_session=RejectNetwork(),
                 client_session=RejectNetwork(),
+                database=database,
+                personal_import_service=product.personal_import_service,
+                desktop_session_id=session_id,
             )
             self.assertIs(services.credential_manager, manager)
             self.assertIs(services.legacy_deepseek_store.manager, manager)
             self.assertIs(services.execution_lock, manager.execution_lock)
-            self.assertEqual(len(services.controller.route_contract()), 9)
-            self.assertFalse(hasattr(services, "business_actions"))
+            self.assertEqual(len(services.controller.route_contract()), 11)
+            self.assertIs(services.database, database)
+            self.assertIs(
+                services.personal_import_service,
+                product.personal_import_service,
+            )
+            self.assertEqual(services.desktop_session_id, session_id)
+            self.assertIsNotNone(services.business_actions)
+            self.assertIs(services.controller._business, services.business_actions)
+            self.assertIs(services.controller._prepared, services.prepared_actions)
+            self.assertIs(
+                services.personal_suggestion_ports.assembler._service,
+                product.personal_import_service,
+            )
+            self.assertIs(services.selected_evidence_chat_ports.assembler._db, database)
+            self.assertIs(services.librarian_ports.assembler._runtime.db, database)
+            self.assertIs(
+                services.literature_extraction_ports.assembler._store,
+                services.literature_jobs,
+            )
+            self.assertFalse(hasattr(services, "literature_finalizer"))
+            self.assertFalse(hasattr(services.literature_extraction_ports, "finalizer"))
+            self.assertEqual(
+                services.literature_extraction_ports.assembler._session_id,
+                session_id,
+            )
+            self.assertEqual(
+                set(services.business_actions._assemblers),
+                BUSINESS_ACTION_SCOPES,
+            )
+            self.assertEqual(
+                set(services.snapshot_authority._authorities),
+                {
+                    "personal_table",
+                    "selected_evidence",
+                    "librarian_job",
+                    "literature_extraction_stage",
+                },
+            )
             catalog = services.desktop_service.catalog()
             self.assertEqual(
                 {item["provider_id"] for item in catalog["providers"]},
@@ -97,7 +148,18 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             )
 
     def test_process_accessor_constructs_exactly_one_graph(self) -> None:
-        sentinel = object()
+        database = object()
+        personal = object()
+        session_id = "desktop-session-" + "x" * 32
+        sentinel = type(
+            "Sentinel",
+            (),
+            {
+                "database": database,
+                "personal_import_service": personal,
+                "desktop_session_id": session_id,
+            },
+        )()
         previous = ai_runtime_composition._SERVICES
         ai_runtime_composition._SERVICES = None
         try:
@@ -106,9 +168,14 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 "create_mac_ai_runtime_services",
                 return_value=sentinel,
             ) as factory:
-                self.assertIs(ai_runtime_composition.mac_ai_runtime_services(), sentinel)
-                self.assertIs(ai_runtime_composition.mac_ai_runtime_services(), sentinel)
-                factory.assert_called_once_with()
+                kwargs = {
+                    "database": database,
+                    "personal_import_service": personal,
+                    "desktop_session_id": session_id,
+                }
+                self.assertIs(ai_runtime_composition.mac_ai_runtime_services(**kwargs), sentinel)
+                self.assertIs(ai_runtime_composition.mac_ai_runtime_services(**kwargs), sentinel)
+                factory.assert_called_once_with(**kwargs)
         finally:
             ai_runtime_composition._SERVICES = previous
 
@@ -165,6 +232,8 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
         self.assertNotIn("/api/desktop/ai/providers/deepseek/test", launcher)
         self.assertIn("credential_store=ai_services.legacy_deepseek_store", launcher)
         self.assertIn("desktop_ai_api=MacDesktopAIAPI(ai_services.controller)", launcher)
+        self.assertIn("personal_import_service=product_services.personal_import_service", launcher)
+        self.assertIn("session_token=desktop_session_id", launcher)
         self.assertNotIn("default_deepseek_credential_store", launcher)
         self.assertNotIn("read_for_runtime()", launcher)
         self.assertIn("disable_legacy_environment_credentials()", launcher)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import io
 import json
 import secrets
 import threading
@@ -51,6 +52,16 @@ HIGH_COST_PATHS = frozenset(
         "/api/current-paper/quality-run",
     }
 )
+LEGACY_PAID_AI_PATHS = frozenset(
+    {
+        "/api/context-chat",
+        "/api/agents/librarian/chat",
+        "/api/current-paper/deepseek-preview",
+        "/api/current-paper/quality-run",
+    }
+)
+LEGACY_WORKFLOW_PATH = "/api/current-paper/run-workflow"
+MAX_LEGACY_WORKFLOW_REQUEST_BYTES = 64 * 1024
 
 
 def new_session_token() -> str:
@@ -68,11 +79,15 @@ def _cookie_token(raw_cookie: str) -> str:
 
 
 class DesktopSecurityState:
-    def __init__(self, bootstrap_token: str) -> None:
+    def __init__(self, bootstrap_token: str, *, session_token: str | None = None) -> None:
         if not isinstance(bootstrap_token, str) or len(bootstrap_token) < 32:
             raise ValueError("desktop bootstrap token is invalid")
         self.bootstrap_token = bootstrap_token
-        self.session_token = new_session_token()
+        if session_token is not None and (
+            not isinstance(session_token, str) or len(session_token) < 32
+        ):
+            raise ValueError("desktop session token is invalid")
+        self.session_token = session_token or new_session_token()
         self.csrf_token = new_session_token()
         self.expected_authority = ""
         self.bootstrap_consumed = False
@@ -399,6 +414,56 @@ class DesktopEvidenceHandler(EvidenceHandler):
             )
         self.json_response({"ok": True, "storage": self.history_store.storage_label})
 
+    def _legacy_paid_ai_unavailable(self) -> None:
+        self.close_connection = True
+        self.json_response(
+            {
+                "error": "旧 AI 接口已停用，请通过当前桌面 AI 授权流程重试。",
+                "code": "desktop_ai_prepared_action_required",
+                "retryable": False,
+            },
+            HTTPStatus.GONE,
+        )
+
+    def _allow_local_legacy_workflow(self) -> bool:
+        """Allow only the old route's curated/packet branches, never paid AI."""
+
+        try:
+            length = self._content_length(
+                MAX_LEGACY_WORKFLOW_REQUEST_BYTES,
+                require_body=True,
+            )
+            raw = self._read_exact_body(length)
+            body = json.loads(raw.decode("utf-8"))
+            if not isinstance(body, dict):
+                raise ValueError("workflow body must be an object")
+            from auto_research.evidence.six_column import (
+                get_six_extraction_status,
+                resolve_paper_selector,
+            )
+
+            paper_id = resolve_paper_selector(
+                self.db,
+                paper_id=(
+                    int(body["paper_id"])
+                    if body.get("paper_id") not in (None, "")
+                    else None
+                ),
+                article_key=body.get("article_key"),
+            )
+            status = get_six_extraction_status(self.db, paper_id)
+            if body.get("force_rescan") or status.get("action") not in {
+                "extract_now",
+                "prepare_packet",
+            }:
+                return False
+            # EvidenceHandler owns the established local response contract. Put
+            # the exact bounded bytes back so it remains the sole body parser.
+            self.rfile = io.BytesIO(raw)
+            return True
+        except Exception:
+            return False
+
     def end_headers(self) -> None:
         if self._issue_desktop_cookie:
             self.send_header(
@@ -454,44 +519,6 @@ class DesktopEvidenceHandler(EvidenceHandler):
         path = urlparse(self.path).path
         if not self._authorize_post(path):
             return
-        if path == HISTORY_PATH:
-            return self._save_desktop_history()
-        if path == CREDENTIAL_PATH:
-            return self._save_credential()
-        if self.desktop_ai_api is not None and self.desktop_ai_api.is_path(self.path):
-            if self.read_only:
-                return self.json_response(
-                    {"error": "当前为只读模式，不允许修改 AI 设置。", "code": "read_only"},
-                    HTTPStatus.FORBIDDEN,
-                )
-            return self.desktop_ai_api.handle(self, "POST")
-        if self.package_api is not None and self.package_api.handle_post(self):
-            return
-        if self.package_center_api is not None and self.package_center_api.is_post_route(
-            self.path
-        ):
-            if self.read_only:
-                return self.json_response(
-                    {
-                        "error": "当前为只读模式，不允许导入或导出资料包。",
-                        "code": "read_only",
-                    },
-                    HTTPStatus.FORBIDDEN,
-                )
-            return self.package_center_api.handle_post(self)
-        if (
-            self.personal_import_api is not None
-            and self.personal_import_api.is_post_route(path)
-        ):
-            if self.read_only:
-                return self.json_response(
-                    {
-                        "error": "当前为只读模式，不允许导入或确认个人实验数据。",
-                        "code": "read_only",
-                    },
-                    HTTPStatus.FORBIDDEN,
-                )
-            return self.personal_import_api.handle_post(self)
         high_cost = path in HIGH_COST_PATHS
         if high_cost and not self.security_state.acquire_high_cost():
             return self.json_response(
@@ -499,6 +526,48 @@ class DesktopEvidenceHandler(EvidenceHandler):
                 HTTPStatus.CONFLICT,
             )
         try:
+            if path in LEGACY_PAID_AI_PATHS:
+                return self._legacy_paid_ai_unavailable()
+            if path == LEGACY_WORKFLOW_PATH and not self._allow_local_legacy_workflow():
+                return self._legacy_paid_ai_unavailable()
+            if path == HISTORY_PATH:
+                return self._save_desktop_history()
+            if path == CREDENTIAL_PATH:
+                return self._save_credential()
+            if self.desktop_ai_api is not None and self.desktop_ai_api.is_path(self.path):
+                if self.read_only:
+                    return self.json_response(
+                        {"error": "当前为只读模式，不允许修改 AI 设置。", "code": "read_only"},
+                        HTTPStatus.FORBIDDEN,
+                    )
+                return self.desktop_ai_api.handle(self, "POST")
+            if self.package_api is not None and self.package_api.handle_post(self):
+                return
+            if self.package_center_api is not None and self.package_center_api.is_post_route(
+                self.path
+            ):
+                if self.read_only:
+                    return self.json_response(
+                        {
+                            "error": "当前为只读模式，不允许导入或导出资料包。",
+                            "code": "read_only",
+                        },
+                        HTTPStatus.FORBIDDEN,
+                    )
+                return self.package_center_api.handle_post(self)
+            if (
+                self.personal_import_api is not None
+                and self.personal_import_api.is_post_route(path)
+            ):
+                if self.read_only:
+                    return self.json_response(
+                        {
+                            "error": "当前为只读模式，不允许导入或确认个人实验数据。",
+                            "code": "read_only",
+                        },
+                        HTTPStatus.FORBIDDEN,
+                    )
+                return self.personal_import_api.handle_post(self)
             return super().do_POST()
         finally:
             if high_cost:
@@ -568,11 +637,12 @@ def create_desktop_server(
     federated_search_api: FederatedSearchAPI | None = None,
     personal_import_api: PersonalImportAPI | None = None,
     desktop_ai_api: MacDesktopAIAPI | None = None,
+    session_token: str | None = None,
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
     host = require_loopback_host(host)
     if host != "127.0.0.1":
         raise ValueError("desktop bridge requires the numeric IPv4 loopback address")
-    security_state = DesktopSecurityState(token)
+    security_state = DesktopSecurityState(token, session_token=session_token)
     database.init()
     upload_service = UploadService(database)
     if read_only:

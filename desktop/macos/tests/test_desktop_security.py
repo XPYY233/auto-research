@@ -9,7 +9,10 @@ import unittest
 import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -156,6 +159,66 @@ class DesktopBridgeSecurityTests(unittest.TestCase):
             error.close()
         finally:
             self.state.release_high_cost()
+
+    def test_legacy_paid_ai_routes_are_gone_before_shared_model_handlers(self) -> None:
+        opener, csrf, _session = self.bootstrap()
+        paths = (
+            "/api/context-chat",
+            "/api/agents/librarian/chat",
+            "/api/current-paper/deepseek-preview",
+            "/api/current-paper/quality-run",
+            "/api/current-paper/run-workflow",
+        )
+        for path in paths:
+            with self.subTest(path=path), self.assertRaises(
+                urllib.error.HTTPError
+            ) as raised:
+                self.post(
+                    opener,
+                    path,
+                    origin=self.base_url,
+                    csrf=csrf,
+                )
+            error = raised.exception
+            self.assertEqual(error.code, 410)
+            payload = json.loads(error.read())
+            self.assertEqual(
+                payload["code"],
+                "desktop_ai_prepared_action_required",
+            )
+            self.assertNotIn("Traceback", json.dumps(payload))
+            error.close()
+
+    def test_legacy_workflow_guard_allows_only_local_curated_or_packet_actions(self) -> None:
+        handler = SimpleNamespace(
+            rfile=BytesIO(b'{"paper_id":1}'),
+            db=object(),
+            _content_length=lambda *_args, **_kwargs: len(b'{"paper_id":1}'),
+            _read_exact_body=lambda length: b'{"paper_id":1}'[:length],
+        )
+        with mock.patch(
+            "auto_research.evidence.six_column.resolve_paper_selector",
+            return_value=1,
+        ), mock.patch(
+            "auto_research.evidence.six_column.get_six_extraction_status",
+            return_value={"action": "prepare_packet"},
+        ):
+            self.assertTrue(
+                self.server.RequestHandlerClass._allow_local_legacy_workflow(handler)
+            )
+        self.assertEqual(handler.rfile.read(), b'{"paper_id":1}')
+
+        handler.rfile = BytesIO(b'{"paper_id":1}')
+        with mock.patch(
+            "auto_research.evidence.six_column.resolve_paper_selector",
+            return_value=1,
+        ), mock.patch(
+            "auto_research.evidence.six_column.get_six_extraction_status",
+            return_value={"action": "deepseek_extract"},
+        ):
+            self.assertFalse(
+                self.server.RequestHandlerClass._allow_local_legacy_workflow(handler)
+            )
 
 
 if __name__ == "__main__":

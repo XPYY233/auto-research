@@ -509,12 +509,17 @@ def _run_smoke_test(project_root: Path) -> int:
             workspace_database=temporary_database,
             workspace_root=project_root,
         )
+        database = EvidenceDB(temporary_database)
+        desktop_session_id = new_session_token()
         ai_services = create_mac_ai_runtime_services(
             state_path=Path(directory) / "application-support" / "State" / "ai-runtime-state-v1.json",
             attestation_key_path=Path(directory) / "application-support" / "State" / "ai-attestation-v1.key",
+            database=database,
+            personal_import_service=product_services.personal_import_service,
+            desktop_session_id=desktop_session_id,
         )
         server, _ = create_desktop_server(
-            EvidenceDB(temporary_database),
+            database,
             host="127.0.0.1",
             port=0,
             token=token,
@@ -538,6 +543,7 @@ def _run_smoke_test(project_root: Path) -> int:
             ),
             federated_search_api=product_services.federated_search_api,
             personal_import_api=product_services.personal_import_api,
+            session_token=desktop_session_id,
         )
         configure_imported_module_paths(project_root)
         port = int(server.server_address[1])
@@ -623,9 +629,6 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     host = "127.0.0.1"
     token = new_session_token()
     server_errors: queue.Queue[BaseException] = queue.Queue(maxsize=1)
-    ai_services = mac_ai_runtime_services()
-    credential_store = ai_services.legacy_deepseek_store
-
     try:
         database = EvidenceDB(project_root / "db" / "experimental_evidence.sqlite")
         product_services = create_desktop_product_services(
@@ -634,6 +637,13 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             workspace_database=project_root / "db" / "experimental_evidence.sqlite",
             workspace_root=project_root,
         )
+        desktop_session_id = new_session_token()
+        ai_services = mac_ai_runtime_services(
+            database=database,
+            personal_import_service=product_services.personal_import_service,
+            desktop_session_id=desktop_session_id,
+        )
+        credential_store = ai_services.legacy_deepseek_store
         native_desktop_bridge = NativeDesktopBridge(
             product_services.package_service.broker,
             product_services.personal_file_selection_broker,
@@ -660,6 +670,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             ),
             federated_search_api=product_services.federated_search_api,
             personal_import_api=product_services.personal_import_api,
+            session_token=desktop_session_id,
         )
         configure_imported_module_paths(project_root)
     except BaseException as exc:

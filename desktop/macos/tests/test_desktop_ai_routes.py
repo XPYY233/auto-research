@@ -23,6 +23,7 @@ for path in (DESKTOP_ROOT, SOURCE_ROOT):
 from ai_runtime_composition import create_mac_ai_runtime_services  # noqa: E402
 from auto_research.ai.desktop_controller import DESKTOP_AI_ROUTES  # noqa: E402
 from auto_research.evidence.db import EvidenceDB  # noqa: E402
+from desktop_product_services import create_desktop_product_services  # noqa: E402
 from desktop_ai_api import MacDesktopAIAPI  # noqa: E402
 from desktop_server import (  # noqa: E402
     COOKIE_NAME,
@@ -66,19 +67,30 @@ class DesktopAIRouteTests(unittest.TestCase):
                 OPENAI_PROVIDER: MemoryBackend(),
             }
         )
+        self.database = EvidenceDB(root / "evidence.sqlite")
+        self.database.init()
+        self.product = create_desktop_product_services(
+            data_root=root / "Application Support",
+            current_app_version="0.8.0-preview",
+        )
+        self.desktop_session = "desktop-session-" + "s" * 32
         self.services = create_mac_ai_runtime_services(
             state_path=root / "state.json",
             attestation_key_path=root / "attestation.key",
             credential_manager=manager,
+            database=self.database,
+            personal_import_service=self.product.personal_import_service,
+            desktop_session_id=self.desktop_session,
         )
         self.token = new_session_token()
         self.server, _ = create_desktop_server(
-            EvidenceDB(root / "evidence.sqlite"),
+            self.database,
             host="127.0.0.1",
             port=0,
             token=self.token,
             credential_store=self.services.legacy_deepseek_store,
             desktop_ai_api=MacDesktopAIAPI(self.services.controller),
+            session_token=self.desktop_session,
         )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -139,7 +151,7 @@ class DesktopAIRouteTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 403)
         raised.exception.close()
 
-    def test_all_nine_shared_routes_are_owned_by_the_mac_adapter(self):
+    def test_all_eleven_shared_routes_are_owned_by_the_mac_adapter(self):
         expected = {
             ("GET", "/api/desktop/ai/providers"),
             ("GET", "/api/desktop/ai/settings"),
@@ -150,14 +162,62 @@ class DesktopAIRouteTests(unittest.TestCase):
             ("POST", "/api/desktop/ai/providers/openai/test-actions"),
             ("POST", "/api/desktop/ai/providers/openai/test"),
             ("POST", "/api/desktop/ai/consents"),
+            ("POST", "/api/desktop/ai/actions/personal_suggestion/prepare"),
+            ("POST", "/api/desktop/ai/actions/personal_suggestion/execute"),
         }
-        self.assertEqual(len(DESKTOP_AI_ROUTES), 9)
+        self.assertEqual(len(DESKTOP_AI_ROUTES), 11)
         for method, path in expected:
             with self.subTest(method=method, path=path):
                 self.assertTrue(MacDesktopAIAPI.is_path(path))
                 self.assertTrue(
                     any(route.match(method, path) is not None for route in DESKTOP_AI_ROUTES)
                 )
+
+    def test_business_routes_reuse_session_origin_csrf_and_hide_internal_errors(self):
+        opener, csrf = self.bootstrap()
+        path = "/api/desktop/ai/actions/personal_suggestion/prepare"
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            self.request(
+                opener,
+                "POST",
+                path,
+                payload={"import_id": "missing", "sheet_index": 0},
+                csrf=csrf,
+            )
+        self.assertEqual(raised.exception.code, 422)
+        payload = json.load(raised.exception)
+        self.assertEqual(payload["code"], "business_action_prepare_failed")
+        self.assertNotIn(str(Path(self.temporary.name)), json.dumps(payload))
+        raised.exception.close()
+
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            self.request(
+                opener,
+                "POST",
+                path,
+                payload={"import_id": "missing", "sheet_index": 0},
+                csrf=csrf,
+                origin=False,
+            )
+        self.assertEqual(raised.exception.code, 403)
+        raised.exception.close()
+
+    def test_local_librarian_result_needs_no_key_and_makes_no_network_call(self):
+        opener, csrf = self.bootstrap()
+        with self.request(
+            opener,
+            "POST",
+            "/api/desktop/ai/actions/librarian/prepare",
+            payload={"question": "你能做什么？", "conversation_id": "local-c1"},
+            csrf=csrf,
+        ) as response:
+            result = json.load(response)
+        self.assertEqual(result["librarian_core_version"], "librarian-v3")
+        self.assertEqual(result["search_operations"], 0)
+        self.assertEqual(result["tool_calls"], 0)
+        self.assertFalse(
+            self.services.desktop_service.credential_status("deepseek")["configured"]
+        )
 
     def test_wrong_method_and_oversized_body_do_not_fall_through(self):
         opener, csrf = self.bootstrap()
@@ -303,6 +363,7 @@ class DesktopAIRouteTests(unittest.TestCase):
             read_only=True,
             credential_store=self.services.legacy_deepseek_store,
             desktop_ai_api=MacDesktopAIAPI(self.services.controller),
+            session_token=self.desktop_session,
         )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
