@@ -334,10 +334,11 @@ def _http_smoke_checks(
             "/static/ai_consent.js",
             (
                 "AutoResearchAIConsent",
-                "auto-research-ai-consent-v1",
+                "auto-research-ai-consent-v2",
                 "librarian",
                 "literature_extraction",
                 "personal_suggestion",
+                "selected_evidence_chat",
             ),
         ),
         "desktop_product_contract": (
@@ -349,7 +350,9 @@ def _http_smoke_checks(
                 "/api/desktop/personal-imports/search-refresh",
                 "/api/desktop/federated-search",
                 "/api/desktop/federated-evidence",
-                "/api/desktop/credentials/deepseek",
+                "/reviewed-import",
+                "authorizePreparedAIAction",
+                "executePreparedAIAction",
             ),
         ),
         "package_center_frontend_contract": (
