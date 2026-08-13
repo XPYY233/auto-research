@@ -5,8 +5,8 @@
 - Target identity: `0.9.1-preview.1` build 19 for Apple Silicon macOS. It is a GUI acceptance build, not a complete functional replacement for 0.8.
 - Production surface: one physical Fusion DOM with title bar, four-item activity rail, context sidebar, central tabs/editor, evidence inspector and status bar. The only bundled Web assets are `index.html`, `app.css`, `workbench.css` and `fusion_review.js`.
 - Runtime boundary: literature is read from an atomic isolated schema-v12 snapshot; experiment tables are explicitly synthetic and session-only. Upload, extraction, confirmation, rollback, real export, native bridges, credentials and model calls are blocked.
-- Validation: 28 Fusion/release/core targets, the complete core evidence test module and 212 macOS tests passed, as did isolated HTTP/frozen smoke, ad-hoc signing, DMG verification and real WebView review. The final tagged source is `0b3242d`; the installed App is 0.9.1/build19.
-- Delivery: `/Users/USER/Zotero/auto-research-releases/Auto-Research-0.9.1-preview.1-build19-FusionReview/`; DMG SHA-256 `e01d547b3dd58e1e3068dd4250eec292bd2a3af5a5f87e0ab8fe9a7a3dbf44d1`.
+- Validation: 28 Fusion/release/core targets, the complete core evidence test module and 212 macOS tests passed, as did isolated HTTP/frozen smoke, ad-hoc signing, DMG verification and real WebView review. A final runtime regression also verifies that settings sections cannot overwrite the active literature tab label. The final tagged source is `4fd4f24`; the installed App is 0.9.1/build19.
+- Delivery: `/Users/USER/Zotero/auto-research-releases/Auto-Research-0.9.1-preview.1-build19-FusionReview/`; DMG SHA-256 `c1786d4b4ee6734390f36c878fdcf008f5d0c3ab405f5eac87031ffe40b92f69`.
 - Rollback: keep macOS 0.8 build18 as a verified non-`.app` rollback before installing build19. Preserve the production SQLite byte hash and do not stage it.
 - Windows is paused. Its 0.8 internal source remains `installer_ready=false`; do not migrate Fusion until the user approves the Mac GUI.
 
