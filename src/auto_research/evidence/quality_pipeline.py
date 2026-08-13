@@ -481,6 +481,19 @@ def _measurement_payload(candidate: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _finding_stable_key(candidate: dict[str, Any]) -> str:
+    """Canonical qualitative identity shared by legacy and atomic publishers."""
+
+    identity = "|".join((
+        str(candidate.get("finding_text") or candidate.get("value_text") or "").strip().casefold(),
+        str(candidate.get("meaning") or "").strip().casefold(),
+        str(candidate.get("context_explanation") or "").strip().casefold(),
+        str(candidate.get("source_page") or ""),
+        str(candidate.get("source_excerpt") or "").casefold(),
+    ))
+    return f"qualitative_{hashlib.sha1(identity.encode('utf-8')).hexdigest()[:20]}"
+
+
 def _apply_visual_semantics(db: EvidenceDB, candidate: dict[str, Any]) -> int:
     asset_id = int(candidate["asset_id"])
     clean = _clean_model_visual_metadata(candidate)

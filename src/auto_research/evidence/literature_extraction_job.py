@@ -80,6 +80,7 @@ class LiteratureExtractionJobError(Exception):
             "message": self.safe_message,
             "retryable": self.code in {
                 "literature_stage_busy", "literature_job_store_full", "literature_commit_failed",
+                "literature_commit_unavailable",
             },
         }
 
@@ -739,18 +740,45 @@ class LiteratureExtractionJobStore:
         session_id: str,
         finalizer: AtomicLiteratureFinalizer,
     ) -> Mapping[str, Any]:
+        from .literature_extraction_finalizer import AtomicEvidenceDBFinalizer
+
         with self._lock:
             job = self._get(job_token, session_id)
             if job.claimed or job.status != "validated" or job.validated_package is None:
                 raise LiteratureExtractionJobError("literature_not_validated", "抽取结果尚未通过全部质量门")
-        # Existing publication code spans several SQLite connections plus
-        # visual-file mutations.  A Protocol cannot prove rollback.  Keep the
-        # production boundary closed until a concrete audited transaction and
-        # asset-staging implementation is installed in this module.
-        raise LiteratureExtractionJobError(
-            "literature_commit_unavailable",
-            "抽取结果已通过质量门，但当前版本尚不能原子保存，请保留任务等待升级",
-        )
+            if not isinstance(finalizer, AtomicEvidenceDBFinalizer):
+                raise LiteratureExtractionJobError(
+                    "literature_commit_unavailable", "当前未安装受信原子保存组件"
+                )
+            job.claimed = True
+            job.claim_expires_at = self._clock.now() + MAX_EXECUTION_LEASE_SECONDS
+            package = job.validated_package
+            snapshot_handle = job.snapshot_handle
+        try:
+            self._snapshots.assert_fresh(snapshot_handle)
+            result = finalizer.finalize(package)
+            _validate_intermediate(result)
+        except LiteratureExtractionJobError:
+            with self._lock:
+                current = self._jobs.get(job_token)
+                if current is job:
+                    current.claimed = False
+                    current.claim_expires_at = None
+            raise
+        except Exception as exc:
+            with self._lock:
+                current = self._jobs.get(job_token)
+                if current is job:
+                    current.claimed = False
+                    current.claim_expires_at = None
+            raise LiteratureExtractionJobError(
+                "literature_commit_failed", "抽取结果未能原子保存，未发布任何新科学记录"
+            ) from exc
+        with self._lock:
+            removed = self._jobs.pop(job_token, None)
+        if removed is not None:
+            self._snapshots.release(removed.snapshot_handle)
+        return MappingProxyType(dict(_plain(result)))
 
     def cancel(self, job_token: str, *, session_id: str) -> None:
         with self._lock:
