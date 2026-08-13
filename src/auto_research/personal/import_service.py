@@ -12,6 +12,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol
 
 from auto_research.personal.ai_import_suggestions import (
@@ -138,6 +139,26 @@ class PersonalImportPreview:
             "status": self.status.public_dict(),
             "preview": self.preview.as_dict(),
         }
+
+
+@dataclass(frozen=True)
+class PersonalSuggestionContext:
+    """Backend-only immutable input to one reviewed AI suggestion call."""
+
+    import_id: str
+    sheet_index: int
+    messages: tuple[Mapping[str, str], ...]
+    prompt_warnings: tuple[str, ...]
+    # Keep the local stale authority separate from the deliberately bounded
+    # outbound prompt.  Future preview fields that affect suggestions must be
+    # added to the preview fingerprint envelope in _suggestion_context_locked.
+    preview_fingerprint: str
+    outbound_fingerprint: str
+    byte_count: int
+    sheet_name: str
+    row_count: int
+    column_count: int
+    sample_row_count: int
 
 
 @dataclass
@@ -426,18 +447,9 @@ class PersonalImportService:
     ) -> PersonalImportSuggestion:
         """Return one bounded AI candidate; this never confirms or writes data."""
 
+        context = self.prepare_suggestion_context(import_id, sheet_index=sheet_index)
         with self._lock:
             session = self._require_session(import_id)
-            if (
-                isinstance(sheet_index, bool)
-                or not isinstance(sheet_index, int)
-                or not 0 <= sheet_index < len(session.preview.sheets)
-            ):
-                raise _service_error(
-                    "personal_request_invalid",
-                    "工作表选择无效。",
-                    details={"field": "sheet_index"},
-                )
             if session.suggestions is not None and sheet_index in session.suggestions:
                 return session.suggestions[sheet_index]
             if self._suggestion_model is None:
@@ -446,21 +458,103 @@ class PersonalImportService:
                     "尚未配置 DeepSeek；仍可使用本地预览并手动检查。",
                     retryable=False,
                 )
-            key = (import_id, sheet_index)
+            model = self._suggestion_model
+        return self.suggest_from_prepared_context(
+            context,
+            model=model,
+            provider=self._suggestion_provider_label,
+        )
+
+    def prepare_suggestion_context(
+        self,
+        import_id: str,
+        *,
+        sheet_index: int,
+    ) -> PersonalSuggestionContext:
+        """Freeze the exact bounded prompt input without calling a model."""
+
+        with self._lock:
+            return self._suggestion_context_locked(import_id, sheet_index)
+
+    def has_cached_suggestion(self, import_id: str, *, sheet_index: int) -> bool:
+        """Tell a server-side assembler whether a paid suggestion already exists."""
+
+        with self._lock:
+            session = self._require_session(import_id)
+            self._suggestion_context_locked(import_id, sheet_index)
+            return bool(
+                session.suggestions is not None
+                and sheet_index in session.suggestions
+            )
+
+    def suggestion_context_fingerprint(
+        self,
+        import_id: str,
+        *,
+        sheet_index: int,
+    ) -> str:
+        """Return only the current prompt-context fingerprint for stale checks."""
+
+        return self.prepare_suggestion_context(
+            import_id,
+            sheet_index=sheet_index,
+        ).preview_fingerprint
+
+    def suggest_from_prepared_context(
+        self,
+        context: PersonalSuggestionContext,
+        *,
+        model: PersonalSuggestionModel,
+        provider: str,
+        allow_cached: bool = True,
+    ) -> PersonalImportSuggestion:
+        """Run and validate one exact prepared call; never save or confirm data."""
+
+        if not isinstance(context, PersonalSuggestionContext):
+            raise _service_error(
+                "personal_request_invalid",
+                "AI 识别请求无效。",
+                details={"field": "context"},
+            )
+        key = (context.import_id, context.sheet_index)
+        with self._lock:
+            current_context = self._suggestion_context_locked(*key)
+            if (
+                current_context.preview_fingerprint != context.preview_fingerprint
+                or current_context.outbound_fingerprint != context.outbound_fingerprint
+                or current_context.messages != context.messages
+                or current_context.prompt_warnings != context.prompt_warnings
+                or current_context.byte_count != context.byte_count
+            ):
+                raise _service_error(
+                    "personal_ai_context_changed",
+                    "表格预览已变化，请重新生成识别请求。",
+                    retryable=True,
+                )
+            session = self._require_session(context.import_id)
+            if (
+                session.suggestions is not None
+                and context.sheet_index in session.suggestions
+            ):
+                if allow_cached:
+                    return session.suggestions[context.sheet_index]
+                raise _service_error(
+                    "personal_ai_already_suggested",
+                    "该表格已有识别建议，请直接查看现有结果。",
+                    retryable=False,
+                )
             if key in self._suggestions_in_flight:
                 raise _service_error(
                     "personal_ai_busy",
                     "该表格正在生成识别建议，请稍候。",
                     retryable=True,
                 )
-            sheet = session.preview.sheets[sheet_index]
-            messages, prompt_warnings = build_suggestion_messages(sheet)
+            sheet = session.preview.sheets[context.sheet_index]
             self._suggestions_in_flight.add(key)
-            model = self._suggestion_model
 
         try:
             payload = model.request_json(
-                messages,
+                [dict(message) for message in context.messages],
                 task="analysis",
                 max_tokens=6_000,
                 thinking=False,
@@ -472,38 +566,98 @@ class PersonalImportService:
             if type(exc).__name__ == "DeepSeekNotConfigured":
                 raise _service_error(
                     "personal_ai_not_configured",
-                    "尚未配置 DeepSeek；仍可使用本地预览并手动检查。",
+                    "尚未配置 AI；仍可使用本地预览并手动检查。",
                     retryable=False,
                 ) from exc
             raise _service_error(
                 "personal_ai_unavailable",
-                "DeepSeek 暂时无法完成识别；本地预览不受影响。",
+                "AI 暂时无法完成识别；本地预览不受影响。",
                 retryable=True,
             ) from exc
         try:
             suggestion = validate_suggestion_payload(
-                import_id=import_id,
-                sheet_index=sheet_index,
+                import_id=context.import_id,
+                sheet_index=context.sheet_index,
                 sheet=sheet,
                 payload=payload,
-                inherited_warnings=prompt_warnings,
-                provider=self._suggestion_provider_label,
+                inherited_warnings=context.prompt_warnings,
+                provider=" ".join(str(provider or "AI").split())[:80] or "AI",
             )
         except PersonalImportSuggestionError as exc:
             with self._lock:
                 self._suggestions_in_flight.discard(key)
             raise _service_error(
                 "personal_ai_invalid_response",
-                "DeepSeek 返回的识别建议未通过本地校验，请重试或直接检查本地预览。",
+                "AI 返回的识别建议未通过本地校验，请重试或直接检查本地预览。",
                 retryable=True,
             ) from exc
         with self._lock:
             self._suggestions_in_flight.discard(key)
-            current = self._require_session(import_id)
+            latest = self._suggestion_context_locked(*key)
+            if (
+                latest.preview_fingerprint != context.preview_fingerprint
+                or latest.outbound_fingerprint != context.outbound_fingerprint
+            ):
+                raise _service_error(
+                    "personal_ai_context_changed",
+                    "表格预览已变化，请重新生成识别请求。",
+                    retryable=True,
+                )
+            current = self._require_session(context.import_id)
             if current.suggestions is None:
                 current.suggestions = {}
-            current.suggestions[sheet_index] = suggestion
+            current.suggestions[context.sheet_index] = suggestion
             return suggestion
+
+    def _suggestion_context_locked(
+        self,
+        import_id: str,
+        sheet_index: int,
+    ) -> PersonalSuggestionContext:
+        session = self._require_session(import_id)
+        if (
+            isinstance(sheet_index, bool)
+            or not isinstance(sheet_index, int)
+            or not 0 <= sheet_index < len(session.preview.sheets)
+        ):
+            raise _service_error(
+                "personal_request_invalid",
+                "工作表选择无效。",
+                details={"field": "sheet_index"},
+            )
+        sheet = session.preview.sheets[sheet_index]
+        messages, warnings = build_suggestion_messages(sheet)
+        outbound_canonical = json.dumps(
+            messages,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        preview_canonical = json.dumps(
+            {
+                "source_sha256": sheet.source_file.sha256,
+                "sheet_name": sheet.sheet_name,
+                "row_count": int(sheet.row_count),
+                "columns": [column.as_dict() for column in sheet.columns],
+                "sample_rows": [dict(row) for row in sheet.sample_rows],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return PersonalSuggestionContext(
+            import_id=import_id,
+            sheet_index=sheet_index,
+            messages=tuple(MappingProxyType(dict(message)) for message in messages),
+            prompt_warnings=tuple(warnings),
+            preview_fingerprint=hashlib.sha256(preview_canonical).hexdigest(),
+            outbound_fingerprint=hashlib.sha256(outbound_canonical).hexdigest(),
+            byte_count=len(outbound_canonical),
+            sheet_name=sheet.sheet_name,
+            row_count=sheet.row_count,
+            column_count=len(sheet.columns),
+            sample_row_count=min(len(sheet.sample_rows), 5),
+        )
 
     def import_reviewed(
         self,
