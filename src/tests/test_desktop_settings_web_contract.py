@@ -59,13 +59,18 @@ class DesktopSettingsWebContractTests(unittest.TestCase):
         ):
             self.assertNotIn(stale, self.app)
 
-    def test_prepared_action_ports_fail_closed_without_guessing_routes(self) -> None:
+    def test_prepared_action_ports_use_frozen_routes_and_strict_bodies(self) -> None:
         self.assertIn("prepareAIAction", self.app)
         self.assertIn("issuePreparedConsent", self.app)
         self.assertIn("executePreparedAIAction", self.app)
-        self.assertIn("aiPreparedActions: null", self.app)
-        self.assertIn("ai_consent_service_unavailable", self.app)
-        self.assertIn("ai_execution_service_unavailable", self.app)
+        self.assertIn("aiPreparedActions: aiPreparedActionRoutes", self.app)
+        self.assertIn('aiConsent: "/api/desktop/ai/consents"', self.app)
+        self.assertIn('`${root}/prepare`', self.app)
+        self.assertIn('`${root}/execute`', self.app)
+        self.assertIn("AI_ACTION_SCOPES.has(scope)", self.app)
+        self.assertIn("JSON.stringify(domainRequest)", self.app)
+        self.assertIn("JSON.stringify({ action_id: actionId })", self.app)
+        self.assertIn("JSON.stringify({ action_id: actionId, consent_nonce: consentNonce })", self.app)
         self.assertNotIn("JSON.stringify({ scope:", self.app)
         self.assertNotIn("consent: true", self.app)
 

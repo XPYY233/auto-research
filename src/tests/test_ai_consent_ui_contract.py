@@ -74,6 +74,7 @@ class AIConsentUIContractTests(unittest.TestCase):
         self.assertIn("prepared.model", authorization)
         self.assertIn("prepared.display", authorization)
         self.assertNotIn("prepared.summary", authorization)
+        self.assertIn("AI_ACTION_CALL_LIMITS[scope]", authorization)
         self.assertIn("globalThis.confirm", authorization)
         self.assertLess(
             authorization.index("AutoResearchAIConsent.ensure(scope, context)"),

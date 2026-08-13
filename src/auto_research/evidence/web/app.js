@@ -40,15 +40,23 @@ const librarianMatchOrder = { direct: 0, adjacent: 1, expansion: 2 };
 const reviewPageSize = 80;
 const desktopCsrfHeader = "X-Auto-Research-CSRF";
 let desktopCsrfToken = "";
+const AI_ACTION_SCOPES = new Set(["librarian", "selected_evidence_chat", "literature_extraction", "personal_suggestion"]);
+const AI_ACTION_CALL_LIMITS = Object.freeze({ librarian: 8, selected_evidence_chat: 1, literature_extraction: 8, personal_suggestion: 1 });
+
+function aiPreparedActionRoutes(scope) {
+  if (!AI_ACTION_SCOPES.has(scope)) return null;
+  const root = `/api/desktop/ai/actions/${scope}`;
+  return Object.freeze({ prepare: `${root}/prepare`, execute: `${root}/execute` });
+}
+
 const DESKTOP_API_ROUTES = Object.freeze({
   settings: "/api/desktop/settings",
   preferences: "/api/desktop/settings/preferences",
   aiProviders: "/api/desktop/ai/providers",
   aiSettings: "/api/desktop/ai/settings",
   aiCredential: providerId => `/api/desktop/ai/credentials/${encodeURIComponent(providerId)}`,
-  // Prepared-action HTTP routes are filled only after every domain controller
-  // freezes its public URI. Renderer code must never sign an arbitrary action.
-  aiPreparedActions: null,
+  aiConsent: "/api/desktop/ai/consents",
+  aiPreparedActions: aiPreparedActionRoutes,
 });
 
 function desktopRequestOptions(options = {}) {
@@ -131,6 +139,11 @@ function aiProviderLabel() {
 }
 
 async function authorizePreparedAIAction(domain, scope, domainRequest) {
+  if (domain !== scope || !AI_ACTION_SCOPES.has(scope)) {
+    const error = new Error("该 AI 功能未受支持。");
+    error.code = "ai_action_scope_invalid";
+    throw error;
+  }
   const prepared = await globalThis.AutoResearchDesktopPorts.prepareAIAction(domain, domainRequest);
   if (scope === "librarian" && prepared?.librarian_core_version === "librarian-v3") {
     return { local_result: prepared };
@@ -148,7 +161,8 @@ async function authorizePreparedAIAction(domain, scope, domainRequest) {
   // data boundary. Every billable prepared action is confirmed separately.
   if (globalThis.AutoResearchAIConsent.ensure(scope, context) !== true) return null;
   const calls = Number(prepared.maximum_calls);
-  if (!Number.isInteger(calls) || calls < 1 || calls > 8) throw new Error("AI 操作调用预算无效，请重试。");
+  const callLimit = AI_ACTION_CALL_LIMITS[scope];
+  if (!Number.isInteger(calls) || calls < 1 || calls > callLimit) throw new Error("AI 操作调用预算无效，请重试。");
   const actionLabel = String(prepared.display || "AI 请求").slice(0, 80);
   const modelLabel = Array.isArray(prepared.model)
     ? prepared.model.join("、")
@@ -161,22 +175,39 @@ async function authorizePreparedAIAction(domain, scope, domainRequest) {
   return { action_id: prepared.action_id, consent_nonce: issued.nonce };
 }
 
-async function prepareAIAction(_domain, _domainRequest) {
-  const error = new Error("AI 知情同意服务正在接入，请稍后重试。");
-  error.code = "ai_consent_service_unavailable";
-  throw error;
+function invalidAIActionRequest() {
+  const error = new Error("AI 操作请求无效。");
+  error.code = "ai_action_request_invalid";
+  return error;
 }
 
-async function issuePreparedConsent(_actionId) {
-  const error = new Error("AI 知情同意服务正在接入，请稍后重试。");
-  error.code = "ai_consent_service_unavailable";
-  throw error;
+async function prepareAIAction(scope, domainRequest) {
+  const routes = DESKTOP_API_ROUTES.aiPreparedActions(scope);
+  if (!routes || !domainRequest || typeof domainRequest !== "object" || Array.isArray(domainRequest)) throw invalidAIActionRequest();
+  return api(routes.prepare, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(domainRequest),
+  });
 }
 
-async function executePreparedAIAction(_domain, _actionId, _consentNonce) {
-  const error = new Error("AI 执行服务正在接入，请稍后重试。");
-  error.code = "ai_execution_service_unavailable";
-  throw error;
+async function issuePreparedConsent(actionId) {
+  if (typeof actionId !== "string" || !actionId || actionId.length > 4096) throw invalidAIActionRequest();
+  return api(DESKTOP_API_ROUTES.aiConsent, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action_id: actionId }),
+  });
+}
+
+async function executePreparedAIAction(scope, actionId, consentNonce) {
+  const routes = DESKTOP_API_ROUTES.aiPreparedActions(scope);
+  if (!routes || typeof actionId !== "string" || !actionId || actionId.length > 4096 || typeof consentNonce !== "string" || !consentNonce || consentNonce.length > 4096) throw invalidAIActionRequest();
+  return api(routes.execute, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action_id: actionId, consent_nonce: consentNonce }),
+  });
 }
 
 globalThis.AutoResearchDesktopPorts = Object.freeze({
