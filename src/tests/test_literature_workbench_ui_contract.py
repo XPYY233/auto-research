@@ -75,7 +75,10 @@ class LiteratureWorkbenchUIContractTests(unittest.TestCase):
         load = self.app[self.app.index("async function loadCurrentPaper"):self.app.index("async function loadEvidenceAuditForPaper")]
         self.assertIn('state.qualityCandidates.length ? "quality"', load)
         self.assertEqual(self.index.count('id="run-current-extraction"'), 1)
-        self.assertIn("AutoResearchAIConsent?.ensure?.('literature_extraction')", self.app)
+        extraction = self.app[self.app.index("async function runPreparedLiteratureWorkflow"):self.app.index("async function saveCurrentSnapshot")]
+        self.assertIn('authorizePreparedAIAction("literature_extraction", "literature_extraction"', extraction)
+        self.assertIn('executePreparedAIAction("literature_extraction"', extraction)
+        self.assertIn('schema_version === "literature-extraction-commit-result-v1"', self.app)
         upload = self.app[self.app.index("async function uploadPdf"):self.app.index("async function switchCurrentPaper")]
         self.assertNotIn("ensureAIConsent", upload)
 
@@ -86,7 +89,9 @@ class LiteratureWorkbenchUIContractTests(unittest.TestCase):
             "@media(max-width:899px)",
         ):
             self.assertIn(marker, self.styles)
-        self.assertIn('if (name !== "paper") setLiteratureInspector(false)', self.app)
+        switch_view = self.app[self.app.index("function switchView(name"):self.app.index("function setFocusReview")]
+        self.assertIn('if (name !== "paper") {', switch_view)
+        self.assertIn("setLiteratureInspector(false);", switch_view)
         self.assertIn('if (next !== "review") setLiteratureInspector(false)', self.app)
         current_paper_load = self.app[self.app.index("async function loadCurrentPaper"):self.app.index("async function loadEvidenceAuditForPaper")]
         self.assertIn("setLiteratureInspector(false);", current_paper_load)
@@ -102,6 +107,20 @@ class LiteratureWorkbenchUIContractTests(unittest.TestCase):
         self.assertNotIn("/* One literature workflow reuses", self.legacy_styles)
         for legacy_upload in (".upload-layout{", ".upload-card{", ".upload-drop{", ".upload-result-card{"):
             self.assertNotIn(legacy_upload, self.legacy_styles)
+
+    def test_multistage_ai_status_is_transient_and_never_exposes_job_token(self) -> None:
+        self.assertEqual(self.index.count('id="literature-ai-stage"'), 1)
+        self.assertIn('aria-live="polite"', self.index)
+        self.assertNotIn("job_token", self.index)
+        workflow = self.app[
+            self.app.index("const literatureStageKeys"):
+            self.app.index("async function saveCurrentSnapshot")
+        ]
+        self.assertIn("domainRequest = { job_token: result.job_token }", workflow)
+        self.assertIn("setLiteratureStageSummary(result)", workflow)
+        self.assertIn("if (isLiteratureCommitResult(result))", workflow)
+        self.assertIn("document.body.dataset.view !== \"paper\"", workflow)
+        self.assertNotIn("localStorage", workflow)
 
 
 if __name__ == "__main__":

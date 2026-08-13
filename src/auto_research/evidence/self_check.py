@@ -42,7 +42,10 @@ def _csv_bytes(rows: list[dict[str, Any]]) -> bytes:
 def _web_ui_contract() -> dict[str, Any]:
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
-    css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
+    css = "\n".join(
+        (WEB_DIR / name).read_text(encoding="utf-8")
+        for name in ("app.css", "workbench.css")
+    )
     source_viewer_js = js.split("async function openSourceViewer", 1)[-1].split("function collectRowFields", 1)[0]
     librarian_request_js = js.split(
         "function librarianResearchRequest", 1
@@ -58,7 +61,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("review_negative_decisions", "id=\"review-decision-dialog\"" in html and "存在歧义" in js and "不采用" in js and "/decision" in js and "恢复待审核" in js),
         ("review_reopen_all_states", all(action in js for action in ('"confirmation", "correction", "rejected", "ambiguous"', "确定将 #", "已保存版本、自动抽取原始版本和修正历史都会保留"))),
         ("optional_reviewer_note", "id=\"selected-review-note\"" in js and "可选，不属于六列数据" in js and "人工核验备注" in js and "reviewNotes" in js and ".review-note-panel" in css),
-        ("review_feedback_refresh", "refreshReviewFeedback" in js and "/api/papers" in js and "/api/learning-report" in js),
+        ("review_feedback_refresh", "refreshReviewFeedback" in js and "/api/papers" in js and "/api/current-paper/extraction" in js),
         ("review_source_sort", "id=\"review-sort\"" in html and "sortReviewRows" in js and "sourcePageNumber" in js and "unreviewed_source" in js),
         ("review_priority_queue", 'value="priority"' in html and "review_priority_score" in js and "review_priority_counts" in js),
         ("compact_article_tools", "id=\"article-tools\"" in html and "提取、导出与文章状态" in html and ".article-tools" in css),
@@ -68,16 +71,15 @@ def _web_ui_contract() -> dict[str, Any]:
         ("row_source_button", "data-source-row" in js and "source-action" in js and "openSourceViewer(Number(btn.dataset.sourceRow))" in js),
         ("item_id_review_filter", "item_id" in html and "rowFilterText" in js and "stable_key" in js),
         ("unsaved_dirty_guard", "hasUnsavedEdits" in js and "beforeunload" in js and "confirmDiscardUnsaved" in js),
-        ("manual_entry", "id=\"manual-form\"" in html and "id=\"manual-paper-select\"" in html and "/api/six-data/manual" in js),
-        ("manual_no_original", "人工补录数据" in js and "没有不可变的原始版本" in js),
-        ("learning_guidance_preview", "id=\"learning-guidance-card\"" in html and "renderLearningGuidanceCard" in js and "/api/current-paper/learning-report" in js),
+        ("single_review_action", "保存当前修正" in js and "保存并下一条" in js and "id=\"manual-form\"" not in html),
+        ("retired_manual_history", "id=\"manual-form\"" not in html and "id=\"view-history\"" not in html and "/api/six-data/manual" not in js),
         ("search_engine", "id=\"search-form\"" in html and "/api/six-search" in js and 'data-search-scope="all"' in html),
         ("search_filters_and_export", all(item in html for item in ("search-source-filter", "search-quality-filter", "search-sort")) and "itemSearchParams" in js and "search-active-filters" in html),
         ("multi_paper_search_scope", 'data-search-scope="selected"' in html and "/api/search-papers" in js and "selectedSearchPaperParam" in js),
         ("automatic_quality_gate", "/api/current-paper/quality-run" in js and all(label in js for label in ("双路一致通过", "第三次复核通过", "自动拦截")) and "data-quality-decision" not in js),
         ("search_guidance_and_shortcut", "search-suggestions" in html and "renderSearchSuggestions" in js and "focusSearchShortcut" in js and "recentSearches" in js),
         ("four_mode_evidence_search", all(mode in html for mode in ("数据条目", "原始表格", "论文图片", "实验结论")) and "/api/visual-search" in js and "/api/qualitative-search" in js and "setSearchMode" in js),
-        ("librarian_agent_primary", 'data-search-experience="agent"' in html and "问图书管理员" in html and "/api/agents/librarian/chat" in js and "setSearchExperience('agent')" in js),
+        ("librarian_agent_primary", 'data-search-experience="agent"' in html and "问图书管理员" in html and "authorizePreparedAIAction('librarian', 'librarian'" in js and "setSearchExperience('agent')" in js),
         (
             "librarian_full_corpus_scope",
             "检索范围：官方文献全库（不含我的实验）" in js
@@ -88,7 +90,7 @@ def _web_ui_contract() -> dict[str, Any]:
                 encoding="utf-8"
             ),
         ),
-        ("librarian_progress_feedback", 'id="librarian-progress"' in html and "startLibrarianProgress" in js and "codexPetWork" in css and "codex-pet-working.webp" in css),
+        ("librarian_progress_feedback", 'id="librarian-progress"' in html and "startLibrarianProgress" in js and "library-progress-mark" in css and "codex-pet-working.webp" not in css),
         ("librarian_typed_results", all(f'data-librarian-result-type="{kind}"' in html for kind in ("item", "table", "figure", "finding")) and "setLibrarianResultType" in js),
         ("librarian_local_history", 'id="librarian-history-list"' in html and "librarianHistoryStorageKey" in js and "restoreLibrarianSession" in js),
         ("librarian_protocol_guard", "DSML" in js and "librarianMarkdown" in js),
@@ -97,7 +99,7 @@ def _web_ui_contract() -> dict[str, Any]:
         ("qualitative_result_export", "/api/qualitative-export.csv" in js and "/api/qualitative-export.xlsx" in js and '["item", "finding"]' in js),
         ("resilient_boot_and_release", "apiOptional" in js and "runtimeWarnings" in js and "id=\"runtime-warning\"" in html and "id=\"release-badge\"" in html),
         ("physical_fact_clustering", all(token in js for token in ("fact_cluster_size", "evidence_occurrences", "data-source-member", "重复记录已合并"))),
-        ("complete_visual_dialog", "id=\"visual-dialog\"" in html and "id=\"visual-image\"" in html and "openVisualAsset" in js and ".visual-dialog-layout" in css),
+        ("complete_visual_dialog", "id=\"visual-dialog\"" in html and "id=\"visual-image\"" in html and "openVisualAsset" in js and ".evidence-workspace-card" in css),
         ("visual_review_objects", all(token in html for token in ('data-review-object="data"', 'data-review-object="table"', 'data-review-object="figure"', 'id="visual-review-workspace"')) and "/api/current-paper/visual-assets" in js and "/review" in js and "saveVisualReview" in js),
         ("table_result_collapsing", "table-result-group" in js and "同一原表" in js and "展开其余" in js),
         ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
@@ -126,7 +128,7 @@ def _web_ui_contract() -> dict[str, Any]:
             and 'id="item-detail-panel"' in html
             and 'id="visual-detail-panel"' in html
             and "说明这个数据本身的含义，并总结该数据在文章中的具体含义" in html
-            and "/api/context-chat" in js
+            and "authorizePreparedAIAction(\"selected_evidence_chat\", \"selected_evidence_chat\"" in js
             and "data-item-detail" in js
             and "openItemDetail" in js
             and "openVisualAsset" in js
@@ -182,9 +184,9 @@ def _requirement_summary(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "evidence": details("web_ui_contract"),
         },
         {
-            "id": "manual_entry_without_original",
-            "ok": ok("web_ui_contract") and ui_ok("manual_entry", "manual_no_original"),
-            "requirement": "支持人工补录漏识别数据；人工补录记录没有伪造的自动原始版本。",
+            "id": "single_review_without_manual_entry",
+            "ok": ok("web_ui_contract") and ui_ok("single_review_action", "retired_manual_history"),
+            "requirement": "用户只需核对已有候选并保存修正；产品不再暴露人工补录或独立修正历史入口。",
             "evidence": details("web_ui_contract"),
         },
         {

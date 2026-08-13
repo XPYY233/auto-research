@@ -1,6 +1,7 @@
-const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", paperStage: "review", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchExperience: "agent", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, evidenceInspectorRequest: 0, librarianMessages: [], librarianResults: [], librarianBusy: false, librarianResultType: "item", librarianSessions: [], librarianSessionId: null, librarianHistoryQuery: "", librarianMeta: {}, librarianResearchContexts: new Map(), librarianBriefAuth: null, librarianProgressTimer: null, librarianProgressStarted: 0, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, learning: null, allLearning: null, learningReport: null, allLearningReport: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, aiCatalog: null, aiPublicState: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
+const state = { paper: null, papers: [], searchPapers: [], searchScope: "all", selectedPaperIds: new Set(), searchPaperQuery: "", testSet: null, paperFilters: { query: "", author: "", topic: "all", status: "all", scope: "all" }, rows: [], selected: null, filter: "", reviewFilter: "all", reviewSort: "review_priority", reviewVisibleLimit: 80, reviewObject: "data", paperStage: "review", visualAssets: [], qualityRun: null, qualityCandidates: [], calibrationReviewIds: new Set(), calibrationActive: false, calibrationBatchTotal: 0, reviewNotes: new Map(), fieldDirtyRows: new Set(), search: "", searchExperience: "agent", searchMode: "item", searchFilters: { review: "all", source: "all", quality: "all", sort: "relevance" }, searchResults: [], searchRequest: 0, searchComposing: false, evidenceInspectorRequest: 0, librarianMessages: [], librarianResults: [], librarianBusy: false, librarianResultType: "item", librarianSessions: [], librarianSessionId: null, librarianHistoryQuery: "", librarianMeta: {}, librarianResearchContexts: new Map(), librarianBriefAuth: null, librarianProgressTimer: null, librarianProgressStarted: 0, visualAsset: null, detailItem: null, extraction: null, experimentProfile: null, audit: null, deepseekRun: null, uploads: [], jobs: [], ai: null, aiCatalog: null, aiPublicState: null, uiMode: { read_only: false }, runtimeWarnings: new Map(), dirtyRows: new Set(), progressTimer: null, progressValue: 0, focusReview: false, reviewDecision: null };
 let librarianPendingSynthesis = null;
 let librarianStageGeneration = 0;
+let literatureWorkflowGeneration = 0;
 const contextChat = { entity: null, conversations: new Map(), busy: false };
 const defaultContextQuestion = "说明这个数据本身的含义，并总结该数据在文章中的具体含义";
 const fields = ["value_text", "meaning", "unit", "article_title", "doi", "context_explanation"];
@@ -12,8 +13,6 @@ const viewCopy = {
   personal: { kicker: "EXPERIMENT DATA INTAKE", title: "上传实验数据", subtitle: "受信 AI 提供商可预填 CSV、TSV 或 XLSX；你只需浏览、修正错误并一次确认导入。" },
   package: { kicker: "PACKAGE CENTER", title: "资料包中心", subtitle: "管理官方资料库，导出或导入课题组内部论文集合与私人实验资料包。" },
   settings: { kicker: "WORKBENCH SETTINGS", title: "设置", subtitle: "管理当前设备的外观、语言、模型服务和数据入口。" },
-  manual: { kicker: "MANUAL ENTRY", title: "补录遗漏数据", subtitle: "历史兼容视图；当前产品不再提供导航入口。" },
-  history: { kicker: "REVISION HISTORY", title: "查看修正记录", subtitle: "历史兼容视图；当前产品不再提供导航入口。" },
 };
 const fieldLabels = {
   value_text: "具体数值",
@@ -138,7 +137,7 @@ function aiProviderLabel() {
   return state.aiPublicState?.provider_label || "AI 提供商";
 }
 
-async function authorizePreparedAIAction(domain, scope, domainRequest) {
+async function authorizePreparedAIAction(domain, scope, domainRequest, confirmationDetail = "") {
   if (domain !== scope || !AI_ACTION_SCOPES.has(scope)) {
     const error = new Error("该 AI 功能未受支持。");
     error.code = "ai_action_scope_invalid";
@@ -167,7 +166,8 @@ async function authorizePreparedAIAction(domain, scope, domainRequest) {
   const modelLabel = Array.isArray(prepared.model)
     ? prepared.model.join("、")
     : String(prepared.model || "当前已选模型");
-  if (typeof globalThis.confirm !== "function" || !globalThis.confirm(`${actionLabel}\n\n将使用 ${context.label} 的 ${modelLabel}，本次最多调用 ${calls} 次，可能产生 API 费用。\n\n是否授权本次操作？`)) return null;
+  const detail = typeof confirmationDetail === "string" && confirmationDetail ? `${confirmationDetail}\n\n` : "";
+  if (typeof globalThis.confirm !== "function" || !globalThis.confirm(`${actionLabel}\n\n${detail}将使用 ${context.label} 的 ${modelLabel}，本次最多调用 ${calls} 次，可能产生 API 费用。\n\n是否授权本次操作？`)) return null;
   const issued = await globalThis.AutoResearchDesktopPorts.issuePreparedConsent(prepared.action_id);
   if (issued?.schema_version !== "ai-consent-v1" || issued.scope !== scope || issued.provider_id !== context.provider_id || issued.disclosure_version !== context.disclosure_version || typeof issued.nonce !== "string" || !issued.nonce) {
     throw new Error("AI 知情同意凭证无效，请重试。");
@@ -456,16 +456,12 @@ async function load() {
 
 async function loadCurrentPaper() {
   setLiteratureInspector(false);
-  [state.paper, state.rows, state.visualAssets, state.extraction, state.experimentProfile, state.learning, state.allLearning, state.learningReport, state.allLearningReport, state.deepseekRun, state.qualityRun, state.qualityCandidates] = await Promise.all([
+  [state.paper, state.rows, state.visualAssets, state.extraction, state.experimentProfile, state.deepseekRun, state.qualityRun, state.qualityCandidates] = await Promise.all([
     api("/api/current-paper"),
     api("/api/six-data"),
     apiOptional("/api/current-paper/visual-assets", [], "当前文章图表证据"),
     apiOptional("/api/current-paper/extraction", null, "当前文章处理状态"),
     apiOptional("/api/current-paper/experiment-profile", null, "实验类型识别"),
-    apiOptional("/api/current-paper/learning-samples", null, "当前文章学习样本"),
-    apiOptional("/api/learning-samples", null, "全库学习样本"),
-    apiOptional("/api/current-paper/learning-report", null, "当前文章学习报告"),
-    apiOptional("/api/learning-report", null, "全库学习报告"),
     apiOptional("/api/current-paper/deepseek-run", null, "DeepSeek 运行记录"),
     apiOptional("/api/current-paper/quality-run", null, "自动质量门状态"),
     apiOptional("/api/current-paper/quality-candidates?status=manual_review", [], "自动拦截队列"),
@@ -490,8 +486,6 @@ async function loadCurrentPaper() {
   renderQualityStatus();
   renderReviewObject();
   renderTable();
-  renderHistory();
-  fillManualDefaults();
   void loadEvidenceAuditForPaper(Number(state.paper.id));
 }
 
@@ -716,16 +710,6 @@ function renderPaperOptions() {
     switchSelect.value = preferred;
     switchSelect.disabled = !filteredPapers.length;
   }
-  const manualSelect = document.querySelector("#manual-paper-select");
-  if (manualSelect) {
-    const previous = manualSelect.value;
-    manualSelect.innerHTML = paperOptionHtml(state.papers, testOrder);
-    if (previous && state.papers.some(paper => String(paper.id) === previous)) {
-      manualSelect.value = previous;
-    } else if (state.paper) {
-      manualSelect.value = String(state.paper.id);
-    }
-  }
   const submit = document.querySelector("#paper-switch-submit");
   if (submit) submit.disabled = !filteredPapers.length;
   const summary = document.querySelector("#paper-filter-summary");
@@ -779,41 +763,30 @@ function renderPaper() {
 
 async function refreshReviewFeedback({ includeAudit = false } = {}) {
   const currentPaperId = state.paper?.id;
-  const commonRequests = [
-    api("/api/papers"),
-    api("/api/learning-samples"),
-    api("/api/learning-report"),
-  ];
+  const commonRequests = [api("/api/papers")];
   const paperRequests = [];
   if (currentPaperId) {
     paperRequests.push(
-      api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(currentPaperId)}`),
-      api(`/api/current-paper/learning-report?paper_id=${encodeURIComponent(currentPaperId)}`),
       api(`/api/current-paper/extraction?paper_id=${encodeURIComponent(currentPaperId)}`),
     );
     if (includeAudit) {
       paperRequests.push(api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(currentPaperId)}`));
     }
   }
-  const [[papers, allLearning, allLearningReport], paperPayload] = await Promise.all([
+  const [[papers], paperPayload] = await Promise.all([
     Promise.all(commonRequests),
     Promise.all(paperRequests),
   ]);
   state.papers = papers;
-  state.allLearning = allLearning;
-  state.allLearningReport = allLearningReport;
   if (currentPaperId) {
-    state.learning = paperPayload[0];
-    state.learningReport = paperPayload[1];
-    state.extraction = paperPayload[2];
-    if (includeAudit) state.audit = paperPayload[3];
+    state.extraction = paperPayload[0];
+    if (includeAudit) state.audit = paperPayload[1];
     applyReviewPriorities();
   }
   renderPaperOptions();
   renderPaper();
   renderExtractionStatus();
   renderEvidenceAudit();
-  renderHistory();
 }
 
 function setReviewRowBusy(itemId, busy, label = "正在保存…") {
@@ -1893,87 +1866,6 @@ async function reopenReviewDecision(itemId) {
     toast(error.message, true);
   } finally {
     setReviewRowBusy(itemId, false);
-  }
-}
-
-function fillManualDefaults() {
-  const form = document.querySelector("#manual-form");
-  const paper = selectedManualPaper();
-  if (!form || !paper) return;
-  form.elements.article_title.value = paper.title || "";
-  form.elements.doi.value = paper.doi || "";
-}
-
-function selectedManualPaper() {
-  const select = document.querySelector("#manual-paper-select");
-  const selectedId = Number(select?.value || state.paper?.id || 0);
-  return state.papers.find(paper => Number(paper.id) === selectedId) || state.paper;
-}
-
-async function saveManual(event) {
-  event.preventDefault();
-  if (rejectReadOnlyAction("人工补录")) return;
-  const form = event.currentTarget;
-  const paper = selectedManualPaper();
-  if (!paper?.id) {
-    toast("请先选择人工数据所属文章。", true);
-    return;
-  }
-  const targetPaperId = Number(paper.id);
-  const values = {};
-  fields.forEach(field => {
-    values[field] = form.elements[field].value;
-  });
-  try {
-    const result = await api("/api/six-data/manual", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paper_id: targetPaperId, fields: values, editor: "本地研究者" }),
-    });
-    if (state.paper && targetPaperId === Number(state.paper.id)) {
-      state.rows.push(result);
-      state.learning = await api(`/api/current-paper/learning-samples?paper_id=${encodeURIComponent(state.paper.id)}`);
-      state.learningReport = await api(`/api/current-paper/learning-report?paper_id=${encodeURIComponent(state.paper.id)}`);
-      state.audit = await api(`/api/current-paper/evidence-audit?paper_id=${encodeURIComponent(state.paper.id)}`);
-      setText("nav-count", state.rows.length);
-    }
-    await refreshReviewFeedback();
-    form.reset();
-    document.querySelector("#manual-paper-select").value = String(targetPaperId);
-    fillManualDefaults();
-    if (state.paper && targetPaperId === Number(state.paper.id)) {
-      renderTable();
-      renderEvidenceAudit();
-    }
-    renderHistory();
-    toast(`人工数据已保存到《${paper.title || "所选文章"}》；未调用 DeepSeek。`);
-  } catch (error) {
-    toast(error.message, true);
-  }
-}
-
-async function importJsonResult(event) {
-  event.preventDefault();
-  if (rejectReadOnlyAction("导入 JSON")) return;
-  if (!confirmDiscardUnsaved("导入 JSON 并刷新当前表格")) return;
-  const textarea = document.querySelector("#import-json-text");
-  const jsonText = textarea.value.trim();
-  if (!jsonText) {
-    toast("请先粘贴抽取结果 JSON。", true);
-    return;
-  }
-  try {
-    const result = await api("/api/current-paper/import-json", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paper_id: state.paper.id, json_text: jsonText }),
-    });
-    textarea.value = "";
-    await loadCurrentPaper();
-    toast(`JSON 导入完成：新增 ${result.inserted} 条，已存在 ${result.existing} 条。`);
-    switchView("review");
-  } catch (error) {
-    toast(error.message, true);
   }
 }
 
@@ -3789,61 +3681,6 @@ async function jumpToRow(id) {
   }
 }
 
-function renderHistory() {
-  const changed = state.rows.filter(row => row.version_no > 0 || row.origin_type === "manual").sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-  const el = document.querySelector("#history-list");
-  const summary = document.querySelector("#learning-summary");
-  const exportLink = document.querySelector("#learning-export");
-  const exportAllLink = document.querySelector("#learning-export-all");
-  const reportLink = document.querySelector("#learning-report-export");
-  renderLearningGuidanceCard();
-  if (summary && exportLink && exportAllLink && reportLink) {
-    const learning = state.learning || { sample_count: 0, correction_count: 0, confirmation_count: 0, manual_count: 0, rejected_count: 0, ambiguous_count: 0 };
-    const allLearning = state.allLearning || { sample_count: 0 };
-    const report = state.learningReport || { included_in_prompt: false };
-    summary.textContent = learning.sample_count
-      ? `当前文章已有 ${learning.sample_count} 条学习样本：确认 ${learning.confirmation_count}、修正 ${learning.correction_count}、歧义 ${learning.ambiguous_count || 0}、不采用 ${learning.rejected_count || 0}、补录 ${learning.manual_count}。${report.included_in_prompt ? "下一次抽取会加入学习提示。" : "下一次抽取暂无学习提示。"}全库共 ${allLearning.sample_count || 0} 条。`
-      : `当前文章还没有学习样本；全库共 ${allLearning.sample_count || 0} 条。确认修正或人工补录后，这里会自动累积。`;
-    exportLink.href = `/api/current-paper/learning-samples.jsonl?paper_id=${encodeURIComponent(state.paper?.id || "")}`;
-    exportLink.classList.toggle("disabled", !learning.sample_count);
-    exportLink.setAttribute("aria-disabled", learning.sample_count ? "false" : "true");
-    exportAllLink.href = "/api/learning-samples.jsonl";
-    exportAllLink.classList.toggle("disabled", !allLearning.sample_count);
-    exportAllLink.setAttribute("aria-disabled", allLearning.sample_count ? "false" : "true");
-    reportLink.href = `/api/current-paper/learning-report.md?paper_id=${encodeURIComponent(state.paper?.id || "")}`;
-    reportLink.classList.toggle("disabled", !learning.sample_count);
-    reportLink.setAttribute("aria-disabled", learning.sample_count ? "false" : "true");
-  }
-  if (!changed.length) {
-    el.innerHTML = '<div class="blank"><h3>还没有已确认修正</h3><p>左侧表格里的临时输入不会出现在这里。</p></div>';
-    return;
-  }
-  const historyLabels = { confirmation: "确认无误", correction: "已修正", rejected: "不采用", ambiguous: "存在歧义", automatic: "恢复待审核" };
-  el.innerHTML = changed.map(row => `<article class="history-card"><span>${row.origin_type === "manual" ? "人工补录" : `${historyLabels[row.review_action] || "审核记录"} v${row.version_no}`}</span><div><strong>${esc(row.meaning)} · ${esc(row.value_text)} ${esc(row.unit)}</strong><p>${esc(row.context_explanation)}</p></div><div><strong>${esc(row.editor)}</strong><p>${esc(row.edit_note || "")}<br>${esc(row.created_at)}</p></div></article>`).join("");
-}
-
-function renderLearningGuidanceCard() {
-  const el = document.querySelector("#learning-guidance-card");
-  if (!el) return;
-  const report = state.learningReport || { sample_count: 0, included_samples: [] };
-  const allReport = state.allLearningReport || { sample_count: 0 };
-  const readinessLabels = {
-    empty: "暂无学习提示",
-    confirmations_only: "已有正例",
-    useful: "可用于优化抽取",
-  };
-  const sampleTypeLabels = { correction: "修正", confirmation: "确认", manual_addition: "人工补录", rejection: "不采用", ambiguity: "存在歧义" };
-  const included = (report.included_samples || []).slice(0, 3).map(sample => {
-    const changed = (sample.changed_labels || []).join("、") || "确认无误";
-    return `<li><strong>${esc(sampleTypeLabels[sample.sample_type] || sample.sample_type)} · #${esc(sample.item_id)}</strong><span>${esc(changed)}</span><p>${esc(sample.corrected_meaning || "")}；${esc(sample.corrected_context || "")}</p></li>`;
-  }).join("");
-  const preview = report.guidance_preview
-    ? `<details><summary>查看将加入 DeepSeek 提示的学习片段</summary><pre>${esc(report.guidance_preview)}</pre></details>`
-    : `<p class="learning-empty">还没有可加入提示的人工学习样本。</p>`;
-  const negativeCount = Number(report.rejected_count || 0) + Number(report.ambiguous_count || 0);
-  el.innerHTML = `<div><span>${esc(readinessLabels[report.readiness] || "学习状态")}</span><h3>${esc(report.message || "等待人工校对样本")}</h3><p>${esc(report.safety_rule || "学习样本只用于字段边界、失败模式和措辞偏好；不能作为新论文数据证据。")}</p></div><dl><div><dt>当前文章样本</dt><dd>${esc(report.sample_count || 0)}</dd></div><div><dt>负例/歧义</dt><dd>${esc(negativeCount)}</dd></div><div><dt>全库样本</dt><dd>${esc(allReport.sample_count || 0)}</dd></div><div><dt>进入提示</dt><dd>${esc(report.included_sample_count || 0)}</dd></div></dl><ul>${included || "<li><strong>尚无样本</strong><span>完成任一审核决定后自动出现</span></li>"}</ul>${preview}`;
-}
-
 function resetViewportTop() {
   const scrollRoot = document.scrollingElement || document.documentElement;
   if (scrollRoot) {
@@ -3900,7 +3737,11 @@ function switchView(name, options = {}) {
     paperStage = "review";
   }
   if (isReadOnly() && name !== "search") name = "search";
-  if (name !== "paper") setLiteratureInspector(false);
+  if (name !== "paper") {
+    literatureWorkflowGeneration += 1;
+    setLiteratureStageSummary(null);
+    setLiteratureInspector(false);
+  }
   if (name !== "search") {
     clearLibrarianPendingSynthesis();
     const inspector = document.querySelector("#visual-dialog");
@@ -4077,6 +3918,8 @@ async function uploadPdf(event) {
 async function switchCurrentPaper({ articleKey = null, paperId = null, silent = false } = {}) {
   if (rejectReadOnlyAction("切换当前校对文章")) return false;
   if (!confirmDiscardUnsaved("切换文章")) return false;
+  literatureWorkflowGeneration += 1;
+  setLiteratureStageSummary(null);
   const payload = {};
   if (paperId != null) payload.paper_id = paperId;
   if (articleKey != null) payload.article_key = articleKey;
@@ -4088,6 +3931,79 @@ async function switchCurrentPaper({ articleKey = null, paperId = null, silent = 
   await loadCurrentPaper();
   if (!silent) toast(`已切换到《${state.paper.title || "未命名文章"}》。`);
   return true;
+}
+
+const literatureStageKeys = new Set(["schema_version", "job_token", "stage", "paper", "call_count", "max_token_budget", "sending_scope", "possible_charges", "requires_confirmation", "expires_at", "transient", "persistence_allowed"]);
+const literatureSendingScopeKeys = new Set(["pdf_page_count", "page_block_count", "branch_count", "focus_count"]);
+const literatureCommitKeys = new Set(["schema_version", "status", "paper", "candidate_count", "published_item_count", "existing_item_count", "manual_review_count", "visual_evidence_ready", "idempotent"]);
+
+function hasExactKeys(value, keys) {
+  return value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === keys.size && Object.keys(value).every(key => keys.has(key));
+}
+
+function isLiteratureStageSummary(value) {
+  const sending = value?.sending_scope;
+  const paper = value?.paper;
+  return hasExactKeys(value, literatureStageKeys)
+    && value.schema_version === "literature-extraction-stage-summary-v1"
+    && typeof value.job_token === "string" && value.job_token.length > 0 && value.job_token.length <= 256
+    && typeof value.stage === "string" && value.stage.length > 0 && value.stage.length <= 80
+    && hasExactKeys(paper, new Set(["title", "doi"])) && typeof paper.title === "string" && (paper.doi === null || typeof paper.doi === "string")
+    && Number.isInteger(value.call_count) && value.call_count > 0 && value.call_count <= AI_ACTION_CALL_LIMITS.literature_extraction
+    && Number.isInteger(value.max_token_budget) && value.max_token_budget > 0 && value.max_token_budget <= 8_200_000
+    && hasExactKeys(sending, literatureSendingScopeKeys)
+    && [...literatureSendingScopeKeys].every(key => Number.isInteger(sending[key]) && sending[key] >= 0)
+    && value.possible_charges === true && value.requires_confirmation === true
+    && value.transient === true && value.persistence_allowed === false;
+}
+
+function isLiteratureCommitResult(value) {
+  const paper = value?.paper;
+  return hasExactKeys(value, literatureCommitKeys)
+    && value.schema_version === "literature-extraction-commit-result-v1"
+    && value.status === "completed"
+    && hasExactKeys(paper, new Set(["title", "doi"])) && typeof paper.title === "string" && (paper.doi === null || typeof paper.doi === "string")
+    && ["candidate_count", "published_item_count", "existing_item_count", "manual_review_count"].every(key => Number.isInteger(value[key]) && value[key] >= 0)
+    && value.visual_evidence_ready === false
+    && typeof value.idempotent === "boolean";
+}
+
+function literatureStageLabel(stage) {
+  return ({ extraction: "提取候选证据", coverage_gap: "补足证据覆盖", coverage_verification: "核对覆盖范围", adversarial_branches: "双路独立核验", third_review: "第三路复核" })[stage] || "继续证据核验";
+}
+
+function setLiteratureStageSummary(summary) {
+  const panel = document.querySelector("#literature-ai-stage");
+  if (!panel) return;
+  panel.hidden = !summary;
+  if (!summary) return;
+  const sending = summary.sending_scope;
+  setText("literature-ai-stage-name", literatureStageLabel(summary.stage));
+  setText("literature-ai-stage-calls", String(summary.call_count));
+  setText("literature-ai-stage-tokens", Number(summary.max_token_budget).toLocaleString("zh-CN"));
+  setText("literature-ai-stage-scope", `${sending.pdf_page_count} 页 PDF · ${sending.page_block_count} 个文本块 · ${sending.focus_count} 个重点区域 · ${sending.branch_count} 路核验`);
+}
+
+function literatureContinuationDetail(summary) {
+  const sending = summary.sending_scope;
+  return `下一阶段：${literatureStageLabel(summary.stage)}\n服务端冻结预算：${summary.call_count} 次调用 / 最多 ${Number(summary.max_token_budget).toLocaleString("zh-CN")} tokens\n发送范围：${sending.pdf_page_count} 页 PDF、${sending.page_block_count} 个文本块、${sending.focus_count} 个重点区域、${sending.branch_count} 路核验`;
+}
+
+async function runPreparedLiteratureWorkflow(initialRequest, generation) {
+  let domainRequest = initialRequest;
+  let confirmationDetail = "";
+  while (generation === literatureWorkflowGeneration) {
+    const authorization = await authorizePreparedAIAction("literature_extraction", "literature_extraction", domainRequest, confirmationDetail);
+    if (!authorization) return { cancelled: true };
+    const result = await globalThis.AutoResearchDesktopPorts.executePreparedAIAction("literature_extraction", authorization.action_id, authorization.consent_nonce);
+    if (generation !== literatureWorkflowGeneration) return { stale: true };
+    if (isLiteratureCommitResult(result)) return { commit: result };
+    if (!isLiteratureStageSummary(result)) throw new Error("文献处理返回了无法识别的阶段结果；未显示保存成功。");
+    setLiteratureStageSummary(result);
+    confirmationDetail = literatureContinuationDetail(result);
+    domainRequest = { job_token: result.job_token };
+  }
+  return { stale: true };
 }
 
 async function runCurrentExtraction() {
@@ -4104,19 +4020,11 @@ async function runCurrentExtraction() {
     toast("已取消再次扫描；当前仍显示本地已保存数据。");
     return;
   }
-  const willCallDeepSeek = status.action === 'deepseek_extract'
+  const willCallAI = status.action === 'deepseek_extract'
     || Boolean(forceRescan && status.pdf_ready && status.deepseek_ready);
   const requestPayload = { paper_id: state.paper.id, force_rescan: forceRescan };
-  if (willCallDeepSeek) {
-    try {
-      const authorization = await authorizePreparedAIAction('literature_extraction', 'literature_extraction', requestPayload);
-      if (!authorization) return toast(`已取消，未向 ${aiProviderLabel()} 发送任何论文内容。`);
-      requestPayload.action_id = authorization.action_id;
-      requestPayload.consent_nonce = authorization.consent_nonce;
-    } catch (error) {
-      return toast(error.message, true);
-    }
-  }
+  const generation = ++literatureWorkflowGeneration;
+  setLiteratureStageSummary(null);
   const previous = button.textContent;
   button.disabled = true;
   button.textContent = "处理中…";
@@ -4127,33 +4035,43 @@ async function runCurrentExtraction() {
     startProgress("一键提取并核验");
   }
   try {
-    const result = willCallDeepSeek
-      ? await globalThis.AutoResearchDesktopPorts.executePreparedAIAction("literature_extraction", requestPayload.action_id, requestPayload.consent_nonce)
+    const preparedResult = willCallAI
+      ? await runPreparedLiteratureWorkflow(requestPayload, generation)
       : await api("/api/current-paper/run-workflow", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestPayload),
         });
+    if (willCallAI && (preparedResult.cancelled || preparedResult.stale)) {
+      finishProgress(preparedResult.cancelled ? "已取消；没有继续下一阶段，也没有显示保存成功。" : "页面上下文已变化；旧任务结果已忽略。", false);
+      if (preparedResult.cancelled) toast(`已取消后续阶段；未再向 ${aiProviderLabel()} 发送论文内容。`);
+      return;
+    }
+    const result = willCallAI ? preparedResult.commit : preparedResult;
+    if (generation !== literatureWorkflowGeneration || document.body.dataset.view !== "paper") return;
     await loadCurrentPaper();
-    if (result.action === "prepare_packet") {
+    if (willCallAI) {
+      setLiteratureStageSummary(null);
+      finishProgress(`已安全保存：发布 ${result.published_item_count} 条，已存在 ${result.existing_item_count} 条，人工复核 ${result.manual_review_count} 条。`);
+      toast(`文献处理已提交：发布 ${result.published_item_count} 条证据；${result.manual_review_count} 条留待人工复核。`);
+      state.searchRequest += 1;
+      state.searchResults = [];
+      document.querySelector("#search-results")?.replaceChildren();
+    } else if (result.action === "prepare_packet") {
       finishProgress("抽取包已生成，等待导入结构化结果。");
       toast(`当前文章已切换，抽取包已生成：${result.action_result?.packet_path || "默认目录"}。`);
     } else if (result.action === "quality_extract" || result.action === "quality_rescan") {
       const summary = result.action_result?.summary || {};
       finishProgress(`完成：双路通过 ${summary.dual_pass_count || 0}，第三次复核通过 ${summary.third_pass_count || 0}，自动拦截 ${summary.manual_review_count || 0}。`);
       toast(`对抗式质量检测完成：自动发布 ${Number(summary.dual_pass_count || 0) + Number(summary.third_pass_count || 0)} 项，自动拦截 ${summary.manual_review_count || 0} 项。`);
-    } else if (result.action === "deepseek_extract" || result.action === "deepseek_preview") {
-      const visuals = result.visual_evidence || result.action_result?.visual_evidence || {};
-      finishProgress(`完成：证据核验通过 ${result.action_result?.verified_count ?? 0} 条；图表 ${visuals.table_count || 0} 张表 / ${visuals.figure_count || 0} 幅图。`);
-      toast(`DeepSeek 处理完成：通过 ${result.action_result?.verified_count ?? 0} 条；已建立 ${visuals.table_count || 0} 张表和 ${visuals.figure_count || 0} 幅图。`);
     } else {
       const extraction = result.action_result?.extraction || {};
       finishProgress(`完成：新增 ${extraction.inserted ?? 0} 条，已存在 ${extraction.existing ?? 0} 条。`);
       toast(`自动提取完成：新增 ${extraction.inserted ?? 0} 条，已存在 ${extraction.existing ?? 0} 条。`);
     }
-  } catch (error) {
-    finishProgress(`处理失败：${error.message}`, false);
-    toast(error.message, true);
+  } catch (_error) {
+    finishProgress("处理未完成；没有显示或声明保存成功。", false);
+    toast("文献处理暂未完成；本地已保存数据不受影响，可稍后重试。", true);
   } finally {
     clearInterval(state.progressTimer);
     state.progressTimer = null;
@@ -4356,9 +4274,6 @@ document.querySelector("#search-paper-clear").addEventListener("click", () => {
   runSearch(null, { remember: false });
 });
 document.addEventListener("keydown", focusSearchShortcut);
-document.querySelector("#manual-form").addEventListener("submit", saveManual);
-document.querySelector("#manual-paper-select").addEventListener("change", fillManualDefaults);
-document.querySelector("#import-json-form").addEventListener("submit", importJsonResult);
 document.querySelector("#pdf-upload-form").addEventListener("submit", uploadPdf);
 document.querySelector("#pdf-upload-file").addEventListener("change", event => {
   const file = event.target.files[0];

@@ -116,13 +116,13 @@ class EvidenceDetailWorkbenchContractTests(unittest.TestCase):
         self.assertIn(':root[data-theme="dark"]', self.styles)
         self.assertIn(':root[data-density="compact"] .source-dialog-head', self.styles)
 
-    def test_compatibility_views_have_stable_owners_but_no_navigation(self) -> None:
-        self.assertIn('id="view-manual" data-compatibility-view="manual-entry"', self.index)
-        self.assertIn('id="view-history" data-compatibility-view="revision-history"', self.index)
+    def test_retired_manual_and_revision_views_are_removed(self) -> None:
+        self.assertNotIn('id="view-manual"', self.index)
+        self.assertNotIn('id="view-history"', self.index)
         self.assertNotIn('class="nav" data-view="manual"', self.index)
         self.assertNotIn('class="nav" data-view="history"', self.index)
-        self.assertIn("manual:", self.app)
-        self.assertIn("history:", self.app)
+        self.assertNotIn('document.querySelector("#manual-form")', self.app)
+        self.assertNotIn('document.querySelector("#history-list")', self.app)
 
 
 if __name__ == "__main__":

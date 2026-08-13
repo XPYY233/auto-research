@@ -36,11 +36,11 @@ class AIConsentUIContractTests(unittest.TestCase):
 
     def test_literature_extraction_cancel_precedes_workflow_request(self) -> None:
         extraction = self.app[
-            self.app.index("async function runCurrentExtraction"):
+            self.app.index("async function runPreparedLiteratureWorkflow"):
             self.app.index("async function saveCurrentSnapshot")
         ]
-        consent = extraction.index("authorizePreparedAIAction('literature_extraction'")
-        cancel = extraction.index("未向 ${aiProviderLabel()} 发送任何论文内容")
+        consent = extraction.index('authorizePreparedAIAction("literature_extraction"')
+        cancel = extraction.index("if (!authorization) return { cancelled: true }")
         request = extraction.index('executePreparedAIAction("literature_extraction"')
         self.assertIn("status.action === 'deepseek_extract'", extraction)
         self.assertIn("forceRescan && status.pdf_ready && status.deepseek_ready", extraction)

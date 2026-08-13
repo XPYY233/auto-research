@@ -37,7 +37,7 @@ class WebViewScrollContractTests(unittest.TestCase):
         )
 
         import_start = self.product.index("async function importPackage()")
-        import_end = self.product.index("async function saveCredential", import_start)
+        import_end = self.product.index("function setPersonalProgress", import_start)
         package_import = self.product[import_start:import_end]
         self.assertIn('switchView("search", { skipSearch: true })', package_import)
         self.assertIn('setSearchExperience("precise", { run: false })', package_import)

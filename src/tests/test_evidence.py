@@ -1568,13 +1568,18 @@ class SixColumnWorkflowTests(unittest.TestCase):
     def test_search_ui_has_scientific_typesetting_and_independent_paper_scope(self):
         index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
         app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
-        app_css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
+        app_css = "\n".join(
+            (WEB_DIR / name).read_text(encoding="utf-8")
+            for name in ("app.css", "workbench.css")
+        )
+        workbench_css = (WEB_DIR / "workbench.css").read_text(encoding="utf-8")
         brief_js = (WEB_DIR / "librarian_brief.js").read_text(encoding="utf-8")
         self.assertIn('data-search-scope="selected"', index_html)
         self.assertIn("selectedSearchPaperParam", app_js)
         self.assertIn("scientificQuantityHtml", app_js)
         self.assertIn("visualTitleParts", app_js)
-        self.assertIn('font-family:"Times New Roman"', app_css)
+        self.assertIn(".wb-literature-title", workbench_css)
+        self.assertIn("font-variant-numeric:tabular-nums", workbench_css)
         self.assertNotIn('id="search-review-filter"', index_html)
         self.assertIn('id="context-chat"', index_html)
         self.assertIn(DEFAULT_CONTEXT_QUESTION, index_html)
@@ -1582,10 +1587,12 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn('id="visual-detail-panel"', index_html)
         self.assertIn("data-item-detail", app_js)
         self.assertNotIn("data-context-chat-item", app_js)
-        self.assertIn("/api/context-chat", app_js)
+        self.assertNotIn("/api/context-chat", app_js)
+        self.assertIn('"selected_evidence_chat"', app_js)
+        self.assertIn("executePreparedAIAction", app_js)
         self.assertIn('id="librarian-progress"', index_html)
         self.assertIn('id="librarian-history-list"', index_html)
-        self.assertIn('class="codex-pet-librarian"', index_html)
+        self.assertIn('class="library-progress-mark"', index_html)
         self.assertIn('data-librarian-result-type="item"', index_html)
         self.assertIn('data-librarian-result-type="table"', index_html)
         self.assertIn('data-librarian-result-type="figure"', index_html)
@@ -1594,7 +1601,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("preferredLibrarianResultType", app_js)
         self.assertIn("agent_cited", app_js)
         self.assertIn('id="librarian-result-overview"', index_html)
-        self.assertIn("codex-pet-working.webp", app_css)
+        self.assertNotIn("codex-pet-working.webp", app_css + workbench_css)
         self.assertIn("librarianHistoryStorageKey", app_js)
         self.assertIn("librarianResearchRequest", app_js)
         self.assertIn('id="librarian-brief-export"', index_html)
@@ -1640,10 +1647,10 @@ class SixColumnWorkflowTests(unittest.TestCase):
         ]
         self.assertIn("clearLibrarianBriefAuthorization();", reset_slice)
         self.assertIn("clearLibrarianBriefAuthorization();", restore_slice)
-        self.assertGreaterEqual(submit_slice.count("clearLibrarianBriefAuthorization();"), 2)
+        self.assertEqual(submit_slice.count("clearLibrarianBriefAuthorization();"), 1)
         self.assertLess(
             submit_slice.index("clearLibrarianBriefAuthorization();"),
-            submit_slice.index("await api('/api/agents/librarian/chat'"),
+            submit_slice.index("state.librarianBusy = true"),
         )
         self.assertIn("clearAuthorization: clearLibrarianBriefAuthorization", app_js)
         clear_auth_slice = app_js[
@@ -1667,7 +1674,10 @@ class SixColumnWorkflowTests(unittest.TestCase):
     def test_librarian_stage_four_report_is_progressively_enhanced(self):
         index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
         app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
-        app_css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
+        app_css = "\n".join(
+            (WEB_DIR / name).read_text(encoding="utf-8")
+            for name in ("app.css", "workbench.css")
+        )
 
         self.assertIn("function librarianReportHtml", app_js)
         self.assertIn("report.direct_conclusion", app_js)
@@ -1685,9 +1695,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("data-agent-result-ref", app_js)
         self.assertIn("setInterval(updateLibrarianProgress, 1000)", app_js)
         submit_at = app_js.index("async function submitLibrarian")
-        clear_at = app_js.index("state.librarianResults = [];", submit_at)
-        request_at = app_js.index("await api('/api/agents/librarian/chat'", submit_at)
-        self.assertLess(clear_at, request_at)
+        authorize_at = app_js.index("await authorizePreparedAIAction('librarian', 'librarian'", submit_at)
+        mutate_at = app_js.index("state.librarianBusy = true;", submit_at)
+        self.assertLess(authorize_at, mutate_at)
 
         tab_order = [
             index_html.index('data-librarian-result-type="item"'),
@@ -1977,8 +1987,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         by_name = {check["name"]: check for check in report["checks"]}
         self.assertTrue(by_name["experiment_type_detection"]["ok"])
         self.assertTrue(by_name["web_ui_contract"]["ok"])
-        self.assertIn("manual_entry", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("learning_guidance_preview", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("single_review_action", by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertIn("retired_manual_history", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("confirm_and_next", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("automatic_quality_gate", by_name["web_ui_contract"]["web_ui"]["checked"])
         self.assertIn("multi_paper_search_scope", by_name["web_ui_contract"]["web_ui"]["checked"])
@@ -2016,7 +2026,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(requirements["article_selector_to_extracted_rows"]["ok"])
         self.assertTrue(requirements["six_required_columns"]["ok"])
         self.assertTrue(requirements["editable_review_preserves_original"]["ok"])
-        self.assertTrue(requirements["manual_entry_without_original"]["ok"])
+        self.assertTrue(requirements["single_review_without_manual_entry"]["ok"])
         self.assertTrue(requirements["free_text_fuzzy_search_and_export"]["ok"])
         self.assertTrue(requirements["automatic_quality_gate"]["ok"])
 

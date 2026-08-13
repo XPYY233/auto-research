@@ -78,6 +78,34 @@ if (root.dataset.theme !== "dark" || root.dataset.density !== "compact") process
         self.assertIn('settings: { kicker: "WORKBENCH SETTINGS"', self.app)
         self.assertIn('matches?.("input,textarea,select,[contenteditable=\'true\']")', self.runtime)
 
+    def test_four_primary_shortcuts_execute_without_creating_a_second_router(self) -> None:
+        node_program = f"""
+const fs = require("fs");
+const assert = require("assert");
+const source = fs.readFileSync({str(WEB_ROOT / "workbench.js")!r}, "utf8");
+const requestStart = source.indexOf("function requestView");
+const requestEnd = source.indexOf("function viewChanged", requestStart);
+const shortcutStart = source.indexOf("function handleShortcut");
+const shortcutEnd = source.indexOf("function initialize()", shortcutStart);
+const visited = [];
+const switchView = name => {{ visited.push(name); }};
+eval(source.slice(requestStart, requestEnd) + source.slice(shortcutStart, shortcutEnd));
+for (const key of ["1", "2", "3", "4"]) {{
+  handleShortcut({{key, metaKey: true, ctrlKey: false, altKey: false, target: {{matches: () => false}}, preventDefault() {{}}}});
+}}
+assert.deepStrictEqual(visited, ["paper", "search", "personal", "package"]);
+const before = visited.length;
+handleShortcut({{key: "1", metaKey: true, ctrlKey: false, altKey: false, target: {{matches: () => true}}, preventDefault() {{}}}});
+assert.strictEqual(visited.length, before);
+"""
+        completed = subprocess.run(
+            ["node", "-e", node_program],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_roving_tabindex_and_accessible_selection_are_explicit(self) -> None:
         self.assertIn('role="tablist" aria-label="设置类别"', self.index)
         self.assertIn('role="tabpanel" data-settings-panel="appearance"', self.index)
@@ -132,6 +160,10 @@ if (root.dataset.theme !== "dark" || root.dataset.density !== "compact") process
             self.assertEqual(navigation.group(0).count(f'data-view="{view}"'), 1)
         self.assertNotIn('data-view="settings"', navigation.group(0))
         self.assertEqual(self.index.count('id="workbench-settings-open"'), 1)
+
+    def test_retired_marketing_pet_and_hidden_views_do_not_have_second_owners(self) -> None:
+        for marker in ("codex-pet-working.webp", "codex-pet-librarian", 'id="view-manual"', 'id="view-history"'):
+            self.assertNotIn(marker, self.index + self.styles)
 
 
 if __name__ == "__main__":

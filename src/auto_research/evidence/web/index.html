@@ -156,6 +156,12 @@
                 <div class="progress-track"><span id="deepseek-progress-bar"></span></div>
                 <p id="deepseek-progress-text">等待任务开始</p>
               </div>
+              <section class="literature-ai-stage" id="literature-ai-stage" hidden aria-labelledby="literature-ai-stage-name" aria-live="polite">
+                <header><span>本轮 AI 阶段已结束</span><strong id="literature-ai-stage-name">等待下一阶段</strong></header>
+                <dl><div><dt>下阶段调用</dt><dd id="literature-ai-stage-calls">0</dd></div><div><dt>最大 tokens</dt><dd id="literature-ai-stage-tokens">0</dd></div></dl>
+                <p id="literature-ai-stage-scope">尚未发送论文内容</p>
+                <small>继续前会再次显示本阶段的精确范围和费用提示；临时任务令牌不会写入历史或本地存储。</small>
+              </section>
             </div>
           </div>
         </details>
@@ -329,7 +335,7 @@
                 <div class="librarian-welcome"><strong>可以这样问：</strong><button type="button" data-librarian-suggestion="高熵合金在中子辐照后，硬度和缺陷结构有哪些变化？">高熵合金中子辐照后的硬度与缺陷</button><button type="button" data-librarian-suggestion="钨及钨合金在高温离子辐照下报告了哪些空洞或气泡结果？">钨合金高温辐照下的空洞与气泡</button></div>
               </div>
               <div class="librarian-progress" id="librarian-progress" hidden role="status" aria-live="polite">
-                <div class="library-scene" aria-hidden="true"><i class="shelf shelf-a"></i><i class="shelf shelf-b"></i><div class="codex-pet-librarian"><i></i></div></div>
+                <div class="library-progress-mark" aria-hidden="true"><span>LIB</span><i></i></div>
                 <div class="librarian-progress-copy"><div><strong id="librarian-progress-stage">预计：正在理解研究问题</strong><span id="librarian-progress-time" aria-hidden="true">0 秒</span></div><div class="librarian-progress-track"><i id="librarian-progress-bar"></i></div><small>阶段是预计提示，秒数是真实耗时；页面仍在工作，无需重复提交。</small></div>
               </div>
               <section class="librarian-synthesis-stage" id="librarian-synthesis-stage" hidden aria-labelledby="librarian-synthesis-heading">
@@ -623,43 +629,6 @@
         </div>
       </section>
 
-      <!-- Compatibility-only owner: retained for historical data handlers; intentionally absent from primary navigation. -->
-      <section class="view" id="view-manual" data-compatibility-view="manual-entry">
-        <div class="view-head"><div><p class="eyebrow">MANUAL ENTRY</p><h2>补上自动抽取遗漏的数据</h2></div></div>
-        <form class="manual-card" id="manual-form">
-          <label class="span-2">所属文章
-            <select id="manual-paper-select" name="paper_id" aria-label="选择人工补录数据所属文章"></select>
-          </label>
-          <label>具体数值<input name="value_text" required placeholder="例如 4.63±0.03"></label>
-          <label>具体意义<input name="meaning" required placeholder="例如 辐照后纳米硬度 Hirr"></label>
-          <label>单位<input name="unit" placeholder="例如 GPa；无单位可留空"></label>
-          <label class="span-2">文章题目<input name="article_title" required></label>
-          <label class="span-2">DOI<input name="doi" required></label>
-          <label class="span-2 context-manual">数据在文中的解释<textarea name="context_explanation" required placeholder="尽量写清材料、实验类型、控制变量、环境条件、样品状态和测量方法等，便于以后搜索。"></textarea></label>
-          <div class="manual-note"><i>i</i><span>人工补录直接写入所选文章的六列数据库，不切换当前检查文章，也不会调用 DeepSeek。</span></div>
-          <button class="primary" type="submit">保存人工数据</button>
-        </form>
-        <form class="manual-card import-card" id="import-json-form">
-          <label class="span-2">导入抽取结果 JSON<textarea id="import-json-text" name="json_text" placeholder='把受约束的 JSON 结果粘贴到这里；导入后会自动回填为六列表格供检查。'></textarea></label>
-          <div class="manual-note"><i>i</i><span>适合“准备当前文章抽取包”之后的下一步：将结构化抽取结果直接回填为可编辑六列表格，同时保留原始证据页码、定位和片段。</span></div>
-          <button class="primary" type="submit">导入六列表格</button>
-        </form>
-      </section>
-
-      <!-- Compatibility-only owner: retained for revision history; intentionally absent from primary navigation. -->
-      <section class="view" id="view-history" data-compatibility-view="revision-history">
-        <div class="view-head">
-          <div><p class="eyebrow">LEARNING TRAIL</p><h2>你确认过的修正</h2></div>
-          <div class="history-tools">
-            <p id="learning-summary">还没有可导出的学习样本</p>
-            <a id="learning-export" href="/api/current-paper/learning-samples.jsonl">导出当前文章学习样本 JSONL</a>
-            <a id="learning-export-all" href="/api/learning-samples.jsonl">导出全库学习样本 JSONL</a>
-            <a id="learning-report-export" href="/api/current-paper/learning-report.md">导出学习报告 Markdown</a>
-          </div>
-        </div>
-        <div class="learning-guidance-card" id="learning-guidance-card"></div>
-        <div class="history-list" id="history-list"></div>
-      </section>
     </main>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
