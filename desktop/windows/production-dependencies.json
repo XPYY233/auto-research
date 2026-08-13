@@ -2,7 +2,7 @@
   "contract_version": 1,
   "architecture_migration_contract": "architecture-migration-contract.json",
   "release_status": "internal-development",
-  "dependency_closure_status": "0.8-ai-settings-and-prepared-contract-wired-pending-scientific-workspace-resolver-win11-build-and-wheel-lock",
+  "dependency_closure_status": "0.8-ai-settings-and-prepared-contract-wired-preview-validation-pins-recorded-pending-scientific-workspace-resolver-win11-wheelhouse-build-and-setup",
   "target": "windows-11-x64",
   "python": "3.12.x-x64-bundled",
   "windows_modules": [

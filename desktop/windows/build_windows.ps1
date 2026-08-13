@@ -49,8 +49,13 @@ try {
         }
     }
 
-    Write-Host "[2/4] Installing the one locked test dependency into the isolated toolchain..."
-    & $Python -m pip install --disable-pip-version-check --no-input "cryptography==44.0.3"
+    Write-Host "[2/4] Installing the locked 0.8 preview validation dependencies..."
+    & $Python -m pip install --disable-pip-version-check --no-input `
+        "cryptography==48.0.0" `
+        "PyMuPDF==1.28.0" `
+        "PyYAML==6.0.3" `
+        "requests==2.34.2" `
+        "pywebview==6.2.1"
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
 
     Write-Host "[3/4] Running the existing Windows-only tests and static build contract..."
