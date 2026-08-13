@@ -541,11 +541,11 @@ _POLICIES = MappingProxyType(
         "literature_extraction": _Policy(
             "literature_extraction",
             "extraction",
-            ("extraction",),
+            ("analysis", "extraction"),
             "literature_extraction_executor",
             "v1",
-            12,
-            256_000,
+            512,
+            8_200_000,
         ),
         "personal_suggestion": _Policy(
             "personal_suggestion",

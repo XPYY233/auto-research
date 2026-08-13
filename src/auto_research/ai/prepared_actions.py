@@ -27,14 +27,14 @@ PREPARED_ACTION_SCHEMA_VERSION = "server-prepared-ai-action-v1"
 PREPARED_ACTION_TTL_SECONDS = 5 * 60
 MAX_PREPARED_ACTIONS = 32
 MAX_ACTIONS_PER_SESSION = 8
-MAX_TOTAL_PREPARED_BYTES = 16 * 1024 * 1024
+MAX_TOTAL_PREPARED_BYTES = 64 * 1024 * 1024
 SCOPE_BYTE_CAPS = MappingProxyType(
     {
         "capability_test": 64 * 1024,
         "personal_suggestion": 256 * 1024,
         "selected_evidence_chat": 1024 * 1024,
         "librarian": 2 * 1024 * 1024,
-        "literature_extraction": 4 * 1024 * 1024,
+        "literature_extraction": 32 * 1024 * 1024,
     }
 )
 MAX_CONTENT_UNITS = 256

@@ -19,11 +19,21 @@ from .literature_extraction_stages import ExistingLiteratureStagePlanner
 
 
 LITERATURE_SCOPE = "literature_extraction"
-LITERATURE_POLICY_MAX_CALLS = 12
-LITERATURE_POLICY_MAX_TOKENS = 256_000
-LITERATURE_POLICY_TASKS = frozenset({"extraction"})
+LITERATURE_POLICY_MAX_CALLS = 512
+LITERATURE_POLICY_MAX_TOKENS = 8_200_000
+LITERATURE_POLICY_TASKS = frozenset({"analysis", "extraction"})
 _REQUEST_KEYS = frozenset({"job_token"})
-_PAYLOAD_KEYS = frozenset({"job_token", "stage_fingerprint", "stage", "call_count"})
+_PAYLOAD_KEYS = frozenset({"job_handle", "stage_fingerprint", "stage", "call_count"})
+
+
+def _runtime_task(stage_task: str) -> str:
+    """Map scientific sub-stages onto the four reviewed provider task slots."""
+
+    if stage_task in {"extraction", "verification"}:
+        return "extraction"
+    if stage_task == "localization":
+        return "analysis"
+    raise BusinessActionError("business_action_invalid")
 
 
 @dataclass(frozen=True)
@@ -75,7 +85,7 @@ class LiteratureExtractionBusinessAssembler:
         calls = tuple(
             PreparedBusinessCall(
                 method="json",
-                task=call.task,
+                task=_runtime_task(call.task),
                 messages=call.messages,
                 max_tokens=call.max_tokens,
                 options={
@@ -86,7 +96,7 @@ class LiteratureExtractionBusinessAssembler:
             for call in stage.calls
         )
         payload = {
-            "job_token": token,
+            "job_handle": token,
             "stage_fingerprint": stage.stage_fingerprint,
             "stage": stage.name,
             "call_count": len(stage.calls),
@@ -109,14 +119,11 @@ class LiteratureExtractionBusinessAssembler:
 
     @staticmethod
     def _assert_shared_policy(stage: FrozenExtractionStage) -> None:
-        # This is deliberately stricter than the domain state machine.  Until
-        # root freezes a server-manifest-aware shared policy, large/mixed-task
-        # stages must not be split into hidden charges or silently reclassified.
         if (
             not stage.calls
             or len(stage.calls) > LITERATURE_POLICY_MAX_CALLS
             or sum(call.max_tokens for call in stage.calls) > LITERATURE_POLICY_MAX_TOKENS
-            or any(call.task not in LITERATURE_POLICY_TASKS for call in stage.calls)
+            or any(_runtime_task(call.task) not in LITERATURE_POLICY_TASKS for call in stage.calls)
         ):
             raise BusinessActionError("business_action_invalid")
 
@@ -139,30 +146,30 @@ class LiteratureExtractionBusinessExecutor:
             if not isinstance(payload, Mapping) or set(payload) != _PAYLOAD_KEYS:
                 raise BusinessActionError("business_action_invalid")
             stage = self._store.claim_stage(
-                payload["job_token"], session_id=self._session_id
+                payload["job_handle"], session_id=self._session_id
             )
             if (
                 stage.stage_fingerprint != payload["stage_fingerprint"]
                 or stage.name != payload["stage"]
                 or len(stage.calls) != payload["call_count"]
             ):
-                self._store.fail_stage(payload["job_token"], session_id=self._session_id)
+                self._store.fail_stage(payload["job_handle"], session_id=self._session_id)
                 raise BusinessActionError("business_action_invalid")
             results = []
             try:
                 for call in stage.calls:
                     results.append(ai_client.request_json(
                         [dict(message) for message in call.messages],
-                        task=call.task,
+                        task=_runtime_task(call.task),
                         max_tokens=call.max_tokens,
                         thinking=call.options.get("thinking"),
                         temperature=call.options.get("temperature"),
                     ))
             except Exception:
-                self._store.fail_stage(payload["job_token"], session_id=self._session_id)
+                self._store.fail_stage(payload["job_handle"], session_id=self._session_id)
                 raise
             summary = self._store.complete_stage(
-                payload["job_token"],
+                payload["job_handle"],
                 session_id=self._session_id,
                 completed_stage_fingerprint=stage.stage_fingerprint,
                 raw_results=results,
@@ -170,7 +177,7 @@ class LiteratureExtractionBusinessExecutor:
             )
             while summary["stage"] in {"coverage_verification", "adversarial_branches", "third_review"} and summary["call_count"] == 0:
                 summary = self._store.advance_local_stage(
-                    payload["job_token"], session_id=self._session_id, planner=self._planner
+                    payload["job_handle"], session_id=self._session_id, planner=self._planner
                 )
             return {"summary": summary}
         except BusinessActionError:

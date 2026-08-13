@@ -214,7 +214,7 @@ class PreparedActionServiceTests(unittest.TestCase):
                 "personal_suggestion": 256 * 1024,
                 "selected_evidence_chat": 1024 * 1024,
                 "librarian": 2 * 1024 * 1024,
-                "literature_extraction": 4 * 1024 * 1024,
+                "literature_extraction": 32 * 1024 * 1024,
             },
         )
         with self.assertRaises(PreparedActionError):

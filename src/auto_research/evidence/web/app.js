@@ -41,7 +41,7 @@ const reviewPageSize = 80;
 const desktopCsrfHeader = "X-Auto-Research-CSRF";
 let desktopCsrfToken = "";
 const AI_ACTION_SCOPES = new Set(["librarian", "selected_evidence_chat", "literature_extraction", "personal_suggestion"]);
-const AI_ACTION_CALL_LIMITS = Object.freeze({ librarian: 8, selected_evidence_chat: 1, literature_extraction: 8, personal_suggestion: 1 });
+const AI_ACTION_CALL_LIMITS = Object.freeze({ librarian: 8, selected_evidence_chat: 1, literature_extraction: 512, personal_suggestion: 1 });
 
 function aiPreparedActionRoutes(scope) {
   if (!AI_ACTION_SCOPES.has(scope)) return null;

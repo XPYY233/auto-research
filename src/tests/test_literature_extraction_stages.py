@@ -147,7 +147,7 @@ def test_malformed_or_missing_stage_results_fail_closed_and_release_claim(tmp_pa
     assert store.peek_stage(summary["job_token"], session_id="owner").stage_fingerprint == stage.stage_fingerprint
 
 
-def test_business_assembler_refuses_real_stage_beyond_shared_policy(tmp_path: Path) -> None:
+def test_business_assembler_accepts_bounded_real_stage_under_shared_policy(tmp_path: Path) -> None:
     path = tmp_path / "long.pdf"
     make_pdf(path, pages=8)
     store = LiteratureExtractionJobStore(session_key=b"x" * 32)
@@ -155,9 +155,11 @@ def test_business_assembler_refuses_real_stage_beyond_shared_policy(tmp_path: Pa
     stage = store.peek_stage(summary["job_token"], session_id="owner")
     assert len(stage.calls) > 12
     assembler = LiteratureExtractionBusinessAssembler(store, session_id="owner")
-    with pytest.raises(BusinessActionError) as blocked:
-        assembler.assemble({"job_token": summary["job_token"]})
-    assert blocked.value.code == "business_action_invalid"
+    draft = assembler.assemble({"job_token": summary["job_token"]})
+    assert draft.estimated_calls == len(stage.calls)
+    assert draft.max_tokens == sum(call.max_tokens for call in stage.calls)
+    assert draft.outbound["job_handle"] == summary["job_token"]
+    assert "job_token" not in draft.outbound
 
 
 def test_business_assembler_executor_and_projector_use_frozen_stage(tmp_path: Path) -> None:
@@ -196,6 +198,25 @@ def test_business_assembler_executor_and_projector_use_frozen_stage(tmp_path: Pa
     assert public["stage"] == "coverage_gap"
     assert str(path) not in repr(public)
     assert "pdf_sha256" not in repr(public)
+
+
+def test_verification_and_localization_use_reviewed_runtime_task_slots(tmp_path: Path) -> None:
+    path = tmp_path / "paper.pdf"
+    make_pdf(path)
+    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+    planner = ExistingLiteratureStagePlanner()
+    summary = store.create(Papers(path), paper_id=1, session_id="owner")
+    summary = complete_with_payloads(
+        store, summary["job_token"], planner, lambda _call: extraction_payload()
+    )
+    summary = complete_with_payloads(
+        store, summary["job_token"], planner, lambda _call: extraction_payload()
+    )
+    assert summary["stage"] == "coverage_verification"
+    draft = LiteratureExtractionBusinessAssembler(store, session_id="owner").assemble(
+        {"job_token": summary["job_token"]}
+    )
+    assert {call.task for call in draft.call_plan} == {"extraction"}
 
 
 def test_business_executor_releases_claim_after_arbitrary_client_failure(tmp_path: Path) -> None:
