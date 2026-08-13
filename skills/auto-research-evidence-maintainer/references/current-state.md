@@ -5,7 +5,7 @@
 - Source identity: Auto Research `0.8.0-preview.1` build 18; builds 16 and 17 were blocked before release by frozen smoke gates. The annotated build18 tag is created from the final release commit. Last rollback remains `0.7.0-preview.2` build 15, source `888aae5`.
 - Completed: Workbench A light/dark/system and density; four-entry single-owner shell; settings; DeepSeek/OpenAI trusted registry and provider-separated credentials; four-scope server-prepared AI actions; staged literature commit; personal reviewed import; package center; macOS runtime; Windows thin source parity.
 - Security: no arbitrary provider URL; renderer cannot create final outbound payload; every billable stage has disclosure, explicit confirmation, one-time nonce and budget; search and local import remain available without a key.
-- Validation: 1177/1177 serial tests (810 core, 228 macOS, 139 Windows), Python compile, six JS syntax checks, release hash sync, diff check and Git object check. Production SQLite was not used or staged.
+- Validation: 1178/1178 serial tests (810 core, 229 macOS, 139 Windows), Python compile, six JS syntax checks, release hash sync, diff check and Git object check. Production SQLite was not used or staged.
 - User-authorized cleanup: paper_056 deepseek/quality/visual leftovers were deleted. The only expected dirty worktree item is the production `db/experimental_evidence.sqlite`.
 - Pending after the Mac release: real Windows 11 build/install acceptance. Windows remains `installer_ready=false`; no Setup exists.
 
@@ -40,7 +40,7 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 | fixed PDFs valid and identity-matched | 50/50 |
 | data-ready fixed papers | 17/50 |
 | visual-ready fixed papers | 30/50 |
-| latest clean release tests | 726: 467 shared, 154 macOS, 105 Windows contracts |
+| latest clean release tests | 1,178: 810 shared, 229 macOS, 139 Windows contracts |
 
 Target DOI `10.1016/j.jnucmat.2018.08.031` has 231 independent facts and 403/403 source-localizable automatic records at this checkpoint.
 
@@ -74,10 +74,10 @@ Independent read-only browser acceptance: a tungsten question returned 65 candid
 
 ## Stable recovery artifacts
 
-- macOS App: `/Applications/Auto Research.app` (bundle `0.8.0`, build `16` after installation).
-- macOS DMG and UserKit: `/Users/USER/Zotero/auto-research-releases/`; exact SHA-256 values are recorded in the 0.8 user-kit acceptance report.
+- macOS App: `/Applications/Auto Research.app` (bundle `0.8.0`, build `18` after installation).
+- macOS UserKit: `/Users/USER/Zotero/auto-research-releases/Auto-Research-0.8.0-preview.1-build18-UserKit.zip`; SHA-256 `fc139f4b3a3f268b246218d01eb8805d71049596ad63cf0f241db1ae94ca7e27`. DMG SHA-256 is recorded in the kit acceptance report.
 - Historical stable SQLite snapshot: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-brief-stable-2026-07-30-v1.sqlite`; recorded SHA-256 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`. Do not infer that the current active user database still has this hash.
-- Git bundle belongs under `/Users/USER/Zotero/auto-research-backups/` and must be generated after the release documentation commit while preserving the current artifact tag.
+- Maintainer-only Git bundle: `/Users/USER/Zotero/auto-research-backups/source-bundles/auto-research-0.8.0-preview.1-build18-private.bundle`; it is intentionally excluded from the user kit because repository history contains historical database blobs.
 - Previous stable tag and artifacts remain available under `evidence-demo-2026-07-30-librarian-reasoning-stable-1` and the `librarian-reasoning-stable-2026-07-30-v1` backup names.
 
 Do not restore over the live tree. Verify a snapshot in a separate location before asking the user to switch.

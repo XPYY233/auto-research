@@ -6,11 +6,13 @@
 
 - 首个 build 16 冻结候选在真实 PyInstaller 冒烟中被安全门拦截：launcher 在 `configure_core_paths()` 前提前导入共享 AI/settings 核心。没有安装 App、没有生成 DMG、没有对外发布。修复将这些导入延迟到运行路径绑定之后，并增加回归契约；为保持标签不可变，正式候选顺延为 build 17，build 16 仅作为失败保护点保留。
 - build 17 随后被第二道 HTTP 前端契约冒烟拦截：检查器仍寻找 0.7 的授权 schema 与旧 DeepSeek 专用前端标记，而实际 0.8 已迁移到多提供商 prepared-action。更新 smoke 为 `ai-consent-v2`、四授权域与 prepare/execute 标记后，正式候选继续顺延为 build 18；build 17 同样没有安装或生成 DMG。
+- build 18 从干净提交 `700e642` 构建成功，冻结 App 冒烟、ad-hoc codesign、DMG 校验、六类共享静态资源与真实 macOS 用户视角检查通过；系统只保留 `/Applications/Auto Research.app` 一个可启动副本，0.7 build15 改为非 `.app` rollback。
+- 最终用户套件为 `Auto-Research-0.8.0-preview.1-build18-UserKit.zip`，SHA-256 `fc139f4b3a3f268b246218d01eb8805d71049596ad63cf0f241db1ae94ca7e27`；包含 DMG、官方 0.2、合成私人实验包、示例 CSV、中文指南与验收报告，不含 Git bundle、生产数据库、paper_056 或 PDF。Windows 另封装 `0.8.0-internal.1` 源码预览，仍无 Setup。
 
 - 完成 Workbench A 日/夜/跟随系统主题、舒适/紧凑密度、统一活动栏/命令面板/设置中心，并以 B 文献阅读层级和 C 实验数值样式补充单一设计系统。个人实验与资料包 DOM 静态归位；人工补录、修正历史和宠物进度场景从生产前端物理退役。
 - DeepSeek/OpenAI 进入同一受信 provider 注册表和按 provider 隔离的安全凭据；Librarian、选中证据、文献提取、个人建议全部改为服务端 prepared action、逐阶段知情同意、一次性 nonce、调用/token 预算和 stale 绑定。旧收费旁路固定退役。
 - macOS 完成四域业务、分阶段文献最终提交、私人实验、资料包、设置与原生薄接线；Windows 完成相同共享 UI/DTO/AI 契约与 Credential Manager 薄适配，但继续 `installer_ready=false / SETUP_PRESENT=NO`。
-- 串行发布门通过 1177 项（core 810、macOS 228、Windows 139），Python 编译、六个 JS 语法、release-contract 同步、diff-check 和 Git 对象检查通过。生产 SQLite 未测试、未暂存。
+- 串行发布门通过 1178 项（core 810、macOS 229、Windows 139），Python 编译、六个 JS 语法、release-contract 同步、diff-check 和 Git 对象检查通过。生产 SQLite 未测试、未暂存。
 - 用户明确确认 `paper_056` 是遗留 bug 后，精确删除 4 个 DeepSeek run、2 个 quality run 和 13 个 visual 文件；未触碰生产 SQLite。0.7 build15 继续作为独立回退。
 
 ## 2026-08-13：0.8 续作——受信 AI 运行时与前两个业务域

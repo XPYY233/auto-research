@@ -1,16 +1,16 @@
 # Auto Research Evidence 阶段发布状态
 
-> 0.8 发布冻结（2026-08-13）：`0.8.0-preview.1` / build `18` 的共享核心、macOS 与 Windows 源码契约已串行通过 1177 项。build 16/17 被冻结冒烟门拦截且未发布；最终 App/DMG/用户套件从本页文档提交后的干净工作树生成；0.7 build15 保持独立回退点。
+> 0.8 发布完成（2026-08-13）：`0.8.0-preview.1` / build `18` 已从干净提交 `700e642` 构建、安装并完成冻结冒烟与用户视角验收。串行验证共 1178 项。build 16/17 被冻结冒烟门拦截且未发布；0.7 build15 保持独立回退点。
 
 ## 版本身份
 
 - 科学数据基线：`2026.07.30-librarian-brief-stable.1`
 - 当前发布候选：Auto Research `0.8.0-preview.1` / build `18`。采用 Workbench A 日/夜科研界面、设置中心、DeepSeek/OpenAI 受信提供商、四域 prepared-action AI 授权和分阶段原子文献工作流；最终 DMG、ZIP 和验收哈希以仓库外 0.8 用户套件为准
-- 当前已构建制品：完成文档冻结后从干净 release worktree 生成 Auto Research `0.8.0-preview.1` / build `18`
+- 当前已构建制品：Auto Research `0.8.0-preview.1` / build `18` 已从干净提交 `700e642` 生成，安装位置为 `/Applications/Auto Research.app`
 - 当前发布套件：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.8.0-preview.1-build18-UserKit.zip`（最终 SHA-256 见相邻 `.sha256` 与套件内验收报告）
 - 改造前保护提交：`6ce9536`
 - 改造前保护标签：`evidence-demo-2026-07-30-pre-research-brief-1`
-- 当前状态：0.8 源码发布门已通过；Mac App、DMG 和用户套件正在从干净发布工作树生成。0.7 build15 保持可验证回退。两者均为课题组内部、ad-hoc 签名、未公证预览，不是公开发行版
+- 当前状态：0.8 Mac App、DMG、用户套件与 Windows 源码预览套件已生成并验收；0.7 build15 保持可验证回退。Mac 仍为课题组内部、ad-hoc 签名、未公证预览；Windows 仍无 Setup，不是公开发行版
 - 证据库结构：`v12`
 - 固定验收语料：`config/evidence_test_set_50.json`
 - 当前用户入口：Auto Research.app（macOS 内部开发预览）
@@ -24,7 +24,8 @@
 - 四个一级入口固定为文献、搜索、实验、资料包；人工补录、修正历史和宠物加载场景已物理退役。个人实验与官方包状态静态归位，导航只有一个所有者，迟到异步任务不能抢页或滚动。
 - AI 提供商首批为 DeepSeek 和 OpenAI，endpoint 由代码注册表固定；用户只能选择受审计模型并保存自己的 key，不能填任意兼容 URL。四个业务域都先由服务端准备有界动作，再逐阶段显示提供商、模型、发送范围、最大调用数与 token 预算。
 - 文献自动流程按阶段执行并在每阶段后持久化非敏感 checkpoint；只有最终显式提交才把候选原子写入科学库。个人表格 AI 只预填，用户浏览并一次确认；精确搜索、资料包管理和本地预览不依赖 AI 密钥。
-- 源码发布门串行通过 1177 项（810 共享核心、228 macOS、139 Windows），Python 编译、六个前端脚本语法、发布哈希与 Git 对象检查通过。生产 SQLite 未进测试或提交；用户授权删除的 paper_056 遗留现场已清理。
+- 源码发布门串行通过 1178 项（810 共享核心、229 macOS、139 Windows），Python 编译、六个前端脚本语法、发布哈希与 Git 对象检查通过。生产 SQLite 未进测试或提交；用户授权删除的 paper_056 遗留现场已清理。
+- 最终 DMG SHA-256：`9b7fcaa5a2da2902d86ba305359d1d143a40b381c48054fa205fb61eafd9baa3`；UserKit ZIP SHA-256：`fc139f4b3a3f268b246218d01eb8805d71049596ad63cf0f241db1ae94ca7e27`。用户套件不包含 Git bundle、生产数据库或 PDF。
 - Windows 0.8 预版本源码消费同一共享 Web/DTO/AI 契约和 Credential Manager，但真实 Setup 与 Win11 真机全流程仍未完成，继续 `installer_ready=false / SETUP_PRESENT=NO`。
 
 ## 0.7.0-preview.2 macOS 课题组内部候选

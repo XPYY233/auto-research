@@ -6,7 +6,7 @@
 - Workbench A 成为唯一生产设计系统：日间/夜间/跟随系统、舒适/紧凑密度、四个科研入口、设置中心、命令面板与键盘导航均使用同一共享前端。个人实验和资料包 DOM 已静态归位；旧人工补录、修正历史和宠物进度场景已从生产 DOM/处理器退役。
 - 运行时 AI 只允许代码审查过的受信提供商（首批 DeepSeek/OpenAI）和固定官方 endpoint/model 目录。Librarian、选中证据、文献提取、个人表格四域全部走服务端 prepared action、逐阶段披露、一次性 consent nonce 和调用/token 预算，旧收费旁路固定退役。
 - macOS 已接完整四域业务、设置、资料包、私人实验与文献最终提交事务。Windows 0.8 源码消费同一共享契约、工作台资产和 Credential Manager 槽；Windows 仍 `installer_ready=false / SETUP_PRESENT=NO`，等待 Win11 真机构建验收。
-- 本轮串行验证：共享核心 810、macOS 228、Windows 139，共 1177/1177；Python 编译、六个 JavaScript 语法、release-contract 同步、diff-check 与 Git 对象检查通过。测试使用临时根，没有读取或写入生产科学数据库。
+- 本轮串行验证：共享核心 810、macOS 229、Windows 139，共 1178/1178；Python 编译、六个 JavaScript 语法、release-contract 同步、diff-check 与 Git 对象检查通过。测试使用临时根，没有读取或写入生产科学数据库。
 - `paper_056` 的 4 个 DeepSeek run、2 个 quality run 与 13 个图表遗留文件已在用户明确授权下删除；它们未进入 Git。工作树仍只保留未暂存的 `db/experimental_evidence.sqlite` 用户现场。
 - 可回退用户版保持 Auto Research `0.7.0-preview.2` / build `15`，源码 `888aae5`，标签 `evidence-demo-2026-08-12-macos-package-center-0.7.0-preview-2-build15`。
 
@@ -28,7 +28,7 @@
 > 交班快照：2026-08-13
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
 > 当前发布候选：Auto Research `0.8.0-preview.1` / build `18`；最终 DMG、套件与验收哈希见仓库外 0.8 用户套件的 `RELEASE_ACCEPTANCE.json`
-> 当前保护提交：`ad40a31`；最终候选在完成文档收口后从干净 release worktree 构建，构建清单中的 `core_commit` 为制品权威
+> 当前 Mac 制品提交：`700e642`；构建清单、build18 标签与 UserKit 验收报告一致。后续 Windows 文档收口提交不改变 Mac App 字节
 > 官方资料包：`0.2.0-preview.1`，SHA-256 `89ec7f8dcdeea2d862d91aaf798674fd600c21fd75c4553d270a0c0b806f999e`；旧 `0.1.0-preview.1` 保持不可变回退点
 > Windows：继续 `installer_ready=false`，无 Setup、无 Win11 真机验收；不得把源码对齐描述为安装版
 > 证据库版本：`2026.07.30-librarian-brief-stable.1` / schema v12

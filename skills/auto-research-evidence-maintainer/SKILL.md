@@ -50,7 +50,7 @@ Keep these invariants:
 
 ## Continue after the 0.8 freeze
 
-Before editing, read the top `PROJECT_HANDOFF.md` release section and the 0.8 user-kit acceptance report. Build 16 is the macOS 0.8 internal-preview line; `888aae5`/build15 remains the independent 0.7 rollback.
+Before editing, read the top `PROJECT_HANDOFF.md` release section and the 0.8 user-kit acceptance report. Build 18 is the shipped macOS 0.8 internal-preview line; builds 16 and 17 were blocked by frozen smoke gates and never released. `888aae5`/build15 remains the independent 0.7 rollback.
 
 - Preserve the uncommitted production evidence database. The legacy paper_056 run/quality/visual artifacts were explicitly deleted by the user before the 0.8 build and should not be recreated unless a new real extraction is authorized.
 - Use existing project Codex threads for frontend/macOS, core, Windows and security. Root is the only Git writer; every other thread receives an exact file list and returns a no-stage/no-commit handoff.
