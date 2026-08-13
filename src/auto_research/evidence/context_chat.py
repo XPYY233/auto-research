@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
-from functools import lru_cache
+import stat
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping, Protocol
 
 import fitz
 
@@ -19,18 +24,142 @@ MAX_QUESTION_CHARS = 2_000
 MAX_HISTORY_MESSAGES = 10
 MAX_HISTORY_CHARS = 16_000
 MAX_PAGE_CONTEXT_CHARS = 36_000
+MAX_CONTEXT_PDF_BYTES = 512 * 1024 * 1024
+MAX_CONTEXT_ANSWER_CHARS = 12_000
+MAX_CONTEXT_NOTE_CHARS = 2_000
+MAX_CONTEXT_ENTITY_TEXT_CHARS = 2_000
+MAX_CONTEXT_MODEL_CHARS = 160
+_PDF_READ_CHUNK_BYTES = 1024 * 1024
+
+
+class ContextChatModel(Protocol):
+    settings: object
+
+    def request_json(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        task: str,
+        max_tokens: int,
+        thinking: bool | None,
+        temperature: float | None,
+    ) -> dict[str, Any]: ...
+
+
+@dataclass(frozen=True)
+class PreparedContextChat:
+    """Exact bounded, path-free input for one selected-evidence AI call."""
+
+    messages: tuple[Mapping[str, str], ...]
+    context_pages: tuple[int, ...]
+    entity: Mapping[str, Any]
+    content_fingerprint: str
+    source_fingerprint: str
+    byte_count: int
+
+
+@dataclass(frozen=True)
+class _StablePDFSnapshot:
+    content: bytes
+    sha256: str
 
 
 def _clean_text(value: Any, limit: int) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
 
 
-@lru_cache(maxsize=32)
-def _pdf_pages(pdf_path: str, modified_ns: int, size: int) -> tuple[str, ...]:
-    del modified_ns, size
-    path = Path(pdf_path)
-    with fitz.open(path) as document:
-        return tuple(page.get_text("text") or "" for page in document)
+def _result_text(
+    value: Any,
+    field: str,
+    *,
+    limit: int,
+    optional: bool = False,
+) -> str | None:
+    if value is None and optional:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be text")
+    cleaned = value.strip()
+    if not cleaned:
+        if optional:
+            return None
+        raise ValueError(f"{field} must not be empty")
+    if len(cleaned) > limit:
+        raise ValueError(f"{field} exceeds the display limit")
+    return cleaned
+
+
+def _stat_identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        int(value.st_dev),
+        int(value.st_ino),
+        int(value.st_size),
+        int(value.st_mtime_ns),
+        int(value.st_ctime_ns),
+    )
+
+
+def _read_stable_pdf_snapshot(pdf_path: str) -> _StablePDFSnapshot:
+    """Read one regular, non-symlink PDF through one verified descriptor."""
+
+    path = Path(pdf_path).expanduser()
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow:
+        flags |= nofollow
+    else:
+        try:
+            if stat.S_ISLNK(os.lstat(path).st_mode):
+                raise ValueError("原始 PDF 不能是符号链接")
+        except OSError as exc:
+            raise FileNotFoundError("原始 PDF 不可读取") from exc
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise FileNotFoundError("原始 PDF 不可读取") from exc
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_size <= 0
+            or before.st_size > MAX_CONTEXT_PDF_BYTES
+        ):
+            raise ValueError("原始 PDF 不符合安全读取限制")
+        blocks: list[bytes] = []
+        total = 0
+        while True:
+            block = os.read(descriptor, _PDF_READ_CHUNK_BYTES)
+            if not block:
+                break
+            total += len(block)
+            if total > MAX_CONTEXT_PDF_BYTES:
+                raise ValueError("原始 PDF 超出安全读取限制")
+            blocks.append(block)
+        after = os.fstat(descriptor)
+        try:
+            current = os.stat(path, follow_symlinks=False)
+        except OSError as exc:
+            raise ValueError("原始 PDF 在读取期间发生变化") from exc
+        if (
+            _stat_identity(before) != _stat_identity(after)
+            or _stat_identity(after) != _stat_identity(current)
+            or not stat.S_ISREG(current.st_mode)
+            or total != after.st_size
+        ):
+            raise ValueError("原始 PDF 在读取期间发生变化")
+        content = b"".join(blocks)
+        return _StablePDFSnapshot(content, hashlib.sha256(content).hexdigest())
+    finally:
+        os.close(descriptor)
+
+
+def _pdf_pages_from_snapshot(snapshot: _StablePDFSnapshot) -> tuple[str, ...]:
+    try:
+        with fitz.open(stream=snapshot.content, filetype="pdf") as document:
+            return tuple(page.get_text("text") or "" for page in document)
+    except Exception as exc:
+        raise ValueError("原始 PDF 无法安全解析") from exc
 
 
 def _page_terms(question: str, entity_text: str) -> list[str]:
@@ -45,13 +174,8 @@ def _page_terms(question: str, entity_text: str) -> list[str]:
     return terms[:24]
 
 
-def _select_pdf_context(pdf_path: str, anchor_page: int | None, question: str,
+def _select_pdf_context(pages: tuple[str, ...], anchor_page: int | None, question: str,
                         entity_text: str) -> tuple[str, list[int]]:
-    path = Path(pdf_path).expanduser().resolve()
-    if not path.is_file():
-        raise FileNotFoundError(f"原始 PDF 不存在：{path}")
-    stat = path.stat()
-    pages = _pdf_pages(str(path), stat.st_mtime_ns, stat.st_size)
     if not pages:
         raise ValueError("原始 PDF 没有可读取页面")
 
@@ -166,10 +290,56 @@ def _history_messages(history: Any) -> list[dict[str, str]]:
     return output
 
 
-def answer_context_chat(db: EvidenceDB, *, entity_type: str, entity_id: int,
-                        question: str, history: Any = None,
-                        client: DeepSeekClient | None = None) -> dict[str, Any]:
-    """Answer one evidence-scoped question without writing to the evidence DB."""
+def context_chat_source_fingerprint(
+    db: EvidenceDB,
+    *,
+    entity_type: str,
+    entity_id: int,
+) -> str:
+    """Fingerprint selected evidence plus the complete local PDF, without paths."""
+
+    if entity_type == "item":
+        context = _item_context(db, int(entity_id))
+    elif entity_type == "visual":
+        context = _visual_context(db, int(entity_id))
+    else:
+        raise ValueError("entity_type must be item or visual")
+    paper = context["paper"]
+    snapshot = _read_stable_pdf_snapshot(str(paper.get("pdf_path") or ""))
+    return _context_source_fingerprint(context, snapshot.sha256)
+
+
+def _context_source_fingerprint(
+    context: Mapping[str, Any],
+    pdf_sha256: str,
+) -> str:
+    paper = context["paper"]
+    canonical = json.dumps(
+        {
+            "entity_type": context["entity_type"],
+            "entity_id": context["entity_id"],
+            "anchor_page": context.get("anchor_page"),
+            "summary": context["summary"],
+            "fields": context["fields"],
+            "paper": {"title": paper.get("title"), "doi": paper.get("doi")},
+            "pdf_sha256": pdf_sha256,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def prepare_context_chat(
+    db: EvidenceDB,
+    *,
+    entity_type: str,
+    entity_id: int,
+    question: str,
+    history: Any = None,
+) -> PreparedContextChat:
+    """Read and freeze the exact local context without calling a model."""
 
     prompt = _clean_text(question, MAX_QUESTION_CHARS)
     if not prompt:
@@ -182,13 +352,17 @@ def answer_context_chat(db: EvidenceDB, *, entity_type: str, entity_id: int,
         raise ValueError("entity_type must be item or visual")
 
     paper = context["paper"]
-    pdf_path = str(paper.get("pdf_path") or "")
+    pdf_snapshot = _read_stable_pdf_snapshot(str(paper.get("pdf_path") or ""))
+    pages_snapshot = _pdf_pages_from_snapshot(pdf_snapshot)
     field_text = "\n".join(
         f"- {label}：{value}" for label, value in context["fields"].items()
         if str(value or "").strip()
     )
     pdf_text, pages = _select_pdf_context(
-        pdf_path, context.get("anchor_page"), prompt, f"{context['summary']} {field_text}"
+        pages_snapshot,
+        context.get("anchor_page"),
+        prompt,
+        f"{context['summary']} {field_text}",
     )
     messages: list[dict[str, str]] = [
         {
@@ -214,33 +388,184 @@ def answer_context_chat(db: EvidenceDB, *, entity_type: str, entity_id: int,
         *_history_messages(history),
         {"role": "user", "content": prompt},
     ]
-    runtime_client = client or DeepSeekClient()
-    result = runtime_client.request_json(
-        messages, task="extraction", max_tokens=2_400, thinking=False, temperature=0.2
+    entity = {
+        "type": context["entity_type"],
+        "id": context["entity_id"],
+        "summary": context["summary"],
+        "paper_title": paper.get("title"),
+        "doi": paper.get("doi"),
+    }
+    canonical = json.dumps(
+        {
+            "messages": messages,
+            "context_pages": pages,
+            "entity": entity,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return PreparedContextChat(
+        messages=tuple(MappingProxyType(dict(message)) for message in messages),
+        context_pages=tuple(pages),
+        entity=MappingProxyType(dict(entity)),
+        content_fingerprint=hashlib.sha256(canonical).hexdigest(),
+        source_fingerprint=_context_source_fingerprint(
+            context,
+            pdf_snapshot.sha256,
+        ),
+        byte_count=len(canonical),
     )
-    answer = str(result.get("answer") or "").strip()
-    if not answer:
-        raise ValueError("DeepSeek 没有返回可展示的回答")
+
+
+def execute_prepared_context_chat(
+    prepared: PreparedContextChat,
+    *,
+    client: ContextChatModel,
+) -> dict[str, Any]:
+    """Execute and validate one previously frozen selected-evidence call."""
+
+    if not isinstance(prepared, PreparedContextChat):
+        raise ValueError("prepared context chat is invalid")
+    result = client.request_json(
+        [dict(message) for message in prepared.messages],
+        task="extraction",
+        max_tokens=2_400,
+        thinking=False,
+        temperature=0.2,
+    )
+    if not isinstance(result, Mapping):
+        raise ValueError("AI 没有返回有效的结构化回答")
+    answer = _result_text(
+        result.get("answer"),
+        "answer",
+        limit=MAX_CONTEXT_ANSWER_CHARS,
+    )
+    assert answer is not None
     cited_pages = []
     for value in result.get("evidence_pages") or []:
         try:
             page_no = int(value)
         except (TypeError, ValueError):
             continue
-        if page_no in pages and page_no not in cited_pages:
+        if page_no in prepared.context_pages and page_no not in cited_pages:
             cited_pages.append(page_no)
-    return {
+    return project_context_chat_result({
         "answer": answer,
         "evidence_pages": cited_pages,
-        "evidence_notes": [str(value).strip() for value in (result.get("evidence_notes") or []) if str(value).strip()][:4],
-        "limitations": [str(value).strip() for value in (result.get("limitations") or []) if str(value).strip()][:4],
-        "context_pages": pages,
-        "entity": {
-            "type": context["entity_type"],
-            "id": context["entity_id"],
-            "summary": context["summary"],
-            "paper_title": paper.get("title"),
-            "doi": paper.get("doi"),
-        },
-        "model": runtime_client.settings.extraction_model,
+        "evidence_notes": result.get("evidence_notes") or [],
+        "limitations": result.get("limitations") or [],
+        "context_pages": list(prepared.context_pages),
+        "entity": dict(prepared.entity),
+        "model": client.settings.extraction_model,
+    })
+
+
+def project_context_chat_result(result: Mapping[str, Any]) -> dict[str, Any]:
+    """Strict public whitelist for the existing context-chat response DTO."""
+
+    expected = {
+        "answer",
+        "evidence_pages",
+        "evidence_notes",
+        "limitations",
+        "context_pages",
+        "entity",
+        "model",
     }
+    entity_expected = {"type", "id", "summary", "paper_title", "doi"}
+    if not isinstance(result, Mapping) or set(result) != expected:
+        raise ValueError("context chat result contains invalid fields")
+    entity = result.get("entity")
+    if not isinstance(entity, Mapping) or set(entity) != entity_expected:
+        raise ValueError("context chat entity contains invalid fields")
+    if entity.get("type") not in {"item", "visual"}:
+        raise ValueError("context chat entity type is invalid")
+    entity_id = entity.get("id")
+    if isinstance(entity_id, bool) or not isinstance(entity_id, int) or entity_id < 1:
+        raise ValueError("context chat entity id is invalid")
+    answer = _result_text(
+        result.get("answer"),
+        "answer",
+        limit=MAX_CONTEXT_ANSWER_CHARS,
+    )
+    model = _result_text(
+        result.get("model"),
+        "model",
+        limit=MAX_CONTEXT_MODEL_CHARS,
+    )
+    assert answer is not None and model is not None
+
+    def page_list(value: Any) -> list[int]:
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("context chat pages are invalid")
+        output: list[int] = []
+        for item in value:
+            if isinstance(item, bool) or not isinstance(item, int) or item < 1:
+                raise ValueError("context chat page is invalid")
+            if item not in output:
+                output.append(item)
+        return output
+
+    def text_list(value: Any) -> list[str]:
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("context chat notes are invalid")
+        output: list[str] = []
+        for item in value[:4]:
+            text = _result_text(
+                item,
+                "context chat note",
+                limit=MAX_CONTEXT_NOTE_CHARS,
+                optional=True,
+            )
+            if text:
+                output.append(text)
+        return output
+
+    return {
+        "answer": answer,
+        "evidence_pages": page_list(result["evidence_pages"]),
+        "evidence_notes": text_list(result["evidence_notes"]),
+        "limitations": text_list(result["limitations"]),
+        "context_pages": page_list(result["context_pages"]),
+        "entity": {
+            "type": entity["type"],
+            "id": entity_id,
+            "summary": _result_text(
+                entity.get("summary"),
+                "entity.summary",
+                limit=MAX_CONTEXT_ENTITY_TEXT_CHARS,
+            ),
+            "paper_title": _result_text(
+                entity.get("paper_title"),
+                "entity.paper_title",
+                limit=MAX_CONTEXT_ENTITY_TEXT_CHARS,
+                optional=True,
+            ),
+            "doi": _result_text(
+                entity.get("doi"),
+                "entity.doi",
+                limit=500,
+                optional=True,
+            ),
+        },
+        "model": model,
+    }
+
+
+def answer_context_chat(db: EvidenceDB, *, entity_type: str, entity_id: int,
+                        question: str, history: Any = None,
+                        client: DeepSeekClient | None = None) -> dict[str, Any]:
+    """Answer one evidence-scoped question without writing to the evidence DB."""
+
+    prepared = prepare_context_chat(
+        db,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        question=question,
+        history=history,
+    )
+    return execute_prepared_context_chat(
+        prepared,
+        client=client or DeepSeekClient(),
+    )
