@@ -142,7 +142,8 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and "openPersonalImport" in product_source
             and "personalView.appendChild(personalPanel)" not in product_source
             and "select_personal_data_file" in product_source
-            and "/ai-suggestion" in product_source
+            and 'authorizePreparedAIAction?.("personal_suggestion", "personal_suggestion"' in product_source
+            and 'executePreparedAIAction("personal_suggestion"' in product_source
             and "/reviewed-import" in product_source
             and 'id="personal-reviewed-import"' in index_source
             and '<script src="/static/package_center.js"></script>' in index_source
@@ -162,11 +163,12 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             '<script src="/static/ai_consent.js"></script>' in index_source
             and index_source.index('<script src="/static/ai_consent.js"></script>')
             < index_source.index('<script src="/static/desktop_product.js"></script>')
-            and "auto-research-ai-consent-v1" in ai_consent_source
+            and "auto-research-ai-consent-v2" in ai_consent_source
             and all(
                 scope in ai_consent_source
                 for scope in (
                     "librarian",
+                    "selected_evidence_chat",
                     "literature_extraction",
                     "personal_suggestion",
                 )

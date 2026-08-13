@@ -46,13 +46,13 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/ai_consent.js": "d2056f9c0636fbd1a2adf116b63496d2e6416a4ed86f53fc0dc7c9e4af6bb46b",
-    "src/auto_research/evidence/web/index.html": "abf0136509b271361536b23fdb3e23393c28466cceda27ee3ec31f5471387604",
-    "src/auto_research/evidence/web/app.js": "03f05350ae9026f4d68e5c01d30c5eaa160b0b0c2947fd98b655e1f777bcae38",
-    "src/auto_research/evidence/web/app.css": "404f263c72f9731e6be18c37aa1223e4f2dbfef18cc64a121d31fe0fbcb17f51",
-    "src/auto_research/evidence/web/desktop_product.js": "389524ac5910ac303c39e1858dfc8a25b6ae867b92270e54e264c0699c8ef871",
-    "src/auto_research/evidence/web/package_center.js": "3ba39228ec567d70448899189449de47bff1fcb54f783cfef6f633cbe56855cd",
-    "src/auto_research/evidence/web/workbench.css": "0000000000000000000000000000000000000000000000000000000000000000",
-    "src/auto_research/evidence/web/workbench.js": "0000000000000000000000000000000000000000000000000000000000000000"
+    "src/auto_research/evidence/web/ai_consent.js": "ada8842907ff40f01a0e3b681d0dd205cc62aaffec4f47ef29813104141cd582",
+    "src/auto_research/evidence/web/index.html": "89e0e6ee391e3d4ea2f2159100ad46eecd5ea5bf73bd315c7ec0117fe87ee220",
+    "src/auto_research/evidence/web/app.js": "9db642407d879363bf1ddc5b3c15931e89a1764cd71ff4a9c358e6530f9b6cb9",
+    "src/auto_research/evidence/web/app.css": "30f29d7f36d06e15cf5c2770efb6caa78335ba95af00e7fc33a92e856d156388",
+    "src/auto_research/evidence/web/desktop_product.js": "f96e28fbff912e340102b0ae8edf1057ec5c1655488a7431752b9efb976da8db",
+    "src/auto_research/evidence/web/package_center.js": "e108fddee3bfb94ea49ffef8121b5280417d03c7bf1b0fe2a7de71b2e76d42bb",
+    "src/auto_research/evidence/web/workbench.css": "121d093077f55b33b5ab424b9f5f31cc1527e7c4903c61db5b66030a22309b9d",
+    "src/auto_research/evidence/web/workbench.js": "28f08565b2d8ce72c3f482d42a79d172a40924743b65e398ed034cc11c103aa2"
   }
 }
