@@ -66,6 +66,19 @@ class _Prepared:
         return self.action
 
 
+class _Business:
+    def __init__(self):
+        self.calls = []
+
+    def prepare(self, **kwargs):
+        self.calls.append(("prepare", kwargs))
+        return {"schema_version": "server-prepared-ai-action-v1", "action_id": "action"}
+
+    def execute(self, action):
+        self.calls.append(("execute", action))
+        return {"schema_version": "business-result-v1", "ok": True}
+
+
 class DesktopAIControllerTests(unittest.TestCase):
     def setUp(self):
         self.settings = _Settings()
@@ -79,11 +92,60 @@ class DesktopAIControllerTests(unittest.TestCase):
 
     def test_route_contract_has_server_prepare_consent_and_execute(self):
         contract = DesktopAIController.route_contract()
-        self.assertEqual(len(contract), 9)
+        self.assertEqual(len(contract), 11)
         patterns = {(row["method"], row["pattern"]) for row in contract}
         self.assertIn(("POST", r"^/api/desktop/ai/providers/(?P<provider_id>deepseek|openai)/test-actions$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/consents$"), patterns)
-        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 9)
+        self.assertIn(("POST", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/prepare$"), patterns)
+        self.assertIn(("POST", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/execute$"), patterns)
+        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 11)
+
+    def test_business_prepare_and_execute_bind_scope_and_platform_session(self):
+        business = _Business()
+        controller = DesktopAIController(
+            settings=self.settings,
+            prepared_actions=self.prepared,
+            business_actions=business,
+        )
+        prepared = controller(self.request(
+            "POST",
+            "/api/desktop/ai/actions/librarian/prepare",
+            {"question": "bounded", "conversation_id": "conversation-1"},
+            session_id="session-business",
+        ))
+        self.prepared.action = type("Action", (), {"scope": "librarian"})()
+        executed = controller(self.request(
+            "POST",
+            "/api/desktop/ai/actions/librarian/execute",
+            {"action_id": "action", "consent_nonce": "nonce"},
+            session_id="session-business",
+        ))
+        self.assertEqual((prepared.status, executed.status), (200, 200))
+        self.assertEqual(business.calls[0][0], "prepare")
+        self.assertEqual(business.calls[0][1]["scope"], "librarian")
+        self.assertEqual(business.calls[0][1]["session_id"], "session-business")
+        self.assertEqual(business.calls[-1], ("execute", self.prepared.action))
+
+    def test_business_routes_fail_closed_without_registry_and_reject_cross_scope(self):
+        unavailable = self.controller(self.request(
+            "POST", "/api/desktop/ai/actions/personal_suggestion/prepare",
+            {"import_id": "import", "sheet_index": 0},
+        ))
+        self.assertEqual(unavailable.status, 503)
+        self.assertEqual(unavailable.body["code"], "desktop_ai_business_unavailable")
+        business = _Business()
+        controller = DesktopAIController(
+            settings=self.settings,
+            prepared_actions=self.prepared,
+            business_actions=business,
+        )
+        self.prepared.action = type("Action", (), {"scope": "personal_suggestion"})()
+        rejected = controller(self.request(
+            "POST", "/api/desktop/ai/actions/librarian/execute",
+            {"action_id": "action", "consent_nonce": "nonce"},
+        ))
+        self.assertEqual(rejected.status, 400)
+        self.assertEqual(business.calls, [])
 
     def test_prepare_then_consent_then_test_uses_platform_session(self):
         prepared = self.controller(self.request("POST", "/api/desktop/ai/providers/openai/test-actions", {"expected_revision": 3}, session_id="s-9"))

@@ -99,6 +99,42 @@ class ContentSnapshotAuthority(Protocol):
     ) -> str: ...
 
 
+class CompositeContentSnapshotAuthority:
+    """Route immutable content kinds to one reviewed domain authority each."""
+
+    def __init__(self, authorities: Mapping[str, ContentSnapshotAuthority]) -> None:
+        if (
+            not isinstance(authorities, Mapping)
+            or not authorities
+            or any(
+                _SAFE_ID_RE.fullmatch(kind) is None
+                or not callable(getattr(authority, "fingerprint_for", None))
+                for kind, authority in authorities.items()
+            )
+        ):
+            raise ValueError("content snapshot authorities are invalid")
+        self._authorities = MappingProxyType(dict(authorities))
+
+    def fingerprint_for(
+        self, *, kind: str, stable_source_identity: str
+    ) -> str:
+        authority = self._authorities.get(kind)
+        if authority is None:
+            raise PreparedActionError("prepared_action_stale")
+        try:
+            value = authority.fingerprint_for(
+                kind=kind,
+                stable_source_identity=stable_source_identity,
+            )
+        except PreparedActionError:
+            raise
+        except Exception as exc:
+            raise PreparedActionError("prepared_action_stale") from exc
+        if not isinstance(value, str) or _HASH_RE.fullmatch(value) is None:
+            raise PreparedActionError("prepared_action_stale")
+        return value
+
+
 @dataclass(frozen=True)
 class ContentUnit:
     kind: str
@@ -617,6 +653,7 @@ class PreparedActionService:
 
 
 __all__ = [
+    "CompositeContentSnapshotAuthority",
     "ContentSnapshotAuthority",
     "ContentUnit",
     "PreparedActionClock",

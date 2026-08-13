@@ -162,9 +162,14 @@ class RouteRegistryTests(unittest.TestCase):
         self.assertTrue(by_id["settings.preferences.patch"]["csrf_required"])
         self.assertEqual(
             by_id["credential.provider.get"]["pattern"],
-            r"^/api/desktop/ai-credentials/(?P<provider_id>deepseek|openai)$",
+            r"^/api/desktop/ai/credentials/(?P<provider_id>deepseek|openai)$",
         )
-        self.assertTrue(by_id["ai.provider.test"]["csrf_required"])
+        self.assertTrue(by_id["ai.provider.test_execute"]["csrf_required"])
+        self.assertEqual(
+            by_id["ai.business.prepare"]["body_cap_bytes"],
+            256 * 1024,
+        )
+        self.assertTrue(by_id["ai.business.execute"]["csrf_required"])
         self.assertFalse(by_id["librarian.chat"]["mutation"])
         self.assertTrue(by_id["workspace.upload_pdf"]["csrf_required"])
 

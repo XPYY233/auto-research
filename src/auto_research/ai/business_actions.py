@@ -601,6 +601,21 @@ class BusinessPreparedActionRegistry:
         request: object,
     ) -> dict[str, object]:
         policy = self._policy(scope)
+        local_result = getattr(self._assemblers[scope], "local_result", None)
+        if callable(local_result):
+            try:
+                result = local_result(request)
+            except BusinessActionError:
+                raise
+            except Exception as exc:
+                raise BusinessActionError("business_action_prepare_failed") from exc
+            if result is not None:
+                try:
+                    return _public_result(self._projectors[scope].project(result))
+                except BusinessActionError:
+                    raise
+                except Exception as exc:
+                    raise BusinessActionError("business_action_result_invalid") from exc
         try:
             draft = self._assemblers[scope].assemble(request)
         except BusinessActionError:

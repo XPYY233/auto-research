@@ -4,6 +4,7 @@ import unittest
 
 from auto_research.ai.consent import AIConsentService
 from auto_research.ai.prepared_actions import (
+    CompositeContentSnapshotAuthority,
     ContentUnit,
     PreparedActionError,
     PreparedActionService,
@@ -53,6 +54,35 @@ class _Snapshots:
 
     def fingerprint_for(self, *, kind, stable_source_identity):
         return self.values[(kind, stable_source_identity)]
+
+
+class CompositeContentSnapshotAuthorityTests(unittest.TestCase):
+    def test_routes_each_kind_to_one_authority_and_rejects_unknown_or_bad_hash(self):
+        finding = _Snapshots()
+        personal = _Snapshots()
+        personal.values = {("personal_table", "personal:one"): "c" * 64}
+        composite = CompositeContentSnapshotAuthority(
+            {"finding": finding, "personal_table": personal}
+        )
+        self.assertEqual(
+            composite.fingerprint_for(
+                kind="finding", stable_source_identity="official:finding-1"
+            ),
+            "a" * 64,
+        )
+        self.assertEqual(
+            composite.fingerprint_for(
+                kind="personal_table", stable_source_identity="personal:one"
+            ),
+            "c" * 64,
+        )
+        with self.assertRaises(PreparedActionError):
+            composite.fingerprint_for(kind="unknown", stable_source_identity="x")
+        personal.values[("personal_table", "personal:one")] = "bad"
+        with self.assertRaises(PreparedActionError):
+            composite.fingerprint_for(
+                kind="personal_table", stable_source_identity="personal:one"
+            )
 
 
 def _unit():

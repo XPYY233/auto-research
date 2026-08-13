@@ -81,6 +81,11 @@ class _Assembler:
         )
 
 
+class _LocalAssembler(_Assembler):
+    def local_result(self, request):
+        return {"answer": "local", "scope": self.scope}
+
+
 class _RawClient:
     def __init__(self): self.calls = []
     def request_json(self, messages, **kwargs):
@@ -169,6 +174,17 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
                 self.assertEqual(len(self.projectors[scope].calls), 2)
                 self.assertEqual(self.factory.actions[-1], (action, 1))
                 self.assertEqual(self.factory.events[-2:], ["enter", "exit"])
+
+    def test_local_result_is_projected_without_runtime_binding_or_model_call(self):
+        self.assemblers["librarian"] = _LocalAssembler("librarian")
+        registry = self.make_registry()
+        result = registry.prepare(
+            scope="librarian", session_id="local-session", request={"question": "system"}
+        )
+        self.assertEqual(result["answer"], "local")
+        self.assertEqual(result["schema_version"], "librarian-result-v1")
+        self.assertEqual(self.factory.actions, [])
+        self.assertEqual(self.factory.client.calls, [])
 
     def test_librarian_normal_planning_then_synthesis_matches_complete_plan(self):
         _summary, action = self.prepare_action("librarian")

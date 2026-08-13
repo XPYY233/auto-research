@@ -13,6 +13,7 @@ SETTINGS_BYTES = 32_768
 HISTORY_BYTES = 3_000_000
 PERSONAL_BYTES = 512 * 1024
 LIBRARIAN_BYTES = 256_000
+AI_ACTION_BYTES = 256 * 1024
 WORKSPACE_JSON_BYTES = 1_000_000
 PDF_BYTES = 80 * 1024 * 1024
 
@@ -112,22 +113,22 @@ DEFAULT_DESKTOP_ROUTES: tuple[RouteSpec, ...] = (
         "settings.patch_preferences",
         SETTINGS_BYTES,
     ),
-    _get("ai.catalog", "/api/desktop/ai-providers", "ai.catalog"),
-    _get("ai.settings.get", "/api/desktop/ai-settings", "ai.settings_get"),
+    _get("ai.catalog", "/api/desktop/ai/providers", "ai.catalog"),
+    _get("ai.settings.get", "/api/desktop/ai/settings", "ai.settings_get"),
     _patch(
         "ai.settings.patch",
-        "/api/desktop/ai-settings",
+        "/api/desktop/ai/settings",
         "ai.settings_patch",
         SETTINGS_BYTES,
     ),
     _get_pattern(
         "credential.provider.get",
-        r"^/api/desktop/ai-credentials/(?P<provider_id>deepseek|openai)$",
+        r"^/api/desktop/ai/credentials/(?P<provider_id>deepseek|openai)$",
         "credential.provider_status",
     ),
     _post_pattern(
         "credential.provider.save",
-        r"^/api/desktop/ai-credentials/(?P<provider_id>deepseek|openai)$",
+        r"^/api/desktop/ai/credentials/(?P<provider_id>deepseek|openai)$",
         "credential.provider_save",
         CREDENTIAL_BYTES,
     ),
@@ -139,12 +140,36 @@ DEFAULT_DESKTOP_ROUTES: tuple[RouteSpec, ...] = (
         True,
         True,
         DESKTOP_AND_MAINTENANCE,
-        pattern=r"^/api/desktop/ai-credentials/(?P<provider_id>deepseek|openai)$",
+        pattern=r"^/api/desktop/ai/credentials/(?P<provider_id>deepseek|openai)$",
     ),
     _post_pattern(
-        "ai.provider.test",
-        r"^/api/desktop/ai-providers/(?P<provider_id>deepseek|openai)/test$",
-        "ai.test_provider",
+        "ai.provider.test_prepare",
+        r"^/api/desktop/ai/providers/(?P<provider_id>deepseek|openai)/test-actions$",
+        "ai.prepare_provider_test",
+        CREDENTIAL_BYTES,
+    ),
+    _post_pattern(
+        "ai.provider.test_execute",
+        r"^/api/desktop/ai/providers/(?P<provider_id>deepseek|openai)/test$",
+        "ai.execute_provider_test",
+        CREDENTIAL_BYTES,
+    ),
+    _post(
+        "ai.consent.issue",
+        "/api/desktop/ai/consents",
+        "ai.issue_consent",
+        CREDENTIAL_BYTES,
+    ),
+    _post_pattern(
+        "ai.business.prepare",
+        r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/prepare$",
+        "ai.prepare_business_action",
+        AI_ACTION_BYTES,
+    ),
+    _post_pattern(
+        "ai.business.execute",
+        r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/execute$",
+        "ai.execute_business_action",
         CREDENTIAL_BYTES,
     ),
     # Legacy DeepSeek-specific endpoints remain compatibility aliases while

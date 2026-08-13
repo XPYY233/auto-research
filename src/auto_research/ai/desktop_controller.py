@@ -12,6 +12,11 @@ from auto_research.settings.ai_desktop_service import (
 from auto_research.settings.ai_runtime_state import AIRuntimeStateError
 
 from .consent import AIConsentError
+from .business_actions import (
+    BUSINESS_ACTION_SCOPES,
+    BusinessActionError,
+    BusinessPreparedActionRegistry,
+)
 from .prepared_actions import PreparedActionError, PreparedActionService
 
 
@@ -21,7 +26,11 @@ MAX_CREDENTIAL_BODY_BYTES = 8 * 1024
 MAX_TEST_BODY_BYTES = 4 * 1024
 MAX_CONSENT_BODY_BYTES = 4 * 1024
 MAX_PROTECTED_ACTION_BODY_BYTES = 4 * 1024
+MAX_BUSINESS_PREPARE_BODY_BYTES = 256 * 1024
 _PROVIDER_PATH = r"(?P<provider_id>deepseek|openai)"
+_BUSINESS_SCOPE_PATH = (
+    r"(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)"
+)
 _SESSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 
 
@@ -166,6 +175,18 @@ DESKTOP_AI_ROUTES = (
         MAX_CONSENT_BODY_BYTES,
         201,
     ),
+    DesktopAIRoute(
+        "desktop_ai.business_prepare",
+        "POST",
+        rf"^/api/desktop/ai/actions/{_BUSINESS_SCOPE_PATH}/prepare$",
+        MAX_BUSINESS_PREPARE_BODY_BYTES,
+    ),
+    DesktopAIRoute(
+        "desktop_ai.business_execute",
+        "POST",
+        rf"^/api/desktop/ai/actions/{_BUSINESS_SCOPE_PATH}/execute$",
+        MAX_PROTECTED_ACTION_BODY_BYTES,
+    ),
 )
 
 
@@ -194,6 +215,13 @@ _ERROR_STATUS = {
     "prepared_action_store_full": 429,
     "prepared_action_state_unavailable": 503,
     "ai_desktop_test_cooldown": 429,
+    "business_action_invalid": 400,
+    "business_action_scope_unsupported": 400,
+    "business_action_prepare_failed": 422,
+    "business_action_execution_failed": 503,
+    "business_action_replayed": 409,
+    "business_action_store_full": 429,
+    "business_action_result_invalid": 502,
 }
 
 
@@ -205,9 +233,11 @@ class DesktopAIController:
         *,
         settings: DesktopAISettings,
         prepared_actions: PreparedActionService,
+        business_actions: BusinessPreparedActionRegistry | None = None,
     ) -> None:
         self._settings = settings
         self._prepared = prepared_actions
+        self._business = business_actions
 
     def __call__(self, request: DesktopAIRequestContext) -> DesktopAIHTTPResponse:
         try:
@@ -224,6 +254,7 @@ class DesktopAIController:
             AIRuntimeStateError,
             AIConsentError,
             PreparedActionError,
+            BusinessActionError,
         ) as exc:
             return _known_error(exc)
         except Exception:
@@ -310,6 +341,40 @@ class DesktopAIController:
                 action_id=payload.get("action_id"),
                 session_id=_session_id(request),
             )
+        elif route.route_id == "desktop_ai.business_prepare":
+            if self._business is None:
+                return _error_response(
+                    503,
+                    "desktop_ai_business_unavailable",
+                    "该 AI 功能尚未在当前桌面版本中启用。",
+                    True,
+                )
+            scope = str(parameters.get("scope") or "")
+            if scope not in BUSINESS_ACTION_SCOPES:
+                raise BusinessActionError("business_action_scope_unsupported")
+            result = self._business.prepare(
+                scope=scope,
+                session_id=_session_id(request),
+                request=payload,
+            )
+        elif route.route_id == "desktop_ai.business_execute":
+            if self._business is None:
+                return _error_response(
+                    503,
+                    "desktop_ai_business_unavailable",
+                    "该 AI 功能尚未在当前桌面版本中启用。",
+                    True,
+                )
+            _exact_keys(payload, {"action_id", "consent_nonce"})
+            scope = str(parameters.get("scope") or "")
+            action = self._prepared.consume(
+                action_id=payload.get("action_id"),
+                consent_nonce=payload.get("consent_nonce"),
+                session_id=_session_id(request),
+            )
+            if getattr(action, "scope", None) != scope:
+                raise BusinessActionError("business_action_invalid")
+            result = self._business.execute(action)
         else:  # pragma: no cover - route table and dispatch are reviewed together
             raise RuntimeError("unhandled AI route")
         if not isinstance(result, Mapping):
@@ -423,7 +488,8 @@ def _known_error(
     error: AIDesktopServiceError
     | AIRuntimeStateError
     | AIConsentError
-    | PreparedActionError,
+    | PreparedActionError
+    | BusinessActionError,
 ) -> DesktopAIHTTPResponse:
     status = _ERROR_STATUS.get(error.code, 500)
     return _error_response(

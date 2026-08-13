@@ -31,6 +31,7 @@ from .consent import (
     SystemConsentClock,
 )
 from .prepared_actions import (
+    CompositeContentSnapshotAuthority,
     ContentSnapshotAuthority,
     ContentUnit,
     PreparedActionClock,
@@ -98,6 +99,7 @@ __all__ = [
     "PreparedConsentBinding",
     "SystemConsentClock",
     "ContentSnapshotAuthority",
+    "CompositeContentSnapshotAuthority",
     "ContentUnit",
     "PreparedActionClock",
     "PreparedActionError",
