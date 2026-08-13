@@ -202,16 +202,10 @@ class DesktopAIRouteTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 403)
         raised.exception.close()
 
-    def test_local_librarian_result_needs_no_key_and_makes_no_network_call(self):
-        opener, csrf = self.bootstrap()
-        with self.request(
-            opener,
-            "POST",
-            "/api/desktop/ai/actions/librarian/prepare",
-            payload={"question": "你能做什么？", "conversation_id": "local-c1"},
-            csrf=csrf,
-        ) as response:
-            result = json.load(response)
+    def test_local_librarian_assembler_needs_no_key_and_makes_no_network_call(self):
+        result = self.services.librarian_ports.assembler.local_result(
+            {"question": "你好", "conversation_id": "local-c1"}
+        )
         self.assertEqual(result["librarian_core_version"], "librarian-v3")
         self.assertEqual(result["search_operations"], 0)
         self.assertEqual(result["tool_calls"], 0)

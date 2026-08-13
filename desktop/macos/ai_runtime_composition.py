@@ -18,6 +18,7 @@ from auto_research.ai.provider_registry import trusted_provider_profile
 from auto_research.ai.runtime_factory import RuntimeAIClientFactory
 from auto_research.evidence.agent_runtime import LibrarianAgentRuntime
 from auto_research.evidence.context_chat_ai_business_action import (
+    SelectedEvidenceChatBusinessPorts,
     selected_evidence_chat_business_ports,
 )
 from auto_research.evidence.db import EvidenceDB
@@ -73,7 +74,7 @@ class MacAIRuntimeServices:
     snapshot_authority: CompositeContentSnapshotAuthority | None = None
     business_actions: BusinessPreparedActionRegistry | None = None
     personal_suggestion_ports: PersonalSuggestionBusinessPorts | None = None
-    selected_evidence_chat_ports: object | None = None
+    selected_evidence_chat_ports: SelectedEvidenceChatBusinessPorts | None = None
     librarian_ports: LibrarianBusinessPorts | None = None
     literature_extraction_ports: LiteratureExtractionBusinessPorts | None = None
     literature_jobs: LiteratureExtractionJobStore | None = None
@@ -192,6 +193,7 @@ def create_mac_ai_runtime_services(
         literature_ports = literature_extraction_business_ports(
             literature_jobs,
             session_id=str(desktop_session_id),
+            db=database,
         )
         snapshots = CompositeContentSnapshotAuthority(
             {

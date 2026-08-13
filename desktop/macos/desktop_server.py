@@ -213,7 +213,11 @@ class DesktopEvidenceHandler(EvidenceHandler):
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
             )
             return False
-        ai_mutation = self.desktop_ai_api is not None and self.desktop_ai_api.is_path(path)
+        ai_mutation = (
+            (self.desktop_ai_api is not None and self.desktop_ai_api.is_path(path))
+            or path in LEGACY_PAID_AI_PATHS
+            or path == LEGACY_WORKFLOW_PATH
+        )
         if (is_read_only_mutation("POST", path) or ai_mutation) and not self._csrf_valid():
             self.json_response(
                 {"error": "桌面写入授权无效", "code": "desktop_csrf_required"},
@@ -425,7 +429,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
             HTTPStatus.GONE,
         )
 
-    def _allow_local_legacy_workflow(self) -> bool:
+    def _local_legacy_workflow_body(self) -> bytes | None:
         """Allow only the old route's curated/packet branches, never paid AI."""
 
         try:
@@ -456,13 +460,10 @@ class DesktopEvidenceHandler(EvidenceHandler):
                 "extract_now",
                 "prepare_packet",
             }:
-                return False
-            # EvidenceHandler owns the established local response contract. Put
-            # the exact bounded bytes back so it remains the sole body parser.
-            self.rfile = io.BytesIO(raw)
-            return True
+                return None
+            return raw
         except Exception:
-            return False
+            return None
 
     def end_headers(self) -> None:
         if self._issue_desktop_cookie:
@@ -528,8 +529,20 @@ class DesktopEvidenceHandler(EvidenceHandler):
         try:
             if path in LEGACY_PAID_AI_PATHS:
                 return self._legacy_paid_ai_unavailable()
-            if path == LEGACY_WORKFLOW_PATH and not self._allow_local_legacy_workflow():
-                return self._legacy_paid_ai_unavailable()
+            if path == LEGACY_WORKFLOW_PATH:
+                raw = self._local_legacy_workflow_body()
+                if raw is None:
+                    return self._legacy_paid_ai_unavailable()
+                # EvidenceHandler remains the sole owner of the established
+                # local response contract. Replay the already bounded bytes
+                # for this call only, then restore the socket reader so a
+                # keep-alive connection remains usable.
+                original_rfile = self.rfile
+                try:
+                    self.rfile = io.BytesIO(raw)
+                    return super().do_POST()
+                finally:
+                    self.rfile = original_rfile
             if path == HISTORY_PATH:
                 return self._save_desktop_history()
             if path == CREDENTIAL_PATH:

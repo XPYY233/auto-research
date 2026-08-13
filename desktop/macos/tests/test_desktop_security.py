@@ -203,8 +203,9 @@ class DesktopBridgeSecurityTests(unittest.TestCase):
             "auto_research.evidence.six_column.get_six_extraction_status",
             return_value={"action": "prepare_packet"},
         ):
-            self.assertTrue(
-                self.server.RequestHandlerClass._allow_local_legacy_workflow(handler)
+            self.assertEqual(
+                self.server.RequestHandlerClass._local_legacy_workflow_body(handler),
+                b'{"paper_id":1}',
             )
         self.assertEqual(handler.rfile.read(), b'{"paper_id":1}')
 
@@ -216,8 +217,8 @@ class DesktopBridgeSecurityTests(unittest.TestCase):
             "auto_research.evidence.six_column.get_six_extraction_status",
             return_value={"action": "deepseek_extract"},
         ):
-            self.assertFalse(
-                self.server.RequestHandlerClass._allow_local_legacy_workflow(handler)
+            self.assertIsNone(
+                self.server.RequestHandlerClass._local_legacy_workflow_body(handler)
             )
 
 
