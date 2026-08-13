@@ -486,27 +486,37 @@ def _localize_candidates(client: DeepSeekClient, candidates: list[dict[str, Any]
             # Localization improves Chinese retrieval but must never invalidate
             # an otherwise evidence-grounded extraction run.
             continue
-        translations = {
-            item.get("candidate_id"): item for item in payload.get("translations", [])
-            if isinstance(item, dict)
-        }
-        for item in batch:
-            translated = translations.get(item["candidate_id"])
-            if not translated:
-                continue
-            meaning = str(translated.get("meaning_zh") or "").strip()
-            context = str(translated.get("context_explanation_zh") or "").strip()
-            original_numbers = set(_numbers(
-                f"{item.get('meaning') or ''} {item.get('context_explanation') or ''}"
-            ))
-            translated_numbers = set(_numbers(f"{meaning} {context}"))
-            if not meaning or not context or not original_numbers.issubset(translated_numbers):
-                continue
-            item["model_meaning"] = item["meaning"]
-            item["model_context_explanation"] = item["context_explanation"]
-            item["meaning"] = meaning
-            item["context_explanation"] = context
+        _apply_localization_payload(batch, payload)
     return output
+
+
+def _apply_localization_payload(
+    candidates: list[dict[str, Any]], payload: Any
+) -> None:
+    """Apply one already-returned localization payload without another model call."""
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("translations"), list):
+        return
+    translations = {
+        item.get("candidate_id"): item for item in payload["translations"]
+        if isinstance(item, dict)
+    }
+    for item in candidates:
+        translated = translations.get(item["candidate_id"])
+        if not translated:
+            continue
+        meaning = str(translated.get("meaning_zh") or "").strip()
+        context = str(translated.get("context_explanation_zh") or "").strip()
+        original_numbers = set(_numbers(
+            f"{item.get('meaning') or ''} {item.get('context_explanation') or ''}"
+        ))
+        translated_numbers = set(_numbers(f"{meaning} {context}"))
+        if not meaning or not context or not original_numbers.issubset(translated_numbers):
+            continue
+        item["model_meaning"] = item["meaning"]
+        item["model_context_explanation"] = item["context_explanation"]
+        item["meaning"] = meaning
+        item["context_explanation"] = context
 
 
 def localize_unreviewed_rows(db: EvidenceDB, paper_id: int,

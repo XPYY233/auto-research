@@ -35,7 +35,14 @@ STAGE_ORDER = (
     "validated",
     "finalized",
 )
-MODEL_STAGES = frozenset(STAGE_ORDER[:-2])
+MODEL_STAGES = frozenset({
+    "initial_focus", "coverage_gap", "coverage_verification", "adversarial_branches",
+    "third_review",
+})
+REQUIRED_CALL_STAGES = frozenset({"initial_focus", "coverage_gap"})
+LOCAL_CAPABLE_STAGES = frozenset({
+    "coverage_verification", "adversarial_branches", "third_review",
+})
 ALLOWED_TASKS = frozenset({"extraction", "verification", "analysis", "localization"})
 MAX_STAGE_CALLS = 512
 MAX_STAGE_TOKENS = 8_200_000
@@ -91,7 +98,7 @@ class PaperSource(Protocol):
 
 
 class AtomicLiteratureFinalizer(Protocol):
-    """Production adapter must commit all scientific rows atomically or roll back."""
+    """Reserved second-batch port for one audited scientific transaction."""
 
     def finalize(self, package: "ValidatedLiteraturePackage") -> Mapping[str, Any]: ...
 
@@ -214,7 +221,7 @@ class FrozenExtractionStage:
         if name not in MODEL_STAGES:
             raise LiteratureExtractionJobError("literature_stage_invalid", "未知抽取阶段")
         frozen_calls = tuple(calls)
-        if not frozen_calls:
+        if name in REQUIRED_CALL_STAGES and not frozen_calls:
             raise LiteratureExtractionJobError("literature_stage_invalid", "模型阶段必须包含调用计划")
         if len(frozen_calls) > MAX_STAGE_CALLS:
             raise LiteratureExtractionJobError("literature_stage_too_large", "抽取阶段调用次数超出限制")
@@ -266,6 +273,7 @@ class LiteratureStageContext:
     pages: tuple[Mapping[str, Any], ...]
     chunks: tuple[tuple[Mapping[str, Any], ...], ...]
     focuses: tuple[str, ...]
+    learning_guidance: str
     experiment_profile: Mapping[str, Any]
     prior_outputs: tuple[FrozenStageOutput, ...]
     snapshot_fingerprint: str
@@ -290,6 +298,7 @@ class _Job:
     experiment_profile: Mapping[str, Any]
     chunks: tuple[tuple[Mapping[str, Any], ...], ...]
     focuses: tuple[str, ...]
+    learning_guidance: str
     stage: FrozenExtractionStage
     issued_at: float
     expires_at: float
@@ -479,6 +488,7 @@ class LiteratureExtractionJobStore:
                     experiment_profile=profile,
                     chunks=chunks,
                     focuses=focuses,
+                    learning_guidance=learning_guidance,
                     stage=stage,
                     issued_at=now_value,
                     expires_at=now_value + self._ttl,
@@ -532,6 +542,13 @@ class LiteratureExtractionJobStore:
             job.status = "executing"
             return job.stage
 
+    def peek_stage(self, job_token: str, *, session_id: str) -> FrozenExtractionStage:
+        with self._lock:
+            job = self._get(job_token, session_id)
+            if job.claimed or job.status != "prepared":
+                raise LiteratureExtractionJobError("literature_stage_busy", "抽取阶段正在执行")
+            return job.stage
+
     def fail_stage(self, job_token: str, *, session_id: str) -> None:
         with self._lock:
             job = self._get(job_token, session_id)
@@ -571,6 +588,7 @@ class LiteratureExtractionJobStore:
                 pages=job.snapshot.pages,
                 chunks=job.chunks,
                 focuses=job.focuses,
+                learning_guidance=job.learning_guidance,
                 experiment_profile=job.experiment_profile,
                 prior_outputs=job.stage_outputs,
                 snapshot_fingerprint=job.snapshot.content_fingerprint,
@@ -592,11 +610,16 @@ class LiteratureExtractionJobStore:
                 ):
                     raise LiteratureExtractionJobError("literature_stage_stale", "抽取阶段状态已变化")
                 current_index = STAGE_ORDER.index(job.stage.name)
-                if current_index + 1 >= len(STAGE_ORDER) or STAGE_ORDER[current_index + 1] != planned.next_stage:
-                    raise LiteratureExtractionJobError("literature_stage_invalid", "抽取阶段顺序无效")
-                next_frozen = FrozenExtractionStage.create(
-                    planned.next_stage, planned.calls, planned.input_fingerprint, self._clock.now()
+                valid_next = (
+                    current_index + 1 < len(STAGE_ORDER)
+                    and STAGE_ORDER[current_index + 1] == planned.next_stage
+                ) or (
+                    job.stage.name == "adversarial_branches"
+                    and planned.next_stage == "validated"
+                    and not planned.calls
                 )
+                if not valid_next:
+                    raise LiteratureExtractionJobError("literature_stage_invalid", "抽取阶段顺序无效")
                 frozen_result = _freeze(planned.validated_result)
                 _validate_intermediate(frozen_result)
                 result_bytes = _canonical_bytes(frozen_result)
@@ -615,6 +638,26 @@ class LiteratureExtractionJobStore:
                     result_fingerprint=hashlib.sha256(result_bytes).hexdigest(),
                 )
                 job.stage_outputs = (*job.stage_outputs, output)
+                if planned.next_stage == "validated":
+                    if planned.calls:
+                        raise LiteratureExtractionJobError(
+                            "literature_stage_invalid", "已验证阶段不能包含模型调用"
+                        )
+                    job.validated_package = ValidatedLiteraturePackage(
+                        paper_id=job.paper_id,
+                        paper=job.paper,
+                        snapshot_fingerprint=job.snapshot.content_fingerprint,
+                        pdf_sha256=job.snapshot.pdf_sha256,
+                        experiment_profile=job.experiment_profile,
+                        quality_result=frozen_result,
+                    )
+                    job.claimed = False
+                    job.claim_expires_at = None
+                    job.status = "validated"
+                    return self.summary(job_token, session_id=session_id)
+                next_frozen = FrozenExtractionStage.create(
+                    planned.next_stage, planned.calls, planned.input_fingerprint, self._clock.now()
+                )
                 job.stage = next_frozen
                 job.claimed = False
                 job.claim_expires_at = None
@@ -623,6 +666,25 @@ class LiteratureExtractionJobStore:
         except Exception:
             self.fail_stage(job_token, session_id=session_id)
             raise
+
+    def advance_local_stage(
+        self,
+        job_token: str,
+        *,
+        session_id: str,
+        planner: LiteratureStagePlanner,
+    ) -> dict[str, Any]:
+        stage = self.claim_stage(job_token, session_id=session_id)
+        if stage.name not in LOCAL_CAPABLE_STAGES or stage.calls:
+            self.fail_stage(job_token, session_id=session_id)
+            raise LiteratureExtractionJobError("literature_stage_invalid", "当前阶段不是本地阶段")
+        return self.complete_stage(
+            job_token,
+            session_id=session_id,
+            completed_stage_fingerprint=stage.stage_fingerprint,
+            raw_results=(),
+            planner=planner,
+        )
 
     def mark_validated(
         self,
@@ -660,6 +722,16 @@ class LiteratureExtractionJobStore:
             snapshot_handle = job.snapshot_handle
         self._snapshots.assert_fresh(snapshot_handle)
 
+    def stage_fingerprint(self, job_token: str) -> str:
+        """Snapshot-authority hook; possession never grants execution or summary access."""
+
+        with self._lock:
+            self._cleanup(self._clock.now())
+            job = self._jobs.get(job_token)
+            if not job or job.status != "prepared" or job.claimed:
+                raise LiteratureExtractionJobError("literature_job_expired", "抽取阶段已变化")
+            return job.stage.stage_fingerprint
+
     def finalize(
         self,
         job_token: str,
@@ -667,34 +739,18 @@ class LiteratureExtractionJobStore:
         session_id: str,
         finalizer: AtomicLiteratureFinalizer,
     ) -> Mapping[str, Any]:
-        # Freshness is checked once immediately before the controlled commit.
-        # The finalizer receives only the frozen package and must never reopen
-        # the source path, so later path replacement cannot alter committed facts.
         with self._lock:
             job = self._get(job_token, session_id)
             if job.claimed or job.status != "validated" or job.validated_package is None:
                 raise LiteratureExtractionJobError("literature_not_validated", "抽取结果尚未通过全部质量门")
-            job.claimed = True
-            job.claim_expires_at = self._clock.now() + MAX_EXECUTION_LEASE_SECONDS
-            package = job.validated_package
-        try:
-            self._snapshots.assert_fresh(job.snapshot_handle)
-            result = finalizer.finalize(package)
-            _validate_intermediate(result)
-        except Exception as exc:
-            with self._lock:
-                current = self._jobs.get(job_token)
-                if current is job:
-                    current.claimed = False
-                    current.claim_expires_at = None
-            raise LiteratureExtractionJobError(
-                "literature_commit_failed", "抽取结果未能安全保存，未发布任何科学记录"
-            ) from exc
-        with self._lock:
-            removed = self._jobs.pop(job_token, None)
-        if removed is not None:
-            self._snapshots.release(removed.snapshot_handle)
-        return MappingProxyType(dict(_plain(result)))
+        # Existing publication code spans several SQLite connections plus
+        # visual-file mutations.  A Protocol cannot prove rollback.  Keep the
+        # production boundary closed until a concrete audited transaction and
+        # asset-staging implementation is installed in this module.
+        raise LiteratureExtractionJobError(
+            "literature_commit_unavailable",
+            "抽取结果已通过质量门，但当前版本尚不能原子保存，请保留任务等待升级",
+        )
 
     def cancel(self, job_token: str, *, session_id: str) -> None:
         with self._lock:

@@ -355,6 +355,7 @@ def _third_review_messages(records: list[dict[str, Any]], pages: dict[int, str])
 
 def _apply_third_review(client: DeepSeekClient, records: list[dict[str, Any]],
                         pages: dict[int, str], threshold: float) -> None:
+    payloads: list[dict[str, Any] | None] = []
     for start in range(0, len(records), 10):
         batch = records[start:start + 10]
         try:
@@ -363,9 +364,28 @@ def _apply_third_review(client: DeepSeekClient, records: list[dict[str, Any]],
                 max_tokens=5000, thinking=False, temperature=0.0,
             )
         except DeepSeekResponseError as exc:
+            payload = None
             for record in batch:
                 record["gate_reason"] = f"第三次复核未完成，转人工审核：{exc}"
+        payloads.append(payload)
+    _apply_third_review_payloads(records, payloads, threshold)
+
+
+def _apply_third_review_payloads(
+    records: list[dict[str, Any]],
+    payloads: list[dict[str, Any] | None],
+    threshold: float,
+) -> None:
+    """Apply frozen third-review responses using the established quality gate."""
+
+    batches = [records[start:start + 10] for start in range(0, len(records), 10)]
+    if len(payloads) != len(batches):
+        raise ValueError("third review response count does not match frozen batches")
+    for batch, payload in zip(batches, payloads, strict=True):
+        if payload is None:
             continue
+        if not isinstance(payload, dict) or not isinstance(payload.get("verdicts"), list):
+            raise ValueError("third review response must contain verdicts")
         verdicts = {
             str(item.get("candidate_key")): item
             for item in payload.get("verdicts", []) if isinstance(item, dict)
