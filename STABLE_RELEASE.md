@@ -1,13 +1,13 @@
 # Auto Research Evidence 阶段发布状态
 
-> 0.8 发布冻结（2026-08-13）：`0.8.0-preview.1` / build `17` 的共享核心、macOS 与 Windows 源码契约已串行通过 1177 项。build 16 在冻结路径冒烟门被拦截且未发布；最终 App/DMG/用户套件从本页文档提交后的干净工作树生成；0.7 build15 保持独立回退点。
+> 0.8 发布冻结（2026-08-13）：`0.8.0-preview.1` / build `18` 的共享核心、macOS 与 Windows 源码契约已串行通过 1177 项。build 16/17 被冻结冒烟门拦截且未发布；最终 App/DMG/用户套件从本页文档提交后的干净工作树生成；0.7 build15 保持独立回退点。
 
 ## 版本身份
 
 - 科学数据基线：`2026.07.30-librarian-brief-stable.1`
-- 当前发布候选：Auto Research `0.8.0-preview.1` / build `17`。采用 Workbench A 日/夜科研界面、设置中心、DeepSeek/OpenAI 受信提供商、四域 prepared-action AI 授权和分阶段原子文献工作流；最终 DMG、ZIP 和验收哈希以仓库外 0.8 用户套件为准
-- 当前已构建制品：完成文档冻结后从干净 release worktree 生成 Auto Research `0.8.0-preview.1` / build `17`
-- 当前发布套件：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.8.0-preview.1-build17-UserKit.zip`（最终 SHA-256 见相邻 `.sha256` 与套件内验收报告）
+- 当前发布候选：Auto Research `0.8.0-preview.1` / build `18`。采用 Workbench A 日/夜科研界面、设置中心、DeepSeek/OpenAI 受信提供商、四域 prepared-action AI 授权和分阶段原子文献工作流；最终 DMG、ZIP 和验收哈希以仓库外 0.8 用户套件为准
+- 当前已构建制品：完成文档冻结后从干净 release worktree 生成 Auto Research `0.8.0-preview.1` / build `18`
+- 当前发布套件：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.8.0-preview.1-build18-UserKit.zip`（最终 SHA-256 见相邻 `.sha256` 与套件内验收报告）
 - 改造前保护提交：`6ce9536`
 - 改造前保护标签：`evidence-demo-2026-07-30-pre-research-brief-1`
 - 当前状态：0.8 源码发布门已通过；Mac App、DMG 和用户套件正在从干净发布工作树生成。0.7 build15 保持可验证回退。两者均为课题组内部、ad-hoc 签名、未公证预览，不是公开发行版

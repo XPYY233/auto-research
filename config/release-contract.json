@@ -5,7 +5,7 @@
     "macos": {
       "desktop_version": "0.8.0-preview.1",
       "bundle_short_version": "0.8.0",
-      "build_number": "17",
+      "build_number": "18",
       "target": "macOS arm64 internal development preview"
     },
     "windows": {

@@ -5,6 +5,7 @@
 ## 2026-08-13：0.8.0-preview.1 源码发布门冻结
 
 - 首个 build 16 冻结候选在真实 PyInstaller 冒烟中被安全门拦截：launcher 在 `configure_core_paths()` 前提前导入共享 AI/settings 核心。没有安装 App、没有生成 DMG、没有对外发布。修复将这些导入延迟到运行路径绑定之后，并增加回归契约；为保持标签不可变，正式候选顺延为 build 17，build 16 仅作为失败保护点保留。
+- build 17 随后被第二道 HTTP 前端契约冒烟拦截：检查器仍寻找 0.7 的授权 schema 与旧 DeepSeek 专用前端标记，而实际 0.8 已迁移到多提供商 prepared-action。更新 smoke 为 `ai-consent-v2`、四授权域与 prepare/execute 标记后，正式候选继续顺延为 build 18；build 17 同样没有安装或生成 DMG。
 
 - 完成 Workbench A 日/夜/跟随系统主题、舒适/紧凑密度、统一活动栏/命令面板/设置中心，并以 B 文献阅读层级和 C 实验数值样式补充单一设计系统。个人实验与资料包 DOM 静态归位；人工补录、修正历史和宠物进度场景从生产前端物理退役。
 - DeepSeek/OpenAI 进入同一受信 provider 注册表和按 provider 隔离的安全凭据；Librarian、选中证据、文献提取、个人建议全部改为服务端 prepared action、逐阶段知情同意、一次性 nonce、调用/token 预算和 stale 绑定。旧收费旁路固定退役。
