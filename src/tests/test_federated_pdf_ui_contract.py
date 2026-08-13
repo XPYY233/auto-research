@@ -12,7 +12,10 @@ class FederatedPdfUIContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.product = (WEB_ROOT / "desktop_product.js").read_text(encoding="utf-8")
-        cls.styles = (WEB_ROOT / "app.css").read_text(encoding="utf-8")
+        cls.styles = "\n".join(
+            (WEB_ROOT / name).read_text(encoding="utf-8")
+            for name in ("app.css", "workbench.css")
+        )
 
     def test_transfer_literature_pdf_uses_only_path_free_identity(self) -> None:
         self.assertIn('document.collection_kind === "literature_collection"', self.product)
