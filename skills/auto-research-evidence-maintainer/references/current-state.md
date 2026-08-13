@@ -2,7 +2,7 @@
 
 ## 0.8 release freeze checkpoint (2026-08-13)
 
-- Source identity: Auto Research `0.8.0-preview.1` build 16; the annotated release tag is created from the documentation freeze commit. Last rollback remains `0.7.0-preview.2` build 15, source `888aae5`.
+- Source identity: Auto Research `0.8.0-preview.1` build 17; build 16 was blocked before release by the frozen-path smoke gate. The annotated build17 tag is created from the final release commit. Last rollback remains `0.7.0-preview.2` build 15, source `888aae5`.
 - Completed: Workbench A light/dark/system and density; four-entry single-owner shell; settings; DeepSeek/OpenAI trusted registry and provider-separated credentials; four-scope server-prepared AI actions; staged literature commit; personal reviewed import; package center; macOS runtime; Windows thin source parity.
 - Security: no arbitrary provider URL; renderer cannot create final outbound payload; every billable stage has disclosure, explicit confirmation, one-time nonce and budget; search and local import remain available without a key.
 - Validation: 1177/1177 serial tests (810 core, 228 macOS, 139 Windows), Python compile, six JS syntax checks, release hash sync, diff check and Git object check. Production SQLite was not used or staged.
@@ -18,8 +18,8 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 - Research-brief pre-change tag: `evidence-demo-2026-07-30-pre-research-brief-1`
 - Previous Librarian reasoning/presentation implementation commit: `8e9c4c1`
 - Research-brief implementation/documentation commit: use the current shared-core `git log -1`; this file does not self-reference its commit hash
-- Current desktop source/tag: the 0.8 documentation freeze commit and annotated build16 tag; exact values are recorded in the user-kit acceptance report
-- Current desktop version: Auto Research `0.8.0-preview.1` build 16 for Apple Silicon macOS
+- Current desktop source/tag: the 0.8 final release commit and annotated build17 tag; exact values are recorded in the user-kit acceptance report
+- Current desktop version: Auto Research `0.8.0-preview.1` build 17 for Apple Silicon macOS
 - Release: `2026.07.30-librarian-brief-stable.1`
 - Evidence schema: v12
 - Fixed evidence corpus: `config/evidence_test_set_50.json`
@@ -51,7 +51,7 @@ Independent read-only browser acceptance: a tungsten question returned 65 candid
 - The application and currently published evidence are stable for demonstration.
 - The original at-least-30-processed-paper goal is incomplete: 13 more papers are needed to move from 17 to 30; 33/50 remain not data-ready.
 - Adversarial DeepSeek agreement is not independent scientific accuracy. A human gold standard remains missing.
-- The only supported product shape is a personal desktop workbench. The current release line is Auto Research `0.8.0-preview.1` build 16 on macOS. Its primary navigation is Literature, Search, Experiment and Package Center; manual entry/revision-history views and the pet scene are retired. Windows shares the same UI contract but `installer_ready=false`, no Setup and no clean-machine acceptance. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
+- The only supported product shape is a personal desktop workbench. The current release line is Auto Research `0.8.0-preview.1` build 17 on macOS. Its primary navigation is Literature, Search, Experiment and Package Center; manual entry/revision-history views and the pet scene are retired. Windows shares the same UI contract but `installer_ready=false`, no Setup and no clean-machine acceptance. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
 - GitHub is not configured. `origin` points to a local historical bundle.
 - Librarian reasoning now has deterministic hard-condition parsing, direct/adjacent/expansion classification, evidence bundles and a five-section research report. This did not change scientific evidence or corpus readiness.
 - The local deterministic parser plus bounded history is the only hard-condition authority. DeepSeek plans queries, selects bounded evidence and explains it; it cannot create or rewrite hard conditions. Scientific-notation fluence, equivalent units and particle/material role boundaries are covered by regression tests.

@@ -2,7 +2,7 @@
 
 ## 0.8 发布冻结点（2026-08-13，优先阅读）
 
-- Auto Research `0.8.0-preview.1` / build `16` 源码已冻结；发布身份和六个共享 Web 资源哈希由 `config/release-contract.json` 单一管理。
+- Auto Research `0.8.0-preview.1` / build `17` 源码已冻结；build 16 在冻结路径冒烟门被拦截且未发布。发布身份和六个共享 Web 资源哈希由 `config/release-contract.json` 单一管理。
 - Workbench A 成为唯一生产设计系统：日间/夜间/跟随系统、舒适/紧凑密度、四个科研入口、设置中心、命令面板与键盘导航均使用同一共享前端。个人实验和资料包 DOM 已静态归位；旧人工补录、修正历史和宠物进度场景已从生产 DOM/处理器退役。
 - 运行时 AI 只允许代码审查过的受信提供商（首批 DeepSeek/OpenAI）和固定官方 endpoint/model 目录。Librarian、选中证据、文献提取、个人表格四域全部走服务端 prepared action、逐阶段披露、一次性 consent nonce 和调用/token 预算，旧收费旁路固定退役。
 - macOS 已接完整四域业务、设置、资料包、私人实验与文献最终提交事务。Windows 0.8 源码消费同一共享契约、工作台资产和 Credential Manager 槽；Windows 仍 `installer_ready=false / SETUP_PRESENT=NO`，等待 Win11 真机构建验收。
@@ -27,7 +27,7 @@
 
 > 交班快照：2026-08-13
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
-> 当前发布候选：Auto Research `0.8.0-preview.1` / build `16`；最终 DMG、套件与验收哈希见仓库外 0.8 用户套件的 `RELEASE_ACCEPTANCE.json`
+> 当前发布候选：Auto Research `0.8.0-preview.1` / build `17`；最终 DMG、套件与验收哈希见仓库外 0.8 用户套件的 `RELEASE_ACCEPTANCE.json`
 > 当前保护提交：`ad40a31`；最终候选在完成文档收口后从干净 release worktree 构建，构建清单中的 `core_commit` 为制品权威
 > 官方资料包：`0.2.0-preview.1`，SHA-256 `89ec7f8dcdeea2d862d91aaf798674fd600c21fd75c4553d270a0c0b806f999e`；旧 `0.1.0-preview.1` 保持不可变回退点
 > Windows：继续 `installer_ready=false`，无 Setup、无 Win11 真机验收；不得把源码对齐描述为安装版

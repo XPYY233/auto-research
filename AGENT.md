@@ -12,7 +12,7 @@ This project is a local literature automation workflow for fusion materials, rad
 - Do not solve platform integration by copying product logic into `desktop/macos/**` or `desktop/windows/**`. Package verification, official repository audit, stable source identity and federated read-only search stay platform-neutral; desktop code supplies lifecycle, native file selection, credentials and protected routing only.
 - The canonical official package selector is `<app-data>/official-packages/active.json`. A package becomes active only after signature/checksum validation and `OfficialEvidenceRepository` audit; `distribution-sqlite-v1` must never pass through `EvidenceDB.init()` or any writable v12 search-index path.
 - Signing private keys are maintainer-only files outside Git and outside application data packages. Applications trust only reviewed public keys from `auto_research.product.trusted_publishers`; missing keys must never be silently regenerated under an existing `key_id`.
-- Current release line: Apple Silicon macOS `0.8.0-preview.1` build 16, with final tag/artifact hashes recorded in the user-kit acceptance report. It remains an internal preview; build 15/source `888aae5` is the independent 0.7 rollback.
+- Current release line: Apple Silicon macOS `0.8.0-preview.1` build 17, with final tag/artifact hashes recorded in the user-kit acceptance report. Build 16 was stopped by the frozen-path smoke gate before any App/DMG was released. It remains an internal preview; build 15/source `888aae5` is the independent 0.7 rollback.
 - The 0.8 candidate includes Workbench light/dark/system themes, provider-separated DeepSeek/OpenAI BYOK, four-scope prepared AI actions, staged literature commit, personal reviewed import, federated search and Package Center.
 - Current internal official package: `0.2.0-preview.1`, SHA-256 `89ec7f8dcdeea2d862d91aaf798674fd600c21fd75c4553d270a0c0b806f999e`, 60 paper metadata rows and 4,356 four-type entities. It is read-only, contains no PDFs or binary images, and must never replace or write the editable v12 workspace.
 - Windows 0.8 thin source parity passed 139 contract tests and shares the same Web/DTO/AI contracts. `installer_ready=false`; there is still no Setup or Windows 11 clean-machine evidence.
@@ -72,7 +72,7 @@ This project is a local literature automation workflow for fusion materials, rad
 
 ## 0.8 恢复与协作纪律（2026-08-13）
 
-- 0.8.0-preview.1 build 16 is the current macOS internal-preview release line; use `PROJECT_HANDOFF.md` and the user-kit acceptance report as authority. The independent rollback remains `0.7.0-preview.2` build 15.
+- 0.8.0-preview.1 build 17 is the current macOS internal-preview release line; use `PROJECT_HANDOFF.md` and the user-kit acceptance report as authority. Build 16 was never released; the independent rollback remains `0.7.0-preview.2` build 15.
 - 运行时 AI 不接受任意“OpenAI-compatible URL”，也不再长期限定 DeepSeek。只允许代码内受信 provider 注册表（首批 DeepSeek/OpenAI）、固定 HTTPS endpoint、固定模型目录、禁 redirect；新增 provider 必须代码评审和能力回归。
 - renderer 不能提交最终外发 DTO、scope、provider、content hash、credential generation 或 consent 布尔值。业务 assembler 在服务端准备不可变 job envelope；用户确认后只提交 opaque action_id + one-time nonce；executor 只能使用 envelope 内的科研内容和本 job 的模型输出。
 - API key 与 generation 必须在平台凭据 envelope 中原子更新。旧 DeepSeek route 如保留，只能委托同一 provider manager/AIDesktopService，不得有第二套 secret、generation、状态或环境变量权威。
