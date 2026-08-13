@@ -79,6 +79,15 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn("CFBundleVersion", command)
         self.assertIn("${PREVIOUS_SHORT_VERSION}-build${PREVIOUS_BUILD_NUMBER}", command)
 
+    def test_fusion_installer_uses_a_zsh_safe_transaction_exit_variable(self) -> None:
+        command = (DESKTOP_ROOT / "install_fusion_review.command").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("trap restore_previous_install EXIT", command)
+        self.assertIn("local exit_code=$?", command)
+        self.assertNotIn("local status=$?", command)
+        self.assertIn('return "${exit_code}"', command)
+
     def test_frozen_candidate_imports_all_product_contracts(self) -> None:
         checks = launcher._frozen_product_contract_checks()
         self.assertTrue(checks)

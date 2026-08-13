@@ -15,7 +15,7 @@ COMMITTED=0
 MOVED_OLD=0
 
 restore_previous_install() {
-  local status=$?
+  local exit_code=$?
   if [[ "${COMMITTED}" -eq 0 ]]; then
     rm -rf -- "${STAGED}"
     if [[ "${MOVED_OLD}" -eq 1 && -d "${LIVE_HOLD}" ]]; then
@@ -26,7 +26,7 @@ restore_previous_install() {
   else
     rm -rf -- "${LIVE_HOLD}"
   fi
-  return "${status}"
+  return "${exit_code}"
 }
 trap restore_previous_install EXIT
 
