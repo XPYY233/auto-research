@@ -1,0 +1,705 @@
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import secrets
+import threading
+import time
+import re
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any, Callable, Mapping, Protocol, Sequence
+
+import fitz
+
+from .context_chat import _read_stable_pdf_snapshot
+from .deepseek_extraction import (
+    BASE_EXTRACTION_FOCUSES,
+    _extraction_messages,
+    _is_reference_dominant,
+    _page_chunks,
+)
+from .experiment_types import classify_experiment_types, extraction_focuses_for_profile
+from .quality_pipeline import ROLE_A, ROLE_B
+
+
+SCHEMA_VERSION = "literature-extraction-job-v1"
+SUMMARY_SCHEMA_VERSION = "literature-extraction-stage-summary-v1"
+STAGE_ORDER = (
+    "initial_focus",
+    "coverage_gap",
+    "coverage_verification",
+    "adversarial_branches",
+    "third_review",
+    "validated",
+    "finalized",
+)
+MODEL_STAGES = frozenset(STAGE_ORDER[:-2])
+ALLOWED_TASKS = frozenset({"extraction", "verification", "analysis", "localization"})
+MAX_STAGE_CALLS = 512
+MAX_STAGE_TOKENS = 8_200_000
+MAX_MESSAGE_CHARS = 4_000_000
+MAX_STAGE_BYTES = 32_000_000
+MAX_STAGE_OUTPUT_BYTES = 32_000_000
+MAX_JOB_OUTPUT_BYTES = 96_000_000
+MAX_EXECUTION_LEASE_SECONDS = 10 * 60
+_SENSITIVE_KEYS = frozenset({
+    "api_key", "credential_ref", "endpoint", "pdf_path", "file_path", "local_path",
+    "selection_id", "zotero_key", "database_path",
+})
+_LOCAL_PATH_RE = re.compile(
+    r"(?:^|[\s='\"])(?:/Users/|/home/|/private/|/tmp/|/var/|/etc/|/usr/|/root/|"
+    r"/Applications/|/Library/|/System/|[A-Za-z]:[\\/]|file:|sqlite:|\\\\)",
+    re.IGNORECASE,
+)
+MAX_JOBS = 16
+MAX_SESSION_JOBS = 4
+MAX_SNAPSHOT_BYTES = 128 * 1024 * 1024
+MAX_SNAPSHOT_STORE_BYTES = 512 * 1024 * 1024
+DEFAULT_TTL_SECONDS = 30 * 60
+
+
+class LiteratureExtractionJobError(Exception):
+    def __init__(self, code: str, safe_message: str):
+        super().__init__(safe_message)
+        self.code = code
+        self.safe_message = safe_message
+
+    def public_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "literature-extraction-error-v1",
+            "code": self.code,
+            "message": self.safe_message,
+            "retryable": self.code in {
+                "literature_stage_busy", "literature_job_store_full", "literature_commit_failed",
+            },
+        }
+
+
+class Clock(Protocol):
+    def now(self) -> float: ...
+
+
+class SystemClock:
+    def now(self) -> float:
+        return time.time()
+
+
+class PaperSource(Protocol):
+    def get_paper(self, paper_id: int) -> Mapping[str, Any] | None: ...
+
+
+class AtomicLiteratureFinalizer(Protocol):
+    """Production adapter must commit all scientific rows atomically or roll back."""
+
+    def finalize(self, package: "ValidatedLiteraturePackage") -> Mapping[str, Any]: ...
+
+
+class LiteratureStagePlanner(Protocol):
+    """Trusted server-side adapter around the existing prompt and validator functions."""
+
+    def plan_next(
+        self, context: "LiteratureStageContext", raw_results: Sequence[Mapping[str, Any]]
+    ) -> "PlannedLiteratureStage": ...
+
+
+def _freeze(value: Any, *, depth: int = 0) -> Any:
+    if depth > 10:
+        raise LiteratureExtractionJobError("literature_stage_invalid", "抽取阶段内容层级过深")
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _freeze(item, depth=depth + 1) for key, item in value.items()})
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return tuple(_freeze(item, depth=depth + 1) for item in value)
+    raise LiteratureExtractionJobError("literature_stage_invalid", "抽取阶段包含不支持的数据")
+
+
+def _plain(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _plain(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_plain(item) for item in value]
+    return value
+
+
+def _canonical_bytes(value: Any) -> bytes:
+    return json.dumps(
+        _plain(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+
+
+def _validate_intermediate(value: Any, *, depth: int = 0) -> None:
+    if depth > 10:
+        raise LiteratureExtractionJobError("literature_stage_invalid", "抽取阶段内容层级过深")
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if str(key).casefold() in _SENSITIVE_KEYS:
+                raise LiteratureExtractionJobError("literature_stage_invalid", "抽取阶段包含受保护字段")
+            _validate_intermediate(item, depth=depth + 1)
+        return
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for item in value:
+            _validate_intermediate(item, depth=depth + 1)
+        return
+    if isinstance(value, str) and _LOCAL_PATH_RE.search(value):
+        raise LiteratureExtractionJobError("literature_stage_invalid", "抽取阶段包含本机位置")
+
+
+@dataclass(frozen=True)
+class FrozenPDFContext:
+    pdf_sha256: str
+    pages: tuple[Mapping[str, Any], ...]
+    page_count: int
+    content_fingerprint: str
+
+
+@dataclass(frozen=True)
+class FrozenModelCall:
+    call_id: str
+    task: str
+    messages: tuple[Mapping[str, Any], ...]
+    max_tokens: int
+    options: Mapping[str, Any]
+    call_digest: str
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        call_id: str,
+        task: str,
+        messages: Sequence[Mapping[str, Any]],
+        max_tokens: int,
+        options: Mapping[str, Any] | None = None,
+    ) -> "FrozenModelCall":
+        if task not in ALLOWED_TASKS or not call_id or len(call_id) > 120:
+            raise LiteratureExtractionJobError("literature_stage_invalid", "模型调用计划无效")
+        if not isinstance(max_tokens, int) or not 1 <= max_tokens <= 32_000:
+            raise LiteratureExtractionJobError("literature_stage_invalid", "模型调用预算无效")
+        frozen_messages = _freeze(list(messages))
+        frozen_options = _freeze(dict(options or {}))
+        payload = {
+            "call_id": call_id,
+            "task": task,
+            "messages": frozen_messages,
+            "max_tokens": max_tokens,
+            "options": frozen_options,
+        }
+        if len(_canonical_bytes(payload)) > MAX_MESSAGE_CHARS:
+            raise LiteratureExtractionJobError("literature_stage_too_large", "抽取阶段发送内容超出限制")
+        return cls(
+            call_id=call_id,
+            task=task,
+            messages=tuple(frozen_messages),
+            max_tokens=max_tokens,
+            options=frozen_options,
+            call_digest=hashlib.sha256(_canonical_bytes(payload)).hexdigest(),
+        )
+
+
+@dataclass(frozen=True)
+class FrozenExtractionStage:
+    name: str
+    calls: tuple[FrozenModelCall, ...]
+    input_fingerprint: str
+    stage_fingerprint: str
+    created_at: float
+
+    @classmethod
+    def create(
+        cls, name: str, calls: Sequence[FrozenModelCall], input_fingerprint: str, created_at: float
+    ) -> "FrozenExtractionStage":
+        if name not in MODEL_STAGES:
+            raise LiteratureExtractionJobError("literature_stage_invalid", "未知抽取阶段")
+        frozen_calls = tuple(calls)
+        if not frozen_calls:
+            raise LiteratureExtractionJobError("literature_stage_invalid", "模型阶段必须包含调用计划")
+        if len(frozen_calls) > MAX_STAGE_CALLS:
+            raise LiteratureExtractionJobError("literature_stage_too_large", "抽取阶段调用次数超出限制")
+        if sum(call.max_tokens for call in frozen_calls) > MAX_STAGE_TOKENS:
+            raise LiteratureExtractionJobError("literature_stage_too_large", "抽取阶段令牌预算超出限制")
+        if sum(len(_canonical_bytes({
+            "messages": call.messages, "options": call.options,
+        })) for call in frozen_calls) > MAX_STAGE_BYTES:
+            raise LiteratureExtractionJobError("literature_stage_too_large", "抽取阶段发送内容超出限制")
+        ids = [call.call_id for call in frozen_calls]
+        if len(ids) != len(set(ids)):
+            raise LiteratureExtractionJobError("literature_stage_invalid", "抽取阶段调用标识重复")
+        manifest = {
+            "name": name,
+            "input_fingerprint": input_fingerprint,
+            "calls": [call.call_digest for call in frozen_calls],
+        }
+        return cls(
+            name=name,
+            calls=frozen_calls,
+            input_fingerprint=input_fingerprint,
+            stage_fingerprint=hashlib.sha256(_canonical_bytes(manifest)).hexdigest(),
+            created_at=created_at,
+        )
+
+
+@dataclass(frozen=True)
+class ValidatedLiteraturePackage:
+    paper_id: int
+    paper: Mapping[str, Any]
+    snapshot_fingerprint: str
+    pdf_sha256: str
+    experiment_profile: Mapping[str, Any]
+    quality_result: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class FrozenStageOutput:
+    stage: str
+    stage_fingerprint: str
+    result: Any
+    result_fingerprint: str
+
+
+@dataclass(frozen=True)
+class LiteratureStageContext:
+    stage: FrozenExtractionStage
+    paper: Mapping[str, Any]
+    pages: tuple[Mapping[str, Any], ...]
+    chunks: tuple[tuple[Mapping[str, Any], ...], ...]
+    focuses: tuple[str, ...]
+    experiment_profile: Mapping[str, Any]
+    prior_outputs: tuple[FrozenStageOutput, ...]
+    snapshot_fingerprint: str
+
+
+@dataclass(frozen=True)
+class PlannedLiteratureStage:
+    next_stage: str
+    validated_result: Any
+    calls: tuple[FrozenModelCall, ...]
+    input_fingerprint: str
+
+
+@dataclass
+class _Job:
+    token: str
+    session_digest: str
+    paper_id: int
+    paper: Mapping[str, Any]
+    snapshot_handle: str
+    snapshot: FrozenPDFContext
+    experiment_profile: Mapping[str, Any]
+    chunks: tuple[tuple[Mapping[str, Any], ...], ...]
+    focuses: tuple[str, ...]
+    stage: FrozenExtractionStage
+    issued_at: float
+    expires_at: float
+    claimed: bool = False
+    claim_expires_at: float | None = None
+    status: str = "prepared"
+    stage_outputs: tuple[FrozenStageOutput, ...] = ()
+    validated_package: ValidatedLiteraturePackage | None = None
+
+
+@dataclass(frozen=True)
+class _SnapshotRecord:
+    source_path: str
+    content: bytes
+    context: FrozenPDFContext
+
+
+class LiteraturePDFSnapshotAuthority:
+    """Owns local path and binary bytes outside the public/job state machine."""
+
+    def __init__(self, *, max_total_bytes: int = MAX_SNAPSHOT_STORE_BYTES) -> None:
+        if not MAX_SNAPSHOT_BYTES <= max_total_bytes <= 2 * 1024 * 1024 * 1024:
+            raise ValueError("snapshot authority capacity is invalid")
+        self._max_total_bytes = max_total_bytes
+        self._records: dict[str, _SnapshotRecord] = {}
+        self._lock = threading.RLock()
+
+    def capture(self, pdf_path: str, *, max_pages: int | None = None) -> tuple[str, FrozenPDFContext]:
+        raw, context = _capture_pdf_snapshot(pdf_path, max_pages=max_pages)
+        if len(raw) > MAX_SNAPSHOT_BYTES:
+            raise LiteratureExtractionJobError("literature_pdf_too_large", "PDF 超出抽取快照限制")
+        with self._lock:
+            if sum(len(item.content) for item in self._records.values()) + len(raw) > self._max_total_bytes:
+                raise LiteratureExtractionJobError("literature_job_store_full", "抽取快照空间不足，请稍后重试")
+            handle = secrets.token_urlsafe(32)
+            self._records[handle] = _SnapshotRecord(pdf_path, raw, context)
+        return handle, context
+
+    def assert_fresh(self, handle: str) -> None:
+        with self._lock:
+            record = self._records.get(handle)
+        if record is None:
+            raise LiteratureExtractionJobError("literature_job_expired", "抽取快照已过期")
+        current = _read_stable_pdf_snapshot(record.source_path)
+        if not hmac.compare_digest(record.context.pdf_sha256, current.sha256):
+            raise LiteratureExtractionJobError("literature_source_stale", "原始 PDF 已发生变化")
+
+    def release(self, handle: str) -> None:
+        with self._lock:
+            self._records.pop(handle, None)
+
+
+def _capture_pdf_snapshot(
+    pdf_path: str, *, max_pages: int | None = None
+) -> tuple[bytes, FrozenPDFContext]:
+    """Capture bytes and page text from the same verified file descriptor read."""
+    raw = _read_stable_pdf_snapshot(pdf_path)
+    pages: list[Mapping[str, Any]] = []
+    try:
+        with fitz.open(stream=raw.content, filetype="pdf") as document:
+            limit = min(len(document), max_pages) if max_pages else len(document)
+            for index in range(limit):
+                text = document[index].get_text("text").strip()
+                if _is_reference_dominant(text):
+                    continue
+                pages.append(MappingProxyType({"page": index + 1, "text": text}))
+            page_count = len(document)
+    except Exception as exc:
+        raise LiteratureExtractionJobError("literature_pdf_invalid", "PDF 无法安全解析") from exc
+    if not pages:
+        raise LiteratureExtractionJobError("literature_pdf_empty", "PDF 没有可用于抽取的正文")
+    fingerprint = hashlib.sha256(_canonical_bytes({
+        "pdf_sha256": raw.sha256,
+        "page_count": page_count,
+        "pages": pages,
+    })).hexdigest()
+    return raw.content, FrozenPDFContext(raw.sha256, tuple(pages), page_count, fingerprint)
+
+
+def capture_pdf_snapshot(pdf_path: str, *, max_pages: int | None = None) -> FrozenPDFContext:
+    """Public helper returns immutable derived context, never binary bytes or paths."""
+
+    return _capture_pdf_snapshot(pdf_path, max_pages=max_pages)[1]
+
+
+class LiteratureExtractionJobStore:
+    """Process-local staged authority; it never writes scientific state."""
+
+    def __init__(
+        self,
+        *,
+        clock: Clock | None = None,
+        ttl_seconds: int = DEFAULT_TTL_SECONDS,
+        max_jobs: int = MAX_JOBS,
+        max_session_jobs: int = MAX_SESSION_JOBS,
+        session_key: bytes | None = None,
+        snapshots: LiteraturePDFSnapshotAuthority | None = None,
+    ) -> None:
+        self._clock = clock or SystemClock()
+        self._ttl = ttl_seconds
+        self._max_jobs = max_jobs
+        self._max_session_jobs = max_session_jobs
+        self._key = session_key or secrets.token_bytes(32)
+        self._snapshots = snapshots or LiteraturePDFSnapshotAuthority()
+        self._jobs: dict[str, _Job] = {}
+        self._lock = threading.RLock()
+        if not 1 <= ttl_seconds <= 24 * 60 * 60:
+            raise ValueError("ttl_seconds must be between 1 and 86400")
+        if not 1 <= max_jobs <= 128 or not 1 <= max_session_jobs <= max_jobs:
+            raise ValueError("job capacity limits are invalid")
+
+    def _session_digest(self, session_id: str) -> str:
+        if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
+            raise LiteratureExtractionJobError("literature_session_invalid", "抽取会话无效")
+        return hmac.new(self._key, session_id.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def _cleanup(self, now_value: float) -> None:
+        for token, job in list(self._jobs.items()):
+            claim_expired = job.claimed and (job.claim_expires_at or 0) <= now_value
+            if job.expires_at <= now_value and (not job.claimed or claim_expired):
+                self._jobs.pop(token, None)
+                self._snapshots.release(job.snapshot_handle)
+
+    def create(
+        self,
+        source: PaperSource,
+        *,
+        paper_id: int,
+        session_id: str,
+        max_pages: int | None = None,
+        chunk_pages: int = 2,
+        learning_guidance: str = "",
+    ) -> dict[str, Any]:
+        if not isinstance(paper_id, int) or paper_id < 1 or not 1 <= chunk_pages <= 20:
+            raise LiteratureExtractionJobError("literature_request_invalid", "文献抽取请求无效")
+        if len(learning_guidance) > 64_000:
+            raise LiteratureExtractionJobError("literature_request_invalid", "抽取规则超出限制")
+        paper_raw = source.get_paper(paper_id)
+        if not paper_raw or not paper_raw.get("pdf_path"):
+            raise LiteratureExtractionJobError("literature_pdf_missing", "当前文献没有可读取的 PDF")
+        source_path = str(paper_raw["pdf_path"])
+        snapshot_handle, snapshot = self._snapshots.capture(source_path, max_pages=max_pages)
+        public_paper = MappingProxyType({
+            "title": str(paper_raw.get("title") or "")[:500],
+            "doi": str(paper_raw.get("doi") or "")[:300] or None,
+        })
+        page_list = [_plain(page) for page in snapshot.pages]
+        profile = _freeze(classify_experiment_types(dict(public_paper), pages=page_list))
+        focuses = tuple(extraction_focuses_for_profile(_plain(profile)) or BASE_EXTRACTION_FOCUSES)
+        chunks = tuple(tuple(chunk) for chunk in _page_chunks(page_list, chunk_pages))
+        extraction_paper = {**dict(public_paper), "_recognition_profile": _plain(profile)}
+        calls: list[FrozenModelCall] = []
+        for branch, instruction in (("a", ROLE_A), ("b", ROLE_B)):
+            for chunk_index, chunk in enumerate(chunks, start=1):
+                for focus_index, focus in enumerate(focuses, start=1):
+                    messages = _extraction_messages(
+                        extraction_paper, list(chunk), focus, learning_guidance
+                    )
+                    messages[0]["content"] = f"{instruction}\n\n{messages[0]['content']}"
+                    calls.append(FrozenModelCall.create(
+                        call_id=f"{branch}-chunk-{chunk_index}-focus-{focus_index}",
+                        task="extraction",
+                        messages=messages,
+                        max_tokens=16_000,
+                        options={"thinking": False, "temperature": 0.1 if branch == "a" else 0.45},
+                    ))
+        now_value = self._clock.now()
+        stage = FrozenExtractionStage.create(
+            "initial_focus", calls, snapshot.content_fingerprint, now_value
+        )
+        session_digest = self._session_digest(session_id)
+        try:
+            with self._lock:
+                self._cleanup(now_value)
+                if len(self._jobs) >= self._max_jobs:
+                    raise LiteratureExtractionJobError("literature_job_store_full", "抽取任务繁忙，请稍后重试")
+                if sum(job.session_digest == session_digest for job in self._jobs.values()) >= self._max_session_jobs:
+                    raise LiteratureExtractionJobError("literature_job_store_full", "当前会话抽取任务过多")
+                token = secrets.token_urlsafe(32)
+                self._jobs[token] = _Job(
+                    token=token,
+                    session_digest=session_digest,
+                    paper_id=paper_id,
+                    paper=public_paper,
+                    snapshot_handle=snapshot_handle,
+                    snapshot=snapshot,
+                    experiment_profile=profile,
+                    chunks=chunks,
+                    focuses=focuses,
+                    stage=stage,
+                    issued_at=now_value,
+                    expires_at=now_value + self._ttl,
+                )
+        except Exception:
+            self._snapshots.release(snapshot_handle)
+            raise
+        return self.summary(token, session_id=session_id)
+
+    def summary(self, job_token: str, *, session_id: str) -> dict[str, Any]:
+        with self._lock:
+            job = self._get(job_token, session_id)
+            pending_calls = job.stage.calls if job.status not in {"validated", "finalized"} else ()
+            return {
+                "schema_version": SUMMARY_SCHEMA_VERSION,
+                "job_token": job.token,
+                "stage": job.status if job.status in {"validated", "finalized"} else job.stage.name,
+                "paper": dict(job.paper),
+                "call_count": len(pending_calls),
+                "max_token_budget": sum(call.max_tokens for call in pending_calls),
+                "sending_scope": {
+                    "pdf_page_count": len(job.snapshot.pages),
+                    "page_block_count": len(job.chunks),
+                    "branch_count": 2,
+                    "focus_count": len(job.focuses),
+                },
+                "possible_charges": bool(pending_calls),
+                "requires_confirmation": bool(pending_calls),
+                "expires_at": job.expires_at,
+                "transient": True,
+                "persistence_allowed": False,
+            }
+
+    def _get(self, job_token: str, session_id: str) -> _Job:
+        now_value = self._clock.now()
+        self._cleanup(now_value)
+        job = self._jobs.get(job_token)
+        if not job or job.expires_at <= now_value:
+            raise LiteratureExtractionJobError("literature_job_expired", "抽取任务已过期")
+        if not hmac.compare_digest(job.session_digest, self._session_digest(session_id)):
+            raise LiteratureExtractionJobError("literature_job_invalid", "抽取任务不属于当前会话")
+        return job
+
+    def claim_stage(self, job_token: str, *, session_id: str) -> FrozenExtractionStage:
+        with self._lock:
+            job = self._get(job_token, session_id)
+            if job.claimed:
+                raise LiteratureExtractionJobError("literature_stage_busy", "抽取阶段正在执行")
+            job.claimed = True
+            job.claim_expires_at = self._clock.now() + MAX_EXECUTION_LEASE_SECONDS
+            job.status = "executing"
+            return job.stage
+
+    def fail_stage(self, job_token: str, *, session_id: str) -> None:
+        with self._lock:
+            job = self._get(job_token, session_id)
+            job.claimed = False
+            job.claim_expires_at = None
+            job.status = "prepared"
+
+    def complete_stage(
+        self,
+        job_token: str,
+        *,
+        session_id: str,
+        completed_stage_fingerprint: str,
+        raw_results: Sequence[Mapping[str, Any]],
+        planner: LiteratureStagePlanner,
+    ) -> dict[str, Any]:
+        """Validate one stage and freeze its successor without exposing a renderer plan seam."""
+        with self._lock:
+            job = self._get(job_token, session_id)
+            if not job.claimed or not hmac.compare_digest(
+                job.stage.stage_fingerprint, completed_stage_fingerprint
+            ):
+                raise LiteratureExtractionJobError("literature_stage_stale", "抽取阶段状态已变化")
+        try:
+            if len(raw_results) != len(job.stage.calls):
+                raise LiteratureExtractionJobError(
+                    "literature_stage_invalid", "模型返回数量与冻结计划不一致"
+                )
+            _validate_intermediate(raw_results)
+            if len(_canonical_bytes(raw_results)) > MAX_STAGE_OUTPUT_BYTES:
+                raise LiteratureExtractionJobError(
+                    "literature_stage_too_large", "模型阶段返回内容超出限制"
+                )
+            context = LiteratureStageContext(
+                stage=job.stage,
+                paper=job.paper,
+                pages=job.snapshot.pages,
+                chunks=job.chunks,
+                focuses=job.focuses,
+                experiment_profile=job.experiment_profile,
+                prior_outputs=job.stage_outputs,
+                snapshot_fingerprint=job.snapshot.content_fingerprint,
+            )
+            planned = planner.plan_next(context, tuple(_freeze(item) for item in raw_results))
+        except LiteratureExtractionJobError:
+            self.fail_stage(job_token, session_id=session_id)
+            raise
+        except Exception as exc:
+            self.fail_stage(job_token, session_id=session_id)
+            raise LiteratureExtractionJobError(
+                "literature_stage_invalid", "模型阶段结果未通过科学验证"
+            ) from exc
+        try:
+            with self._lock:
+                job = self._get(job_token, session_id)
+                if not job.claimed or not hmac.compare_digest(
+                    job.stage.stage_fingerprint, completed_stage_fingerprint
+                ):
+                    raise LiteratureExtractionJobError("literature_stage_stale", "抽取阶段状态已变化")
+                current_index = STAGE_ORDER.index(job.stage.name)
+                if current_index + 1 >= len(STAGE_ORDER) or STAGE_ORDER[current_index + 1] != planned.next_stage:
+                    raise LiteratureExtractionJobError("literature_stage_invalid", "抽取阶段顺序无效")
+                next_frozen = FrozenExtractionStage.create(
+                    planned.next_stage, planned.calls, planned.input_fingerprint, self._clock.now()
+                )
+                frozen_result = _freeze(planned.validated_result)
+                _validate_intermediate(frozen_result)
+                result_bytes = _canonical_bytes(frozen_result)
+                if len(result_bytes) > MAX_STAGE_OUTPUT_BYTES:
+                    raise LiteratureExtractionJobError(
+                        "literature_stage_too_large", "抽取阶段中间结果超出限制"
+                    )
+                if sum(len(_canonical_bytes(item.result)) for item in job.stage_outputs) + len(result_bytes) > MAX_JOB_OUTPUT_BYTES:
+                    raise LiteratureExtractionJobError(
+                        "literature_stage_too_large", "抽取任务中间结果总量超出限制"
+                    )
+                output = FrozenStageOutput(
+                    stage=job.stage.name,
+                    stage_fingerprint=job.stage.stage_fingerprint,
+                    result=frozen_result,
+                    result_fingerprint=hashlib.sha256(result_bytes).hexdigest(),
+                )
+                job.stage_outputs = (*job.stage_outputs, output)
+                job.stage = next_frozen
+                job.claimed = False
+                job.claim_expires_at = None
+                job.status = "prepared"
+                return self.summary(job_token, session_id=session_id)
+        except Exception:
+            self.fail_stage(job_token, session_id=session_id)
+            raise
+
+    def mark_validated(
+        self,
+        job_token: str,
+        *,
+        session_id: str,
+        completed_stage_fingerprint: str,
+        quality_result: Mapping[str, Any],
+    ) -> None:
+        with self._lock:
+            job = self._get(job_token, session_id)
+            if job.stage.name != "third_review" or not job.claimed:
+                raise LiteratureExtractionJobError("literature_stage_invalid", "抽取结果尚未完成质量验证")
+            if not hmac.compare_digest(job.stage.stage_fingerprint, completed_stage_fingerprint):
+                raise LiteratureExtractionJobError("literature_stage_stale", "抽取阶段状态已变化")
+            frozen_quality = _freeze(quality_result)
+            _validate_intermediate(frozen_quality)
+            job.validated_package = ValidatedLiteraturePackage(
+                paper_id=job.paper_id,
+                paper=job.paper,
+                snapshot_fingerprint=job.snapshot.content_fingerprint,
+                pdf_sha256=job.snapshot.pdf_sha256,
+                experiment_profile=job.experiment_profile,
+                quality_result=frozen_quality,
+            )
+            job.claimed = False
+            job.claim_expires_at = None
+            job.status = "validated"
+
+    def assert_source_fresh(self, job_token: str, *, session_id: str) -> None:
+        """Authorization-time freshness check; stages themselves use only captured bytes."""
+
+        with self._lock:
+            job = self._get(job_token, session_id)
+            snapshot_handle = job.snapshot_handle
+        self._snapshots.assert_fresh(snapshot_handle)
+
+    def finalize(
+        self,
+        job_token: str,
+        *,
+        session_id: str,
+        finalizer: AtomicLiteratureFinalizer,
+    ) -> Mapping[str, Any]:
+        # Freshness is checked once immediately before the controlled commit.
+        # The finalizer receives only the frozen package and must never reopen
+        # the source path, so later path replacement cannot alter committed facts.
+        with self._lock:
+            job = self._get(job_token, session_id)
+            if job.claimed or job.status != "validated" or job.validated_package is None:
+                raise LiteratureExtractionJobError("literature_not_validated", "抽取结果尚未通过全部质量门")
+            job.claimed = True
+            job.claim_expires_at = self._clock.now() + MAX_EXECUTION_LEASE_SECONDS
+            package = job.validated_package
+        try:
+            self._snapshots.assert_fresh(job.snapshot_handle)
+            result = finalizer.finalize(package)
+            _validate_intermediate(result)
+        except Exception as exc:
+            with self._lock:
+                current = self._jobs.get(job_token)
+                if current is job:
+                    current.claimed = False
+                    current.claim_expires_at = None
+            raise LiteratureExtractionJobError(
+                "literature_commit_failed", "抽取结果未能安全保存，未发布任何科学记录"
+            ) from exc
+        with self._lock:
+            removed = self._jobs.pop(job_token, None)
+        if removed is not None:
+            self._snapshots.release(removed.snapshot_handle)
+        return MappingProxyType(dict(_plain(result)))
+
+    def cancel(self, job_token: str, *, session_id: str) -> None:
+        with self._lock:
+            job = self._get(job_token, session_id)
+            if job.claimed:
+                raise LiteratureExtractionJobError("literature_stage_busy", "抽取阶段正在执行")
+            self._jobs.pop(job_token, None)
+        self._snapshots.release(job.snapshot_handle)
