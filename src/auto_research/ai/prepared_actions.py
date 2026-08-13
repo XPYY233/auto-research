@@ -129,6 +129,7 @@ class PreparedOutbound:
     runtime_revision: int
     credential_generation: int
     task: str
+    task_models: tuple[tuple[str, str], ...]
     models: tuple[str, ...]
     executor_id: str
     executor_version: str
@@ -198,6 +199,7 @@ def _manifest_digest(
     scope: str,
     binding: RuntimeActionBinding,
     task: str,
+    task_models: tuple[tuple[str, str], ...],
     models: tuple[str, ...],
     executor_id: str,
     executor_version: str,
@@ -215,6 +217,7 @@ def _manifest_digest(
         "credential_generation": binding.credential_generation,
         "activation": binding.activation,
         "task": task,
+        "task_models": dict(task_models),
         "models": list(models),
         "executor_id": executor_id,
         "executor_version": executor_version,
@@ -265,6 +268,7 @@ class PreparedActionService:
         task: str,
         outbound: Any,
         content_units: Sequence[ContentUnit] = (),
+        allowed_tasks: Sequence[str] | None = None,
         models: Sequence[str] | None = None,
         executor_id: str,
         executor_version: str,
@@ -290,7 +294,10 @@ class PreparedActionService:
             and binding.selection_revision != expected_revision
         ):
             raise PreparedActionError("prepared_action_stale")
-        selected_models = self._models(binding, scope, task, models)
+        selected_task_models = self._task_models(
+            binding, scope, task, allowed_tasks, models
+        )
+        selected_models = tuple(sorted(set(dict(selected_task_models).values())))
         if (
             _SAFE_ID_RE.fullmatch(executor_id) is None
             or _SAFE_ID_RE.fullmatch(executor_version) is None
@@ -321,6 +328,7 @@ class PreparedActionService:
             scope=scope,
             binding=binding,
             task=task,
+            task_models=selected_task_models,
             models=selected_models,
             executor_id=executor_id,
             executor_version=executor_version,
@@ -339,6 +347,7 @@ class PreparedActionService:
             runtime_revision=binding.selection_revision,
             credential_generation=binding.credential_generation,
             task=task,
+            task_models=selected_task_models,
             models=selected_models,
             executor_id=executor_id,
             executor_version=executor_version,
@@ -461,8 +470,14 @@ class PreparedActionService:
             or binding.credential_generation != action.credential_generation
             or binding.activation not in {"legacy_compatible", "connection_verified"}
             and action.scope != "capability_test"
-            or self._models(binding, action.scope, action.task, action.models)
-            != action.models
+            or self._task_models(
+                binding,
+                action.scope,
+                action.task,
+                tuple(task for task, _model in action.task_models),
+                action.models,
+            )
+            != action.task_models
         ):
             raise PreparedActionError("prepared_action_stale")
         self._validate_units(action.units)
@@ -482,25 +497,44 @@ class PreparedActionService:
                 raise PreparedActionError("prepared_action_stale")
 
     @staticmethod
-    def _models(
+    def _task_models(
         binding: RuntimeActionBinding,
         scope: str,
         task: str,
+        allowed_tasks: Sequence[str] | None,
         models: Sequence[str] | None,
-    ) -> tuple[str, ...]:
+    ) -> tuple[tuple[str, str], ...]:
         if scope == "capability_test":
             if task != "capability_test":
                 raise PreparedActionError("prepared_action_invalid")
             expected = tuple(sorted(set(binding.task_models.values())))
             if models is not None and tuple(models) != expected:
                 raise PreparedActionError("prepared_action_stale")
-            return expected
+            expected_mapping = tuple(
+                (f"capability_test:{index}", model)
+                for index, model in enumerate(expected)
+            )
+            expected_keys = tuple(item for item, _model in expected_mapping)
+            if allowed_tasks is not None and tuple(allowed_tasks) != expected_keys:
+                raise PreparedActionError("prepared_action_invalid")
+            return expected_mapping
         if task not in TASK_IDS:
             raise PreparedActionError("prepared_action_invalid")
-        expected = (binding.task_models[task],)
-        if models is not None and tuple(models) != expected:
+        tasks = (task,) if allowed_tasks is None else tuple(allowed_tasks)
+        if (
+            not tasks
+            or task not in tasks
+            or len(set(tasks)) != len(tasks)
+            or any(item not in TASK_IDS for item in tasks)
+        ):
+            raise PreparedActionError("prepared_action_invalid")
+        expected_mapping = tuple(
+            sorted((item, binding.task_models[item]) for item in tasks)
+        )
+        expected_models = tuple(sorted(set(model for _item, model in expected_mapping)))
+        if models is not None and tuple(models) != expected_models:
             raise PreparedActionError("prepared_action_stale")
-        return expected
+        return expected_mapping
 
     def _binding(self) -> RuntimeActionBinding:
         try:
@@ -548,6 +582,11 @@ class PreparedActionService:
             "provider_id": action.provider_id,
             "display": "AI 能力测试" if action.scope == "capability_test" else "AI 请求",
             "task": action.task,
+            "allowed_tasks": (
+                ["capability_test"]
+                if action.scope == "capability_test"
+                else [task for task, _model in action.task_models]
+            ),
             "model": action.models[0] if len(action.models) == 1 else list(action.models),
             "unit_counts": counts,
             "byte_count": action.byte_count,

@@ -137,6 +137,7 @@ class PreparedActionServiceTests(unittest.TestCase):
             session_id="session-1",
         )
         self.assertEqual(prepared.outbound["question"], "compare")
+        self.assertEqual(prepared.task_models, (("librarian_synthesis", "deepseek-v4-pro"),))
         with self.assertRaises(TypeError):
             prepared.outbound["question"] = "changed"
         with self.assertRaises(PreparedActionError) as replay:
@@ -212,6 +213,57 @@ class PreparedActionServiceTests(unittest.TestCase):
         self.assertEqual(summary["estimated_calls"], 4)
         self.assertEqual(summary["maximum_calls"], 4)
         self.assertEqual(summary["maximum_tokens"], 128)
+
+    def test_multi_task_action_binds_strict_task_model_mapping(self):
+        summary = self.service.prepare(
+            session_id="session-multi",
+            scope="librarian",
+            task="librarian_synthesis",
+            allowed_tasks=("librarian_planning", "librarian_synthesis"),
+            outbound={"question": "bounded"},
+            executor_id="librarian_executor",
+            executor_version="v1",
+            estimated_calls=2,
+            max_calls=4,
+            max_tokens=8_000,
+        )
+        self.assertEqual(
+            summary["allowed_tasks"],
+            ["librarian_planning", "librarian_synthesis"],
+        )
+        self.assertEqual(
+            summary["model"],
+            ["deepseek-v4-flash", "deepseek-v4-pro"],
+        )
+        consent = self.service.issue_consent(
+            action_id=summary["action_id"], session_id="session-multi"
+        )
+        action = self.service.consume(
+            action_id=summary["action_id"],
+            consent_nonce=consent["nonce"],
+            session_id="session-multi",
+        )
+        self.assertEqual(
+            action.task_models,
+            (
+                ("librarian_planning", "deepseek-v4-flash"),
+                ("librarian_synthesis", "deepseek-v4-pro"),
+            ),
+        )
+
+        with self.assertRaises(PreparedActionError):
+            self.service.prepare(
+                session_id="session-bad-task",
+                scope="librarian",
+                task="librarian_synthesis",
+                allowed_tasks=("librarian_synthesis", "arbitrary"),
+                outbound={"question": "bounded"},
+                executor_id="librarian_executor",
+                executor_version="v1",
+                estimated_calls=1,
+                max_calls=1,
+                max_tokens=1,
+            )
 
     def test_expiry_and_unsafe_outbound_fail_closed(self):
         summary = self.prepare()

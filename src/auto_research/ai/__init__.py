@@ -41,6 +41,19 @@ from .prepared_actions import (
     SystemPreparedActionClock,
 )
 from .runtime_factory import RuntimeAIClientFactory, RuntimeCredentialResolver
+from .business_actions import (
+    BUSINESS_ACTION_SCOPES,
+    BusinessAIClientFactory,
+    BusinessActionClock,
+    BusinessActionAssembler,
+    BusinessActionDraft,
+    BusinessActionError,
+    BusinessActionExecutor,
+    BusinessPreparedActionRegistry,
+    BudgetedBusinessAIClient,
+    SafeBusinessModelSettings,
+    SystemBusinessActionClock,
+)
 from .desktop_controller import (
     DESKTOP_AI_ROUTES,
     ConsentProtectedAction,
@@ -85,6 +98,17 @@ __all__ = [
     "SystemPreparedActionClock",
     "RuntimeAIClientFactory",
     "RuntimeCredentialResolver",
+    "BUSINESS_ACTION_SCOPES",
+    "BusinessAIClientFactory",
+    "BusinessActionClock",
+    "BusinessActionAssembler",
+    "BusinessActionDraft",
+    "BusinessActionError",
+    "BusinessActionExecutor",
+    "BusinessPreparedActionRegistry",
+    "BudgetedBusinessAIClient",
+    "SafeBusinessModelSettings",
+    "SystemBusinessActionClock",
     "DESKTOP_AI_ROUTES",
     "ConsentProtectedAction",
     "DesktopAIController",

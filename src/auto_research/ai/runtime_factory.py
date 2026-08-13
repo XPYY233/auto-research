@@ -29,7 +29,13 @@ class RuntimeAIClientFactory:
         self._credentials = credential_resolver
         self._session = session
 
-    def create(self) -> OpenAICompatibleClient:
+    def create(self, *, max_attempts: int = 2) -> OpenAICompatibleClient:
+        if (
+            isinstance(max_attempts, bool)
+            or not isinstance(max_attempts, int)
+            or not 1 <= max_attempts <= 8
+        ):
+            raise AIProviderNotConfigured("AI 运行参数无效。")
         runtime = self._runtime_state.resolve_runtime()
         try:
             api_key = self._credentials.resolve(runtime.credential_ref)
@@ -40,6 +46,7 @@ class RuntimeAIClientFactory:
         settings = OpenAICompatibleSettings.from_resolved_runtime(
             runtime,
             api_key=api_key,
+            max_attempts=max_attempts,
         )
         return OpenAICompatibleClient(settings, session=self._session)
 

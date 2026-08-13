@@ -67,6 +67,13 @@ class RuntimeAIClientFactoryTests(unittest.TestCase):
         self.assertFalse(client.settings.verification_mode)
         self.assertEqual(credentials.refs, ["openai.default"])
 
+    def test_callers_can_fail_closed_to_one_http_attempt(self):
+        client = RuntimeAIClientFactory(
+            runtime_state=_Runtime(self.runtime("openai", OPENAI_MODELS, "connection_verified")),
+            credential_resolver=_Credentials(),
+        ).create(max_attempts=1)
+        self.assertEqual(client.settings.max_attempts, 1)
+
     def test_direct_openai_settings_and_verification_mode_do_not_activate_business(self):
         from auto_research.ai.openai_compatible import OpenAICompatibleClient, OpenAICompatibleSettings
 
