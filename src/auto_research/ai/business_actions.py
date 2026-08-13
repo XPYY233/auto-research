@@ -34,7 +34,7 @@ _SENSITIVE_KEY_RE = re.compile(
     r"(?:^|_)(?:api_?key|secret|password|credential|token|nonce|path|endpoint)(?:$|_)",
     re.IGNORECASE,
 )
-_PUBLIC_SIGNED_TOKEN_KEYS = frozenset({"state_token", "snapshot_token"})
+_PUBLIC_SIGNED_TOKEN_KEYS = frozenset({"state_token", "snapshot_token", "job_token"})
 MAX_PUBLIC_SIGNED_TOKEN_LENGTH = 16 * 1024
 _LOCAL_VALUE_RE = re.compile(
     r"(?:^|[\s='\"])(?:~[/\\]|/(?:Users|home|private|tmp|var|etc|usr|root|srv|mnt|media|opt|Applications|Library|System)(?:[/\\]|$)|/[^/\s]+[/\\][^\s]*|[A-Za-z]:[\\/]|\\\\|file:|sqlite:)",

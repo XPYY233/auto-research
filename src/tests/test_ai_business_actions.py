@@ -400,10 +400,12 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
         self.projectors["personal_suggestion"].project = lambda result: {
             "state_token": "signed-state",
             "snapshot_token": "signed-snapshot",
+            "job_token": "opaque-stage-job",
         }
         _summary, action = self.prepare_action("personal_suggestion")
         result = self.registry.execute(action)
         self.assertEqual(result["state_token"], "signed-state")
+        self.assertEqual(result["job_token"], "opaque-stage-job")
 
         for unsafe in (
             {"consent_nonce": "secret"},

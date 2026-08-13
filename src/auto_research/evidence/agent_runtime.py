@@ -586,52 +586,95 @@ class LibrarianAgentRuntime:
         recent = self._history(history)
         try:
             payload = self.client.request_json(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是实验文献证据检索规划器。检索范围固定为全部文章，不接受论文范围限制。"
-                            "把当前中文研究问题改写为2到8个简短检索式。"
-                            "硬条件由本地确定性程序独立解析；你不得补充或输出材料、粒子、温度、剂量等条件。"
-                            "同义词只用于检索式，不得把它们写成新的问题事实。"
-                            "检索式应覆盖材料、实验条件和每个目标物理量；复杂问题要拆分，不能把所有词都塞进一个检索式。"
-                            "同时保留至少一个严格组合检索式和若干材料+性质、辐照类型+性质的召回检索式。"
-                            "若存在无法从当前问题或有限历史确定的关键指代/比较对象，在clarification中提出一句澄清问题；"
-                            "否则needed必须为false。只输出JSON对象："
-                            "{\"queries\":[\"...\"],\"focus\":\"一句话研究意图\","
-                            "\"clarification\":{\"needed\":false,\"question\":\"\",\"options\":[]}}。"
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"最近对话：{json.dumps(recent, ensure_ascii=False)[:4_000]}\n"
-                            f"当前问题：{prompt}\n本地保底检索式：{json.dumps(fallback, ensure_ascii=False)}"
-                        ),
-                    },
-                ],
+                self.planner_messages(prompt, recent),
                 task="librarian_planning",
                 max_tokens=1_200,
                 thinking=False,
                 temperature=0.0,
             )
-            if len(json.dumps(payload, ensure_ascii=False, default=str)) > 16_000:
-                raise ValueError("planner_payload_too_large")
-            planned = payload.get("queries") or []
-            if not isinstance(planned, list):
-                planned = []
-            analysis = build_query_analysis(prompt, model_payload=payload, history=recent)
-            combined = _dedupe_text(
-                [str(value) for value in planned[:4] if isinstance(value, (str, int, float))]
-                + fallback
-                + soft_recall_queries(analysis),
-                MAX_AGENT_RECALL_QUERIES,
+            queries, analysis = self.validate_planner_payload(
+                prompt, recent, payload, strict=False
             )
-            return combined or fallback, "deepseek+local", analysis
+            return queries, "deepseek+local", analysis
         except Exception:
             analysis = build_query_analysis(prompt, history=recent)
             combined = _dedupe_text(fallback + soft_recall_queries(analysis), MAX_AGENT_RECALL_QUERIES)
             return combined or fallback, "local_fallback", analysis
+
+    @staticmethod
+    def planner_messages(prompt: str, history: Any) -> list[dict[str, str]]:
+        fallback = _fallback_recall_queries(prompt)
+        recent = LibrarianAgentRuntime._history(history)
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "你是实验文献证据检索规划器。检索范围固定为全部文章，不接受论文范围限制。"
+                    "把当前中文研究问题改写为2到8个简短检索式。"
+                    "硬条件由本地确定性程序独立解析；你不得补充或输出材料、粒子、温度、剂量等条件。"
+                    "同义词只用于检索式，不得把它们写成新的问题事实。"
+                    "检索式应覆盖材料、实验条件和每个目标物理量；复杂问题要拆分，不能把所有词都塞进一个检索式。"
+                    "同时保留至少一个严格组合检索式和若干材料+性质、辐照类型+性质的召回检索式。"
+                    "若存在无法从当前问题或有限历史确定的关键指代/比较对象，在clarification中提出一句澄清问题；"
+                    "否则needed必须为false。只输出JSON对象："
+                    "{\"queries\":[\"...\"],\"focus\":\"一句话研究意图\","
+                    "\"clarification\":{\"needed\":false,\"question\":\"\",\"options\":[]}}。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"最近对话：{json.dumps(recent, ensure_ascii=False)[:4_000]}\n"
+                    f"当前问题：{prompt}\n本地保底检索式：{json.dumps(fallback, ensure_ascii=False)}"
+                ),
+            },
+        ]
+
+    @staticmethod
+    def validate_planner_payload(
+        prompt: str,
+        history: Any,
+        payload: Any,
+        *,
+        strict: bool = True,
+    ) -> tuple[list[str], QueryAnalysis]:
+        if not isinstance(payload, dict) or len(
+            json.dumps(payload, ensure_ascii=False, default=str)
+        ) > 16_000:
+            raise ValueError("planner_payload_invalid")
+        if strict and set(payload) - {"queries", "focus", "clarification"}:
+            raise ValueError("planner_payload_invalid")
+        if strict:
+            clarification = payload.get("clarification")
+            if (
+                not isinstance(payload.get("focus"), str)
+                or not isinstance(clarification, dict)
+                or set(clarification) - {"needed", "question", "options"}
+                or not isinstance(clarification.get("needed"), bool)
+                or not isinstance(clarification.get("question"), str)
+                or not isinstance(clarification.get("options"), list)
+                or any(not isinstance(value, str) for value in clarification["options"])
+            ):
+                raise ValueError("planner_payload_invalid")
+        planned = payload.get("queries")
+        if not isinstance(planned, list):
+            if strict:
+                raise ValueError("planner_payload_invalid")
+            planned = []
+        if strict and not 1 <= len(planned) <= 8:
+            raise ValueError("planner_payload_invalid")
+        if strict and any(not isinstance(value, str) or not value.strip() for value in planned):
+            raise ValueError("planner_payload_invalid")
+        recent = LibrarianAgentRuntime._history(history)
+        analysis = build_query_analysis(prompt, model_payload=payload, history=recent)
+        fallback = _fallback_recall_queries(prompt)
+        combined = _dedupe_text(
+            [str(value) for value in planned[:4] if isinstance(value, (str, int, float))]
+            + fallback
+            + soft_recall_queries(analysis),
+            MAX_AGENT_RECALL_QUERIES,
+        )
+        return combined or fallback, analysis
 
     def _run_recall(self, queries: list[str]) -> int:
         operations = 0
@@ -959,10 +1002,64 @@ class LibrarianAgentRuntime:
         *,
         review_map: list[dict[str, Any]] | None = None,
     ) -> tuple[dict[str, Any], set[str], str]:
+        messages, candidates = self.synthesis_messages(
+            prompt, queries, analysis, reasoned, bundles, review_map=review_map
+        )
+        available = {str(row.get("ref")) for row in candidates}
+        try:
+            payload = self.client.request_json(
+                messages,
+                task="librarian_synthesis",
+                max_tokens=3_600,
+                thinking=False,
+                temperature=0.0,
+            )
+            if isinstance(payload, dict) and len(json.dumps(payload, ensure_ascii=False, default=str)) <= 32_000:
+                report, selected = self.report_from_synthesis_payload(
+                    payload, analysis, candidates, review_map=review_map
+                )
+                return report, selected & available, "deepseek_json"
+        except Exception:
+            pass
+        try:
+            message = self.client.request_tool_message(
+                messages, [], task="librarian_synthesis",
+                max_tokens=3_600, temperature=0.0,
+            )
+            answer = str(message.get("content") or "").strip()
+            if len(answer) > 12_000:
+                raise ValueError("synthesis_text_too_large")
+            selected = _cited_refs(answer) & available
+            if answer and selected and not _is_internal_protocol(answer):
+                report, selected = self.report_from_synthesis_payload(
+                    {"answer": answer, "selected_refs": sorted(selected)},
+                    analysis,
+                    candidates,
+                    review_map=review_map,
+                )
+                return report, selected & available, "deepseek_text_fallback"
+        except Exception:
+            pass
+        report, selected = self.deterministic_synthesis(
+            analysis, candidates, review_map=review_map
+        )
+        return report, selected & available, "deterministic_fallback"
+
+    def synthesis_messages(
+        self,
+        prompt: str,
+        queries: list[str],
+        analysis: QueryAnalysis,
+        reasoned: list[dict[str, Any]],
+        bundles: list[dict[str, Any]],
+        *,
+        review_map: list[dict[str, Any]] | None = None,
+    ) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+        """Build the exact bounded synthesis request without calling a model."""
+
         candidates = self._summary_candidates(reasoned)
         model_candidates = bounded_public_candidates(candidates, limit=MAX_SUMMARY_RESULTS)
         model_bundles = bounded_public_bundles(bundles, limit=24)
-        available = {str(row.get("ref")) for row in candidates}
         messages = [
             {
                 "role": "system",
@@ -993,48 +1090,174 @@ class LibrarianAgentRuntime:
                 ),
             },
         ]
-        try:
-            payload = self.client.request_json(
-                messages,
-                task="librarian_synthesis",
-                max_tokens=3_600,
-                thinking=False,
-                temperature=0.0,
-            )
-            if isinstance(payload, dict) and len(json.dumps(payload, ensure_ascii=False, default=str)) <= 32_000:
-                report = self._report_from_payload(payload, analysis, candidates)
-                if review_map is not None:
-                    report["review_map"] = review_map
-                selected = report_references(report) & available
-                return report, selected, "deepseek_json"
-        except Exception:
-            pass
-        try:
-            message = self.client.request_tool_message(
-                messages, [], task="librarian_synthesis",
-                max_tokens=3_600, temperature=0.0,
-            )
-            answer = str(message.get("content") or "").strip()
-            if len(answer) > 12_000:
-                raise ValueError("synthesis_text_too_large")
-            selected = _cited_refs(answer) & available
-            if answer and selected and not _is_internal_protocol(answer):
-                report = self._report_from_payload(
-                    {"answer": answer, "selected_refs": sorted(selected)},
-                    analysis,
-                    candidates,
-                )
-                if review_map is not None:
-                    report["review_map"] = review_map
-                return report, report_references(report) & available, "deepseek_text_fallback"
-        except Exception:
-            pass
+        return messages, candidates
+
+    def report_from_synthesis_payload(
+        self,
+        payload: Any,
+        analysis: QueryAnalysis,
+        candidates: list[dict[str, Any]],
+        *,
+        review_map: list[dict[str, Any]] | None = None,
+        strict: bool = False,
+    ) -> tuple[dict[str, Any], set[str]]:
+        if not isinstance(payload, dict) or len(
+            json.dumps(payload, ensure_ascii=False, default=str)
+        ) > 32_000:
+            raise ValueError("synthesis_payload_invalid")
+        if strict:
+            allowed = {
+                "direct_conclusion", "direct_refs", "related_refs", "related_notes",
+                "suggested_followups",
+            }
+            if (
+                set(payload) - allowed
+                or not isinstance(payload.get("direct_conclusion"), str)
+                or any(not isinstance(payload.get(key, []), list) for key in (
+                    "direct_refs", "related_refs", "related_notes", "suggested_followups"
+                ))
+            ):
+                raise ValueError("synthesis_payload_invalid")
+        report = self._report_from_payload(payload, analysis, candidates)
+        if review_map is not None:
+            report["review_map"] = review_map
+        return report, report_references(report) & {
+            str(row.get("ref")) for row in candidates
+        }
+
+    @staticmethod
+    def deterministic_synthesis(
+        analysis: QueryAnalysis,
+        candidates: list[dict[str, Any]],
+        *,
+        review_map: list[dict[str, Any]] | None = None,
+    ) -> tuple[dict[str, Any], set[str]]:
         report = (
             deterministic_review_report(analysis, review_map, candidates)
             if review_map is not None
             else build_research_report(analysis, candidates)
         )
-        return report, report_references(report) & available, "deterministic_fallback"
+        return report, report_references(report) & {
+            str(row.get("ref")) for row in candidates
+        }
+
+    def build_public_result(
+        self,
+        *,
+        prompt: str,
+        agent: AgentDefinition,
+        decision: IntentDecision,
+        evidence_version: str,
+        active_conversation_id: str,
+        verified_state: dict[str, Any] | None,
+        analysis: QueryAnalysis,
+        queries: list[str],
+        plan_mode: str,
+        search_operations: int,
+        reasoned: list[dict[str, Any]],
+        bundles: list[dict[str, Any]],
+        report: dict[str, Any],
+        cited: set[str],
+        summary_mode: str,
+        review_map: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Apply the existing V3 state, reference and public DTO gates."""
+
+        state, signed_state_token = self.state_codec.build(
+            evidence_version=evidence_version,
+            conversation_id=active_conversation_id,
+            active_topic=self._state_topic(analysis),
+            constraints=analysis.as_dict().get("constraints") or {},
+            source_id=self.source_id,
+            candidates=reasoned,
+            bundles=bundles,
+            selected_refs=cited,
+            parent_state=verified_state,
+        )
+        bundle_uid_by_id = {
+            str(bundle.get("id")): str(bundle.get("bundle_uid") or "") for bundle in bundles
+        }
+        suggested_actions = validate_suggested_actions(
+            report.get("suggested_followups") or [],
+            question=prompt,
+            candidates=reasoned,
+            cited_refs=cited,
+            bundles=bundles,
+        )
+        report["suggested_followups"] = [action["text"] for action in suggested_actions]
+        answer = report_markdown(report)
+        collected_by_ref = {str(item["ref"]): item for item in self._collected}
+        public_results: list[dict[str, Any]] = []
+        for candidate in reasoned[:MAX_AGENT_RESULTS]:
+            item = collected_by_ref[str(candidate["ref"])]
+            row = public_evidence_dto(item["payload"])
+            row.update({
+                "agent_ref": item["ref"],
+                "agent_entity_type": item["entity_type"],
+                "agent_cited": item["ref"] in cited,
+                "agent_match_queries": item["matched_queries"][:4],
+                "agent_match_class": candidate.get("match_class"),
+                "agent_matched_constraints": candidate.get("matched_constraints") or [],
+                "agent_missing_constraints": candidate.get("missing_constraints") or [],
+                "agent_constraint_coverage": candidate.get("constraint_coverage"),
+                "agent_bundle_id": candidate.get("bundle_id") or "",
+                "agent_bundle_uid": bundle_uid_by_id.get(str(candidate.get("bundle_id") or ""), ""),
+            })
+            anchor_identity = (state.get("anchors") or {}).get(str(item["ref"])) or {}
+            row["source_scope"] = anchor_identity.get("source_scope") or "official"
+            row["source_id"] = anchor_identity.get("source_id") or self.source_id
+            row["entity_uid"] = anchor_identity.get("entity_uid") or ""
+            row["agent_relaxed_condition"] = (
+                candidate.get("missing_constraints", [{}])[0].get("label")
+                if candidate.get("match_class") == "adjacent" and candidate.get("missing_constraints")
+                else ""
+            )
+            public_results.append(row)
+        class_counts = {
+            value: sum(1 for row in public_results if row.get("agent_match_class") == value)
+            for value in ("direct", "adjacent", "expansion")
+        }
+        recommended_articles = build_article_recommendations(reasoned)
+        _annotate_article_coverage(
+            recommended_articles,
+            self.index.paper_entity_counts(
+                [article["paper_id"] for article in recommended_articles], refresh=False
+            ),
+        )
+        return {
+            "agent": {"id": agent.agent_id, "name": agent.name},
+            "response_format": LIBRARIAN_RESPONSE_FORMAT_VERSION,
+            "librarian_core_version": LIBRARIAN_CORE_VERSION,
+            "answered_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "evidence_version": evidence_version,
+            "answer": answer,
+            "report": report,
+            "query_analysis": analysis.as_dict(),
+            "evidence_bundles": bundles,
+            "results": public_results,
+            "recommended_articles": recommended_articles,
+            "recommended_article_count": len(recommended_articles),
+            "tool_calls": len(queries),
+            "search_operations": search_operations,
+            "candidate_count": len(public_results),
+            "cited_count": len(cited),
+            "match_counts": class_counts,
+            "bundle_count": len(bundles),
+            "recall_queries": queries,
+            "plan_mode": plan_mode,
+            "summary_mode": summary_mode,
+            "clarification_required": analysis.needs_clarification,
+            "scope": {"paper_ids": [], "mode": "all"},
+            "model": self.client.settings.librarian_synthesis_model,
+            "planning_model": self.client.settings.librarian_planning_model,
+            "cache_hit": False,
+            "intent": decision.as_dict(),
+            "retrieval_policy": decision.retrieval_policy,
+            "research_state": state,
+            "state_token": signed_state_token,
+            "suggested_actions": suggested_actions,
+            "review_map": review_map,
+        }
 
     def run(
         self,
@@ -1223,100 +1446,24 @@ class LibrarianAgentRuntime:
                 cited = set()
                 summary_mode = "no_results"
 
-        state, signed_state_token = self.state_codec.build(
+        result = self.build_public_result(
+            prompt=prompt,
+            agent=agent,
+            decision=decision,
             evidence_version=evidence_version,
-            conversation_id=active_conversation_id,
-            active_topic=self._state_topic(analysis),
-            constraints=analysis.as_dict().get("constraints") or {},
-            source_id=self.source_id,
-            candidates=reasoned,
+            active_conversation_id=active_conversation_id,
+            verified_state=verified_state,
+            analysis=analysis,
+            queries=queries,
+            plan_mode=plan_mode,
+            search_operations=search_operations,
+            reasoned=reasoned,
             bundles=bundles,
-            selected_refs=cited,
-            parent_state=verified_state,
+            report=report,
+            cited=cited,
+            summary_mode=summary_mode,
+            review_map=review_map,
         )
-        bundle_uid_by_id = {
-            str(bundle.get("id")): str(bundle.get("bundle_uid") or "") for bundle in bundles
-        }
-        suggested_actions = validate_suggested_actions(
-            report.get("suggested_followups") or [],
-            question=prompt,
-            candidates=reasoned,
-            cited_refs=cited,
-            bundles=bundles,
-        )
-        report["suggested_followups"] = [action["text"] for action in suggested_actions]
-        answer = report_markdown(report)
-        collected_by_ref = {str(item["ref"]): item for item in self._collected}
-        public_results: list[dict[str, Any]] = []
-        for candidate in reasoned[:MAX_AGENT_RESULTS]:
-            item = collected_by_ref[str(candidate["ref"])]
-            row = public_evidence_dto(item["payload"])
-            row["agent_ref"] = item["ref"]
-            row["agent_entity_type"] = item["entity_type"]
-            row["agent_cited"] = item["ref"] in cited
-            row["agent_match_queries"] = item["matched_queries"][:4]
-            row["agent_match_class"] = candidate.get("match_class")
-            row["agent_matched_constraints"] = candidate.get("matched_constraints") or []
-            row["agent_missing_constraints"] = candidate.get("missing_constraints") or []
-            row["agent_constraint_coverage"] = candidate.get("constraint_coverage")
-            row["agent_bundle_id"] = candidate.get("bundle_id") or ""
-            row["agent_bundle_uid"] = bundle_uid_by_id.get(str(candidate.get("bundle_id") or ""), "")
-            anchor_identity = (state.get("anchors") or {}).get(str(item["ref"])) or {}
-            row["source_scope"] = anchor_identity.get("source_scope") or "official"
-            row["source_id"] = anchor_identity.get("source_id") or self.source_id
-            row["entity_uid"] = anchor_identity.get("entity_uid") or ""
-            row["agent_relaxed_condition"] = (
-                candidate.get("missing_constraints", [{}])[0].get("label")
-                if candidate.get("match_class") == "adjacent" and candidate.get("missing_constraints")
-                else ""
-            )
-            public_results.append(row)
-        class_counts = {
-            match_class: sum(1 for row in public_results if row.get("agent_match_class") == match_class)
-            for match_class in ("direct", "adjacent", "expansion")
-        }
-        recommended_articles = build_article_recommendations(reasoned)
-        _annotate_article_coverage(
-            recommended_articles,
-            self.index.paper_entity_counts(
-                [article["paper_id"] for article in recommended_articles],
-                refresh=False,
-            ),
-        )
-        result = {
-            "agent": {"id": agent.agent_id, "name": agent.name},
-            "response_format": LIBRARIAN_RESPONSE_FORMAT_VERSION,
-            "librarian_core_version": LIBRARIAN_CORE_VERSION,
-            "answered_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-            "evidence_version": self.index.source_fingerprint(),
-            "answer": answer,
-            "report": report,
-            "query_analysis": analysis.as_dict(),
-            "evidence_bundles": bundles,
-            "results": public_results,
-            "recommended_articles": recommended_articles,
-            "recommended_article_count": len(recommended_articles),
-            "tool_calls": len(queries),
-            "search_operations": search_operations,
-            "candidate_count": len(public_results),
-            "cited_count": len(cited),
-            "match_counts": class_counts,
-            "bundle_count": len(bundles),
-            "recall_queries": queries,
-            "plan_mode": plan_mode,
-            "summary_mode": summary_mode,
-            "clarification_required": analysis.needs_clarification,
-            "scope": {"paper_ids": [], "mode": "all"},
-            "model": self.client.settings.librarian_synthesis_model,
-            "planning_model": self.client.settings.librarian_planning_model,
-            "cache_hit": False,
-            "intent": decision.as_dict(),
-            "retrieval_policy": decision.retrieval_policy,
-            "research_state": state,
-            "state_token": signed_state_token,
-            "suggested_actions": suggested_actions,
-            "review_map": review_map,
-        }
         self._cache_put(cache_key, result)
         return result
 
