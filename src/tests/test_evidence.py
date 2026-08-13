@@ -1553,9 +1553,9 @@ class SixColumnWorkflowTests(unittest.TestCase):
 
     def test_rejected_cloud_visual_experiment_is_absent_from_active_ui(self):
         index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-        app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+        fusion_js = (WEB_DIR / "fusion_review.js").read_text(encoding="utf-8")
         server_source = Path(webapp_module.__file__).read_text(encoding="utf-8")
-        active_source = "\n".join((index_html, app_js, server_source))
+        active_source = "\n".join((index_html, fusion_js, server_source))
         for marker in (
             "run-cloud-visual",
             "visual-processing-mode",
@@ -1563,157 +1563,43 @@ class SixColumnWorkflowTests(unittest.TestCase):
             "auto_verified_cloud_semantics",
         ):
             self.assertNotIn(marker, active_source)
-        self.assertIn("/api/visual-search", active_source)
+        self.assertIn("/api/search-v2", active_source)
 
-    def test_search_ui_has_scientific_typesetting_and_independent_paper_scope(self):
+    def test_fusion_search_ui_is_single_owner_read_only_and_scientific(self):
         index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-        app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+        fusion_js = (WEB_DIR / "fusion_review.js").read_text(encoding="utf-8")
         app_css = "\n".join(
             (WEB_DIR / name).read_text(encoding="utf-8")
             for name in ("app.css", "workbench.css")
         )
-        workbench_css = (WEB_DIR / "workbench.css").read_text(encoding="utf-8")
-        brief_js = (WEB_DIR / "librarian_brief.js").read_text(encoding="utf-8")
-        self.assertIn('data-search-scope="selected"', index_html)
-        self.assertIn("selectedSearchPaperParam", app_js)
-        self.assertIn("scientificQuantityHtml", app_js)
-        self.assertIn("visualTitleParts", app_js)
-        self.assertIn(".wb-literature-title", workbench_css)
-        self.assertIn("font-variant-numeric:tabular-nums", workbench_css)
-        self.assertNotIn('id="search-review-filter"', index_html)
-        self.assertIn('id="context-chat"', index_html)
-        self.assertIn(DEFAULT_CONTEXT_QUESTION, index_html)
-        self.assertIn('id="item-detail-panel"', index_html)
-        self.assertIn('id="visual-detail-panel"', index_html)
-        self.assertIn("data-item-detail", app_js)
-        self.assertNotIn("data-context-chat-item", app_js)
-        self.assertNotIn("/api/context-chat", app_js)
-        self.assertIn('"selected_evidence_chat"', app_js)
-        self.assertIn("executePreparedAIAction", app_js)
-        self.assertIn('id="librarian-progress"', index_html)
-        self.assertIn('id="librarian-history-list"', index_html)
-        self.assertIn('class="library-progress-mark"', index_html)
-        self.assertIn('data-librarian-result-type="item"', index_html)
-        self.assertIn('data-librarian-result-type="table"', index_html)
-        self.assertIn('data-librarian-result-type="figure"', index_html)
-        self.assertIn('data-librarian-result-type="finding"', index_html)
-        self.assertIn("librarianMarkdown", app_js)
-        self.assertIn("preferredLibrarianResultType", app_js)
-        self.assertIn("agent_cited", app_js)
-        self.assertIn('id="librarian-result-overview"', index_html)
-        self.assertNotIn("codex-pet-working.webp", app_css + workbench_css)
-        self.assertIn("librarianHistoryStorageKey", app_js)
-        self.assertIn("librarianResearchRequest", app_js)
-        self.assertIn('id="librarian-brief-export"', index_html)
-        self.assertIn("getLatestLibrarianBriefSnapshot", app_js)
-        self.assertIn("getLatestLibrarianBriefPayload", app_js)
-        self.assertIn("librarianBriefAuth", app_js)
-        self.assertNotIn("meta: state.librarianBriefAuth", app_js)
-        self.assertIn("/api/agents/librarian/research-brief.md", brief_js)
-        self.assertIn("snapshot_token", app_js)
-        self.assertNotIn("localStorage", brief_js)
-        self.assertNotIn("/api/desktop/librarian-history", brief_js)
-        self.assertLess(
-            index_html.index('<script src="/static/app.js"></script>'),
-            index_html.index('<script src="/static/librarian_brief.js"></script>'),
-        )
-        server_source = Path(webapp_module.__file__).read_text(encoding="utf-8")
-        self.assertIn("answer_context_chat", server_source)
-        self.assertIn("export_research_brief", server_source)
-        self.assertIn("verify_research_brief_snapshot", server_source)
-        persistence_slice = app_js[
-            app_js.index("async function persistLibrarianHistory"):
-            app_js.index("async function loadLibrarianHistory")
-        ]
-        for transient_field in (
-            "librarianBriefAuth",
-            "snapshot_token",
-            "answered_at",
-            "evidence_version",
-            "plan_mode",
-        ):
-            self.assertNotIn(transient_field, persistence_slice)
-        reset_slice = app_js[
-            app_js.index("function resetLibrarian"):
-            app_js.index("function bindLibrarianSuggestions")
-        ]
-        restore_slice = app_js[
-            app_js.index("function restoreLibrarianSession"):
-            app_js.index("function deleteLibrarianSession")
-        ]
-        submit_slice = app_js[
-            app_js.index("async function submitLibrarian"):
-            app_js.index("function getLatestLibrarianBriefSnapshot")
-        ]
-        self.assertIn("clearLibrarianBriefAuthorization();", reset_slice)
-        self.assertIn("clearLibrarianBriefAuthorization();", restore_slice)
-        self.assertEqual(submit_slice.count("clearLibrarianBriefAuthorization();"), 1)
-        self.assertLess(
-            submit_slice.index("clearLibrarianBriefAuthorization();"),
-            submit_slice.index("state.librarianBusy = true"),
-        )
-        self.assertIn("clearAuthorization: clearLibrarianBriefAuthorization", app_js)
-        clear_auth_slice = app_js[
-            app_js.index("function clearLibrarianBriefAuthorization"):
-            app_js.index("globalThis.autoResearchLibrarianBrief")
-        ]
-        self.assertIn("currentToken !== expectedToken", clear_auth_slice)
-        self.assertIn("state.librarianBriefAuth = null;", clear_auth_slice)
-        export_slice = brief_js[
-            brief_js.index("async function exportBrief"):
-            brief_js.index('button.addEventListener("click", exportBrief)')
-        ]
-        self.assertIn("clearAuthorization?.();", export_slice)
-        self.assertIn("if (!response.ok)", export_slice)
-        export_failure_slice = export_slice[export_slice.index("} catch (error)"):]
-        self.assertIn("clearAuthorization?.(payload.snapshot_token)", export_failure_slice)
-        self.assertFalse(is_read_only_public_get("/api/context-chat"))
-        self.assertIn('parsed.path in {"/", "/index.html", "/readonly"}', server_source)
-        self.assertFalse((WEB_DIR / "readonly.html").exists())
+        self.assertEqual(index_html.count('class="fusion-activity"'), 1)
+        self.assertEqual(index_html.count('/static/fusion_review.js'), 1)
+        for legacy in ("app.js", "desktop_product.js", "package_center.js", "workbench.js"):
+            self.assertNotIn(f'/static/{legacy}', index_html)
+        self.assertIn('data-view="search"', index_html)
+        self.assertIn('data-context-view="search"', index_html)
+        self.assertIn('data-view-panel="search"', index_html)
+        self.assertIn('id="fusion-inspector"', index_html)
+        self.assertIn('/api/search-v2', fusion_js)
+        self.assertIn('credentials:"same-origin"', fusion_js)
+        self.assertNotIn("appendChild", fusion_js)
+        self.assertNotIn("XMLHttpRequest", fusion_js)
+        self.assertIn("font-variant-numeric:tabular-nums", app_css)
+        self.assertNotIn("codex-pet-working.webp", app_css)
 
-    def test_librarian_stage_four_report_is_progressively_enhanced(self):
+    def test_fusion_librarian_is_an_honest_disabled_future_action(self):
         index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-        app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
-        app_css = "\n".join(
-            (WEB_DIR / name).read_text(encoding="utf-8")
-            for name in ("app.css", "workbench.css")
-        )
-
-        self.assertIn("function librarianReportHtml", app_js)
-        self.assertIn("report.direct_conclusion", app_js)
-        self.assertIn("report.evidence_matrix", app_js)
-        self.assertIn("report.related_evidence", app_js)
-        self.assertIn("report.database_gaps", app_js)
-        self.assertIn("report.suggested_followups", app_js)
-        self.assertIn("recommended_articles", app_js)
-        self.assertIn("数据库内相关文章", app_js)
-        self.assertIn("覆盖预警", app_js)
-        self.assertIn("query_analysis", app_js)
-        self.assertIn("agent_match_class", app_js)
-        self.assertIn("agent_bundle_id", app_js)
-        self.assertIn("data-librarian-reference", app_js)
-        self.assertIn("data-agent-result-ref", app_js)
-        self.assertIn("setInterval(updateLibrarianProgress, 1000)", app_js)
-        submit_at = app_js.index("async function submitLibrarian")
-        authorize_at = app_js.index("await authorizePreparedAIAction('librarian', 'librarian'", submit_at)
-        mutate_at = app_js.index("state.librarianBusy = true;", submit_at)
-        self.assertLess(authorize_at, mutate_at)
-
-        tab_order = [
-            index_html.index('data-librarian-result-type="item"'),
-            index_html.index('data-librarian-result-type="finding"'),
-            index_html.index('data-librarian-result-type="table"'),
-            index_html.index('data-librarian-result-type="figure"'),
+        fusion_js = (WEB_DIR / "fusion_review.js").read_text(encoding="utf-8")
+        self.assertIn("图书管理员", index_html)
+        self.assertIn("0.9.2+", index_html)
+        librarian_buttons = [
+            item for item in index_html.split("<button")
+            if "图书管理员" in item[:500]
         ]
-        self.assertEqual(tab_order, sorted(tab_order))
-        self.assertIn('id="librarian-progress-time" aria-hidden="true"', index_html)
-        self.assertIn("阶段是预计提示", index_html)
-        self.assertIn(".librarian-research-report", app_css)
-        self.assertIn(".librarian-query-chips", app_css)
-        self.assertIn(".librarian-related-row", app_css)
-        self.assertIn(".librarian-article-recommendations", app_css)
-        self.assertIn(".librarian-article-warning", app_css)
-        self.assertIn(".agent-result-ref.direct", app_css)
+        self.assertTrue(librarian_buttons)
+        self.assertTrue(all("disabled" in item[:500] for item in librarian_buttons))
+        self.assertNotIn("/api/agents/librarian", fusion_js)
+        self.assertNotIn("authorizePreparedAIAction", fusion_js)
 
     def test_future_visual_metadata_prompt_requires_material_and_comparison_context(self):
         prompt = _visual_metadata_messages(
@@ -1987,48 +1873,36 @@ class SixColumnWorkflowTests(unittest.TestCase):
         by_name = {check["name"]: check for check in report["checks"]}
         self.assertTrue(by_name["experiment_type_detection"]["ok"])
         self.assertTrue(by_name["web_ui_contract"]["ok"])
-        self.assertIn("single_review_action", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("retired_manual_history", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("confirm_and_next", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("automatic_quality_gate", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("multi_paper_search_scope", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("review_keyboard_shortcuts", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("review_progress_card", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("review_negative_decisions", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("review_reopen_all_states", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("optional_reviewer_note", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("review_feedback_refresh", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("review_source_sort", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("review_priority_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("compact_article_tools", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("view_specific_header", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("focus_review_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("initial_row_selection", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("row_source_button", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("source_highlight", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("next_unreviewed_queue", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("review_batch_download", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("review_calibration_download", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("resumable_calibration_review", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("review_all_download", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("item_id_review_filter", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("experiment_profile_card", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("paper_status_overview", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("readonly_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("readonly_search_only_mode", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("search_source_evidence_button", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("readonly_source_direct", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("search_review_state", by_name["web_ui_contract"]["web_ui"]["checked"])
-        self.assertIn("dense_review_rows", by_name["web_ui_contract"]["web_ui"]["checked"])
+        checked_ui = set(by_name["web_ui_contract"]["web_ui"]["checked"])
+        self.assertEqual(
+            checked_ui,
+            {
+                "fusion_shell",
+                "single_navigation_owner",
+                "four_research_views",
+                "settings_view",
+                "fusion_runtime_only",
+                "isolated_read_routes",
+                "business_actions_disabled",
+                "synthetic_grid",
+                "session_review_only",
+                "zero_model_demo",
+                "appearance_modes",
+                "keyboard_navigation",
+                "responsive_drawers",
+                "reduced_motion",
+                "retired_legacy_dom",
+            },
+        )
         self.assertNotIn("public_readonly_ngrok_share", by_name)
         requirements = {item["id"]: item for item in report["requirements"]}
         self.assertTrue(all(item["ok"] for item in requirements.values()))
         self.assertTrue(requirements["article_selector_to_extracted_rows"]["ok"])
         self.assertTrue(requirements["six_required_columns"]["ok"])
-        self.assertTrue(requirements["editable_review_preserves_original"]["ok"])
-        self.assertTrue(requirements["single_review_without_manual_entry"]["ok"])
+        self.assertTrue(requirements["fusion_read_only_literature"]["ok"])
+        self.assertTrue(requirements["fusion_synthetic_experiment"]["ok"])
         self.assertTrue(requirements["free_text_fuzzy_search_and_export"]["ok"])
-        self.assertTrue(requirements["automatic_quality_gate"]["ok"])
+        self.assertTrue(requirements["fusion_future_actions_blocked"]["ok"])
 
     def test_db_health_checks_current_view_indexes_and_required_fields(self):
         report = evidence_db_health(self.db, paper_id=self.paper_id)

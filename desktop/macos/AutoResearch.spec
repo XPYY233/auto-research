@@ -12,10 +12,13 @@ analysis = Analysis(
     pathex=[str(project_root / "src"), str(desktop_root)],
     binaries=[],
     datas=[
-        (
-            str(project_root / "src" / "auto_research" / "evidence" / "web"),
-            "auto_research/evidence/web",
-        ),
+        *[
+            (
+                str(project_root / "src" / "auto_research" / "evidence" / "web" / name),
+                "auto_research/evidence/web",
+            )
+            for name in ("index.html", "app.css", "workbench.css", "fusion_review.js")
+        ],
         (
             str(desktop_root / "version.json"),
             "desktop/macos",

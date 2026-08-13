@@ -48,14 +48,18 @@ Keep these invariants:
 - Keep platform logic thin. macOS and Windows may implement lifecycle, native selection, credentials and a protected bridge, but must reuse product package, identity, audit and federated-search contracts rather than copy them.
 - Codex develops the project. Application runtime AI is limited to the audited provider registry (initially DeepSeek and OpenAI), with fixed endpoints/models and server-prepared informed actions.
 
-## Continue after the 0.8 freeze
+## Continue from the 0.9.1 Fusion review line
 
-Before editing, read the top `PROJECT_HANDOFF.md` release section and the 0.8 user-kit acceptance report. Build 18 is the shipped macOS 0.8 internal-preview line; builds 16 and 17 were blocked by frozen smoke gates and never released. `888aae5`/build15 remains the independent 0.7 rollback.
+Before editing, read the top `PROJECT_HANDOFF.md` release section. `0.9.1-preview.1` build 19 is an intentionally read-only Fusion GUI review line; it must not be called a full functional upgrade. Build 18 is the shipped macOS 0.8 full-function rollback until the user explicitly approves the Fusion GUI.
 
 - Preserve the uncommitted production evidence database. The legacy paper_056 run/quality/visual artifacts were explicitly deleted by the user before the 0.8 build and should not be recreated unless a new real extraction is authorized.
 - Use existing project Codex threads for frontend/macOS, core, Windows and security. Root is the only Git writer; every other thread receives an exact file list and returns a no-stage/no-commit handoff.
 - Keep the four-scope prepared-action registry and provider runtime as the only billable AI authority. Do not restore legacy direct Librarian, context-chat, personal-suggestion or workflow model routes.
 - On a hot machine, run at most two development threads and only targeted tests. Run the shared full suite, build and real App flow serially once after interfaces freeze.
+- Keep the 0.9 sequence strict: build19 changes only the Fusion production DOM, appearance and review interactions. Do not reconnect search detail/PDF, extraction, private experiment records or real export before the user approves the Mac GUI.
+- Build19 must use an isolated schema-v12 SQLite backup plus clearly synthetic, session-only experiment rows. It must clear AI-provider environment keys, expose no native bridge and block every business mutation/model route at the desktop handler.
+- The build19 bundle and server may expose only `index.html`, `app.css`, `workbench.css` and `fusion_review.js`. Do not re-add hidden 0.8 pages, old business runtimes, duplicate navigation listeners, cross-view DOM reparenting or CSS skin overlays.
+- Windows 0.9 work is paused. Do not edit, test or build `desktop/windows/**` until the user explicitly approves the Mac Fusion GUI.
 - Windows remains `installer_ready=false` until real Win11 build/install/import/search/upload/BYOK acceptance. Do not turn its source/build kit into a fake Setup.
 
 ## Choose the safe action level

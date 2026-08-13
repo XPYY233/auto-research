@@ -1,5 +1,21 @@
 # Auto Research 阶段性交班总览
 
+## 0.9.1 Fusion GUI 审核线（2026-08-13，当前优先）
+
+- 当前开发目标固定为 `0.9.1-preview.1` / build `19`：只实现 `fusion-concept.html` 的生产级四区工作台，不并行修复搜索详情、PDF返回、真实导出、自动提取或私人实验详情。只有用户在真实Mac App中明确认可GUI后，才依次进入0.9.2—0.9.5。
+- 运行界面只有一套Fusion DOM和一个 `fusion_review.js` 导航所有者；App包仅包含 `index.html`、`app.css`、`workbench.css`、`fusion_review.js` 四个前端资产。0.8旧脚本保留在源码历史边界供后续逐域迁移，但build19不打包、Fusion路由固定403，不能成为第二套生产界面。
+- build19只读浏览启动时从schema-v12生产库创建独立SQLite快照；实验页只使用明确标记的合成CSV。除外观/密度设置外，POST/DELETE和其他PATCH固定403，PDF、导出、上传、提取、确认、资料包操作与模型调用均被后端能力策略阻断。
+- Windows完全暂停：不要同步Fusion资源、版本或路由，不运行Windows测试/构建。Mac主流程获用户认可后才恢复Windows薄迁移。
+- 0.8 build18仍是完整功能回退点。安装build19前必须把它复制为已验证的非 `.app` rollback；安装事务失败必须恢复旧App。生产SQLite哈希必须在开发、构建和安装前后保持一致。
+- 当前低负载证据：Fusion/发布/核心目标28项、完整核心证据测试、macOS 212项通过；候选HTTP冒烟验证61篇真实文献、schema v12、只读GET、外观PATCH和所有业务写入阻断。最终commit/tag/DMG/安装与真实WebView验收尚待完成。
+
+### 当前恢复顺序
+
+1. 保留工作树中的 `db/experimental_evidence.sqlite`，绝不暂存、还原或清理。
+2. 只继续Fusion视觉与Mac发布；不接回第1—5项，不启动Windows对话。
+3. 在干净release worktree串行构建，事务安装build19，真实WebView检查文献/搜索/实验/资料包/设置、日夜/密度和窄窗口。
+4. 交付App、DMG与 `desktop/macos/FUSION_REVIEW_GUIDE.zh-CN.md`；用户认可前不得把0.9.1称为完整功能版。
+
 ## 0.8 发布冻结点（2026-08-13，优先阅读）
 
 - Auto Research `0.8.0-preview.1` / build `18` 源码已冻结；build 16/17 分别在冻结路径与前端契约冒烟门被拦截且未发布。发布身份和六个共享 Web 资源哈希由 `config/release-contract.json` 单一管理。

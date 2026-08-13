@@ -27,13 +27,12 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertEqual(metadata["desktop_version"], contract["desktop"]["macos"]["desktop_version"])
         self.assertEqual(metadata["bundle_short_version"], contract["desktop"]["macos"]["bundle_short_version"])
         self.assertEqual(metadata["build_number"], contract["desktop"]["macos"]["build_number"])
-        self.assertEqual(launcher.DESKTOP_VERSION, "0.8.0-preview.1")
-        self.assertEqual(metadata["bundle_short_version"], "0.8.0")
-        self.assertEqual(metadata["build_number"], "18")
-        self.assertEqual(metadata["target"], "macOS arm64 internal development preview")
-        self.assertIn("legacy-v12-workspace", metadata["data_mode"])
-        self.assertIn("signed-official-package", metadata["data_mode"])
-        self.assertIn("local-private-library", metadata["data_mode"])
+        self.assertEqual(launcher.DESKTOP_VERSION, "0.9.1-preview.1")
+        self.assertEqual(metadata["bundle_short_version"], "0.9.1")
+        self.assertEqual(metadata["build_number"], "19")
+        self.assertEqual(metadata["target"], "macOS arm64 Fusion GUI review preview")
+        self.assertIn("isolated-schema-v12", metadata["data_mode"])
+        self.assertIn("synthetic-session-experiment", metadata["data_mode"])
         self.assertIn("not released", metadata["product_target"])
         launcher_source = (DESKTOP_ROOT / "launcher.py").read_text(encoding="utf-8")
         self.assertNotIn('DESKTOP_VERSION = "0.', launcher_source)
@@ -47,22 +46,21 @@ class DesktopVersionContractTests(unittest.TestCase):
         launcher_source = (DESKTOP_ROOT / "launcher.py").read_text(encoding="utf-8")
         import_region = launcher_source.split("def _desktop_version_metadata", 1)[0]
         for core_dependent_import in (
-            "from ai_runtime_composition import",
-            "from desktop_ai_api import",
             "from auto_research.settings.desktop_settings import",
             "from desktop_settings_api import",
             "from desktop_settings_store import",
+            "from fusion_review_mode import",
         ):
             self.assertNotIn(core_dependent_import, import_region)
         smoke_body = launcher_source.split("def _run_smoke_test", 1)[1]
         self.assertLess(
             smoke_body.index("configure_core_paths(project_root)"),
-            smoke_body.index("from ai_runtime_composition import"),
+            smoke_body.index("from auto_research.settings.desktop_settings import"),
         )
         desktop_body = launcher_source.split("def _run_desktop", 1)[1]
         self.assertLess(
             desktop_body.index("configure_core_paths(project_root)"),
-            desktop_body.index("from ai_runtime_composition import"),
+            desktop_body.index("from fusion_review_mode import"),
         )
 
     def test_dmg_name_is_derived_and_does_not_reuse_previous_identity(self) -> None:
@@ -85,28 +83,28 @@ class DesktopVersionContractTests(unittest.TestCase):
         checks = launcher._frozen_product_contract_checks()
         self.assertTrue(checks)
         self.assertTrue(all(checks.values()), checks)
-        self.assertTrue(checks["primary_personal_import_navigation"])
-        self.assertTrue(checks["ai_consent_scope_contract"])
-        self.assertTrue(checks["workbench_appearance_contract"])
+        self.assertTrue(checks["fusion_shell_contract"])
+        self.assertTrue(checks["fusion_runtime_contract"])
+        self.assertTrue(checks["fusion_appearance_contract"])
         launcher_source = (DESKTOP_ROOT / "launcher.py").read_text(encoding="utf-8")
-        self.assertIn('"auto-research-ai-consent-v2"', launcher_source)
-        self.assertIn('"selected_evidence_chat"', launcher_source)
-        self.assertIn('"authorizePreparedAIAction"', launcher_source)
-        package_center = (
+        self.assertIn('experience_mode="fusion-review"', launcher_source)
+        self.assertNotIn("mac_ai_runtime_services(", launcher_source.split("def _run_desktop", 1)[1])
+        fusion_runtime = (
             DESKTOP_ROOT.parents[1]
             / "src"
             / "auto_research"
             / "evidence"
             / "web"
-            / "package_center.js"
+            / "fusion_review.js"
         ).read_text(encoding="utf-8")
-        self.assertIn("selectExportDestination", package_center)
-        self.assertNotIn("select_package_export_destination", package_center)
+        self.assertIn("AutoResearchFusion", fusion_runtime)
+        self.assertNotIn("executePreparedAIAction", fusion_runtime)
 
-    def test_pyinstaller_bundles_the_complete_shared_web_directory(self) -> None:
+    def test_pyinstaller_bundles_only_the_fusion_review_assets(self) -> None:
         spec = (DESKTOP_ROOT / "AutoResearch.spec").read_text(encoding="utf-8")
-        self.assertIn('str(project_root / "src" / "auto_research" / "evidence" / "web")', spec)
+        self.assertIn('("index.html", "app.css", "workbench.css", "fusion_review.js")', spec)
         self.assertIn('"auto_research/evidence/web"', spec)
+        self.assertNotIn('str(project_root / "src" / "auto_research" / "evidence" / "web"),', spec)
 
 
 if __name__ == "__main__":

@@ -41,101 +41,27 @@ def _csv_bytes(rows: list[dict[str, Any]]) -> bytes:
 
 def _web_ui_contract() -> dict[str, Any]:
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    js = (WEB_DIR / "fusion_review.js").read_text(encoding="utf-8")
     css = "\n".join(
         (WEB_DIR / name).read_text(encoding="utf-8")
         for name in ("app.css", "workbench.css")
     )
-    source_viewer_js = js.split("async function openSourceViewer", 1)[-1].split("function collectRowFields", 1)[0]
-    librarian_request_js = js.split(
-        "function librarianResearchRequest", 1
-    )[-1].split("function librarianStateFailureCode", 1)[0]
     expectations = [
-        ("editable_table", "class=\"edit-table\"" in html and "id=\"edit-rows\"" in html),
-        ("six_columns_visible", all(label in html for label in ("具体数值", "具体意义", "单位", "文章题目", "DOI", "数据在文中的解释"))),
-        ("original_right_pane", "id=\"original-pane\"" in html and "IMMUTABLE ORIGINAL" in js and "original_" in js),
-        ("confirm_before_save", "保存当前修正" in js and "/confirm" in js and "confirmRow" in js),
-        ("confirm_and_next", "保存并下一条" in js and "data-confirm-next" in js and "goNext" in js),
-        ("review_keyboard_shortcuts", "快捷键" in html and "handleReviewKeyboard" in js and "confirmSelectedRow" in js and "openSelectedSource" in js),
-        ("review_progress_card", "id=\"review-progress-card\"" in html and "renderReviewProgressCard" in js and "review-progress-bar" in js),
-        ("review_negative_decisions", "id=\"review-decision-dialog\"" in html and "存在歧义" in js and "不采用" in js and "/decision" in js and "恢复待审核" in js),
-        ("review_reopen_all_states", all(action in js for action in ('"confirmation", "correction", "rejected", "ambiguous"', "确定将 #", "已保存版本、自动抽取原始版本和修正历史都会保留"))),
-        ("optional_reviewer_note", "id=\"selected-review-note\"" in js and "可选，不属于六列数据" in js and "人工核验备注" in js and "reviewNotes" in js and ".review-note-panel" in css),
-        ("review_feedback_refresh", "refreshReviewFeedback" in js and "/api/papers" in js and "/api/current-paper/extraction" in js),
-        ("review_source_sort", "id=\"review-sort\"" in html and "sortReviewRows" in js and "sourcePageNumber" in js and "unreviewed_source" in js),
-        ("review_priority_queue", 'value="priority"' in html and "review_priority_score" in js and "review_priority_counts" in js),
-        ("compact_article_tools", "id=\"article-tools\"" in html and "提取、导出与文章状态" in html and ".article-tools" in css),
-        ("view_specific_header", "id=\"workspace-title\"" in html and "viewCopy" in js and "renderViewHeader" in js),
-        ("focus_review_mode", "id=\"focus-review\"" in html and "id=\"focus-review-bar\"" in html and "setFocusReview" in js and 'data-focus-review="true"' in css),
-        ("initial_row_selection", "rows[0].item_id" in js and "renderOriginal(rows.find" in js),
-        ("row_source_button", "data-source-row" in js and "source-action" in js and "openSourceViewer(Number(btn.dataset.sourceRow))" in js),
-        ("item_id_review_filter", "item_id" in html and "rowFilterText" in js and "stable_key" in js),
-        ("unsaved_dirty_guard", "hasUnsavedEdits" in js and "beforeunload" in js and "confirmDiscardUnsaved" in js),
-        ("single_review_action", "保存当前修正" in js and "保存并下一条" in js and "id=\"manual-form\"" not in html),
-        ("retired_manual_history", "id=\"manual-form\"" not in html and "id=\"view-history\"" not in html and "/api/six-data/manual" not in js),
-        ("search_engine", "id=\"search-form\"" in html and "/api/six-search" in js and 'data-search-scope="all"' in html),
-        ("search_filters_and_export", all(item in html for item in ("search-source-filter", "search-quality-filter", "search-sort")) and "itemSearchParams" in js and "search-active-filters" in html),
-        ("multi_paper_search_scope", 'data-search-scope="selected"' in html and "/api/search-papers" in js and "selectedSearchPaperParam" in js),
-        ("automatic_quality_gate", "/api/current-paper/quality-run" in js and all(label in js for label in ("双路一致通过", "第三次复核通过", "自动拦截")) and "data-quality-decision" not in js),
-        ("search_guidance_and_shortcut", "search-suggestions" in html and "renderSearchSuggestions" in js and "focusSearchShortcut" in js and "recentSearches" in js),
-        ("four_mode_evidence_search", all(mode in html for mode in ("数据条目", "原始表格", "论文图片", "实验结论")) and "/api/visual-search" in js and "/api/qualitative-search" in js and "setSearchMode" in js),
-        ("librarian_agent_primary", 'data-search-experience="agent"' in html and "问图书管理员" in html and "authorizePreparedAIAction('librarian', 'librarian'" in js and "setSearchExperience('agent')" in js),
-        (
-            "librarian_full_corpus_scope",
-            "检索范围：官方文献全库（不含我的实验）" in js
-            and "conversation_id: state.librarianSessionId" in librarian_request_js
-            and "paper_ids" not in librarian_request_js
-            and "不接受论文范围限制"
-            in Path(__file__).with_name("agent_runtime.py").read_text(
-                encoding="utf-8"
-            ),
-        ),
-        ("librarian_progress_feedback", 'id="librarian-progress"' in html and "startLibrarianProgress" in js and "library-progress-mark" in css and "codex-pet-working.webp" not in css),
-        ("librarian_typed_results", all(f'data-librarian-result-type="{kind}"' in html for kind in ("item", "table", "figure", "finding")) and "setLibrarianResultType" in js),
-        ("librarian_local_history", 'id="librarian-history-list"' in html and "librarianHistoryStorageKey" in js and "restoreLibrarianSession" in js),
-        ("librarian_protocol_guard", "DSML" in js and "librarianMarkdown" in js),
-        ("librarian_coverage_recall", "_fallback_recall_queries" in Path(__file__).with_name("agent_runtime.py").read_text(encoding="utf-8") and "candidate_count" in Path(__file__).with_name("agent_runtime.py").read_text(encoding="utf-8") and "preferredLibrarianResultType" in js and "agent_cited" in js and 'id="librarian-result-overview"' in html),
-        ("precise_search_fallback", 'data-search-experience="precise"' in html and 'id="precise-search-workspace"' in html and "runSearch" in js),
-        ("qualitative_result_export", "/api/qualitative-export.csv" in js and "/api/qualitative-export.xlsx" in js and '["item", "finding"]' in js),
-        ("resilient_boot_and_release", "apiOptional" in js and "runtimeWarnings" in js and "id=\"runtime-warning\"" in html and "id=\"release-badge\"" in html),
-        ("physical_fact_clustering", all(token in js for token in ("fact_cluster_size", "evidence_occurrences", "data-source-member", "重复记录已合并"))),
-        ("complete_visual_dialog", "id=\"visual-dialog\"" in html and "id=\"visual-image\"" in html and "openVisualAsset" in js and ".evidence-workspace-card" in css),
-        ("visual_review_objects", all(token in html for token in ('data-review-object="data"', 'data-review-object="table"', 'data-review-object="figure"', 'id="visual-review-workspace"')) and "/api/current-paper/visual-assets" in js and "/review" in js and "saveVisualReview" in js),
-        ("table_result_collapsing", "table-result-group" in js and "同一原表" in js and "展开其余" in js),
-        ("source_highlight", "source-dialog" in html and "openSourceViewer" in js and "image_url" in js and "snippet_url" in js),
-        ("next_unreviewed_queue", "id=\"next-unreviewed\"" in html and "selectNextUnreviewed" in js and "scrollIntoView" in js),
-        ("review_batch_download", "id=\"current-review-batch\"" in html and "/api/current-paper/review-batch.md" in js),
-        ("review_calibration_download", "id=\"current-review-calibration\"" in html and "strategy=calibration" in js),
-        ("interactive_calibration_review", "id=\"review-calibration-start\"" in html and "/api/current-paper/review-batch" in js and "toggleCalibrationReview" in js and "calibrationReviewIds" in js),
-        ("chunked_review_render", "id=\"review-load-more\"" in html and "reviewVisibleLimit" in js and "reviewPageSize" in js and "当前显示" in js),
-        ("resumable_calibration_review", "calibrationStoragePrefix" in js and "restoreCalibrationBatch" in js and "继续本轮校准" in js and "saveCalibrationBatch" in js),
-        ("review_all_download", "id=\"current-review-all\"" in html and "下载全部待审核" in js and "updateReviewBatchLinks" in js),
-        ("experiment_profile_card", "experiment-profile-card" in html and "renderExperimentProfile" in js and "/api/current-paper/experiment-profile" in js),
-        ("paper_status_overview", "id=\"paper-status-summary\"" in html and "renderPaperStatusSummary" in js and "paperAutomaticStatus" in js),
-        ("full_corpus_test_set_picker", "/api/test-set" in js and "全库测试集" in js and "testOrder" in js),
-        ("article_navigation_filters", all(item in html for item in ("paper-picker-query", "paper-author-filter", "data-paper-topic", "paper-status-filter", "paper-filter-summary")) and "paperMatchesFilters" in js and "navigation_method_tags" in js and "first_author" in js and "最近访问" in html and "筛选不会切换文章或重新扫描" in html),
-        ("article_scope_presets", "文章集合（点击后清除其他筛选）" in html and "applyPaperScopePreset" in js and 'applyPaperScopePreset(button.dataset.paperScope)' in js),
-        ("review_only_article_picker", 'body:not([data-view="review"]) .article-picker' in css),
-        ("readonly_mode", "id=\"readonly-badge\"" in html and "/api/ui-mode" in js and "isReadOnly" in js and "rejectReadOnlyAction" in js and ".readonly-badge[hidden]" in css),
-        ("readonly_search_only_mode", "renderPublicSearchOnlyMode" in js and 'name !== "search"' in js and 'body[data-readonly="true"] .nav:not([data-view="search"])' in css),
-        ("search_source_evidence_button", "data-source-search" in js and "原文证据" in js and "openSourceViewer(itemId" in js),
-        ("readonly_source_direct", "function openSourceViewer(id, rowHint = null)" in js and "rows.find(row => Number(row.item_id) === itemId)" in js and "await api(`/api/six-data/${id}`)" not in source_viewer_js),
-        ("search_review_state", "search-review-state" in js and "自动收录" in js and "历史确认" in js and "历史修正" in js),
-        (
-            "evidence_scoped_ai_chat",
-            'id="context-chat"' in html
-            and 'id="context-chat-form"' in html
-            and 'id="item-detail-panel"' in html
-            and 'id="visual-detail-panel"' in html
-            and "说明这个数据本身的含义，并总结该数据在文章中的具体含义" in html
-            and "authorizePreparedAIAction(\"selected_evidence_chat\", \"selected_evidence_chat\"" in js
-            and "data-item-detail" in js
-            and "openItemDetail" in js
-            and "openVisualAsset" in js
-            and "data-context-chat-item" not in js
-            and ".evidence-workspace-card" in css,
-        ),
-        ("dense_review_rows", "autoSizeReviewCell" in js and "grid-template-columns:repeat(3,minmax(0,1fr))" in css and ".edit-table{min-width:1380px;font-size:14px}" in css),
+        ("fusion_shell", all(token in html for token in ('class="fusion-activity"', 'id="fusion-context"', 'id="fusion-editor"', 'id="fusion-inspector"', 'class="fusion-statusbar"'))),
+        ("single_navigation_owner", html.count('class="fusion-activity"') == 1 and "appendChild" not in js),
+        ("four_research_views", all(f'data-view="{name}"' in html for name in ("paper", "search", "personal", "package"))),
+        ("settings_view", 'data-view="settings"' in html and 'data-settings-section="appearance"' in html),
+        ("fusion_runtime_only", '<script src="/static/fusion_review.js"></script>' in html and all(f'/static/{name}' not in html for name in ("app.js", "desktop_product.js", "package_center.js", "workbench.js"))),
+        ("isolated_read_routes", all(route in js for route in ("/api/search-papers", "/api/search-v2", "/api/desktop/settings"))),
+        ("business_actions_disabled", html.count("data-fusion-disabled") >= 14 and "0.9.2+" in html),
+        ("synthetic_grid", "syntheticSheets" in js and 'id="fusion-data-grid"' in html and "合成数据，不来自生产数据库" in js),
+        ("session_review_only", "markReviewed" in js and "本次会话已检查" in js),
+        ("zero_model_demo", "showDemoSuggestion" in js and "没有调用任何模型" in js),
+        ("appearance_modes", all(value in js for value in ("system", "light", "dark", "comfortable", "compact"))),
+        ("keyboard_navigation", all(value in js for value in ('"1":"paper"', '"2":"search"', '"3":"personal"', '"4":"package"', 'event.key.toLowerCase()==="k"', 'event.key===","'))),
+        ("responsive_drawers", all(value in css for value in ("@media(min-width:1280px)", "@media(min-width:900px) and (max-width:1279px)", "@media(min-width:640px) and (max-width:899px)", "@media(max-width:639px)"))),
+        ("reduced_motion", "prefers-reduced-motion:reduce" in css),
+        ("retired_legacy_dom", all(value not in html for value in ('id="manual-form"', 'id="view-history"', 'id="personal-import-panel"', 'id="package-center-panel"'))),
     ]
     failed = [name for name, ok in expectations if not ok]
     return {
@@ -158,12 +84,6 @@ def _requirement_summary(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     def details(*names: str) -> list[str]:
         return [str(by_name[name]["detail"]) for name in names if name in by_name]
 
-    ui = by_name.get("web_ui_contract", {}).get("web_ui", {})
-    ui_failed = set(ui.get("failed") or [])
-
-    def ui_ok(*parts: str) -> bool:
-        return bool(by_name.get("web_ui_contract", {}).get("ok")) or not any(part in ui_failed for part in parts)
-
     return [
         {
             "id": "article_selector_to_extracted_rows",
@@ -178,15 +98,15 @@ def _requirement_summary(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "evidence": details("six_editable_fields"),
         },
         {
-            "id": "editable_review_preserves_original",
-            "ok": ok("web_ui_contract") and ui_ok("editable_table", "original_right_pane", "confirm_before_save", "unsaved_dirty_guard"),
-            "requirement": "网页左侧可自由编辑六列表，右侧保留原始抽取版本，只有确认后才写入修正。",
+            "id": "fusion_read_only_literature",
+            "ok": ok("web_ui_contract", "fuzzy_search", "source_highlight"),
+            "requirement": "Fusion审核版只读展示真实文献快照和可定位证据，不开放写入、提取或模型调用。",
             "evidence": details("web_ui_contract"),
         },
         {
-            "id": "single_review_without_manual_entry",
-            "ok": ok("web_ui_contract") and ui_ok("single_review_action", "retired_manual_history"),
-            "requirement": "用户只需核对已有候选并保存修正；产品不再暴露人工补录或独立修正历史入口。",
+            "id": "fusion_synthetic_experiment",
+            "ok": ok("web_ui_contract"),
+            "requirement": "Fusion审核版实验网格仅使用合成数据，会话级核验与演示建议均不写私人库或调用模型。",
             "evidence": details("web_ui_contract"),
         },
         {
@@ -196,9 +116,9 @@ def _requirement_summary(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "evidence": details("fuzzy_search", "csv_export", "excel_export"),
         },
         {
-            "id": "automatic_quality_gate",
-            "ok": ok("web_ui_contract") and ui_ok("automatic_quality_gate", "multi_paper_search_scope"),
-            "requirement": "双路 DeepSeek 对抗抽取与第三次低分复核决定自动收录；低分候选自动隔离，不依赖人工批准。",
+            "id": "fusion_future_actions_blocked",
+            "ok": ok("web_ui_contract"),
+            "requirement": "0.9.2—0.9.5业务入口在Fusion审核版中可见但固定禁用，不能伪造成功或发送网络写请求。",
             "evidence": details("web_ui_contract"),
         },
     ]
@@ -370,7 +290,7 @@ def check_evidence_workflow(db: EvidenceDB, selector: str,
         "web_ui_contract",
         ui_contract["ok"],
         (
-            "网页工作流契约存在：自动质量门、可选修正、原始证据、多文章搜索、导出和原文高亮入口均可定位。"
+            "Fusion审核界面契约存在：单一工作台、只读文献、合成实验、禁用未来业务、主题和响应式抽屉均可定位。"
             if ui_contract["ok"]
             else f"网页工作流契约缺失：{', '.join(ui_contract['failed'])}"
         ),

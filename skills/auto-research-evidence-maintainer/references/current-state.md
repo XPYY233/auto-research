@@ -1,5 +1,14 @@
 # Current state checkpoint
 
+## 0.9.1 Fusion GUI review checkpoint (2026-08-13)
+
+- Target identity: `0.9.1-preview.1` build 19 for Apple Silicon macOS. It is a GUI acceptance build, not a complete functional replacement for 0.8.
+- Production surface: one physical Fusion DOM with title bar, four-item activity rail, context sidebar, central tabs/editor, evidence inspector and status bar. The only bundled Web assets are `index.html`, `app.css`, `workbench.css` and `fusion_review.js`.
+- Runtime boundary: literature is read from an atomic isolated schema-v12 snapshot; experiment tables are explicitly synthetic and session-only. Upload, extraction, confirmation, rollback, real export, native bridges, credentials and model calls are blocked.
+- Validation checkpoint before final packaging: 28 Fusion/release/core targets, the complete core evidence test module and 212 macOS tests passed, as did the isolated HTTP/frozen smoke. Final commit/tag/build19 install, real WebView review and DMG remain the next serial steps.
+- Rollback: keep macOS 0.8 build18 as a verified non-`.app` rollback before installing build19. Preserve the production SQLite byte hash and do not stage it.
+- Windows is paused. Its 0.8 internal source remains `installer_ready=false`; do not migrate Fusion until the user approves the Mac GUI.
+
 ## 0.8 release freeze checkpoint (2026-08-13)
 
 - Source identity: Auto Research `0.8.0-preview.1` build 18; builds 16 and 17 were blocked before release by frozen smoke gates. The annotated build18 tag is created from the final release commit. Last rollback remains `0.7.0-preview.2` build 15, source `888aae5`.

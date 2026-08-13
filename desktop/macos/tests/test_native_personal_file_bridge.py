@@ -136,15 +136,14 @@ class NativePersonalFileBridgeTests(unittest.TestCase):
         )
         self.assertEqual(len(window.calls), 2)
 
-    def test_launcher_uses_one_small_combined_native_bridge(self) -> None:
+    def test_fusion_review_launcher_exposes_no_native_file_bridge(self) -> None:
         source = (DESKTOP_ROOT / "launcher.py").read_text(encoding="utf-8")
-        self.assertIn("from native_desktop_bridge import NativeDesktopBridge", source)
-        self.assertIn("js_api=native_desktop_bridge", source)
-        self.assertIn("product_services.personal_file_selection_broker", source)
-        self.assertGreaterEqual(
-            source.count("personal_import_api=product_services.personal_import_api"),
-            2,
-        )
+        production = source.split("def _run_desktop", 1)[1]
+        self.assertNotIn("from native_desktop_bridge import NativeDesktopBridge", production)
+        self.assertNotIn("js_api=", production)
+        self.assertNotIn("personal_file_selection_broker", production)
+        self.assertNotIn("personal_import_api=", production)
+        self.assertIn('experience_mode="fusion-review"', production)
 
 
 if __name__ == "__main__":

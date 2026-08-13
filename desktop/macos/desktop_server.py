@@ -16,6 +16,7 @@ from auto_research.evidence.search_index import EvidenceSearchIndex
 from auto_research.evidence.uploads import UploadService
 from auto_research.evidence.webapp import (
     EvidenceHandler,
+    RELEASE_INFO,
     is_read_only_mutation,
     require_loopback_host,
 )
@@ -62,6 +63,31 @@ LEGACY_PAID_AI_PATHS = frozenset(
 )
 LEGACY_WORKFLOW_PATH = "/api/current-paper/run-workflow"
 MAX_LEGACY_WORKFLOW_REQUEST_BYTES = 64 * 1024
+FUSION_REVIEW_ALLOWED_GETS = frozenset(
+    {
+        "/",
+        "/index.html",
+        "/api/ui-mode",
+        "/api/desktop/settings",
+        "/api/search-papers",
+        "/api/search-v2",
+        "/api/search-v2/status",
+    }
+)
+FUSION_REVIEW_STATIC_ASSETS = frozenset(
+    {"index.html", "app.css", "workbench.css", "fusion_review.js"}
+)
+
+
+def is_fusion_review_allowed_get(path: str) -> bool:
+    """Keep the GUI review on public, path-free projections only."""
+
+    if path in FUSION_REVIEW_ALLOWED_GETS:
+        return True
+    if not path.startswith("/static/"):
+        return False
+    name = path.removeprefix("/static/")
+    return name in FUSION_REVIEW_STATIC_ASSETS and Path(name).name == name
 
 
 def new_session_token() -> str:
@@ -134,6 +160,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     federated_search_api: FederatedSearchAPI | None = None
     personal_import_api: PersonalImportAPI | None = None
     desktop_ai_api: MacDesktopAIAPI | None = None
+    experience_mode: str = "standard"
     _issue_desktop_cookie: bool = False
     _issue_csrf_header: bool = False
 
@@ -259,6 +286,17 @@ class DesktopEvidenceHandler(EvidenceHandler):
     def _desktop_forbidden(self) -> None:
         self.json_response(
             {"error": "无效的桌面会话", "code": "desktop_session_required"},
+            HTTPStatus.FORBIDDEN,
+        )
+
+    def _experience_forbidden(self) -> None:
+        self.close_connection = True
+        self.json_response(
+            {
+                "error": "Fusion GUI 体验版不会执行写入、模型调用、导入、回退或导出。",
+                "code": "fusion_review_read_only",
+                "retryable": False,
+            },
             HTTPStatus.FORBIDDEN,
         )
 
@@ -485,6 +523,34 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._bootstrap_redirect()
         if not self._has_session():
             return self._desktop_forbidden()
+        if parsed.path == "/api/ui-mode" and not parsed.query:
+            self._issue_csrf_header = True
+            if self.experience_mode == "fusion-review":
+                return self.json_response(
+                    {
+                        "read_only": True,
+                        "mode": "fusion-review",
+                        "label": "Fusion GUI 体验版",
+                        "experience": {
+                            "schema": "auto-research-fusion-review-v1",
+                            "literature": "isolated-read-only-snapshot",
+                            "experiment": "synthetic-session-only",
+                            "mutations": False,
+                            "model_calls": False,
+                        },
+                        "release": RELEASE_INFO,
+                    }
+                )
+        if self.experience_mode == "fusion-review" and not is_fusion_review_allowed_get(
+            parsed.path
+        ):
+            return self._experience_forbidden()
+        if self.experience_mode == "fusion-review" and parsed.path == "/api/desktop/settings":
+            # The Fusion runtime does not load the legacy UI bootstrap.  Issue
+            # its CSRF capability with the authoritative settings snapshot so
+            # the only permitted mutation (appearance preferences) can use the
+            # same protected desktop envelope.
+            self._issue_csrf_header = True
         if parsed.path == HISTORY_PATH:
             return self._get_desktop_history()
         if parsed.path == CREDENTIAL_PATH:
@@ -520,6 +586,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
         path = urlparse(self.path).path
         if not self._authorize_post(path):
             return
+        if self.experience_mode == "fusion-review":
+            return self._experience_forbidden()
         high_cost = path in HIGH_COST_PATHS
         if high_cost and not self.security_state.acquire_high_cost():
             return self.json_response(
@@ -590,6 +658,10 @@ class DesktopEvidenceHandler(EvidenceHandler):
         path = urlparse(self.path).path
         if not self._authorize_patch():
             return
+        if self.experience_mode == "fusion-review":
+            if self.desktop_settings_api is not None and self.desktop_settings_api.handle_patch(self):
+                return
+            return self._experience_forbidden()
         if self.read_only:
             return self.json_response(
                 {"error": "当前为只读模式，不允许修改设置。", "code": "read_only"},
@@ -606,6 +678,15 @@ class DesktopEvidenceHandler(EvidenceHandler):
 
     def do_DELETE(self) -> None:
         path = urlparse(self.path).path
+        if self.experience_mode == "fusion-review":
+            if not self._has_session(require_origin=True):
+                return self._desktop_forbidden()
+            if not self._csrf_valid():
+                return self.json_response(
+                    {"error": "桌面写入授权无效", "code": "desktop_csrf_required"},
+                    HTTPStatus.FORBIDDEN,
+                )
+            return self._experience_forbidden()
         if self.desktop_ai_api is not None and self.desktop_ai_api.is_path(self.path):
             if not self._has_session(require_origin=True):
                 return self._desktop_forbidden()
@@ -651,10 +732,13 @@ def create_desktop_server(
     personal_import_api: PersonalImportAPI | None = None,
     desktop_ai_api: MacDesktopAIAPI | None = None,
     session_token: str | None = None,
+    experience_mode: str = "standard",
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
     host = require_loopback_host(host)
     if host != "127.0.0.1":
         raise ValueError("desktop bridge requires the numeric IPv4 loopback address")
+    if experience_mode not in {"standard", "fusion-review"}:
+        raise ValueError("desktop experience mode is invalid")
     security_state = DesktopSecurityState(token, session_token=session_token)
     database.init()
     upload_service = UploadService(database)
@@ -682,6 +766,7 @@ def create_desktop_server(
             "federated_search_api": federated_search_api,
             "personal_import_api": personal_import_api,
             "desktop_ai_api": desktop_ai_api,
+            "experience_mode": experience_mode,
         },
     )
     server = ThreadingHTTPServer((host, port), handler)

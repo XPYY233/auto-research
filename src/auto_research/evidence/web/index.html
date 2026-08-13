@@ -1,783 +1,172 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="system" data-density="comfortable">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Auto Research · 科研工作台</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Auto Research · Fusion GUI 体验版</title>
   <script>
     (() => {
       try {
-        const cached = JSON.parse(localStorage.getItem("auto-research-appearance-v1") || "null");
-        const valid = cached && cached.version === 1;
-        const theme = valid && ["system", "light", "dark"].includes(cached.theme) ? cached.theme : "system";
-        const density = valid && ["comfortable", "compact"].includes(cached.density) ? cached.density : "comfortable";
-        const resolved = theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : theme === "system" ? "light" : theme;
-        document.documentElement.dataset.themePreference = theme;
-        document.documentElement.dataset.theme = resolved;
-        document.documentElement.dataset.density = density;
-        document.documentElement.style.colorScheme = resolved;
+        const saved = JSON.parse(localStorage.getItem("auto-research-fusion-appearance-v1") || "null");
+        if (["system", "light", "dark"].includes(saved?.theme)) document.documentElement.dataset.theme = saved.theme;
+        if (["comfortable", "compact"].includes(saved?.density)) document.documentElement.dataset.density = saved.density;
       } catch (_error) {}
     })();
   </script>
   <link rel="stylesheet" href="/static/app.css">
   <link rel="stylesheet" href="/static/workbench.css">
 </head>
-<body data-view="paper" data-paper-stage="review">
-  <a class="skip-link" href="#main">跳到主要内容</a>
-  <div class="shell">
-    <aside class="sidebar" aria-label="Auto Research 活动栏">
-      <div class="brand"><span class="beam" aria-hidden="true">AR</span><div><strong>Auto Research</strong><small>科研证据工作台</small></div></div>
-      <nav aria-label="工作区" id="workbench-navigation">
-        <button class="nav active" data-view="paper">文献处理 <b id="nav-count">0</b></button>
-        <button class="nav" data-view="search">搜索数据</button>
-        <button class="nav" data-view="personal">上传实验数据</button>
-        <button class="nav" data-view="package">导出 / 导入资料包</button>
+<body data-view="paper">
+  <a class="skip-link" href="#fusion-editor">跳到中央工作区</a>
+  <main class="fusion-app" aria-label="Auto Research Fusion GUI 体验版">
+    <header class="fusion-titlebar">
+      <div class="fusion-window-mark" aria-hidden="true"><i></i><i></i><i></i></div>
+      <strong>Auto Research</strong>
+      <span id="fusion-breadcrumb">文献 / 当前论文</span>
+      <button type="button" class="fusion-command" id="fusion-command" aria-keyshortcuts="Meta+K Control+K" aria-haspopup="dialog" aria-expanded="false" aria-controls="fusion-command-palette">命令与快速跳转 <kbd>⌘K</kbd></button>
+      <span class="fusion-preview-badge">Fusion GUI体验版 · 文献只读 · 实验为合成示例</span>
+    </header>
+
+    <section class="fusion-shell">
+      <nav class="fusion-activity" aria-label="工作区">
+        <div class="fusion-logo" aria-label="Auto Research">AR</div>
+        <button type="button" class="fusion-nav active" data-view="paper" aria-current="page" aria-label="文献"><span aria-hidden="true">▤</span><small>文献</small></button>
+        <button type="button" class="fusion-nav" data-view="search" aria-label="搜索"><span aria-hidden="true">⌕</span><small>搜索</small></button>
+        <button type="button" class="fusion-nav" data-view="personal" aria-label="实验"><span aria-hidden="true">⌬</span><small>实验</small></button>
+        <button type="button" class="fusion-nav" data-view="package" aria-label="资料包"><span aria-hidden="true">◇</span><small>资料包</small></button>
+        <button type="button" class="fusion-nav fusion-settings-nav" data-view="settings" aria-label="设置"><span aria-hidden="true">⚙</span><small>设置</small></button>
       </nav>
-      <div class="article-mini">
-        <span>当前文章</span>
-        <p id="mini-title">载入中…</p>
-        <code id="mini-doi"></code>
-      </div>
-      <div class="save-rule"><i></i><p>表格修改需确认后写入；原始证据始终保留。</p></div>
-      <button class="workbench-settings-button" id="workbench-settings-open" type="button" data-view="settings" aria-keyshortcuts="Meta+, Control+," aria-label="打开设置"><span aria-hidden="true">⚙</span><span>设置</span></button>
-    </aside>
 
-    <main id="main">
-      <header class="topbar">
-        <div class="topbar-copy">
-          <p class="eyebrow" id="workspace-kicker">LITERATURE WORKFLOW</p>
-          <h1 id="workspace-title">文献处理</h1>
-          <p class="workspace-subtitle" id="workspace-subtitle">导入真实 PDF，在同一流程内完成去重、自动提取和必要的证据检查。</p>
-        </div>
-        <div class="topbar-status">
-          <button type="button" class="workbench-command-trigger" id="workbench-command-open" aria-keyshortcuts="Meta+K Control+K"><span>快速跳转</span><kbd>⌘K</kbd></button>
-          <div class="runtime-warning" id="runtime-warning" hidden></div>
-          <div class="release-badge" id="release-badge"><i></i><span>正在读取版本…</span></div>
-          <div class="readonly-badge" id="readonly-badge" hidden><i></i>只读模式</div>
-        </div>
-      </header>
-
-      <section class="view active" id="view-review">
-      <div class="literature-workbench">
-      <aside class="literature-context-sidebar" aria-label="文献库与当前论文">
-      <section class="paper-workflow-nav" aria-label="文献处理流程">
-        <div>
-          <p class="eyebrow">LITERATURE WORKFLOW</p>
-          <strong>从 PDF 导入到证据检查，在同一流程内完成</strong>
-          <small>上传只进行验证、去重和入库；只有你逐阶段确认后才会调用当前受信 AI 提供商。</small>
-        </div>
-        <div class="paper-workflow-actions" role="tablist" aria-label="文献处理阶段">
-          <button type="button" role="tab" aria-selected="false" aria-controls="literature-workbench-center" tabindex="-1" data-paper-stage="upload"><span>01</span><strong>导入 PDF</strong><small>验证并去重</small></button>
-          <button type="button" class="active" role="tab" aria-selected="true" aria-controls="literature-workbench-center" tabindex="0" data-paper-stage="review"><span>02</span><strong>当前文章</strong><small>提取、查看与必要修正</small></button>
-        </div>
-      </section>
-
-      <section class="article-picker">
-        <div class="article-picker-main">
-          <div class="article-picker-copy">
-            <small>当前检查文章</small>
-            <strong>快速定位论文并读取已保存数据</strong>
-            <p>筛选不会切换文章或重新扫描。</p>
+      <aside class="fusion-context" id="fusion-context" aria-label="当前工作区上下文">
+        <header><strong id="fusion-context-title">文献</strong><button type="button" class="fusion-drawer-close" data-close-drawer="context" aria-label="关闭上下文栏">×</button></header>
+        <section class="fusion-context-view active" data-context-view="paper">
+          <p class="fusion-section-label">真实文献 · 只读</p>
+          <div id="fusion-paper-catalog" class="fusion-paper-catalog" aria-live="polite" aria-busy="true">
+            <div class="fusion-state-card" data-literature-state="loading"><strong>正在读取文献目录…</strong><span>只发起本机只读 GET，不读取 PDF。</span></div>
           </div>
-          <div class="paper-picker-workspace">
-            <div class="paper-filter-grid">
-              <label class="paper-query">搜索题目、作者或 DOI
-                <input id="paper-picker-query" type="search" placeholder="例如：El-Atwani、tungsten、10.1016…" autocomplete="off">
-              </label>
-              <label>按作者筛选
-                <input id="paper-author-filter" type="search" list="paper-author-options" placeholder="输入一作或通讯作者" autocomplete="off">
-                <datalist id="paper-author-options"></datalist>
-              </label>
-              <label>处理状态
-                <select id="paper-status-filter">
-                  <option value="all">全部处理状态</option>
-                  <option value="scanned">已有抽取数据</option>
-                  <option value="not_scanned">尚未扫描</option>
-                </select>
-              </label>
-              <button type="button" class="paper-filter-reset" id="paper-filter-reset">清除筛选</button>
-            </div>
-            <div class="paper-topic-bar" aria-label="文章研究方向">
-              <span>研究方向（可叠加筛选）</span>
-              <button type="button" class="active" data-paper-topic="all" aria-pressed="true">全部方向</button>
-              <button type="button" data-paper-topic="聚变堆材料" aria-pressed="false">聚变堆</button>
-              <button type="button" data-paper-topic="辐照实验" aria-pressed="false">辐照实验</button>
-              <button type="button" data-paper-topic="辐照模拟/计算" aria-pressed="false">辐照模拟</button>
-              <button type="button" data-paper-topic="高熵/中熵合金" aria-pressed="false">高熵/中熵合金</button>
-              <button type="button" data-paper-topic="钨与难熔合金" aria-pressed="false">钨与难熔合金</button>
-              <button type="button" data-paper-topic="显微/缺陷表征" aria-pressed="false">显微/缺陷表征</button>
-              <button type="button" data-paper-topic="力学性能" aria-pressed="false">力学性能</button>
-            </div>
-            <div class="paper-scope-bar" aria-label="文章快捷范围">
-              <span>文章集合（点击后清除其他筛选）</span>
-              <button type="button" class="active" data-paper-scope="all" aria-pressed="true">全部文章</button>
-              <button type="button" data-paper-scope="test_set" aria-pressed="false">50 篇真实性测试集</button>
-              <button type="button" data-paper-scope="recent" aria-pressed="false">最近访问</button>
-              <strong id="paper-filter-summary">正在载入文章…</strong>
-            </div>
-            <div class="paper-library-list" id="paper-library-list" role="listbox" aria-label="筛选后的论文"></div>
-            <form id="paper-switch-form">
-              <label class="paper-select-label" for="paper-switch-input">筛选后的文章</label>
-              <select id="paper-switch-input" aria-describedby="paper-selected-meta"></select>
-              <button type="submit" id="paper-switch-submit" data-write-action>切换文章</button>
-            </form>
-            <div class="paper-selected-meta" id="paper-selected-meta"></div>
-          </div>
-        </div>
-        <details class="article-tools" id="article-tools">
-          <summary>
-            <span>提取、导出与文章状态</span>
-            <small id="paper-compact-status">正在读取文章状态…</small>
-          </summary>
-          <div class="article-tools-body">
-            <div class="article-tool-actions">
-              <button type="button" id="run-current-extraction" data-write-action>开始自动提取与核验</button>
-              <button type="button" id="save-current-snapshot" data-write-action>生成当前文章 CSV 备份</button>
-              <a id="current-export-csv" href="/api/current-paper/export.csv">下载 CSV</a>
-              <a id="current-export-xlsx" href="/api/current-paper/export.xlsx">下载 Excel</a>
-              <a id="open-current-packet" target="_blank" rel="noopener">查看抽取包</a>
-            </div>
-            <div class="article-status-grid">
-              <p id="paper-status-summary"></p>
-              <p id="paper-extraction-status"></p>
-              <div class="experiment-profile-card" id="experiment-profile-card">
-                <strong>实验类型识别</strong>
-                <p id="experiment-profile-summary">正在识别当前文章的实验类型…</p>
-                <div id="experiment-profile-tags"></div>
-              </div>
-              <p id="paper-evidence-audit"></p>
-              <p id="paper-deepseek-status"></p>
-              <div class="quality-gate-status" id="quality-gate-status">
-                <div><strong>自动质量门</strong><span id="quality-run-stage">尚未运行</span></div>
-                <p id="quality-run-summary">两路 DeepSeek 将独立抽取并互相对照；低分项再由第三路复核。</p>
-                <div class="quality-score-strip" id="quality-score-strip"></div>
-              </div>
-              <div class="progress-panel" id="deepseek-progress" hidden>
-                <div class="progress-track"><span id="deepseek-progress-bar"></span></div>
-                <p id="deepseek-progress-text">等待任务开始</p>
-              </div>
-              <section class="literature-ai-stage" id="literature-ai-stage" hidden aria-labelledby="literature-ai-stage-name" aria-live="polite">
-                <header><span>本轮 AI 阶段已结束</span><strong id="literature-ai-stage-name">等待下一阶段</strong></header>
-                <dl><div><dt>下阶段调用</dt><dd id="literature-ai-stage-calls">0</dd></div><div><dt>最大 tokens</dt><dd id="literature-ai-stage-tokens">0</dd></div></dl>
-                <p id="literature-ai-stage-scope">尚未发送论文内容</p>
-                <small>继续前会再次显示本阶段的精确范围和费用提示；临时任务令牌不会写入历史或本地存储。</small>
-              </section>
-            </div>
-          </div>
-        </details>
-      </section>
-
-      </aside>
-      <div class="literature-workbench-center" id="literature-workbench-center">
-
-      <section class="article-strip">
-        <div><small>作者/年份</small><strong id="paper-key">—</strong></div>
-        <div class="wide"><small>题目</small><strong id="paper-title">—</strong></div>
-        <div><small>DOI</small><strong id="paper-doi">—</strong></div>
-        <div><small>处理状态</small><strong id="paper-process-status">—</strong></div>
-        <a id="open-paper" target="_blank" rel="noopener">打开原文 PDF</a>
-      </section>
-
-        <div id="paper-upload-mount">
-          <section class="paper-workflow-intake" id="view-upload" hidden>
-            <div class="view-head">
-              <div><p class="eyebrow">PDF INTAKE · DEDUPLICATION</p><h2>导入真实 PDF，验证和去重后进入当前文章处理</h2></div>
-              <span class="ai-state" id="deepseek-status">DeepSeek 状态载入中…</span>
-            </div>
-            <div class="upload-layout">
-              <form class="upload-card" id="pdf-upload-form">
-                <label class="upload-drop span-2">选择 PDF 文件<input id="pdf-upload-file" name="pdf" type="file" accept="application/pdf,.pdf" required><strong id="upload-file-label">点击选择本地 PDF</strong><small>最大 80 MB；文件必须能够正常打开</small></label>
-                <label class="span-2">文章题目（可留空自动读取）<input name="title" placeholder="建议填写正式出版题目"></label>
-                <label>DOI（可选）<input name="doi" placeholder="10.xxxx/xxxxx"></label>
-                <label>年份（可选）<input name="year" inputmode="numeric" placeholder="2024"></label>
-                <label class="span-2">第一作者（可选）<input name="first_author" placeholder="用于辅助判断标题相近的论文"></label>
-                <label class="span-2">通讯作者（可选）<input name="corresponding_author" placeholder="用于检索和重复文献辅助判断"></label>
-                <div class="manual-note"><i>i</i><span>上传后会检查文件指纹、DOI、题目/年份/作者和正文指纹；重复论文不会重复入库。</span></div>
-                <button class="primary" id="pdf-upload-submit" type="submit">验证并加入文献处理</button>
-              </form>
-              <aside class="upload-result" id="upload-result">
-                <div class="blank"><span>↑</span><h3>等待上传</h3><p>验证结果、重复原因以及下一步处理状态会显示在这里。</p></div>
-              </aside>
-            </div>
-            <div class="queue-head"><div><p class="eyebrow">PROCESSING QUEUE</p><h2>处理队列</h2></div><button type="button" id="refresh-upload-queue">刷新</button></div>
-            <div class="queue-list" id="processing-queue"></div>
-            <div class="queue-head uploads-head"><div><p class="eyebrow">UPLOAD TRAIL</p><h2>最近上传记录</h2></div></div>
-            <div class="queue-list" id="upload-events"></div>
-          </section>
-        </div>
-        <div class="view-head">
-          <div><p class="eyebrow">EVIDENCE WORKBENCH</p><h2>自动提取结果检查</h2></div>
-          <div class="view-actions">
-            <label class="compact-search">筛选当前表<input id="table-filter" placeholder="item_id、材料、硬度、300°C…"></label>
-            <label class="compact-search" hidden>检查状态
-              <select id="review-filter">
-                <option value="all">全部</option>
-                <option value="calibration">本轮分层校准</option>
-                <option value="priority">只看重点项</option>
-                <option value="unreviewed">只看未审核</option>
-                <option value="confirmed">只看已确认</option>
-                <option value="corrected">只看已修正</option>
-                <option value="ambiguous">只看存在歧义</option>
-                <option value="rejected">只看不采用</option>
-                <option value="manual">只看人工补录</option>
-              </select>
-            </label>
-            <label class="compact-search">显示顺序
-              <select id="review-sort">
-                <option value="original">抽取顺序</option>
-                <option value="review_priority" selected>证据检查优先级（高到低）</option>
-                <option value="source_asc">原文页码升序</option>
-                <option value="source_desc">原文页码降序</option>
-                <option value="unreviewed_source">未检查项优先，按页码</option>
-              </select>
-            </label>
-            <button type="button" class="secondary-action" id="next-unreviewed" hidden>下一条未检查</button>
-            <button type="button" class="secondary-action" id="review-load-more" hidden>显示更多</button>
-            <button type="button" class="secondary-action focus-action" id="focus-review" aria-pressed="false">专注检查</button>
-            <a class="secondary-action calibration-action" id="current-review-calibration" href="/api/current-paper/review-batch.md?limit=20&amp;strategy=calibration" hidden>下载分层校准集</a>
-            <a class="secondary-action" id="current-review-batch" href="/api/current-paper/review-batch.md?limit=20" hidden>下载待审核清单</a>
-            <a class="secondary-action" id="current-review-all" href="/api/current-paper/review-batch.md?limit=200" hidden>下载全部待审核</a>
-            <details class="shortcut-help">
-              <summary>快捷键</summary>
-              <div>Ctrl/⌘+Enter 确认<br>Shift+Ctrl/⌘+Enter 确认并下一条<br>Alt+N 下一条<br>Alt+S 原文证据</div>
-            </details>
-            <span id="row-count">0 条</span>
-          </div>
-        </div>
-        <div class="review-object-switch" id="review-object-switch" role="tablist" aria-label="检查对象">
-          <button type="button" class="active" role="tab" aria-selected="true" aria-controls="data-review-workspace" tabindex="0" data-review-object="data"><span>01</span><strong>已收录数据</strong><small id="review-data-count">0 条</small></button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="visual-review-workspace" tabindex="-1" data-review-object="table"><span>02</span><strong>原始表格</strong><small id="review-table-count">0 张</small></button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="visual-review-workspace" tabindex="-1" data-review-object="figure"><span>03</span><strong>论文图片</strong><small id="review-figure-count">0 幅</small></button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="quality-review-workspace" tabindex="-1" data-review-object="quality"><span>04</span><strong>需处理异常</strong><small id="review-quality-count">0 项</small></button>
-        </div>
-        <div id="data-review-workspace">
-        <div class="review-progress-card" id="review-progress-card" hidden>
-          <div class="review-progress-copy">
-            <span>人工核验进度</span>
-            <strong id="review-progress-title">0/0 已审核</strong>
-            <p id="review-progress-note">选择一篇文章后开始核验。</p>
-            <button type="button" id="review-calibration-start" class="calibration-start" aria-pressed="false">开始分层校准（20 条）</button>
-          </div>
-          <div class="review-progress-meter" aria-hidden="true"><i id="review-progress-bar"></i></div>
-          <dl>
-            <div><dt>待审核</dt><dd id="review-progress-unreviewed">0</dd></div>
-            <div><dt>已确认</dt><dd id="review-progress-confirmed">0</dd></div>
-            <div><dt>已修正</dt><dd id="review-progress-corrected">0</dd></div>
-            <div><dt>存在歧义</dt><dd id="review-progress-ambiguous">0</dd></div>
-            <div><dt>不采用</dt><dd id="review-progress-rejected">0</dd></div>
-            <div><dt>人工补录</dt><dd id="review-progress-manual">0</dd></div>
-          </dl>
-        </div>
-        <div class="focus-review-bar" id="focus-review-bar" hidden>
-          <div><small>专注检查</small><strong id="focus-paper-title">当前文章</strong></div>
-          <span id="focus-review-progress">0/0 已审核</span>
-          <button type="button" id="exit-focus-review">退出专注模式</button>
-        </div>
-        <div class="review-split">
-          <section class="edit-pane" aria-label="可编辑数据表">
-            <div class="table-scroll">
-              <table class="edit-table">
-                <thead><tr><th>具体数值</th><th>具体意义</th><th>单位</th><th>文章题目</th><th>DOI</th><th class="context-col">数据在文中的解释（搜索核心）</th><th>操作</th></tr></thead>
-                <tbody id="edit-rows"></tbody>
-              </table>
-            </div>
-          </section>
-          <button type="button" class="literature-inspector-toggle" id="literature-inspector-toggle" aria-controls="original-pane" aria-expanded="false">显示证据检查器</button>
-          <aside class="original-pane" id="original-pane" aria-label="当前条目证据检查器">
-            <div class="blank"><span>↖</span><h3>选择一条数据</h3><p>右侧显示原始抽取值、证据页码和原文定位。</p></div>
-          </aside>
-        </div>
-        </div>
-        <section class="visual-review-workspace" id="visual-review-workspace" hidden aria-live="polite">
-          <header>
-            <div><p class="eyebrow" id="visual-review-kicker">TABLE EVIDENCE CHECK</p><h2 id="visual-review-title">原始表格检查</h2><p id="visual-review-summary">检查截图、图注和上下文标签；系统不会自动读取曲线点。</p></div>
-            <div class="visual-review-legend"><span><i class="pending"></i>自动元数据</span><span><i class="confirmed"></i>历史修正</span><span><i class="attention"></i>已排除</span></div>
-          </header>
-          <div class="visual-review-grid" id="visual-review-grid"></div>
+          <p class="fusion-section-label">状态</p>
+          <div class="fusion-tree-row static"><span>当前论文</span><b id="fusion-current-paper-state">载入中</b></div>
+          <div class="fusion-tree-row static"><span>证据条目</span><b id="fusion-current-paper-count">—</b></div>
         </section>
-        <section class="quality-review-workspace" id="quality-review-workspace" hidden aria-live="polite">
-          <header>
-            <div><p class="eyebrow">QUALITY GATE QUARANTINE</p><h2>需要处理的异常</h2><p>这里只展示自动核验后仍无法可靠判断的少量候选；已通过质量门的数据无需逐项确认。</p></div>
-            <div class="quality-review-threshold"><span>自动发布阈值</span><strong>85 / 100</strong></div>
-          </header>
-          <div class="quality-review-grid" id="quality-review-grid"></div>
+        <section class="fusion-context-view" data-context-view="search" hidden>
+          <p class="fusion-section-label">来源</p>
+          <div class="fusion-tree-row active static"><span>当前真实文献</span><b>只读</b></div>
+          <div class="fusion-tree-row static"><span>官方资料库</span><b>0.9.2+</b></div>
+          <div class="fusion-tree-row static"><span>我的实验</span><b>合成</b></div>
+          <p class="fusion-section-label">证据类型</p>
+          <div class="fusion-tree-row static"><span>测量条目</span><b id="fusion-count-item">—</b></div>
+          <div class="fusion-tree-row static"><span>研究结论</span><b id="fusion-count-finding">—</b></div>
+          <div class="fusion-tree-row static"><span>完整表格</span><b id="fusion-count-table">—</b></div>
+          <div class="fusion-tree-row static"><span>论文图片</span><b id="fusion-count-figure">—</b></div>
         </section>
-      </div>
-      </div>
-      </section>
-
-      <section class="view" id="view-search">
-        <div class="search-workbench">
-        <aside class="search-context-sidebar" aria-label="搜索上下文">
-          <div class="search-experience-layout">
-            <div class="search-experience-switch" role="tablist" aria-label="检索方式">
-              <button type="button" class="active" role="tab" aria-selected="true" aria-controls="librarian-workspace" tabindex="0" data-search-experience="agent"><span>推荐</span><strong>问图书管理员</strong><small>用自然语言检索整个证据库</small></button>
-              <button type="button" role="tab" aria-selected="false" aria-controls="precise-search-workspace" tabindex="-1" data-search-experience="precise"><span>进阶</span><strong>精确检索</strong><small>自行组合类型、字段与文章范围</small></button>
-            </div>
-            <aside class="search-experience-guide" id="search-experience-guide"><strong>直接描述研究问题</strong><p>图书管理员默认检索完整文献库。需要限制论文范围或逐字段筛选时，再切换到精确检索。</p></aside>
-          </div>
-          <aside class="librarian-history" aria-label="图书管理员对话历史">
-            <div class="librarian-history-head"><div><span>LIBRARY LOG</span><strong>对话记录</strong></div><button type="button" id="librarian-reset">＋ 新对话</button></div>
-            <label class="librarian-history-search"><span class="visually-hidden">搜索历史对话</span><input id="librarian-history-query" type="search" placeholder="搜索过去的问题" autocomplete="off"></label>
-            <div class="librarian-history-list" id="librarian-history-list"></div>
-            <small id="librarian-history-privacy">记录仅保存在当前设备，不写入科学数据库；打开旧对话不会再次调用模型。</small>
-          </aside>
-        </aside>
-        <div class="search-workbench-center">
-        <div class="search-hero">
-          <section class="librarian-workspace" id="librarian-workspace" aria-label="图书管理员 Agent">
-            <div class="librarian-main">
-              <div class="librarian-intro">
-                <div class="librarian-avatar" aria-hidden="true">馆</div>
-                <div><p class="eyebrow">TRUSTED AI · LIBRARIAN AGENT</p><h3>描述问题，我来查证据</h3><p>自动拆解材料、条件和物理量，并返回可以继续打开核对的数据库记录。</p></div>
-              </div>
-              <div class="librarian-messages" id="librarian-messages" aria-live="polite">
-                <div class="librarian-welcome"><strong>可以这样问：</strong><button type="button" data-librarian-suggestion="高熵合金在中子辐照后，硬度和缺陷结构有哪些变化？">高熵合金中子辐照后的硬度与缺陷</button><button type="button" data-librarian-suggestion="钨及钨合金在高温离子辐照下报告了哪些空洞或气泡结果？">钨合金高温辐照下的空洞与气泡</button></div>
-              </div>
-              <div class="librarian-progress" id="librarian-progress" hidden role="status" aria-live="polite">
-                <div class="library-progress-mark" aria-hidden="true"><span>LIB</span><i></i></div>
-                <div class="librarian-progress-copy"><div><strong id="librarian-progress-stage">预计：正在理解研究问题</strong><span id="librarian-progress-time" aria-hidden="true">0 秒</span></div><div class="librarian-progress-track"><i id="librarian-progress-bar"></i></div><small>阶段是预计提示，秒数是真实耗时；页面仍在工作，无需重复提交。</small></div>
-              </div>
-              <section class="librarian-synthesis-stage" id="librarian-synthesis-stage" hidden aria-labelledby="librarian-synthesis-heading">
-                <div><p class="eyebrow">STAGE 1 COMPLETE</p><h3 id="librarian-synthesis-heading">检索规划已完成，是否生成回答？</h3><p>阶段 1 已完成候选召回。生成综合回答可能再调用模型 1 次，并产生额外 API 费用。</p></div>
-                <dl><div><dt>候选证据</dt><dd id="librarian-stage-candidates">0</dd></div><div><dt>证据组</dt><dd id="librarian-stage-bundles">0</dd></div><div><dt>研究主题</dt><dd id="librarian-stage-themes">0</dd></div></dl>
-                <div><button type="button" id="librarian-synthesis-cancel">停止，不生成回答</button><button type="button" id="librarian-synthesis-continue">生成回答（可能调用 1 次）</button></div>
-              </section>
-              <form id="librarian-form" class="librarian-form">
-                <label class="visually-hidden" for="librarian-input">向图书管理员描述问题</label>
-                <textarea id="librarian-input" maxlength="2000" rows="3" placeholder="例如：帮我找高熵合金在中子辐照后硬度如何变化，并给出对应论文和原文证据"></textarea>
-                <div>
-                  <small id="librarian-status">检索范围：官方文献全库（不含我的实验）</small>
-                  <span class="librarian-form-actions">
-                    <button type="button" id="librarian-brief-export" disabled>导出研究简报</button>
-                    <button type="submit" id="librarian-send">交给图书管理员</button>
-                  </span>
-                </div>
-                <small id="librarian-brief-status" class="librarian-brief-status" aria-live="polite"></small>
-              </form>
-            </div>
-          </section>
-          <section class="desktop-product-panel" id="desktop-product-panel" hidden aria-label="桌面资料与 AI 设置">
-            <div class="desktop-product-copy">
-              <span>DESKTOP PREVIEW · LOCAL FIRST</span>
-              <h3>本机实验数据与 AI 设置</h3>
-              <p>官方版本和用户资料包统一放在“资料包中心”；我的实验数据只保存在本机私人库，不会覆盖文献工作区。</p>
-            </div>
-            <div class="desktop-product-status desktop-personal-status">
-              <i id="desktop-personal-dot"></i>
-              <div><small>我的实验数据</small><strong id="desktop-personal-title">尚未检查</strong><p id="desktop-personal-note">导入 CSV、TSV 或 XLSX，确认含义后才会加入私人搜索。</p></div>
-              <button type="button" id="desktop-personal-import">导入实验表格</button>
-            </div>
-          </section>
-          <div id="precise-search-workspace" hidden>
-          <div class="search-repository-switch" id="search-repository-switch" hidden role="tablist" aria-label="搜索工作区">
-            <div><span>搜索工作区</span><small>两类数据互不写入</small></div>
-            <button type="button" class="active" role="tab" aria-selected="true" data-search-repository="workspace"><strong>本地文献工作区</strong><small>上传、提取、校对与导出</small></button>
-            <button type="button" role="tab" aria-selected="false" data-search-repository="offline"><strong>离线资料库</strong><small>官方文献与我的实验联合搜索</small></button>
-          </div>
-          <div class="offline-source-scope" id="offline-source-scope" hidden aria-label="离线资料来源">
-            <div><span>离线资料范围</span><small>“全部”由后端一次联合检索；精确检索无需配置 AI 密钥</small></div>
-            <div role="group" aria-label="选择离线资料范围">
-              <button type="button" data-source-scope="official" aria-pressed="false"><strong>官方文献</strong><small>签名资料包 · 只读</small></button>
-              <button type="button" data-source-scope="private" aria-pressed="false"><strong>我的实验</strong><small>当前电脑 · 私人</small></button>
-              <button type="button" data-source-scope="all" aria-pressed="true" class="active"><strong>全部</strong><small>官方与私人联合召回</small></button>
-            </div>
-          </div>
-          <div class="search-scope-selector" aria-label="检索文章范围">
-            <div class="search-scope-switch" role="group" aria-label="检索范围">
-              <button type="button" class="active" data-search-scope="all" aria-pressed="true">全部文章</button>
-              <button type="button" data-search-scope="selected" aria-pressed="false">指定多篇文章</button>
-            </div>
-            <div class="search-scope"><span>当前检索范围</span><strong id="search-scope-heading">全部文章</strong><small id="search-scope-caption">不受当前检查文章影响</small></div>
-            <strong id="search-paper-count">全库文章</strong>
-          </div>
-          <div class="search-paper-panel" id="search-paper-panel" hidden>
-            <div class="search-paper-toolbar">
-              <label>按题目、作者或 DOI 筛选文章
-                <input id="search-paper-query" type="search" placeholder="例如：tungsten、El-Atwani、10.1016…" autocomplete="off">
-              </label>
-              <div><button type="button" id="search-paper-select-visible">选择当前结果</button><button type="button" id="search-paper-clear">清空选择</button></div>
-            </div>
-            <div class="search-paper-list" id="search-paper-list" aria-live="polite"></div>
-          </div>
-          <div class="search-mode-switch" id="search-mode-switch" role="tablist" aria-label="检索对象">
-            <button type="button" class="active" role="tab" aria-selected="true" aria-controls="search-results" tabindex="0" data-search-mode="item"><i>01</i><span>数据条目</span><small>查数值、性质与条件</small></button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-search-mode="table"><i>02</i><span>原始表格</span><small>查完整表格及上下文</small></button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-search-mode="figure"><i>03</i><span>论文图片</span><small>查图像、变量与结论</small></button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-search-mode="finding"><i>04</i><span>实验结论</span><small>查趋势、存在与未观察结果</small></button>
-          </div>
-          <div class="search-box-wrap">
-            <form id="search-form" role="search">
-              <span class="search-glyph" aria-hidden="true">⌕</span>
-              <label class="visually-hidden" for="search-query">搜索实验数据</label>
-              <input id="search-query" placeholder="例如：CoCrFeMnNi 300°C 辐照后 硬度" autocomplete="off" spellcheck="false">
-              <button type="button" class="search-clear" id="search-clear" aria-label="清除搜索" hidden>清除</button>
-              <button class="search-submit" type="submit">搜索</button>
-            </form>
-            <kbd title="按 / 快速聚焦搜索框">/</kbd>
-          </div>
-          <div class="search-discovery">
-            <span>试试这样搜索</span>
-            <div class="search-suggestions" id="search-suggestions"></div>
-            <div class="recent-searches" id="recent-searches" hidden><span>最近搜索</span><div id="recent-search-items"></div></div>
-          </div>
-          <p id="search-help">检索六列数据及原文证据；同一原表的命中数据会集中显示，并支持展开全部。</p>
-          </div>
-        </div>
-        <nav class="librarian-result-tabs" id="librarian-result-tabs" role="tablist" aria-label="图书管理员结果类型" hidden>
-          <span id="librarian-result-overview">本次检索证据</span>
-          <button type="button" class="active" role="tab" aria-selected="true" aria-controls="search-results" tabindex="0" data-librarian-result-type="item">条目 <b id="librarian-count-item">0</b></button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-librarian-result-type="finding">结论 <b id="librarian-count-finding">0</b></button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-librarian-result-type="table">表格 <b id="librarian-count-table">0</b></button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="search-results" tabindex="-1" data-librarian-result-type="figure">图片 <b id="librarian-count-figure">0</b></button>
-        </nav>
-        <div class="search-controls" id="search-filter-bar">
-          <div class="search-control-copy"><span>精确结果</span><small>筛选会同步应用到 CSV 和 Excel 导出</small></div>
-          <label>证据来源<select id="search-source-filter"><option value="all">全部来源</option><option value="text">正文数据</option><option value="table">表格数据</option><option value="figure">图片关联</option><option value="manual">人工补录</option></select></label>
-          <label>质量来源<select id="search-quality-filter"><option value="all">全部已收录</option><option value="quality_passed">自动质量门通过</option><option value="dual_pass">双路一致通过</option><option value="third_pass">第三次复核通过</option><option value="legacy_stable">历史稳定数据</option></select></label>
-          <label>结果排序<select id="search-sort"><option value="relevance">相关度优先</option><option value="source_page">按文章与页码</option><option value="article">按文章归类</option></select></label>
-          <button type="button" id="search-reset-filters">重置</button>
-        </div>
-        <div class="search-toolbar">
-          <div><span class="search-live-dot" aria-hidden="true"></span><strong id="search-summary">等待搜索</strong><div id="search-active-filters"></div></div>
-          <span id="search-exports"><small>导出全部匹配</small><a id="search-export" href="/api/six-export.csv">CSV</a><a id="search-export-xlsx" href="/api/six-export.xlsx">Excel</a></span>
-        </div>
-        <div class="result-list" id="search-results" aria-live="polite" tabindex="-1"></div>
-        </div>
-        </div>
-      </section>
-
-      <section class="view" id="view-personal" aria-label="上传实验数据">
-        <section class="personal-import-panel" id="personal-import-panel" hidden aria-label="导入个人实验数据">
-          <header>
-            <div><span>MY EXPERIMENT DATA</span><h3>AI 辅助导入实验数据</h3><p>选择后可使用你在设置页选定的受信 AI 提供商进行识别，并可能产生少量费用。实际只发送工作表名、行数、列名、数据类型、已有单位/本地初步角色与含义和最多 5 行样例；完整表格不会上传，文件路径和密钥也不会发送。</p></div>
-            <button type="button" id="personal-import-choose">选择文件并自动识别</button>
-          </header>
-          <div class="personal-search-notice" id="personal-search-notice" aria-live="polite"><span id="personal-search-notice-text"></span><button type="button" id="personal-search-refresh" hidden>重试刷新搜索</button></div>
-          <div class="personal-import-workflow" id="personal-import-workflow" hidden>
-            <div class="personal-import-progress-row"><div class="personal-import-progress" id="personal-import-progress" role="status" aria-live="polite">等待选择文件</div><button type="button" class="personal-secondary" id="personal-ai-retry" hidden>使用当前 AI 提供商识别（可能产生费用）</button></div>
-            <div class="personal-preview-summary" id="personal-preview-summary"></div>
-            <label class="personal-sheet-selector">选择工作表<select id="personal-import-sheet"></select></label>
-            <form id="personal-import-form">
-              <fieldset>
-                <legend>实验信息</legend>
-                <div class="personal-form-grid">
-                  <label>项目名称<input id="personal-project-name" required maxlength="500" placeholder="例如：W-Ta 辐照实验"></label>
-                  <label>样品名称<input id="personal-sample-name" required maxlength="500" placeholder="例如：W-5Ta-01"></label>
-                  <label>材料<input id="personal-sample-material" maxlength="500" placeholder="例如：W-5Ta"></label>
-                  <label>实验批次<input id="personal-run-name" required maxlength="500" placeholder="例如：室温纳米压痕"></label>
-                  <label>测试方法<input id="personal-run-method" required maxlength="500" placeholder="例如：纳米压痕"></label>
-                  <label class="personal-wide">实验条件（可选；每行“名称=数值或说明”）<textarea id="personal-run-conditions" rows="3" placeholder="temperature=300 K&#10;dose=1 dpa"></textarea></label>
-                  <label class="personal-wide">实验备注（可选）<textarea id="personal-run-note" rows="2" placeholder="只记录自己确认过的说明"></textarea></label>
-                </div>
-              </fieldset>
-              <fieldset>
-                <legend>AI 识别结果</legend>
-                <p class="personal-field-help">请浏览列角色、物理意义和单位；只有识别错误时才需要修改。最终点击一次“我已检查，确认导入”即可。</p>
-                <div class="personal-column-list" id="personal-import-columns"></div>
-              </fieldset>
-              <fieldset class="personal-advanced-series">
-                <legend>变量关系（AI 可自动识别，可选）</legend>
-                <p class="personal-field-help">只有表格明确表达横纵轴关系时才需要测量序列；普通数据表可以不填写。</p>
-                <div class="personal-series-list" id="personal-series-list"></div>
-                <button type="button" class="personal-secondary" id="personal-add-series">＋ 添加测量序列</button>
-              </fieldset>
-              <div class="personal-import-actions">
-                <div><strong>最终核验</strong><small>点击即表示你已经浏览当前页面；系统会在后台完成保存、版本核对和搜索更新。</small></div>
-                <button type="submit" id="personal-reviewed-import">我已检查，确认导入</button>
-              </div>
-            </form>
-          </div>
+        <section class="fusion-context-view" data-context-view="personal" hidden>
+          <p class="fusion-section-label">当前文件</p>
+          <div class="fusion-tree-row active static"><span>W-Ta_nanoindentation_demo.csv</span><b>合成</b></div>
+          <p class="fusion-section-label">工作表</p>
+          <button type="button" class="fusion-tree-row active" data-sheet="hardness"><span>硬度测量</span><b>12×5</b></button>
+          <button type="button" class="fusion-tree-row" data-sheet="metadata"><span>样品信息</span><b>4×3</b></button>
+          <p class="fusion-section-label">检查状态</p>
+          <div class="fusion-tree-row static"><span>本次会话核验</span><b id="fusion-review-context-state">尚未检查</b></div>
+          <div class="fusion-tree-row static"><span>AI 建议</span><b id="fusion-ai-demo-context-state">未运行模型</b></div>
         </section>
-      </section>
-
-      <section class="view package-center" id="view-package" aria-label="资料包中心">
-        <header class="package-center-hero">
-          <div><p class="eyebrow">PACKAGE CENTER · LOCAL TRANSFER</p><h2>资料包中心</h2><p>管理课题组官方资料库，并按需导出论文集合或已确认的私人实验。官方包和用户包始终分开。</p></div>
-          <div class="package-center-safety"><strong>用户包安全边界</strong><span>未加密</span><span>来源未认证</span><span>仅限课题组内部</span><small>SHA-256 只能发现文件损坏，不能证明发送者身份，也不能阻止文件泄露。</small></div>
-        </header>
-
-        <section class="package-center-card package-official-card" aria-labelledby="package-official-heading">
-          <header><div><span>OFFICIAL LIBRARY</span><h3 id="package-official-heading">官方资料库</h3><p>官方包经过签名、完整性检查和只读仓库审计；导入失败不会改变当前活动版本。</p></div></header>
-          <div id="package-official-status-mount">
-            <div class="desktop-product-status" id="desktop-official-package-status">
-              <i id="desktop-package-dot"></i>
-              <div><small>官方资料库</small><strong id="desktop-package-title">尚未导入</strong><p id="desktop-package-note">选择我们提供的 .aresearch 资料包即可离线搜索。</p></div>
-              <button type="button" id="desktop-package-import">选择资料包</button>
-            </div>
-          </div>
-          <div class="package-installed" aria-live="polite">
-            <div class="package-section-heading"><strong>已安装版本</strong><small>可回退到通过复核的旧版本</small></div>
-            <div id="package-installed-list"><p class="package-empty">正在读取已安装版本…</p></div>
-          </div>
+        <section class="fusion-context-view" data-context-view="package" hidden>
+          <p class="fusion-section-label">资料库</p>
+          <div class="fusion-tree-row active static"><span>官方资料库</span><b>体验版未读取</b></div>
+          <div class="fusion-tree-row static"><span>历史版本</span><b>0.9.2+ 恢复</b></div>
+          <p class="fusion-section-label">安全边界</p>
+          <div class="fusion-context-note">签名 App、官方资料包与私人实验库彼此独立。体验版不会执行导入、回退或导出。</div>
         </section>
-
-        <div class="package-center-columns">
-          <section class="package-center-card" aria-labelledby="package-literature-heading">
-            <header><div><span>LITERATURE COLLECTION</span><h3 id="package-literature-heading">导出论文集合</h3><p>可导出结构化证据和符合权限要求的原始 PDF；首版不包含图表截图。</p></div></header>
-            <form id="package-literature-plan-form" class="package-form">
-              <fieldset class="package-scope-picker">
-                <legend>选择论文范围</legend>
-                <label><input type="radio" name="literature-scope" value="selected" checked><span><strong>逐篇选择</strong><small>使用“搜索数据”中已选择的论文</small></span></label>
-                <label><input type="radio" name="literature-scope" value="filtered"><span><strong>当前筛选结果</strong><small>使用文献处理页当前筛选条件</small></span></label>
-                <label><input type="radio" name="literature-scope" value="all"><span><strong>全部论文</strong><small>证据库当前登记的全部论文</small></span></label>
-              </fieldset>
-              <p class="package-scope-status" id="package-literature-scope-status">尚未读取选择范围</p>
-              <button type="submit" class="package-primary">生成导出计划</button>
-            </form>
-            <div class="package-plan" id="package-literature-plan" hidden>
-              <div class="package-plan-metrics" id="package-literature-metrics"></div>
-              <div class="package-rights" id="package-literature-rights"></div>
-              <div class="package-limit-note"><strong>单包上限 2 GB</strong><span>系统会先估算大小；超限时请减少论文，不会自动拆包。</span></div>
-              <button type="button" class="package-primary" id="package-literature-export">选择保存位置并导出</button>
-            </div>
-          </section>
-
-          <section class="package-center-card" aria-labelledby="package-personal-export-heading">
-            <header><div><span>MY EXPERIMENTS</span><h3 id="package-personal-export-heading">导出我的实验</h3><p>只包含已确认并可检索的结构化记录及原始 CSV、TSV、XLSX；不包含草稿、AI 建议、路径或实验图片。</p></div></header>
-            <div class="package-personal-export">
-              <ul><li>项目、样品、实验批次与条件</li><li>测量定义和已确认备注</li><li>对应原始表格文件</li></ul>
-              <button type="button" class="package-primary" id="package-personal-plan">生成私人实验导出计划</button>
-            </div>
-            <div class="package-plan" id="package-personal-export-plan" hidden>
-              <div class="package-plan-metrics" id="package-personal-metrics"></div>
-              <button type="button" class="package-primary" id="package-personal-export">选择保存位置并导出</button>
-            </div>
-          </section>
-        </div>
-
-        <section class="package-center-card package-import-card" aria-labelledby="package-user-import-heading">
-          <header><div><span>USER TRANSFER PACKAGE</span><h3 id="package-user-import-heading">导入用户资料包</h3><p>用户包只会进入私人只读来源或私人实验库，绝不会改变官方资料库，也不会进入图书管理员。</p></div><button type="button" class="package-primary" id="package-user-select">选择用户资料包</button></header>
-          <div id="package-user-inspection" class="package-user-inspection" hidden>
-            <div class="package-inspection-summary" id="package-user-summary"></div>
-            <label class="package-sha-input">发送者提供的 SHA-256<input id="package-user-sha" inputmode="text" autocomplete="off" maxlength="64" placeholder="粘贴通过其他渠道收到的 64 位校验码"></label>
-            <div class="package-risk-checks">
-              <label><input type="checkbox" id="package-checksum-ack"><span>我已通过其他渠道与发送者核对 SHA-256</span></label>
-              <label><input type="checkbox" id="package-unencrypted-ack"><span>我知道该资料包未加密，获得文件的人可以读取内容</span></label>
-              <label><input type="checkbox" id="package-unauthenticated-ack"><span>我知道 SHA-256 不能证明资料包来自谁</span></label>
-              <label><input type="checkbox" id="package-internal-ack"><span>我确认仅在课题组内部使用该资料包</span></label>
-            </div>
-            <label class="package-conflict-option" id="package-keep-conflicts-row" hidden><input type="checkbox" id="package-keep-conflicts"><span><strong>遇到同身份但内容不同的私人实验时保留两份</strong><small>可选；不会覆盖本机已有实验。</small></span></label>
-            <button type="button" class="package-primary" id="package-user-import" disabled>核对并导入</button>
-          </div>
+        <section class="fusion-context-view" data-context-view="settings" hidden>
+          <p class="fusion-section-label">设置</p>
+          <button type="button" class="fusion-tree-row active" data-settings-section="appearance"><span>外观</span></button>
+          <button type="button" class="fusion-tree-row" data-settings-section="language"><span>语言与区域</span></button>
+          <button type="button" class="fusion-tree-row" data-settings-section="ai"><span>AI 与 API 密钥</span></button>
+          <button type="button" class="fusion-tree-row" data-settings-section="data"><span>数据与资料库</span></button>
+          <button type="button" class="fusion-tree-row" data-settings-section="about"><span>关于</span></button>
         </section>
-
-        <section class="package-center-card package-jobs-card" aria-labelledby="package-jobs-heading">
-          <header><div><span>TRANSFER JOBS</span><h3 id="package-jobs-heading">任务进度</h3><p>导出和导入结果会显示稳定的操作、阶段、结果和错误码；失败不会留下半成品或覆盖旧资料。</p></div></header>
-          <div class="package-job-list" id="package-job-list"><p class="package-empty">本次还没有资料包任务。</p></div>
-        </section>
-      </section>
-
-      <section class="view workbench-settings" id="view-settings" aria-labelledby="settings-heading">
-        <header class="settings-heading">
-          <div><p class="eyebrow">WORKBENCH SETTINGS</p><h2 id="settings-heading">设置</h2><p>外观偏好只保存在当前设备。API 密钥由系统安全凭据存储管理，不会写入网页存储。</p></div>
-        </header>
-        <div class="settings-layout">
-          <nav class="settings-navigation" role="tablist" aria-label="设置类别" aria-orientation="vertical">
-            <button type="button" id="settings-tab-appearance" class="active" role="tab" aria-selected="true" aria-controls="settings-panel-appearance" tabindex="0" data-settings-section="appearance">外观</button>
-            <button type="button" id="settings-tab-language" role="tab" aria-selected="false" aria-controls="settings-panel-language" tabindex="-1" data-settings-section="language">语言与区域</button>
-            <button type="button" id="settings-tab-ai" role="tab" aria-selected="false" aria-controls="settings-panel-ai" tabindex="-1" data-settings-section="ai">AI 与 API 密钥</button>
-            <button type="button" id="settings-tab-data" role="tab" aria-selected="false" aria-controls="settings-panel-data" tabindex="-1" data-settings-section="data">数据与资料库</button>
-          </nav>
-          <div class="settings-content">
-            <section class="settings-section active" id="settings-panel-appearance" role="tabpanel" data-settings-panel="appearance" aria-labelledby="settings-tab-appearance">
-              <h3 id="settings-appearance-title">外观</h3>
-              <fieldset><legend>颜色模式</legend><div class="settings-choice-grid">
-                <label><input type="radio" name="workbench-theme" value="system"><span><strong>跟随系统</strong><small>随 macOS 或 Windows 外观切换</small></span></label>
-                <label><input type="radio" name="workbench-theme" value="light"><span><strong>日间</strong><small>明亮、中性的科研工作台</small></span></label>
-                <label><input type="radio" name="workbench-theme" value="dark"><span><strong>夜间</strong><small>低眩光深色工作台</small></span></label>
-              </div></fieldset>
-              <fieldset><legend>界面密度</legend><div class="settings-choice-grid two">
-                <label><input type="radio" name="workbench-density" value="comfortable"><span><strong>舒适</strong><small>适合触控板和初次使用</small></span></label>
-                <label><input type="radio" name="workbench-density" value="compact"><span><strong>紧凑</strong><small>同屏显示更多文献与数据</small></span></label>
-              </div></fieldset>
-              <p id="settings-appearance-status" class="settings-inline-status" role="status" aria-live="polite">正在读取当前设备设置…</p>
-            </section>
-            <section class="settings-section" id="settings-panel-language" role="tabpanel" data-settings-panel="language" aria-labelledby="settings-tab-language" hidden>
-              <h3 id="settings-language-title">语言与区域</h3>
-              <div class="settings-row"><div><strong>简体中文</strong><small>当前界面语言</small></div><span class="settings-state ready">使用中</span></div>
-              <div class="settings-row disabled" aria-disabled="true"><div><strong>English</strong><small>English interface</small></div><span class="settings-state">计划支持</span></div>
-            </section>
-            <section class="settings-section" id="settings-panel-ai" role="tabpanel" data-settings-panel="ai" aria-labelledby="settings-tab-ai" hidden>
-              <h3 id="settings-ai-title">AI 与 API 密钥</h3>
-              <div class="settings-notice"><strong>只连接内置受信提供商</strong><p>密钥只进入操作系统安全凭据存储；本页不会显示密钥片段、保存密钥副本或允许任意网址接收论文与实验内容。</p></div>
-              <p id="settings-ai-status" class="settings-inline-status" role="status" aria-live="polite">正在读取 AI 设置…</p>
-              <label class="settings-field">模型提供商<select id="settings-ai-provider" aria-describedby="settings-ai-status" disabled><option>正在载入…</option></select></label>
-              <div class="settings-choice-grid two" id="settings-ai-model-grid">
-                <label class="settings-field">文献抽取<select data-ai-model-task="extraction" disabled></select></label>
-                <label class="settings-field">证据分析<select data-ai-model-task="analysis" disabled></select></label>
-                <label class="settings-field">图书管理员规划<select data-ai-model-task="librarian_planning" disabled></select></label>
-                <label class="settings-field">图书管理员回答<select data-ai-model-task="librarian_synthesis" disabled></select></label>
-              </div>
-              <button type="button" id="settings-ai-model-save" disabled>保存模型分工</button>
-              <div class="settings-row"><div><strong>安全凭据</strong><small id="settings-ai-credential-note">尚未读取</small></div><span id="settings-ai-configured" class="settings-state">未知</span></div>
-              <div class="settings-row"><div><strong>连接验证</strong><small id="settings-ai-test-plan">尚未读取能力测试计划</small></div><span id="settings-ai-verified" class="settings-state">未知</span></div>
-              <div class="settings-row"><div><strong>当前可用性</strong><small>状态来自本机桌面服务，不由网页自行推断</small></div><span id="settings-ai-availability" class="settings-state">未知</span></div>
-              <label class="settings-field">API 密钥<input id="settings-ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴后安全保存；页面不会保留"></label>
-              <div class="settings-actions">
-                <button type="button" id="settings-ai-key-save" disabled>安全保存</button>
-                <button type="button" id="settings-ai-test" disabled>测试连接</button>
-                <button type="button" id="settings-ai-key-delete" disabled>删除本机密钥</button>
-              </div>
-            </section>
-            <section class="settings-section" id="settings-panel-data" role="tabpanel" data-settings-panel="data" aria-labelledby="settings-tab-data" hidden>
-              <h3 id="settings-data-title">数据与资料库</h3>
-              <button type="button" class="settings-link" data-settings-view="package"><span><strong>资料包中心</strong><small>查看官方资料库、导入和导出任务</small></span><span aria-hidden="true">›</span></button>
-              <button type="button" class="settings-link" data-settings-view="personal"><span><strong>我的实验</strong><small>导入并核验本机 CSV、TSV 或 XLSX</small></span><span aria-hidden="true">›</span></button>
-            </section>
-          </div>
-        </div>
-      </section>
-
-    </main>
-  </div>
-  <div id="toast" role="status" aria-live="polite"></div>
-  <dialog class="source-dialog wb-dialog" id="source-dialog" aria-labelledby="source-dialog-title" aria-describedby="source-dialog-width-note">
-    <div class="source-dialog-card wb-dialog-surface">
-      <header class="source-dialog-head">
-        <div>
-          <p class="eyebrow">SOURCE VIEWER</p>
-          <h3 id="source-dialog-title">高亮后的原文证据</h3>
-        </div>
-        <button class="dialog-close" type="button" data-close-source>关闭</button>
-      </header>
-      <p class="wb-narrow-inspector-note" id="source-dialog-width-note"><strong>桌面宽度受限</strong><span>原文证据将纵向显示；关闭、打开 PDF 与页面滚动仍可使用。放宽窗口可同时比较定位图与整页位置。</span></p>
-      <div class="source-dialog-meta" id="source-meta"></div>
-      <div class="source-dialog-visuals">
-        <figure class="source-dialog-image focus">
-          <figcaption>定位放大图</figcaption>
-          <img id="source-focus-image" alt="高亮后的原文句子放大图">
-        </figure>
-        <figure class="source-dialog-image">
-          <figcaption>整页位置</figcaption>
-          <img id="source-image" alt="高亮后的原文页">
-        </figure>
-      </div>
-      <div class="source-dialog-actions">
-        <a id="source-open-pdf" target="_blank" rel="noopener">打开原始 PDF</a>
-      </div>
-    </div>
-  </dialog>
-  <dialog class="visual-dialog evidence-workspace wb-dialog" id="visual-dialog" aria-labelledby="visual-dialog-title" aria-describedby="evidence-workspace-width-note">
-    <div class="visual-dialog-card evidence-workspace-card">
-      <p class="wb-narrow-inspector-note" id="evidence-workspace-width-note"><strong>桌面宽度受限</strong><span>证据详情与只读解释将上下排列；关闭、原文与 PDF 按钮仍可使用。</span></p>
-      <aside class="context-chat" id="context-chat" aria-label="当前证据 AI 对话" aria-hidden="false">
-        <header class="context-chat-head">
-          <div><p class="eyebrow">TRUSTED AI · EVIDENCE CHAT</p><h2>围绕当前证据提问</h2></div>
-          <button type="button" id="context-chat-reset" title="清空当前对话">新对话</button>
-        </header>
-        <section class="context-chat-target">
-          <span>本轮讨论对象</span>
-          <strong id="context-chat-entity">尚未选择数据或图表</strong>
-          <small id="context-chat-paper">打开一个条目后开始</small>
-        </section>
-        <div class="context-chat-disclosure"><i>i</i><span>当前受信 AI 提供商只读取右侧条目和原始 PDF 的相关页面文字；回答不会写回科学数据。</span></div>
-        <div class="context-chat-messages" id="context-chat-messages" aria-live="polite">
-          <div class="context-chat-empty"><span>AI</span><p>默认问题已填入下方输入框。你可以直接发送，也可以修改后继续追问。</p></div>
-        </div>
-        <form class="context-chat-form" id="context-chat-form">
-          <label for="context-chat-input">向当前 AI 提供商提问</label>
-          <textarea id="context-chat-input" maxlength="2000">说明这个数据本身的含义，并总结该数据在文章中的具体含义</textarea>
-          <div><small id="context-chat-status">基于右侧条目与 PDF 相关页回答</small><button type="submit" id="context-chat-send">发送</button></div>
-        </form>
       </aside>
 
-      <section class="evidence-detail">
-        <header class="visual-dialog-head evidence-detail-head">
-          <div>
-            <p class="eyebrow" id="visual-dialog-type">EVIDENCE DETAIL</p>
-            <h3 id="visual-dialog-title">证据详情</h3>
-            <span id="evidence-detail-model">受信 AI · 只读解释</span>
-          </div>
-          <button class="dialog-close" type="button" data-close-visual>关闭</button>
-        </header>
-
-        <div class="item-detail-panel" id="item-detail-panel" hidden>
-          <div class="item-detail-hero">
-            <div><small>报告值</small><strong id="item-detail-value"></strong></div>
-            <div><small>具体意义</small><h4 id="item-detail-meaning"></h4><div id="item-detail-badges"></div></div>
-          </div>
-          <div class="item-detail-grid">
-            <section class="item-detail-primary"><span>实验条件与文章语境</span><p id="item-detail-context"></p></section>
-            <section><span>原文证据</span><blockquote id="item-detail-excerpt"></blockquote></section>
-            <section><span>文章信息</span><p id="item-detail-paper"></p></section>
-            <section><span>证据位置</span><p id="item-detail-location"></p></section>
-          </div>
-          <div class="item-detail-actions">
-            <button type="button" id="item-detail-linked-visual" hidden>查看关联图表</button>
-            <button type="button" id="item-detail-open-source">查看高亮原文</button>
-            <button type="button" id="item-detail-edit">前往数据检查</button>
-            <a id="item-detail-open-pdf" target="_blank" rel="noopener">打开 PDF 原页</a>
-          </div>
+      <section class="fusion-editor" id="fusion-editor" tabindex="-1">
+        <div class="fusion-tabs" role="tablist" aria-label="中央编辑区标签">
+          <button type="button" class="fusion-tab active" role="tab" aria-selected="true" tabindex="0" data-tab="primary"><span id="fusion-primary-tab-label">当前论文</span></button>
+          <button type="button" class="fusion-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="detail" disabled data-fusion-disabled><span id="fusion-detail-tab-label">证据详情 · 0.9.2+</span></button>
         </div>
 
-        <div class="visual-detail-panel" id="visual-detail-panel" hidden>
-          <div class="visual-dialog-layout">
-            <figure class="visual-dialog-image">
-              <img id="visual-image" alt="论文中的完整图表原始截图">
-              <figcaption id="visual-caption"></figcaption>
-            </figure>
-            <aside class="visual-dialog-info">
-              <section class="visual-info-primary"><span>图表说明</span><p id="visual-context"></p></section>
-              <dl id="visual-details"></dl>
-              <section><span>原文依据</span><p id="visual-source-context"></p></section>
-              <section><span>文章信息</span><p id="visual-paper"></p></section>
-              <div class="visual-tags" id="visual-tags"></div>
-              <div class="visual-dialog-actions">
-                <button type="button" id="visual-related-items">查看相关数据条目</button>
-                <a id="visual-open-pdf" target="_blank" rel="noopener">打开 PDF 原页</a>
-              </div>
-            </aside>
+        <section class="fusion-view active" id="view-paper" data-view-panel="paper" aria-label="文献工作区">
+          <header class="fusion-toolbar">
+            <button type="button" class="fusion-mobile-toggle" data-open-drawer="context">上下文</button>
+            <div><strong>当前论文</strong><small>真实文献快照 · 只读展示</small></div>
+            <span class="fusion-spacer"></span>
+            <button type="button" class="fusion-primary-action" disabled data-fusion-disabled>开始自动提取与核验 <small>0.9.2+</small></button>
+            <button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button>
+          </header>
+          <div class="fusion-scroll" id="fusion-literature-content" aria-live="polite" aria-busy="true">
+            <div class="fusion-state-card large" data-literature-state="loading"><strong>正在载入真实文献快照…</strong><span>文献标题、公开元数据与四类证据来自现有只读接口。</span></div>
+            <section class="fusion-placeholder-actions" aria-label="0.9.2 后续功能"><button disabled data-fusion-disabled>导入 PDF · 0.9.2+</button><button disabled data-fusion-disabled>打开 PDF · 0.9.2+</button><button disabled data-fusion-disabled>导出当前论文 · 0.9.2+</button></section>
           </div>
-        </div>
+        </section>
+
+        <section class="fusion-view" id="view-search" data-view-panel="search" hidden aria-label="搜索工作区">
+          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">筛选</button><label class="fusion-query"><span aria-hidden="true">⌕</span><input value="当前论文的真实只读证据" aria-label="搜索词" readonly></label><button type="button" disabled data-fusion-disabled>检索 · 0.9.2+</button><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button></header>
+          <div class="fusion-scroll fusion-result-stream" id="fusion-search-results" role="listbox" aria-label="当前论文的真实只读证据">
+            <div class="fusion-state-card large" data-literature-state="loading"><strong>正在读取真实证据…</strong><span>当前搜索体验只浏览所选论文的公开四类证据。</span></div>
+            <section class="fusion-placeholder-actions"><button disabled data-fusion-disabled>图书管理员 · 0.9.2+</button><button disabled data-fusion-disabled>打开 PDF · 0.9.2+</button><button disabled data-fusion-disabled>就地导出 · 0.9.2+</button></section>
+          </div>
+        </section>
+
+        <section class="fusion-view" id="view-personal" data-view-panel="personal" hidden aria-label="合成实验数据工作区">
+          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context" aria-expanded="false" aria-controls="fusion-context">工作表</button><div><strong>W-Ta_nanoindentation_demo.csv</strong><small id="fusion-sheet-summary">硬度测量 · 12 行 · 5 列 · 合成数据</small></div><span class="fusion-spacer"></span><span class="fusion-reviewed" id="fusion-reviewed-state">尚未检查</span><button type="button" id="fusion-mark-reviewed">标记本次会话已检查</button><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector" aria-expanded="false" aria-controls="fusion-inspector">列检查器</button></header>
+          <div class="fusion-sheet-tabs" role="tablist" aria-label="合成工作表">
+            <button type="button" class="active" role="tab" aria-selected="true" tabindex="0" data-sheet="hardness">硬度测量</button>
+            <button type="button" role="tab" aria-selected="false" tabindex="-1" data-sheet="metadata">样品信息</button>
+          </div>
+          <div class="fusion-grid-wrap" tabindex="0" aria-label="W-Ta 合成实验表格，可用方向键选择单元格">
+            <table class="fusion-data-grid" id="fusion-data-grid"><thead></thead><tbody></tbody></table>
+          </div>
+          <section class="fusion-placeholder-actions"><button disabled data-fusion-disabled>选择 CSV/TSV/XLSX · 0.9.2+</button><button type="button" id="fusion-demo-suggestion">查看演示 AI 建议（不调用模型）</button><span id="fusion-demo-suggestion-status" aria-live="polite">尚未生成演示建议</span><button disabled data-fusion-disabled>确认导入 · 0.9.2+</button><button disabled data-fusion-disabled>导出实验 · 0.9.2+</button></section>
+        </section>
+
+        <section class="fusion-view" id="view-package" data-view-panel="package" hidden aria-label="资料包工作区">
+          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">版本</button><div><strong>资料包中心</strong><small>冻结状态快照 · 不执行文件操作</small></div><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">安全边界</button></header>
+          <div class="fusion-scroll fusion-package-list">
+            <section><header><span>OFFICIAL</span><strong>官方资料库</strong><em>体验版未读取</em></header><dl><div><dt>当前版本</dt><dd>—</dd></div><div><dt>证据数量</dt><dd>—</dd></div><div><dt>说明</dt><dd>0.9.2+ 恢复</dd></div></dl><button disabled data-fusion-disabled>更换官方资料包 · 0.9.2+</button></section>
+            <section><header><span>PRIVATE</span><strong>我的实验资料</strong><em>本机私人</em></header><p>体验版只展示合成示例；不会读取、导出或覆盖私人仓库。</p><button disabled data-fusion-disabled>导入 / 导出 · 0.9.2+</button></section>
+            <section class="fusion-placeholder-actions"><button disabled data-fusion-disabled>回退资料包 · 0.9.2+</button><button disabled data-fusion-disabled>统一导出中心 · 0.9.2+</button></section>
+          </div>
+        </section>
+
+        <section class="fusion-view" id="view-settings" data-view-panel="settings" hidden aria-label="设置工作区">
+          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">设置目录</button><div><strong>设置</strong><small>体验版仅外观偏好可操作</small></div></header>
+          <div class="fusion-scroll fusion-settings-page">
+            <section data-settings-panel="appearance"><h1>外观</h1><p>主题与密度只影响这台设备的界面，不改变论文、实验值或单位。桌面设置是权威，本地缓存只用于避免首屏闪烁。</p><p class="fusion-settings-status" id="fusion-settings-status" aria-live="polite">正在同步桌面外观设置…</p><div class="fusion-setting-row"><div><strong>主题</strong><small>跟随系统、日间或夜间</small></div><div class="fusion-segmented" role="group" aria-label="主题"><button type="button" data-theme-choice="system">跟随系统</button><button type="button" data-theme-choice="light">日间</button><button type="button" data-theme-choice="dark">夜间</button></div></div><div class="fusion-setting-row"><div><strong>界面密度</strong><small>紧凑模式减少间距，不缩小实验数值</small></div><div class="fusion-segmented" role="group" aria-label="密度"><button type="button" data-density-choice="comfortable">舒适</button><button type="button" data-density-choice="compact">紧凑</button></div></div></section>
+            <section data-settings-panel="language"><h2>语言与区域</h2><div class="fusion-setting-row"><div><strong>简体中文</strong><small>当前完整支持</small></div><span>已启用</span></div><div class="fusion-setting-row muted"><div><strong>English</strong><small>计划支持</small></div><span>不可用</span></div></section>
+            <section data-settings-panel="ai"><h2>AI 与 API 密钥</h2><p>体验版不会读取或保存密钥。真实设置入口将在 0.9.2 恢复并继续使用受信提供商安全存储。</p><div class="fusion-placeholder-actions"><button disabled data-fusion-disabled>选择提供商 · 0.9.2+</button><button disabled data-fusion-disabled>安全保存密钥 · 0.9.2+</button><button disabled data-fusion-disabled>测试连接 · 0.9.2+</button></div></section>
+            <section data-settings-panel="data"><h2>数据与资料库</h2><p>文献仅通过受限 GET 读取公开快照、实验为合成示例；生产数据库不会被本体验版修改。</p></section>
+            <section data-settings-panel="about"><h2>关于</h2><div class="fusion-setting-row"><div><strong>Auto Research 0.9.1-preview.1</strong><small>build 19 · Fusion GUI 体验审核</small></div><span>macOS 内部预览</span></div><p>本版只供审核四区结构、信息密度、主题、CSV 网格与窄窗口行为。Windows 与第1—5项真实业务均未在本版启用。</p></section>
+          </div>
+        </section>
       </section>
+
+      <aside class="fusion-inspector" id="fusion-inspector" aria-label="详情与检查器">
+        <header><strong id="fusion-inspector-title">论文检查器</strong><button type="button" class="fusion-drawer-close" data-close-drawer="inspector" aria-label="关闭检查器">×</button></header>
+        <div class="fusion-inspector-body" id="fusion-inspector-body" aria-live="polite"></div>
+        <footer><button type="button" disabled data-fusion-disabled>围绕当前证据询问 AI · 0.9.2+</button></footer>
+      </aside>
+    </section>
+
+    <footer class="fusion-statusbar"><span><b>●</b> Fusion GUI体验版</span><span id="fusion-status-context">文献只读</span><span>实验：合成示例</span><span class="fusion-status-right">AI / 写入 / 下载均已停用</span></footer>
+  </main>
+  <div class="fusion-scrim" data-close-all-drawers hidden></div>
+  <section class="fusion-command-palette" id="fusion-command-palette" role="dialog" aria-modal="true" aria-label="命令与快速跳转" hidden>
+    <header><strong>命令与快速跳转</strong><kbd>Esc</kbd></header>
+    <div role="listbox" aria-label="可用命令">
+      <button type="button" role="option" tabindex="0" data-command-view="paper">转到：文献 <kbd>⌘1</kbd></button>
+      <button type="button" role="option" tabindex="-1" data-command-view="search">转到：搜索 <kbd>⌘2</kbd></button>
+      <button type="button" role="option" tabindex="-1" data-command-view="personal">转到：实验 <kbd>⌘3</kbd></button>
+      <button type="button" role="option" tabindex="-1" data-command-view="package">转到：资料包 <kbd>⌘4</kbd></button>
+      <button type="button" role="option" tabindex="-1" data-command-view="settings">打开设置 <kbd>⌘,</kbd></button>
     </div>
-  </dialog>
-  <dialog class="review-decision-dialog wb-dialog" id="review-decision-dialog" aria-labelledby="review-decision-title" aria-describedby="review-decision-description">
-    <form class="review-decision-card wb-dialog-surface" id="review-decision-form">
-      <header>
-        <div><p class="eyebrow">REVIEW DECISION</p><h3 id="review-decision-title">记录审核决定</h3></div>
-        <button type="button" class="dialog-close" data-close-review-decision>关闭</button>
-      </header>
-      <p id="review-decision-description">这项决定会作为新的审核版本保存，自动抽取原始记录不会改变。</p>
-      <label>主要原因
-        <select id="review-decision-reason" required>
-          <option value="">请选择原因</option>
-          <option value="原文证据不足">原文证据不足</option>
-          <option value="样品或实验条件对应不明确">样品或实验条件对应不明确</option>
-          <option value="自动抽取的物理意义错误">自动抽取的物理意义错误</option>
-          <option value="图中无法获得精确数值">图中无法获得精确数值</option>
-          <option value="不是本文报告的实验数据">不是本文报告的实验数据</option>
-          <option value="其他">其他</option>
-        </select>
-      </label>
-      <label>补充说明（可选）
-        <textarea id="review-decision-note" placeholder="例如：该数值来自参考文献，不是本文实验结果。"></textarea>
-      </label>
-      <div class="review-decision-actions">
-        <button type="button" data-close-review-decision>取消</button>
-        <button type="submit" class="primary" id="save-review-decision">保存审核决定</button>
-      </div>
-    </form>
-  </dialog>
-  <dialog class="workbench-command-palette" id="workbench-command-palette" aria-labelledby="workbench-command-title">
-    <form method="dialog">
-      <header><strong id="workbench-command-title">快速跳转</strong><button value="cancel" aria-label="关闭快速跳转">关闭</button></header>
-      <label><span class="visually-hidden">筛选命令</span><input id="workbench-command-query" type="search" autocomplete="off" aria-controls="workbench-command-list" aria-activedescendant="workbench-command-paper" placeholder="输入文献、搜索、实验、资料包或设置"></label>
-      <div class="workbench-command-list" id="workbench-command-list" role="listbox" aria-label="可用命令">
-        <button type="button" id="workbench-command-paper" role="option" aria-selected="true" tabindex="0" data-command-view="paper"><span>文献</span><kbd>⌘1</kbd></button>
-        <button type="button" id="workbench-command-search" role="option" aria-selected="false" tabindex="-1" data-command-view="search"><span>搜索</span><kbd>⌘2</kbd></button>
-        <button type="button" id="workbench-command-personal" role="option" aria-selected="false" tabindex="-1" data-command-view="personal"><span>实验</span><kbd>⌘3</kbd></button>
-        <button type="button" id="workbench-command-package" role="option" aria-selected="false" tabindex="-1" data-command-view="package"><span>资料包</span><kbd>⌘4</kbd></button>
-        <button type="button" id="workbench-command-settings" role="option" aria-selected="false" tabindex="-1" data-command-view="settings"><span>设置</span><kbd>⌘,</kbd></button>
-      </div>
-    </form>
-  </dialog>
-  <script src="/static/ai_consent.js"></script>
-  <script src="/static/package_center.js"></script>
-  <script src="/static/desktop_product.js"></script>
-  <script src="/static/app.js"></script>
-  <script src="/static/workbench.js"></script>
-  <script src="/static/librarian_brief.js"></script>
+  </section>
+  <script src="/static/fusion_review.js"></script>
 </body>
 </html>

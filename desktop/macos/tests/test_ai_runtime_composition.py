@@ -221,22 +221,18 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             thread.join(1)
             self.assertTrue(finished.is_set())
 
-    def test_launcher_smoke_and_production_inject_one_runtime_graph(self) -> None:
+    def test_fusion_review_launcher_does_not_construct_or_expose_ai_runtime(self) -> None:
         launcher = (DESKTOP_ROOT / "launcher.py").read_text(encoding="utf-8")
-        self.assertIn('"desktop_ai_providers": "/api/desktop/ai/providers"', launcher)
-        self.assertIn('"desktop_ai_settings": "/api/desktop/ai/settings"', launcher)
-        self.assertIn(
-            '"desktop_ai_deepseek_credential": "/api/desktop/ai/credentials/deepseek"',
-            launcher,
-        )
-        self.assertNotIn("/api/desktop/ai/providers/deepseek/test", launcher)
-        self.assertIn("credential_store=ai_services.legacy_deepseek_store", launcher)
-        self.assertIn("desktop_ai_api=MacDesktopAIAPI(ai_services.controller)", launcher)
-        self.assertIn("personal_import_service=product_services.personal_import_service", launcher)
-        self.assertIn("session_token=desktop_session_id", launcher)
-        self.assertNotIn("default_deepseek_credential_store", launcher)
-        self.assertNotIn("read_for_runtime()", launcher)
-        self.assertIn("disable_legacy_environment_credentials()", launcher)
+        production = launcher.split("def _run_desktop", 1)[1]
+        self.assertNotIn("create_mac_ai_runtime_services", production)
+        self.assertNotIn("mac_ai_runtime_services(", production)
+        self.assertNotIn("credential_store=", production)
+        self.assertNotIn("desktop_ai_api=", production)
+        self.assertNotIn("personal_import_service=", production)
+        self.assertNotIn("read_for_runtime()", production)
+        self.assertIn('experience_mode="fusion-review"', production)
+        self.assertIn('"OPENAI_API_KEY"', production)
+        self.assertIn('"DEEPSEEK_API_KEY"', production)
 
 
 if __name__ == "__main__":
