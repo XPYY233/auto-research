@@ -2,6 +2,14 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-13：0.8 续作——受信 AI 运行时与前两个业务域
+
+- `118fd59` 完成 macOS 受信 AI 运行时：provider 凭据、runtime state 与执行 lease 共用同一锁和单一 `ProviderCredentialManager`；正式桌面入口删除 ambient `DEEPSEEK_API_KEY`，旧 DeepSeek credential route 只委托同一 manager，不再写环境变量或形成第二 secret authority。42 项定向/邻接测试通过。
+- `0dde3c7` 将个人实验 AI 建议绑定到 server-prepared action。renderer 仅能提交 import/sheet locator；服务端拥有 prompt、task、模型、token 和调用参数。完整本地预览指纹与有界外发指纹分离，准备后变化及模型调用期间变化均拒绝；AI 永远只返回待核验建议。28 项定向测试通过。
+- `0450345` 将选中证据详情 AI 绑定到 server-prepared action。选中证据与完整 PDF 作为 stale authority；PDF 由单一 `O_NOFOLLOW` 文件描述符读成不可变快照，同一字节生成上下文与 SHA，拒绝 symlink、同大小同 mtime 替换和读取中变化。公开结果严格白名单、长度有界，同一 action 重放零新增调用。10 项定向/兼容测试通过。
+- 两次安全审查分别发现并关闭“截断列未进入 stale fingerprint”和“PDF 消息/哈希双重读取 TOCTOU”两个 P0；所有修复均在独立三文件提交内完成。没有网络、模型、全测、构建、App 或生产数据库操作。
+- 当前开发 HEAD 为 `0450345`；0.7 build15/`888aae5` 仍是唯一稳定回退。下一步为 Librarian、文献提取两个共享业务适配，以及四域统一 registry/snapshot authority/HTTP；随后才恢复前端与 Windows。
+
 ## 2026-08-13：0.8 科研工作台开发暂停与可恢复检查点
 
 - 视觉采用 Workbench A 骨架与中性工作台配色，吸收 B 的文献题名/阅读层级和 C 的实验数值/单位表现。共享前端已落地 light/dark/system、comfortable/compact、设置中心、单一活动栏/导航、键盘与 ARIA 基础，并迁移搜索和文献工作区；personal/package 已静态归位，不再跨页面 appendChild。

@@ -50,11 +50,11 @@ Keep these invariants:
 
 ## Recover interrupted 0.8 work
 
-Before editing 0.8, read the top `PROJECT_HANDOFF.md` pause section. Treat `228942a` as the committed development baseline and `888aae5`/build15 as the user rollback release until a later handoff supersedes them.
+Before editing 0.8, read the top `PROJECT_HANDOFF.md` checkpoint section. Treat `0450345` as the committed development baseline and `888aae5`/build15 as the user rollback release until a later handoff supersedes them.
 
 - Preserve the uncommitted evidence-detail workbench files and user production DB/paper_056 artifacts; never reset, clean or broadly stage them.
 - Use existing project Codex threads for frontend/macOS, core, Windows and security. Root is the only Git writer; every other thread receives an exact file list and returns a no-stage/no-commit handoff.
-- Freeze shared AI/settings/route DTOs first, wire and validate macOS second, synchronize Windows last. Do not implement provider, prompt, search, package or private-repository algorithms in platform folders.
+- The macOS trusted runtime plus personal-suggestion and selected-evidence-chat prepared adapters are committed. Finish Librarian and literature-extraction adapters, then freeze one four-scope registry/snapshot/HTTP contract; wire and validate macOS before synchronizing Windows. Do not implement provider, prompt, search, package or private-repository algorithms in platform folders.
 - On a hot machine, run at most two development threads and only small targeted tests. Run the shared full suite, build and real App flow serially once after interfaces freeze.
 - Do not sync release web hashes or increment final build identity until all shared web assets are frozen. Windows remains `installer_ready=false` until real Win11 acceptance.
 

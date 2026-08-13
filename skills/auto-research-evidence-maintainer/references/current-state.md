@@ -1,13 +1,14 @@
 # Current state checkpoint
 
-## 0.8 interrupted-development checkpoint (2026-08-13)
+## 0.8 resumable development checkpoint (2026-08-13)
 
-- Committed development HEAD: `228942a`; this is not an App release.
+- Committed development HEAD: `0450345`; this is not an App release.
 - Last usable release/rollback: `0.7.0-preview.2` build 15, source `888aae5`, tag `evidence-demo-2026-08-12-macos-package-center-0.7.0-preview-2-build15`.
-- Completed 0.8 foundations: Workbench A light/dark/system and density; settings contract/stores; search/literature workbench; trusted DeepSeek/OpenAI registry and runtime; server-prepared AI actions/consent; macOS atomic provider credentials; Windows appearance/settings thin parity.
-- Pending: real business prepared assemblers/executors, macOS AI controller/server/composition, Windows AI parity, final CSS/detail pane migration, release hash/version sync, full tests/build/real-machine acceptance.
+- Completed 0.8 foundations: Workbench A light/dark/system and density; settings contract/stores; search/literature workbench; trusted DeepSeek/OpenAI registry and runtime; server-prepared AI actions/consent; macOS atomic provider credentials and trusted runtime; personal-suggestion and selected-evidence-chat business adapters; Windows appearance/settings thin parity.
+- Security evidence: personal preview stale authority covers all columns separately from bounded outbound; selected evidence uses a single verified PDF byte snapshot for context and SHA, rejects symlink/replacement/read-time changes, and prevents action replay.
+- Pending: Librarian and literature-extraction business adapters; the four-scope registry/composite snapshot authority/shared HTTP contract; frontend authoritative AI/settings wiring; Windows AI parity; final CSS/detail pane migration; release hash/version sync; full tests/build/real-machine acceptance.
 - Uncommitted code pause: `web/app.css`, `web/index.html`, `web/workbench.css`, `test_evidence_detail_workbench_contract.py` (unverified detail/drawer migration), plus root release-contract draft. User DB and paper_056 artifacts are separate protected dirty state.
-- Targeted evidence before pause: AI core 70 passed; frontend fifth batch 36 passed; macOS credential/legacy route/readiness 30 passed. No network/model/full suite/build/App/production DB.
+- Latest targeted evidence: AI core 70 passed; frontend fifth batch 36 passed; macOS trusted runtime 42 passed; personal prepared action 28 passed; selected-evidence prepared action 10 passed. No network/model/full suite/build/App/production DB.
 
 Use this file for fast orientation. Verify drift-prone counts with read-only commands before publishing them.
 
