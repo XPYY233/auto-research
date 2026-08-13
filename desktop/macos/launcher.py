@@ -37,18 +37,7 @@ from secure_history import (  # noqa: E402
     StaticHistoryKeyProvider,
     default_secure_history_store,
 )
-from ai_runtime_composition import (  # noqa: E402
-    create_mac_ai_runtime_services,
-    disable_legacy_environment_credentials,
-    mac_ai_runtime_services,
-)
-from desktop_ai_api import MacDesktopAIAPI  # noqa: E402
-from auto_research.settings.desktop_settings import DesktopSettingsService  # noqa: E402
-from desktop_settings_api import DesktopSettingsAPI  # noqa: E402
-from desktop_settings_store import (  # noqa: E402
-    DEFAULT_SETTINGS_PATH,
-    MacAtomicDesktopSettingsStore,
-)
+
 def _desktop_version_metadata() -> dict[str, object]:
     if getattr(sys, "frozen", False):
         bundle_root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
@@ -482,10 +471,15 @@ def _run_smoke_test(project_root: Path) -> int:
     configure_core_paths(project_root)
     report = smoke_check_project(project_root)
 
+    from ai_runtime_composition import create_mac_ai_runtime_services
+    from auto_research.settings.desktop_settings import DesktopSettingsService
     from auto_research.evidence.db import EvidenceDB
     from auto_research.evidence.webapp import RELEASE_INFO, WEB_DIR
+    from desktop_ai_api import MacDesktopAIAPI
     from desktop_product_services import create_desktop_product_services
     from desktop_server import create_desktop_server, new_session_token
+    from desktop_settings_api import DesktopSettingsAPI
+    from desktop_settings_store import MacAtomicDesktopSettingsStore
 
     production_database = project_root / "db" / "experimental_evidence.sqlite"
     with tempfile.TemporaryDirectory(prefix="auto-research-desktop-smoke-") as directory:
@@ -611,6 +605,15 @@ def _run_smoke_test(project_root: Path) -> int:
 
 def _run_desktop(project_root: Path, debug: bool = False) -> int:
     configure_core_paths(project_root)
+    from ai_runtime_composition import (
+        disable_legacy_environment_credentials,
+        mac_ai_runtime_services,
+    )
+    from auto_research.settings.desktop_settings import DesktopSettingsService
+    from desktop_ai_api import MacDesktopAIAPI
+    from desktop_settings_api import DesktopSettingsAPI
+    from desktop_settings_store import DEFAULT_SETTINGS_PATH, MacAtomicDesktopSettingsStore
+
     # Desktop runtime AI must resolve only a generation-bound secure credential
     # under the shared execution lease.  Maintainer shell variables are never a
     # desktop-product credential source and must not activate legacy clients.

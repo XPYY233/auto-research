@@ -43,6 +43,28 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn('str(desktop_root / "version.json")', spec)
         self.assertIn('"desktop/macos"', spec)
 
+    def test_launcher_defers_core_imports_until_runtime_paths_are_bound(self) -> None:
+        launcher_source = (DESKTOP_ROOT / "launcher.py").read_text(encoding="utf-8")
+        import_region = launcher_source.split("def _desktop_version_metadata", 1)[0]
+        for core_dependent_import in (
+            "from ai_runtime_composition import",
+            "from desktop_ai_api import",
+            "from auto_research.settings.desktop_settings import",
+            "from desktop_settings_api import",
+            "from desktop_settings_store import",
+        ):
+            self.assertNotIn(core_dependent_import, import_region)
+        smoke_body = launcher_source.split("def _run_smoke_test", 1)[1]
+        self.assertLess(
+            smoke_body.index("configure_core_paths(project_root)"),
+            smoke_body.index("from ai_runtime_composition import"),
+        )
+        desktop_body = launcher_source.split("def _run_desktop", 1)[1]
+        self.assertLess(
+            desktop_body.index("configure_core_paths(project_root)"),
+            desktop_body.index("from ai_runtime_composition import"),
+        )
+
     def test_dmg_name_is_derived_and_does_not_reuse_previous_identity(self) -> None:
         command = (DESKTOP_ROOT / "make_dmg.command").read_text(encoding="utf-8")
         self.assertIn("plutil -extract desktop_version", command)
