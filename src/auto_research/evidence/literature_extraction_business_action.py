@@ -10,19 +10,24 @@ from auto_research.ai.business_actions import (
 )
 from auto_research.ai.prepared_actions import ContentUnit, PreparedOutbound
 
+from .db import EvidenceDB
+from .learning import build_learning_guidance
+from .literature_extraction_finalizer import AtomicEvidenceDBFinalizer
 from .literature_extraction_job import (
     FrozenExtractionStage,
     LiteratureExtractionJobError,
     LiteratureExtractionJobStore,
 )
 from .literature_extraction_stages import ExistingLiteratureStagePlanner
+from .six_column import collect_learning_samples, get_six_extraction_status
 
 
 LITERATURE_SCOPE = "literature_extraction"
 LITERATURE_POLICY_MAX_CALLS = 512
 LITERATURE_POLICY_MAX_TOKENS = 8_200_000
 LITERATURE_POLICY_TASKS = frozenset({"analysis", "extraction"})
-_REQUEST_KEYS = frozenset({"job_token"})
+_INITIAL_REQUEST_KEYS = frozenset({"paper_id", "force_rescan"})
+_CONTINUATION_REQUEST_KEYS = frozenset({"job_token"})
 _PAYLOAD_KEYS = frozenset({"job_handle", "stage_fingerprint", "stage", "call_count"})
 
 
@@ -42,6 +47,57 @@ class LiteratureExtractionBusinessPorts:
     executor: "LiteratureExtractionBusinessExecutor"
     projector: "LiteratureExtractionBusinessProjector"
     snapshots: "LiteratureExtractionStageSnapshotAuthority"
+
+
+class EvidenceDBLiteratureJobStarter:
+    """Create a bounded in-memory job from trusted EvidenceDB state."""
+
+    MAX_PAGES = 8
+    CHUNK_PAGES = 2
+
+    def __init__(self, db: EvidenceDB, store: LiteratureExtractionJobStore) -> None:
+        if not isinstance(db, EvidenceDB):
+            raise TypeError("db must be an EvidenceDB")
+        self._db = db
+        self._store = store
+
+    def start(
+        self, *, paper_id: int, force_rescan: bool, session_id: str
+    ) -> Mapping[str, Any]:
+        if (
+            isinstance(paper_id, bool)
+            or not isinstance(paper_id, int)
+            or paper_id < 1
+            or not isinstance(force_rescan, bool)
+        ):
+            raise LiteratureExtractionJobError(
+                "literature_request_invalid", "文献抽取请求无效"
+            )
+        paper = self._db.get_paper(paper_id)
+        if not paper:
+            raise LiteratureExtractionJobError(
+                "literature_paper_missing", "目标文献不存在"
+            )
+        try:
+            scanned = bool(get_six_extraction_status(self._db, paper_id).get("scanned"))
+        except KeyError as exc:
+            raise LiteratureExtractionJobError(
+                "literature_paper_missing", "目标文献不存在"
+            ) from exc
+        if scanned and not force_rescan:
+            raise LiteratureExtractionJobError(
+                "literature_rescan_confirmation_required",
+                "这篇文献已有抽取记录，请明确确认后新建重扫任务",
+            )
+        guidance = build_learning_guidance(collect_learning_samples(self._db))
+        return self._store.create(
+            self._db,
+            paper_id=paper_id,
+            session_id=session_id,
+            max_pages=self.MAX_PAGES,
+            chunk_pages=self.CHUNK_PAGES,
+            learning_guidance=guidance,
+        )
 
 
 class LiteratureExtractionStageSnapshotAuthority:
@@ -67,14 +123,39 @@ class LiteratureExtractionStageSnapshotAuthority:
 class LiteratureExtractionBusinessAssembler:
     """Prepare exactly one already-frozen stage, never a renderer-defined plan."""
 
-    def __init__(self, store: LiteratureExtractionJobStore, *, session_id: str) -> None:
+    def __init__(
+        self,
+        store: LiteratureExtractionJobStore,
+        *,
+        session_id: str,
+        starter: EvidenceDBLiteratureJobStarter | None = None,
+    ) -> None:
         self._store = store
         self._session_id = session_id
+        self._starter = starter
 
     def assemble(self, request: object) -> BusinessActionDraft:
-        if not isinstance(request, Mapping) or set(request) != _REQUEST_KEYS:
+        if not isinstance(request, Mapping):
             raise BusinessActionError("business_action_invalid")
-        token = request.get("job_token")
+        request_keys = set(request)
+        if request_keys == _INITIAL_REQUEST_KEYS:
+            if self._starter is None:
+                raise BusinessActionError("business_action_prepare_failed")
+            try:
+                summary = self._starter.start(
+                    paper_id=request.get("paper_id"),
+                    force_rescan=request.get("force_rescan"),
+                    session_id=self._session_id,
+                )
+                token = summary["job_token"]
+            except LiteratureExtractionJobError as exc:
+                raise BusinessActionError("business_action_prepare_failed") from exc
+            except Exception as exc:
+                raise BusinessActionError("business_action_prepare_failed") from exc
+        elif request_keys == _CONTINUATION_REQUEST_KEYS:
+            token = request.get("job_token")
+        else:
+            raise BusinessActionError("business_action_invalid")
         if not isinstance(token, str) or not token or len(token) > 256:
             raise BusinessActionError("business_action_invalid")
         try:
@@ -135,10 +216,12 @@ class LiteratureExtractionBusinessExecutor:
         planner: ExistingLiteratureStagePlanner,
         *,
         session_id: str,
+        finalizer: AtomicEvidenceDBFinalizer | None = None,
     ) -> None:
         self._store = store
         self._planner = planner
         self._session_id = session_id
+        self._finalizer = finalizer
 
     def execute(self, *, action: PreparedOutbound, ai_client: object) -> Mapping[str, Any]:
         try:
@@ -179,6 +262,16 @@ class LiteratureExtractionBusinessExecutor:
                 summary = self._store.advance_local_stage(
                     payload["job_handle"], session_id=self._session_id, planner=self._planner
                 )
+            if summary["stage"] == "validated":
+                if self._finalizer is None:
+                    raise LiteratureExtractionJobError(
+                        "literature_commit_unavailable", "当前未安装受信原子保存组件"
+                    )
+                summary = self._store.finalize(
+                    payload["job_handle"],
+                    session_id=self._session_id,
+                    finalizer=self._finalizer,
+                )
             return {"summary": summary}
         except BusinessActionError:
             raise
@@ -194,12 +287,67 @@ class LiteratureExtractionBusinessProjector:
         "max_token_budget", "sending_scope", "possible_charges",
         "requires_confirmation", "expires_at", "transient", "persistence_allowed",
     })
+    _COMMIT_KEYS = frozenset({
+        "schema_version", "status", "paper", "candidate_count",
+        "published_item_count", "existing_item_count", "manual_review_count",
+        "visual_evidence_ready", "idempotent",
+    })
+    _PAPER_KEYS = frozenset({"title", "doi"})
+    _SENDING_SCOPE_KEYS = frozenset({
+        "pdf_page_count", "page_block_count", "branch_count", "focus_count",
+    })
+
+    @classmethod
+    def _valid_paper(cls, value: object) -> bool:
+        return (
+            isinstance(value, Mapping)
+            and set(value) == cls._PAPER_KEYS
+            and isinstance(value.get("title"), str)
+            and len(value.get("title")) <= 500
+            and (value.get("doi") is None or isinstance(value.get("doi"), str))
+            and len(value.get("doi") or "") <= 300
+        )
 
     def project(self, result: Mapping[str, Any]) -> Mapping[str, Any]:
         summary = result.get("summary") if isinstance(result, Mapping) else None
-        if not isinstance(summary, Mapping) or set(summary) != self._SUMMARY_KEYS:
+        if not isinstance(summary, Mapping):
             raise BusinessActionError("business_action_result_invalid")
-        if summary.get("persistence_allowed") is not False or summary.get("transient") is not True:
+        if summary.get("schema_version") == "literature-extraction-stage-summary-v1":
+            if set(summary) != self._SUMMARY_KEYS:
+                raise BusinessActionError("business_action_result_invalid")
+            sending_scope = summary.get("sending_scope")
+            if (
+                summary.get("persistence_allowed") is not False
+                or summary.get("transient") is not True
+                or not self._valid_paper(summary.get("paper"))
+                or not isinstance(sending_scope, Mapping)
+                or set(sending_scope) != self._SENDING_SCOPE_KEYS
+                or any(
+                    isinstance(sending_scope.get(key), bool)
+                    or not isinstance(sending_scope.get(key), int)
+                    or sending_scope.get(key) < 0
+                    for key in self._SENDING_SCOPE_KEYS
+                )
+            ):
+                raise BusinessActionError("business_action_result_invalid")
+        elif summary.get("schema_version") == "literature-extraction-commit-result-v1":
+            if (
+                set(summary) != self._COMMIT_KEYS
+                or summary.get("status") != "completed"
+                or not self._valid_paper(summary.get("paper"))
+                or summary.get("visual_evidence_ready") is not False
+                or not isinstance(summary.get("idempotent"), bool)
+                or any(
+                    isinstance(summary.get(key), bool) or not isinstance(summary.get(key), int)
+                    or summary.get(key) < 0
+                    for key in (
+                        "candidate_count", "published_item_count",
+                        "existing_item_count", "manual_review_count",
+                    )
+                )
+            ):
+                raise BusinessActionError("business_action_result_invalid")
+        else:
             raise BusinessActionError("business_action_result_invalid")
         return dict(summary)
 
@@ -209,12 +357,17 @@ def literature_extraction_business_ports(
     *,
     session_id: str,
     planner: ExistingLiteratureStagePlanner | None = None,
+    db: EvidenceDB | None = None,
+    finalizer: AtomicEvidenceDBFinalizer | None = None,
 ) -> LiteratureExtractionBusinessPorts:
     domain_planner = planner or ExistingLiteratureStagePlanner()
+    starter = EvidenceDBLiteratureJobStarter(db, store) if db is not None else None
     return LiteratureExtractionBusinessPorts(
-        assembler=LiteratureExtractionBusinessAssembler(store, session_id=session_id),
+        assembler=LiteratureExtractionBusinessAssembler(
+            store, session_id=session_id, starter=starter
+        ),
         executor=LiteratureExtractionBusinessExecutor(
-            store, domain_planner, session_id=session_id
+            store, domain_planner, session_id=session_id, finalizer=finalizer
         ),
         projector=LiteratureExtractionBusinessProjector(),
         snapshots=LiteratureExtractionStageSnapshotAuthority(store),
@@ -222,6 +375,7 @@ def literature_extraction_business_ports(
 
 
 __all__ = [
+    "EvidenceDBLiteratureJobStarter",
     "LiteratureExtractionBusinessAssembler",
     "LiteratureExtractionBusinessExecutor",
     "LiteratureExtractionBusinessPorts",
