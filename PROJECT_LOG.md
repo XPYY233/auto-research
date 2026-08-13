@@ -8,7 +8,10 @@
 - 生产DOM物理重排为标题栏、活动栏、上下文栏、中央标签区、右侧检查器与状态栏。文献与搜索从独立schema-v12快照只读展示，实验为可键盘操作的会话级合成CSV，资料包和未来业务按钮明确禁用并标注0.9.2+。
 - macOS新增 `fusion-review` 后端能力模式：只允许受保护的论文目录、Search V2、UI mode、桌面外观设置GET，以及带CAS/CSRF的外观PATCH；所有模型、上传、提取、确认、PDF、导出、资料包与删除操作固定403。
 - App包前端白名单收敛为四个Fusion资产；0.8旧页面脚本不被打包或提供。旧DOM专用测试退役，核心自检改为Fusion唯一导航、响应式抽屉、合成网格、零模型和禁用业务契约。
-- 低负载验证：macOS 212/212、Fusion/发布/核心目标28/28、完整核心证据测试、候选HTTP冒烟全部通过；生产SQLite SHA-256仍为 `d3e225d35f4c9e21fcf825405d0e38f28210c4479caac67b87be9f8382fb6f72`。尚未提交、构建、安装或生成DMG。
+- 低负载验证：macOS 212/212、Fusion/发布/核心目标28/28、完整核心证据测试、候选HTTP冒烟全部通过；生产SQLite SHA-256仍为 `d3e225d35f4c9e21fcf825405d0e38f28210c4479caac67b87be9f8382fb6f72`。
+- 源码实现提交为 `50a6b78`，安装事务的zsh保留变量问题在首次内部安装时暴露并由 `0b3242d` 修复、加回归测试后重新构建；最终标签 `auto-research-0.9.1-preview.1-build19` 指向 `0b3242d`。0.8 build18已保存为不可启动回退，最终App安装于 `/Applications/Auto Research.app`。
+- 真实WebView串行验收通过：文献/搜索/实验/资料包/设置单一导航，真实文献与右侧检查器同步，合成CSV工作表与键盘网格，日夜主题及紧凑密度跨重启，窄窗口检查器抽屉与Escape焦点恢复。未调用模型、未上传或执行业务写入。
+- 交付目录为 `auto-research-releases/Auto-Research-0.9.1-preview.1-build19-FusionReview/`；DMG完成 `hdiutil verify`，SHA-256 `e01d547b3dd58e1e3068dd4250eec292bd2a3af5a5f87e0ab8fe9a7a3dbf44d1`。该版本仍只等待用户GUI认可，不代表第1—5项功能已恢复。
 
 ## 2026-08-13：0.8.0-preview.1 源码发布门冻结
 

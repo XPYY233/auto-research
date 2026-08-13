@@ -7,7 +7,9 @@
 - 目标：让真实App达到 `fusion-concept.html` 的四区工作台形态，支持light/dark/system、comfortable/compact、四工作区、设置、命令面板、响应式抽屉和合成CSV网格。
 - 数据：真实文献只读自独立schema-v12快照；实验仅为会话级合成示例。App不读私人库、不改生产库、不调用模型、不保存密钥。
 - 边界：上传、提取、确认、PDF、真实搜索详情、导出、资料包导入/回退均以禁用按钮预示后续版本，点击不会发请求或伪造成功。
-- 回退：0.8 build18必须在安装build19前保存为已验证且不可启动的 `.app.rollback`。build19尚未完成最终构建、安装和用户视觉验收前，不得替换本节状态为“发布完成”。
+- 源码与状态：最终标签 `auto-research-0.9.1-preview.1-build19` 指向 `0b3242d`。`/Applications/Auto Research.app` 当前为0.9.1/build19，构建清单与提交、版本和标签一致。
+- 回退：0.8 build18在替换前已保存为已验证且不可启动的 `.app.rollback`；系统只有一个可启动Auto Research App。
+- 交付：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.9.1-preview.1-build19-FusionReview/`；DMG SHA-256 `e01d547b3dd58e1e3068dd4250eec292bd2a3af5a5f87e0ab8fe9a7a3dbf44d1`，已通过镜像校验。真实WebView验收覆盖四区、真实文献、CSV网格、设置持久化和窄窗口抽屉。
 - Windows：完全暂停，无0.9 Windows源码同步或Setup。
 
 > 0.8 发布完成（2026-08-13）：`0.8.0-preview.1` / build `18` 已从干净提交 `700e642` 构建、安装并完成冻结冒烟与用户视角验收。串行验证共 1178 项。build 16/17 被冻结冒烟门拦截且未发布；0.7 build15 保持独立回退点。
