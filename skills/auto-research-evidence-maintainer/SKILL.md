@@ -48,15 +48,15 @@ Keep these invariants:
 - Keep platform logic thin. macOS and Windows may implement lifecycle, native selection, credentials and a protected bridge, but must reuse product package, identity, audit and federated-search contracts rather than copy them.
 - Codex develops the project. Application runtime AI is limited to the audited provider registry (initially DeepSeek and OpenAI), with fixed endpoints/models and server-prepared informed actions.
 
-## Recover interrupted 0.8 work
+## Continue after the 0.8 freeze
 
-Before editing 0.8, read the top `PROJECT_HANDOFF.md` checkpoint section. Treat `0450345` as the committed development baseline and `888aae5`/build15 as the user rollback release until a later handoff supersedes them.
+Before editing, read the top `PROJECT_HANDOFF.md` release section and the 0.8 user-kit acceptance report. Build 16 is the macOS 0.8 internal-preview line; `888aae5`/build15 remains the independent 0.7 rollback.
 
-- Preserve the uncommitted evidence-detail workbench files and user production DB/paper_056 artifacts; never reset, clean or broadly stage them.
+- Preserve the uncommitted production evidence database. The legacy paper_056 run/quality/visual artifacts were explicitly deleted by the user before the 0.8 build and should not be recreated unless a new real extraction is authorized.
 - Use existing project Codex threads for frontend/macOS, core, Windows and security. Root is the only Git writer; every other thread receives an exact file list and returns a no-stage/no-commit handoff.
-- The macOS trusted runtime plus personal-suggestion and selected-evidence-chat prepared adapters are committed. Finish Librarian and literature-extraction adapters, then freeze one four-scope registry/snapshot/HTTP contract; wire and validate macOS before synchronizing Windows. Do not implement provider, prompt, search, package or private-repository algorithms in platform folders.
-- On a hot machine, run at most two development threads and only small targeted tests. Run the shared full suite, build and real App flow serially once after interfaces freeze.
-- Do not sync release web hashes or increment final build identity until all shared web assets are frozen. Windows remains `installer_ready=false` until real Win11 acceptance.
+- Keep the four-scope prepared-action registry and provider runtime as the only billable AI authority. Do not restore legacy direct Librarian, context-chat, personal-suggestion or workflow model routes.
+- On a hot machine, run at most two development threads and only targeted tests. Run the shared full suite, build and real App flow serially once after interfaces freeze.
+- Windows remains `installer_ready=false` until real Win11 build/install/import/search/upload/BYOK acceptance. Do not turn its source/build kit into a fake Setup.
 
 ## Choose the safe action level
 

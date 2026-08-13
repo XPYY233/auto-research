@@ -1,26 +1,22 @@
 # Auto Research 阶段性交班总览
 
-## 0.8 当前续作检查点（2026-08-13，优先阅读）
+## 0.8 发布冻结点（2026-08-13，优先阅读）
 
-- 当前 Git 开发基线：`0450345`（不是发布版）。在原 `228942a` 基础上，已继续提交共享 AI 调用预算/执行 lease、macOS 受信 AI 运行时、个人实验 AI prepared action，以及选中证据详情 AI prepared action。A 骨架的日/夜/系统主题、舒适/紧凑密度、工作台设置、搜索与文献工作区、桌面偏好契约、DeepSeek/OpenAI 受信提供商注册表和 Windows 0.8 外观设置薄适配均仍保留。
-- 唯一可回退用户版仍是 Auto Research `0.7.0-preview.2` / build `15`，源码 `888aae5`，标签 `evidence-demo-2026-08-12-macos-package-center-0.7.0-preview-2-build15`。不要从 0.8 当前 checkout 构建或覆盖它。
-- 0.8 尚未形成可用 App：Librarian 与文献提取的业务 assembler/executor、四个 AI scope 的统一 registry/snapshot authority/HTTP 路由、前端真实 AI 设置接线、Windows AI 第二批、release-contract 最终哈希、0.8 最终版本文件、全测、构建和实机验收均未完成。前端遇到未冻结 AI 业务 route 必须继续明确 fail closed。
-- macOS 已提交 `118fd59`：桌面运行时只从同一 `ProviderCredentialManager` 解析受信 provider 凭据，正式桌面入口清除 ambient `DEEPSEEK_API_KEY`，旧 credential route 仅作同一 manager 的兼容视图；旧个人建议 route 暂时 fail closed，但本地预览、人工核验、确认、私人搜索和离线精确检索不受影响。42 项 macOS AI/邻接定向测试通过。
-- 个人实验 AI 已提交 `0dde3c7`：renderer 只提交 `import_id/sheet_index`，服务端冻结 prompt、task、token 与完整预览指纹；AI 只产生待核验建议，不保存草稿、不确认、不入库。完整预览与有界外发使用分离指纹，第129列变化和模型返回途中变化均 fail closed。28 项定向测试通过。
-- 选中证据详情 AI 已提交 `0450345`：同一安全文件描述符一次读取 PDF，使用 `O_NOFOLLOW`、普通文件/大小限制、读取前后身份复核，同一不可变字节同时生成页面文本与 SHA；同大小同 mtime 替换、符号链接、读取期间变化和 action 重放均 fail closed。10 项定向/兼容测试通过。
-- 未提交的开发暂停件只有 `web/app.css`、`web/index.html`、`web/workbench.css` 和新增 `test_evidence_detail_workbench_contract.py`：这是“证据详情/原文/审核 dialog → Workbench pane/drawer”的半成品，未运行测试、不可提交或构建；恢复时先由前端对话自审并完成定向测试。
-- `src/auto_research/release_contract.py` 与 `src/tests/test_release_contract.py` 是 root 保留的 0.8 发布契约草稿；`config/release-contract.json` 的 workbench 哈希仍是占位值。只能在共享前端完全冻结后统一同步哈希。
-- 永远保留未暂存用户现场：`db/experimental_evidence.sqlite`、`paper_056` 的 deepseek/quality/visual 产物。不要清理、还原、暂存、测试或打包它们。
+- Auto Research `0.8.0-preview.1` / build `16` 源码已冻结；发布身份和六个共享 Web 资源哈希由 `config/release-contract.json` 单一管理。
+- Workbench A 成为唯一生产设计系统：日间/夜间/跟随系统、舒适/紧凑密度、四个科研入口、设置中心、命令面板与键盘导航均使用同一共享前端。个人实验和资料包 DOM 已静态归位；旧人工补录、修正历史和宠物进度场景已从生产 DOM/处理器退役。
+- 运行时 AI 只允许代码审查过的受信提供商（首批 DeepSeek/OpenAI）和固定官方 endpoint/model 目录。Librarian、选中证据、文献提取、个人表格四域全部走服务端 prepared action、逐阶段披露、一次性 consent nonce 和调用/token 预算，旧收费旁路固定退役。
+- macOS 已接完整四域业务、设置、资料包、私人实验与文献最终提交事务。Windows 0.8 源码消费同一共享契约、工作台资产和 Credential Manager 槽；Windows 仍 `installer_ready=false / SETUP_PRESENT=NO`，等待 Win11 真机构建验收。
+- 本轮串行验证：共享核心 810、macOS 228、Windows 139，共 1177/1177；Python 编译、六个 JavaScript 语法、release-contract 同步、diff-check 与 Git 对象检查通过。测试使用临时根，没有读取或写入生产科学数据库。
+- `paper_056` 的 4 个 DeepSeek run、2 个 quality run 与 13 个图表遗留文件已在用户明确授权下删除；它们未进入 Git。工作树仍只保留未暂存的 `db/experimental_evidence.sqlite` 用户现场。
+- 可回退用户版保持 Auto Research `0.7.0-preview.2` / build `15`，源码 `888aae5`，标签 `evidence-demo-2026-08-12-macos-package-center-0.7.0-preview-2-build15`。
 
-### 恢复顺序
+### 后续恢复顺序
 
-1. 读本节、`AGENT.md` 的“0.8 恢复与协作纪律”和项目 Skill 的 current-state/operations。
-2. 运行 `git status --short`，确认上述暂停件与用户现场仍在；禁止 `git reset/checkout/clean`。
-3. 从 `0450345` 开始，先完成 Librarian 与文献提取两个共享业务适配，再建立四 scope 的组合式 snapshot authority、统一 registry 与共享 prepare/consent/execute HTTP 契约；不要让平台层复制 prompt、provider 或科学算法。
-4. 让 macOS 消费完整四域 registry 并完成小型路由/组合测试；旧 context-chat、personal suggest、Librarian 和 workflow AI route 只能委托同一 prepared-action 权威或暂时 fail closed，不能继续成为收费旁路。
-5. macOS 源码契约通过后，再让 Windows 对话只做同接口薄适配；继续 `installer_ready=false / SETUP_PRESENT=NO`。
-6. 恢复并完成前端第六批，再接权威设置/AI路由并做 CSS/DOM 债务清扫；不得在旧 `app.css` 文件尾继续追加整套皮肤。
-7. 最后同步 release-contract/web hashes/macOS build identity，串行跑全套、干净 worktree 构建和真实用户流程。科学数据库与官方/用户资料包格式不变。
+1. 读本节、`STABLE_RELEASE.md`、用户套件内 `RELEASE_ACCEPTANCE.json` 与项目 Skill current-state。
+2. 运行 `git status --short`；只允许生产 SQLite 作为既有未提交现场，禁止 `git reset/checkout/clean`。
+3. macOS 后续修复从 0.8 发布标签分支；先跑目标测试，再决定是否需要新 build。不要在主工作区直接构建。
+4. Windows 下一步只是在 Win11 使用预版本构建套件完成真实依赖、Credential Manager、WebView2、启动、导包、搜索、上传和 BYOK 验收；通过前不得生成或宣称正式 Setup。
+5. 0.9 前继续拆分旧 `app.css` 与 `app.js`，但每次必须删除被替代规则/处理器，不能再叠加新皮肤或复制平台 UI。
 
 ### 多对话协作纪律
 
@@ -29,9 +25,9 @@
 - 同一文件只能有一个对话所有者；接口先由共享核心冻结，macOS 先消费并验证，Windows 最后薄同步。
 - 电脑发热时最多保留两个开发对话；禁止并行全测、构建、模型调用或 App 实机。目标测试小步串行，全套只在接口冻结后运行一次。
 
-> 交班快照：2026-08-12
+> 交班快照：2026-08-13
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
-> 当前发布候选：Auto Research `0.7.0-preview.2` / build `15`；最终 DMG、套件与验收哈希见仓库外发布目录的 `RELEASE_ACCEPTANCE.json`
+> 当前发布候选：Auto Research `0.8.0-preview.1` / build `16`；最终 DMG、套件与验收哈希见仓库外 0.8 用户套件的 `RELEASE_ACCEPTANCE.json`
 > 当前保护提交：`ad40a31`；最终候选在完成文档收口后从干净 release worktree 构建，构建清单中的 `core_commit` 为制品权威
 > 官方资料包：`0.2.0-preview.1`，SHA-256 `89ec7f8dcdeea2d862d91aaf798674fd600c21fd75c4553d270a0c0b806f999e`；旧 `0.1.0-preview.1` 保持不可变回退点
 > Windows：继续 `installer_ready=false`，无 Setup、无 Win11 真机验收；不得把源码对齐描述为安装版

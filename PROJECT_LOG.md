@@ -2,6 +2,14 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-13：0.8.0-preview.1 源码发布门冻结
+
+- 完成 Workbench A 日/夜/跟随系统主题、舒适/紧凑密度、统一活动栏/命令面板/设置中心，并以 B 文献阅读层级和 C 实验数值样式补充单一设计系统。个人实验与资料包 DOM 静态归位；人工补录、修正历史和宠物进度场景从生产前端物理退役。
+- DeepSeek/OpenAI 进入同一受信 provider 注册表和按 provider 隔离的安全凭据；Librarian、选中证据、文献提取、个人建议全部改为服务端 prepared action、逐阶段知情同意、一次性 nonce、调用/token 预算和 stale 绑定。旧收费旁路固定退役。
+- macOS 完成四域业务、分阶段文献最终提交、私人实验、资料包、设置与原生薄接线；Windows 完成相同共享 UI/DTO/AI 契约与 Credential Manager 薄适配，但继续 `installer_ready=false / SETUP_PRESENT=NO`。
+- 串行发布门通过 1177 项（core 810、macOS 228、Windows 139），Python 编译、六个 JS 语法、release-contract 同步、diff-check 和 Git 对象检查通过。生产 SQLite 未测试、未暂存。
+- 用户明确确认 `paper_056` 是遗留 bug 后，精确删除 4 个 DeepSeek run、2 个 quality run 和 13 个 visual 文件；未触碰生产 SQLite。0.7 build15 继续作为独立回退。
+
 ## 2026-08-13：0.8 续作——受信 AI 运行时与前两个业务域
 
 - `118fd59` 完成 macOS 受信 AI 运行时：provider 凭据、runtime state 与执行 lease 共用同一锁和单一 `ProviderCredentialManager`；正式桌面入口删除 ambient `DEEPSEEK_API_KEY`，旧 DeepSeek credential route 只委托同一 manager，不再写环境变量或形成第二 secret authority。42 项定向/邻接测试通过。
