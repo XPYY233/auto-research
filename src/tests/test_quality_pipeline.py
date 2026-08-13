@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 import fitz
 
+from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.quality_pipeline import (
     AdversarialQualityPipeline,
@@ -205,13 +206,14 @@ class AdversarialQualityPipelineTests(unittest.TestCase):
             "qualitative_findings": [],
             "visual_semantics": {},
         }
-        settings = type("Settings", (), {
-            "api_key": "test-key",
-            "base_url": "https://example.invalid",
-            "extraction_model": "test-extractor",
-            "analysis_model": "test-analysis",
-            "timeout_seconds": 10,
-        })()
+        settings = DeepSeekSettings(
+            api_key="test-key",
+            extraction_model="deepseek-v4-pro",
+            analysis_model="deepseek-v4-pro",
+            librarian_planning_model="deepseek-v4-flash",
+            librarian_synthesis_model="deepseek-v4-pro",
+            timeout_seconds=10,
+        )
         pipeline = AdversarialQualityPipeline(
             self.db, settings=settings, output_dir=Path(self.tmp.name) / "quality-runs"
         )

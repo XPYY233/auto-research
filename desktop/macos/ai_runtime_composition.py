@@ -101,12 +101,17 @@ class _PreparedOnlyLibrarianClient:
     create a second provider or credential authority.
     """
 
-    def __init__(self) -> None:
-        profile = trusted_provider_profile("deepseek")
-        models = dict(profile.default_task_models)
-        self.settings = SimpleNamespace(
-            librarian_planning_model=models["librarian_planning"],
-            librarian_synthesis_model=models["librarian_synthesis"],
+    def __init__(self, runtime_state: AIRuntimeStateService) -> None:
+        self._runtime_state = runtime_state
+
+    @property
+    def settings(self) -> SimpleNamespace:
+        state = self._runtime_state.get()
+        profile = trusted_provider_profile(state.provider_id)
+        return SimpleNamespace(
+            provider_display_name=profile.display_name,
+            librarian_planning_model=state.task_models["librarian_planning"],
+            librarian_synthesis_model=state.task_models["librarian_synthesis"],
         )
 
     @staticmethod
@@ -190,7 +195,10 @@ def create_mac_ai_runtime_services(
         personal_ports = personal_suggestion_business_ports(personal_import_service)
         selected_ports = selected_evidence_chat_business_ports(database)
         librarian_ports = librarian_business_ports(
-            LibrarianAgentRuntime(database, client=_PreparedOnlyLibrarianClient())
+            LibrarianAgentRuntime(
+                database,
+                client=_PreparedOnlyLibrarianClient(runtime_state),
+            )
         )
         literature_jobs = LiteratureExtractionJobStore()
         literature_ports = literature_extraction_business_ports(

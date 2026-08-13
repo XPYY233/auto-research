@@ -6,9 +6,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from auto_research.ai.deepseek import DeepSeekSettings
 from auto_research.evidence.agent_runtime import LibrarianAgentRuntime
+from auto_research.evidence.capability_manifest import CapabilityManifest
 from auto_research.evidence.db import EvidenceDB, now
 from auto_research.evidence.librarian_followups import validate_suggested_actions
 from auto_research.evidence.librarian_intent import route_librarian_intent
@@ -111,6 +113,19 @@ class LibrarianV3Tests(unittest.TestCase):
         self.assertEqual(result["candidate_count"], 0)
         self.assertEqual((client.json_calls, client.text_calls), (0, 0))
         self.assertEqual(result["results"], [])
+
+    def test_capability_manifest_uses_selected_provider_metadata(self):
+        client = SimpleNamespace(
+            settings=SimpleNamespace(
+                provider_display_name="OpenAI",
+                librarian_planning_model="gpt-5.6-terra",
+                librarian_synthesis_model="gpt-5.6-sol",
+            )
+        )
+        manifest = CapabilityManifest.from_client(client)
+        self.assertEqual(manifest.provider, "OpenAI")
+        self.assertEqual(manifest.planning_model, "gpt-5.6-terra")
+        self.assertEqual(manifest.synthesis_model, "gpt-5.6-sol")
 
     def test_state_rejects_tamper_wrong_corpus_and_cross_conversation(self):
         codec = ResearchStateCodec(secret=b"a" * 32)

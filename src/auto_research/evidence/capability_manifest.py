@@ -14,8 +14,15 @@ class CapabilityManifest:
     @classmethod
     def from_client(cls, client: Any) -> "CapabilityManifest":
         settings = getattr(client, "settings", None)
+        provider = str(
+            getattr(
+                settings,
+                "provider_display_name",
+                getattr(settings, "provider", "DeepSeek"),
+            )
+        )
         return cls(
-            provider="DeepSeek",
+            provider=provider,
             planning_model=str(getattr(settings, "librarian_planning_model", "deepseek-v4-flash")),
             synthesis_model=str(getattr(settings, "librarian_synthesis_model", "deepseek-v4-pro")),
         )
