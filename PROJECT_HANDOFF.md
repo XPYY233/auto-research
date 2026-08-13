@@ -7,8 +7,8 @@
 - build19只读浏览启动时从schema-v12生产库创建独立SQLite快照；实验页只使用明确标记的合成CSV。除外观/密度设置外，POST/DELETE和其他PATCH固定403，PDF、导出、上传、提取、确认、资料包操作与模型调用均被后端能力策略阻断。
 - Windows完全暂停：不要同步Fusion资源、版本或路由，不运行Windows测试/构建。Mac主流程获用户认可后才恢复Windows薄迁移。
 - 0.8 build18仍是完整功能回退点。安装build19前必须把它复制为已验证的非 `.app` rollback；安装事务失败必须恢复旧App。生产SQLite哈希必须在开发、构建和安装前后保持一致。
-- build19源码标签固定到 `0b3242d`。Fusion/发布/核心目标28项、完整核心证据测试、macOS 212项、冻结HTTP冒烟、ad-hoc签名、DMG校验和真实WebView验收均通过；实际验证了四区导航、真实文献/证据同步、合成CSV两工作表与键盘选择、日夜/系统主题、舒适/紧凑持久化及窄窗口检查器抽屉/Escape焦点恢复。
-- `/Applications/Auto Research.app` 当前为0.9.1/build19；系统与用户Applications中只有这一份可启动App。0.8 build18回退副本位于仓库外 `auto-research-backups/app-rollbacks` 且后缀为 `.app.rollback`。DMG与中文指南在 `auto-research-releases/Auto-Research-0.9.1-preview.1-build19-FusionReview/`，DMG SHA-256为 `e01d547b3dd58e1e3068dd4250eec292bd2a3af5a5f87e0ab8fe9a7a3dbf44d1`。
+- build19源码标签固定到 `4fd4f24`。Fusion/发布/核心目标28项、完整核心证据测试、macOS 212项、冻结HTTP冒烟、ad-hoc签名、DMG校验和真实WebView验收均通过；实际验证了四区导航、真实文献/证据同步、合成CSV两工作表与键盘选择、日夜/系统主题、舒适/紧凑持久化、窄窗口检查器抽屉/Escape焦点恢复，以及设置分类不会污染文献中央标签。
+- `/Applications/Auto Research.app` 当前为0.9.1/build19；系统与用户Applications中只有这一份可启动App。0.8 build18回退副本位于仓库外 `auto-research-backups/app-rollbacks` 且后缀为 `.app.rollback`。DMG与中文指南在 `auto-research-releases/Auto-Research-0.9.1-preview.1-build19-FusionReview/`，DMG SHA-256为 `c1786d4b4ee6734390f36c878fdcf008f5d0c3ab405f5eac87031ffe40b92f69`。
 
 ### 当前恢复顺序
 
