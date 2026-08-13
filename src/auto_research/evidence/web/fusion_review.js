@@ -154,6 +154,7 @@
     const title={paper:"论文检查器",search:"证据检查器",personal:"列检查器",package:"安全边界",settings:"设置说明"}[state.view];
     q("#fusion-inspector-title").textContent=title; q("#fusion-inspector-body").innerHTML=inspectorForView(state.view);bindColumnEditor();
   }
+  const SETTINGS_LABELS={appearance:"设置：外观",language:"设置：语言",ai:"设置：AI 与密钥",data:"设置：数据",about:"设置：关于"};
   function switchView(name,{focus=true}={}) {
     if(!VIEWS.includes(name)) return false;
     const previous=state.view; state.view=name; document.body.dataset.view=name;
@@ -161,7 +162,7 @@
     qa(".fusion-nav[data-view]").forEach(button=>{const active=button.dataset.view===name;button.classList.toggle("active",active);active?button.setAttribute("aria-current","page"):button.removeAttribute("aria-current");});
     qa("[data-context-view]").forEach(panel=>{const active=panel.dataset.contextView===name;panel.hidden=!active;panel.classList.toggle("active",active);});
     q("#fusion-context-title").textContent=VIEW_LABELS[name]; q("#fusion-breadcrumb").textContent=`${VIEW_LABELS[name]} / Fusion GUI 体验`;
-    q("#fusion-primary-tab-label").textContent={paper:"当前论文",search:"精确检索",personal:syntheticSheets[state.sheet].label,package:"资料包中心",settings:"设置"}[name];
+    q("#fusion-primary-tab-label").textContent=name==="settings"?SETTINGS_LABELS[state.settingsSection]:{paper:"当前论文",search:"精确检索",personal:syntheticSheets[state.sheet].label,package:"资料包中心"}[name];
     q("#fusion-status-context").textContent={paper:"真实文献只读",search:"真实证据只读",personal:"合成实验数据",package:"资料包只读",settings:"仅外观可操作"}[name];
     closeDrawers(false); updateInspector();syncDrawerAccessibility();
     if(focus&&previous!==name) q("#fusion-editor")?.focus({preventScroll:true}); return true;
@@ -204,7 +205,7 @@
     if(!["role","meaning","unit"].includes(field))return false;const column=syntheticSheets[state.sheet].columns[state.column];column[field]=String(value).trim().slice(0,field==="meaning"?120:32);renderSheet(state.sheet,{focus:false,preserveSelection:true});return true;
   }
   function selectSettingsSection(name,{focus=false}={}) {
-    if(!["appearance","language","ai","data","about"].includes(name))return false;state.settingsSection=name;qa("[data-settings-panel]").forEach(panel=>panel.hidden=panel.dataset.settingsPanel!==name);qa("[data-settings-section]").forEach(button=>{const active=button.dataset.settingsSection===name;button.classList.toggle("active",active);button.setAttribute("aria-selected",active?"true":"false");button.tabIndex=active?0:-1;});q("#fusion-primary-tab-label").textContent={appearance:"设置：外观",language:"设置：语言",ai:"设置：AI 与密钥",data:"设置：数据",about:"设置：关于"}[name];if(focus)q(`[data-settings-section="${name}"]`)?.focus();return true;
+    if(!["appearance","language","ai","data","about"].includes(name))return false;state.settingsSection=name;qa("[data-settings-panel]").forEach(panel=>panel.hidden=panel.dataset.settingsPanel!==name);qa("[data-settings-section]").forEach(button=>{const active=button.dataset.settingsSection===name;button.classList.toggle("active",active);button.setAttribute("aria-selected",active?"true":"false");button.tabIndex=active?0:-1;});if(state.view==="settings")q("#fusion-primary-tab-label").textContent=SETTINGS_LABELS[name];if(focus)q(`[data-settings-section="${name}"]`)?.focus();return true;
   }
   function markReviewed() {state.reviewed=true;updateReviewStatus();updateInspector();return true;}
   function showDemoSuggestion() {state.demoSuggestion=true;const status=q("#fusion-demo-suggestion-status");if(status)status.textContent="演示建议已显示 · 未调用模型";const context=q("#fusion-ai-demo-context-state");if(context)context.textContent="演示建议 · 零模型";updateInspector();return true;}

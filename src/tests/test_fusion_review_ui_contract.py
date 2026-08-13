@@ -189,6 +189,9 @@ eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
  api.switchView('personal');assert.equal(document.body.dataset.view,'personal');const before=document.body.dataset.view;await Promise.resolve().then(()=>api.renderSheet('metadata'));assert.equal(document.body.dataset.view,before);
  assert(api.applyAppearance('dark','compact'));assert.equal(document.documentElement.dataset.theme,'dark');assert.equal(document.documentElement.dataset.density,'compact');assert.equal(api.syntheticSheets.hardness.rows.length,12);
  api.openDrawer('inspector',navs[2]);assert(ids['#fusion-inspector'].classList.contains('drawer-open'));api.closeDrawers();assert(!ids['#fusion-inspector'].classList.contains('drawer-open'));assert.strictEqual(globalThis.focused,navs[2]);
+ api.switchView('paper');api.selectSettingsSection('appearance');assert.equal(ids['#fusion-primary-tab-label'].textContent,'当前论文');
+ api.switchView('settings');assert.equal(ids['#fusion-primary-tab-label'].textContent,'设置：外观');api.selectSettingsSection('ai');assert.equal(ids['#fusion-primary-tab-label'].textContent,'设置：AI 与密钥');
+ api.switchView('paper');assert.equal(ids['#fusion-primary-tab-label'].textContent,'当前论文');
  assert(requests.every(([url,options])=>['/api/search-papers','/api/desktop/settings','/api/desktop/settings/preferences'].includes(url)||url.startsWith('/api/search-v2?')));assert(requests.every(([url,options])=>(options.method||'GET')==='GET'||(url==='/api/desktop/settings/preferences'&&options.method==='PATCH')));
 }})().catch(error=>{{console.error(error);process.exitCode=1}});
 """
