@@ -33,6 +33,9 @@ from auto_research.evidence.literature_extraction_business_action import (
 from auto_research.evidence.literature_extraction_job import (
     LiteratureExtractionJobStore,
 )
+from auto_research.evidence.literature_extraction_finalizer import (
+    AtomicEvidenceDBFinalizer,
+)
 from auto_research.personal.ai_business_action import (
     PersonalSuggestionBusinessPorts,
     personal_suggestion_business_ports,
@@ -194,6 +197,7 @@ def create_mac_ai_runtime_services(
             literature_jobs,
             session_id=str(desktop_session_id),
             db=database,
+            finalizer=AtomicEvidenceDBFinalizer(database),
         )
         snapshots = CompositeContentSnapshotAuthority(
             {
