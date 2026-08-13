@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import unittest
+import threading
+from contextlib import contextmanager
 
 from auto_research.ai.openai_compatible import AIProviderCapabilityError
-from auto_research.ai.runtime_factory import RuntimeAIClientFactory
+from auto_research.ai.runtime_factory import AIRuntimeBindingError, RuntimeAIClientFactory
 from auto_research.settings.ai_runtime_state import (
     AIRuntimeStateError,
     ResolvedAIRuntime,
@@ -39,10 +41,41 @@ class _Credentials:
     def __init__(self, key="sk-backend-secret"):
         self.key = key
         self.refs = []
+        self.generation = 7
 
     def resolve(self, credential_ref):
         self.refs.append(credential_ref)
         return self.key
+
+    def resolve_bound(self, credential_ref, expected_generation):
+        self.refs.append((credential_ref, expected_generation))
+        if expected_generation != self.generation:
+            return None
+        return self.key
+
+
+class _Action:
+    def __init__(self, runtime):
+        self.provider_id = runtime.provider_id
+        self.runtime_revision = runtime.selection_revision
+        self.credential_generation = runtime.credential_generation
+        self.runtime_activation = runtime.activation
+        self.runtime_task_models = tuple(sorted(runtime.task_models.items()))
+
+
+class _LeaseAuthority:
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.events = []
+
+    @contextmanager
+    def acquire(self, action):
+        with self.lock:
+            self.events.append("enter")
+            try:
+                yield
+            finally:
+                self.events.append("exit")
 
 
 class RuntimeAIClientFactoryTests(unittest.TestCase):
@@ -118,6 +151,115 @@ class RuntimeAIClientFactoryTests(unittest.TestCase):
                 self.runtime("openai", OPENAI_MODELS, "renderer_verified"),
                 api_key="sk-secret",
             )
+
+    def test_bound_factory_requires_exact_runtime_and_generation(self):
+        runtime = self.runtime("openai", OPENAI_MODELS, "connection_verified")
+        authority = _Runtime(runtime)
+        credentials = _Credentials()
+        factory = RuntimeAIClientFactory(
+            runtime_state=authority, credential_resolver=credentials
+        )
+        client = factory.create_bound(_Action(runtime), max_attempts=1)
+        self.assertEqual(client.settings.max_attempts, 1)
+        self.assertEqual(credentials.refs, [("openai.default", 7)])
+
+    def test_execution_lease_is_required_and_covers_client_lifetime(self):
+        runtime = self.runtime("openai", OPENAI_MODELS, "connection_verified")
+        without = RuntimeAIClientFactory(
+            runtime_state=_Runtime(runtime), credential_resolver=_Credentials()
+        )
+        with self.assertRaises(AIRuntimeBindingError):
+            with without.acquire_bound(_Action(runtime)):
+                self.fail("lease must not be entered")
+
+        authority = _LeaseAuthority()
+        factory = RuntimeAIClientFactory(
+            runtime_state=_Runtime(runtime), credential_resolver=_Credentials(),
+            execution_lease_authority=authority,
+        )
+        with factory.acquire_bound(_Action(runtime)) as client:
+            self.assertEqual(authority.events, ["enter"])
+            self.assertEqual(client.settings.max_attempts, 1)
+        self.assertEqual(authority.events, ["enter", "exit"])
+
+    def test_mutation_waits_until_execution_lease_exit(self):
+        runtime = self.runtime("openai", OPENAI_MODELS, "connection_verified")
+        authority = _LeaseAuthority()
+        state = _Runtime(runtime)
+        factory = RuntimeAIClientFactory(
+            runtime_state=state, credential_resolver=_Credentials(),
+            execution_lease_authority=authority,
+        )
+        mutated = threading.Event()
+
+        def mutate():
+            with authority.lock:
+                state.resolved = ResolvedAIRuntime(
+                    "openai", OPENAI_MODELS, "openai.default", 8, 4,
+                    "connection_verified",
+                )
+                mutated.set()
+
+        with factory.acquire_bound(_Action(runtime)):
+            worker = threading.Thread(target=mutate)
+            worker.start()
+            self.assertFalse(mutated.wait(0.02))
+        worker.join(1)
+        self.assertTrue(mutated.is_set())
+
+    def test_execution_lease_releases_when_caller_raises(self):
+        runtime = self.runtime("openai", OPENAI_MODELS, "connection_verified")
+        authority = _LeaseAuthority()
+        factory = RuntimeAIClientFactory(
+            runtime_state=_Runtime(runtime), credential_resolver=_Credentials(),
+            execution_lease_authority=authority,
+        )
+        with self.assertRaises(RuntimeError):
+            with factory.acquire_bound(_Action(runtime)):
+                raise RuntimeError("executor failed")
+        self.assertEqual(authority.events, ["enter", "exit"])
+
+    def test_bound_factory_runtime_mutations_fail_before_credential_read(self):
+        original = self.runtime("openai", OPENAI_MODELS, "connection_verified")
+        cases = (
+            self.runtime("deepseek", DEEPSEEK_MODELS, "legacy_compatible"),
+            ResolvedAIRuntime("openai", OPENAI_MODELS, "openai.default", 7, 5, "connection_verified"),
+            ResolvedAIRuntime("openai", OPENAI_MODELS, "openai.default", 8, 4, "connection_verified"),
+            self.runtime("openai", {**OPENAI_MODELS, "analysis": "gpt-5.6-luna"}, "connection_verified"),
+        )
+        for changed in cases:
+            credentials = _Credentials()
+            factory = RuntimeAIClientFactory(
+                runtime_state=_Runtime(changed), credential_resolver=credentials
+            )
+            with self.subTest(changed=changed), self.assertRaises(AIRuntimeBindingError):
+                factory.create_bound(_Action(original))
+            self.assertEqual(credentials.refs, [])
+
+    def test_bound_factory_requires_atomic_resolver_and_rechecks_runtime(self):
+        runtime = self.runtime("openai", OPENAI_MODELS, "connection_verified")
+        no_bound = RuntimeAIClientFactory(
+            runtime_state=_Runtime(runtime), credential_resolver=object()
+        )
+        with self.assertRaises(AIRuntimeBindingError):
+            no_bound.create_bound(_Action(runtime))
+
+        class ChangingCredentials(_Credentials):
+            def __init__(self, authority):
+                super().__init__(); self.authority = authority
+            def resolve_bound(self, credential_ref, expected_generation):
+                self.authority.resolved = ResolvedAIRuntime(
+                    "openai", OPENAI_MODELS, "openai.default", 8, 4,
+                    "connection_verified",
+                )
+                return super().resolve_bound(credential_ref, expected_generation)
+
+        authority = _Runtime(runtime)
+        with self.assertRaises(AIRuntimeBindingError):
+            RuntimeAIClientFactory(
+                runtime_state=authority,
+                credential_resolver=ChangingCredentials(authority),
+            ).create_bound(_Action(runtime))
 
 
 if __name__ == "__main__":

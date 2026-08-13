@@ -128,6 +128,8 @@ class PreparedOutbound:
     provider_id: str
     runtime_revision: int
     credential_generation: int
+    runtime_activation: str
+    runtime_task_models: tuple[tuple[str, str], ...]
     task: str
     task_models: tuple[tuple[str, str], ...]
     models: tuple[str, ...]
@@ -199,6 +201,7 @@ def _manifest_digest(
     scope: str,
     binding: RuntimeActionBinding,
     task: str,
+    runtime_task_models: tuple[tuple[str, str], ...],
     task_models: tuple[tuple[str, str], ...],
     models: tuple[str, ...],
     executor_id: str,
@@ -216,6 +219,7 @@ def _manifest_digest(
         "runtime_revision": binding.selection_revision,
         "credential_generation": binding.credential_generation,
         "activation": binding.activation,
+        "runtime_task_models": dict(runtime_task_models),
         "task": task,
         "task_models": dict(task_models),
         "models": list(models),
@@ -328,6 +332,7 @@ class PreparedActionService:
             scope=scope,
             binding=binding,
             task=task,
+            runtime_task_models=tuple(sorted(binding.task_models.items())),
             task_models=selected_task_models,
             models=selected_models,
             executor_id=executor_id,
@@ -346,6 +351,8 @@ class PreparedActionService:
             provider_id=binding.provider_id,
             runtime_revision=binding.selection_revision,
             credential_generation=binding.credential_generation,
+            runtime_activation=binding.activation,
+            runtime_task_models=tuple(sorted(binding.task_models.items())),
             task=task,
             task_models=selected_task_models,
             models=selected_models,
@@ -468,6 +475,8 @@ class PreparedActionService:
             binding.provider_id != action.provider_id
             or binding.selection_revision != action.runtime_revision
             or binding.credential_generation != action.credential_generation
+            or binding.activation != action.runtime_activation
+            or tuple(sorted(binding.task_models.items())) != action.runtime_task_models
             or binding.activation not in {"legacy_compatible", "connection_verified"}
             and action.scope != "capability_test"
             or self._task_models(

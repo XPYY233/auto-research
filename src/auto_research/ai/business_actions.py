@@ -7,10 +7,11 @@ import threading
 import time
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, ContextManager, Mapping, Protocol, Sequence
 
 from .prepared_actions import (
     ContentUnit,
+    PreparedActionError,
     PreparedActionService,
     PreparedOutbound,
     SCOPE_BYTE_CAPS,
@@ -69,6 +70,119 @@ class BusinessActionError(RuntimeError):
         }
 
 
+def _canonical_call_value(value: object) -> object:
+    nodes = [0]
+
+    def thaw(item: object, depth: int = 0) -> object:
+        nodes[0] += 1
+        if depth > 12 or nodes[0] > 2_000:
+            raise BusinessActionError("business_action_invalid")
+        if isinstance(item, Mapping):
+            output = {}
+            for key, child in item.items():
+                if (
+                    not isinstance(key, str)
+                    or not key
+                    or _SENSITIVE_KEY_RE.search(key)
+                ):
+                    raise BusinessActionError("business_action_invalid")
+                output[key] = thaw(child, depth + 1)
+            return output
+        if isinstance(item, Sequence) and not isinstance(item, (str, bytes, bytearray)):
+            return [thaw(child, depth + 1) for child in item]
+        if item is None or isinstance(item, (bool, int)):
+            return item
+        if isinstance(item, float):
+            if not math.isfinite(item):
+                raise BusinessActionError("business_action_invalid")
+            return item
+        if isinstance(item, str):
+            if _LOCAL_VALUE_RE.search(item):
+                raise BusinessActionError("business_action_invalid")
+            return item
+        raise BusinessActionError("business_action_invalid")
+
+    try:
+        encoded = json.dumps(
+            thaw(value),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        normalized = json.loads(encoded.decode("utf-8"))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise BusinessActionError("business_action_invalid") from exc
+    if len(encoded) > 4 * 1024 * 1024:
+        raise BusinessActionError("business_action_invalid")
+    return normalized
+
+
+def _freeze_call_value(value: object) -> object:
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {key: _freeze_call_value(child) for key, child in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_call_value(child) for child in value)
+    return value
+
+
+@dataclass(frozen=True)
+class PreparedBusinessCall:
+    method: str
+    task: str
+    messages: tuple[Mapping[str, Any], ...]
+    max_tokens: int
+    tools: tuple[Mapping[str, Any], ...] = ()
+    options: Mapping[str, Any] = MappingProxyType({})
+
+    def __post_init__(self) -> None:
+        if (
+            self.method not in {"json", "tool"}
+            or not isinstance(self.task, str)
+            or not self.task
+            or isinstance(self.max_tokens, bool)
+            or not isinstance(self.max_tokens, int)
+            or self.max_tokens < 1
+            or self.method == "json" and self.tools
+        ):
+            raise BusinessActionError("business_action_invalid")
+        messages = _canonical_call_value(list(self.messages))
+        tools = _canonical_call_value(list(self.tools))
+        options = _canonical_call_value(dict(self.options))
+        if not isinstance(messages, list) or not isinstance(tools, list) or not isinstance(options, dict):
+            raise BusinessActionError("business_action_invalid")
+        if self.method == "json":
+            if set(options) != {"thinking", "temperature"}:
+                raise BusinessActionError("business_action_invalid")
+            if options["thinking"] not in {None, True, False}:
+                raise BusinessActionError("business_action_invalid")
+        elif set(options) != {"temperature"}:
+            raise BusinessActionError("business_action_invalid")
+        temperature = options["temperature"]
+        if temperature is not None and (
+            isinstance(temperature, bool)
+            or not isinstance(temperature, (int, float))
+            or not math.isfinite(float(temperature))
+            or not 0 <= float(temperature) <= 1.5
+        ):
+            raise BusinessActionError("business_action_invalid")
+        object.__setattr__(self, "messages", _freeze_call_value(messages))
+        object.__setattr__(self, "tools", _freeze_call_value(tools))
+        object.__setattr__(self, "options", _freeze_call_value(options))
+
+    def canonical_dict(self) -> dict[str, object]:
+        return {
+            "method": self.method,
+            "task": self.task,
+            "messages": _canonical_call_value(self.messages),
+            "tools": _canonical_call_value(self.tools),
+            "options": _canonical_call_value(self.options),
+            "max_tokens": self.max_tokens,
+        }
+
+
 @dataclass(frozen=True)
 class BusinessActionDraft:
     """Server-assembled final envelope input; never accepted from a renderer."""
@@ -78,6 +192,7 @@ class BusinessActionDraft:
     estimated_calls: int
     max_calls: int
     max_tokens: int
+    call_plan: tuple[PreparedBusinessCall, ...]
 
     def __post_init__(self) -> None:
         if (
@@ -92,6 +207,12 @@ class BusinessActionDraft:
             or isinstance(self.max_tokens, bool)
             or not isinstance(self.max_tokens, int)
             or self.max_tokens < 1
+            or not isinstance(self.call_plan, tuple)
+            or not self.call_plan
+            or not all(isinstance(call, PreparedBusinessCall) for call in self.call_plan)
+            or len(self.call_plan) != self.estimated_calls
+            or len(self.call_plan) > self.max_calls
+            or sum(call.max_tokens for call in self.call_plan) > self.max_tokens
         ):
             raise BusinessActionError("business_action_invalid")
 
@@ -111,7 +232,13 @@ class BusinessActionExecutor(Protocol):
 
 
 class BusinessAIClientFactory(Protocol):
-    def create(self, *, max_attempts: int = 2) -> object: ...
+    def acquire_bound(
+        self, action: PreparedOutbound, *, max_attempts: int = 1
+    ) -> ContextManager[object]: ...
+
+
+class BusinessResultProjector(Protocol):
+    def project(self, result: Mapping[str, Any]) -> Mapping[str, Any]: ...
 
 
 class BusinessActionClock(Protocol):
@@ -167,6 +294,8 @@ class BudgetedBusinessAIClient:
         "__remaining_calls",
         "__remaining_tokens",
         "__settings",
+        "__plan",
+        "__position",
     )
     _PUBLIC_ATTRIBUTES = frozenset(
         {
@@ -196,6 +325,12 @@ class BudgetedBusinessAIClient:
             "_BudgetedBusinessAIClient__settings",
             SafeBusinessModelSettings(dict(action.task_models)),
         )
+        try:
+            plan = tuple(action.outbound["call_plan"])
+        except (KeyError, TypeError) as exc:
+            raise BusinessActionError("business_action_invalid") from exc
+        object.__setattr__(self, "_BudgetedBusinessAIClient__plan", plan)
+        object.__setattr__(self, "_BudgetedBusinessAIClient__position", 0)
 
     def __getattribute__(self, name: str) -> object:
         if name not in object.__getattribute__(self, "_PUBLIC_ATTRIBUTES"):
@@ -232,8 +367,13 @@ class BudgetedBusinessAIClient:
         thinking: bool | None = None,
         temperature: float | None = None,
     ) -> dict[str, Any]:
-        object.__getattribute__(self, "_reserve")(
-            task=task, max_tokens=max_tokens
+        authorized = object.__getattribute__(self, "_authorize")(
+            method="json",
+            task=task,
+            messages=messages,
+            tools=(),
+            options={"thinking": thinking, "temperature": temperature},
+            max_tokens=max_tokens,
         )
         try:
             client = object.__getattribute__(
@@ -243,11 +383,10 @@ class BudgetedBusinessAIClient:
         except AttributeError as exc:
             raise BusinessActionError("business_action_execution_failed") from exc
         return method(
-            messages,
-            task=task,
-            max_tokens=max_tokens,
-            thinking=thinking,
-            temperature=temperature,
+            authorized.messages,
+            task=authorized.task,
+            max_tokens=authorized.max_tokens,
+            **authorized.options,
         )
 
     def request_tool_message(
@@ -259,8 +398,13 @@ class BudgetedBusinessAIClient:
         max_tokens: int,
         temperature: float = 0.1,
     ) -> dict[str, Any]:
-        object.__getattribute__(self, "_reserve")(
-            task=task, max_tokens=max_tokens
+        authorized = object.__getattribute__(self, "_authorize")(
+            method="tool",
+            task=task,
+            messages=messages,
+            tools=tools,
+            options={"temperature": temperature},
+            max_tokens=max_tokens,
         )
         try:
             client = object.__getattribute__(
@@ -270,14 +414,35 @@ class BudgetedBusinessAIClient:
         except AttributeError as exc:
             raise BusinessActionError("business_action_execution_failed") from exc
         return method(
-            messages,
-            tools,
-            task=task,
-            max_tokens=max_tokens,
-            temperature=temperature,
+            authorized.messages,
+            authorized.tools,
+            task=authorized.task,
+            max_tokens=authorized.max_tokens,
+            **authorized.options,
         )
 
-    def _reserve(self, *, task: object, max_tokens: object) -> None:
+    def _authorize(
+        self,
+        *,
+        method: str,
+        task: object,
+        messages: object,
+        tools: object,
+        options: object,
+        max_tokens: object,
+    ) -> "AuthorizedCall":
+        position = object.__getattribute__(
+            self, "_BudgetedBusinessAIClient__position"
+        )
+        plan = object.__getattribute__(self, "_BudgetedBusinessAIClient__plan")
+        candidate = {
+            "method": method,
+            "task": task,
+            "messages": _canonical_call_value(messages),
+            "tools": _canonical_call_value(tools),
+            "options": _canonical_call_value(options),
+            "max_tokens": max_tokens,
+        }
         if (
             not isinstance(task, str)
             or task not in object.__getattribute__(
@@ -292,6 +457,8 @@ class BudgetedBusinessAIClient:
             or max_tokens > object.__getattribute__(
                 self, "_BudgetedBusinessAIClient__remaining_tokens"
             )
+            or position >= len(plan)
+            or _canonical_call_value(plan[position]) != candidate
         ):
             raise BusinessActionError("business_action_invalid")
         object.__setattr__(
@@ -308,6 +475,36 @@ class BudgetedBusinessAIClient:
                 self, "_BudgetedBusinessAIClient__remaining_tokens"
             ) - max_tokens,
         )
+        object.__setattr__(
+            self, "_BudgetedBusinessAIClient__position", position + 1
+        )
+        planned = _canonical_call_value(plan[position])
+        return AuthorizedCall(
+            method=planned["method"],
+            task=planned["task"],
+            messages=planned["messages"],
+            tools=planned["tools"],
+            options=planned["options"],
+            max_tokens=planned["max_tokens"],
+        )
+
+    def _assert_complete(self) -> None:
+        if object.__getattribute__(
+            self, "_BudgetedBusinessAIClient__position"
+        ) != len(object.__getattribute__(self, "_BudgetedBusinessAIClient__plan")):
+            raise BusinessActionError("business_action_invalid")
+
+
+@dataclass(frozen=True)
+class AuthorizedCall:
+    """Fresh plain copy of one call from the immutable authorized plan."""
+
+    method: str
+    task: str
+    messages: list[dict[str, Any]]
+    tools: list[dict[str, Any]]
+    options: dict[str, Any]
+    max_tokens: int
 
 
 @dataclass(frozen=True)
@@ -373,12 +570,14 @@ class BusinessPreparedActionRegistry:
         client_factory: BusinessAIClientFactory,
         assemblers: Mapping[str, BusinessActionAssembler],
         executors: Mapping[str, BusinessActionExecutor],
+        projectors: Mapping[str, BusinessResultProjector],
         clock: BusinessActionClock | None = None,
         receipt_capacity: int = MAX_EXECUTION_RECEIPTS,
     ) -> None:
         if (
             set(assemblers) != BUSINESS_ACTION_SCOPES
             or set(executors) != BUSINESS_ACTION_SCOPES
+            or set(projectors) != BUSINESS_ACTION_SCOPES
             or isinstance(receipt_capacity, bool)
             or not isinstance(receipt_capacity, int)
             or not 1 <= receipt_capacity <= MAX_EXECUTION_RECEIPTS
@@ -388,6 +587,7 @@ class BusinessPreparedActionRegistry:
         self._client_factory = client_factory
         self._assemblers = MappingProxyType(dict(assemblers))
         self._executors = MappingProxyType(dict(executors))
+        self._projectors = MappingProxyType(dict(projectors))
         self._clock = clock or SystemBusinessActionClock()
         self._receipt_capacity = receipt_capacity
         self._lock = threading.Lock()
@@ -409,21 +609,31 @@ class BusinessPreparedActionRegistry:
             raise BusinessActionError("business_action_prepare_failed") from exc
         if not isinstance(draft, BusinessActionDraft):
             raise BusinessActionError("business_action_prepare_failed")
-        if draft.max_calls > policy.max_calls or draft.max_tokens > policy.max_tokens:
+        if (
+            draft.max_calls > policy.max_calls
+            or draft.max_tokens > policy.max_tokens
+            or any(call.task not in policy.allowed_tasks for call in draft.call_plan)
+        ):
             raise BusinessActionError("business_action_invalid")
-        return self._prepared.prepare(
-            session_id=session_id,
-            scope=scope,
-            task=policy.task,
-            outbound=draft.outbound,
-            content_units=draft.content_units,
-            allowed_tasks=policy.allowed_tasks,
-            executor_id=policy.executor_id,
-            executor_version=policy.executor_version,
-            estimated_calls=draft.estimated_calls,
-            max_calls=draft.max_calls,
-            max_tokens=draft.max_tokens,
-        )
+        try:
+            return self._prepared.prepare(
+                session_id=session_id,
+                scope=scope,
+                task=policy.task,
+                outbound={
+                    "payload": draft.outbound,
+                    "call_plan": [call.canonical_dict() for call in draft.call_plan],
+                },
+                content_units=draft.content_units,
+                allowed_tasks=policy.allowed_tasks,
+                executor_id=policy.executor_id,
+                executor_version=policy.executor_version,
+                estimated_calls=draft.estimated_calls,
+                max_calls=draft.max_calls,
+                max_tokens=draft.max_tokens,
+            )
+        except PreparedActionError as exc:
+            raise BusinessActionError("business_action_prepare_failed") from exc
 
     def execute(self, action: PreparedOutbound) -> dict[str, object]:
         if not isinstance(action, PreparedOutbound):
@@ -445,14 +655,19 @@ class BusinessPreparedActionRegistry:
             # attempt must not be replayed into a second billable request.
             self._executed[action.action_id] = action.expires_at
         try:
-            client = BudgetedBusinessAIClient(
-                client=self._client_factory.create(max_attempts=1),
-                action=action,
-            )
-            result = self._executors[action.scope].execute(
-                action=action,
-                ai_client=client,
-            )
+            with self._client_factory.acquire_bound(
+                action, max_attempts=1
+            ) as raw_client:
+                client = BudgetedBusinessAIClient(
+                    client=raw_client,
+                    action=action,
+                )
+                result = self._executors[action.scope].execute(
+                    action=action,
+                    ai_client=client,
+                )
+                object.__getattribute__(client, "_assert_complete")()
+                result = self._projectors[action.scope].project(result)
         except BusinessActionError:
             raise
         except Exception as exc:
@@ -553,6 +768,7 @@ def _public_result(value: object) -> dict[str, object]:
 
 __all__ = [
     "BUSINESS_ACTION_SCOPES",
+    "AuthorizedCall",
     "BusinessAIClientFactory",
     "BusinessActionClock",
     "BusinessActionAssembler",
@@ -560,7 +776,9 @@ __all__ = [
     "BusinessActionError",
     "BusinessActionExecutor",
     "BusinessPreparedActionRegistry",
+    "BusinessResultProjector",
     "BudgetedBusinessAIClient",
     "SafeBusinessModelSettings",
+    "PreparedBusinessCall",
     "SystemBusinessActionClock",
 ]

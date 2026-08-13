@@ -41,8 +41,15 @@ from .prepared_actions import (
     SystemPreparedActionClock,
 )
 from .runtime_factory import RuntimeAIClientFactory, RuntimeCredentialResolver
+from .runtime_factory import (
+    AIExecutionLeaseAuthority,
+    AIRuntimeBindingError,
+    BoundCredentialResolver,
+    BoundRuntimeAction,
+)
 from .business_actions import (
     BUSINESS_ACTION_SCOPES,
+    AuthorizedCall,
     BusinessAIClientFactory,
     BusinessActionClock,
     BusinessActionAssembler,
@@ -50,7 +57,9 @@ from .business_actions import (
     BusinessActionError,
     BusinessActionExecutor,
     BusinessPreparedActionRegistry,
+    BusinessResultProjector,
     BudgetedBusinessAIClient,
+    PreparedBusinessCall,
     SafeBusinessModelSettings,
     SystemBusinessActionClock,
 )
@@ -98,7 +107,12 @@ __all__ = [
     "SystemPreparedActionClock",
     "RuntimeAIClientFactory",
     "RuntimeCredentialResolver",
+    "AIRuntimeBindingError",
+    "AIExecutionLeaseAuthority",
+    "BoundCredentialResolver",
+    "BoundRuntimeAction",
     "BUSINESS_ACTION_SCOPES",
+    "AuthorizedCall",
     "BusinessAIClientFactory",
     "BusinessActionClock",
     "BusinessActionAssembler",
@@ -106,7 +120,9 @@ __all__ = [
     "BusinessActionError",
     "BusinessActionExecutor",
     "BusinessPreparedActionRegistry",
+    "BusinessResultProjector",
     "BudgetedBusinessAIClient",
+    "PreparedBusinessCall",
     "SafeBusinessModelSettings",
     "SystemBusinessActionClock",
     "DESKTOP_AI_ROUTES",

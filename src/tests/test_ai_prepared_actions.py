@@ -137,6 +137,8 @@ class PreparedActionServiceTests(unittest.TestCase):
             session_id="session-1",
         )
         self.assertEqual(prepared.outbound["question"], "compare")
+        self.assertEqual(prepared.runtime_activation, "legacy_compatible")
+        self.assertEqual(prepared.runtime_task_models, tuple(sorted(MODELS.items())))
         self.assertEqual(prepared.task_models, (("librarian_synthesis", "deepseek-v4-pro"),))
         with self.assertRaises(TypeError):
             prepared.outbound["question"] = "changed"
