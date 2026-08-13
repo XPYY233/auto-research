@@ -626,7 +626,8 @@
         </div>
       </section>
 
-      <section class="view" id="view-manual">
+      <!-- Compatibility-only owner: retained for historical data handlers; intentionally absent from primary navigation. -->
+      <section class="view" id="view-manual" data-compatibility-view="manual-entry">
         <div class="view-head"><div><p class="eyebrow">MANUAL ENTRY</p><h2>补上自动抽取遗漏的数据</h2></div></div>
         <form class="manual-card" id="manual-form">
           <label class="span-2">所属文章
@@ -648,7 +649,8 @@
         </form>
       </section>
 
-      <section class="view" id="view-history">
+      <!-- Compatibility-only owner: retained for revision history; intentionally absent from primary navigation. -->
+      <section class="view" id="view-history" data-compatibility-view="revision-history">
         <div class="view-head">
           <div><p class="eyebrow">LEARNING TRAIL</p><h2>你确认过的修正</h2></div>
           <div class="history-tools">
@@ -664,15 +666,16 @@
     </main>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
-  <dialog class="source-dialog" id="source-dialog">
-    <div class="source-dialog-card">
+  <dialog class="source-dialog wb-dialog" id="source-dialog" aria-labelledby="source-dialog-title" aria-describedby="source-dialog-width-note">
+    <div class="source-dialog-card wb-dialog-surface">
       <header class="source-dialog-head">
         <div>
           <p class="eyebrow">SOURCE VIEWER</p>
-          <h3>高亮后的原文证据</h3>
+          <h3 id="source-dialog-title">高亮后的原文证据</h3>
         </div>
         <button class="dialog-close" type="button" data-close-source>关闭</button>
       </header>
+      <p class="wb-narrow-inspector-note" id="source-dialog-width-note"><strong>桌面宽度受限</strong><span>原文证据将纵向显示；关闭、打开 PDF 与页面滚动仍可使用。放宽窗口可同时比较定位图与整页位置。</span></p>
       <div class="source-dialog-meta" id="source-meta"></div>
       <div class="source-dialog-visuals">
         <figure class="source-dialog-image focus">
@@ -689,8 +692,9 @@
       </div>
     </div>
   </dialog>
-  <dialog class="visual-dialog evidence-workspace" id="visual-dialog">
+  <dialog class="visual-dialog evidence-workspace wb-dialog" id="visual-dialog" aria-labelledby="visual-dialog-title" aria-describedby="evidence-workspace-width-note">
     <div class="visual-dialog-card evidence-workspace-card">
+      <p class="wb-narrow-inspector-note" id="evidence-workspace-width-note"><strong>桌面宽度受限</strong><span>证据详情与只读解释将上下排列；关闭、原文与 PDF 按钮仍可使用。</span></p>
       <aside class="context-chat" id="context-chat" aria-label="当前证据 AI 对话" aria-hidden="false">
         <header class="context-chat-head">
           <div><p class="eyebrow">DEEPSEEK PRO · EVIDENCE CHAT</p><h2>围绕当前证据提问</h2></div>
@@ -763,8 +767,8 @@
       </section>
     </div>
   </dialog>
-  <dialog class="review-decision-dialog" id="review-decision-dialog">
-    <form class="review-decision-card" id="review-decision-form">
+  <dialog class="review-decision-dialog wb-dialog" id="review-decision-dialog" aria-labelledby="review-decision-title" aria-describedby="review-decision-description">
+    <form class="review-decision-card wb-dialog-surface" id="review-decision-form">
       <header>
         <div><p class="eyebrow">REVIEW DECISION</p><h3 id="review-decision-title">记录审核决定</h3></div>
         <button type="button" class="dialog-close" data-close-review-decision>关闭</button>

@@ -8,26 +8,6 @@
 @media(max-width:700px){.git-status{display:inline-flex;margin-top:14px}.article-strip{grid-template-columns:1fr}.article-strip div{border-right:0;border-bottom:1px solid #ccd8df}.article-strip a{padding:11px}.view-head{display:block}.view-actions{margin-top:12px}.compact-search input{width:100%}.review-split{height:65vh}.original-pane{height:55vh}.manual-card{grid-template-columns:1fr}.span-2{grid-column:auto}.history-card{grid-template-columns:1fr}}
 .source-open{border:0;padding:0;background:transparent;color:var(--blue);cursor:pointer;font-size:11px}
 .source-open:hover,.source-open:focus-visible{text-decoration:underline;outline:0}
-.source-dialog{width:min(1100px,calc(100vw - 40px));max-width:1100px;padding:0;border:0;border-radius:14px;background:transparent;box-shadow:0 28px 80px rgba(15,28,38,.35)}
-.source-dialog::backdrop{background:rgba(17,30,39,.55)}
-.source-dialog-card{background:#f7fafb;border:1px solid #cdd7dc;border-radius:14px;overflow:hidden}
-.source-dialog-head{display:flex;justify-content:space-between;gap:16px;align-items:start;padding:18px 22px;background:#ecf3f6;border-bottom:1px solid #d5e0e5}
-.source-dialog-head h3{margin:7px 0 0;font:600 22px/1.25 Georgia,"Songti SC",serif}
-.dialog-close{border:1px solid #c3d0d7;border-radius:999px;padding:8px 14px;background:#fff;color:var(--blue);cursor:pointer}
-.source-dialog-meta{display:grid;grid-template-columns:1.2fr 1fr;gap:10px;padding:16px 22px 0}
-.source-meta-card{padding:14px;background:#fff;border:1px solid #dbe3e7;border-radius:9px}
-.source-meta-card strong{display:block;font-size:12px}
-.source-meta-card p{margin:7px 0 0;color:#536572;font-size:12px;line-height:1.6;white-space:pre-wrap}
-.source-meta-card.emphasis{border-color:#f0cf98;background:#fff8ee}
-.source-meta-card.error{border-color:#e3c2bf;background:#fff7f6}
-.source-dialog-visuals{display:grid;grid-template-columns:1fr;gap:0}
-.source-dialog-image{padding:18px 22px;margin:0}
-.source-dialog-image figcaption{margin-bottom:10px;color:var(--muted);font:700 10px "IBM Plex Mono",monospace;letter-spacing:.08em}
-.source-dialog-image.focus{padding-bottom:0}
-.source-dialog-image img{display:block;width:100%;height:auto;border:1px solid #d0d9de;border-radius:10px;background:#fff}
-.source-dialog-actions{display:flex;justify-content:flex-end;padding:0 22px 20px}
-.source-dialog-actions a{color:#fff;text-decoration:none;padding:10px 16px;border-radius:999px;background:var(--blue);font-size:12px}
-@media(max-width:700px){.source-dialog{width:calc(100vw - 18px)}.source-dialog-head,.source-dialog-meta,.source-dialog-image,.source-dialog-actions{padding-left:14px;padding-right:14px}.source-dialog-meta{grid-template-columns:1fr}}
 .article-picker{display:grid;grid-template-columns:minmax(190px,240px) minmax(0,1fr);gap:12px 18px;align-items:end;margin:18px 0 18px;padding:16px 18px;border:1px solid #d2dce1;border-radius:9px;background:linear-gradient(135deg,#eef4f7,#fafcfd)}
 .article-picker small{display:block;color:var(--muted);font-size:10px}
 .article-picker strong{display:block;margin-top:4px;font:600 15px/1.4 Georgia,"Songti SC",serif}
@@ -134,9 +114,8 @@ body[data-focus-review="true"] .shell{display:block}body[data-focus-review="true
 /* Explicit negative and ambiguous review decisions */
 .review-progress-card dl{grid-template-columns:repeat(6,minmax(58px,1fr));min-width:500px}.edit-table tr.rejected td:first-child{box-shadow:inset 3px 0 var(--red)}.edit-table tr.ambiguous td:first-child{box-shadow:inset 3px 0 #c88a2d}.edit-table tr.rejected td{background:#fff8f7}.edit-table tr.ambiguous td{background:#fffaf0}
 .row-review-more{position:relative}.row-review-more summary{display:grid;place-items:center;padding:6px;border:1px solid #bdced7;border-radius:4px;background:#fff;color:var(--blue);cursor:pointer;list-style:none;font-size:10px}.row-review-more summary::-webkit-details-marker{display:none}.row-review-more[open] summary{border-color:var(--blue);box-shadow:0 0 0 2px var(--focus-ring)}.row-review-more button{margin-top:4px;width:100%}.row-review-more button[data-decision="rejected"]{color:var(--red);border-color:#dfbbb7;background:#fff7f6}.row-review-more button[data-decision="ambiguous"]{color:#8a5a16;border-color:#e2c48d;background:#fffaf0}.row-action button.reopen-action{color:#fff;border-color:#6d7f89;background:#6d7f89}
-.review-decision-dialog{width:min(560px,calc(100vw - 28px));padding:0;border:0;border-radius:13px;background:transparent;box-shadow:0 26px 70px rgba(15,28,38,.34)}.review-decision-dialog::backdrop{background:rgba(17,30,39,.52)}.review-decision-card{display:grid;gap:14px;padding:20px 22px 22px;border:1px solid #cdd9df;border-radius:13px;background:#f8fafb}.review-decision-card header{display:flex;justify-content:space-between;gap:16px;align-items:start}.review-decision-card h3{margin:5px 0 0;font:600 22px/1.25 Georgia,"Songti SC",serif}.review-decision-card>p{margin:0;padding:11px 12px;border-left:3px solid var(--orange);background:var(--surface-warm);color:#536572;font-size:12px;line-height:1.6}.review-decision-card textarea{min-height:90px}.review-decision-actions{display:flex;justify-content:flex-end;gap:9px}.review-decision-actions button{padding:9px 14px;border:1px solid #bdced7;border-radius:7px;background:#fff;color:var(--blue);cursor:pointer}.review-decision-actions .primary{border-color:var(--blue-deep);background:var(--blue-deep);color:#fff}
 @media(max-width:1100px){.review-progress-card dl{min-width:0}}
-@media(max-width:700px){.review-progress-card dl{grid-template-columns:repeat(2,1fr)}.review-decision-card{padding:17px}.review-decision-card h3{font-size:19px}}
+@media(max-width:700px){.review-progress-card dl{grid-template-columns:repeat(2,1fr)}}
 
 /* Article navigator: topic-first narrowing with a dedicated author search. */
 .paper-filter-grid{grid-template-columns:minmax(240px,1.7fr) minmax(180px,1fr) minmax(145px,.7fr) auto}
