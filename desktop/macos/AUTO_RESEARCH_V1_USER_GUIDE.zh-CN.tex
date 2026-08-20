@@ -1,0 +1,197 @@
+\documentclass[11pt,a4paper]{ctexart}
+\usepackage[a4paper,margin=2.1cm]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{longtable}
+\usepackage{tabularx}
+
+\definecolor{linkblue}{HTML}{0969DA}
+\hypersetup{colorlinks=true,linkcolor=linkblue,urlcolor=linkblue}
+\setlist{nosep,leftmargin=2em}
+\setlength{\parskip}{0.55em}
+\setlength{\parindent}{0pt}
+
+\title{Auto Research v1.0.0\\用户使用教程}
+\author{Auto Research 项目组}
+\date{2026 年 8 月}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\fbox{\parbox{0.9\textwidth}{
+本教程适用于 Apple Silicon Mac 上的 Auto Research v1.0.0（build 22）。
+本版由课题组内部渠道分发，采用 ad-hoc 签名且未经 Apple 公证；Windows 版尚未发布。
+}}
+\end{center}
+
+\tableofcontents
+\newpage
+
+\section{安装与首次打开}
+
+\subsection{安装前准备}
+\begin{enumerate}
+  \item 完全退出正在运行的 Auto Research。
+  \item 弹出旧的 Auto Research DMG，避免从旧磁盘映像再次打开旧版。
+  \item 打开随套件提供的 \texttt{SHA256SUMS.txt}，核对 DMG 和官方资料包的 SHA-256。
+  \item 打开 \texttt{Auto-Research-1.0.0-macOS-arm64.dmg}，将 \texttt{Auto Research.app} 拖入“应用程序”。如系统询问，选择“替换”。
+\end{enumerate}
+
+安装不会把论文库、私人实验或 API 密钥写进 App。应用、官方资料包和私人数据分别更新。
+
+\subsection{首次打开被 macOS 拦截时}
+
+本版没有 Developer ID 签名，也没有 Apple 公证。如首次双击被 Gatekeeper 拦截：
+
+\begin{enumerate}
+  \item 在“应用程序”中找到 \texttt{Auto Research.app}；
+  \item 按住 Control 点击 App，选择“打开”；
+  \item 在系统对话框中再次选择“打开”；
+  \item 如仍被拦截，前往“系统设置 → 隐私与安全性”，对 Auto Research 选择“仍要打开”。
+\end{enumerate}
+
+不要关闭 Gatekeeper、XProtect 或其他系统安全保护。若来源和校验值不一致，请停止安装并联系维护者。
+
+\subsection{确认版本与唯一应用}
+
+打开“设置 → 关于”，应显示 \textbf{v1.0.0 / build 22}。应用程序目录中只应保留一个可启动的 \texttt{Auto Research.app}。旧版回退副本由维护流程保存为不可直接启动的 \texttt{.app.rollback}。
+
+\section{认识 Fusion 科研工作台}
+
+主界面采用四区工作台：左侧活动栏、上下文侧栏、中央标签与内容区、右侧证据检查器，底部显示资料库与任务状态。
+
+\begin{longtable}{p{2.4cm}p{10.5cm}}
+\toprule
+入口 & 用途 \\
+\midrule
+文献 & 导入 PDF、选择当前论文、开始自动提取、查看四类证据和 PDF。 \\
+搜索 & 对本机工作区、官方资料、私人实验或全部资料源进行精确检索；使用图书管理员。 \\
+实验 & 选择 CSV、TSV 或 XLSX，检查工作表、可选 AI 预填，并一次确认写入私人库。 \\
+资料包 & 导入/回退官方资料包；导出或导入论文集合包和私人实验包。 \\
+设置 & 日间/夜间主题、界面密度、AI 提供商、模型与 API 密钥。 \\
+\bottomrule
+\end{longtable}
+
+常用快捷键：\texttt{Command+1...4} 切换四个入口，\texttt{Command+K} 打开命令面板，\texttt{Command+,} 打开设置，\texttt{Esc} 关闭对话框、抽屉或 PDF 阅读器。
+
+\section{导入官方资料包}
+
+\begin{enumerate}
+  \item 打开“资料包”。
+  \item 在“官方资料库”区域选择“导入官方资料包”。
+  \item 选择套件中的 \texttt{auto-research-internal-evidence-1.0.0.aresearch}。
+  \item 等待任务完成。首次应显示“已安装”；重复导入同一活动版本应显示“已在使用”，这属于成功结果。
+  \item 转到“搜索”，选择“官方资料”，输入材料、物理量或实验条件进行检索。
+\end{enumerate}
+
+官方资料包经过签名和完整性审计，只读进入官方来源。导入失败不会覆盖当前活动资料库。
+
+\section{文献处理：从 PDF 到证据}
+
+\subsection{导入 PDF}
+\begin{enumerate}
+  \item 打开“文献”。
+  \item 点击顶部显眼的“导入 PDF”。
+  \item 选择论文 PDF。导入成功后，论文出现在左侧目录并成为当前论文。
+\end{enumerate}
+
+\subsection{开始自动提取}
+\begin{enumerate}
+  \item 确认中央区域显示正确的当前论文。
+  \item 点击“开始自动提取”。
+  \item 纯本地步骤不会调用模型；实际需要 AI 时，应用会先显示提供商、发送范围、模型与可能费用。
+  \item 只有明确确认后才会调用模型。取消确认即零调用。
+  \item 等待任务完成后检查测量条目、研究结论、完整表格和论文图片四类证据。
+\end{enumerate}
+
+已有提取结果的论文若需要重扫，应用会再次明确说明费用与覆盖边界，不会静默重复调用。
+
+\subsection{查看 PDF、图片与表格}
+
+在证据详情中点击“查看原文”，PDF 会在中央阅读器打开。点击“返回证据详情”或按 \texttt{Esc} 返回原位置。表格与图片使用真实安全资源；没有原图时会明确显示“未提供”，不会生成占位图片或编造数据。
+
+\section{搜索与图书管理员}
+
+\subsection{精确检索}
+
+选择资料源后输入关键词。结果严格保持四类证据：测量条目、研究结论、完整表格、论文图片。
+
+\begin{itemize}
+  \item 点击结果，在中央打开完整详情；右侧显示来源、页码和证据状态。
+  \item 单条证据可导出为 CSV 或 XLSX；图片可下载原图。
+  \item 本机文献工作区的测量与结论可按当前检索批量导出。
+  \item 表格、图片、官方资料与私人资料不伪装成工作区批量导出；使用单条导出或资料包导出。
+\end{itemize}
+
+\subsection{图书管理员}
+
+点击搜索栏旁的“图书管理员”，输入研究问题。图书管理员只检索官方文献库，不读取私人实验。第一次模型调用前会展示问题、有限结构化证据、提供商、模型与可能费用；取消即不发送。
+
+回答中的证据编号可以回到对应结果。若条件含糊或证据不足，应用会要求澄清，而不是编造定量结论。
+
+\section{导入个人实验数据}
+
+\begin{enumerate}
+  \item 打开“实验”，点击顶部“选择 CSV / TSV / XLSX”。
+  \item 选择文件后，中央区域显示真实工作表样例、列名和数据类型；文件路径不会进入页面。
+  \item 切换工作表，检查项目、样品、批次、方法，以及每列的角色、物理意义和单位。
+  \item “AI 辅助预填”是可选项。调用前会说明只发送工作表名、列信息、本地初步语义和最多 5 行样例；不会发送完整表格、路径或 API 密钥。
+  \item 修改不准确的建议，浏览整页后点击一次“确认并导入”。AI 不能代替这次人工确认。
+  \item 应用会转到“搜索 → 我的实验”。打开表格结果即可分页查看真实行列、条件和已核验定义。
+\end{enumerate}
+
+私人数据不会覆盖官方资料，也不会进入图书管理员。
+
+\section{导出与分享}
+
+\subsection{论文集合包}
+
+在“资料包 → 论文集合导出”中选择当前论文或全部论文，先生成计划，再逐篇确认非开放许可 PDF 的课题组内部分享权利。计划只计算范围和大小；必须继续点击“选择保存位置并导出论文集合”，文件才会真正生成。
+
+\subsection{私人实验包}
+
+私人实验包只包含已经确认并可检索的记录以及对应原始 CSV/TSV/XLSX，不包含草稿、AI 建议、路径或密钥。点击“生成导出计划”后，还要点击“选择保存位置并导出私人实验”。
+
+\subsection{用户资料包的安全边界}
+
+用户资料包使用 SHA-256 完整性校验，但\textbf{不加密，也不认证发送者身份}。导出内容只能通过可信课题组渠道传输。真实接收时，必须通过独立渠道向发送者核对完整的 64 位 SHA-256；与资料包放在同一目录的 \texttt{.sha256} 文件只能帮助发现传输损坏，不能证明发送者身份。
+
+\section{设置 AI 提供商与 API 密钥}
+
+本版支持受信目录中的 DeepSeek 和 OpenAI，并为不同任务固定选择兼容模型；不接受自定义 API 地址。
+
+\begin{enumerate}
+  \item 打开“设置 → AI 与 API 密钥”。
+  \item 选择提供商与模型，点击“保存提供商与模型”。
+  \item 粘贴 API 密钥并点击“安全保存密钥”。密钥只进入当前电脑的私有加密存储，页面不会回显。
+  \item “验证连接”会先展示调用模型和最多调用次数；确认后才联网并可能产生少量费用。
+  \item 每类真实 AI 功能仍会在首次调用前单独说明发送范围。设置页不会授予永久全局同意。
+\end{enumerate}
+
+没有 API 密钥时，资料包管理、文献浏览、精确检索和不依赖模型的本地步骤仍可使用。
+
+\section{日间、夜间与窗口布局}
+
+在“设置 → 外观”选择跟随系统、日间或夜间，并选择舒适或紧凑密度。设置只改变界面，不改变论文、实验值、单位、搜索或导出结果。
+
+较窄窗口中，检查器和上下文栏会变成抽屉；按 \texttt{Esc} 关闭并恢复焦点。窗口过窄时应增大窗口，避免同时展开多个抽屉。
+
+\section{常见问题}
+
+\begin{description}[style=nextline]
+  \item[一直显示“正在读取”怎么办？] 等待数秒后仍未结束，可切换到其他入口再返回；若出现“暂不可用”，使用页面中的重试按钮。不要重复快速点击导入或收费动作。
+  \item[官方资料包重复导入是不是失败？] 不是。“已在使用”表示内容经过复核且当前已经启用。
+  \item[为什么某条记录没有图片或 PDF？] 资料源可能只包含结构化证据。应用不会用占位内容冒充真实资源。
+  \item[为什么生成计划后没有文件？] 计划只是导出前的范围、权利和大小检查。还需点击“选择保存位置并导出”。
+  \item[AI 失败会损坏资料吗？] 不会。AI 建议不自动确认；提取、私人导入和资料包写入均有独立提交门，失败不会覆盖现有官方库或私人库。
+  \item[如何回到旧版本？] 不要手工覆盖数据库。使用维护者保留的不可启动回退副本和对应发布说明进行受控恢复。
+\end{description}
+
+\section{发布边界}
+
+v1.0.0 表示 Mac 产品流程与发布制品达到本次课题组稳定门，不表示 60 篇固定语料全部完成科学人工复核，也不表示 App 已经 Apple 公证或通过 App Store 审核。官方资料包仅限课题组内部使用；Windows 安装版将在 Mac 主流程进一步确认后另行开发。
+
+\end{document}
