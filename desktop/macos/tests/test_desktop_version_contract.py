@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 DESKTOP_ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +13,7 @@ if str(DESKTOP_ROOT) not in sys.path:
     sys.path.insert(0, str(DESKTOP_ROOT))
 
 import launcher  # noqa: E402
+import build_manifest as desktop_build_manifest  # noqa: E402
 
 
 class DesktopVersionContractTests(unittest.TestCase):
@@ -78,6 +81,67 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn("CFBundleShortVersionString", command)
         self.assertIn("CFBundleVersion", command)
         self.assertIn("${PREVIOUS_SHORT_VERSION}-build${PREVIOUS_BUILD_NUMBER}", command)
+        self.assertIn("macOS 课题组稳定版构建器", command)
+        self.assertIn("ad-hoc 签名，未经 Apple 公证", command)
+        self.assertNotIn("开发预览构建器", command)
+        self.assertNotIn("正式用户端目标为 Windows", command)
+
+    def test_current_distribution_copy_is_stable_mac_release_not_preview(self) -> None:
+        build_command = (DESKTOP_ROOT / "build_app.command").read_text(encoding="utf-8")
+        dmg_command = (DESKTOP_ROOT / "make_dmg.command").read_text(encoding="utf-8")
+        version_command = (DESKTOP_ROOT / "查看当前桌面版本.command").read_text(
+            encoding="utf-8"
+        )
+        current_readme = (DESKTOP_ROOT / "README.md").read_text(encoding="utf-8")
+        changelog_current = (DESKTOP_ROOT / "CHANGELOG.md").read_text(encoding="utf-8").split(
+            "## 0.4.0-preview.1", 1
+        )[0]
+
+        for text in (build_command, dmg_command, version_command, current_readme, changelog_current):
+            self.assertNotIn("正式用户端目标为 Windows", text)
+            self.assertNotIn("稳定演示预览", text)
+        self.assertNotIn("Auto Research Preview", dmg_command)
+        self.assertIn('-volname "Auto Research"', dmg_command)
+        self.assertIn("manifest['desktop_version']", version_command)
+        self.assertIn("manifest.get('build_number'", version_command)
+        self.assertIn("课题组稳定版", version_command)
+        self.assertIn("Apple Silicon", current_readme)
+        self.assertIn("未经 Apple 公证", current_readme)
+        self.assertIn("Windows 暂停且未发布", current_readme)
+
+    def test_build_manifest_records_the_distribution_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_root = Path(temp_dir)
+            desktop_root = project_root / "desktop" / "macos"
+            desktop_root.mkdir(parents=True)
+            (desktop_root / "version.json").write_text(
+                json.dumps(
+                    {
+                        "desktop_version": "1.0.0",
+                        "build_number": "22",
+                        "target": "macOS arm64 Auto Research workbench",
+                        "product_target": "macOS research workbench; Windows release paused",
+                        "data_mode": "workspace-schema-v12-plus-private-library",
+                        "minimum_evidence_schema": 12,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(desktop_build_manifest, "git", side_effect=["", "abc123", ""]),
+                mock.patch.object(desktop_build_manifest, "core_release", return_value="1.0.0"),
+            ):
+                manifest = desktop_build_manifest.build_manifest(project_root)
+
+        self.assertEqual(manifest["desktop_version"], "1.0.0")
+        self.assertEqual(manifest["build_number"], "22")
+        self.assertEqual(manifest["release_channel"], "research-group-stable")
+        self.assertEqual(manifest["supported_architecture"], "arm64")
+        self.assertEqual(manifest["code_signing"], "ad-hoc")
+        self.assertFalse(manifest["apple_notarized"])
+        self.assertFalse(manifest["windows_released"])
+        self.assertFalse(manifest["public_distribution_ready"])
+        self.assertIn("build 22", manifest["publication_note"])
 
     def test_fusion_installer_uses_a_zsh_safe_transaction_exit_variable(self) -> None:
         command = (DESKTOP_ROOT / "install_fusion_review.command").read_text(

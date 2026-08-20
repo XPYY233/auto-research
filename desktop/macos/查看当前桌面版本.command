@@ -30,11 +30,16 @@ print(f"核心提交：{manifest['core_commit'][:12]}")
 print(f"核心产品版本：{manifest['core_release']}")
 print(f"构建时间：{manifest['built_at']}")
 print(f"目标设备：{manifest['target']}")
-print(f"未来产品目标：{manifest.get('product_target', '未记录')}")
+print(f"产品边界：{manifest.get('product_target', '未记录')}")
 print(f"内置 Python：{manifest['python_runtime']}")
 print(f"构建时工作树：{'干净、可复现' if manifest['worktree_clean'] else '包含未提交开发内容'}")
 print("科学数据：保留在外部工作区，没有打包进应用")
-print("发布状态：macOS 稳定演示预览，尚未正式签名与公证")
+print(
+    f"发布状态：macOS v{manifest['desktop_version']} "
+    f"build {manifest.get('build_number', '未记录')} 课题组稳定版"
+)
+print("签名状态：ad-hoc 签名，未经 Apple 公证")
+print("Windows 状态：暂停且未发布，当前没有 Windows 安装版")
 PY
 
 echo

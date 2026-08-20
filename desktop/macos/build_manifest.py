@@ -36,6 +36,7 @@ def build_manifest(project_root: Path) -> dict[str, object]:
         "manifest_version": 1,
         "built_at": datetime.now(timezone.utc).isoformat(),
         "desktop_version": desktop_version["desktop_version"],
+        "build_number": desktop_version["build_number"],
         "target": desktop_version["target"],
         "product_target": desktop_version["product_target"],
         "data_mode": desktop_version["data_mode"],
@@ -48,9 +49,16 @@ def build_manifest(project_root: Path) -> dict[str, object]:
         "worktree_clean": not bool(dirty),
         "scientific_data_bundled": False,
         "public_distribution_ready": False,
+        "release_channel": "research-group-stable",
+        "supported_architecture": "arm64",
+        "code_signing": "ad-hoc",
+        "apple_notarized": False,
+        "windows_released": False,
         "publication_note": (
-            "macOS development preview only; Windows is the production target; "
-            "production evidence remains external."
+            f"macOS v{desktop_version['desktop_version']} build "
+            f"{desktop_version['build_number']} research-group stable release for "
+            "Apple Silicon; ad-hoc signed and not Apple-notarized; Windows release "
+            "is paused and unpublished; production evidence remains external."
         ),
     }
 

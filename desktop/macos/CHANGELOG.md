@@ -1,5 +1,14 @@
 # macOS Desktop Changelog
 
+## 1.0.0 — 2026-08-21
+
+- 发行身份升级为 macOS `1.0.0` / build `22` 课题组稳定版，目标设备为 Apple Silicon Mac。
+- Fusion 科研工作台作为唯一主界面，集中承载文献导入与分阶段提取、四类证据详情、精确检索、Librarian V3、个人实验导入、资料包管理和 BYOK 设置。
+- App 与 DMG 使用 ad-hoc 签名，未使用 Developer ID，未经 Apple 公证，不通过 App Store 分发。
+- 首次打开如被 Gatekeeper 拦截，使用访达的 Control 点击“打开”，或在“系统设置 → 隐私与安全性”中选择“仍要打开”。
+- Windows 开发与发布暂停，本版没有 Windows 安装包。
+- 科学 SQLite、PDF、图片、用户私人库和开发者凭据不打包进 App；稳定发行不代表固定语料已全部完成或科学内容已全部人工验证。
+
 ## 0.4.0-preview.1 — 未发布
 
 - 新增 macOS 原生 `.aresearch` 文件选择器；网页只接收短期 `selection_id`，不接收或返回本机路径。

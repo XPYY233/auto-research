@@ -31,9 +31,10 @@ if ! "${PYTHON_BIN}" "${PROJECT_ROOT}/scripts/sync_release_contract.py"; then
   exit 2
 fi
 
-echo "Auto Research macOS 开发预览构建器"
+echo "Auto Research macOS 课题组稳定版构建器"
 echo "桌面版本: ${DESKTOP_VERSION}"
-echo "当前构建设备: Apple Silicon Mac（正式用户端目标为 Windows）"
+echo "目标设备: Apple Silicon Mac（arm64）"
+echo "签名边界: ad-hoc 签名，未经 Apple 公证"
 echo
 
 if [[ -z "${PYTHON_BIN}" || ! -x "${PYTHON_BIN}" ]]; then
@@ -42,14 +43,14 @@ if [[ -z "${PYTHON_BIN}" || ! -x "${PYTHON_BIN}" ]]; then
 fi
 
 if [[ "$(uname -m)" != "arm64" ]]; then
-  echo "第一阶段只允许在 Apple Silicon（arm64）Mac 上构建。"
+  echo "当前 macOS 发行版只允许在 Apple Silicon（arm64）Mac 上构建。"
   exit 2
 fi
 
 DIRTY_STATE="$(git status --porcelain --untracked-files=all)"
 if [[ -n "${DIRTY_STATE}" && "${AUTO_RESEARCH_ALLOW_DIRTY_BUILD:-0}" != "1" ]]; then
   echo "项目还有未提交改动，因此没有生成可能混合多个对话的桌面版本。"
-  echo "请先让所有 Codex 对话完成、测试并提交，再运行“更新桌面版.command”。"
+  echo "请先让所有 Codex 对话完成、验证并提交，再运行“更新桌面版.command”。"
   echo
   echo "当前未完成文件："
   echo "${DIRTY_STATE}"
@@ -121,7 +122,8 @@ fi
 echo
 echo "构建完成：${APP_PATH}"
 echo "上一版（如有）保存在：${PREVIOUS_ROOT}"
-echo "现在可以双击应用测试；它仍使用当前项目的数据工作区，不是 Windows 正式发行版。"
+echo "现在可以打开应用；科学数据仍保留在外部工作区，不会烘焙进 App。"
+echo "Windows 发行已暂停，当前没有 Windows 安装版。"
 
 trap - EXIT
 if [[ -t 0 ]]; then
