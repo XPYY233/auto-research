@@ -119,7 +119,7 @@ class FusionReviewUIContractTests(unittest.TestCase):
         for marker in (
             "select_personal_data_file", 'personalPreview:"/api/desktop/personal-imports/preview"',
             "personal-import-preview-v1", "personal-import-suggestion-v1", "/reviewed-import",
-            "reviewed:true", "collectPersonalDraft", "安全预览完成", "一次确认", "indexable!==true",
+            "reviewed:true", "collectPersonalDraft", "受限文件检查", "一次确认", "indexable!==true",
             'row[column.source_name]', '中央顶部“导入 PDF”',
         ):
             self.assertIn(marker, self.index + self.runtime)
@@ -136,6 +136,99 @@ class FusionReviewUIContractTests(unittest.TestCase):
             self.assertIn(marker, self.index + self.runtime)
         self.assertNotIn("base_url", self.runtime)
         self.assertNotIn("chat_endpoint", self.runtime)
+
+    def test_package_center_has_complete_safe_sequences(self) -> None:
+        for element_id in (
+            "fusion-package-official-select", "fusion-package-installed",
+            "fusion-package-literature-plan", "fusion-package-literature-export",
+            "fusion-package-personal-plan", "fusion-package-personal-export",
+            "fusion-package-user-select", "fusion-package-user-sha",
+            "fusion-package-checksum-ack", "fusion-package-unencrypted-ack",
+            "fusion-package-source-ack", "fusion-package-user-import",
+            "fusion-package-jobs",
+        ):
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        for marker in (
+            'select_evidence_package', 'select_package_export_destination',
+            '"/api/desktop/evidence-packages/import"',
+            '"/api/desktop/evidence-packages/rollback"',
+            '"/api/desktop/package-center/export-plan"',
+            '"/api/desktop/package-center/export"',
+            '"/api/desktop/package-center/inspect"',
+            '"/api/desktop/package-center/import"',
+            'expected_sha:', 'checksum_ack:true', 'keep_conflicts:',
+            'unencrypted_ack:true', 'unauthenticated_source_ack:true',
+            'internal_use_only_ack:true', 'paper_rights:paperRights',
+            'plan.exceeds_size_limit===true', 'await waitPackageJob',
+        ):
+            self.assertIn(marker, self.runtime)
+        export_body = re.search(
+            r"async function exportPlannedPackage\(kind\)\{(?P<body>.*?)\n  function updateUserPackageImportButton",
+            self.runtime,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(export_body)
+        body = export_body.group("body")
+        self.assertLess(body.index("plan_token"), body.index("choosePackageDestination"))
+        self.assertLess(body.index("choosePackageDestination"), body.index("package-center/export"))
+        self.assertIn("选择保存位置并导出", self.index)
+        self.assertIn("2 GB", self.runtime)
+        self.assertIn("另一条可信渠道", self.index + self.runtime)
+        self.assertIn("未加密", self.index + self.runtime)
+        self.assertIn("不认证发送者身份", self.index + self.runtime)
+
+    def test_selected_evidence_ai_is_workspace_numeric_only(self) -> None:
+        for element_id in (
+            "fusion-evidence-ai-question", "fusion-evidence-ai",
+            "fusion-evidence-ai-reason", "fusion-evidence-ai-output",
+        ):
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        for marker in (
+            'preparedAuthorization("selected_evidence_chat"',
+            'executePrepared("selected_evidence_chat"',
+            'entity_type:identity.entityType', 'entity_id:identity.entityId',
+            'row.sourceScope!=="workspace"', 'Number.isSafeInteger(candidate)',
+        ):
+            self.assertIn(marker, self.runtime)
+        program = f"""
+globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
+const api=globalThis.AutoResearchFusion,assert=require('assert');
+api.state.view='search';
+api.state.selectedEvidence={{type:'item',sourceScope:'workspace',itemId:17}};
+assert.deepEqual(api.selectedEvidenceAIIdentity(),{{key:'item:17',entityType:'item',entityId:17}});
+api.state.selectedEvidence={{type:'figure',sourceScope:'workspace',assetId:23}};
+assert.equal(api.selectedEvidenceAIIdentity().entityId,23);
+api.state.selectedEvidence={{type:'item',sourceScope:'official',itemId:17}};
+assert.equal(api.selectedEvidenceAIIdentity(),null);
+api.state.selectedEvidence={{type:'item',sourceScope:'private',itemId:17}};
+assert.equal(api.selectedEvidenceAIIdentity(),null);
+api.state.selectedEvidence={{type:'item',sourceScope:'workspace',itemId:'17'}};
+assert.equal(api.selectedEvidenceAIIdentity(),null);
+api.state.selectedEvidence={{type:'figure',sourceScope:'workspace',assetId:-1}};
+assert.equal(api.selectedEvidenceAIIdentity(),null);
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_personal_starts_empty_and_user_copy_is_release_neutral(self) -> None:
+        for marker in (
+            'id="fusion-personal-empty"', "尚未选择实验文件",
+            "选择一份真实实验表格开始", 'id="fusion-select-data-file-empty"',
+        ):
+            self.assertIn(marker, self.index)
+        self.assertNotIn("syntheticSheets", self.runtime)
+        self.assertNotIn("W-Ta_nanoindentation_demo", self.index + self.runtime)
+        self.assertNotIn('renderSheet("hardness")', self.runtime)
+        for forbidden in (
+            "体验版", "合成示例", "后续版本", "功能恢复",
+            "测试连接", "能力测试", "受控测试连接", "0.9.2-preview",
+        ):
+            self.assertNotIn(forbidden, self.index + self.runtime)
+        self.assertIn('uiMode:"/api/ui-mode"', self.runtime)
+        self.assertIn("loadReleaseInfo", self.runtime)
+        self.assertEqual(self.runtime.count("async function request("), 1)
 
     def test_fusion_layout_accessibility_and_responsive_contract(self) -> None:
         for marker in (
