@@ -73,7 +73,7 @@
         <section class="fusion-context-view" data-context-view="package" hidden>
           <p class="fusion-section-label">资料库</p>
           <div class="fusion-tree-row active static"><span>官方资料库</span><b>体验版未读取</b></div>
-          <div class="fusion-tree-row static"><span>历史版本</span><b>0.9.2+ 恢复</b></div>
+          <div class="fusion-tree-row static"><span>历史版本</span><b>后续版本恢复</b></div>
           <p class="fusion-section-label">安全边界</p>
           <div class="fusion-context-note">签名 App、官方资料包与私人实验库彼此独立。体验版不会执行导入、回退或导出。</div>
         </section>
@@ -90,7 +90,7 @@
       <section class="fusion-editor" id="fusion-editor" tabindex="-1">
         <div class="fusion-tabs" role="tablist" aria-label="中央编辑区标签">
           <button type="button" class="fusion-tab active" role="tab" aria-selected="true" tabindex="0" data-tab="primary"><span id="fusion-primary-tab-label">当前论文</span></button>
-          <button type="button" class="fusion-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="detail" disabled data-fusion-disabled><span id="fusion-detail-tab-label">证据详情</span></button>
+          <button type="button" class="fusion-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="detail" aria-controls="fusion-evidence-detail" disabled><span id="fusion-detail-tab-label">证据详情</span></button>
         </div>
 
         <section class="fusion-view active" id="view-paper" data-view-panel="paper" aria-label="文献工作区">
@@ -143,9 +143,9 @@
         <section class="fusion-view" id="view-package" data-view-panel="package" hidden aria-label="资料包工作区">
           <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">版本</button><div><strong>资料包中心</strong><small>冻结状态快照 · 不执行文件操作</small></div><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">安全边界</button></header>
           <div class="fusion-scroll fusion-package-list">
-            <section><header><span>OFFICIAL</span><strong>官方资料库</strong><em>体验版未读取</em></header><dl><div><dt>当前版本</dt><dd>—</dd></div><div><dt>证据数量</dt><dd>—</dd></div><div><dt>说明</dt><dd>0.9.2+ 恢复</dd></div></dl><button disabled data-fusion-disabled>更换官方资料包 · 0.9.2+</button></section>
-            <section><header><span>PRIVATE</span><strong>我的实验资料</strong><em>本机私人</em></header><p>实验页可安全预览并核验导入私人库；本资料包页暂不提供批量导入、导出或覆盖操作。</p><button disabled data-fusion-disabled>批量导入 / 导出 · 0.9.2+</button></section>
-            <section class="fusion-placeholder-actions"><button disabled data-fusion-disabled>回退资料包 · 0.9.2+</button><button disabled data-fusion-disabled>统一导出中心 · 0.9.2+</button></section>
+            <section><header><span>OFFICIAL</span><strong>官方资料库</strong><em>体验版未读取</em></header><dl><div><dt>当前版本</dt><dd>—</dd></div><div><dt>证据数量</dt><dd>—</dd></div><div><dt>说明</dt><dd>后续版本恢复</dd></div></dl><button disabled data-fusion-disabled>更换官方资料包 · 后续版本</button></section>
+            <section><header><span>PRIVATE</span><strong>我的实验资料</strong><em>本机私人</em></header><p>实验页可安全预览并核验导入私人库；本资料包页暂不提供批量导入、导出或覆盖操作。</p><button disabled data-fusion-disabled>批量导入 / 导出 · 后续版本</button></section>
+            <section class="fusion-placeholder-actions"><button disabled data-fusion-disabled>回退资料包 · 后续版本</button><button disabled data-fusion-disabled>统一导出中心 · 后续版本</button></section>
           </div>
         </section>
 
@@ -156,15 +156,30 @@
             <section data-settings-panel="language"><h2>语言与区域</h2><div class="fusion-setting-row"><div><strong>简体中文</strong><small>当前完整支持</small></div><span>已启用</span></div><div class="fusion-setting-row muted"><div><strong>English</strong><small>计划支持</small></div><span>不可用</span></div></section>
             <section data-settings-panel="ai"><h2>AI 与 API 密钥</h2><p>只允许内置的 DeepSeek / OpenAI 受信目录与固定模型；密钥保存到系统安全凭据存储，不会回显或写入页面缓存。</p><p class="fusion-settings-status" id="fusion-ai-settings-status" aria-live="polite">正在读取受信提供商状态…</p><div class="fusion-setting-row"><div><strong>提供商</strong><small>不接受自定义 URL</small></div><select id="fusion-ai-provider" disabled></select></div><div id="fusion-ai-models" class="fusion-ai-models"></div><div class="fusion-setting-row"><div><strong>API 密钥</strong><small id="fusion-ai-credential-state">尚未读取</small></div><input id="fusion-ai-key" type="password" autocomplete="off" maxlength="4096" placeholder="粘贴后安全保存；不会回显"></div><div class="fusion-placeholder-actions"><button type="button" id="fusion-ai-model-save" disabled>保存提供商与模型</button><button type="button" id="fusion-ai-key-save" disabled>安全保存密钥</button><button type="button" id="fusion-ai-key-delete" disabled>删除密钥</button><button type="button" id="fusion-ai-test" disabled>受控测试连接</button></div><small id="fusion-ai-test-plan">读取设置后显示精确测试调用上限。</small></section>
             <section data-settings-panel="data"><h2>数据与资料库</h2><p>文献检索使用公开安全 DTO；实验文件先在本机受限预览，只有你集中核验并确认后才写入私人库。</p></section>
-            <section data-settings-panel="about"><h2>关于</h2><div class="fusion-setting-row"><div><strong>Auto Research 0.9.1-preview.2</strong><small>build 20 · Fusion 功能恢复预览</small></div><span>macOS 内部预览</span></div><p>本版恢复文献、搜索、个人实验与受信 AI 设置的核心工作流；资料包管理、导出中心与 Windows 发布仍未在本预览中启用。</p></section>
+            <section data-settings-panel="about"><h2>关于</h2><div class="fusion-setting-row"><div><strong>Auto Research 0.9.2-preview.1</strong><small>build 21 · Fusion 真实视觉证据预览</small></div><span>macOS 内部预览</span></div><p>本版恢复四类证据的中央详情、真实表格与论文图片截图，以及工作台内 PDF 返回链；资料包导出中心与 Windows 发布仍未在本预览中启用。</p></section>
           </div>
+        </section>
+
+        <section class="fusion-evidence-detail" id="fusion-evidence-detail" role="tabpanel" aria-labelledby="fusion-detail-tab-label" hidden>
+          <header class="fusion-detail-toolbar">
+            <button type="button" id="fusion-detail-back">← 返回证据列表</button>
+            <div><strong id="fusion-detail-heading">证据详情</strong><small id="fusion-detail-identity">公开安全字段</small></div>
+            <span class="fusion-spacer"></span>
+            <button type="button" id="fusion-detail-open-pdf" disabled>在中央打开论文 PDF</button>
+            <button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button>
+          </header>
+          <div class="fusion-evidence-detail-scroll fusion-scroll" id="fusion-evidence-detail-body" aria-live="polite" aria-busy="false"></div>
+          <section class="fusion-detail-pdf" id="fusion-detail-pdf" hidden aria-label="证据来源 PDF 查看器">
+            <header><button type="button" id="fusion-detail-close-pdf">← 返回证据详情</button><strong id="fusion-detail-pdf-title">证据来源原文</strong><span>本机同源查看 · 不离开工作台</span></header>
+            <iframe id="fusion-detail-pdf-frame" title="证据来源 PDF" loading="lazy"></iframe>
+          </section>
         </section>
       </section>
 
       <aside class="fusion-inspector" id="fusion-inspector" aria-label="详情与检查器">
         <header><strong id="fusion-inspector-title">论文检查器</strong><button type="button" class="fusion-drawer-close" data-close-drawer="inspector" aria-label="关闭检查器">×</button></header>
         <div class="fusion-inspector-body" id="fusion-inspector-body" aria-live="polite"></div>
-        <footer><button type="button" disabled data-fusion-disabled>围绕当前证据询问 AI · 0.9.2+</button></footer>
+        <footer><button type="button" disabled data-fusion-disabled>围绕当前证据询问 AI · 后续版本</button></footer>
       </aside>
     </section>
 

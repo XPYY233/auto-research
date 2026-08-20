@@ -207,8 +207,37 @@ class FusionReviewModeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             token = new_session_token()
+            database = EvidenceDB(root / "workspace.sqlite")
+            database.init()
+            image = root / "table-1.png"
+            image.write_bytes(b"\x89PNG\r\n\x1a\nreal-table-preview")
+            stamp = "2026-08-20T00:00:00+00:00"
+            with database.connect() as conn:
+                paper = conn.execute(
+                    "INSERT INTO papers(title,created_at,updated_at) VALUES(?,?,?)",
+                    ("Fusion visual evidence", stamp, stamp),
+                )
+                asset = conn.execute(
+                    """INSERT INTO visual_assets(
+                       paper_id,asset_type,label,asset_number,caption,page_start,page_end,
+                       bbox_json,image_path,image_sha256,physical_quantities_json,
+                       variables_json,materials_json,conditions_text,methods_text,
+                       context_explanation,tags_json,source_context,review_status,
+                       extraction_method,metadata_source,created_at,updated_at
+                       ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        int(paper.lastrowid), "table", "Table 1", 1,
+                        "Measured irradiation temperatures", 3, 3, "[0,0,1,1]",
+                        str(image), "visual-sha", '["temperature"]',
+                        '{"column_1":"temperature"}', '["W"]', "irradiated",
+                        "table extraction", "Original table screenshot", '["verified"]',
+                        "Table 1 context", "verified", "pdf_layout", "deterministic",
+                        stamp, stamp,
+                    ),
+                )
+                asset_id = int(asset.lastrowid)
             server, _ = create_desktop_server(
-                EvidenceDB(root / "workspace.sqlite"),
+                database,
                 host="127.0.0.1",
                 port=0,
                 token=token,
@@ -231,6 +260,25 @@ class FusionReviewModeTests(unittest.TestCase):
                 self.assertEqual(mode["mode"], "fusion-product")
                 self.assertTrue(mode["experience"]["mutations"])
                 self.assertTrue(mode["experience"]["model_calls"])
+
+                with opener.open(
+                    f"{base}/api/visual-assets/{asset_id}", timeout=5
+                ) as response:
+                    visual = json.load(response)
+                    self.assertEqual(response.headers["Cache-Control"], "no-store")
+                self.assertEqual(visual["asset_type"], "table")
+                self.assertEqual(visual["id"], asset_id)
+                self.assertEqual(
+                    visual["image_url"], f"/api/visual-assets/{asset_id}/image"
+                )
+                self.assertNotIn("image_path", visual)
+
+                with opener.open(
+                    f"{base}/api/visual-assets/{asset_id}/image", timeout=5
+                ) as response:
+                    self.assertEqual(response.headers["Content-Type"], "image/png")
+                    self.assertEqual(response.headers["Cache-Control"], "no-store")
+                    self.assertEqual(response.read(), image.read_bytes())
 
                 request = urllib.request.Request(
                     f"{base}/api/desktop/personal-imports/search-refresh",

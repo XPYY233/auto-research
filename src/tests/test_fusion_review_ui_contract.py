@@ -59,6 +59,39 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertIn("不离开工作台", self.index)
         self.assertIn("closeCurrentPDF", self.runtime)
 
+    def test_four_evidence_types_share_one_central_detail_workspace(self) -> None:
+        for element_id in (
+            "fusion-evidence-detail", "fusion-evidence-detail-body", "fusion-detail-back",
+            "fusion-detail-open-pdf", "fusion-detail-pdf", "fusion-detail-close-pdf",
+            "fusion-detail-pdf-frame",
+        ):
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        detail_tab = re.search(r'<button[^>]+data-tab="detail"[^>]*>', self.index)
+        self.assertIsNotNone(detail_tab)
+        self.assertNotIn("data-fusion-disabled", detail_tab.group(0))
+        self.assertIn('aria-controls="fusion-evidence-detail"', detail_tab.group(0))
+        for marker in (
+            'const EVIDENCE_LABELS=Object.freeze({item:', "function openEvidenceDetail(",
+            "function closeEvidenceDetail(", "function renderEvidenceDetail(",
+            'visualAsset:"/api/visual-assets"', 'federatedEvidence:"/api/desktop/federated-evidence"',
+            "state.evidenceDetailRequest", "evidenceIdentity(state.evidenceDetail)!==identity",
+        ):
+            self.assertIn(marker, self.runtime)
+        self.assertNotIn("#visual-dialog", self.runtime)
+        self.assertNotIn("showModal()", self.runtime)
+
+    def test_detail_uses_public_fields_and_keeps_scientific_images_authoritative(self) -> None:
+        for marker in (
+            "physical_quantities", "variables", "materials", "conditions_text", "methods_text",
+            "linked_item_count", "source_excerpt", "source_locator", "quality_gate_status",
+            "本机 PyMuPDF", "不会生成替代图", "filter:none", "mix-blend-mode:normal",
+        ):
+            self.assertIn(marker, self.runtime + self.css)
+        for forbidden in ("pdf_path", "image_path", "zotero_key", "local_article_key", "reviewer", "edit_note"):
+            self.assertNotIn(f"raw?.{forbidden}", self.runtime)
+        self.assertNotIn("appendChild", self.runtime)
+        self.assertNotIn("_blank", self.index + self.runtime)
+
     def test_search_sources_use_workspace_and_federated_routes(self) -> None:
         for source in ("workspace", "official", "private", "all"):
             self.assertEqual(self.index.count(f'data-search-source="{source}"'), 1)
