@@ -111,6 +111,22 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertNotIn("4,356", self.index)
         self.assertNotIn("<dd>60</dd>", self.index)
 
+    def test_primary_workflow_actions_are_top_level_and_not_repeated_at_page_bottom(self) -> None:
+        paper = re.search(r'<section class="fusion-view active" id="view-paper".*?</section>\s*<section class="fusion-view" id="view-search"', self.index, re.DOTALL)
+        search = re.search(r'<section class="fusion-view" id="view-search".*?</section>\s*<section class="fusion-view" id="view-personal"', self.index, re.DOTALL)
+        personal = re.search(r'<section class="fusion-view" id="view-personal".*?</section>\s*<section class="fusion-view" id="view-package"', self.index, re.DOTALL)
+        self.assertIsNotNone(paper)
+        self.assertIsNotNone(search)
+        self.assertIsNotNone(personal)
+        self.assertRegex(paper.group(0), r'(?s)<header class="fusion-toolbar">.*id="fusion-import-pdf".*id="fusion-start-extraction".*</header>')
+        self.assertRegex(search.group(0), r'(?s)<header class="fusion-toolbar">.*id="fusion-run-precise-search".*id="fusion-open-librarian".*</header>')
+        self.assertRegex(personal.group(0), r'(?s)<header class="fusion-toolbar">.*id="fusion-select-data-file".*id="fusion-demo-suggestion".*</header>')
+        for label in ("导入 PDF", "选择 CSV / TSV / XLSX"):
+            self.assertNotIn(label, self.runtime)
+        self.assertIn('search:"图书管理员 · 官方全库 · 后续接入"', self.runtime)
+        self.assertIn(".fusion-action-cluster", self.css)
+        self.assertIn(".fusion-view#view-personal { grid-template-rows:auto auto auto minmax(0,1fr); }", self.css)
+
     def test_synthetic_table_is_explicit_interactive_and_not_production_data(self) -> None:
         for marker in (
             "W-Ta_nanoindentation_demo.csv",
@@ -167,7 +183,7 @@ const themeButtons=['system','light','dark'].map(themeChoice=>new El({{themeChoi
 const densityButtons=['comfortable','compact'].map(densityChoice=>new El({{densityChoice}}));
 const sheets=['hardness','metadata'].map(sheet=>new El({{sheet}}));
 const ids={{
- '#fusion-editor':new El(),'#fusion-context-title':new El(),'#fusion-breadcrumb':new El(),'#fusion-primary-tab-label':new El(),'#fusion-status-context':new El(),
+ '#fusion-editor':new El(),'#fusion-context-title':new El(),'#fusion-breadcrumb':new El(),'#fusion-primary-tab-label':new El(),'#fusion-detail-tab-label':new El(),'#fusion-status-context':new El(),
  '#fusion-inspector-title':new El(),'#fusion-inspector-body':new El(),'#fusion-context':new El(),'#fusion-inspector':new El(),'#fusion-sheet-summary':new El(),
  '#fusion-data-grid':new El(),'#fusion-command':new El(),'[data-close-all-drawers]':new El(),'#fusion-paper-catalog':new El(),'#fusion-literature-content':new El(),
  '#fusion-search-results':new El(),'#fusion-current-paper-state':new El(),'#fusion-current-paper-count':new El(),'#fusion-settings-status':new El(),
@@ -186,6 +202,7 @@ globalThis.document={{readyState:'loading',documentElement:{{dataset:{{}}}},body
 eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
 (async()=>{{const api=globalThis.AutoResearchFusion;assert(api);await api.loadSettings();await api.loadLiterature();assert.equal(api.state.paper.title,'Real paper');assert.equal(api.state.evidence[0].value,'300');
  api.switchView('search');assert.equal(document.body.dataset.view,'search');assert.equal(panels.filter(x=>!x.hidden).length,1);
+ assert.equal(ids['#fusion-detail-tab-label'].textContent,'图书管理员 · 官方全库 · 后续接入');
  api.switchView('personal');assert.equal(document.body.dataset.view,'personal');const before=document.body.dataset.view;await Promise.resolve().then(()=>api.renderSheet('metadata'));assert.equal(document.body.dataset.view,before);
  assert(api.applyAppearance('dark','compact'));assert.equal(document.documentElement.dataset.theme,'dark');assert.equal(document.documentElement.dataset.density,'compact');assert.equal(api.syntheticSheets.hardness.rows.length,12);
  api.openDrawer('inspector',navs[2]);assert(ids['#fusion-inspector'].classList.contains('drawer-open'));api.closeDrawers();assert(!ids['#fusion-inspector'].classList.contains('drawer-open'));assert.strictEqual(globalThis.focused,navs[2]);

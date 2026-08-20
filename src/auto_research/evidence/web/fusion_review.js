@@ -77,14 +77,14 @@
     ["item","finding","table","figure"].forEach(type=>{const node=q(`#fusion-count-${type}`);if(node)node.textContent=String(counts[type]);});
     q("#fusion-current-paper-state").textContent=paper.status||"只读";q("#fusion-current-paper-count").textContent=String(state.evidence.length);
     const lines=state.evidence.slice(0,12).map((row,index)=>`<button type="button" class="fusion-evidence-line${index===0?" selected":""}" data-evidence-index="${index}"><b>${esc(row.value)}${row.unit?` <small>${esc(row.unit)}</small>`:""}</b><span>${esc(row.title)} · 第 ${esc(row.page)} 页</span><em>${({item:"测量条目",finding:"研究结论",table:"完整表格",figure:"论文图片"})[row.type]}</em></button>`).join("");
-    host.innerHTML=`<article class="fusion-paper-heading"><span>READ-ONLY LITERATURE · LIVE PUBLIC SNAPSHOT</span><h1>${esc(paper.title)}</h1><p>${esc([paper.firstAuthor,paper.year,paper.doi,paper.material].filter(Boolean).join(" · ")||"公开元数据未提供")}</p><dl><div><dt>处理状态</dt><dd>${esc(paper.status)}</dd></div><div><dt>证据条目</dt><dd>${state.evidence.length}</dd></div><div><dt>模式</dt><dd>只读 GET</dd></div></dl></article><section class="fusion-readonly-block"><header><strong>公开四类证据概览</strong><span>只读</span></header>${lines||'<div class="fusion-state-card" data-literature-state="empty"><strong>这篇文献暂无公开证据</strong><span>目录信息仍可只读浏览。</span></div>'}</section><section class="fusion-placeholder-actions" aria-label="0.9.2 后续功能"><button disabled data-fusion-disabled>导入 PDF · 0.9.2+</button><button disabled data-fusion-disabled>打开 PDF · 0.9.2+</button><button disabled data-fusion-disabled>导出当前论文 · 0.9.2+</button></section>`;
+    host.innerHTML=`<article class="fusion-paper-heading"><span>READ-ONLY LITERATURE · LIVE PUBLIC SNAPSHOT</span><h1>${esc(paper.title)}</h1><p>${esc([paper.firstAuthor,paper.year,paper.doi,paper.material].filter(Boolean).join(" · ")||"公开元数据未提供")}</p><dl><div><dt>处理状态</dt><dd>${esc(paper.status)}</dd></div><div><dt>证据条目</dt><dd>${state.evidence.length}</dd></div><div><dt>模式</dt><dd>只读 GET</dd></div></dl></article><section class="fusion-readonly-block"><header><strong>公开四类证据概览</strong><span>只读</span></header>${lines||'<div class="fusion-state-card" data-literature-state="empty"><strong>这篇文献暂无公开证据</strong><span>目录信息仍可只读浏览。</span></div>'}</section>`;
     qa("[data-evidence-index]").forEach(button=>button.addEventListener("click",()=>selectEvidence(Number(button.dataset.evidenceIndex))));
     renderSearchEvidence();selectEvidence(0,{focus:false});
   }
   function renderSearchEvidence() {
     const host=q("#fusion-search-results");if(!host)return;const results=state.evidence.map((row,index)=>`<button type="button" class="fusion-result${index===0?" selected":""}" role="option" aria-selected="${index===0?"true":"false"}" data-search-evidence-index="${index}"><span>${({item:"测量条目",finding:"研究结论",table:"完整表格",figure:"论文图片"})[row.type]} · 本机只读</span><b>${esc(row.value)}${row.unit?` <small>${esc(row.unit)}</small>`:""}</b><h2>${esc(row.title)}</h2><span class="fusion-result-meta">${esc(row.articleTitle||state.paper?.title||"")} · 第 ${esc(row.page)} 页</span>${row.excerpt?`<span class="fusion-result-excerpt">${esc(row.excerpt)}</span>`:""}</button>`).join("");
     const terminal=state.literatureStatus==="error"?literatureState("error","真实证据暂时无法载入"):literatureState("empty",state.paper?"当前论文暂无公开证据":"当前没有可浏览的文献");
-    host.innerHTML=`${results||terminal}<section class="fusion-placeholder-actions"><button disabled data-fusion-disabled>图书管理员 · 0.9.2+</button><button disabled data-fusion-disabled>打开 PDF · 0.9.2+</button><button disabled data-fusion-disabled>就地导出 · 0.9.2+</button></section>`;
+    host.innerHTML=results||terminal;
     qa("[data-search-evidence-index]").forEach(button=>button.addEventListener("click",()=>selectEvidence(Number(button.dataset.searchEvidenceIndex))));
   }
   function selectEvidence(index,{focus=true}={}) {
@@ -155,6 +155,7 @@
     q("#fusion-inspector-title").textContent=title; q("#fusion-inspector-body").innerHTML=inspectorForView(state.view);bindColumnEditor();
   }
   const SETTINGS_LABELS={appearance:"设置：外观",language:"设置：语言",ai:"设置：AI 与密钥",data:"设置：数据",about:"设置：关于"};
+  const DETAIL_TAB_LABELS={paper:"证据详情 · 后续接入",search:"图书管理员 · 官方全库 · 后续接入",personal:"列与曲线详情 · 后续接入",package:"任务详情 · 后续接入",settings:"设置说明"};
   function switchView(name,{focus=true}={}) {
     if(!VIEWS.includes(name)) return false;
     const previous=state.view; state.view=name; document.body.dataset.view=name;
@@ -163,6 +164,7 @@
     qa("[data-context-view]").forEach(panel=>{const active=panel.dataset.contextView===name;panel.hidden=!active;panel.classList.toggle("active",active);});
     q("#fusion-context-title").textContent=VIEW_LABELS[name]; q("#fusion-breadcrumb").textContent=`${VIEW_LABELS[name]} / Fusion GUI 体验`;
     q("#fusion-primary-tab-label").textContent=name==="settings"?SETTINGS_LABELS[state.settingsSection]:{paper:"当前论文",search:"精确检索",personal:syntheticSheets[state.sheet].label,package:"资料包中心"}[name];
+    q("#fusion-detail-tab-label").textContent=DETAIL_TAB_LABELS[name];
     q("#fusion-status-context").textContent={paper:"真实文献只读",search:"真实证据只读",personal:"合成实验数据",package:"资料包只读",settings:"仅外观可操作"}[name];
     closeDrawers(false); updateInspector();syncDrawerAccessibility();
     if(focus&&previous!==name) q("#fusion-editor")?.focus({preventScroll:true}); return true;
