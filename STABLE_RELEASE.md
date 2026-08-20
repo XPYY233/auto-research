@@ -1,6 +1,15 @@
 # Auto Research Evidence 阶段发布状态
 
-> 当前用户版为 `0.9.1-preview.2` / build `20` Fusion功能预览：Mac核心文献、搜索、图书管理员、实验导入、双provider设置和应用内PDF返回链已经恢复；资料包/通用导出、选中证据AI和私人实验大表分页仍未完成。它是课题组内部、ad-hoc签名、未公证版本，不是公开稳定发行或Windows安装版。
+> 当前用户版为 `0.9.2-preview.1` / build `21` Fusion真实视觉证据预览：Mac核心文献、搜索、图书管理员、实验导入、双provider设置、应用内PDF返回链，以及真实表格/论文图片中央详情已经恢复；资料包/通用导出、选中证据AI和私人实验大表分页仍未完成。它是课题组内部、ad-hoc签名、未公证版本，不是公开稳定发行或Windows安装版。
+
+## 0.9.2-preview.1 macOS Fusion真实视觉证据预览
+
+- 文献与搜索结果中的item、finding、table、figure均进入中央唯一详情；table/figure从现有安全路由显示真实PyMuPDF截图，不再使用占位符。详情包含图注、原文语境、物理量、变量、材料、条件、方法和关联条目。
+- 中央证据PDF有明确打开、返回详情和返回列表链；请求代次、视图和实体身份共同阻止晚响应覆盖。官方/私人来源没有原图能力时只显示结构化详情，绝不借图或重绘。
+- 串行验证：共享753、macOS 215、Fusion详情11项、冻结HTTP冒烟、codesign和DMG验证。源码 `83cf5e4`，标签 `auto-research-0.9.2-preview.1-build21`，DMG SHA-256 `87e29d20d926111aac784d8883ea19330ac818b754b8f3f86171f22b94943a11`。
+- `/Applications/Auto Research.app` 当前为0.9.2/build21；旧build20为仓库外不可启动rollback。真实WebView验收覆盖Table 4、Figure 9、科研元数据、搜索详情、中央PDF与返回；生产SQLite哈希不变，未调用模型。
+- UserKit：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.9.2-preview.1-build21-UserKit.zip`，SHA-256 `1848453eeff79e1ad8fe206e3f3475282116afd3bbeac7de9a8657a80dfd0331`。内含DMG、中文教程、验收报告和已验签官方0.2资源包；当前Fusion资料包导入/回退/导出仍禁用。
+- Windows完全暂停，无0.9同步、无Setup、无Win11验收。
 
 ## 0.9.1-preview.2 macOS Fusion功能预览
 

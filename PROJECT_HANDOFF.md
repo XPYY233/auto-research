@@ -2,6 +2,10 @@
 
 ## 0.9 Fusion 功能恢复线（2026-08-20，当前优先）
 
+- `0.9.2-preview.1` / build `21` 已恢复四类证据的中央结构化详情，并把工作区 `table/figure` 重新接回真实 PyMuPDF 截图，不再显示类型占位符。文献列表与搜索结果共用同一中央详情，原图失败有明确结束态；官方/私人来源没有二进制路由时只显示结构化字段，禁止借用工作区编号或生成替代图。
+- build21真实Mac验收已打开 Table 4 与 Figure 9 原图，显示图注、物理量、变量、材料、实验条件、方法和关联数；中央PDF打开后可返回原证据，搜索页也能进入同一真实表格详情。生产SQLite SHA-256前后均为 `d3e225d35f4c9e21fcf825405d0e38f28210c4479caac67b87be9f8382fb6f72`。
+- 串行验证：共享核心753项、macOS 215项、Fusion详情11项、冻结HTTP冒烟、codesign与DMG校验全部通过。源码提交 `83cf5e4`，标签 `auto-research-0.9.2-preview.1-build21`，DMG SHA-256 `87e29d20d926111aac784d8883ea19330ac818b754b8f3f86171f22b94943a11`。
+- `/Applications/Auto Research.app` 当前为0.9.2/build21；build20已保存为仓库外不可启动 `.app.rollback`。UserKit位于 `/Users/USER/Zotero/auto-research-releases/Auto-Research-0.9.2-preview.1-build21-UserKit.zip`，SHA-256 `1848453eeff79e1ad8fe206e3f3475282116afd3bbeac7de9a8657a80dfd0331`，含DMG、中文教程、验收报告和已重新验签的官方0.2资源包。
 - 用户已明确接受0.9.1 Fusion工作台作为后续功能重构的唯一界面底座；旧0.8页面没有复活，Windows继续暂停。
 - `0.9.1-preview.2` / build `20` 已在这一套Fusion DOM内恢复Mac核心功能：文献页顶部“导入 PDF / 开始自动提取与核验 / 打开 PDF”，搜索页“精确检索 / 图书管理员（官方全库）”，实验页顶部“选择 CSV / TSV / XLSX”及一次核验导入，设置页提供DeepSeek/OpenAI受信配置。
 - 中央PDF查看和“返回当前论文”已通过真实App验收；精确检索“辐照温度”返回82条，图书管理员入口、实验文件入口和双provider设置均可见。未调用收费模型，生产SQLite哈希保持不变。
@@ -22,8 +26,8 @@
 
 1. 保留工作树中的 `db/experimental_evidence.sqlite`，绝不暂存、还原或清理。
 2. 只在Fusion DOM内继续串行恢复Mac功能；不复活旧页面，不启动Windows迁移。
-3. 下一阶段优先恢复资料包/通用导出、选中证据详情AI和私人实验分页表格；每项先冻结共享DTO，再接Fusion界面。
-4. build20只能称为Mac内部功能预览；ad-hoc签名、未公证、未执行收费模型验收，也没有Windows Setup。
+3. 下一阶段优先恢复私人实验分页表格与核验曲线、资料包/通用导出、选中证据详情AI；每项先冻结共享DTO，再接Fusion界面。
+4. build21只能称为Mac内部功能预览；ad-hoc签名、未公证、未执行收费模型验收，也没有Windows Setup。随附官方0.2资源包已经验签，但Fusion资料包导入/回退UI仍未恢复，不得宣称可在本版界面导入。
 
 ## 0.8 发布冻结点（2026-08-13，优先阅读）
 

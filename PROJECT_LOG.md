@@ -2,6 +2,15 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-20：0.9.2-preview.1 build21 真实表格与论文图片恢复
+
+- 复用既有 `/api/visual-assets/{id}` 与 `/image`，在Fusion中央唯一详情区恢复item、finding、table、figure四类详情；未恢复旧app.js、dialog或第二导航。
+- 工作区table/figure显示真实PyMuPDF权威截图、图注、上下文、物理量、变量、材料、条件、方法和关联数；官方/私人来源只用稳定身份读取安全字段，无图片路由时明确不可用且不伪造。
+- 详情、原图与PDF均在中央工作区，支持返回原列表/原证据、焦点恢复、Escape与晚到响应失效。公开投影保留finding正文和原文摘录的区分，并拒绝路径、Zotero key和内部备注。
+- 串行回归通过共享753项、macOS 215项与Fusion详情11项；从干净提交 `83cf5e4` 构建并安装0.9.2/build21，冻结冒烟、codesign与DMG校验通过。DMG SHA-256为 `87e29d20d926111aac784d8883ea19330ac818b754b8f3f86171f22b94943a11`。
+- 真实Mac验收打开Table 4与Figure 9原图、科研元数据、中央PDF及返回链，并从搜索结果打开同一真实表格。生产数据库SHA前后不变；未调用收费模型；Windows继续暂停。
+- UserKit ZIP为 `Auto-Research-0.9.2-preview.1-build21-UserKit.zip`，SHA-256 `1848453eeff79e1ad8fe206e3f3475282116afd3bbeac7de9a8657a80dfd0331`。随附官方0.2资源包已验签，但Fusion资料包导入/回退/导出UI仍明确禁用。
+
 ## 2026-08-20：0.9.1-preview.2 build20 Fusion核心功能恢复
 
 - 在Fusion唯一生产DOM内复用0.8成熟服务，恢复文献PDF导入、prepared-action自动提取入口、应用内PDF与返回链、Search V2/联合精确检索、图书管理员入口、CSV/TSV/XLSX安全预览与一次核验导入、DeepSeek/OpenAI受信设置；没有恢复旧0.8页面或第二导航。
