@@ -299,7 +299,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
         self.close_connection = True
         self.json_response(
             {
-                "error": "Fusion GUI 体验版不会执行写入、模型调用、导入、回退或导出。",
+                "error": "当前为 Fusion 只读模式，不会执行写入、模型调用、导入、回退或导出。",
                 "code": "fusion_review_read_only",
                 "retryable": False,
             },
@@ -536,11 +536,11 @@ class DesktopEvidenceHandler(EvidenceHandler):
                     {
                         "read_only": True,
                         "mode": "fusion-review",
-                        "label": "Fusion GUI 体验版",
+                        "label": "Fusion 只读工作台",
                         "experience": {
                             "schema": "auto-research-fusion-review-v1",
                             "literature": "isolated-read-only-snapshot",
-                            "experiment": "synthetic-session-only",
+                            "experiment": "isolated-session-only",
                             "mutations": False,
                             "model_calls": False,
                         },

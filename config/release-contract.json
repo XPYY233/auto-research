@@ -1,12 +1,12 @@
 {
   "schema": "auto-research-release-contract-v1",
-  "core_version": "0.1.0",
+  "core_version": "1.0.0",
   "desktop": {
     "macos": {
-      "desktop_version": "0.9.2-preview.1",
-      "bundle_short_version": "0.9.2",
-      "build_number": "21",
-      "target": "macOS arm64 Fusion visual evidence preview"
+      "desktop_version": "1.0.0",
+      "bundle_short_version": "1.0.0",
+      "build_number": "22",
+      "target": "macOS arm64 Auto Research workbench"
     },
     "windows": {
       "desktop_version": "0.8.0-internal.1",
@@ -29,9 +29,9 @@
       "format_version": 1,
       "distribution_schema": 1,
       "identity_version": 1,
-      "current_version": "0.2.0-preview.1",
+      "current_version": "1.0.0",
       "minimum_app_version": "0.6.0",
-      "maximum_app_version_exclusive": "1.0.0"
+      "maximum_app_version_exclusive": "2.0.0"
     },
     "transfer": {
       "format": "auto-research-transfer-package",
@@ -46,10 +46,10 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "e623613d734e186f013dfc775042b2f02ef3428a7b7c24f2d3c2f7adc5a38dd7",
+    "src/auto_research/evidence/web/index.html": "d12c12664732cb78abfb0d27254d1c8e8f56f0ad512304401225f2e1215c5bec",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
-    "src/auto_research/evidence/web/workbench.css": "578ca14bd7165ce1ee6e7c7df058f9dac0cc2993421ecd0ec8c36af499aa656c",
+    "src/auto_research/evidence/web/workbench.css": "e36145ec9bed05ee3599e5b14f1f3733b522f5f033df4c52e1dec32a19432445",
     "src/auto_research/evidence/web/ai_consent.js": "ada8842907ff40f01a0e3b681d0dd205cc62aaffec4f47ef29813104141cd582",
-    "src/auto_research/evidence/web/fusion_review.js": "49b104a437e84c19f9d52f0f83cf51694460ab3b5eec2db84b86164f228df36f"
+    "src/auto_research/evidence/web/fusion_review.js": "3a98adefe57f5c7cbfd8933ac563edc2ec11e1f875944adeb5854022aa695698"
   }
 }

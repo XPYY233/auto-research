@@ -1,9 +1,9 @@
 {
-  "desktop_version": "0.9.2-preview.1",
-  "bundle_short_version": "0.9.2",
-  "build_number": "21",
-  "target": "macOS arm64 Fusion visual evidence preview",
-  "product_target": "future Windows production target (not released)",
+  "desktop_version": "1.0.0",
+  "bundle_short_version": "1.0.0",
+  "build_number": "22",
+  "target": "macOS arm64 Auto Research workbench",
+  "product_target": "macOS research workbench; Windows release paused",
   "data_mode": "workspace-schema-v12-plus-private-library-and-versioned-evidence-packages",
   "minimum_evidence_schema": 12,
   "official_package_schema": 1

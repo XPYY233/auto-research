@@ -299,7 +299,7 @@ def _error_document(title: str, message: str) -> str:
 <main>
   <h1>{safe_title}</h1>
   <p>{safe_message}</p>
-  <p class="note">桌面开发预览不会自动修复或改写证据数据。请关闭窗口并把这段提示交给 Codex 检查。</p>
+  <p class="note">桌面应用不会自动修复或改写证据数据。请关闭窗口并把这段提示交给维护者检查。</p>
 </main>
 </html>
 """
@@ -564,7 +564,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Auto Research macOS development-preview shell")
+    parser = argparse.ArgumentParser(description="Auto Research macOS desktop application")
     parser.add_argument("--project-root", help="Override the external Auto Research data workspace")
     parser.add_argument("--smoke-test", action="store_true", help="Validate the bundle without opening a window")
     parser.add_argument("--debug", action="store_true", help="Enable pywebview developer diagnostics")
@@ -588,7 +588,7 @@ def main(argv: list[str] | None = None) -> int:
     if not compatibility["ok"]:
         return _show_error_window(
             "证据数据库与当前桌面版不兼容",
-            "当前桌面开发预览只允许 schema v12，且要求 SQLite 完整性检查通过。"
+            "当前桌面应用只允许 schema v12，且要求 SQLite 完整性检查通过。"
             f"\n检测结果：schema {compatibility.get('schema_version')}，"
             f"integrity {compatibility.get('sqlite_integrity')}。",
             debug=args.debug,
@@ -597,7 +597,7 @@ def main(argv: list[str] | None = None) -> int:
         return _show_error_window(
             "已退役的浏览器工作台仍在运行",
             "检测到已经退役的浏览器编辑服务。为了避免两个编辑入口同时写入同一个 SQLite，"
-            "桌面版没有启动。\n请先关闭旧服务；另一个 Codex 正在测试时，请等它完成后再打开桌面版。",
+            "桌面版没有启动。\n请先关闭旧服务或仍在运行的 Auto Research，再重新打开桌面版。",
             debug=args.debug,
         )
     try:

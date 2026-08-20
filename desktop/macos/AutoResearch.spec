@@ -79,6 +79,6 @@ app = BUNDLE(
         "CFBundleVersion": version["build_number"],
         "LSMinimumSystemVersion": "13.0",
         "NSHighResolutionCapable": True,
-        "NSHumanReadableCopyright": "macOS development preview — Windows production target",
+        "NSHumanReadableCopyright": "Auto Research macOS application",
     },
 )
