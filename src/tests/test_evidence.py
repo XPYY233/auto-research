@@ -1888,7 +1888,7 @@ class SixColumnWorkflowTests(unittest.TestCase):
                 "functional_read_routes",
                 "prominent_primary_actions",
                 "protected_business_routes",
-                "synthetic_grid",
+                "real_personal_import",
                 "personal_review_once",
                 "versioned_ai_consent",
                 "central_pdf_return",

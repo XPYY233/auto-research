@@ -55,7 +55,27 @@ def _web_ui_contract() -> dict[str, Any]:
         ("functional_read_routes", all(route in js for route in ("/api/search-papers", "/api/search-v2", "/api/desktop/federated-search", "/api/desktop/settings"))),
         ("prominent_primary_actions", all(f'id="{name}"' in html for name in ("fusion-import-pdf", "fusion-start-extraction", "fusion-open-librarian", "fusion-select-data-file"))),
         ("protected_business_routes", all(route in js for route in ("/api/uploads/pdf", "/api/desktop/ai/actions/", "/api/desktop/personal-imports/preview", "/reviewed-import"))),
-        ("synthetic_grid", "syntheticSheets" in js and 'id="fusion-data-grid"' in html and "合成数据，不来自生产数据库" in js),
+        (
+            "real_personal_import",
+            all(
+                token in html
+                for token in (
+                    'id="fusion-select-data-file"',
+                    'id="fusion-data-grid"',
+                    'id="fusion-personal-confirm"',
+                )
+            )
+            and all(
+                route in js
+                for route in (
+                    "/api/desktop/personal-imports/preview",
+                    "/reviewed-import",
+                    "/api/desktop/personal-experiments/table",
+                )
+            )
+            and "syntheticSheets" not in js
+            and "合成数据，不来自生产数据库" not in js,
+        ),
         ("personal_review_once", "confirmPersonalImport" in js and "reviewed:true,draft" in js and "确认并导入一次" in html),
         ("versioned_ai_consent", '<script src="/static/ai_consent.js"></script>' in html and "AutoResearchAIConsent.ensure" in js and "/api/desktop/ai/consents" in js),
         ("central_pdf_return", 'id="fusion-pdf-viewer"' in html and 'id="fusion-close-pdf"' in html and "globalThis.open" not in js and "_blank" not in js),
