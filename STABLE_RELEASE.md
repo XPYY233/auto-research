@@ -1,6 +1,15 @@
 # Auto Research Evidence 阶段发布状态
 
-> 0.9.1当前是Fusion GUI审核候选，不是完整功能升级。`0.9.1-preview.1` / build `19` 只供用户确认新工作台结构；0.8 build18继续作为完整功能回退版本，直到用户明确认可并解锁0.9.2—0.9.5。
+> 当前用户版为 `0.9.1-preview.2` / build `20` Fusion功能预览：Mac核心文献、搜索、图书管理员、实验导入、双provider设置和应用内PDF返回链已经恢复；资料包/通用导出、选中证据AI和私人实验大表分页仍未完成。它是课题组内部、ad-hoc签名、未公证版本，不是公开稳定发行或Windows安装版。
+
+## 0.9.1-preview.2 macOS Fusion功能预览
+
+- 唯一Fusion工作台继续拥有文献、搜索、实验、资料包四区和设置；没有复活0.8 DOM。文献顶部有PDF导入、自动提取与应用内PDF；搜索保留精确检索与图书管理员；实验顶部有CSV/TSV/XLSX选择、可选AI预填和一次确认。
+- 核心功能直接复用既有共享后端、prepared action、AI逐次授权、path-free错误、私人快照和联合搜索契约。DeepSeek/OpenAI只允许受信provider目录与固定模型，不接受自定义URL。
+- 串行验证：共享750、macOS 214、冻结HTTP冒烟、codesign、DMG校验和真实Mac流程。App源码提交 `056e2fb`，DMG SHA-256 `470dabcf5b9f491f08807677e2a3068fe185748eed2f3ee21299492e6bd26396`。
+- `/Applications/Auto Research.app` 当前为0.9.1/build20；旧build19是不可启动 `.app.rollback`。真实验收包含“辐照温度”82条、中央PDF打开/返回、三类显眼入口和双provider设置；没有调用模型，生产SQLite哈希未变。
+- 用户套件：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.9.1-preview.2-build20-UserKit.zip`，内含DMG、中文教程、验收报告和校验清单，不含生产数据库、PDF、Git bundle或API密钥。
+- Windows完全暂停，继续无0.9同步、无Setup、无Win11验收。
 
 ## 0.9.1-preview.1 macOS Fusion GUI审核候选
 

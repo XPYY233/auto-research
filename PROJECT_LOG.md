@@ -2,6 +2,14 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-20：0.9.1-preview.2 build20 Fusion核心功能恢复
+
+- 在Fusion唯一生产DOM内复用0.8成熟服务，恢复文献PDF导入、prepared-action自动提取入口、应用内PDF与返回链、Search V2/联合精确检索、图书管理员入口、CSV/TSV/XLSX安全预览与一次核验导入、DeepSeek/OpenAI受信设置；没有恢复旧0.8页面或第二导航。
+- 三项用户要求固定在顶部主操作区：文献“导入PDF/开始自动提取与核验”、搜索“精确检索/图书管理员”、实验“选择CSV/TSV/XLSX”。AI仍只在实际调用前逐阶段披露并授权；本次验收未调用模型。
+- 串行通过共享750项、macOS 214项、冻结HTTP冒烟、前端/Python检查；从干净提交 `056e2fb` 构建0.9.1/build20。App通过严格codesign，DMG通过hdiutil校验，SHA-256为 `470dabcf5b9f491f08807677e2a3068fe185748eed2f3ee21299492e6bd26396`。
+- 真实Mac验收完成：只读查询“辐照温度”82条、图书管理员可见、实验文件选择可见、中央PDF打开并返回、DeepSeek/OpenAI设置载入。旧build19保存为不可启动rollback，系统只有一个可启动App；生产数据库SHA前后不变。
+- UserKit ZIP及中文教程位于仓库外 `auto-research-releases/Auto-Research-0.9.1-preview.2-build20-UserKit.zip`。资料包/通用导出、选中证据AI、私人实验大表分页仍明确为后续边界；Windows继续暂停。
+
 ## 2026-08-20：0.9 Fusion功能恢复的首个界面契约
 
 - 用户确认以0.9.1 Fusion工作台作为功能重构底座，Windows继续暂停；后续功能只能接入这一套生产DOM，不允许复活0.8页面或新增第二导航所有者。
