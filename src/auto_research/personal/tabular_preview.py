@@ -81,6 +81,83 @@ class TabularFilePreview:
         }
 
 
+@dataclass(frozen=True)
+class TabularSheetRows:
+    """A bounded, immutable table decoded by the preview security authority."""
+
+    sheet_name: str
+    column_names: tuple[str, ...]
+    rows: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True)
+class TabularFileRows:
+    detected_format: str
+    sheets: tuple[TabularSheetRows, ...]
+
+
+def read_tabular_snapshot(
+    raw: bytes,
+    *,
+    original_name: str,
+    limits: PreviewLimits | None = None,
+) -> TabularFileRows:
+    """Decode rows from one already captured file snapshot without executing content."""
+
+    limits = limits or PreviewLimits()
+    if not isinstance(raw, bytes) or len(raw) > limits.max_file_bytes:
+        raise UnsafeTabularFileError("selected file exceeds the preview size limit")
+    if (
+        not isinstance(original_name, str)
+        or not original_name
+        or Path(original_name).name != original_name
+    ):
+        raise UnsafeTabularFileError("selected file name is invalid")
+    extension = Path(original_name).suffix.casefold()
+    if extension in {".xls", ".xlsm", ".xltm", ".xlam"}:
+        raise UnsafeTabularFileError("legacy or macro-enabled Excel files are not supported")
+    if extension not in _MEDIA_TYPES:
+        raise UnsafeTabularFileError("only CSV, TSV, and XLSX files are supported")
+    if extension in {".csv", ".tsv"}:
+        text, _ = _decode_delimited(raw)
+        delimiter = "\t" if extension == ".tsv" else _detect_delimiter(text)
+        try:
+            rows, truncated, columns_truncated = _bounded_rows(
+                csv.reader(io.StringIO(text, newline=""), delimiter=delimiter),
+                limits,
+            )
+        except csv.Error as exc:
+            raise UnsafeTabularFileError("text table structure exceeds safe CSV limits") from exc
+        if truncated or columns_truncated:
+            raise UnsafeTabularFileError("text table exceeds the safe row or column limit")
+        return TabularFileRows(
+            detected_format=extension[1:],
+            sheets=(_table_rows("Sheet1", rows, limits),),
+        )
+
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile as exc:
+        raise UnsafeTabularFileError("XLSX is not a valid ZIP-based workbook") from exc
+    with archive:
+        _validate_xlsx_archive(archive, limits)
+        workbook = _safe_xml(_read_zip_entry(archive, "xl/workbook.xml", limits))
+        relationships = _workbook_relationships(archive, limits)
+        shared_strings = _shared_strings(archive, limits)
+        sheets = _workbook_sheets(workbook, relationships)
+        if len(sheets) > limits.max_sheets:
+            raise UnsafeTabularFileError("XLSX contains too many worksheets")
+        output: list[TabularSheetRows] = []
+        for sheet_name, target, _hidden in sheets:
+            rows, _formula_count, warnings = _xlsx_rows(
+                _read_zip_entry(archive, target, limits), shared_strings, limits
+            )
+            if "row_scan_truncated" in warnings or "column_scan_truncated" in warnings:
+                raise UnsafeTabularFileError("worksheet exceeds the safe row or column limit")
+            output.append(_table_rows(sheet_name, rows, limits))
+        return TabularFileRows(detected_format="xlsx", sheets=tuple(output))
+
+
 def preview_tabular_file(
     path: str | Path,
     *,
@@ -231,13 +308,16 @@ def _validate_xlsx_archive(archive: zipfile.ZipFile, limits: PreviewLimits) -> N
     names = {info.filename for info in infos}
     if len(names) != len(infos):
         raise UnsafeTabularFileError("XLSX contains duplicate ZIP entry names")
+    folded_names = {name.casefold() for name in names}
+    if len(folded_names) != len(names):
+        raise UnsafeTabularFileError("XLSX contains conflicting ZIP entry names")
     for name in names:
         _validate_xlsx_member_name(name)
     if any(info.flag_bits & 0x1 for info in infos):
         raise UnsafeTabularFileError("encrypted XLSX files are not supported")
     if "xl/vbaProject.bin" in names or any(name.casefold().endswith("vbaproject.bin") for name in names):
         raise UnsafeTabularFileError("macro-enabled workbooks are not supported")
-    if any(name.startswith("xl/externalLinks/") for name in names):
+    if any(name.casefold().startswith("xl/externallinks/") for name in names):
         raise UnsafeTabularFileError("workbooks with external links are not supported")
     if any(
         name.casefold().startswith(_UNSAFE_EMBEDDED_PREFIXES)
@@ -488,6 +568,28 @@ def _rows_to_sheet(
         columns=tuple(columns),
         sample_rows=sample_rows,
     )
+
+
+def _table_rows(
+    sheet_name: str,
+    rows: list[list[str]],
+    limits: PreviewLimits,
+) -> TabularSheetRows:
+    nonempty = [row for row in rows if any(str(value).strip() for value in row)]
+    if not nonempty:
+        return TabularSheetRows(sheet_name=sheet_name, column_names=(), rows=())
+    header = nonempty[0][: limits.max_columns]
+    data_rows = nonempty[1:]
+    width = min(max([len(header), *(len(row) for row in data_rows)]), limits.max_columns)
+    names = tuple(_unique_headers(header, width))
+    normalized = tuple(
+        tuple(
+            str(row[index])[: limits.max_cell_chars] if index < len(row) else ""
+            for index in range(width)
+        )
+        for row in data_rows
+    )
+    return TabularSheetRows(sheet_name=sheet_name, column_names=names, rows=normalized)
 
 
 def _unique_headers(header: list[str], width: int) -> list[str]:

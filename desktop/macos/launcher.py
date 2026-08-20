@@ -382,6 +382,7 @@ def _run_smoke_test(project_root: Path) -> int:
             ),
             federated_search_api=product_services.federated_search_api,
             personal_import_api=product_services.personal_import_api,
+            personal_table_api=product_services.personal_table_api,
             session_token=desktop_session_id,
             experience_mode="fusion-product",
         )
@@ -498,6 +499,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             ),
             federated_search_api=product_services.federated_search_api,
             personal_import_api=product_services.personal_import_api,
+            personal_table_api=product_services.personal_table_api,
             session_token=desktop_session_id,
             experience_mode="fusion-product",
         )

@@ -30,10 +30,11 @@ from first_use_state import (
     resolve_first_use_state,
 )
 from federated_search_api import FederatedSearchAPI
-from package_api import PackageAPI
+from package_api import PACKAGE_IMPORT_PATH, PACKAGE_ROLLBACK_PATH, PackageAPI
 from package_center_api import PackageCenterAPI
 from package_import_service import PackageImportService, PackageImportServiceError
 from personal_import_api import PersonalImportAPI
+from personal_table_api import PersonalTableAPI
 from desktop_ai_api import MacDesktopAIAPI
 
 
@@ -159,6 +160,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     package_center_api: PackageCenterAPI | None = None
     federated_search_api: FederatedSearchAPI | None = None
     personal_import_api: PersonalImportAPI | None = None
+    personal_table_api: PersonalTableAPI | None = None
     desktop_ai_api: MacDesktopAIAPI | None = None
     experience_mode: str = "standard"
     _issue_desktop_cookie: bool = False
@@ -594,6 +596,11 @@ class DesktopEvidenceHandler(EvidenceHandler):
             and self.personal_import_api.handle_get(self)
         ):
             return
+        if (
+            self.personal_table_api is not None
+            and self.personal_table_api.handle_get(self)
+        ):
+            return
         if parsed.path == "/api/ui-mode":
             self._issue_csrf_header = True
         return super().do_GET()
@@ -638,8 +645,20 @@ class DesktopEvidenceHandler(EvidenceHandler):
                         HTTPStatus.FORBIDDEN,
                     )
                 return self.desktop_ai_api.handle(self, "POST")
-            if self.package_api is not None and self.package_api.handle_post(self):
-                return
+            if self.package_api is not None and path in {
+                PACKAGE_IMPORT_PATH,
+                PACKAGE_ROLLBACK_PATH,
+            }:
+                if self.read_only:
+                    return self.json_response(
+                        {
+                            "error": "当前为只读模式，不允许导入或回退官方资料包。",
+                            "code": "read_only",
+                        },
+                        HTTPStatus.FORBIDDEN,
+                    )
+                if self.package_api.handle_post(self):
+                    return
             if self.package_center_api is not None and self.package_center_api.is_post_route(
                 self.path
             ):
@@ -746,6 +765,7 @@ def create_desktop_server(
     package_center_api: PackageCenterAPI | None = None,
     federated_search_api: FederatedSearchAPI | None = None,
     personal_import_api: PersonalImportAPI | None = None,
+    personal_table_api: PersonalTableAPI | None = None,
     desktop_ai_api: MacDesktopAIAPI | None = None,
     session_token: str | None = None,
     experience_mode: str = "standard",
@@ -781,6 +801,7 @@ def create_desktop_server(
             "package_center_api": package_center_api,
             "federated_search_api": federated_search_api,
             "personal_import_api": personal_import_api,
+            "personal_table_api": personal_table_api,
             "desktop_ai_api": desktop_ai_api,
             "experience_mode": experience_mode,
         },

@@ -6,6 +6,7 @@ from typing import Protocol
 
 from auto_research.personal.import_service import PersonalImportService
 from auto_research.personal.private_repository import PrivateExperimentRepository
+from auto_research.personal.table_detail import PersonalTableDetailService
 
 from federated_search_api import (
     DesktopFederatedSearchService,
@@ -16,6 +17,7 @@ from package_export_destination_broker import PackageExportDestinationBroker
 from package_import_service import PackageImportService
 from personal_file_selection_broker import PersonalFileSelectionBroker
 from personal_import_api import PersonalImportAPI
+from personal_table_api import PersonalTableAPI
 from personal_import_service import DEFAULT_PERSONAL_LIBRARY_DIRECTORY
 
 from package_center_services import DesktopPackageCenterServices
@@ -45,6 +47,7 @@ class DesktopProductServices:
     personal_file_selection_broker: PersonalFileSelectionBroker
     personal_import_service: PersonalImportService
     personal_import_api: PersonalImportAPI
+    personal_table_api: PersonalTableAPI
     personal_repository: PrivateExperimentRepository
     package_center: DesktopPackageCenterServices | None
 
@@ -85,6 +88,9 @@ def create_desktop_product_services(
         personal_import_service,
         search_service=federated_search_service,
     )
+    personal_table_api = PersonalTableAPI(
+        PersonalTableDetailService(personal_repository)
+    )
     personal_import_api.restore_private_search()
     if package_center_builder is None and workspace_database is not None:
         package_center_builder = DesktopPackageCenterRuntimeBuilder(
@@ -117,6 +123,7 @@ def create_desktop_product_services(
         personal_file_selection_broker=personal_file_selection_broker,
         personal_import_service=personal_import_service,
         personal_import_api=personal_import_api,
+        personal_table_api=personal_table_api,
         personal_repository=personal_repository,
         package_center=package_center,
     )
