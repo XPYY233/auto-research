@@ -230,6 +230,48 @@ assert.equal(api.selectedEvidenceAIIdentity(),null);
         self.assertIn("loadReleaseInfo", self.runtime)
         self.assertEqual(self.runtime.count("async function request("), 1)
 
+    def test_private_table_rescan_and_full_librarian_runtime(self) -> None:
+        program = f"""
+(async()=>{{
+const fs=require('fs'),assert=require('assert');
+class Classes{{toggle(){{}}add(){{}}remove(){{}}contains(){{return false}}}}
+class El{{constructor(){{this.hidden=false;this.disabled=false;this.dataset={{}};this.textContent='';this.innerHTML='';this.value='';this.attrs={{}};this.classList=new Classes();this.listeners={{}};this.isConnected=true;}}setAttribute(k,v){{this.attrs[k]=String(v)}}removeAttribute(k){{delete this.attrs[k]}}addEventListener(k,f){{this.listeners[k]=f}}focus(){{globalThis.focused=this}}querySelector(){{return null}}querySelectorAll(){{return []}}}}
+const ids={{}};for(const id of ['fusion-evidence-detail-body','fusion-detail-heading','fusion-detail-identity','fusion-private-table-prev','fusion-private-table-next','fusion-inspector-title','fusion-inspector-body','fusion-evidence-ai','fusion-evidence-ai-reason','fusion-evidence-ai-question','fusion-evidence-ai-output','fusion-literature-action-status','fusion-status-operation','fusion-librarian-output','fusion-librarian-stage','fusion-librarian-status','fusion-librarian-question'])ids['#'+id]=new El();
+globalThis.document={{readyState:'loading',querySelector:s=>ids[s]||null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+const pending=new Map(),calls=[];globalThis.fetch=(url,options={{}})=>{{url=String(url);calls.push([url,options.method||'GET']);return new Promise(resolve=>{{const page=Number(new URL(url,'http://local').searchParams.get('page'));pending.set(page,payload=>resolve({{ok:true,headers:{{get:()=>null}},json:async()=>payload}}));}})}};
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion,row={{type:'table',title:'纳米压痕原始表',sourceScope:'private',sourceId:'private-public',entityUid:'private:table:opaque'}};
+const dto=page=>({{schema_version:'personal-table-page-v1',source_id:'private-public',entity_uid:'private:table:opaque',title:'真实实验表',sheet_name:'数据',columns:[{{name:'剂量',role:'independent',data_type:'number',meaning:'辐照剂量',unit:'dpa'}},{{name:'硬度',role:'dependent',data_type:'number',meaning:'纳米硬度',unit:'GPa'}}],conditions:{{温度:'300 K'}},series:[{{name:'硬度曲线',x_column:'剂量',y_column:'硬度',uncertainty_column:null,description:'真实测量序列'}}],page,page_size:50,total:75,has_next:page===1,rows:[{{剂量:String((page-1)*50),硬度:'4.1'}}]}});
+api.state.view='search';api.state.evidenceDetailOpen=true;api.state.evidenceDetail=row;
+assert.deepEqual(api.privateTableIdentity(row),{{sourceId:'private-public',entityUid:'private:table:opaque',key:'private:private-public:private:table:opaque'}});assert.equal(api.privateTableIdentity({{...row,sourceScope:'official'}}),null);assert.equal(api.privateTableIdentity({{...row,type:'finding'}}),null);
+const first=api.loadPrivateTablePage(row,1),second=api.loadPrivateTablePage(row,2);pending.get(2)(dto(2));await second;pending.get(1)(dto(1));await first;assert.equal(api.state.personalTablePage.page,2,'late page must not replace current page');assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('硬度'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('第 2 页'));assert(ids['#fusion-inspector-body'].innerHTML.includes('辐照剂量'));assert(ids['#fusion-inspector-body'].innerHTML.includes('300 K'));assert(ids['#fusion-inspector-body'].innerHTML.includes('硬度曲线'));assert(calls.some(([url])=>url.includes('source_id=private-public')&&url.includes('entity_uid=private%3Atable%3Aopaque')&&url.includes('page_size=50')));
+const before=calls.length;api.state.paper={{id:9,title:'已扫描论文',requiresRescanConfirmation:true}};globalThis.confirm=()=>false;await api.runLiteratureExtraction();assert.equal(calls.length,before,'rescan cancellation must make zero prepare requests');assert(ids['#fusion-literature-action-status'].textContent.includes('没有准备或执行模型调用'));
+api.renderLibrarianFinal({{librarian_core_version:'librarian-v3',answer:'完整回答',research_state:null,state_token:'',results:[{{entity_type:'item',source_scope:'official',source_id:'official-v1',entity_uid:'official:item:1',meaning:'硬度变化',value_text:'4.1',unit:'GPa',article_title:'论文A',source_page:3,source_excerpt:'原文证据'}}],report:{{schema_version:'research-report-v1',direct_conclusion:{{status:'found',text:'直接结论正文',refs:['R1']}},evidence_matrix:[{{property:'硬度',result:'4.1 GPa',material:'W',conditions:'300 K',article_title:'论文A',source_page:3,refs:['R1']}}],related_evidence:[{{summary:'相关证据正文',relaxed_constraints:['温度'],refs:['R2']}}],database_gaps:['缺少剂量范围'],suggested_followups:['继续解释R1']}},recommended_articles:[{{article_title:'推荐论文',why_recommended:'满足硬条件',first_author:'A',year:2025,doi:'10.1/a',recommendation_level:'direct',supporting_refs:['R1'],coverage_warning:'缺少图片'}}],suggested_actions:[{{schema_version:'suggested-action-v1',answerable:true,text:'详细解释R1'}}]}},'问题');const html=ids['#fusion-librarian-output'].innerHTML;for(const text of ['完整回答','直接结论正文','证据矩阵','相关证据正文','缺少剂量范围','继续解释R1','原文证据','推荐论文','缺少图片','详细解释R1'])assert(html.includes(text),text);
+}})().catch(error=>{{console.error(error);process.exitCode=1}});
+"""
+        result = subprocess.run(
+            ["node", "-e", program],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_private_table_and_rescan_contracts_are_bounded(self) -> None:
+        for marker in (
+            'personalTable:"/api/desktop/personal-experiments/table"',
+            "personal-table-page-v1", "page_size=50", "privateTableIdentity",
+            "source_id=${encodeURIComponent(identity.sourceId)}",
+            "entity_uid=${encodeURIComponent(identity.entityUid)}",
+            'requiresRescanConfirmation:raw?.requires_rescan_confirmation===true',
+            "会重新调用模型并可能产生 API 费用", "force_rescan:forceRescan",
+            "renderRecommendedArticles", "renderSuggestedActions", "renderLibrarianReport",
+        ):
+            self.assertIn(marker, self.runtime)
+        self.assertNotIn("raw?.run_id", self.runtime)
+        self.assertNotIn("raw?.file_id", self.runtime)
+        for forbidden in ("体验版", "合成示例", "测试连接", "能力测试", "后续版本", "功能恢复"):
+            self.assertNotIn(forbidden, self.index + self.runtime)
+
     def test_fusion_layout_accessibility_and_responsive_contract(self) -> None:
         for marker in (
             "--fusion-titlebar:34px", "--fusion-activity:48px", "--fusion-context:244px",
