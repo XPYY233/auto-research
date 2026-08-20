@@ -177,6 +177,38 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertIn("未加密", self.index + self.runtime)
         self.assertIn("不认证发送者身份", self.index + self.runtime)
 
+    def test_fixed_download_routes_and_workspace_gate(self) -> None:
+        for element_id in (
+            "fusion-paper-export-csv", "fusion-paper-export-xlsx",
+            "fusion-search-item-csv", "fusion-search-item-xlsx",
+            "fusion-search-finding-csv", "fusion-search-finding-xlsx",
+            "fusion-detail-download-image",
+        ):
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        for marker in (
+            "/api/current-paper/export.${format}?paper_id=${paperId}",
+            'item:"/api/six-export"', 'finding:"/api/qualitative-export"',
+            "encodeURIComponent(String(query", "sourceScope===\"workspace\"",
+            "计划已生成，但尚未创建文件", "选择保存位置并导出",
+        ):
+            self.assertIn(marker, self.index + self.runtime)
+        program = f"""
+globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
+const api=globalThis.AutoResearchFusion,assert=require('assert');
+assert.equal(api.currentPaperExportURL('csv',7),'/api/current-paper/export.csv?paper_id=7');
+assert.equal(api.currentPaperExportURL('xlsx',7),'/api/current-paper/export.xlsx?paper_id=7');
+assert.equal(api.currentPaperExportURL('csv',0),'');
+assert.equal(api.currentPaperExportURL('csv','7'),'');
+assert.equal(api.currentPaperExportURL('pdf',7),'');
+assert.equal(api.workspaceSearchExportURL('item','csv','W Ta/He'),'/api/six-export.csv?q=W%20Ta%2FHe');
+assert.equal(api.workspaceSearchExportURL('finding','xlsx','辐照 缺陷'),'/api/qualitative-export.xlsx?q=%E8%BE%90%E7%85%A7%20%E7%BC%BA%E9%99%B7');
+assert.equal(api.workspaceSearchExportURL('official','csv','x'),'');
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_selected_evidence_ai_is_workspace_numeric_only(self) -> None:
         for element_id in (
             "fusion-evidence-ai-question", "fusion-evidence-ai",
