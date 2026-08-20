@@ -9,7 +9,7 @@ ROLLBACK_ROOT="${PROJECT_ROOT:h}/auto-research-backups/app-rollbacks"
 EXPECTED_VERSION="$(/usr/bin/plutil -extract bundle_short_version raw -o - "${SCRIPT_DIR}/version.json")"
 EXPECTED_BUILD="$(/usr/bin/plutil -extract build_number raw -o - "${SCRIPT_DIR}/version.json")"
 STAMP="$(date '+%Y%m%d-%H%M%S')"
-STAGED="/Applications/.Auto Research-0.9.1-build19-${STAMP}.app"
+STAGED="/Applications/.Auto Research-${EXPECTED_VERSION}-build${EXPECTED_BUILD}-${STAMP}.app"
 LIVE_HOLD="/Applications/.Auto Research-previous-${STAMP}.app.rollback"
 COMMITTED=0
 MOVED_OLD=0
@@ -31,14 +31,14 @@ restore_previous_install() {
 trap restore_previous_install EXIT
 
 if [[ ! -d "${CANDIDATE}" ]]; then
-  echo "没有找到已经验证的 0.9.1 候选 App。"
+  echo "没有找到已经验证的 Auto Research 候选 App。"
   exit 2
 fi
 codesign --verify --deep --strict "${CANDIDATE}"
 CANDIDATE_VERSION="$(/usr/bin/plutil -extract CFBundleShortVersionString raw -o - "${CANDIDATE}/Contents/Info.plist")"
 CANDIDATE_BUILD="$(/usr/bin/plutil -extract CFBundleVersion raw -o - "${CANDIDATE}/Contents/Info.plist")"
 if [[ "${CANDIDATE_VERSION}" != "${EXPECTED_VERSION}" || "${CANDIDATE_BUILD}" != "${EXPECTED_BUILD}" ]]; then
-  echo "候选 App 的版本身份与 0.9.1/build19 契约不一致。"
+  echo "候选 App 的版本身份与 ${EXPECTED_VERSION}/build${EXPECTED_BUILD} 契约不一致。"
   exit 3
 fi
 

@@ -88,6 +88,20 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertNotIn("local status=$?", command)
         self.assertIn('return "${exit_code}"', command)
 
+    def test_fusion_installer_uses_current_version_metadata(self) -> None:
+        command = (DESKTOP_ROOT / "install_fusion_review.command").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'EXPECTED_VERSION="$(/usr/bin/plutil -extract bundle_short_version',
+            command,
+        )
+        self.assertIn(
+            'EXPECTED_BUILD="$(/usr/bin/plutil -extract build_number', command
+        )
+        self.assertIn("${EXPECTED_VERSION}-build${EXPECTED_BUILD}", command)
+        self.assertNotIn("build19", command)
+
     def test_frozen_candidate_imports_all_product_contracts(self) -> None:
         checks = launcher._frozen_product_contract_checks()
         self.assertTrue(checks)
