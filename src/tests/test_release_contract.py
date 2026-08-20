@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 class ReleaseContractTests(unittest.TestCase):
     def test_repository_contract_is_valid_and_assets_match(self) -> None:
         contract = load_release_contract(PROJECT_ROOT / "config" / "release-contract.json")
-        self.assertEqual(contract.macos_version, "0.9.1-preview.1")
+        self.assertEqual(contract.macos_version, "0.9.1-preview.2")
         self.assertEqual(contract.windows_version, "0.8.0-internal.1")
         self.assertEqual(contract.official_package_version, "0.2.0-preview.1")
         verify_web_asset_hashes(contract, PROJECT_ROOT)
@@ -58,6 +58,12 @@ class ReleaseContractTests(unittest.TestCase):
     def test_fusion_runtime_asset_cannot_be_omitted(self) -> None:
         value = json.loads((PROJECT_ROOT / "config" / "release-contract.json").read_text())
         value["web_assets"].pop("src/auto_research/evidence/web/fusion_review.js")
+        with self.assertRaisesRegex(ReleaseContractError, "全部共享前端资产"):
+            validate_release_contract(value)
+
+    def test_ai_consent_asset_cannot_be_omitted(self) -> None:
+        value = json.loads((PROJECT_ROOT / "config" / "release-contract.json").read_text())
+        value["web_assets"].pop("src/auto_research/evidence/web/ai_consent.js", None)
         with self.assertRaisesRegex(ReleaseContractError, "全部共享前端资产"):
             validate_release_contract(value)
 

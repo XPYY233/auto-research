@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Auto Research · Fusion GUI 体验版</title>
+  <title>Auto Research · Fusion 科研工作台</title>
   <script>
     (() => {
       try {
@@ -18,13 +18,13 @@
 </head>
 <body data-view="paper">
   <a class="skip-link" href="#fusion-editor">跳到中央工作区</a>
-  <main class="fusion-app" aria-label="Auto Research Fusion GUI 体验版">
+  <main class="fusion-app" aria-label="Auto Research Fusion 科研工作台">
     <header class="fusion-titlebar">
       <div class="fusion-window-mark" aria-hidden="true"><i></i><i></i><i></i></div>
       <strong>Auto Research</strong>
       <span id="fusion-breadcrumb">文献 / 当前论文</span>
       <button type="button" class="fusion-command" id="fusion-command" aria-keyshortcuts="Meta+K Control+K" aria-haspopup="dialog" aria-expanded="false" aria-controls="fusion-command-palette">命令与快速跳转 <kbd>⌘K</kbd></button>
-      <span class="fusion-preview-badge">Fusion GUI体验版 · 文献只读 · 实验为合成示例</span>
+      <span class="fusion-preview-badge">Fusion 功能恢复预览 · 本机数据 · AI 逐次授权</span>
     </header>
 
     <section class="fusion-shell">
@@ -50,9 +50,10 @@
         </section>
         <section class="fusion-context-view" data-context-view="search" hidden>
           <p class="fusion-section-label">来源</p>
-          <div class="fusion-tree-row active static"><span>当前真实文献</span><b>只读</b></div>
-          <div class="fusion-tree-row static"><span>官方资料库</span><b>0.9.2+</b></div>
-          <div class="fusion-tree-row static"><span>我的实验</span><b>合成</b></div>
+          <button type="button" class="fusion-tree-row active" data-search-source="workspace"><span>本机文献工作区</span><b>V12</b></button>
+          <button type="button" class="fusion-tree-row" data-search-source="official"><span>官方资料库</span><b>签名只读</b></button>
+          <button type="button" class="fusion-tree-row" data-search-source="private"><span>我的实验</span><b>本机私人</b></button>
+          <button type="button" class="fusion-tree-row" data-search-source="all"><span>全部资料源</span><b>联合</b></button>
           <p class="fusion-section-label">证据类型</p>
           <div class="fusion-tree-row static"><span>测量条目</span><b id="fusion-count-item">—</b></div>
           <div class="fusion-tree-row static"><span>研究结论</span><b id="fusion-count-finding">—</b></div>
@@ -66,8 +67,8 @@
           <button type="button" class="fusion-tree-row active" data-sheet="hardness"><span>硬度测量</span><b>12×5</b></button>
           <button type="button" class="fusion-tree-row" data-sheet="metadata"><span>样品信息</span><b>4×3</b></button>
           <p class="fusion-section-label">检查状态</p>
-          <div class="fusion-tree-row static"><span>本次会话核验</span><b id="fusion-review-context-state">尚未检查</b></div>
-          <div class="fusion-tree-row static"><span>AI 建议</span><b id="fusion-ai-demo-context-state">未运行模型</b></div>
+          <div class="fusion-tree-row static"><span>真实文件</span><b id="fusion-review-context-state">待选择</b></div>
+          <div class="fusion-tree-row static"><span>AI 预填</span><b id="fusion-ai-demo-context-state">逐次授权</b></div>
         </section>
         <section class="fusion-context-view" data-context-view="package" hidden>
           <p class="fusion-section-label">资料库</p>
@@ -89,7 +90,7 @@
       <section class="fusion-editor" id="fusion-editor" tabindex="-1">
         <div class="fusion-tabs" role="tablist" aria-label="中央编辑区标签">
           <button type="button" class="fusion-tab active" role="tab" aria-selected="true" tabindex="0" data-tab="primary"><span id="fusion-primary-tab-label">当前论文</span></button>
-          <button type="button" class="fusion-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="detail" disabled data-fusion-disabled><span id="fusion-detail-tab-label">证据详情 · 后续接入</span></button>
+          <button type="button" class="fusion-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="detail" disabled data-fusion-disabled><span id="fusion-detail-tab-label">证据详情</span></button>
         </div>
 
         <section class="fusion-view active" id="view-paper" data-view-panel="paper" aria-label="文献工作区">
@@ -98,28 +99,38 @@
             <div><strong>当前论文</strong><small>真实文献快照 · 只读展示</small></div>
             <span class="fusion-spacer"></span>
             <div class="fusion-action-cluster" aria-label="文献主操作">
-              <button type="button" class="fusion-primary-action" id="fusion-import-pdf" disabled data-fusion-disabled>＋ 导入 PDF <small>后续接入</small></button>
-              <button type="button" class="fusion-primary-action" id="fusion-start-extraction" disabled data-fusion-disabled>▶ 开始自动提取与核验 <small>后续接入</small></button>
-              <button type="button" disabled data-fusion-disabled>打开 PDF</button>
-              <button type="button" disabled data-fusion-disabled>导出当前论文</button>
+              <input type="file" id="fusion-pdf-file" accept="application/pdf,.pdf" hidden>
+              <button type="button" class="fusion-primary-action" id="fusion-import-pdf">＋ 导入 PDF</button>
+              <button type="button" class="fusion-primary-action" id="fusion-start-extraction" disabled>▶ 开始自动提取与核验</button>
+              <button type="button" id="fusion-open-pdf" disabled>打开 PDF</button>
             </div>
             <button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button>
           </header>
+          <div class="fusion-toolbar-note" id="fusion-literature-action-status" aria-live="polite">选择文献后可在中央打开原文；导入与自动提取均由你明确启动。</div>
           <div class="fusion-scroll" id="fusion-literature-content" aria-live="polite" aria-busy="true">
             <div class="fusion-state-card large" data-literature-state="loading"><strong>正在载入真实文献快照…</strong><span>文献标题、公开元数据与四类证据来自现有只读接口。</span></div>
           </div>
+          <section class="fusion-pdf-viewer" id="fusion-pdf-viewer" hidden aria-label="当前论文 PDF 查看器"><header><button type="button" id="fusion-close-pdf">← 返回当前论文</button><strong id="fusion-pdf-title">当前论文原文</strong><span>本机同源查看 · 不离开工作台</span></header><iframe id="fusion-pdf-frame" title="当前论文 PDF" loading="lazy"></iframe></section>
         </section>
 
         <section class="fusion-view" id="view-search" data-view-panel="search" hidden aria-label="搜索工作区">
-          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">筛选</button><label class="fusion-query"><span aria-hidden="true">⌕</span><input value="当前论文的真实只读证据" aria-label="搜索词" readonly></label><div class="fusion-action-cluster" aria-label="搜索模式"><button type="button" class="fusion-primary-action" id="fusion-run-precise-search" disabled data-fusion-disabled>⌕ 精确检索 <small>后续接入</small></button><button type="button" class="fusion-primary-action fusion-librarian-action" id="fusion-open-librarian" disabled data-fusion-disabled>▣ 图书管理员 <small>官方全库 · 后续接入</small></button></div><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button></header>
-          <div class="fusion-scroll fusion-result-stream" id="fusion-search-results" role="listbox" aria-label="当前论文的真实只读证据">
-            <div class="fusion-state-card large" data-literature-state="loading"><strong>正在读取真实证据…</strong><span>当前搜索体验只浏览所选论文的公开四类证据。</span></div>
-          </div>
+          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">筛选</button><label class="fusion-query"><span aria-hidden="true">⌕</span><input id="fusion-search-query" placeholder="题目、DOI、材料、条件或物理量" aria-label="搜索词"></label><div class="fusion-action-cluster" role="tablist" aria-label="搜索模式"><button type="button" class="fusion-primary-action active" id="fusion-run-precise-search" role="tab" aria-selected="true">⌕ 精确检索</button><button type="button" class="fusion-librarian-action" id="fusion-open-librarian" role="tab" aria-selected="false">▣ 图书管理员 <small>官方全库</small></button></div><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button></header>
+          <section class="fusion-search-mode" id="fusion-precise-panel" data-search-mode-panel="precise"><div class="fusion-scroll fusion-result-stream" id="fusion-search-results" role="listbox" aria-label="精确检索结果"><div class="fusion-state-card large" data-literature-state="loading"><strong>正在读取真实证据…</strong><span>精确检索只消费四类公开证据。</span></div></div></section>
+          <section class="fusion-search-mode fusion-librarian-panel" id="fusion-librarian-panel" data-search-mode-panel="librarian" hidden>
+            <form class="fusion-librarian-form" id="fusion-librarian-form"><label for="fusion-librarian-question">研究问题</label><textarea id="fusion-librarian-question" rows="3" maxlength="4000" placeholder="例如：钨基材料在氦离子辐照后的硬度变化有哪些证据？"></textarea><button type="submit" class="fusion-primary-action" id="fusion-librarian-send">发送给图书管理员</button></form>
+            <p class="fusion-toolbar-note" id="fusion-librarian-status" aria-live="polite">图书管理员仅检索官方文献全库；收费模型调用前会逐次说明并确认。</p>
+            <section class="fusion-librarian-stage" id="fusion-librarian-stage" hidden><strong>检索规划已完成，尚未生成最终回答</strong><dl><div><dt>候选</dt><dd id="fusion-librarian-candidates">0</dd></div><div><dt>证据组</dt><dd id="fusion-librarian-bundles">0</dd></div><div><dt>主题</dt><dd id="fusion-librarian-themes">0</dd></div></dl><button type="button" class="fusion-primary-action" id="fusion-librarian-continue">继续生成回答（可能再调用模型 1 次）</button><button type="button" id="fusion-librarian-cancel">停止</button></section>
+            <div class="fusion-scroll fusion-librarian-output" id="fusion-librarian-output" aria-live="polite"></div>
+          </section>
         </section>
 
         <section class="fusion-view" id="view-personal" data-view-panel="personal" hidden aria-label="合成实验数据工作区">
-          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context" aria-expanded="false" aria-controls="fusion-context">工作表</button><div><strong>W-Ta_nanoindentation_demo.csv</strong><small id="fusion-sheet-summary">硬度测量 · 12 行 · 5 列 · 合成数据</small></div><span class="fusion-spacer"></span><div class="fusion-action-cluster" aria-label="实验主操作"><button type="button" class="fusion-primary-action" id="fusion-select-data-file" disabled data-fusion-disabled>＋ 选择 CSV / TSV / XLSX <small>后续接入</small></button><button type="button" id="fusion-demo-suggestion">查看演示 AI 建议</button><button type="button" id="fusion-mark-reviewed">标记本次会话已检查</button></div><span class="fusion-reviewed" id="fusion-reviewed-state">尚未检查</span><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector" aria-expanded="false" aria-controls="fusion-inspector">列检查器</button></header>
-          <div class="fusion-toolbar-note" id="fusion-demo-suggestion-status" aria-live="polite">AI 建议尚未运行；当前网格为合成示例，不会调用模型。</div>
+          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context" aria-expanded="false" aria-controls="fusion-context">工作表</button><div><strong id="fusion-personal-filename">W-Ta_nanoindentation_demo.csv</strong><small id="fusion-sheet-summary">硬度测量 · 12 行 · 5 列 · 合成数据</small></div><span class="fusion-spacer"></span><div class="fusion-action-cluster" aria-label="实验主操作"><button type="button" class="fusion-primary-action" id="fusion-select-data-file">＋ 选择 CSV / TSV / XLSX</button><button type="button" id="fusion-personal-ai" disabled>AI 辅助预填</button><button type="button" class="fusion-primary-action" id="fusion-personal-confirm" disabled>确认并导入一次</button></div><span class="fusion-reviewed" id="fusion-reviewed-state">合成示例</span><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector" aria-expanded="false" aria-controls="fusion-inspector">列检查器</button></header>
+          <div class="fusion-toolbar-note" id="fusion-personal-status" aria-live="polite">当前为显著标注的合成示例。选择本机表格后先安全预览，再由你核验并一次确认。</div>
+          <section class="fusion-personal-review" id="fusion-personal-review" hidden>
+            <div class="fusion-personal-meta"><label>项目名称<input id="fusion-project-name" maxlength="500"></label><label>样品名称<input id="fusion-sample-name" maxlength="500"></label><label>材料（可选）<input id="fusion-sample-material" maxlength="500"></label><label>实验批次<input id="fusion-run-name" maxlength="500"></label><label>方法<input id="fusion-run-method" maxlength="500"></label></div>
+            <label>工作表<select id="fusion-personal-sheet"></select></label><div id="fusion-personal-columns" class="fusion-personal-columns"></div>
+          </section>
           <div class="fusion-sheet-tabs" role="tablist" aria-label="合成工作表">
             <button type="button" class="active" role="tab" aria-selected="true" tabindex="0" data-sheet="hardness">硬度测量</button>
             <button type="button" role="tab" aria-selected="false" tabindex="-1" data-sheet="metadata">样品信息</button>
@@ -133,19 +144,19 @@
           <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">版本</button><div><strong>资料包中心</strong><small>冻结状态快照 · 不执行文件操作</small></div><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">安全边界</button></header>
           <div class="fusion-scroll fusion-package-list">
             <section><header><span>OFFICIAL</span><strong>官方资料库</strong><em>体验版未读取</em></header><dl><div><dt>当前版本</dt><dd>—</dd></div><div><dt>证据数量</dt><dd>—</dd></div><div><dt>说明</dt><dd>0.9.2+ 恢复</dd></div></dl><button disabled data-fusion-disabled>更换官方资料包 · 0.9.2+</button></section>
-            <section><header><span>PRIVATE</span><strong>我的实验资料</strong><em>本机私人</em></header><p>体验版只展示合成示例；不会读取、导出或覆盖私人仓库。</p><button disabled data-fusion-disabled>导入 / 导出 · 0.9.2+</button></section>
+            <section><header><span>PRIVATE</span><strong>我的实验资料</strong><em>本机私人</em></header><p>实验页可安全预览并核验导入私人库；本资料包页暂不提供批量导入、导出或覆盖操作。</p><button disabled data-fusion-disabled>批量导入 / 导出 · 0.9.2+</button></section>
             <section class="fusion-placeholder-actions"><button disabled data-fusion-disabled>回退资料包 · 0.9.2+</button><button disabled data-fusion-disabled>统一导出中心 · 0.9.2+</button></section>
           </div>
         </section>
 
         <section class="fusion-view" id="view-settings" data-view-panel="settings" hidden aria-label="设置工作区">
-          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">设置目录</button><div><strong>设置</strong><small>体验版仅外观偏好可操作</small></div></header>
+          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">设置目录</button><div><strong>设置</strong><small>外观与受信 AI 提供商</small></div></header>
           <div class="fusion-scroll fusion-settings-page">
             <section data-settings-panel="appearance"><h1>外观</h1><p>主题与密度只影响这台设备的界面，不改变论文、实验值或单位。桌面设置是权威，本地缓存只用于避免首屏闪烁。</p><p class="fusion-settings-status" id="fusion-settings-status" aria-live="polite">正在同步桌面外观设置…</p><div class="fusion-setting-row"><div><strong>主题</strong><small>跟随系统、日间或夜间</small></div><div class="fusion-segmented" role="group" aria-label="主题"><button type="button" data-theme-choice="system">跟随系统</button><button type="button" data-theme-choice="light">日间</button><button type="button" data-theme-choice="dark">夜间</button></div></div><div class="fusion-setting-row"><div><strong>界面密度</strong><small>紧凑模式减少间距，不缩小实验数值</small></div><div class="fusion-segmented" role="group" aria-label="密度"><button type="button" data-density-choice="comfortable">舒适</button><button type="button" data-density-choice="compact">紧凑</button></div></div></section>
             <section data-settings-panel="language"><h2>语言与区域</h2><div class="fusion-setting-row"><div><strong>简体中文</strong><small>当前完整支持</small></div><span>已启用</span></div><div class="fusion-setting-row muted"><div><strong>English</strong><small>计划支持</small></div><span>不可用</span></div></section>
-            <section data-settings-panel="ai"><h2>AI 与 API 密钥</h2><p>体验版不会读取或保存密钥。真实设置入口将在 0.9.2 恢复并继续使用受信提供商安全存储。</p><div class="fusion-placeholder-actions"><button disabled data-fusion-disabled>选择提供商 · 0.9.2+</button><button disabled data-fusion-disabled>安全保存密钥 · 0.9.2+</button><button disabled data-fusion-disabled>测试连接 · 0.9.2+</button></div></section>
-            <section data-settings-panel="data"><h2>数据与资料库</h2><p>文献仅通过受限 GET 读取公开快照、实验为合成示例；生产数据库不会被本体验版修改。</p></section>
-            <section data-settings-panel="about"><h2>关于</h2><div class="fusion-setting-row"><div><strong>Auto Research 0.9.1-preview.1</strong><small>build 19 · Fusion GUI 体验审核</small></div><span>macOS 内部预览</span></div><p>本版只供审核四区结构、信息密度、主题、CSV 网格与窄窗口行为。Windows 与第1—5项真实业务均未在本版启用。</p></section>
+            <section data-settings-panel="ai"><h2>AI 与 API 密钥</h2><p>只允许内置的 DeepSeek / OpenAI 受信目录与固定模型；密钥保存到系统安全凭据存储，不会回显或写入页面缓存。</p><p class="fusion-settings-status" id="fusion-ai-settings-status" aria-live="polite">正在读取受信提供商状态…</p><div class="fusion-setting-row"><div><strong>提供商</strong><small>不接受自定义 URL</small></div><select id="fusion-ai-provider" disabled></select></div><div id="fusion-ai-models" class="fusion-ai-models"></div><div class="fusion-setting-row"><div><strong>API 密钥</strong><small id="fusion-ai-credential-state">尚未读取</small></div><input id="fusion-ai-key" type="password" autocomplete="off" maxlength="4096" placeholder="粘贴后安全保存；不会回显"></div><div class="fusion-placeholder-actions"><button type="button" id="fusion-ai-model-save" disabled>保存提供商与模型</button><button type="button" id="fusion-ai-key-save" disabled>安全保存密钥</button><button type="button" id="fusion-ai-key-delete" disabled>删除密钥</button><button type="button" id="fusion-ai-test" disabled>受控测试连接</button></div><small id="fusion-ai-test-plan">读取设置后显示精确测试调用上限。</small></section>
+            <section data-settings-panel="data"><h2>数据与资料库</h2><p>文献检索使用公开安全 DTO；实验文件先在本机受限预览，只有你集中核验并确认后才写入私人库。</p></section>
+            <section data-settings-panel="about"><h2>关于</h2><div class="fusion-setting-row"><div><strong>Auto Research 0.9.1-preview.2</strong><small>build 20 · Fusion 功能恢复预览</small></div><span>macOS 内部预览</span></div><p>本版恢复文献、搜索、个人实验与受信 AI 设置的核心工作流；资料包管理、导出中心与 Windows 发布仍未在本预览中启用。</p></section>
           </div>
         </section>
       </section>
@@ -157,7 +168,7 @@
       </aside>
     </section>
 
-    <footer class="fusion-statusbar"><span><b>●</b> Fusion GUI体验版</span><span id="fusion-status-context">文献只读</span><span>实验：合成示例</span><span class="fusion-status-right">AI / 写入 / 下载均已停用</span></footer>
+    <footer class="fusion-statusbar"><span><b>●</b> Fusion 功能恢复预览</span><span id="fusion-status-context">真实文献</span><span id="fusion-status-operation">就绪</span><span class="fusion-status-right">敏感操作逐次授权 · 数据默认留在本机</span></footer>
   </main>
   <div class="fusion-scrim" data-close-all-drawers hidden></div>
   <section class="fusion-command-palette" id="fusion-command-palette" role="dialog" aria-modal="true" aria-label="命令与快速跳转" hidden>
@@ -170,6 +181,7 @@
       <button type="button" role="option" tabindex="-1" data-command-view="settings">打开设置 <kbd>⌘,</kbd></button>
     </div>
   </section>
+  <script src="/static/ai_consent.js"></script>
   <script src="/static/fusion_review.js"></script>
 </body>
 </html>

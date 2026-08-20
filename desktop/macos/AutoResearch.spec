@@ -17,7 +17,13 @@ analysis = Analysis(
                 str(project_root / "src" / "auto_research" / "evidence" / "web" / name),
                 "auto_research/evidence/web",
             )
-            for name in ("index.html", "app.css", "workbench.css", "fusion_review.js")
+            for name in (
+                "index.html",
+                "app.css",
+                "workbench.css",
+                "ai_consent.js",
+                "fusion_review.js",
+            )
         ],
         (
             str(desktop_root / "version.json"),

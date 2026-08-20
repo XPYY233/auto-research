@@ -1,10 +1,10 @@
 {
-  "desktop_version": "0.9.1-preview.1",
+  "desktop_version": "0.9.1-preview.2",
   "bundle_short_version": "0.9.1",
-  "build_number": "19",
-  "target": "macOS arm64 Fusion GUI review preview",
+  "build_number": "20",
+  "target": "macOS arm64 Fusion functional preview",
   "product_target": "future Windows production target (not released)",
-  "data_mode": "isolated-schema-v12-read-only-snapshot-plus-synthetic-session-experiment",
+  "data_mode": "workspace-schema-v12-plus-private-library-and-versioned-evidence-packages",
   "minimum_evidence_schema": 12,
   "official_package_schema": 1
 }

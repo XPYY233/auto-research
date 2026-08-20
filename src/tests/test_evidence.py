@@ -1587,19 +1587,20 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertIn("font-variant-numeric:tabular-nums", app_css)
         self.assertNotIn("codex-pet-working.webp", app_css)
 
-    def test_fusion_librarian_is_an_honest_disabled_future_action(self):
+    def test_fusion_librarian_uses_the_prepared_action_authority(self):
         index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
         fusion_js = (WEB_DIR / "fusion_review.js").read_text(encoding="utf-8")
         self.assertIn("图书管理员", index_html)
-        self.assertIn("0.9.2+", index_html)
         librarian_buttons = [
             item for item in index_html.split("<button")
             if "图书管理员" in item[:500]
         ]
         self.assertTrue(librarian_buttons)
-        self.assertTrue(all("disabled" in item[:500] for item in librarian_buttons))
+        self.assertTrue(any("disabled" not in item[:500] for item in librarian_buttons))
+        self.assertIn('preparedAuthorization("librarian"', fusion_js)
+        self.assertIn('/api/desktop/ai/actions/', fusion_js)
+        self.assertIn('/api/desktop/ai/consents', fusion_js)
         self.assertNotIn("/api/agents/librarian", fusion_js)
-        self.assertNotIn("authorizePreparedAIAction", fusion_js)
 
     def test_future_visual_metadata_prompt_requires_material_and_comparison_context(self):
         prompt = _visual_metadata_messages(
@@ -1882,11 +1883,13 @@ class SixColumnWorkflowTests(unittest.TestCase):
                 "four_research_views",
                 "settings_view",
                 "fusion_runtime_only",
-                "isolated_read_routes",
-                "business_actions_disabled",
+                "functional_read_routes",
+                "prominent_primary_actions",
+                "protected_business_routes",
                 "synthetic_grid",
-                "session_review_only",
-                "zero_model_demo",
+                "personal_review_once",
+                "versioned_ai_consent",
+                "central_pdf_return",
                 "appearance_modes",
                 "keyboard_navigation",
                 "responsive_drawers",
@@ -1899,10 +1902,10 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(all(item["ok"] for item in requirements.values()))
         self.assertTrue(requirements["article_selector_to_extracted_rows"]["ok"])
         self.assertTrue(requirements["six_required_columns"]["ok"])
-        self.assertTrue(requirements["fusion_read_only_literature"]["ok"])
-        self.assertTrue(requirements["fusion_synthetic_experiment"]["ok"])
+        self.assertTrue(requirements["fusion_functional_literature"]["ok"])
+        self.assertTrue(requirements["fusion_personal_experiment_import"]["ok"])
         self.assertTrue(requirements["free_text_fuzzy_search_and_export"]["ok"])
-        self.assertTrue(requirements["fusion_future_actions_blocked"]["ok"])
+        self.assertTrue(requirements["fusion_controlled_ai_actions"]["ok"])
 
     def test_db_health_checks_current_view_indexes_and_required_fields(self):
         report = evidence_db_health(self.db, paper_id=self.paper_id)

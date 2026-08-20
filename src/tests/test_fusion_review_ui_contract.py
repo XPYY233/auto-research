@@ -30,186 +30,122 @@ class FusionReviewUIContractTests(unittest.TestCase):
         cls.css = (WEB / "workbench.css").read_text(encoding="utf-8")
         cls.runtime = (WEB / "fusion_review.js").read_text(encoding="utf-8")
 
-    def test_physical_shell_geometry_and_one_runtime_owner(self) -> None:
-        for marker in (
-            "--fusion-titlebar:34px",
-            "--fusion-activity:48px",
-            "--fusion-context:244px",
-            "--fusion-tabs:36px",
-            "--fusion-inspector:340px",
-            "--fusion-statusbar:22px",
-        ):
-            self.assertIn(marker, self.base_css + self.css)
-        self.assertEqual(self.index.count('class="fusion-titlebar"'), 1)
-        self.assertEqual(self.index.count('class="fusion-activity"'), 1)
-        self.assertEqual(self.index.count('class="fusion-context"'), 1)
-        self.assertEqual(self.index.count('class="fusion-editor"'), 1)
-        self.assertEqual(self.index.count('class="fusion-inspector"'), 1)
-        self.assertEqual(self.index.count('class="fusion-statusbar"'), 1)
-        self.assertEqual(self.index.count('/static/fusion_review.js'), 1)
-        for legacy_runtime in ("/static/app.js", "/static/workbench.js", "/static/desktop_product.js", "/static/package_center.js"):
-            self.assertNotIn(legacy_runtime, self.index)
-
-    def test_five_views_have_unique_ids_and_single_primary_navigation(self) -> None:
+    def test_single_fusion_owner_and_script_order(self) -> None:
         parser = _IDs()
         parser.feed(self.index)
         self.assertEqual(len(parser.ids), len(set(parser.ids)))
+        self.assertEqual(self.index.count('/static/fusion_review.js'), 1)
+        self.assertEqual(self.index.count('/static/ai_consent.js'), 1)
+        self.assertLess(self.index.index('/static/ai_consent.js'), self.index.index('/static/fusion_review.js'))
+        for legacy in ("/static/app.js", "/static/workbench.js", "/static/desktop_product.js", "/static/package_center.js"):
+            self.assertNotIn(legacy, self.index)
+        self.assertNotIn("appendChild", self.runtime)
         navigation = re.search(r'<nav class="fusion-activity".*?</nav>', self.index, re.DOTALL)
         self.assertIsNotNone(navigation)
         for name in ("paper", "search", "personal", "package", "settings"):
             self.assertEqual(navigation.group(0).count(f'data-view="{name}"'), 1)
             self.assertEqual(self.index.count(f'data-view-panel="{name}"'), 1)
-            self.assertEqual(self.index.count(f'data-context-view="{name}"'), 1)
-        self.assertNotIn("appendChild", self.runtime)
 
-    def test_experience_boundary_is_visible_and_every_future_action_is_disabled(self) -> None:
-        boundary = "Fusion GUI体验版 · 文献只读 · 实验为合成示例"
-        self.assertIn(boundary, self.index)
-        buttons = re.findall(r"<button\b[^>]*data-fusion-disabled[^>]*>", self.index)
-        self.assertGreaterEqual(len(buttons), 14)
-        self.assertTrue(all("disabled" in button for button in buttons))
-        for forbidden in ("XMLHttpRequest", "sendBeacon", "pywebview", 'method:"POST"', 'method:"DELETE"'):
-            self.assertNotIn(forbidden, self.runtime)
-        self.assertEqual(set(re.findall(r'"(/api/[^"`?]+)', self.runtime)), {
-            "/api/search-papers", "/api/search-v2", "/api/desktop/settings", "/api/desktop/settings/preferences",
-        })
-
-    def test_real_literature_uses_bounded_gets_with_terminal_states_and_generation(self) -> None:
-        for marker in (
-            'method:"GET"', 'credentials:"same-origin"', 'cache:"no-store"',
-            "literatureRequest", 'request!==state.literatureRequest',
-            'data-literature-state="loading"', 'literatureState("empty"', 'literatureState("error"',
-            "publicPaper", "publicEvidence", 'paper_ids=${encodeURIComponent(String(id))}',
+    def test_real_workflows_are_top_level_and_pdf_stays_in_workspace(self) -> None:
+        for element_id in (
+            "fusion-import-pdf", "fusion-start-extraction", "fusion-open-pdf",
+            "fusion-run-precise-search", "fusion-open-librarian",
+            "fusion-select-data-file", "fusion-personal-ai", "fusion-personal-confirm",
+            "fusion-pdf-viewer", "fusion-close-pdf", "fusion-pdf-frame",
         ):
-            self.assertIn(marker, self.index + self.runtime)
-        for fake_count in ("4,362", "4,356"):
-            self.assertNotIn(fake_count, self.index)
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        self.assertNotIn("globalThis.open", self.runtime)
+        self.assertNotIn("_blank", self.runtime)
+        self.assertIn("不离开工作台", self.index)
+        self.assertIn("closeCurrentPDF", self.runtime)
 
-    def test_desktop_settings_are_authoritative_and_cache_is_prepaint_only(self) -> None:
+    def test_search_sources_use_workspace_and_federated_routes(self) -> None:
+        for source in ("workspace", "official", "private", "all"):
+            self.assertEqual(self.index.count(f'data-search-source="{source}"'), 1)
         for marker in (
-            'schema_version!=="desktop-settings-v1"', "settingsRevision", "expected_revision",
-            'method:"PATCH"', 'preferences:{appearance:{theme:state.theme,density:state.density}}',
-            "loadSettings", "hydrateSettings", "外观保存失败；本次会话仍保留当前选择",
+            'federatedSearch:"/api/desktop/federated-search"', 'source_scope=official',
+            'source_scope=private', 'setSearchSource("private")',
+            'page.results.map(hit=>hit?.document)', 'source!==state.searchSource',
         ):
             self.assertIn(marker, self.runtime)
-        self.assertIn("本地缓存只用于避免首屏闪烁", self.index)
+        self.assertNotIn("官方资料库</span><b>0.9.2+", self.index)
+        self.assertNotIn("我的实验</span><b>合成", self.index)
 
-    def test_command_palette_session_review_and_package_placeholders_are_honest(self) -> None:
+    def test_prepared_actions_reuse_versioned_disclosure_gate(self) -> None:
         for marker in (
-            'id="fusion-command-palette"',
-            'data-command-view="settings"',
-            'event.key===","',
-            "openCommandPalette",
-            "closeCommandPalette",
-            'id="fusion-mark-reviewed"',
-            'id="fusion-demo-suggestion"',
-            "markReviewed",
-            "showDemoSuggestion",
-            "体验版未读取",
+            "globalThis.AutoResearchAIConsent.ensure", "ai_consent_gate_unavailable",
+            "updateTrustedProviders", "prepared.provider_id!==context.provider_id",
+            "prepared.disclosure_version!==disclosureVersion", "librarian-ai-stage-v1",
+            "literature-extraction-stage-summary-v1", "literature-extraction-commit-result-v1",
+        ):
+            self.assertIn(marker, self.runtime)
+        self.assertNotIn("consent:true", self.runtime)
+        self.assertNotIn('localStorage.setItem("job_token', self.runtime)
+
+    def test_personal_preview_review_and_single_import_are_real(self) -> None:
+        for marker in (
+            "select_personal_data_file", 'personalPreview:"/api/desktop/personal-imports/preview"',
+            "personal-import-preview-v1", "personal-import-suggestion-v1", "/reviewed-import",
+            "reviewed:true", "collectPersonalDraft", "安全预览完成", "一次确认", "indexable!==true",
+            'row[column.source_name]', '中央顶部“导入 PDF”',
         ):
             self.assertIn(marker, self.index + self.runtime)
-        self.assertNotIn("4,356", self.index)
-        self.assertNotIn("<dd>60</dd>", self.index)
+        self.assertNotIn('id="fusion-mark-reviewed"', self.index)
+        self.assertNotIn('id="fusion-demo-suggestion"', self.index)
+        self.assertNotIn("showDemoSuggestion", self.runtime)
 
-    def test_primary_workflow_actions_are_top_level_and_not_repeated_at_page_bottom(self) -> None:
-        paper = re.search(r'<section class="fusion-view active" id="view-paper".*?</section>\s*<section class="fusion-view" id="view-search"', self.index, re.DOTALL)
-        search = re.search(r'<section class="fusion-view" id="view-search".*?</section>\s*<section class="fusion-view" id="view-personal"', self.index, re.DOTALL)
-        personal = re.search(r'<section class="fusion-view" id="view-personal".*?</section>\s*<section class="fusion-view" id="view-package"', self.index, re.DOTALL)
-        self.assertIsNotNone(paper)
-        self.assertIsNotNone(search)
-        self.assertIsNotNone(personal)
-        self.assertRegex(paper.group(0), r'(?s)<header class="fusion-toolbar">.*id="fusion-import-pdf".*id="fusion-start-extraction".*</header>')
-        self.assertRegex(search.group(0), r'(?s)<header class="fusion-toolbar">.*id="fusion-run-precise-search".*id="fusion-open-librarian".*</header>')
-        self.assertRegex(personal.group(0), r'(?s)<header class="fusion-toolbar">.*id="fusion-select-data-file".*id="fusion-demo-suggestion".*</header>')
-        for label in ("导入 PDF", "选择 CSV / TSV / XLSX"):
-            self.assertNotIn(label, self.runtime)
-        self.assertIn('search:"图书管理员 · 官方全库 · 后续接入"', self.runtime)
-        self.assertIn(".fusion-action-cluster", self.css)
-        self.assertIn(".fusion-view#view-personal { grid-template-rows:auto auto auto minmax(0,1fr); }", self.css)
-
-    def test_synthetic_table_is_explicit_interactive_and_not_production_data(self) -> None:
+    def test_provider_settings_use_trusted_catalog_and_secure_credentials(self) -> None:
         for marker in (
-            "W-Ta_nanoindentation_demo.csv",
-            "syntheticSheets",
-            'hardness: {',
-            'metadata: {',
-            'setAttribute("role","grid")',
-            "aria-rowcount",
-            "aria-colcount",
-            "ArrowLeft",
-            "ArrowRight",
-            "ArrowUp",
-            "ArrowDown",
-            "Home",
-            "End",
-            "PageUp",
-            "PageDown",
-            "updateColumnDefinition",
-            "本次会话已检查",
-            "没有调用任何模型",
-            "合成数据，不来自生产数据库",
+            "/api/desktop/ai/providers", "/api/desktop/ai/settings", "/api/desktop/ai/credentials/",
+            "test-actions", "expected_revision", "task_models", "api_key", 'type="password"',
+            "不接受自定义 URL", "不会回显",
         ):
             self.assertIn(marker, self.index + self.runtime)
-        self.assertIn("position:sticky", self.css)
-        self.assertIn("font-variant-numeric:tabular-nums", self.css)
+        self.assertNotIn("base_url", self.runtime)
+        self.assertNotIn("chat_endpoint", self.runtime)
 
-    def test_responsive_drawers_bottom_navigation_focus_and_motion(self) -> None:
+    def test_fusion_layout_accessibility_and_responsive_contract(self) -> None:
         for marker in (
-            "@media(min-width:1280px)",
-            "@media(min-width:900px) and (max-width:1279px)",
-            "@media(min-width:640px) and (max-width:899px)",
-            "@media(max-width:639px)",
-            "@media(prefers-reduced-motion:reduce)",
-            "focusReturn",
-            'event.key==="Escape"',
-            "aria-current",
-            "aria-selected",
-            'setAttribute("aria-controls"',
-            ".fusion-tabs [role='tab']",
+            "--fusion-titlebar:34px", "--fusion-activity:48px", "--fusion-context:244px",
+            "--fusion-tabs:36px", "--fusion-inspector:340px", "--fusion-statusbar:22px",
+            "@media(min-width:1280px)", "@media(min-width:900px) and (max-width:1279px)",
+            "@media(min-width:640px) and (max-width:899px)", "@media(max-width:639px)",
+            "@media(prefers-reduced-motion:reduce)", "position:sticky", "font-variant-numeric:tabular-nums",
+            'event.key==="Escape"', "focusReturn", "aria-selected", "aria-current",
         ):
-            self.assertIn(marker, self.base_css + self.css + self.runtime)
+            self.assertIn(marker, self.base_css + self.css + self.runtime + self.index)
 
-    def test_node_fake_dom_exercises_views_grid_drawer_theme_and_zero_fetch(self) -> None:
+    def test_node_runtime_gate_pdf_and_late_federated_response(self) -> None:
         program = f"""
 const fs=require('fs'),assert=require('assert');
 class Classes{{constructor(){{this.s=new Set()}}toggle(k,v){{v?this.s.add(k):this.s.delete(k)}}add(k){{this.s.add(k)}}remove(k){{this.s.delete(k)}}contains(k){{return this.s.has(k)}}}}
-class El{{constructor(dataset={{}}){{this.dataset=dataset;this.hidden=false;this.classList=new Classes();this.attrs={{}};this.listeners={{}};this.textContent='';this.innerHTML='';this.tabIndex=0;this.isConnected=true;}}
- addEventListener(k,f){{(this.listeners[k]??=[]).push(f)}} click(){{for(const f of this.listeners.click||[])f({{currentTarget:this,target:this}})}}
- setAttribute(k,v){{this.attrs[k]=String(v)}}removeAttribute(k){{delete this.attrs[k]}}focus(){{globalThis.focused=this}}querySelector(){{return null}}matches(s){{return s.includes('[data-cell]')&&this.dataset.cell==='1'}}}}
-const panels=['paper','search','personal','package','settings'].map(viewPanel=>new El({{viewPanel}}));
-const navs=['paper','search','personal','package','settings'].map(view=>new El({{view}}));
-const contexts=['paper','search','personal','package','settings'].map(contextView=>new El({{contextView}}));
-const themeButtons=['system','light','dark'].map(themeChoice=>new El({{themeChoice}}));
-const densityButtons=['comfortable','compact'].map(densityChoice=>new El({{densityChoice}}));
-const sheets=['hardness','metadata'].map(sheet=>new El({{sheet}}));
-const ids={{
- '#fusion-editor':new El(),'#fusion-context-title':new El(),'#fusion-breadcrumb':new El(),'#fusion-primary-tab-label':new El(),'#fusion-detail-tab-label':new El(),'#fusion-status-context':new El(),
- '#fusion-inspector-title':new El(),'#fusion-inspector-body':new El(),'#fusion-context':new El(),'#fusion-inspector':new El(),'#fusion-sheet-summary':new El(),
- '#fusion-data-grid':new El(),'#fusion-command':new El(),'[data-close-all-drawers]':new El(),'#fusion-paper-catalog':new El(),'#fusion-literature-content':new El(),
- '#fusion-search-results':new El(),'#fusion-current-paper-state':new El(),'#fusion-current-paper-count':new El(),'#fusion-settings-status':new El(),
- '#fusion-count-item':new El(),'#fusion-count-finding':new El(),'#fusion-count-table':new El(),'#fusion-count-figure':new El()
-}};
-ids['#fusion-data-grid'].setAttribute=El.prototype.setAttribute;ids['#fusion-data-grid'].querySelector=()=>new El();
-const all={{'[data-view-panel]':panels,'.fusion-nav[data-view]':navs,'[data-context-view]':contexts,'[data-theme-choice]':themeButtons,'[data-density-choice]':densityButtons,'[data-sheet]':sheets,'[data-open-drawer]':[],'[data-close-drawer]':[],'.fusion-result':[],'#fusion-data-grid [data-cell]':[],'#fusion-data-grid th[data-column]':[],'.fusion-sheet-tabs [data-sheet]':sheets}};
-const requests=[];let settingsRevision=3;
-globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};globalThis.fetch=async(url,options={{}})=>{{requests.push([String(url),options]);const headers={{get:name=>name==='X-Auto-Research-CSRF'?'csrf-test':null}};
- if(url==='/api/desktop/settings'&&(!options.method||options.method==='GET'))return{{ok:true,headers,json:async()=>({{schema_version:'desktop-settings-v1',revision:settingsRevision,appearance:{{theme:'dark',density:'compact'}},locale:{{selected:'zh-CN',supported:['zh-CN']}}}})}};
- if(url==='/api/desktop/settings/preferences'&&options.method==='PATCH')return{{ok:true,headers,json:async()=>({{schema_version:'desktop-settings-v1',revision:++settingsRevision,appearance:{{theme:'light',density:'compact'}},locale:{{selected:'zh-CN',supported:['zh-CN']}}}})}};
- if(url==='/api/search-papers')return{{ok:true,headers,json:async()=>[{{id:7,title:'Real paper',doi:'10.1/real',six_row_count:2,six_workflow_label:'已核验'}}]}};
- if(String(url).startsWith('/api/search-v2?'))return{{ok:true,headers,json:async()=>({{rows:[{{entity_type:'item',meaning:'温度',value_text:'300',unit:'°C',source_page:6,article_title:'Real paper'}}]}})}};
- throw new Error('network forbidden:'+url)}};globalThis.focused=null;
-globalThis.document={{readyState:'loading',documentElement:{{dataset:{{}}}},body:{{dataset:{{view:'paper'}}}},querySelector:s=>ids[s]||null,querySelectorAll:s=>all[s]||[],addEventListener:(k,f)=>{{if(k==='DOMContentLoaded')globalThis.boot=f}}}};
-eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
-(async()=>{{const api=globalThis.AutoResearchFusion;assert(api);await api.loadSettings();await api.loadLiterature();assert.equal(api.state.paper.title,'Real paper');assert.equal(api.state.evidence[0].value,'300');
- api.switchView('search');assert.equal(document.body.dataset.view,'search');assert.equal(panels.filter(x=>!x.hidden).length,1);
- assert.equal(ids['#fusion-detail-tab-label'].textContent,'图书管理员 · 官方全库 · 后续接入');
- api.switchView('personal');assert.equal(document.body.dataset.view,'personal');const before=document.body.dataset.view;await Promise.resolve().then(()=>api.renderSheet('metadata'));assert.equal(document.body.dataset.view,before);
- assert(api.applyAppearance('dark','compact'));assert.equal(document.documentElement.dataset.theme,'dark');assert.equal(document.documentElement.dataset.density,'compact');assert.equal(api.syntheticSheets.hardness.rows.length,12);
- api.openDrawer('inspector',navs[2]);assert(ids['#fusion-inspector'].classList.contains('drawer-open'));api.closeDrawers();assert(!ids['#fusion-inspector'].classList.contains('drawer-open'));assert.strictEqual(globalThis.focused,navs[2]);
- api.switchView('paper');api.selectSettingsSection('appearance');assert.equal(ids['#fusion-primary-tab-label'].textContent,'当前论文');
- api.switchView('settings');assert.equal(ids['#fusion-primary-tab-label'].textContent,'设置：外观');api.selectSettingsSection('ai');assert.equal(ids['#fusion-primary-tab-label'].textContent,'设置：AI 与密钥');
- api.switchView('paper');assert.equal(ids['#fusion-primary-tab-label'].textContent,'当前论文');
- assert(requests.every(([url,options])=>['/api/search-papers','/api/desktop/settings','/api/desktop/settings/preferences'].includes(url)||url.startsWith('/api/search-v2?')));assert(requests.every(([url,options])=>(options.method||'GET')==='GET'||(url==='/api/desktop/settings/preferences'&&options.method==='PATCH')));
+class El{{constructor(dataset={{}}){{this.dataset=dataset;this.hidden=false;this.disabled=false;this.classList=new Classes();this.attrs={{}};this.listeners={{}};this.textContent='';this.innerHTML='';this.value='';this.src='';this.tabIndex=0;this.isConnected=true;}} addEventListener(k,f){{(this.listeners[k]??=[]).push(f)}} setAttribute(k,v){{this.attrs[k]=String(v)}} removeAttribute(k){{delete this.attrs[k]}} focus(){{globalThis.focused=this}} querySelector(){{return new El()}} querySelectorAll(){{return []}} matches(){{return false}}}}
+const panels=['paper','search','personal','package','settings'].map(viewPanel=>new El({{viewPanel}})),navs=['paper','search','personal','package','settings'].map(view=>new El({{view}})),contexts=['paper','search','personal','package','settings'].map(contextView=>new El({{contextView}}));
+const modes=['precise','librarian'].map(searchModePanel=>new El({{searchModePanel}})),sources=['workspace','official','private','all'].map(searchSource=>new El({{searchSource}}));
+const ids={{}};for(const id of ['fusion-editor','fusion-context-title','fusion-breadcrumb','fusion-primary-tab-label','fusion-detail-tab-label','fusion-status-context','fusion-status-operation','fusion-inspector-title','fusion-inspector-body','fusion-context','fusion-inspector','fusion-search-results','fusion-search-query','fusion-run-precise-search','fusion-open-librarian','fusion-librarian-stage','fusion-librarian-status','fusion-literature-content','fusion-pdf-viewer','fusion-pdf-frame','fusion-pdf-title','fusion-close-pdf','fusion-open-pdf','fusion-start-extraction','fusion-literature-action-status','fusion-personal-status','fusion-personal-filename','fusion-personal-review','fusion-personal-sheet','fusion-personal-columns','fusion-project-name','fusion-sample-name','fusion-sample-material','fusion-run-name','fusion-run-method','fusion-personal-ai','fusion-personal-confirm','fusion-reviewed-state','fusion-review-context-state','fusion-ai-demo-context-state','fusion-sheet-summary','fusion-data-grid','fusion-ai-settings-status','fusion-ai-provider','fusion-ai-models','fusion-ai-model-save','fusion-ai-key-save','fusion-ai-key-delete','fusion-ai-test','fusion-ai-credential-state','fusion-ai-test-plan','fusion-ai-key'])ids['#'+id]=new El();
+ids['[data-close-all-drawers]']=new El();
+ids['.fusion-sheet-tabs']=new El();ids['[data-context-view="personal"] .fusion-tree-row.active span']=new El();
+const all={{'[data-view-panel]':panels,'.fusion-nav[data-view]':navs,'[data-context-view]':contexts,'[data-search-mode-panel]':modes,'[data-search-source]':sources,'[data-evidence-index],[data-search-evidence-index]':[],'[data-search-evidence-index]':[],'[data-open-drawer]':[],'[data-personal-column]':[],'[data-context-view="personal"] [data-sheet]':[],'[data-fusion-ai-task]':[]}};
+globalThis.document={{readyState:'loading',documentElement:{{dataset:{{}}}},body:{{dataset:{{view:'paper'}}}},querySelector:s=>ids[s]||null,querySelectorAll:s=>all[s]||[],addEventListener:()=>{{}}}};globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};globalThis.confirm=()=>true;
+let pendingResolvers=[];const calls=[];globalThis.fetch=async(url,options={{}})=>{{url=String(url);calls.push([url,options.method||'GET',options.body]);const headers={{get:()=> 'csrf-next'}};
+ if(url==='/api/desktop/ai/providers')return{{ok:true,headers,json:async()=>({{schema_version:'ai-desktop-catalog-v1',providers:[{{provider_id:'deepseek',display_name:'DeepSeek',model_options:{{}}}}],capability_test:{{provider_id:'deepseek',maximum_model_calls:2,unique_model_count:1}}}})}};
+ if(url==='/api/desktop/ai/settings')return{{ok:true,headers,json:async()=>({{schema_version:'ai-runtime-public-state-v1',provider_id:'deepseek',revision:1,task_models:{{}}}})}};
+ if(url==='/api/desktop/ai/credentials/deepseek'&&(options.method||'GET')==='GET')return{{ok:true,headers,json:async()=>({{schema_version:'ai-credential-status-v1',provider_id:'deepseek',configured:true}})}};
+ if(url==='/api/desktop/ai/credentials/deepseek'&&options.method==='POST')return{{ok:true,headers,json:async()=>({{schema_version:'ai-credential-status-v1',provider_id:'deepseek',configured:true}})}};
+ if(url==='/api/desktop/ai/actions/personal_suggestion/prepare')return{{ok:true,headers,json:async()=>({{schema_version:'server-prepared-ai-action-v1',scope:'personal_suggestion',provider_id:'deepseek',disclosure_version:'personal-suggestion-disclosure-v1',action_id:'action-1',maximum_calls:1,model:'deepseek-v4-pro',display:'实验预填'}})}};
+ if(url==='/api/desktop/ai/consents')return{{ok:true,headers,json:async()=>({{schema_version:'ai-consent-v1',scope:'personal_suggestion',nonce:'nonce-1'}})}};
+ if(url==='/api/desktop/ai/actions/personal_suggestion/execute')return{{ok:true,headers,json:async()=>({{schema_version:'personal-import-suggestion-v1',import_id:'personal_import_abcdefghijklmnop',project:{{name:'W-Ta'}},sample:{{name:'S1'}},run:{{name:'R1',method:'nanoindentation'}},columns:[],series:[]}})}};
+ if(url==='/api/desktop/personal-imports/preview')return{{ok:true,headers,json:async()=>({{schema_version:'personal-import-preview-v1',status:{{schema_version:'personal-import-status-v1',import_id:'personal_import_abcdefghijklmnop',revision:null,indexable:false}},preview:{{schema_version:'personal-tabular-preview-v1',source_file:{{original_name:'real.csv'}},sheets:[{{sheet_name:'Sheet1',row_count:2,columns:[{{source_name:'Dose',data_type:'number',role:'independent',meaning:'剂量',unit:'dpa'}}],sample_rows:[{{Dose:1}},{{Dose:2}}]}}]}}}})}};
+ if(url==='/api/desktop/personal-imports/personal_import_abcdefghijklmnop/reviewed-import')return{{ok:true,headers,json:async()=>({{schema_version:'personal-import-status-v1',import_id:'personal_import_abcdefghijklmnop',revision:1,indexable:true}})}};
+ if(url.startsWith('/api/desktop/federated-search?'))return new Promise(resolve=>pendingResolvers.push(()=>resolve({{ok:true,headers,json:async()=>({{schema_version:'federated-search-page-v1',results:[{{document:{{entity_type:'table',source_scope:'private',source_id:'lab',entity_uid:'e1',display_title:'硬度表',source_excerpt:'真实私人实验'}}}}]}})}})));
+ throw new Error('unexpected:'+url)}};
+eval(fs.readFileSync({str(WEB / 'ai_consent.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
+(async()=>{{assert.equal(api.previewCellValue({{Dose:3}},{{source_name:'Dose'}},0),3);assert.equal(api.previewCellValue([4],{{source_name:'Dose'}},0),4);await api.loadAISettingsUI();ids['#fusion-ai-key'].value='sk-private-never-render';await api.saveAIKey();assert.equal(ids['#fusion-ai-key'].value,'');assert(!Object.values(ids).some(node=>node.textContent.includes('sk-private-never-render')));api.state.paper={{id:7,title:'Real paper'}};assert(api.openCurrentPDF());assert.equal(ids['#fusion-pdf-frame'].src,'/api/papers/7/pdf');assert.equal(ids['#fusion-literature-content'].hidden,true);assert(api.closeCurrentPDF());assert.equal(ids['#fusion-literature-content'].hidden,false);
+ const auth=await api.preparedAuthorization('personal_suggestion',{{import_id:'personal_import_abcdefghijklmnop',sheet_index:0}});assert.equal(auth.actionId,'action-1');assert(calls.some(x=>x[0]==='/api/desktop/ai/consents'));
+ api.switchView('search',{{focus:false}});api.setSearchSource('private');const late=api.runPreciseSearch();api.switchView('paper',{{focus:false}});pendingResolvers.shift()();await late;assert.equal(api.state.searchResults.length,0,'late result must not update inactive view');
+ api.switchView('search',{{focus:false}});api.setSearchSource('private');const ready=api.runPreciseSearch();pendingResolvers.shift()();await ready;assert.equal(api.state.searchResults[0].title,'硬度表');assert(calls.some(x=>x[0].includes('source_scope=private')));
+ globalThis.pywebview={{api:{{select_personal_data_file:async()=>({{ok:true,cancelled:false,selection:{{selection_id:'opaque-selection'}}}})}}}};api.switchView('personal',{{focus:false}});await api.choosePersonalFile();assert.equal(api.state.personalStatus.import_id,'personal_import_abcdefghijklmnop');await api.requestPersonalSuggestion();assert.equal(ids['#fusion-project-name'].value,'W-Ta');const imported=api.confirmPersonalImport();while(!pendingResolvers.length)await new Promise(resolve=>setImmediate(resolve));pendingResolvers.shift()();await imported;assert.equal(api.state.view,'search');assert.equal(api.state.searchSource,'private');assert(calls.some(x=>x[0].endsWith('/reviewed-import')));
+ const before=calls.length;api.state.aiContext=null;globalThis.AutoResearchAIConsent=undefined;await api.preparedAuthorization('personal_suggestion',{{import_id:'personal_import_abcdefghijklmnop',sheet_index:0}}).then(()=>assert.fail('gate missing'),()=>{{}});assert.equal(calls.slice(before).filter(x=>x[0]==='/api/desktop/ai/consents').length,0);
 }})().catch(error=>{{console.error(error);process.exitCode=1}});
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)

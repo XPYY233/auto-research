@@ -3,10 +3,10 @@
   "core_version": "0.1.0",
   "desktop": {
     "macos": {
-      "desktop_version": "0.9.1-preview.1",
+      "desktop_version": "0.9.1-preview.2",
       "bundle_short_version": "0.9.1",
-      "build_number": "19",
-      "target": "macOS arm64 Fusion GUI review preview"
+      "build_number": "20",
+      "target": "macOS arm64 Fusion functional preview"
     },
     "windows": {
       "desktop_version": "0.8.0-internal.1",
@@ -46,9 +46,10 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "73bf6c909183525b39a989577507d6eca66a96dfc87a45e5f0710ae144ddafc7",
+    "src/auto_research/evidence/web/index.html": "e0a5f7ef6248d5adcdb39b0d0267ceeb12fce3e7285448f2d89fe768cb973056",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
-    "src/auto_research/evidence/web/workbench.css": "1935dc58667f58eeeef6b72c73f7f6af5dadfd835bfac5a6870c9adc33b08690",
-    "src/auto_research/evidence/web/fusion_review.js": "595508f9b65749561e358c06b4bc9c21b544d7986a89568977388f0d03317248"
+    "src/auto_research/evidence/web/workbench.css": "34945b353c52e2252477f1340f15cdb70ec3a14ffb9f701616b5ea96ba79dc93",
+    "src/auto_research/evidence/web/ai_consent.js": "ada8842907ff40f01a0e3b681d0dd205cc62aaffec4f47ef29813104141cd582",
+    "src/auto_research/evidence/web/fusion_review.js": "996ae0547f56389eb71303c6a71024952875efd5f429b0101244a3125d0ab145"
   }
 }

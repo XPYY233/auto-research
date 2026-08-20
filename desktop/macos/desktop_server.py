@@ -75,7 +75,7 @@ FUSION_REVIEW_ALLOWED_GETS = frozenset(
     }
 )
 FUSION_REVIEW_STATIC_ASSETS = frozenset(
-    {"index.html", "app.css", "workbench.css", "fusion_review.js"}
+    {"index.html", "app.css", "workbench.css", "ai_consent.js", "fusion_review.js"}
 )
 
 
@@ -541,6 +541,22 @@ class DesktopEvidenceHandler(EvidenceHandler):
                         "release": RELEASE_INFO,
                     }
                 )
+            if self.experience_mode == "fusion-product":
+                return self.json_response(
+                    {
+                        "read_only": False,
+                        "mode": "fusion-product",
+                        "label": "Fusion 科研工作台",
+                        "experience": {
+                            "schema": "auto-research-fusion-product-v1",
+                            "literature": "workspace-schema-v12",
+                            "experiment": "private-library",
+                            "mutations": True,
+                            "model_calls": True,
+                        },
+                        "release": RELEASE_INFO,
+                    }
+                )
         if self.experience_mode == "fusion-review" and not is_fusion_review_allowed_get(
             parsed.path
         ):
@@ -737,7 +753,7 @@ def create_desktop_server(
     host = require_loopback_host(host)
     if host != "127.0.0.1":
         raise ValueError("desktop bridge requires the numeric IPv4 loopback address")
-    if experience_mode not in {"standard", "fusion-review"}:
+    if experience_mode not in {"standard", "fusion-review", "fusion-product"}:
         raise ValueError("desktop experience mode is invalid")
     security_state = DesktopSecurityState(token, session_token=session_token)
     database.init()

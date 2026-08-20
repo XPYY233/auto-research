@@ -167,7 +167,6 @@ class FusionReviewModeTests(unittest.TestCase):
                     "desktop_product.js",
                     "package_center.js",
                     "workbench.js",
-                    "ai_consent.js",
                 ):
                     with self.subTest(asset=asset), self.assertRaises(
                         urllib.error.HTTPError
@@ -180,6 +179,71 @@ class FusionReviewModeTests(unittest.TestCase):
                         "fusion_review_read_only",
                     )
                     error.close()
+                with opener.open(f"{base}/static/ai_consent.js", timeout=5) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertIn(b"AutoResearchAIConsent", response.read())
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_fusion_product_restores_protected_services_without_review_bypass(self) -> None:
+        class PersonalAPI:
+            @staticmethod
+            def is_post_route(path: str) -> bool:
+                return path == "/api/desktop/personal-imports/search-refresh"
+
+            @staticmethod
+            def handle_post(handler) -> bool:
+                length = handler._content_length(512 * 1024, require_body=True)
+                handler._read_exact_body(length)
+                handler.json_response({"ok": True, "mode": "fusion-product"})
+                return True
+
+            @staticmethod
+            def handle_get(_handler) -> bool:
+                return False
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            token = new_session_token()
+            server, _ = create_desktop_server(
+                EvidenceDB(root / "workspace.sqlite"),
+                host="127.0.0.1",
+                port=0,
+                token=token,
+                personal_import_api=PersonalAPI(),
+                experience_mode="fusion-product",
+            )
+            import threading
+
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(CookieJar())
+            )
+            try:
+                opener.open(f"{base}/?desktop_token={token}", timeout=5).close()
+                with opener.open(f"{base}/api/ui-mode", timeout=5) as response:
+                    mode = json.load(response)
+                    csrf = response.headers[CSRF_HEADER]
+                self.assertEqual(mode["mode"], "fusion-product")
+                self.assertTrue(mode["experience"]["mutations"])
+                self.assertTrue(mode["experience"]["model_calls"])
+
+                request = urllib.request.Request(
+                    f"{base}/api/desktop/personal-imports/search-refresh",
+                    data=b"{}",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Origin": base,
+                        CSRF_HEADER: csrf,
+                    },
+                    method="POST",
+                )
+                with opener.open(request, timeout=5) as response:
+                    self.assertEqual(json.load(response)["mode"], "fusion-product")
             finally:
                 server.shutdown()
                 server.server_close()

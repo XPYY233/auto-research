@@ -27,12 +27,12 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertEqual(metadata["desktop_version"], contract["desktop"]["macos"]["desktop_version"])
         self.assertEqual(metadata["bundle_short_version"], contract["desktop"]["macos"]["bundle_short_version"])
         self.assertEqual(metadata["build_number"], contract["desktop"]["macos"]["build_number"])
-        self.assertEqual(launcher.DESKTOP_VERSION, "0.9.1-preview.1")
+        self.assertEqual(launcher.DESKTOP_VERSION, "0.9.1-preview.2")
         self.assertEqual(metadata["bundle_short_version"], "0.9.1")
-        self.assertEqual(metadata["build_number"], "19")
-        self.assertEqual(metadata["target"], "macOS arm64 Fusion GUI review preview")
-        self.assertIn("isolated-schema-v12", metadata["data_mode"])
-        self.assertIn("synthetic-session-experiment", metadata["data_mode"])
+        self.assertEqual(metadata["build_number"], "20")
+        self.assertEqual(metadata["target"], "macOS arm64 Fusion functional preview")
+        self.assertIn("workspace-schema-v12", metadata["data_mode"])
+        self.assertIn("private-library", metadata["data_mode"])
         self.assertIn("not released", metadata["product_target"])
         launcher_source = (DESKTOP_ROOT / "launcher.py").read_text(encoding="utf-8")
         self.assertNotIn('DESKTOP_VERSION = "0.', launcher_source)
@@ -49,7 +49,7 @@ class DesktopVersionContractTests(unittest.TestCase):
             "from auto_research.settings.desktop_settings import",
             "from desktop_settings_api import",
             "from desktop_settings_store import",
-            "from fusion_review_mode import",
+            "from desktop_product_services import",
         ):
             self.assertNotIn(core_dependent_import, import_region)
         smoke_body = launcher_source.split("def _run_smoke_test", 1)[1]
@@ -60,7 +60,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         desktop_body = launcher_source.split("def _run_desktop", 1)[1]
         self.assertLess(
             desktop_body.index("configure_core_paths(project_root)"),
-            desktop_body.index("from fusion_review_mode import"),
+            desktop_body.index("from desktop_product_services import"),
         )
 
     def test_dmg_name_is_derived_and_does_not_reuse_previous_identity(self) -> None:
@@ -96,8 +96,8 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertTrue(checks["fusion_runtime_contract"])
         self.assertTrue(checks["fusion_appearance_contract"])
         launcher_source = (DESKTOP_ROOT / "launcher.py").read_text(encoding="utf-8")
-        self.assertIn('experience_mode="fusion-review"', launcher_source)
-        self.assertNotIn("mac_ai_runtime_services(", launcher_source.split("def _run_desktop", 1)[1])
+        self.assertIn('experience_mode="fusion-product"', launcher_source)
+        self.assertIn("mac_ai_runtime_services(", launcher_source.split("def _run_desktop", 1)[1])
         fusion_runtime = (
             DESKTOP_ROOT.parents[1]
             / "src"
@@ -107,11 +107,19 @@ class DesktopVersionContractTests(unittest.TestCase):
             / "fusion_review.js"
         ).read_text(encoding="utf-8")
         self.assertIn("AutoResearchFusion", fusion_runtime)
-        self.assertNotIn("executePreparedAIAction", fusion_runtime)
+        self.assertIn("/api/desktop/ai/actions/", fusion_runtime)
+        self.assertIn("/api/desktop/personal-imports/preview", fusion_runtime)
 
-    def test_pyinstaller_bundles_only_the_fusion_review_assets(self) -> None:
+    def test_pyinstaller_bundles_only_the_fusion_product_assets(self) -> None:
         spec = (DESKTOP_ROOT / "AutoResearch.spec").read_text(encoding="utf-8")
-        self.assertIn('("index.html", "app.css", "workbench.css", "fusion_review.js")', spec)
+        for asset in (
+            '"index.html"',
+            '"app.css"',
+            '"workbench.css"',
+            '"ai_consent.js"',
+            '"fusion_review.js"',
+        ):
+            self.assertIn(asset, spec)
         self.assertIn('"auto_research/evidence/web"', spec)
         self.assertNotIn('str(project_root / "src" / "auto_research" / "evidence" / "web"),', spec)
 

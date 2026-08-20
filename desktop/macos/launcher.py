@@ -10,6 +10,7 @@ import tempfile
 import threading
 import urllib.error
 import urllib.request
+from http import HTTPStatus
 from http.cookiejar import CookieJar
 from pathlib import Path
 
@@ -49,13 +50,18 @@ DESKTOP_VERSION = str(DESKTOP_VERSION_METADATA["desktop_version"])
 
 
 def _frozen_product_contract_checks() -> dict[str, bool]:
-    """Confirm the frozen bundle is the isolated 0.9.1 Fusion GUI review."""
+    """Confirm the frozen bundle contains one functional Fusion product surface."""
 
+    from inspect import signature
     from auto_research.evidence.webapp import WEB_DIR
+    from desktop_server import DesktopEvidenceHandler, create_desktop_server
+    from native_desktop_bridge import NativeDesktopBridge
 
     index_source = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     runtime_source = (WEB_DIR / "fusion_review.js").read_text(encoding="utf-8")
+    ai_consent_source = (WEB_DIR / "ai_consent.js").read_text(encoding="utf-8")
     workbench_styles = (WEB_DIR / "workbench.css").read_text(encoding="utf-8")
+    server_parameters = signature(create_desktop_server).parameters
     return {
         "fusion_shell_contract": bool(
             'class="fusion-shell"' in index_source
@@ -71,17 +77,28 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and 'id="view-package"' in index_source
             and 'id="view-personal"' in index_source
             and 'id="view-settings"' in index_source
-            and "Fusion GUI体验版" in index_source
+            and "fusion-import-pdf" in index_source
+            and "fusion-start-extraction" in index_source
+            and "fusion-open-librarian" in index_source
+            and "fusion-select-data-file" in index_source
         ),
         "fusion_runtime_contract": bool(
             '<link rel="stylesheet" href="/static/workbench.css">' in index_source
+            and '<script src="/static/ai_consent.js"></script>' in index_source
             and '<script src="/static/fusion_review.js"></script>' in index_source
+            and index_source.index('<script src="/static/ai_consent.js"></script>')
+            < index_source.index('<script src="/static/fusion_review.js"></script>')
             and '<script src="/static/app.js"></script>' not in index_source
             and '<script src="/static/desktop_product.js"></script>' not in index_source
             and '<script src="/static/package_center.js"></script>' not in index_source
             and "AutoResearchFusion" in runtime_source
-            and "syntheticSheets" in runtime_source
             and "/api/search-papers" in runtime_source
+            and "/api/search-v2" in runtime_source
+            and "/api/desktop/federated-search" in runtime_source
+            and "/api/uploads/pdf" in runtime_source
+            and "/api/desktop/ai/actions/" in runtime_source
+            and "/api/desktop/personal-imports/preview" in runtime_source
+            and "/reviewed-import" in runtime_source
         ),
         "fusion_appearance_contract": bool(
             "system" in runtime_source
@@ -91,17 +108,45 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and "compact" in runtime_source
             and "prefers-reduced-motion" in workbench_styles
         ),
-        "fusion_disabled_business_contract": bool(
-            "data-fusion-disabled" in index_source
-            and "disabled" in index_source
-            and "fetch(" not in index_source
-            and "0.9.2+" in index_source
+        "fusion_ai_consent_contract": bool(
+            "AutoResearchAIConsent" in ai_consent_source
+            and "auto-research-ai-consent-v2" in ai_consent_source
+            and all(
+                scope in ai_consent_source
+                for scope in (
+                    "librarian",
+                    "literature_extraction",
+                    "personal_suggestion",
+                )
+            )
+            and "AutoResearchAIConsent" in runtime_source
+        ),
+        "fusion_protected_services_contract": bool(
+            callable(getattr(DesktopEvidenceHandler, "_authorize_post", None))
+            and callable(getattr(DesktopEvidenceHandler, "_authorize_patch", None))
+            and callable(getattr(DesktopEvidenceHandler, "_has_session", None))
+            and {
+                "history_store",
+                "desktop_ai_api",
+                "desktop_settings_api",
+                "package_center_api",
+                "federated_search_api",
+                "personal_import_api",
+            }
+            <= set(server_parameters)
+        ),
+        "fusion_native_bridge_contract": bool(
+            callable(getattr(NativeDesktopBridge, "select_evidence_package", None))
+            and callable(getattr(NativeDesktopBridge, "select_personal_data_file", None))
+            and callable(
+                getattr(NativeDesktopBridge, "select_package_export_destination", None)
+            )
         ),
     }
 
 
-def _fusion_review_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
-    """Exercise the frozen GUI review surface without any production mutation."""
+def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
+    """Exercise the Fusion product graph against an isolated temporary root."""
 
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
     opener.open(f"{url}/?desktop_token={token}", timeout=5).close()
@@ -109,10 +154,10 @@ def _fusion_review_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
         mode = json.load(response)
         csrf_token = response.headers.get("X-Auto-Research-CSRF") or ""
     checks = {
-        "fusion_review_mode": bool(
-            mode.get("mode") == "fusion-review"
-            and mode.get("experience", {}).get("mutations") is False
-            and mode.get("experience", {}).get("model_calls") is False
+        "fusion_product_mode": bool(
+            mode.get("mode") == "fusion-product"
+            and mode.get("experience", {}).get("mutations") is True
+            and mode.get("experience", {}).get("model_calls") is True
             and csrf_token
         )
     }
@@ -121,9 +166,29 @@ def _fusion_review_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
         "search_status": "/api/search-v2/status",
         "search_query": "/api/search-v2?q=%E6%B8%A9%E5%BA%A6&limit=2",
         "settings": "/api/desktop/settings",
+        "desktop_ai_providers": "/api/desktop/ai/providers",
+        "desktop_ai_settings": "/api/desktop/ai/settings",
+        "librarian_history": "/api/desktop/librarian-history",
+        "personal_search_status": "/api/desktop/personal-imports/search-status",
+        "federated_search": "/api/desktop/federated-search?q=%E6%B8%A9%E5%BA%A6&source_scope=official&page=1&page_size=2",
     }.items():
-        with opener.open(f"{url}{route}", timeout=15) as response:
-            checks[name] = response.status == 200 and isinstance(json.load(response), (dict, list))
+        try:
+            with opener.open(f"{url}{route}", timeout=15) as response:
+                checks[name] = response.status == 200 and isinstance(
+                    json.load(response), (dict, list)
+                )
+        except urllib.error.HTTPError as error:
+            if name == "federated_search" and error.code == HTTPStatus.CONFLICT:
+                try:
+                    payload = json.load(error)
+                finally:
+                    error.close()
+                checks[name] = payload.get("code") == "evidence_package_required"
+                continue
+            error.close()
+            raise RuntimeError(
+                f"Fusion product smoke route {name} failed with HTTP {error.code}"
+            ) from error
 
     settings_request = urllib.request.Request(
         f"{url}/api/desktop/settings/preferences",
@@ -156,12 +221,40 @@ def _fusion_review_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
         (
             "fusion_index",
             "/",
-            ("fusion-shell", "Fusion GUI体验版", "/static/fusion_review.js"),
+            (
+                "fusion-shell",
+                "fusion-import-pdf",
+                "fusion-start-extraction",
+                "fusion-open-librarian",
+                "fusion-select-data-file",
+                "/static/ai_consent.js",
+                "/static/fusion_review.js",
+            ),
         ),
         (
             "fusion_runtime",
             "/static/fusion_review.js",
-            ("AutoResearchFusion", "syntheticSheets", "/api/search-papers"),
+            (
+                "AutoResearchFusion",
+                "/api/search-papers",
+                "/api/search-v2",
+                "/api/desktop/federated-search",
+                "/api/uploads/pdf",
+                "/api/desktop/ai/actions/",
+                "/api/desktop/personal-imports/preview",
+                "/reviewed-import",
+            ),
+        ),
+        (
+            "ai_consent_runtime",
+            "/static/ai_consent.js",
+            (
+                "AutoResearchAIConsent",
+                "auto-research-ai-consent-v2",
+                "librarian",
+                "literature_extraction",
+                "personal_suggestion",
+            ),
         ),
         (
             "fusion_styles",
@@ -173,25 +266,6 @@ def _fusion_review_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
             payload = response.read(2_000_000).decode("utf-8")
             checks[name] = response.status == 200 and all(marker in payload for marker in markers)
 
-    blocked_request = urllib.request.Request(
-        f"{url}/api/current-paper",
-        data=b"{}",
-        headers={
-            "Content-Type": "application/json",
-            "Origin": url,
-            "X-Auto-Research-CSRF": csrf_token,
-        },
-        method="POST",
-    )
-    try:
-        opener.open(blocked_request, timeout=5).close()
-        checks["mutation_blocked"] = False
-    except urllib.error.HTTPError as error:
-        payload = json.loads(error.read())
-        checks["mutation_blocked"] = bool(
-            error.code == 403 and payload.get("code") == "fusion_review_read_only"
-        )
-        error.close()
     return checks
 
 
@@ -238,12 +312,16 @@ def _run_smoke_test(project_root: Path) -> int:
     configure_core_paths(project_root)
     report = smoke_check_project(project_root)
 
+    from ai_runtime_composition import create_mac_ai_runtime_services
     from auto_research.settings.desktop_settings import DesktopSettingsService
     from auto_research.evidence.db import EvidenceDB
     from auto_research.evidence.webapp import RELEASE_INFO, WEB_DIR
+    from desktop_ai_api import MacDesktopAIAPI
+    from desktop_product_services import create_desktop_product_services
     from desktop_server import create_desktop_server, new_session_token
     from desktop_settings_api import DesktopSettingsAPI
     from desktop_settings_store import MacAtomicDesktopSettingsStore
+    from secure_history import SecureHistoryStore, StaticHistoryKeyProvider
 
     production_database = project_root / "db" / "experimental_evidence.sqlite"
     with tempfile.TemporaryDirectory(prefix="auto-research-desktop-smoke-") as directory:
@@ -257,23 +335,55 @@ def _run_smoke_test(project_root: Path) -> int:
             source.close()
 
         token = new_session_token()
+        application_support = Path(directory) / "application-support"
+        history_path = application_support / "History" / "librarian-history-v2.enc"
+        history_store = SecureHistoryStore(
+            history_path,
+            StaticHistoryKeyProvider(b"\x91" * 32),
+            storage_label="test-static-aes-256-gcm",
+        )
+        product_services = create_desktop_product_services(
+            data_root=application_support,
+            current_app_version=DESKTOP_VERSION,
+            workspace_database=temporary_database,
+            workspace_root=project_root,
+        )
         database = EvidenceDB(temporary_database)
         desktop_session_id = new_session_token()
+        ai_services = create_mac_ai_runtime_services(
+            state_path=application_support / "State" / "ai-runtime-state-v1.json",
+            attestation_key_path=application_support / "State" / "ai-attestation-v1.key",
+            database=database,
+            personal_import_service=product_services.personal_import_service,
+            desktop_session_id=desktop_session_id,
+        )
         server, _ = create_desktop_server(
             database,
             host="127.0.0.1",
             port=0,
             token=token,
             read_only=False,
+            history_store=history_store,
+            credential_store=ai_services.legacy_deepseek_store,
+            desktop_ai_api=MacDesktopAIAPI(ai_services.controller),
             desktop_settings_api=DesktopSettingsAPI(
                 DesktopSettingsService(
                     MacAtomicDesktopSettingsStore(
-                        Path(directory) / "application-support" / "State" / "settings-v1.json"
+                        application_support / "State" / "settings-v1.json"
                     )
                 )
             ),
+            package_service=product_services.package_service,
+            package_api=product_services.package_api,
+            package_center_api=(
+                product_services.package_center.api
+                if product_services.package_center is not None
+                else None
+            ),
+            federated_search_api=product_services.federated_search_api,
+            personal_import_api=product_services.personal_import_api,
             session_token=desktop_session_id,
-            experience_mode="fusion-review",
+            experience_mode="fusion-product",
         )
         configure_imported_module_paths(project_root)
         port = int(server.server_address[1])
@@ -285,14 +395,12 @@ def _run_smoke_test(project_root: Path) -> int:
                 timeout_seconds=30,
                 bootstrap_token=token,
             )
-            # wait_for_ui intentionally probes the unauthenticated health endpoint;
-            # the authenticated smoke suite below owns the Fusion mode assertion.
             report["http_stack"] = health.get("read_only") is False
-            report["http_checks"] = _fusion_review_http_smoke_checks(
+            report["http_checks"] = _fusion_product_http_smoke_checks(
                 f"http://127.0.0.1:{port}",
                 token,
             )
-            report["secure_history_ciphertext"] = True
+            report["secure_history_ciphertext"] = not history_path.exists()
         finally:
             server.shutdown()
             server.server_close()
@@ -320,23 +428,22 @@ def _run_smoke_test(project_root: Path) -> int:
 
 def _run_desktop(project_root: Path, debug: bool = False) -> int:
     configure_core_paths(project_root)
-    from auto_research.settings.desktop_settings import DesktopSettingsService
-    from desktop_settings_api import DesktopSettingsAPI
-    from desktop_settings_store import MacAtomicDesktopSettingsStore
-    from fusion_review_mode import (
-        FUSION_REVIEW_SETTINGS,
-        create_fusion_review_snapshot,
+    from ai_runtime_composition import (
+        disable_legacy_environment_credentials,
+        mac_ai_runtime_services,
     )
+    from auto_research.settings.desktop_settings import DesktopSettingsService
+    from desktop_ai_api import MacDesktopAIAPI
+    from desktop_product_services import create_desktop_product_services
+    from desktop_settings_api import DesktopSettingsAPI
+    from desktop_settings_store import DEFAULT_SETTINGS_PATH, MacAtomicDesktopSettingsStore
+    from native_desktop_bridge import NativeDesktopBridge
+    from package_import_service import DEFAULT_PACKAGE_DATA_ROOT
+    from secure_history import default_secure_history_store
 
-    # 0.9.1 is intentionally an isolated GUI review.  It neither constructs a
-    # model client nor resolves any platform credential.
-    for environment_name in (
-        "DEEPSEEK_API_KEY",
-        "OPENAI_API_KEY",
-        "AUTO_RESEARCH_DEEPSEEK_API_KEY",
-        "AUTO_RESEARCH_OPENAI_API_KEY",
-    ):
-        os.environ.pop(environment_name, None)
+    # The Fusion product restores the reviewed 0.8 service graph, but desktop
+    # credentials still come only from the generation-bound secure store.
+    disable_legacy_environment_credentials()
 
     from auto_research.evidence.db import EvidenceDB
     from desktop_server import create_desktop_server, new_session_token
@@ -351,22 +458,48 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     token = new_session_token()
     server_errors: queue.Queue[BaseException] = queue.Queue(maxsize=1)
     try:
-        snapshot = create_fusion_review_snapshot(
-            project_root / "db" / "experimental_evidence.sqlite"
+        workspace_database = project_root / "db" / "experimental_evidence.sqlite"
+        database = EvidenceDB(workspace_database)
+        product_services = create_desktop_product_services(
+            data_root=DEFAULT_PACKAGE_DATA_ROOT,
+            current_app_version=DESKTOP_VERSION,
+            workspace_database=workspace_database,
+            workspace_root=project_root,
         )
-        database = EvidenceDB(snapshot.database)
         desktop_session_id = new_session_token()
+        ai_services = mac_ai_runtime_services(
+            database=database,
+            personal_import_service=product_services.personal_import_service,
+            desktop_session_id=desktop_session_id,
+        )
+        native_desktop_bridge = NativeDesktopBridge(
+            product_services.package_service.broker,
+            product_services.personal_file_selection_broker,
+            product_services.package_export_destination_broker,
+        )
         server, _ = create_desktop_server(
             database,
             host=host,
             port=0,
             token=token,
             read_only=False,
+            history_store=default_secure_history_store(),
+            credential_store=ai_services.legacy_deepseek_store,
+            desktop_ai_api=MacDesktopAIAPI(ai_services.controller),
             desktop_settings_api=DesktopSettingsAPI(
-                DesktopSettingsService(MacAtomicDesktopSettingsStore(FUSION_REVIEW_SETTINGS))
+                DesktopSettingsService(MacAtomicDesktopSettingsStore(DEFAULT_SETTINGS_PATH))
             ),
+            package_service=product_services.package_service,
+            package_api=product_services.package_api,
+            package_center_api=(
+                product_services.package_center.api
+                if product_services.package_center is not None
+                else None
+            ),
+            federated_search_api=product_services.federated_search_api,
+            personal_import_api=product_services.personal_import_api,
             session_token=desktop_session_id,
-            experience_mode="fusion-review",
+            experience_mode="fusion-product",
         )
         configure_imported_module_paths(project_root)
     except BaseException as exc:
@@ -396,11 +529,13 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     window = webview.create_window(
         APP_NAME,
         url=f"{url}/?desktop_token={token}",
+        js_api=native_desktop_bridge,
         width=1440,
         height=920,
         min_size=(1040, 700),
         background_color="#181a1d",
     )
+    native_desktop_bridge.bind_window(window)
     window.events.loaded += lambda: window.evaluate_js(
         "window.history.replaceState({}, document.title, '/');"
     )
