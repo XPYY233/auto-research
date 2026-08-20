@@ -385,11 +385,17 @@ def search_paper_catalog(db: EvidenceDB) -> list[dict]:
     allowed = {
         "id", "title", "doi", "year", "first_author", "corresponding_author",
         "material_focus", "six_row_count", "six_workflow_state", "six_workflow_label",
+        "requires_rescan_confirmation",
     }
-    return [
-        {key: paper.get(key) for key in allowed}
-        for paper in annotate_navigation_tags(list_paper_workflow_summaries(db))
-    ]
+    catalog: list[dict] = []
+    for paper in annotate_navigation_tags(list_paper_workflow_summaries(db)):
+        public = {key: paper.get(key) for key in allowed}
+        paper_id = int(paper["id"])
+        public["requires_rescan_confirmation"] = requires_rescan_confirmation(
+            db, paper_id
+        )
+        catalog.append(public)
+    return catalog
 
 
 def search_export_rows(db: EvidenceDB, query: str, limit: int = 100000, *,

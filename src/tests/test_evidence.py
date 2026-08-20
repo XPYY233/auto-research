@@ -1468,6 +1468,8 @@ class SixColumnWorkflowTests(unittest.TestCase):
         self.assertTrue(catalog)
         self.assertNotIn("pdf_path", catalog[0])
         self.assertNotIn("local_article_key", catalog[0])
+        selected = next(row for row in catalog if row["id"] == self.paper_id)
+        self.assertIs(selected["requires_rescan_confirmation"], True)
 
     def test_search_expands_element_names_to_symbols(self):
         other = self.db.upsert_paper(title="Tungsten alloy paper", doi="10.1/search-w")
