@@ -1,6 +1,17 @@
 # Auto Research Evidence 阶段发布状态
 
-> 当前用户版为 `0.9.2-preview.1` / build `21` Fusion真实视觉证据预览：Mac核心文献、搜索、图书管理员、实验导入、双provider设置、应用内PDF返回链，以及真实表格/论文图片中央详情已经恢复；资料包/通用导出、选中证据AI和私人实验大表分页仍未完成。它是课题组内部、ad-hoc签名、未公证版本，不是公开稳定发行或Windows安装版。
+> 当前发布候选为 Auto Research `1.0.0` / build `22`。它是 Apple Silicon macOS 课题组稳定版，完整使用 Fusion 工作台并恢复现有核心功能；采用 ad-hoc 签名、未公证，不是 App Store/Developer ID 公开发行，也不是 Windows 安装版。
+
+## v1.0.0 macOS 稳定候选
+
+- 功能：文献 PDF 导入与分阶段提取、四类证据及真实图表/图片详情、应用内 PDF/返回、精确与联合搜索、图书管理员、受控 AI、个人 CSV/TSV/XLSX 一次核验与真实分页表格、官方资料包、用户论文/实验包，以及单条和批量数据导出。
+- 界面：Fusion 四区工作台、单一导航、中央标签、上下文侧栏、证据检查器、日/夜/跟随系统主题和舒适/紧凑密度。生产页面没有 0.9 审核占位词或旧页面副本。
+- 验证：共享核心 `773/773`、macOS `226/226`，合计 `999/999`；前端语法、Python 编译、发布哈希同步与差异检查通过。生产 SQLite 字节哈希未变。
+- 官方包：`auto-research-internal-evidence-1.0.0.aresearch`，SHA-256 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`；60 篇论文、4,356 条四类实体、零 PDF/零二进制资产，仍受课题组内部签名与 rights 契约约束。
+- 发布门：必须从最终干净提交构建 App/DMG，先把 0.9.2/build21 保存为不可启动回退，再完成真实 Mac 用户流程和 UserKit 哈希封箱。完成前本节只表示源码候选，不表示已经安装。
+- Windows：完全暂停；没有 v1 Windows 源码同步、Setup 或 Win11 验收。
+
+以下 0.9/0.8 小节是历史发布记录。
 
 ## 0.9.2-preview.1 macOS Fusion真实视觉证据预览
 
@@ -35,9 +46,9 @@
 ## 版本身份
 
 - 科学数据基线：`2026.07.30-librarian-brief-stable.1`
-- 当前发布候选：Auto Research `0.8.0-preview.1` / build `18`。采用 Workbench A 日/夜科研界面、设置中心、DeepSeek/OpenAI 受信提供商、四域 prepared-action AI 授权和分阶段原子文献工作流；最终 DMG、ZIP 和验收哈希以仓库外 0.8 用户套件为准
-- 当前已构建制品：Auto Research `0.8.0-preview.1` / build `18` 已从干净提交 `700e642` 生成，安装位置为 `/Applications/Auto Research.app`
-- 当前发布套件：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.8.0-preview.1-build18-UserKit.zip`（最终 SHA-256 见相邻 `.sha256` 与套件内验收报告）
+- 历史 0.8 发布候选：Auto Research `0.8.0-preview.1` / build `18`。采用 Workbench A 日/夜科研界面、设置中心、DeepSeek/OpenAI 受信提供商、四域 prepared-action AI 授权和分阶段原子文献工作流；历史 DMG、ZIP 和验收哈希以仓库外 0.8 用户套件为准
+- 历史 0.8 构建制品：Auto Research `0.8.0-preview.1` / build `18` 从干净提交 `700e642` 生成；它不再是当前安装身份
+- 历史 0.8 发布套件：`/Users/USER/Zotero/auto-research-releases/Auto-Research-0.8.0-preview.1-build18-UserKit.zip`
 - 改造前保护提交：`6ce9536`
 - 改造前保护标签：`evidence-demo-2026-07-30-pre-research-brief-1`
 - 当前状态：0.8 Mac App、DMG、用户套件与 Windows 源码预览套件已生成并验收；0.7 build15 保持可验证回退。Mac 仍为课题组内部、ad-hoc 签名、未公证预览；Windows 仍无 Setup，不是公开发行版

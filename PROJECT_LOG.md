@@ -2,6 +2,15 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-21：v1.0.0 build22 功能冻结与发布前验证
+
+- 将 Fusion 工作台从 0.9 功能恢复线收敛为首个 v1 稳定 Mac 候选；活动页不再出现“测试/体验/预览/合成/后续版本”等发布占位词，旧 0.8 DOM、第二导航和退役浏览器入口没有复活。
+- 在唯一 Fusion 中完成文献导入与 staged extraction、四类证据与真实视觉详情、中央 PDF/返回、精确与联合搜索、图书管理员、选中证据 AI、私人表格一次核验与分页详情、官方/用户资料包和真实文件导出。导出文案明确：工作区批量导出只覆盖测量条目与研究结论，表格、图片、官方/私人来源使用单条导出或资料包。
+- 修复用户论文集合 PDF 的中央阅读能力：只有已核验 `literature_collection` 私人来源且 DTO 同时具备 `source_id/paper_uid/pdf_available` 时才使用受保护 lease；私人实验来源不能声明 PDF 能力。
+- 发布前串行通过共享核心 773 项、macOS 226 项，共 999 项；JavaScript/Python、release-contract 和 diff-check 通过。生产 SQLite SHA-256 保持 `d3e225d35f4c9e21fcf825405d0e38f28210c4479caac67b87be9f8382fb6f72`，Windows 未参与。
+- 官方 v1 包从已审计不可变快照生成并在临时根完成首次 `installed`、重复 `already_active` 验收；包 SHA-256 为 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`，60 篇论文/4,356 条四类实体，零 PDF/零二进制资产。
+- 当前阶段只冻结源码、教程与包内容。必须在干净发布工作区构建、备份旧 App、安装验收并生成绑定最终提交的 UserKit 后，才可宣布 v1 已交付。
+
 ## 2026-08-20：0.9.2-preview.1 build21 真实表格与论文图片恢复
 
 - 复用既有 `/api/visual-assets/{id}` 与 `/image`，在Fusion中央唯一详情区恢复item、finding、table、figure四类详情；未恢复旧app.js、dialog或第二导航。

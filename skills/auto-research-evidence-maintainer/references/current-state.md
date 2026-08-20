@@ -1,5 +1,16 @@
 # Current state checkpoint
 
+## v1.0.0 stable-candidate checkpoint (2026-08-21)
+
+- Source identity: Auto Research `1.0.0` build 22 for Apple Silicon macOS. The final commit/tag/artifact hashes must be filled only after the clean-worktree build and real installation acceptance; the currently installed App remains 0.9.2/build21 until that transaction succeeds.
+- Production surface: one Fusion workbench with Literature, Search, Experiment and Package Center plus Settings. Restored capabilities include staged PDF extraction, four evidence details and real visual assets, central PDF/return, exact/federated search, Librarian and selected-evidence AI, reviewed personal imports with real paginated tables, official/user package flows, and single/batch exports.
+- Validation so far: 773 shared tests and 226 macOS tests, 999 total, plus JavaScript/Python/release-contract checks. Windows was deliberately excluded and remains paused without Setup.
+- Official package: `auto-research-internal-evidence-1.0.0.aresearch`, SHA-256 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`; 60 papers and 4,356 entities (3,142 item / 936 finding / 46 table / 232 figure), no PDFs or binary assets.
+- Data protection: production SQLite SHA-256 remains `d3e225d35f4c9e21fcf825405d0e38f28210c4479caac67b87be9f8382fb6f72`. It is the only expected dirty worktree item and must never be staged, reset or used for release tests.
+- Honest boundary: v1 is a research-group stable Mac build, ad-hoc signed and not notarized because this machine has no Developer ID identity. Corpus readiness remains 17/50 data-ready and 30/50 visual-ready; software release status does not imply corpus completeness or human gold-standard scientific validation.
+
+The 0.9 and 0.8 checkpoints below are retained only for rollback/history.
+
 ## 0.9.2 Fusion visual-evidence checkpoint (2026-08-20)
 
 - Installed identity: `0.9.2-preview.1` build 21 for Apple Silicon macOS, functional source `83cf5e4f6031dda8b3efc375e1e0aa183453f92a`, annotated tag `auto-research-0.9.2-preview.1-build21`.
@@ -39,8 +50,8 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 - Research-brief pre-change tag: `evidence-demo-2026-07-30-pre-research-brief-1`
 - Previous Librarian reasoning/presentation implementation commit: `8e9c4c1`
 - Research-brief implementation/documentation commit: use the current shared-core `git log -1`; this file does not self-reference its commit hash
-- Current desktop source/tag: `83cf5e4f6031dda8b3efc375e1e0aa183453f92a`; `auto-research-0.9.2-preview.1-build21`
-- Current desktop version: Auto Research `0.9.2-preview.1` build 21 for Apple Silicon macOS
+- Current desktop source/tag: v1 source is the current `git log -1`; fill the annotated `auto-research-v1.0.0-build22` tag only after final build/install acceptance
+- Current desktop version: Auto Research `1.0.0` build 22 source candidate for Apple Silicon macOS; installed App remains 0.9.2/build21 until the protected replacement completes
 - Release: `2026.07.30-librarian-brief-stable.1`
 - Evidence schema: v12
 - Fixed evidence corpus: `config/evidence_test_set_50.json`
@@ -69,10 +80,10 @@ Independent read-only browser acceptance: a tungsten question returned 65 candid
 
 ## Honest completion boundary
 
-- The installed build21 application and currently published evidence are stable for the validated read-only visual-evidence demonstration.
+- The installed build21 application is the rollback source while v1 build22 completes its protected build and installation acceptance.
 - The original at-least-30-processed-paper goal is incomplete: 13 more papers are needed to move from 17 to 30; 33/50 remain not data-ready.
 - Adversarial DeepSeek agreement is not independent scientific accuracy. A human gold standard remains missing.
-- The only supported product shape is a personal desktop workbench. The current installed line is Auto Research `0.9.2-preview.1` build 21 on macOS. Its primary navigation is Literature, Search, Experiment and Package Center; manual entry/revision-history views and the pet scene are retired. Windows work is paused, remains `installer_ready=false`, has no Setup and has no clean-machine acceptance. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
+- The only supported product shape is a personal desktop workbench. The current source line is Auto Research `1.0.0` build 22 on macOS; the installed line changes only after protected acceptance. Its primary navigation is Literature, Search, Experiment and Package Center; manual entry/revision-history views and the pet scene are retired. Windows work is paused, remains `installer_ready=false`, has no Setup and has no clean-machine acceptance. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
 - GitHub is not configured. `origin` points to a local historical bundle.
 - Librarian reasoning now has deterministic hard-condition parsing, direct/adjacent/expansion classification, evidence bundles and a five-section research report. This did not change scientific evidence or corpus readiness.
 - The local deterministic parser plus bounded history is the only hard-condition authority. DeepSeek plans queries, selects bounded evidence and explains it; it cannot create or rewrite hard conditions. Scientific-notation fluence, equivalent units and particle/material role boundaries are covered by regression tests.

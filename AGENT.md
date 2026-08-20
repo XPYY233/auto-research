@@ -2,7 +2,7 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
-## Handoff entry point (updated 2026-08-09)
+## Handoff entry point (updated 2026-08-21)
 
 - A new account or agent must read `PROJECT_HANDOFF.md` before modifying this repository, then use this file as the durable policy authority.
 - The canonical portable project skill is `skills/auto-research-evidence-maintainer/`; its current-account installation is a symlink under `~/.codex/skills/auto-research-evidence-maintainer`.
@@ -12,11 +12,10 @@ This project is a local literature automation workflow for fusion materials, rad
 - Do not solve platform integration by copying product logic into `desktop/macos/**` or `desktop/windows/**`. Package verification, official repository audit, stable source identity and federated read-only search stay platform-neutral; desktop code supplies lifecycle, native file selection, credentials and protected routing only.
 - The canonical official package selector is `<app-data>/official-packages/active.json`. A package becomes active only after signature/checksum validation and `OfficialEvidenceRepository` audit; `distribution-sqlite-v1` must never pass through `EvidenceDB.init()` or any writable v12 search-index path.
 - Signing private keys are maintainer-only files outside Git and outside application data packages. Applications trust only reviewed public keys from `auto_research.product.trusted_publishers`; missing keys must never be silently regenerated under an existing `key_id`.
-- Current full-function rollback line: Apple Silicon macOS `0.8.0-preview.1` build 18. Current development line: `0.9.1-preview.1` build 19, an intentionally read-only Fusion GUI review that must not be described as a complete functional upgrade until the user approves it. Build19 packages only the Fusion HTML/CSS/runtime and uses an isolated schema-v12 snapshot plus synthetic session-only experiment data.
-- The 0.8 candidate includes Workbench light/dark/system themes, provider-separated DeepSeek/OpenAI BYOK, four-scope prepared AI actions, staged literature commit, personal reviewed import, federated search and Package Center.
-- Current internal official package: `0.2.0-preview.1`, SHA-256 `89ec7f8dcdeea2d862d91aaf798674fd600c21fd75c4553d270a0c0b806f999e`, 60 paper metadata rows and 4,356 four-type entities. It is read-only, contains no PDFs or binary images, and must never replace or write the editable v12 workspace.
+- Current release line: Apple Silicon macOS `1.0.0` build 22, using the single Fusion workbench and the restored literature/search/experiment/package/export feature set. The installed 0.9.2/build21 remains the rollback source until the v1 installation transaction and final acceptance complete.
+- Current internal official package: `1.0.0`, SHA-256 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`, 60 paper metadata rows and 4,356 four-type entities. It is read-only, contains no PDFs or binary images, and must never replace or write the editable v12 workspace. Its historical signer id and rights label are immutable security contracts, not user-facing release-channel labels.
 - Windows 0.8 thin source parity passed 139 contract tests and shares the same Web/DTO/AI contracts. `installer_ready=false`; there is still no Setup or Windows 11 clean-machine evidence.
-- Windows 0.9 work is explicitly paused. Do not edit, test or build `desktop/windows/**` until the user approves the Mac Fusion GUI and asks to resume migration.
+- Windows work is explicitly paused. Do not edit, test or build `desktop/windows/**` until the user accepts the complete Mac v1 and explicitly asks to resume migration.
 - Product stability, corpus completion and scientific validity remain separate claims. The fixed corpus is still 17/50 data-ready and 30/50 visual-ready; automatic adversarial agreement is not an independent human physics gold standard.
 
 ## Search V2, federated search and in-product agents (updated 2026-08-09)
@@ -71,9 +70,9 @@ This project is a local literature automation workflow for fusion materials, rad
 - The product distribution model is a signed desktop App plus separately delivered, versioned evidence packages. Import must verify package version and hash, keep official packages separate from the user's private library, and provide rollback on failure. Packages exclude restricted PDFs, local paths, Zotero keys, private conversations and developer credentials by default.
 - Runtime AI calls are BYOK through a code-reviewed provider registry (initially DeepSeek and OpenAI). Keys stay in provider-separated platform credential slots and never enter SQLite, packages, logs, diagnostics or Git. Every billable prepared action must name the selected provider/model, possible cost, exact bounded outbound data and maximum call/token budget before execution.
 
-## 0.8 恢复与协作纪律（2026-08-13）
+## 0.8 历史恢复与当前协作纪律（2026-08-13；协作规则继续有效）
 
-- 0.8.0-preview.1 build 18 is the current macOS internal-preview release line; use `PROJECT_HANDOFF.md` and the user-kit acceptance report as authority. Builds 16 and 17 were never released; the independent rollback remains `0.7.0-preview.2` build 15.
+- 0.8.0-preview.1 build 18 is a historical macOS release line; use the v1 section in `PROJECT_HANDOFF.md` as current authority. Builds 16 and 17 were never released.
 - 运行时 AI 不接受任意“OpenAI-compatible URL”，也不再长期限定 DeepSeek。只允许代码内受信 provider 注册表（首批 DeepSeek/OpenAI）、固定 HTTPS endpoint、固定模型目录、禁 redirect；新增 provider 必须代码评审和能力回归。
 - renderer 不能提交最终外发 DTO、scope、provider、content hash、credential generation 或 consent 布尔值。业务 assembler 在服务端准备不可变 job envelope；用户确认后只提交 opaque action_id + one-time nonce；executor 只能使用 envelope 内的科研内容和本 job 的模型输出。
 - API key 与 generation 必须在平台凭据 envelope 中原子更新。旧 DeepSeek route 如保留，只能委托同一 provider manager/AIDesktopService，不得有第二套 secret、generation、状态或环境变量权威。

@@ -1,6 +1,19 @@
 # Auto Research 阶段性交班总览
 
-## 0.9 Fusion 功能恢复线（2026-08-20，当前优先）
+## v1.0.0 macOS 首个稳定交付线（2026-08-21，当前权威）
+
+- 当前源码身份固定为 Auto Research `1.0.0` / build `22`，唯一生产界面是 Fusion 四区工作台：文献、搜索、实验、资料包；设置是底部工具入口，不是第五个科研工作流。当前主工作区仅保留用户的 `db/experimental_evidence.sqlite` 未提交现场，禁止暂存、还原、清理或用于发布测试。
+- v1 已在 Fusion DOM 内恢复既有成熟能力：PDF 导入与分阶段自动提取、四类证据中央详情及真实表格/论文图片、中央 PDF 与返回链、精确/联合搜索、图书管理员、选中证据受控 AI、CSV/TSV/XLSX 预览与可选 AI 预填/一次确认、私人实验分页真实表格、官方包导入/回退、论文集合与私人实验包导入导出、单条证据 CSV/XLSX 导出和工作区测量/结论批量导出。
+- 活跃页面已经移除“测试、体验、预览、合成、后续版本”等面向用户的发布占位文案；没有恢复旧 0.8 页面、第二套导航、浏览器工作台、导师只读页或 ngrok。私人数据、官方包和可写工作区仍保持独立来源与生命周期。
+- 串行发布前验证已通过：共享核心 `773/773`、macOS `226/226`，共 `999/999`；JavaScript 语法、Python 编译、release-contract 同步和 Git diff 检查通过。Windows 本轮完全暂停，未运行 Windows 测试或构建。
+- 官方 v1 资料包为 `auto-research-internal-evidence-1.0.0.aresearch`，SHA-256 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`；包含 60 篇论文元数据和 4,356 条四类实体（item 3,142 / finding 936 / table 46 / figure 232），不含 PDF、图片、私人实验、路径或密钥。其签名身份与 rights 仍是受保护的课题组内部发布者契约，不能改写成公开再分发许可。
+- 生产 SQLite 在本轮开发与测试前后 SHA-256 均为 `d3e225d35f4c9e21fcf825405d0e38f28210c4479caac67b87be9f8382fb6f72`。科学完成度仍独立为 17/50 data-ready、30/50 visual-ready；软件稳定不代表语料完成或有人类金标准验证。
+- 发布边界：v1 是 Apple Silicon macOS 课题组稳定版；当前机器没有 Developer ID 身份，因此采用 ad-hoc 签名、未公证，首次打开需遵循中文指南中的 Gatekeeper 安全步骤。Windows 仍无 Setup，必须等用户明确下令后才恢复迁移。
+- 当前 `/Applications/Auto Research.app` 在 v1 安装事务完成前仍是 0.9.2/build21。构建、安装、DMG、标签和 UserKit 哈希只有在干净发布工作区及最终验收报告绑定同一提交后才可写入本节；不要提前把源码候选描述为已安装制品。
+
+以下 0.9/0.8 内容仅作历史回退与决策记录，不再是当前功能说明。
+
+## 0.9 Fusion 功能恢复线（2026-08-20，历史）
 
 - `0.9.2-preview.1` / build `21` 已恢复四类证据的中央结构化详情，并把工作区 `table/figure` 重新接回真实 PyMuPDF 截图，不再显示类型占位符。文献列表与搜索结果共用同一中央详情，原图失败有明确结束态；官方/私人来源没有二进制路由时只显示结构化字段，禁止借用工作区编号或生成替代图。
 - build21真实Mac验收已打开 Table 4 与 Figure 9 原图，显示图注、物理量、变量、材料、实验条件、方法和关联数；中央PDF打开后可返回原证据，搜索页也能进入同一真实表格详情。生产SQLite SHA-256前后均为 `d3e225d35f4c9e21fcf825405d0e38f28210c4479caac67b87be9f8382fb6f72`。
@@ -56,7 +69,7 @@
 
 > 交班快照：2026-08-13
 > 活跃项目：`/Users/USER/Zotero/auto-research`  
-> 当前发布候选：Auto Research `0.8.0-preview.1` / build `18`；最终 DMG、套件与验收哈希见仓库外 0.8 用户套件的 `RELEASE_ACCEPTANCE.json`
+> 历史 0.8 发布候选：Auto Research `0.8.0-preview.1` / build `18`；当时的 DMG、套件与验收哈希见仓库外 0.8 用户套件的 `RELEASE_ACCEPTANCE.json`
 > 当前 Mac 制品提交：`700e642`；构建清单、build18 标签与 UserKit 验收报告一致。后续 Windows 文档收口提交不改变 Mac App 字节
 > 官方资料包：`0.2.0-preview.1`，SHA-256 `89ec7f8dcdeea2d862d91aaf798674fd600c21fd75c4553d270a0c0b806f999e`；旧 `0.1.0-preview.1` 保持不可变回退点
 > Windows：继续 `installer_ready=false`，无 Setup、无 Win11 真机验收；不得把源码对齐描述为安装版
