@@ -209,6 +209,35 @@ assert.equal(api.workspaceSearchExportURL('official','csv','x'),'');
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_single_evidence_metadata_export_uses_public_identity_only(self) -> None:
+        for element_id in ("fusion-detail-export-csv", "fusion-detail-export-xlsx"):
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        self.assertIn("证据元数据 CSV", self.index)
+        self.assertIn("证据元数据 XLSX", self.index)
+        self.assertNotIn("pdf_path", self.runtime)
+        program = f"""
+globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
+const api=globalThis.AutoResearchFusion,assert=require('assert');
+const expected='/api/desktop/evidence-export?source_scope=workspace&source_id=workspace&entity_type=item&entity_uid=17&format=csv';
+assert.equal(api.evidenceExportURL({{sourceScope:'workspace',type:'item',itemId:17}},'csv'),expected);
+assert(api.evidenceExportURL({{sourceScope:'workspace',type:'finding',itemId:19}},'xlsx').endsWith('entity_uid=19&format=xlsx'));
+assert(api.evidenceExportURL({{sourceScope:'workspace',type:'table',assetId:23}},'csv').includes('entity_type=table&entity_uid=23'));
+assert(api.evidenceExportURL({{sourceScope:'workspace',type:'figure',assetId:29}},'xlsx').includes('entity_type=figure&entity_uid=29'));
+const official=api.evidenceExportURL({{sourceScope:'official',type:'table',sourceId:'official / 甲',entityUid:'table:W Ta?1'}},'csv');
+assert(official.includes('source_id=official%20%2F%20%E7%94%B2'));
+assert(official.includes('entity_uid=table%3AW%20Ta%3F1'));
+const privateURL=api.evidenceExportURL({{sourceScope:'private',type:'table',sourceId:'private-main',entityUid:'sheet:1'}},'xlsx');
+assert(privateURL.includes('source_scope=private'));
+assert.equal(api.evidenceExportURL({{sourceScope:'workspace',type:'item',itemId:'17'}},'csv'),'');
+assert.equal(api.evidenceExportURL({{sourceScope:'official',type:'table',sourceId:'',entityUid:'x'}},'csv'),'');
+assert.equal(api.evidenceExportURL({{sourceScope:'private',type:'other',sourceId:'p',entityUid:'x'}},'csv'),'');
+assert.equal(api.evidenceExportURL({{sourceScope:'private',type:'table',sourceId:'p',entityUid:'x',pdf_path:'/secret'}},'pdf'),'');
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_selected_evidence_ai_is_workspace_numeric_only(self) -> None:
         for element_id in (
             "fusion-evidence-ai-question", "fusion-evidence-ai",
