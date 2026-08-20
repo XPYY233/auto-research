@@ -46,10 +46,10 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "d12c12664732cb78abfb0d27254d1c8e8f56f0ad512304401225f2e1215c5bec",
+    "src/auto_research/evidence/web/index.html": "5011d09158fa45fa762914b8a9e660af03c5b8f475158999515e058e967ba339",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
     "src/auto_research/evidence/web/workbench.css": "e36145ec9bed05ee3599e5b14f1f3733b522f5f033df4c52e1dec32a19432445",
     "src/auto_research/evidence/web/ai_consent.js": "ada8842907ff40f01a0e3b681d0dd205cc62aaffec4f47ef29813104141cd582",
-    "src/auto_research/evidence/web/fusion_review.js": "3a98adefe57f5c7cbfd8933ac563edc2ec11e1f875944adeb5854022aa695698"
+    "src/auto_research/evidence/web/fusion_review.js": "87acf6275edfd44c5938f02e792baed5680b4d126ca4b6822e06eff80de5dff7"
   }
 }
