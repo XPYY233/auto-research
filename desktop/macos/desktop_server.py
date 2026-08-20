@@ -23,6 +23,7 @@ from auto_research.evidence.webapp import (
 from secure_history import SecureHistoryError, SecureHistoryStore
 from secure_credentials import DeepSeekCredentialStore, SecureCredentialError
 from desktop_settings_api import DesktopSettingsAPI
+from evidence_export_api import EvidenceExportAPI
 from first_use_state import (
     ActivePackageStatus,
     FirstUseStateError,
@@ -154,6 +155,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     history_store: SecureHistoryStore | None = None
     credential_store: DeepSeekCredentialStore | None = None
     desktop_settings_api: DesktopSettingsAPI | None = None
+    evidence_export_api: EvidenceExportAPI | None = None
     active_package_status_path: Path | None = None
     package_service: PackageImportService | None = None
     package_api: PackageAPI | None = None
@@ -601,6 +603,11 @@ class DesktopEvidenceHandler(EvidenceHandler):
             and self.personal_table_api.handle_get(self)
         ):
             return
+        if (
+            self.evidence_export_api is not None
+            and self.evidence_export_api.handle_get(self)
+        ):
+            return
         if parsed.path == "/api/ui-mode":
             self._issue_csrf_header = True
         return super().do_GET()
@@ -759,6 +766,7 @@ def create_desktop_server(
     history_store: SecureHistoryStore | None = None,
     credential_store: DeepSeekCredentialStore | None = None,
     desktop_settings_api: DesktopSettingsAPI | None = None,
+    evidence_export_api: EvidenceExportAPI | None = None,
     active_package_status_path: Path | None = None,
     package_service: PackageImportService | None = None,
     package_api: PackageAPI | None = None,
@@ -783,6 +791,26 @@ def create_desktop_server(
     else:
         document_index = {**upload_service.index_existing_pdfs(), "disabled": False}
     search_index = EvidenceSearchIndex(database).ensure_fresh()
+    if evidence_export_api is None:
+        from auto_research.evidence.evidence_export import (
+            EvidenceExportService,
+            FederatedEvidenceResolver,
+            WorkspaceEvidenceProjectionResolver,
+        )
+
+        federated_session = getattr(
+            getattr(federated_search_api, "service", None), "session", None
+        )
+        evidence_export_api = EvidenceExportAPI(
+            EvidenceExportService(
+                workspace_resolver=WorkspaceEvidenceProjectionResolver(database),
+                federated_resolver=(
+                    FederatedEvidenceResolver(federated_session)
+                    if federated_session is not None
+                    else None
+                ),
+            )
+        )
 
     handler = type(
         "BoundDesktopEvidenceHandler",
@@ -795,6 +823,7 @@ def create_desktop_server(
             "history_store": history_store,
             "credential_store": credential_store,
             "desktop_settings_api": desktop_settings_api,
+            "evidence_export_api": evidence_export_api,
             "active_package_status_path": active_package_status_path,
             "package_service": package_service,
             "package_api": package_api,
