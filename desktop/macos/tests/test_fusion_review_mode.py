@@ -242,6 +242,12 @@ class FusionReviewModeTests(unittest.TestCase):
                 port=0,
                 token=token,
                 personal_import_api=PersonalAPI(),
+                release_info={
+                    "label": "Auto Research 1.0.0",
+                    "version": "1.0.0",
+                    "build": "22",
+                    "evidence_schema": 12,
+                },
                 experience_mode="fusion-product",
             )
             import threading
@@ -260,6 +266,8 @@ class FusionReviewModeTests(unittest.TestCase):
                 self.assertEqual(mode["mode"], "fusion-product")
                 self.assertTrue(mode["experience"]["mutations"])
                 self.assertTrue(mode["experience"]["model_calls"])
+                self.assertEqual(mode["release"]["version"], "1.0.0")
+                self.assertEqual(mode["release"]["build"], "22")
 
                 with opener.open(
                     f"{base}/api/visual-assets/{asset_id}", timeout=5

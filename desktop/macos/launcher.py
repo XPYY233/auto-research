@@ -49,6 +49,17 @@ DESKTOP_VERSION_METADATA = _desktop_version_metadata()
 DESKTOP_VERSION = str(DESKTOP_VERSION_METADATA["desktop_version"])
 
 
+def _desktop_release_info() -> dict[str, object]:
+    return {
+        "label": f"Auto Research {DESKTOP_VERSION}",
+        "version": DESKTOP_VERSION,
+        "build": str(DESKTOP_VERSION_METADATA.get("build_number", "")),
+        "evidence_schema": int(
+            DESKTOP_VERSION_METADATA.get("minimum_evidence_schema", 12)
+        ),
+    }
+
+
 def _frozen_product_contract_checks() -> dict[str, bool]:
     """Confirm the frozen bundle contains one functional Fusion product surface."""
 
@@ -383,6 +394,7 @@ def _run_smoke_test(project_root: Path) -> int:
             federated_search_api=product_services.federated_search_api,
             personal_import_api=product_services.personal_import_api,
             personal_table_api=product_services.personal_table_api,
+            release_info=_desktop_release_info(),
             session_token=desktop_session_id,
             experience_mode="fusion-product",
         )
@@ -500,6 +512,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             federated_search_api=product_services.federated_search_api,
             personal_import_api=product_services.personal_import_api,
             personal_table_api=product_services.personal_table_api,
+            release_info=_desktop_release_info(),
             session_token=desktop_session_id,
             experience_mode="fusion-product",
         )

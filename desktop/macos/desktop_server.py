@@ -9,6 +9,7 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from typing import Mapping
 from urllib.parse import parse_qs, urlparse
 
 from auto_research.evidence.db import EvidenceDB
@@ -164,6 +165,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     personal_import_api: PersonalImportAPI | None = None
     personal_table_api: PersonalTableAPI | None = None
     desktop_ai_api: MacDesktopAIAPI | None = None
+    release_info: Mapping[str, object] = RELEASE_INFO
     experience_mode: str = "standard"
     _issue_desktop_cookie: bool = False
     _issue_csrf_header: bool = False
@@ -542,7 +544,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
                             "mutations": False,
                             "model_calls": False,
                         },
-                        "release": RELEASE_INFO,
+                        "release": self.release_info,
                     }
                 )
             if self.experience_mode == "fusion-product":
@@ -558,7 +560,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
                             "mutations": True,
                             "model_calls": True,
                         },
-                        "release": RELEASE_INFO,
+                        "release": self.release_info,
                     }
                 )
         if self.experience_mode == "fusion-review" and not is_fusion_review_allowed_get(
@@ -775,6 +777,7 @@ def create_desktop_server(
     personal_import_api: PersonalImportAPI | None = None,
     personal_table_api: PersonalTableAPI | None = None,
     desktop_ai_api: MacDesktopAIAPI | None = None,
+    release_info: Mapping[str, object] | None = None,
     session_token: str | None = None,
     experience_mode: str = "standard",
 ) -> tuple[ThreadingHTTPServer, dict[str, object]]:
@@ -832,6 +835,7 @@ def create_desktop_server(
             "personal_import_api": personal_import_api,
             "personal_table_api": personal_table_api,
             "desktop_ai_api": desktop_ai_api,
+            "release_info": dict(release_info or RELEASE_INFO),
             "experience_mode": experience_mode,
         },
     )
