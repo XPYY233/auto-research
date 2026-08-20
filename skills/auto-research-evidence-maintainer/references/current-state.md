@@ -1,6 +1,17 @@
 # Current state checkpoint
 
-## 0.9.1 Fusion GUI review checkpoint (2026-08-13)
+## 0.9.2 Fusion visual-evidence checkpoint (2026-08-20)
+
+- Installed identity: `0.9.2-preview.1` build 21 for Apple Silicon macOS, functional source `83cf5e4f6031dda8b3efc375e1e0aa183453f92a`, annotated tag `auto-research-0.9.2-preview.1-build21`.
+- Restored production capability: all four public evidence types open in the central Fusion detail workspace. Workspace `table` and `figure` records load the audited visual-asset DTO and actual no-store PNG/JPEG bytes; `item` and `finding` keep their distinct safe projections.
+- PDF behavior: a source-local paper opens inside the central workbench and provides explicit `返回证据详情` and `返回证据列表` actions. Late detail/image requests are generation-guarded and cannot overwrite a newer tab.
+- Privacy/scientific boundary: renderer DTOs remain path-free; missing official/private binary assets terminate with an honest unavailable state. The UI never redraws or invents table cells, curves or images.
+- Validation: 753/753 shared tests and 215/215 macOS tests passed serially, with JavaScript/Python syntax, release-contract sync, frozen smoke, strict ad-hoc signature and DMG verification. Real-App review opened an actual Table 4 screenshot, Figure 9 TEM image, central PDF and a search-result table without a model call.
+- Delivery: `/Users/USER/Zotero/auto-research-releases/Auto-Research-0.9.2-preview.1-build21-UserKit.zip`; SHA-256 `1848453eeff79e1ad8fe206e3f3475282116afd3bbeac7de9a8657a80dfd0331`. DMG SHA-256 `87e29d20d926111aac784d8883ea19330ac818b754b8f3f86171f22b94943a11`.
+- Rollback: build20 remains as a non-launchable `.app.rollback` under `/Users/USER/Zotero/auto-research-backups/app-rollbacks/`. The system has exactly one launchable `/Applications/Auto Research.app`.
+- Still incomplete: automatic extraction, private experiment paginated row/curve details, selected-evidence AI, Package Center mutations and real export remain later 0.9 work. Windows remains paused and has no Setup.
+
+## Historical 0.9.1 Fusion GUI review checkpoint (2026-08-13)
 
 - Target identity: `0.9.1-preview.1` build 19 for Apple Silicon macOS. It is a GUI acceptance build, not a complete functional replacement for 0.8.
 - Production surface: one physical Fusion DOM with title bar, four-item activity rail, context sidebar, central tabs/editor, evidence inspector and status bar. The only bundled Web assets are `index.html`, `app.css`, `workbench.css` and `fusion_review.js`.
@@ -28,8 +39,8 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 - Research-brief pre-change tag: `evidence-demo-2026-07-30-pre-research-brief-1`
 - Previous Librarian reasoning/presentation implementation commit: `8e9c4c1`
 - Research-brief implementation/documentation commit: use the current shared-core `git log -1`; this file does not self-reference its commit hash
-- Current desktop source/tag: the 0.8 final release commit and annotated build18 tag; exact values are recorded in the user-kit acceptance report
-- Current desktop version: Auto Research `0.8.0-preview.1` build 18 for Apple Silicon macOS
+- Current desktop source/tag: `83cf5e4f6031dda8b3efc375e1e0aa183453f92a`; `auto-research-0.9.2-preview.1-build21`
+- Current desktop version: Auto Research `0.9.2-preview.1` build 21 for Apple Silicon macOS
 - Release: `2026.07.30-librarian-brief-stable.1`
 - Evidence schema: v12
 - Fixed evidence corpus: `config/evidence_test_set_50.json`
@@ -50,7 +61,7 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 | fixed PDFs valid and identity-matched | 50/50 |
 | data-ready fixed papers | 17/50 |
 | visual-ready fixed papers | 30/50 |
-| latest clean release tests | 1,178: 810 shared, 229 macOS, 139 Windows contracts |
+| latest Mac release tests | 968: 753 shared, 215 macOS; Windows deliberately paused |
 
 Target DOI `10.1016/j.jnucmat.2018.08.031` has 231 independent facts and 403/403 source-localizable automatic records at this checkpoint.
 
@@ -58,10 +69,10 @@ Independent read-only browser acceptance: a tungsten question returned 65 candid
 
 ## Honest completion boundary
 
-- The application and currently published evidence are stable for demonstration.
+- The installed build21 application and currently published evidence are stable for the validated read-only visual-evidence demonstration.
 - The original at-least-30-processed-paper goal is incomplete: 13 more papers are needed to move from 17 to 30; 33/50 remain not data-ready.
 - Adversarial DeepSeek agreement is not independent scientific accuracy. A human gold standard remains missing.
-- The only supported product shape is a personal desktop workbench. The current release line is Auto Research `0.8.0-preview.1` build 18 on macOS. Its primary navigation is Literature, Search, Experiment and Package Center; manual entry/revision-history views and the pet scene are retired. Windows shares the same UI contract but `installer_ready=false`, no Setup and no clean-machine acceptance. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
+- The only supported product shape is a personal desktop workbench. The current installed line is Auto Research `0.9.2-preview.1` build 21 on macOS. Its primary navigation is Literature, Search, Experiment and Package Center; manual entry/revision-history views and the pet scene are retired. Windows work is paused, remains `installer_ready=false`, has no Setup and has no clean-machine acceptance. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
 - GitHub is not configured. `origin` points to a local historical bundle.
 - Librarian reasoning now has deterministic hard-condition parsing, direct/adjacent/expansion classification, evidence bundles and a five-section research report. This did not change scientific evidence or corpus readiness.
 - The local deterministic parser plus bounded history is the only hard-condition authority. DeepSeek plans queries, selects bounded evidence and explains it; it cannot create or rewrite hard conditions. Scientific-notation fluence, equivalent units and particle/material role boundaries are covered by regression tests.
@@ -73,7 +84,7 @@ Independent read-only browser acceptance: a tungsten question returned 65 candid
 - The brief uses a public-field whitelist. Missing title/DOI/page/excerpt stays empty, sets `integrity.status=warning`, and is displayed by R# in the Markdown.
 - Librarian history in the ad-hoc macOS preview uses an Application Support private AES-GCM key/ciphertext pair to avoid unstable-code-identity Keychain prompts; a formally signed macOS release uses Keychain and Windows uses Credential Manager. `browser-local` and `readonly-none` remain compatibility/test adapters only. No history is written to the evidence DB, and a stable App must not prompt for an Auto Research edit password.
 - The intended distribution model is a signed desktop App plus separately delivered, versioned evidence packages. Users import a package for immediate offline search and may add their own PDFs. Any DeepSeek extraction or Librarian use is BYOK: the user's key goes to the OS credential store only, never the database, package, logs or Git. Package implementation follows the stable macOS preview.
-- The 0.8 artifact includes Librarian V3, official/private/all federated exact search, reviewed private CSV/TSV/XLSX import, Package Center and a shared light/dark workbench. It remains an internal, ad-hoc signed, non-notarized preview, not a public release.
+- Build21 restores real read-only table/figure visual evidence and the central PDF chain in the Fusion shell. Automatic extraction, private experiment row paging/curves, selected-evidence AI and real export are not yet reconnected. It remains an internal, ad-hoc signed, non-notarized preview, not a public release.
 - The 291 current visuals include the unchanged 243-asset historical pre-cloud freeze; 243 is not the current total.
 
 ## Pre-change protection point
@@ -84,10 +95,10 @@ Independent read-only browser acceptance: a tungsten question returned 65 candid
 
 ## Stable recovery artifacts
 
-- macOS App: `/Applications/Auto Research.app` (bundle `0.8.0`, build `18` after installation).
-- macOS UserKit: `/Users/USER/Zotero/auto-research-releases/Auto-Research-0.8.0-preview.1-build18-UserKit.zip`; SHA-256 `fc139f4b3a3f268b246218d01eb8805d71049596ad63cf0f241db1ae94ca7e27`. DMG SHA-256 is recorded in the kit acceptance report.
+- macOS App: `/Applications/Auto Research.app` (bundle `0.9.2`, build `21` after installation).
+- macOS UserKit: `/Users/USER/Zotero/auto-research-releases/Auto-Research-0.9.2-preview.1-build21-UserKit.zip`; SHA-256 `1848453eeff79e1ad8fe206e3f3475282116afd3bbeac7de9a8657a80dfd0331`. DMG SHA-256 is `87e29d20d926111aac784d8883ea19330ac818b754b8f3f86171f22b94943a11`.
 - Historical stable SQLite snapshot: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-brief-stable-2026-07-30-v1.sqlite`; recorded SHA-256 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`. Do not infer that the current active user database still has this hash.
-- Maintainer-only Git bundle: `/Users/USER/Zotero/auto-research-backups/source-bundles/auto-research-0.8.0-preview.1-build18-private.bundle`; it is intentionally excluded from the user kit because repository history contains historical database blobs.
+- Maintainer-only historical Git bundles remain under `/Users/USER/Zotero/auto-research-backups/source-bundles/`; they are intentionally excluded from user kits because repository history contains historical database blobs.
 - Previous stable tag and artifacts remain available under `evidence-demo-2026-07-30-librarian-reasoning-stable-1` and the `librarian-reasoning-stable-2026-07-30-v1` backup names.
 
 Do not restore over the live tree. Verify a snapshot in a separate location before asking the user to switch.
