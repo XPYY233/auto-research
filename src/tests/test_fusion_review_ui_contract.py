@@ -92,6 +92,40 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertNotIn("appendChild", self.runtime)
         self.assertNotIn("_blank", self.index + self.runtime)
 
+    def test_imported_literature_pdf_reuses_central_viewer(self) -> None:
+        self.assertIn("查看原文", self.index)
+        self.assertIn('federated-pdf?source_id=${encodeURIComponent(row.sourceId)}&paper_uid=${encodeURIComponent(row.paperUid)}', self.runtime)
+        program = f"""
+globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
+const api=globalThis.AutoResearchFusion,assert=require('assert');
+const literature=api.publicEvidence({{entity_type:'table',source_scope:'private',source_id:'lab / 甲',entity_uid:'table:1',paper_uid:'paper W?1',collection_kind:'literature_collection',pdf_available:true,display_title:'表格'}});
+assert.equal(api.detailPDFURL(literature),'/api/desktop/federated-pdf?source_id=lab%20%2F%20%E7%94%B2&paper_uid=paper%20W%3F1');
+const personal=api.publicEvidence({{entity_type:'table',source_scope:'private',source_id:'personal',entity_uid:'table:2',paper_uid:'paper-x',collection_kind:'personal_experiments',pdf_available:true,display_title:'私人表'}});
+assert.equal(api.detailPDFURL(personal),'');
+assert.equal(api.detailPDFURL({{sourceScope:'official',sourceId:'official',paperUid:'paper-x',pdfAvailable:true,collectionKind:'literature_collection'}}),'');
+assert.equal(api.detailPDFURL({{sourceScope:'private',sourceId:'literature',paperUid:'paper-x',pdfAvailable:false,collectionKind:'literature_collection'}}),'');
+assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/api/papers/7/pdf#page=3');
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_active_fusion_copy_uses_product_language_and_honest_batch_exports(self) -> None:
+        for forbidden in ("READ-ONLY", "LIVE PUBLIC SNAPSHOT", "只读 GET", "English", "计划支持", "系统安全存储", "系统安全凭据存储"):
+            self.assertNotIn(forbidden, self.index + self.runtime)
+        for marker in (
+            "文献资料 · 当前资料库", "当前检索批量导出",
+            "表格、图片及其他资料源请用单条证据导出或资料包",
+            "英语界面尚未提供",
+            "当前电脑的私有加密存储", "本机加密存储",
+        ):
+            self.assertIn(marker, self.index + self.runtime)
+        self.assertEqual(self.runtime.count('item:"/api/six-export"'), 1)
+        self.assertEqual(self.runtime.count('finding:"/api/qualitative-export"'), 1)
+        self.assertNotIn('table:"/api/six-export"', self.runtime)
+        self.assertNotIn('figure:"/api/six-export"', self.runtime)
+
     def test_search_sources_use_workspace_and_federated_routes(self) -> None:
         for source in ("workspace", "official", "private", "all"):
             self.assertEqual(self.index.count(f'data-search-source="{source}"'), 1)
