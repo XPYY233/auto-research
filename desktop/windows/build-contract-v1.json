@@ -9,9 +9,9 @@
   "inno_setup_url": "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
   "locked_files": {
     "version.json": "e33afaa843498bc493f0be16025124a48cee71ead1d08dcfa75fef0deff1eb5a",
-    "build_windows.ps1": "4d01af767d6426d2753663a633d44a95fa2ea562624818fc3d0b6965721d83d4",
+    "build_windows.ps1": "16291dd6af104276d4c560d5b9c05fd5317a312569f2806b8537bc4ea6771e5c",
     "Build-Windows-Preview.cmd": "682f319bc007ac8ef0aa8ac75fb824356f58c0cd99bec88f86f3c1138f51e7ec",
-    "requirements-windows-x64.lock": "2a89655936c40f31b7b8116193debd6ba2373ea5a9022c9ce334a008a555991e",
+    "requirements-windows-x64.lock": "f931ea6c91bc57a447235b39d91887873da85ee509b388d560264d52caf8e01f",
     "AutoResearch.spec": "cf0b34615eb590af4fe46a5dc5c9887586124b1dd14d8f456e93074b6c962b2c",
     "AutoResearch.iss": "06d939cf2283381fa5e7318f0da049e1932ae89fb78030386ce745bc59f83ea8",
     "verify_build_inputs.py": "96408b5977f6bb9f993e2fce7ea5b5b6502c513da6d380cca0244494d17ce7bd",

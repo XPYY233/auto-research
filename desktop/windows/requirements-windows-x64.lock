@@ -4,3 +4,6 @@ PyYAML==6.0.3
 requests==2.34.2
 pywebview==6.2.1
 pyinstaller==6.18.0
+proxy_tools==0.1.0
+setuptools==80.9.0
+wheel==0.45.1

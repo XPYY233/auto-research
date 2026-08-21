@@ -10,6 +10,9 @@ $Python = Join-Path $ToolchainRoot "python.exe"
 $CacheRoot = Join-Path $BuildKitRoot "Downloads"
 $PythonInstaller = Join-Path $CacheRoot "python-3.12.10-amd64.exe"
 $PythonUrl = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
+$ProxyToolsArchive = Join-Path $CacheRoot "proxy_tools-0.1.0.tar.gz"
+$ProxyToolsUrl = "https://files.pythonhosted.org/packages/source/p/proxy_tools/proxy_tools-0.1.0.tar.gz"
+$ProxyToolsSha256 = "ccb3751f529c047e2d8a58440d86b205303cf0fe8146f784d1cbcd94f0a28010"
 $InnoRoot = Join-Path $BuildKitRoot "InnoSetup-6.7.3"
 $InnoInstaller = Join-Path $CacheRoot "innosetup-6.7.3.exe"
 $InnoUrl = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe"
@@ -109,6 +112,15 @@ try {
     if ($PythonVersion -ne "3.12.10") { throw "The isolated Python version is not the locked 3.12.10 release." }
 
     Write-Host "[2/8] Installing the locked Windows build dependencies..."
+    & $Python -m pip install --disable-pip-version-check --no-input --only-binary=:all: "setuptools==80.9.0" "wheel==0.45.1"
+    if ($LASTEXITCODE -ne 0) { throw "The locked source-build helpers could not be installed." }
+    Invoke-WebRequest -UseBasicParsing -Uri $ProxyToolsUrl -OutFile $ProxyToolsArchive
+    $ActualProxyToolsHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ProxyToolsArchive).Hash.ToLowerInvariant()
+    if ($ActualProxyToolsHash -ne $ProxyToolsSha256) {
+        throw "The proxy_tools source archive hash is not trusted. Nothing was installed from it."
+    }
+    & $Python -m pip install --disable-pip-version-check --no-input --no-index --no-deps --no-build-isolation $ProxyToolsArchive
+    if ($LASTEXITCODE -ne 0) { throw "The verified proxy_tools dependency could not be installed." }
     & $Python -m pip install --disable-pip-version-check --no-input --only-binary=:all: --requirement (Join-Path $ScriptRoot "requirements-windows-x64.lock")
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
     & $Python -m pip check

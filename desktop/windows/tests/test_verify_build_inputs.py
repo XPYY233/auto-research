@@ -47,6 +47,23 @@ class VerifyWindowsBuildInputsTests(unittest.TestCase):
             with self.assertRaises(MODULE.WindowsBuildInputError):
                 MODULE._assert_no_release_sensitive_literals(root)
 
+    def test_proxy_tools_source_exception_is_pinned_and_hash_verified(self) -> None:
+        requirements = (WINDOWS_ROOT / "requirements-windows-x64.lock").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        self.assertIn("proxy_tools==0.1.0", requirements)
+        self.assertIn("setuptools==80.9.0", requirements)
+        self.assertIn("wheel==0.45.1", requirements)
+        build_script = (WINDOWS_ROOT / "build_windows.ps1").read_text(encoding="utf-8")
+        self.assertIn("proxy_tools-0.1.0.tar.gz", build_script)
+        self.assertIn(
+            "ccb3751f529c047e2d8a58440d86b205303cf0fe8146f784d1cbcd94f0a28010",
+            build_script,
+        )
+        self.assertIn("Get-FileHash -Algorithm SHA256", build_script)
+        self.assertIn("--no-index --no-deps --no-build-isolation", build_script)
+        self.assertIn("--only-binary=:all: --requirement", build_script)
+
 
 if __name__ == "__main__":
     unittest.main()
