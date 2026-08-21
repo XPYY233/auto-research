@@ -9,13 +9,15 @@ $ToolchainRoot = Join-Path $BuildKitRoot "Python312"
 $Python = Join-Path $ToolchainRoot "python.exe"
 $CacheRoot = Join-Path $BuildKitRoot "Downloads"
 $PythonInstaller = Join-Path $CacheRoot "python-3.12.10-amd64.exe"
-$PythonUrl = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
-$ProxyToolsArchive = Join-Path $CacheRoot "proxy_tools-0.1.0.tar.gz"
-$ProxyToolsUrl = "https://files.pythonhosted.org/packages/source/p/proxy_tools/proxy_tools-0.1.0.tar.gz"
-$ProxyToolsSha256 = "ccb3751f529c047e2d8a58440d86b205303cf0fe8146f784d1cbcd94f0a28010"
+$BundledPythonInstaller = Join-Path $KitRoot "Windows-Tools\python-3.12.10-amd64.exe"
+$PythonInstallerSha256 = "67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb"
+$WheelhouseRoot = Join-Path $KitRoot "Windows-Wheelhouse"
+$WheelhouseManifest = Join-Path $ScriptRoot "wheelhouse-sha256-v1.txt"
+$ProxyToolsArchive = Join-Path $WheelhouseRoot "proxy_tools-0.1.0.tar.gz"
 $InnoRoot = Join-Path $BuildKitRoot "InnoSetup-6.7.3"
 $InnoInstaller = Join-Path $CacheRoot "innosetup-6.7.3.exe"
-$InnoUrl = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe"
+$BundledInnoInstaller = Join-Path $KitRoot "Windows-Tools\innosetup-6.7.3.exe"
+$InnoInstallerSha256 = "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
 $Iscc = Join-Path $InnoRoot "ISCC.exe"
 $OutputRoot = Join-Path $KitRoot "Windows-Output"
 $WorkRoot = Join-Path $BuildKitRoot "Work"
@@ -25,6 +27,40 @@ $PackageName = "auto-research-internal-evidence-1.0.0.aresearch"
 $ResolvedDependenciesHash = ""
 $PackageHash = ""
 $SourceCommit = ""
+
+function Assert-FileSha256([string]$Path, [string]$Expected, [string]$Label) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "$Label is missing. Re-extract the complete Windows Build Kit."
+    }
+    $Actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+    if ($Actual -ne $Expected) {
+        throw "$Label has an unexpected SHA-256. Nothing was installed from it."
+    }
+}
+
+function Assert-OfflineWheelhouse() {
+    if (-not (Test-Path -LiteralPath $WheelhouseManifest -PathType Leaf)) {
+        throw "The offline wheelhouse manifest is missing."
+    }
+    if (-not (Test-Path -LiteralPath $WheelhouseRoot -PathType Container)) {
+        throw "Windows-Wheelhouse is missing. Re-extract the complete Windows Build Kit."
+    }
+    $ExpectedNames = @()
+    foreach ($Line in Get-Content -LiteralPath $WheelhouseManifest) {
+        if ($Line -notmatch '^([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9._-]+)$') {
+            throw "The offline wheelhouse manifest is invalid."
+        }
+        $ExpectedHash = $Matches[1]
+        $FileName = $Matches[2]
+        $ExpectedNames += $FileName
+        Assert-FileSha256 (Join-Path $WheelhouseRoot $FileName) $ExpectedHash "Offline dependency $FileName"
+    }
+    $ActualNames = @(Get-ChildItem -LiteralPath $WheelhouseRoot -File | ForEach-Object { $_.Name } | Sort-Object)
+    $ExpectedNames = @($ExpectedNames | Sort-Object)
+    if (Compare-Object -ReferenceObject $ExpectedNames -DifferenceObject $ActualNames) {
+        throw "Windows-Wheelhouse contains missing or unapproved files."
+    }
+}
 
 function Write-Report([string]$Status, [string]$Detail, [string]$SetupPresent = "NO", [string]$SetupHash = "") {
     @(
@@ -89,15 +125,19 @@ try {
         throw "The exact v1 official .aresearch package is missing. Wait for the complete kit to download."
     }
 
+    Assert-FileSha256 $BundledPythonInstaller $PythonInstallerSha256 "Bundled Python 3.12.10 installer"
+    Assert-FileSha256 $BundledInnoInstaller $InnoInstallerSha256 "Bundled Inno Setup 6.7.3 installer"
+    Assert-OfflineWheelhouse
+
     New-Item -ItemType Directory -Force -Path $CacheRoot, $OutputRoot, $WorkRoot | Out-Null
     New-Item -ItemType Directory -Force -Path $ToolchainRoot | Out-Null
 
     if (-not (Test-Path $Python)) {
-        Write-Host "[1/8] Downloading the official isolated Python toolchain..."
-        Invoke-WebRequest -UseBasicParsing -Uri $PythonUrl -OutFile $PythonInstaller
+        Write-Host "[1/8] Installing the bundled, verified Python toolchain..."
+        Copy-Item -LiteralPath $BundledPythonInstaller -Destination $PythonInstaller -Force
         $Signature = Get-AuthenticodeSignature -FilePath $PythonInstaller
         if ($Signature.Status -ne "Valid" -or $Signature.SignerCertificate.Subject -notmatch "Python Software Foundation") {
-            throw "The downloaded Python installer signature is not trusted. Nothing was installed."
+            throw "The bundled Python installer signature is not trusted. Nothing was installed."
         }
         $Process = Start-Process -FilePath $PythonInstaller -Wait -PassThru -ArgumentList @(
             "/quiet", "InstallAllUsers=0", "TargetDir=$ToolchainRoot", "Include_pip=1",
@@ -112,16 +152,11 @@ try {
     if ($PythonVersion -ne "3.12.10") { throw "The isolated Python version is not the locked 3.12.10 release." }
 
     Write-Host "[2/8] Installing the locked Windows build dependencies..."
-    & $Python -m pip install --disable-pip-version-check --no-input --only-binary=:all: "setuptools==80.9.0" "wheel==0.45.1"
+    & $Python -m pip install --disable-pip-version-check --no-input --no-index --find-links $WheelhouseRoot --only-binary=:all: "setuptools==80.9.0" "wheel==0.45.1"
     if ($LASTEXITCODE -ne 0) { throw "The locked source-build helpers could not be installed." }
-    Invoke-WebRequest -UseBasicParsing -Uri $ProxyToolsUrl -OutFile $ProxyToolsArchive
-    $ActualProxyToolsHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ProxyToolsArchive).Hash.ToLowerInvariant()
-    if ($ActualProxyToolsHash -ne $ProxyToolsSha256) {
-        throw "The proxy_tools source archive hash is not trusted. Nothing was installed from it."
-    }
     & $Python -m pip install --disable-pip-version-check --no-input --no-index --no-deps --no-build-isolation $ProxyToolsArchive
     if ($LASTEXITCODE -ne 0) { throw "The verified proxy_tools dependency could not be installed." }
-    & $Python -m pip install --disable-pip-version-check --no-input --only-binary=:all: --requirement (Join-Path $ScriptRoot "requirements-windows-x64.lock")
+    & $Python -m pip install --disable-pip-version-check --no-input --no-index --find-links $WheelhouseRoot --only-binary=:all: --requirement (Join-Path $ScriptRoot "requirements-windows-x64.lock")
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
     & $Python -m pip check
     if ($LASTEXITCODE -ne 0) { throw "The resolved Python dependency graph is inconsistent." }
@@ -133,15 +168,15 @@ try {
     $ResolvedDependenciesHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $DependencyAudit).Hash.ToLowerInvariant()
 
     if (-not (Test-Path $Iscc)) {
-        Write-Host "[3/8] Downloading the locked Inno Setup compiler..."
-        Invoke-WebRequest -UseBasicParsing -Uri $InnoUrl -OutFile $InnoInstaller
+        Write-Host "[3/8] Installing the bundled, verified Inno Setup compiler..."
+        Copy-Item -LiteralPath $BundledInnoInstaller -Destination $InnoInstaller -Force
         $InnoSignature = Get-AuthenticodeSignature -FilePath $InnoInstaller
         if (
             $InnoSignature.Status -ne "Valid" -or
             $InnoSignature.SignerCertificate.Subject -notmatch "Pyrsys B\.V\."
         ) { throw "The Inno Setup installer publisher identity is not trusted." }
         if ((Get-Item $InnoInstaller).VersionInfo.ProductVersion -notlike "6.7.3*") {
-            throw "The downloaded Inno Setup installer is not version 6.7.3."
+            throw "The bundled Inno Setup installer is not version 6.7.3."
         }
         $InnoProcess = Start-Process -FilePath $InnoInstaller -Wait -PassThru -ArgumentList @(
             "/VERYSILENT", "/CURRENTUSER", "/NORESTART", "/SP-", "/DIR=$InnoRoot"

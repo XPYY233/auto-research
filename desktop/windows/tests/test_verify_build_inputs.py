@@ -56,13 +56,43 @@ class VerifyWindowsBuildInputsTests(unittest.TestCase):
         self.assertIn("wheel==0.45.1", requirements)
         build_script = (WINDOWS_ROOT / "build_windows.ps1").read_text(encoding="utf-8")
         self.assertIn("proxy_tools-0.1.0.tar.gz", build_script)
+        manifest = (WINDOWS_ROOT / "wheelhouse-sha256-v1.txt").read_text(
+            encoding="ascii"
+        )
         self.assertIn(
-            "ccb3751f529c047e2d8a58440d86b205303cf0fe8146f784d1cbcd94f0a28010",
-            build_script,
+            "ccb3751f529c047e2d8a58440d86b205303cf0fe8146f784d1cbcd94f0a28010  proxy_tools-0.1.0.tar.gz",
+            manifest,
         )
         self.assertIn("Get-FileHash -Algorithm SHA256", build_script)
         self.assertIn("--no-index --no-deps --no-build-isolation", build_script)
-        self.assertIn("--only-binary=:all: --requirement", build_script)
+        self.assertIn("--no-index --find-links $WheelhouseRoot --only-binary=:all:", build_script)
+
+    def test_windows_build_toolchain_and_dependencies_are_fully_offline(self) -> None:
+        contract = json.loads(
+            (WINDOWS_ROOT / "build-contract-v1.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            contract["python_installer_sha256"],
+            "67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb",
+        )
+        self.assertEqual(
+            contract["inno_setup_sha256"],
+            "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732",
+        )
+        manifest = (WINDOWS_ROOT / "wheelhouse-sha256-v1.txt").read_text(
+            encoding="ascii"
+        ).splitlines()
+        self.assertEqual(len(manifest), 24)
+        self.assertTrue(any(line.endswith("  pywebview-6.2.1-py3-none-any.whl") for line in manifest))
+        self.assertTrue(any(line.endswith("  proxy_tools-0.1.0.tar.gz") for line in manifest))
+        build_script = (WINDOWS_ROOT / "build_windows.ps1").read_text(encoding="utf-8")
+        self.assertIn('Join-Path $KitRoot "Windows-Tools\\python-3.12.10-amd64.exe"', build_script)
+        self.assertIn('Join-Path $KitRoot "Windows-Tools\\innosetup-6.7.3.exe"', build_script)
+        self.assertIn('Join-Path $KitRoot "Windows-Wheelhouse"', build_script)
+        self.assertIn("Assert-OfflineWheelhouse", build_script)
+        self.assertNotIn("Invoke-WebRequest", build_script)
+        self.assertIn("Get-AuthenticodeSignature", build_script)
+        self.assertIn('SignerCertificate.Subject -notmatch "Pyrsys B\\.V\\."', build_script)
 
 
 if __name__ == "__main__":
