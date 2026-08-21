@@ -8,6 +8,8 @@ import threading
 from pathlib import Path
 from typing import Any, Mapping
 
+from auto_research.portable_file_ops import is_link_or_reparse, replace_file, unlink_file
+
 
 MAX_SETTINGS_FILE_BYTES = 32_768
 SETTINGS_FILENAME = "settings-v1.json"
@@ -30,7 +32,7 @@ class WindowsAtomicDesktopSettingsStore:
     def _directory(self) -> Path:
         directory = self.path.parent
         directory.mkdir(parents=True, exist_ok=True)
-        if directory.is_symlink() or not directory.is_dir():
+        if is_link_or_reparse(directory) or not directory.is_dir():
             raise OSError("desktop settings directory is unsafe")
         return directory
 
@@ -39,7 +41,12 @@ class WindowsAtomicDesktopSettingsStore:
             metadata = self.path.lstat()
         except FileNotFoundError:
             return None
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or int(getattr(metadata, "st_file_attributes", 0))
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+            or not stat.S_ISREG(metadata.st_mode)
+        ):
             raise OSError("desktop settings file is unsafe")
         if metadata.st_size > MAX_SETTINGS_FILE_BYTES:
             raise OSError("desktop settings file is too large")
@@ -103,10 +110,13 @@ class WindowsAtomicDesktopSettingsStore:
                     os.fsync(handle.fileno())
                 if self.path.exists() and self.path.is_symlink():
                     raise OSError("desktop settings file is unsafe")
-                os.replace(temporary, self.path)
+                replace_file(temporary, self.path)
             finally:
                 if temporary is not None:
-                    temporary.unlink(missing_ok=True)
+                    try:
+                        unlink_file(temporary, missing_ok=True)
+                    except OSError:
+                        pass
             return True
 
 

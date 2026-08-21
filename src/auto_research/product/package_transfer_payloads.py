@@ -21,6 +21,8 @@ from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Iterator, Mapping, Protocol, Sequence, runtime_checkable
 
+from auto_research.portable_file_ops import best_effort_remove_tree
+
 from .portable_repository import (
     DATABASE_PATH,
     PROVENANCE_PATH,
@@ -1459,5 +1461,5 @@ def materialize_payload_candidate(
         )
         return plan
     except Exception:
-        shutil.rmtree(workspace, ignore_errors=True)
+        best_effort_remove_tree(workspace)
         raise

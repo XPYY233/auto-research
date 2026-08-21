@@ -19,6 +19,8 @@ $InnoInstaller = Join-Path $CacheRoot "innosetup-6.7.3.exe"
 $BundledInnoInstaller = Join-Path $KitRoot "Windows-Tools\innosetup-6.7.3.exe"
 $InnoInstallerSha256 = "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
 $Iscc = Join-Path $InnoRoot "ISCC.exe"
+$BundledWebView2Installer = Join-Path $KitRoot "Windows-Tools\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+$WebView2InstallerSha256 = "82b2d8a7013e0c0ea15d48ff4742ee3778ba16bd8b7b4a47876645b3e48d4016"
 $OutputRoot = Join-Path $KitRoot "Windows-Output"
 $WorkRoot = Join-Path $BuildKitRoot "Work"
 $Report = Join-Path $KitRoot "Windows-Build-Report.txt"
@@ -128,6 +130,12 @@ try {
 
     Assert-FileSha256 $BundledPythonInstaller $PythonInstallerSha256 "Bundled Python 3.12.10 installer"
     Assert-FileSha256 $BundledInnoInstaller $InnoInstallerSha256 "Bundled Inno Setup 6.7.3 installer"
+    Assert-FileSha256 $BundledWebView2Installer $WebView2InstallerSha256 "Bundled Microsoft WebView2 Runtime installer"
+    $WebViewSignature = Get-AuthenticodeSignature -FilePath $BundledWebView2Installer
+    if (
+        $WebViewSignature.Status -ne "Valid" -or
+        $WebViewSignature.SignerCertificate.Subject -notmatch "Microsoft Corporation"
+    ) { throw "The bundled Microsoft WebView2 Runtime publisher identity is not trusted." }
     Assert-FileSha256 $PackagePath $OfficialPackageSha256 "The exact v1 official package"
     Assert-OfflineWheelhouse
 
@@ -146,7 +154,7 @@ try {
             throw "The bundled Python installer signature is not trusted. Nothing was installed."
         }
         $Process = Start-Process -FilePath $PythonInstaller -Wait -PassThru -ArgumentList @(
-            "/quiet", "InstallAllUsers=0", "TargetDir=$ToolchainRoot", "Include_pip=1",
+            "/quiet", "InstallAllUsers=0", "TargetDir=`"$ToolchainRoot`"", "Include_pip=1",
             "Include_launcher=0", "Include_test=0", "PrependPath=0", "Shortcuts=0"
         )
         if ($Process.ExitCode -ne 0 -or -not (Test-Path $Python)) {
@@ -181,7 +189,7 @@ try {
         $InnoSignature.SignerCertificate.Subject -notmatch "Pyrsys B\.V\."
     ) { throw "The Inno Setup installer publisher identity is not trusted." }
     $InnoProcess = Start-Process -FilePath $InnoInstaller -Wait -PassThru -ArgumentList @(
-        "/VERYSILENT", "/CURRENTUSER", "/NORESTART", "/SP-", "/DIR=$InnoRoot"
+        "/VERYSILENT", "/CURRENTUSER", "/NORESTART", "/SP-", "/DIR=`"$InnoRoot`""
     )
     if ($InnoProcess.ExitCode -ne 0 -or -not (Test-Path $Iscc)) {
         throw "The isolated Inno Setup compiler could not be installed."
@@ -220,8 +228,30 @@ try {
             --analysis-toc $AnalysisToc
         if ($LASTEXITCODE -ne 0) { throw "Bundled runtime, forbidden-module, or Fusion resource audit failed." }
 
+        $SmokeRoot = Join-Path $WorkRoot "frozen-smoke"
+        Remove-Item -LiteralPath $SmokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path $SmokeRoot | Out-Null
+        $PreviousLocalAppData = $env:LOCALAPPDATA
+        $PreviousTemp = $env:TEMP
+        $PreviousTmp = $env:TMP
+        $PreviousPath = $env:PATH
+        try {
+            $env:LOCALAPPDATA = Join-Path $SmokeRoot "LocalAppData"
+            $env:TEMP = Join-Path $SmokeRoot "Temp"
+            $env:TMP = $env:TEMP
+            $env:PATH = Join-Path $env:SystemRoot "System32"
+            New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA, $env:TEMP | Out-Null
+            & $AppExe --frozen-smoke
+            if ($LASTEXITCODE -ne 0) { throw "The frozen application bootstrap smoke failed." }
+        } finally {
+            $env:LOCALAPPDATA = $PreviousLocalAppData
+            $env:TEMP = $PreviousTemp
+            $env:TMP = $PreviousTmp
+            $env:PATH = $PreviousPath
+        }
+
         Write-Host "[6/8] Creating the per-user Setup with Inno Setup..."
-        & $Iscc "/DAppVersion=$CandidateVersion" "/DSourceDir=$AppRoot" "/DOutputDir=$OutputRoot" "$ScriptRoot\AutoResearch.iss"
+        & $Iscc "/DAppVersion=$CandidateVersion" "/DSourceDir=$AppRoot" "/DOutputDir=$OutputRoot" "/DWebView2Installer=$BundledWebView2Installer" "$ScriptRoot\AutoResearch.iss"
         if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
         $Setup = Join-Path $OutputRoot "Auto-Research-$CandidateVersion-Setup.exe"
         if (-not (Test-Path $Setup -PathType Leaf)) { throw "Setup was not generated." }

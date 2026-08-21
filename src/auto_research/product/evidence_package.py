@@ -23,6 +23,13 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
+from auto_research.portable_file_ops import (
+    is_link_or_reparse,
+    remove_tree,
+    replace_file,
+    unlink_file,
+)
+
 
 ARESEARCH_FORMAT = "auto-research-evidence-package"
 ARESEARCH_FORMAT_VERSION = 1
@@ -40,7 +47,11 @@ MAX_METADATA_BYTES = 8 * 1024 * 1024
 MAX_COMPRESSION_RATIO = 250
 
 PACKAGE_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$")
-PACKAGE_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
+PACKAGE_VERSION_RE = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 KEY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 PORTABLE_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,126}[A-Za-z0-9]$|^[A-Za-z0-9]$")
@@ -506,14 +517,31 @@ def _atomic_json_write(path: Path, value: dict[str, Any]) -> None:
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "wb") as handle:
+        # Python 3.12 does not expose os.fchmod on Windows.  Keep the
+        # descriptor-based permission hardening where it exists.  Windows
+        # relies on the private application-data directory ACL; path chmod has
+        # no POSIX privacy semantics there and can itself contend with the open
+        # descriptor.  Failing before fdopen would otherwise leave the
+        # descriptor open and make cleanup raise WinError 32, masking the real
+        # portability error.
+        fchmod = getattr(os, "fchmod", None)
+        if fchmod is not None:
+            fchmod(descriptor, 0o600)
+        handle = os.fdopen(descriptor, "wb")
+        descriptor = -1
+        with handle:
             handle.write(_canonical_json_bytes(value))
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+        replace_file(temporary, path)
+    except BaseException:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            unlink_file(temporary, missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def _read_active_state(path: Path) -> dict[str, Any] | None:
@@ -596,13 +624,14 @@ def _snapshot_package(source_path: Path | str, staging_parent: Path) -> tuple[Pa
     if source.suffix.lower() != ".aresearch":
         raise EvidencePackageError("not_package", "请选择有效的 .aresearch 资料包")
     staging_parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if staging_parent.is_symlink():
+    if is_link_or_reparse(staging_parent):
         raise EvidencePackageError("unsafe_install_root", "本机资料包暂存目录不安全")
     operation = staging_parent / f"import-{uuid.uuid4().hex}"
     operation.mkdir(mode=0o700)
     snapshot = operation / "source.aresearch"
     source_fd = -1
     snapshot_fd = -1
+    cleanup_needed = False
     try:
         flags = (
             os.O_RDONLY
@@ -636,22 +665,27 @@ def _snapshot_package(source_path: Path | str, staging_parent: Path) -> tuple[Pa
             raise EvidencePackageError("source_changed", "资料包复制过程中发生变化，请重新选择")
         os.fsync(snapshot_fd)
     except EvidencePackageError:
-        shutil.rmtree(operation, ignore_errors=True)
+        cleanup_needed = True
         raise
     except OSError as exc:
-        shutil.rmtree(operation, ignore_errors=True)
+        cleanup_needed = True
         raise EvidencePackageError("snapshot_failed", "无法创建安全的资料包导入副本") from exc
     finally:
         if snapshot_fd >= 0:
             os.close(snapshot_fd)
         if source_fd >= 0:
             os.close(source_fd)
+        if cleanup_needed:
+            try:
+                remove_tree(operation, missing_ok=True)
+            except OSError:
+                pass
     return operation, snapshot
 
 
 def _read_small_file(path: Path, *, maximum: int, label: str) -> bytes:
     try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > maximum:
+        if is_link_or_reparse(path) or not path.is_file() or path.stat().st_size > maximum:
             raise EvidencePackageError("invalid_install", f"已安装{label}缺失或超过安全上限")
         return path.read_bytes()
     except EvidencePackageError:
@@ -670,13 +704,13 @@ def _validate_installed_tree(
     expected_package_version: str,
     expected_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
-    if target.is_symlink() or not target.is_dir():
+    if is_link_or_reparse(target) or not target.is_dir():
         raise EvidencePackageError("invalid_install", "已安装资料包目录不安全")
     actual_files: dict[str, Path] = {}
     portable_names: set[str] = set()
     try:
         for candidate in target.rglob("*"):
-            if candidate.is_symlink():
+            if is_link_or_reparse(candidate):
                 raise EvidencePackageError("invalid_install", "已安装资料包包含符号链接")
             if candidate.is_dir():
                 continue
@@ -798,7 +832,7 @@ def import_evidence_package(
         )
         official_root = root / "official-packages" / verified.package_id
         target = official_root / verified.package_version
-        if official_root.is_symlink() or target.is_symlink():
+        if is_link_or_reparse(official_root) or is_link_or_reparse(target):
             raise EvidencePackageError("unsafe_install_root", "本机资料包安装目录不安全")
         selector_path = (
             Path(active_state_path).expanduser().resolve()
@@ -870,7 +904,7 @@ def import_evidence_package(
                     expected_evidence_schema=expected_evidence_schema,
                 )
                 official_root.mkdir(parents=True, exist_ok=True)
-                os.replace(staging, target)
+                replace_file(staging, target)
             except EvidencePackageError:
                 raise
             except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
@@ -929,7 +963,10 @@ def import_evidence_package(
             outcome="activated" if already_installed else "installed",
         )
     finally:
-        shutil.rmtree(operation, ignore_errors=True)
+        try:
+            remove_tree(operation, missing_ok=True)
+        except OSError:
+            pass
 
 
 def rollback_evidence_package(
@@ -1162,13 +1199,19 @@ def build_evidence_package(
             trusted_public_keys={normalized_key_id: signing_key.public_key()},
             expected_evidence_schema=int(manifest_value["evidence_schema"]),
         )
-        os.replace(temporary, output)
+        replace_file(temporary, output)
     except EvidencePackageError:
         raise
     except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
         raise EvidencePackageError("build_failed", "资料包构建失败") from exc
     finally:
         if "temporary" in locals():
-            temporary.unlink(missing_ok=True)
-        shutil.rmtree(snapshot_root, ignore_errors=True)
+            try:
+                unlink_file(temporary, missing_ok=True)
+            except OSError:
+                pass
+        try:
+            remove_tree(snapshot_root, missing_ok=True)
+        except OSError:
+            pass
     return output

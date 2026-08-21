@@ -27,6 +27,7 @@ from auto_research.product.evidence_package import (
     verify_evidence_package,
 )
 from auto_research.product import evidence_package as package_module
+from auto_research import portable_file_ops as portable_file_ops_module
 
 
 class EvidencePackageTests(unittest.TestCase):
@@ -86,6 +87,12 @@ class EvidencePackageTests(unittest.TestCase):
             "rights_path": "rights/licenses.json",
             "provenance_path": "provenance/sources.json",
         }
+
+    def test_package_versions_are_portable_semver_path_components(self) -> None:
+        for value in ("1.0.0", "0.2.0-preview.1", "1.0.0-rc.1+win64"):
+            self.assertIsNotNone(package_module.PACKAGE_VERSION_RE.fullmatch(value))
+        for value in ("1.0.0-preview.", "01.0.0", "1.0.0+meta.", "1.0.0-"):
+            self.assertIsNone(package_module.PACKAGE_VERSION_RE.fullmatch(value))
 
     def build(self, version: str = "1.0.0", *, schema: int = 12) -> Path:
         database = self.make_database(f"database-{version}.sqlite", schema=schema, marker=version)
@@ -200,6 +207,65 @@ class EvidencePackageTests(unittest.TestCase):
             self.assertTrue(all(flags & binary_flag for flags in observed_flags))
         finally:
             shutil.rmtree(operation, ignore_errors=True)
+
+    def test_atomic_json_retries_transient_windows_sharing_violation(self) -> None:
+        destination = self.root / "state" / "install.json"
+        real_replace = os.replace
+        attempts = 0
+
+        def replace_after_transient_sharing_violation(source, target):
+            nonlocal attempts
+            attempts += 1
+            if attempts <= 2:
+                error = PermissionError("temporarily in use")
+                error.winerror = 32
+                raise error
+            return real_replace(source, target)
+
+        with mock.patch.object(
+            portable_file_ops_module.os,
+            "replace",
+            side_effect=replace_after_transient_sharing_violation,
+        ), mock.patch.object(portable_file_ops_module.time, "sleep") as sleep:
+            package_module._atomic_json_write(destination, {"state": "installed"})
+
+        self.assertEqual(attempts, 3)
+        self.assertEqual(json.loads(destination.read_text(encoding="utf-8")), {"state": "installed"})
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_atomic_json_supports_windows_python_without_fchmod(self) -> None:
+        destination = self.root / "state" / "install.json"
+        real_close = os.close
+        closed_descriptors: list[int] = []
+
+        def record_close(descriptor: int) -> None:
+            closed_descriptors.append(descriptor)
+            real_close(descriptor)
+
+        with mock.patch.object(package_module.os, "fchmod", None, create=True), mock.patch.object(
+            package_module.os,
+            "close",
+            side_effect=record_close,
+        ):
+            package_module._atomic_json_write(destination, {"state": "installed"})
+
+        self.assertEqual(json.loads(destination.read_text(encoding="utf-8")), {"state": "installed"})
+        self.assertEqual(list(destination.parent.glob(".install.json.*")), [])
+        # fdopen owns and closes the descriptor on the successful path, so the
+        # explicit os.close cleanup must not run a second time.
+        self.assertEqual(closed_descriptors, [])
+
+    def test_atomic_json_does_not_retry_non_transient_errors(self) -> None:
+        destination = self.root / "state" / "install.json"
+        error = PermissionError("permanent access denial")
+        error.winerror = 1314
+        with mock.patch.object(portable_file_ops_module.os, "replace", side_effect=error), mock.patch.object(
+            portable_file_ops_module.time,
+            "sleep",
+        ) as sleep:
+            with self.assertRaises(PermissionError):
+                package_module._atomic_json_write(destination, {"state": "installed"})
+        sleep.assert_not_called()
 
     def test_untrusted_signer_is_rejected(self) -> None:
         package = self.build()

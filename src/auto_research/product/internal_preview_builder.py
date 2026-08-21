@@ -19,6 +19,8 @@ from typing import Iterable, Sequence
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from auto_research.portable_file_ops import best_effort_remove_tree, replace_file
+
 from .evidence_package import build_evidence_package, verify_evidence_package
 from .evidence_v12_export import plan_evidence_v12_export
 from .official_package_store import (
@@ -305,11 +307,11 @@ def build_internal_preview_package(
             app_minimum=app_minimum,
             app_maximum_exclusive=app_maximum_exclusive,
         )
-        os.replace(staging, output)
+        replace_file(staging, output)
         return report
     finally:
         if staging.exists():
-            shutil.rmtree(staging, ignore_errors=True)
+            best_effort_remove_tree(staging)
 
 
 def _build_internal_preview_package_in_directory(

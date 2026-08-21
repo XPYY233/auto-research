@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Mapping
 
+from auto_research.portable_file_ops import is_link_or_reparse
+
 
 APP_DIRECTORY_NAME = "Auto Research"
 LOCAL_APP_DATA_ENV = "LOCALAPPDATA"
@@ -93,7 +95,10 @@ class WindowsAppPaths:
         if os.name != "nt":
             raise WindowsPathError("只能在 Windows 上创建 Windows 应用数据目录")
         for directory in self.all_directories():
-            Path(directory).mkdir(parents=True, exist_ok=True)
+            concrete = Path(directory)
+            concrete.mkdir(parents=True, exist_ok=True)
+            if is_link_or_reparse(concrete) or not concrete.is_dir():
+                raise WindowsPathError("Windows 应用数据目录不能是链接或重解析点")
 
     def assert_separated(self) -> None:
         official = self.official_repositories

@@ -62,6 +62,11 @@ class _Jobs:
 
 
 class PackageCenterBridgeTests(unittest.TestCase):
+    def test_bridge_does_not_import_publisher_side_runtime_api(self):
+        source = (WINDOWS_ROOT / "package_center_bridge.py").read_text(encoding="utf-8")
+        self.assertNotIn("auto_research.product.runtime_api", source)
+        self.assertNotIn("evidence_v12_export", source)
+
     def adapter(self):
         return MODULE.WindowsPackageCenterBridgeAdapter(
             summary_provider=_Summary(),

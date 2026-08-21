@@ -15,18 +15,32 @@ finally:
 
 
 class FinalizeRuntimeCandidateTests(unittest.TestCase):
+    @staticmethod
+    def _write_native_runtime(root: Path) -> None:
+        native = root / "_internal" / "native"
+        native.mkdir(parents=True, exist_ok=True)
+        for name in (
+            "Microsoft.Web.WebView2.Core.dll",
+            "Microsoft.Web.WebView2.WinForms.dll",
+            "WebView2Loader.dll",
+            "Python.Runtime.dll",
+            "_mupdf.pyd",
+        ):
+            (native / name).write_bytes(name.encode("ascii"))
+
     def test_runtime_manifest_assets_and_forbidden_module_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "Auto Research"
             web = root / "_internal" / "auto_research" / "evidence" / "web"
             web.mkdir(parents=True)
             (root / "Auto Research.exe").write_bytes(b"fake-windows-executable")
+            self._write_native_runtime(root)
             for name in ("index.html", "app.css", "workbench.css", "ai_consent.js", "fusion_review.js"):
                 (web / name).write_text(name, encoding="utf-8")
             dependencies = Path(directory) / "resolved.txt"
             dependencies.write_text("pywebview==6.2.1\n", encoding="utf-8")
             toc = Path(directory) / "Analysis-00.toc"
-            toc.write_text("safe module graph", encoding="utf-8")
+            toc.write_text("safe module graph webview.platforms.edgechromium", encoding="utf-8")
             report = finalize_candidate(
                 root,
                 desktop_version="1.0.0-windows.rc.1",
@@ -36,6 +50,7 @@ class FinalizeRuntimeCandidateTests(unittest.TestCase):
             )
             self.assertEqual(report["component_count"], 9)
             self.assertTrue(report["forbidden_modules_absent"])
+            self.assertTrue(report["native_runtime_present"])
             self.assertTrue((root / "bundled-runtime-manifest.json").is_file())
 
     def test_forbidden_maintainer_module_fails_closed(self) -> None:
@@ -44,12 +59,16 @@ class FinalizeRuntimeCandidateTests(unittest.TestCase):
             web = root / "_internal" / "auto_research" / "evidence" / "web"
             web.mkdir(parents=True)
             (root / "Auto Research.exe").write_bytes(b"fake")
+            self._write_native_runtime(root)
             for name in ("index.html", "app.css", "workbench.css", "ai_consent.js", "fusion_review.js"):
                 (web / name).write_text(name, encoding="utf-8")
             dependencies = Path(directory) / "resolved.txt"
             dependencies.write_text("safe", encoding="utf-8")
             toc = Path(directory) / "Analysis-00.toc"
-            toc.write_text("auto_research.product.internal_preview_builder", encoding="utf-8")
+            toc.write_text(
+                "auto_research.product.internal_preview_builder webview.platforms.edgechromium",
+                encoding="utf-8",
+            )
             with self.assertRaisesRegex(RuntimeError, "禁止"):
                 finalize_candidate(
                     root,

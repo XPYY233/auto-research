@@ -12,6 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
+from auto_research.portable_file_ops import (
+    is_link_or_reparse,
+    replace_file,
+    unlink_file,
+)
+
 from .experiment_contract import PersonalExperimentDraft, PersonalSourceFile
 
 
@@ -207,7 +213,7 @@ class PrivateExperimentRepository:
                 "个人实验数据位置不可用，请重新选择。",
                 details={"operation": "initialize"},
             ) from None
-        if requested_root.is_symlink():
+        if is_link_or_reparse(requested_root):
             raise _failure(
                 "PRIVATE_ROOT_UNSAFE",
                 "个人实验数据位置不能是符号链接。",
@@ -231,7 +237,7 @@ class PrivateExperimentRepository:
         conn: sqlite3.Connection | None = None
         try:
             self.data_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-            if self.files_root.is_symlink():
+            if is_link_or_reparse(self.files_root):
                 raise _failure(
                     "PRIVATE_FILES_UNSAFE",
                     "私人文件目录不能是符号链接。",
@@ -320,7 +326,7 @@ class PrivateExperimentRepository:
                 conn.close()
 
     def _prepare_database_file(self) -> tuple[bool, tuple[int, int]]:
-        if self.database_path.is_symlink():
+        if is_link_or_reparse(self.database_path):
             raise _failure(
                 "PRIVATE_DB_UNSAFE",
                 "个人实验数据库位置不安全，请重新选择。",
@@ -337,7 +343,7 @@ class PrivateExperimentRepository:
             )
             created = True
         except FileExistsError:
-            if self.database_path.is_symlink():
+            if is_link_or_reparse(self.database_path):
                 raise _failure(
                     "PRIVATE_DB_UNSAFE",
                     "个人实验数据库位置不安全，请重新选择。",
@@ -405,13 +411,13 @@ class PrivateExperimentRepository:
                 int(metadata.st_dev),
                 int(metadata.st_ino),
             ) == identity:
-                path.unlink()
+                unlink_file(path, missing_ok=True)
         except OSError:
             pass
 
     @staticmethod
     def _restrict_permissions(path: Path, mode: int) -> None:
-        if path.is_symlink():
+        if is_link_or_reparse(path):
             raise _failure(
                 "PRIVATE_PERMISSIONS_UNSAFE",
                 "私人数据权限无法安全设置。",
@@ -434,13 +440,13 @@ class PrivateExperimentRepository:
             )
 
     def _assert_storage_roots_safe(self) -> None:
-        if self.data_root.is_symlink() or self.files_root.is_symlink():
+        if is_link_or_reparse(self.data_root) or is_link_or_reparse(self.files_root):
             raise _failure(
                 "PRIVATE_FILES_UNSAFE",
                 "私人数据目录不能是符号链接。",
                 details={"operation": "access_storage"},
             )
-        if self.database_path.is_symlink():
+        if is_link_or_reparse(self.database_path):
             raise _failure(
                 "PRIVATE_DB_UNSAFE",
                 "个人实验数据库位置不安全。",
@@ -460,7 +466,7 @@ class PrivateExperimentRepository:
         current = self.files_root
         for part in relative.parts:
             current = current / part
-            if current.is_symlink():
+            if is_link_or_reparse(current):
                 raise _failure(
                     "PRIVATE_PATH_UNSAFE",
                     "私人文件保存路径不能包含符号链接。",
@@ -624,7 +630,7 @@ class PrivateExperimentRepository:
                 "所选文件不可用，请重新选择。",
                 details={"entity_type": "source_file"},
             ) from None
-        if selected.is_symlink() or not selected.is_file():
+        if is_link_or_reparse(selected) or not selected.is_file():
             raise _failure(
                 "SOURCE_FILE_INVALID",
                 "所选文件不可用，请重新选择。",
@@ -668,13 +674,13 @@ class PrivateExperimentRepository:
                 if existing is not None:
                     return self._registered_source_result(source, existing)
                 self._assert_destination_safe(destination)
-                if destination.is_symlink() or destination.exists():
+                if is_link_or_reparse(destination) or destination.exists():
                     raise _failure(
                         "PRIVATE_PATH_UNSAFE",
                         "私人文件目标已存在，未覆盖任何文件。",
                         details={"operation": "register_source_file"},
                     )
-                os.replace(temporary, destination)
+                replace_file(temporary, destination)
                 metadata = destination.lstat()
                 if not stat.S_ISREG(metadata.st_mode):
                     raise _failure(
@@ -732,7 +738,7 @@ class PrivateExperimentRepository:
         stored = self._resolve_relative_path(str(existing["relative_path"]))
         try:
             stored_matches = (
-                not stored.is_symlink()
+                not is_link_or_reparse(stored)
                 and stored.is_file()
                 and self._sha256(stored) == source.sha256
             )
@@ -811,8 +817,8 @@ class PrivateExperimentRepository:
     @staticmethod
     def _unlink_staging_file(path: Path) -> None:
         try:
-            if path.is_symlink() or path.exists():
-                path.unlink()
+            if is_link_or_reparse(path) or path.exists():
+                unlink_file(path, missing_ok=True)
         except OSError:
             pass
 

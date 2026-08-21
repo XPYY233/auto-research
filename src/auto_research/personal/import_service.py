@@ -15,6 +15,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol
 
+from auto_research.portable_file_ops import unlink_file
+
 from auto_research.personal.ai_import_suggestions import (
     PersonalImportSuggestion,
     PersonalImportSuggestionError,
@@ -399,6 +401,8 @@ class PersonalImportService:
                         import_id=import_id,
                     )
             except SelectionSnapshotProviderError as exc:
+                if staged_path is not None:
+                    self._remove_staged_path(staged_path)
                 raise _translate_selection(exc) from exc
             except UnsafeTabularFileError as exc:
                 raise _service_error(
@@ -967,6 +971,7 @@ class PersonalImportService:
         output_fd = -1
         copied = 0
         digest = hashlib.sha256()
+        cleanup_needed = False
         try:
             source_fd = os.open(
                 source_path,
@@ -1012,10 +1017,10 @@ class PersonalImportService:
                 )
             return destination
         except PersonalImportServiceError:
-            self._remove_staged_path(destination)
+            cleanup_needed = True
             raise
         except OSError as exc:
-            self._remove_staged_path(destination)
+            cleanup_needed = True
             raise _service_error(
                 "personal_snapshot_failed",
                 "无法保存私有导入快照，请重新选择文件。",
@@ -1026,11 +1031,13 @@ class PersonalImportService:
                 os.close(output_fd)
             if source_fd >= 0:
                 os.close(source_fd)
+            if cleanup_needed:
+                self._remove_staged_path(destination)
 
     @staticmethod
     def _remove_staged_path(path: Path) -> None:
         try:
-            path.unlink(missing_ok=True)
+            unlink_file(path, missing_ok=True)
         except OSError:
             # The repository and public state never depend on cleanup succeeding.
             # A future session prune can retry without exposing the private path.

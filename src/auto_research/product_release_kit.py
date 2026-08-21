@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from auto_research.portable_file_ops import best_effort_remove_tree, replace_file
+
 
 class ReleaseKitError(RuntimeError):
     pass
@@ -80,10 +82,10 @@ def _build_atomic_kit(
             "".join(f"{artifact.sha256}  {artifact.path.name}\n" for artifact in artifacts),
             encoding="utf-8",
         )
-        os.replace(staging, output)
+        replace_file(staging, output)
     finally:
         if staging.exists():
-            shutil.rmtree(staging, ignore_errors=True)
+            best_effort_remove_tree(staging)
 
     zip_path = output.parent / f"{release_name}.zip"
     if zip_path.exists() or zip_path.is_symlink():
@@ -100,7 +102,7 @@ def _build_atomic_kit(
                 if path.is_symlink() or not path.is_file():
                     raise ReleaseKitError("发布套件包含不安全文件")
                 archive.write(path, arcname=f"{release_name}/{path.name}")
-        os.replace(temporary_zip, zip_path)
+        replace_file(temporary_zip, zip_path)
     finally:
         if temporary_zip.exists():
             temporary_zip.unlink()

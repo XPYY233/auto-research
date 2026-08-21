@@ -17,6 +17,7 @@ from auto_research.product.trusted_publishers import (
     trusted_public_keys,
     trusted_publisher_policy,
 )
+from frozen_resources import application_resource
 
 
 CONTROL_MEMBERS = frozenset({"manifest.json", "checksums.json", "signature.json"})
@@ -54,7 +55,10 @@ def verify_windows_v1_official_package(
     *,
     contract_path: Path | None = None,
 ) -> WindowsV1PackageReport:
-    contract = _load_contract(contract_path or Path(__file__).with_name("official-package-v1.json"))
+    contract = _load_contract(
+        contract_path
+        or application_resource("desktop", "windows", "official-package-v1.json")
+    )
     package = package_path.expanduser().resolve()
     if not package.is_file() or package.name != contract["file_name"]:
         raise WindowsV1PackageContractError("请选择冻结的 v1 官方资料包")
@@ -94,7 +98,10 @@ def verify_windows_v1_official_package(
 
     # A temporary official root exercises checksum, signature, rights policy,
     # distribution-sqlite-v1 audit and active selector without touching a user DB.
-    with tempfile.TemporaryDirectory(prefix="auto-research-windows-v1-package-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="auto-research-windows-v1-package-",
+        ignore_cleanup_errors=True,
+    ) as directory:
         official_root = Path(directory) / "official"
         policy = trusted_publisher_policy(channel="internal-preview")
         import_official_evidence_package(

@@ -91,7 +91,7 @@ class PackageInputTests(unittest.TestCase):
             broker.resolve_for_import(handle)
         self.assertEqual(changed.exception.code, "file_changed")
 
-    def test_unc_device_relative_wrong_extension_and_long_paths_are_rejected_without_probe(self) -> None:
+    def test_unsafe_device_ads_reserved_wrong_extension_and_excessive_paths_are_rejected(self) -> None:
         values = (
             r"\\server\share\evidence.aresearch",
             r"\\?\C:\Data\evidence.aresearch",
@@ -99,7 +99,10 @@ class PackageInputTests(unittest.TestCase):
             r"C:\Data\..\evidence.aresearch",
             r"relative\evidence.aresearch",
             r"C:\Data\evidence.zip",
-            "C:\\" + "a" * 230 + ".aresearch",
+            r"C:\Data\evidence.aresearch:secret",
+            r"C:\Data\CON.aresearch",
+            r"C:\CLOCK$.aresearch",
+            "C:\\" + "a" * 1_030 + ".aresearch",
         )
         probe = FakeProbe()
         broker = MODULE.PackageInputBroker(probe)

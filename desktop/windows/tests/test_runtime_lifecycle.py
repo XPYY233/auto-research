@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "runtime_lifecycle.py"
@@ -38,6 +39,24 @@ class FakeLoopbackService:
 
 
 class WindowsRuntimeLifecycleTests(unittest.TestCase):
+    def test_windows_liveness_probe_never_uses_os_kill(self) -> None:
+        with mock.patch.object(MODULE.sys, "platform", "win32"), mock.patch.object(
+            MODULE,
+            "_windows_process_is_alive",
+            return_value=True,
+        ) as windows_probe, mock.patch.object(MODULE.os, "kill") as os_kill:
+            self.assertTrue(MODULE.process_is_alive(1234))
+        windows_probe.assert_called_once_with(1234)
+        os_kill.assert_not_called()
+
+    def test_non_positive_pid_is_rejected_before_windows_probe(self) -> None:
+        with mock.patch.object(MODULE.sys, "platform", "win32"), mock.patch.object(
+            MODULE,
+            "_windows_process_is_alive",
+        ) as windows_probe:
+            self.assertFalse(MODULE.process_is_alive(0))
+        windows_probe.assert_not_called()
+
     def test_start_uses_loopback_and_os_selected_port_without_persisting_token(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             service = FakeLoopbackService(49152)

@@ -20,6 +20,7 @@ from ai_runtime_composition import (
 from desktop_ai_bridge import WindowsDesktopAIAPI
 from evidence_search_bridge import EvidenceSearchBridgeAdapter
 from evidence_search_service import WindowsEvidenceSearchService
+from frozen_resources import application_resource
 from evidence_export_bridge import (
     WindowsEvidenceExportBridge,
     windows_evidence_export_service,
@@ -282,7 +283,7 @@ class WindowsCompositionRoot:
 
     @staticmethod
     def _load_release_contract() -> ReleaseContract:
-        path = Path(__file__).resolve().parents[2] / "config" / "release-contract.json"
+        path = application_resource("config", "release-contract.json")
         try:
             return load_release_contract(path)
         except Exception as exc:
@@ -313,6 +314,10 @@ class WindowsCompositionRoot:
 
     def compose(self) -> WindowsProductionComposition:
         compatibility = self.compatibility_detector()
+        if not compatibility.webview2_compatible:
+            raise WindowsCompositionError(
+                "此电脑缺少 Microsoft Edge WebView2 Runtime；请重新运行完整安装程序。"
+            )
         if self.shared_http_bridge.contract_version != SHARED_BRIDGE_CONTRACT_VERSION:
             raise WindowsCompositionError("共享桌面 HTTP bridge 尚未冻结或版本不兼容")
         if (

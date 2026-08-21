@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Protocol
 
+from auto_research.portable_file_ops import remove_tree, replace_file, unlink_file
+
 from .private_repository import DATABASE_NAME, PrivateExperimentRepository
 from .search_source import PrivateRepositorySearchSource, PrivateSearchSnapshot
 
@@ -32,6 +34,13 @@ _TABLE_MEDIA = {
     ".tsv": "text/tab-separated-values",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
+
+
+def _best_effort_remove_tree(path: Path) -> None:
+    try:
+        remove_tree(path, missing_ok=True)
+    except OSError:
+        pass
 _SNAPSHOT_PATH = "personal/structured/personal_transfer.sqlite"
 
 
@@ -126,9 +135,9 @@ class PersonalTransferMergeHandle:
         )
         displaced: Path | None = None
         try:
-            os.replace(self._repository_root, backup)
+            replace_file(self._repository_root, backup)
             displaced = backup
-            os.replace(self._staging_root, self._repository_root)
+            replace_file(self._staging_root, self._repository_root)
             self._staging_root = None
             self._backup_root = backup
             self._state = "committed"
@@ -137,7 +146,7 @@ class PersonalTransferMergeHandle:
         except OSError:
             if displaced is not None and not self._repository_root.exists():
                 try:
-                    os.replace(displaced, self._repository_root)
+                    replace_file(displaced, self._repository_root)
                     displaced = None
                 except OSError:
                     pass
@@ -165,15 +174,15 @@ class PersonalTransferMergeHandle:
             f".{self._repository_root.name}.transfer-discard-{uuid.uuid4().hex}"
         )
         try:
-            os.replace(self._repository_root, discarded)
-            os.replace(self._backup_root, self._repository_root)
+            replace_file(self._repository_root, discarded)
+            replace_file(self._backup_root, self._repository_root)
             self._backup_root = None
-            shutil.rmtree(discarded, ignore_errors=True)
+            _best_effort_remove_tree(discarded)
             _fsync_directory(self._repository_root.parent)
         except OSError:
             if not self._repository_root.exists() and discarded.exists():
                 try:
-                    os.replace(discarded, self._repository_root)
+                    replace_file(discarded, self._repository_root)
                 except OSError:
                     pass
             raise PersonalTransferMergeError(
@@ -189,7 +198,7 @@ class PersonalTransferMergeHandle:
         if self._state == "prepared":
             self._discard_staging()
         elif self._state == "committed" and self._backup_root is not None:
-            shutil.rmtree(self._backup_root, ignore_errors=True)
+            _best_effort_remove_tree(self._backup_root)
             self._backup_root = None
         self._state = "closed"
         self._release_once()
@@ -202,7 +211,7 @@ class PersonalTransferMergeHandle:
 
     def _discard_staging(self) -> None:
         if self._staging_root is not None:
-            shutil.rmtree(self._staging_root, ignore_errors=True)
+            _best_effort_remove_tree(self._staging_root)
             self._staging_root = None
 
     def _release_once(self) -> None:
@@ -374,10 +383,10 @@ class PersonalTransferMergeService:
                 content_fingerprint=fingerprint,
             )
         except PersonalTransferMergeError:
-            shutil.rmtree(stage, ignore_errors=True)
+            _best_effort_remove_tree(stage)
             raise
         except Exception:
-            shutil.rmtree(stage, ignore_errors=True)
+            _best_effort_remove_tree(stage)
             raise PersonalTransferMergeError(
                 "personal_transfer_prepare_failed",
                 "个人实验数据暂时无法合并，原私人库保持不变。",
@@ -502,7 +511,7 @@ def _clone_private_repository(repository: PrivateExperimentRepository, destinati
             _copy_private_files(repository.files_root, files_destination)
         os.chmod(destination / DATABASE_NAME, 0o600)
     except Exception:
-        shutil.rmtree(destination, ignore_errors=True)
+        _best_effort_remove_tree(destination)
         raise
 
 
@@ -721,10 +730,10 @@ def _install_table(
             raise PersonalTransferMergeError(
                 "personal_transfer_table_changed", "个人实验包原始表格在导入时发生变化。"
             )
-        os.replace(temporary, destination)
+        replace_file(temporary, destination)
     finally:
         try:
-            temporary.unlink()
+            unlink_file(temporary, missing_ok=True)
         except OSError:
             pass
     conn.execute(

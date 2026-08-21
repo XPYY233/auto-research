@@ -71,6 +71,21 @@ class PackageExportDestinationTests(unittest.TestCase):
             ).select_package_export_destination("export.aresearch")
             self.assertEqual(denied["error"]["code"], "package_destination_nonlocal")
 
+    def test_reserved_device_and_ads_names_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = MODULE.WindowsPackageExportDestinationBroker()
+            for name in (
+                "CON.aresearch",
+                "CLOCK$.aresearch",
+                "collection.aresearch:secret",
+            ):
+                with self.subTest(name=name):
+                    denied = MODULE.WindowsPackageExportDestinationAdapter(
+                        broker,
+                        _Window(str(Path(directory) / name)),
+                    ).select_package_export_destination("export.aresearch")
+                    self.assertEqual(denied["error"]["code"], "package_destination_invalid")
+
 
 if __name__ == "__main__":
     unittest.main()

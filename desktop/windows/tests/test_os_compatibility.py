@@ -4,6 +4,7 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "os_compatibility.py"
@@ -51,6 +52,37 @@ class WindowsCompatibilityTests(unittest.TestCase):
         if MODULE.os.name != "nt":
             with self.assertRaises(MODULE.WindowsCompatibilityError):
                 MODULE.detect_windows_compatibility()
+
+    def test_detected_windows_without_webview2_is_not_compatible(self) -> None:
+        version = type("Version", (), {"major": 10, "build": 26100})()
+        with mock.patch.object(MODULE.os, "name", "nt"), mock.patch.object(
+            MODULE.sys,
+            "getwindowsversion",
+            return_value=version,
+            create=True,
+        ), mock.patch.object(MODULE.platform, "machine", return_value="AMD64"), mock.patch.object(
+            MODULE,
+            "_installed_webview2_version",
+            return_value=None,
+        ):
+            result = MODULE.detect_windows_compatibility()
+        self.assertFalse(result.webview2_compatible)
+        self.assertIn("WebView2", result.warning)
+
+    def test_detected_windows_with_webview2_is_compatible(self) -> None:
+        version = type("Version", (), {"major": 10, "build": 26100})()
+        with mock.patch.object(MODULE.os, "name", "nt"), mock.patch.object(
+            MODULE.sys,
+            "getwindowsversion",
+            return_value=version,
+            create=True,
+        ), mock.patch.object(MODULE.platform, "machine", return_value="AMD64"), mock.patch.object(
+            MODULE,
+            "_installed_webview2_version",
+            return_value="140.0.0.0",
+        ):
+            result = MODULE.detect_windows_compatibility()
+        self.assertTrue(result.webview2_compatible)
 
 
 if __name__ == "__main__":

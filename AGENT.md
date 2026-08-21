@@ -80,6 +80,8 @@ This project is a local literature automation workflow for fusion materials, rad
 - 多对话协作使用项目已有 Codex 对话，不由 root 随意新建子 agent。root 唯一 stage/commit；其他对话只编辑明确文件并停手报告。电脑发热时最多两个开发对话，禁止并行全测、构建、App 和模型调用。
 - 前端重构必须删除被新工作台取代的旧选择器/DOM 所有权，不能在 `app.css` 尾部叠加第三套皮肤。personal/package 静态归位；主导航唯一 owner；异步完成不得抢页或滚动。
 - 跨平台代码用 `os.open` 读取或写入归档、PDF、CSV/TSV/XLSX、SQLite、密钥或设置等文件字节时，flags 必须包含 `getattr(os, "O_BINARY", 0)`；仅用于目录 `fsync` 的描述符除外。Windows CRT 文本模式会翻译或截断二进制流，不能依靠 macOS/Linux 测试推断可移植性。
+- Windows 构建锁定 Python 3.12；该版本在 Windows 不提供 `os.fchmod`。跨平台原子写只能在 `os.fchmod` 可调用时设置 fd mode；Windows 依赖受控 AppData/Temp ACL，不能用路径 `chmod(0o600)` 冒充 POSIX 私密权限。关闭全部文件描述符后才能 replace/unlink/remove；对 Defender、索引器和预览器造成的 WinError 5/32/33 只做有界重试，其他错误立即失败关闭。
+- Windows 不得用 `os.kill(pid, 0)` 探测进程，也不得让冻结 EXE 按源码相对路径寻找资源。进程存活使用 Win32 process handle；PyInstaller 资源只从受控 `_MEIPASS` helper 解析。离线 Setup 必须携带并校验 Microsoft WebView2 Evergreen x64 安装器，冻结候选在生成 Setup 前必须完成资源、原生 DLL、禁止模块和无 UI bootstrap smoke。
 
 ## Current acquisition capability summary
 

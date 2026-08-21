@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import stat
 import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
+
+from auto_research.portable_file_ops import remove_tree
 
 from .package_center_models import (
     MaterializedPayload,
@@ -35,6 +36,13 @@ from .transfer_package import TransferFileRights, TransferPackageError
 
 
 MAX_WORKSPACE_PARENT_FILES = 256
+
+
+def _best_effort_remove_tree(path: Path) -> None:
+    try:
+        remove_tree(path, missing_ok=True)
+    except OSError:
+        pass
 
 
 @dataclass(frozen=True)
@@ -257,11 +265,11 @@ class StructuredPackageCenterPayloadAdapter:
                 package_version=candidate.package_version,
             )
         except Exception:
-            shutil.rmtree(operation, ignore_errors=True)
+            _best_effort_remove_tree(operation)
             raise
         return MaterializedPayload(
             export_plan,
-            lambda: shutil.rmtree(operation, ignore_errors=True),
+            lambda: _best_effort_remove_tree(operation),
         )
 
     @staticmethod

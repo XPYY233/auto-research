@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
+import sys
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -10,10 +10,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Protocol
 
+from auto_research.portable_file_ops import remove_tree, replace_file, unlink_file
+
 
 LOOPBACK_HOST = "127.0.0.1"
 RUNTIME_STATE_VERSION = 1
 STATE_FILE_NAME = "runtime-session.json"
+
+
+def _best_effort_remove_tree(path: Path) -> None:
+    try:
+        remove_tree(path, missing_ok=True)
+    except OSError:
+        pass
 
 
 class WindowsRuntimeError(RuntimeError):
@@ -40,9 +49,45 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _windows_process_is_alive(pid: int) -> bool:
+    """Probe a process without sending a signal or terminating it."""
+
+    import ctypes
+    from ctypes import wintypes
+
+    process_query_limited_information = 0x1000
+    still_active = 259
+    error_access_denied = 5
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    open_process.restype = wintypes.HANDLE
+    get_exit_code = kernel32.GetExitCodeProcess
+    get_exit_code.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    get_exit_code.restype = wintypes.BOOL
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = (wintypes.HANDLE,)
+    close_handle.restype = wintypes.BOOL
+
+    handle = open_process(process_query_limited_information, False, pid)
+    if not handle:
+        # Access denied means the process exists but is protected from this
+        # user.  Treat it as alive so single-instance recovery fails closed.
+        return ctypes.get_last_error() == error_access_denied
+    try:
+        exit_code = wintypes.DWORD()
+        if not get_exit_code(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value == still_active
+    finally:
+        close_handle(handle)
+
+
 def process_is_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        return _windows_process_is_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -83,12 +128,15 @@ def _atomic_json(path: Path, value: dict[str, object]) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        replace_file(temporary, path)
     except OSError as exc:
         raise WindowsRuntimeError("无法写入 Windows 运行状态") from exc
     finally:
         if temporary is not None:
-            temporary.unlink(missing_ok=True)
+            try:
+                unlink_file(temporary, missing_ok=True)
+            except OSError:
+                pass
 
 
 class WindowsRuntimeSession:
@@ -141,8 +189,8 @@ class WindowsRuntimeSession:
             stale_directory.relative_to(self.runtime_root)
         except ValueError as exc:
             raise WindowsRuntimeError("旧运行目录超出应用状态范围") from exc
-        shutil.rmtree(stale_directory, ignore_errors=True)
-        self.state_file.unlink(missing_ok=True)
+        _best_effort_remove_tree(stale_directory)
+        unlink_file(self.state_file, missing_ok=True)
         return RuntimeRecovery(True, previous_pid, previous_port)
 
     def start(self) -> RuntimeRecovery:
@@ -173,7 +221,7 @@ class WindowsRuntimeSession:
                 self.service.stop()
             except BaseException:
                 pass
-            shutil.rmtree(self.runtime_directory, ignore_errors=True)
+            _best_effort_remove_tree(self.runtime_directory)
             raise
         self._started = True
         return recovery
@@ -187,8 +235,8 @@ class WindowsRuntimeSession:
         except BaseException as exc:
             stop_error = exc
         else:
-            self.state_file.unlink(missing_ok=True)
-            shutil.rmtree(self.runtime_directory, ignore_errors=True)
+            unlink_file(self.state_file, missing_ok=True)
+            _best_effort_remove_tree(self.runtime_directory)
             self._started = False
         if stop_error is not None:
             raise WindowsRuntimeError(

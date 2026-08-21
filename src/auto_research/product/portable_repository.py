@@ -15,6 +15,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Iterator, Mapping
 from urllib.parse import urlsplit
 
+from auto_research.portable_file_ops import best_effort_remove_tree, replace_file
+
 
 DISTRIBUTION_SCHEMA_VERSION = 1
 IDENTITY_VERSION = 1
@@ -1405,7 +1407,7 @@ def materialize_portable_repository(
             assets=asset_rows,
         )
         audit_portable_repository(staging, expected_package_id=package_id, expected_version=package_version)
-        os.replace(staging, destination)
+        replace_file(staging, destination)
         database_digest, _ = _sha256_file(
             destination.joinpath(*PurePosixPath(DATABASE_PATH).parts)
         )
@@ -1425,7 +1427,7 @@ def materialize_portable_repository(
             dropped_by_reason=dict(plan.dropped_by_reason),
         )
     except Exception:
-        shutil.rmtree(staging, ignore_errors=True)
+        best_effort_remove_tree(staging)
         raise
 
 

@@ -3,12 +3,13 @@ from __future__ import annotations
 import os
 import platform
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 WINDOWS_10_22H2_BUILD = 19045
 WINDOWS_11_MINIMUM_BUILD = 22000
 X64_ARCHITECTURES = frozenset({"amd64", "x86_64"})
+WEBVIEW2_CLIENT_ID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
 
 class WindowsCompatibilityError(RuntimeError):
@@ -66,8 +67,47 @@ def detect_windows_compatibility() -> WindowsCompatibility:
     if os.name != "nt" or not hasattr(sys, "getwindowsversion"):
         raise WindowsCompatibilityError("Windows 兼容检查只能在 Windows 实机运行")
     version = sys.getwindowsversion()
-    return evaluate_windows_compatibility(
+    compatibility = evaluate_windows_compatibility(
         major=int(version.major),
         build=int(version.build),
         architecture=platform.machine(),
     )
+    if _installed_webview2_version() is None:
+        warning = "Microsoft Edge WebView2 Runtime 尚未安装。"
+        if compatibility.warning:
+            warning = f"{compatibility.warning} {warning}"
+        return replace(
+            compatibility,
+            webview2_compatible=False,
+            warning=warning,
+        )
+    return compatibility
+
+
+def _installed_webview2_version() -> str | None:
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+    except ImportError:
+        return None
+    locations = (
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            rf"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_ID}",
+        ),
+        (
+            winreg.HKEY_CURRENT_USER,
+            rf"Software\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_ID}",
+        ),
+    )
+    for hive, key_name in locations:
+        try:
+            with winreg.OpenKey(hive, key_name, 0, winreg.KEY_READ) as key:
+                value, _kind = winreg.QueryValueEx(key, "pv")
+        except OSError:
+            continue
+        version = str(value).strip()
+        if version and version != "0.0.0.0":
+            return version
+    return None

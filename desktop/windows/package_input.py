@@ -9,9 +9,14 @@ from typing import Callable, Protocol, Sequence
 
 
 PACKAGE_EXTENSION = ".aresearch"
-MAX_WINDOWS_PACKAGE_PATH_CHARS = 240
+MAX_WINDOWS_PACKAGE_PATH_CHARS = 1_024
 ALLOWED_INPUT_SOURCES = frozenset({"file-picker", "drag-drop", "file-association"})
 WINDOWS_REPARSE_POINT = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+WINDOWS_RESERVED_NAMES = frozenset(
+    {"con", "prn", "aux", "nul", "clock$"}
+    | {f"com{index}" for index in range(1, 10)}
+    | {f"lpt{index}" for index in range(1, 10)}
+)
 
 
 class PackageInputError(RuntimeError):
@@ -49,6 +54,13 @@ def _validate_windows_path_text(raw_path: str) -> PureWindowsPath:
     path = PureWindowsPath(normalized)
     if not path.is_absolute() or not path.drive or ".." in path.parts:
         raise PackageInputError("invalid_path", "资料包必须是本机绝对路径")
+    if normalized.count(":") != 1 or normalized[1:2] != ":":
+        raise PackageInputError("invalid_path", "资料包路径不能包含数据流或额外设备名")
+    for part in path.parts[1:]:
+        normalized_part = part.rstrip(" .")
+        base = normalized_part.split(".", 1)[0].casefold()
+        if not normalized_part or base in WINDOWS_RESERVED_NAMES:
+            raise PackageInputError("invalid_path", "资料包路径包含 Windows 保留名称")
     if path.suffix.casefold() != PACKAGE_EXTENSION:
         raise PackageInputError("wrong_extension", "请选择一个 .aresearch 资料包")
     return path

@@ -16,6 +16,13 @@ FORBIDDEN_FROZEN_MODULES = (
     "auto_research.product.internal_preview_builder",
     "auto_research.product.evidence_v12_export",
 )
+REQUIRED_NATIVE_RUNTIME_FILES = (
+    "Microsoft.Web.WebView2.Core.dll",
+    "Microsoft.Web.WebView2.WinForms.dll",
+    "WebView2Loader.dll",
+    "Python.Runtime.dll",
+    "_mupdf.pyd",
+)
 
 
 def finalize_candidate(
@@ -32,6 +39,17 @@ def finalize_candidate(
     forbidden = [name for name in FORBIDDEN_FROZEN_MODULES if name in toc_text]
     if forbidden:
         raise RuntimeError("Windows 冻结包混入禁止的维护模块")
+    if "webview.platforms.edgechromium" not in toc_text:
+        raise RuntimeError("Windows 冻结包缺少 Edge Chromium 后端")
+
+    bundled_names = {
+        path.name
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+    missing_native = sorted(set(REQUIRED_NATIVE_RUNTIME_FILES) - bundled_names)
+    if missing_native:
+        raise RuntimeError("Windows 冻结包缺少原生运行组件")
 
     asset_root = root / "_internal" / "auto_research" / "evidence" / "web"
     required_assets = {"index.html", "app.css", "workbench.css", "ai_consent.js", "fusion_review.js"}
@@ -70,6 +88,7 @@ def finalize_candidate(
         "architecture": report.architecture,
         "component_count": report.component_count,
         "forbidden_modules_absent": True,
+        "native_runtime_present": True,
         "fusion_assets_present": True,
     }
 

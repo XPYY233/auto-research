@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 WINDOWS_ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(WINDOWS_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 try:
+    import v1_package_contract as MODULE
     from v1_package_contract import (
         WindowsV1PackageContractError,
         verify_windows_v1_official_package,
@@ -32,6 +34,25 @@ PACKAGE = (
 
 
 class WindowsV1PackageContractTests(unittest.TestCase):
+    def test_default_contract_loads_from_pyinstaller_resource_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundled = root / "desktop" / "windows"
+            bundled.mkdir(parents=True)
+            source = WINDOWS_ROOT / "official-package-v1.json"
+            (bundled / source.name).write_bytes(source.read_bytes())
+            resource_sys = MODULE.application_resource.__globals__["sys"]
+            with mock.patch.object(resource_sys, "frozen", True, create=True), mock.patch.object(
+                resource_sys,
+                "_MEIPASS",
+                str(root),
+                create=True,
+            ):
+                contract = MODULE._load_contract(
+                    MODULE.application_resource("desktop", "windows", source.name)
+                )
+            self.assertEqual(contract["package_version"], "1.0.0")
+
     @unittest.skipUnless(PACKAGE.is_file(), "frozen v1 release package is not present in this checkout")
     def test_exact_mac_v1_bytes_are_windows_compatible_without_remake(self) -> None:
         report = verify_windows_v1_official_package(PACKAGE)

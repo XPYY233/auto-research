@@ -22,6 +22,8 @@ from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Mapping
 
+from auto_research.portable_file_ops import remove_tree, replace_file, unlink_file
+
 from .evidence_package import (
     PACKAGE_ID_RE,
     PACKAGE_VERSION_RE,
@@ -888,7 +890,7 @@ def export_transfer_package(
         if temporary.stat().st_size > MAX_TRANSFER_PACKAGE_BYTES:
             raise TransferPackageError("transfer_size", "传输包超过 2 GB 上限")
         verified = verify_transfer_package(temporary, expected_kind=plan.kind)
-        os.replace(temporary, output)
+        replace_file(temporary, output)
         return ExportedTransferPackage(
             package_path=output,
             package_sha256=verified.package_sha256,
@@ -899,7 +901,10 @@ def export_transfer_package(
     except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
         raise TransferPackageError("transfer_export_failed", "传输包生成失败") from exc
     finally:
-        shutil.rmtree(workspace, ignore_errors=True)
+        try:
+            remove_tree(workspace, missing_ok=True)
+        except OSError:
+            pass
 
 
 def export_transfer_package_with_checksum(
@@ -948,9 +953,9 @@ def export_transfer_package_with_checksum(
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
-        os.replace(temporary_sidecar, sidecar)
+        replace_file(temporary_sidecar, sidecar)
         published_sidecar = True
-        os.replace(temporary, output)
+        replace_file(temporary, output)
         return ExportedTransferPackage(
             package_path=output,
             package_sha256=exported.package_sha256,
@@ -965,12 +970,12 @@ def export_transfer_package_with_checksum(
     finally:
         for candidate in (temporary, temporary_sidecar):
             try:
-                candidate.unlink(missing_ok=True)
+                unlink_file(candidate, missing_ok=True)
             except OSError:
                 pass
         if published_sidecar and not output.exists():
             try:
-                sidecar.unlink(missing_ok=True)
+                unlink_file(sidecar, missing_ok=True)
             except OSError:
                 pass
 
@@ -1290,6 +1295,7 @@ def _snapshot_transfer_package(source: Path, staging_root: Path) -> tuple[Path, 
     operation.mkdir(mode=0o700)
     snapshot = operation / "source.aresearch"
     source_fd = snapshot_fd = -1
+    cleanup_needed = False
     try:
         source_fd = os.open(
             source,
@@ -1323,16 +1329,21 @@ def _snapshot_transfer_package(source: Path, staging_root: Path) -> tuple[Path, 
             raise TransferPackageError("transfer_source_changed", "传输包选择后发生变化")
         os.fsync(snapshot_fd)
     except TransferPackageError:
-        shutil.rmtree(operation, ignore_errors=True)
+        cleanup_needed = True
         raise
     except OSError as exc:
-        shutil.rmtree(operation, ignore_errors=True)
+        cleanup_needed = True
         raise TransferPackageError("transfer_snapshot_failed", "无法创建传输包安全副本") from exc
     finally:
         if snapshot_fd >= 0:
             os.close(snapshot_fd)
         if source_fd >= 0:
             os.close(source_fd)
+        if cleanup_needed:
+            try:
+                remove_tree(operation, missing_ok=True)
+            except OSError:
+                pass
     return operation, snapshot
 
 
@@ -1588,7 +1599,7 @@ def import_transfer_package(
             )
         )
         _validate_installed_transfer(staging, verified)
-        os.replace(staging, target)
+        replace_file(staging, target)
         return ImportedTransferPackage(
             verified.kind,
             verified.package_id,
@@ -1604,4 +1615,7 @@ def import_transfer_package(
     except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
         raise TransferPackageError("transfer_import_failed", "传输包导入失败") from exc
     finally:
-        shutil.rmtree(operation, ignore_errors=True)
+        try:
+            remove_tree(operation, missing_ok=True)
+        except OSError:
+            pass

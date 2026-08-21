@@ -6,6 +6,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path, PureWindowsPath
+from unittest import mock
 
 
 WINDOWS_ROOT = Path(__file__).resolve().parents[1]
@@ -200,6 +201,36 @@ class CompositionRootTests(unittest.TestCase):
             guard_factory=lambda identity: FakeGuard(identity, self.events),
             compatibility_detector=compatibility,
         )
+
+    def test_release_contract_loads_from_pyinstaller_resource_root(self) -> None:
+        root = Path(self.temporary.name) / "frozen"
+        bundled = root / "config"
+        bundled.mkdir(parents=True)
+        source = Path(__file__).resolve().parents[3] / "config" / "release-contract.json"
+        (bundled / "release-contract.json").write_bytes(source.read_bytes())
+        resource_sys = MODULE.application_resource.__globals__["sys"]
+        with mock.patch.object(resource_sys, "frozen", True, create=True), mock.patch.object(
+            resource_sys,
+            "_MEIPASS",
+            str(root),
+            create=True,
+        ):
+            release = MODULE.WindowsCompositionRoot._load_release_contract()
+        self.assertEqual(release.windows_version, "1.0.0-windows.rc.1")
+
+    def test_missing_webview2_runtime_blocks_composition(self) -> None:
+        unavailable = COMPATIBILITY.WindowsCompatibility(
+            product_name="Windows 11",
+            build=26100,
+            architecture="x64",
+            support_level="primary",
+            stable_release_supported=True,
+            webview2_compatible=False,
+            warning="Microsoft Edge WebView2 Runtime 尚未安装。",
+        )
+        self.root.compatibility_detector = lambda: unavailable
+        with self.assertRaisesRegex(MODULE.WindowsCompositionError, "WebView2"):
+            self.root.compose()
 
     def test_composition_connects_existing_modules_to_shared_bridge_services(self) -> None:
         composition = self.root.compose()

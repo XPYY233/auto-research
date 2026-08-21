@@ -76,6 +76,7 @@ class _MemorySelectionProvider:
         self.path = path
         self.revoked: list[str] = []
         self.error: SelectionSnapshotProviderError | None = None
+        self.error_on_exit: SelectionSnapshotProviderError | None = None
 
     @contextmanager
     def snapshot(self, selection_id: str):
@@ -88,6 +89,8 @@ class _MemorySelectionProvider:
                 retryable=True,
             )
         yield SimpleNamespace(path=self.path)
+        if self.error_on_exit is not None:
+            raise self.error_on_exit
 
     def revoke(self, selection_id: str) -> None:
         self.revoked.append(selection_id)
@@ -278,6 +281,18 @@ class PersonalImportServiceTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "personal_selection_changed")
         self.assertTrue(raised.exception.retryable)
         self.assertEqual(self.repository.operations, [])
+
+    def test_provider_cleanup_failure_removes_completed_private_staging_copy(self) -> None:
+        self.provider.error_on_exit = SelectionSnapshotProviderError(
+            "personal_selection_snapshot_failed",
+            "无法清理选择副本。",
+            retryable=True,
+        )
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            self.service.preview(SELECTION_ID)
+        self.assertEqual(raised.exception.code, "personal_selection_snapshot_failed")
+        staging = self.service.data_root / ".import-staging"
+        self.assertEqual(list(staging.glob("*")), [])
 
     def test_preview_must_be_saved_before_confirm(self) -> None:
         self.service.preview(SELECTION_ID)

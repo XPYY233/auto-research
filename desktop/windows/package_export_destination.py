@@ -12,6 +12,18 @@ from typing import Callable, Protocol
 
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 SAFE_NAME_RE = re.compile(r"^[^/\\\x00]{1,180}\.aresearch$", re.IGNORECASE)
+WINDOWS_RESERVED_NAMES = frozenset(
+    {"con", "prn", "aux", "nul", "clock$"}
+    | {f"com{index}" for index in range(1, 10)}
+    | {f"lpt{index}" for index in range(1, 10)}
+)
+
+
+def _safe_windows_package_name(name: str) -> bool:
+    if SAFE_NAME_RE.fullmatch(name) is None or ":" in name or name.endswith((" ", ".")):
+        return False
+    stem = name[: -len(".aresearch")].rstrip(" .").casefold()
+    return bool(stem) and stem not in WINDOWS_RESERVED_NAMES
 
 
 class PackageExportDestinationError(RuntimeError):
@@ -84,7 +96,7 @@ class WindowsPackageExportDestinationBroker:
         candidate = Path(raw).expanduser()
         if not candidate.is_absolute() or candidate.is_symlink():
             self._fail("package_destination_invalid", "请选择本机普通文件位置。")
-        if len(raw) > 1024 or SAFE_NAME_RE.fullmatch(candidate.name) is None:
+        if len(raw) > 1024 or not _safe_windows_package_name(candidate.name):
             self._fail("package_destination_invalid", "资料包文件名无效。")
         parent = candidate.parent
         try:

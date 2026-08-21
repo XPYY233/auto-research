@@ -13,6 +13,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any, Callable, Iterator, Protocol, Sequence
 
 from auto_research.personal.import_service import SelectionSnapshotProviderError
+from auto_research.portable_file_ops import remove_tree
 
 
 SUPPORTED_EXTENSIONS = frozenset({".csv", ".tsv", ".xlsx"})
@@ -235,7 +236,7 @@ class WindowsPersonalFileSelectionBroker:
 
     @contextmanager
     def snapshot(self, selection_id: str) -> Iterator[PersonalFileSnapshot]:
-        temporary: tempfile.TemporaryDirectory[str] | None = None
+        temporary_root: Path | None = None
         try:
             with self._lock:
                 record = self._resolve(selection_id)
@@ -243,10 +244,10 @@ class WindowsPersonalFileSelectionBroker:
                 if before != record.identity:
                     self._records.pop(selection_id, None)
                     raise _error("personal_selection_changed")
-                temporary = tempfile.TemporaryDirectory(
+                temporary_root = Path(tempfile.mkdtemp(
                     prefix="auto-research-windows-personal-selection-"
-                )
-                destination = Path(temporary.name) / record.path.name
+                ))
+                destination = temporary_root / record.path.name
                 with record.path.open("rb") as source, destination.open("xb") as output:
                     shutil.copyfileobj(source, output, length=1024 * 1024)
                 after = _identity(record.path.stat())
@@ -261,8 +262,16 @@ class WindowsPersonalFileSelectionBroker:
                 self._records.pop(selection_id, None)
             raise _error("personal_selection_snapshot_failed") from None
         finally:
-            if temporary is not None:
-                temporary.cleanup()
+            if temporary_root is not None:
+                # Windows antivirus and preview handlers may briefly retain a
+                # copied workbook after the parser closes it.  Bound the retry
+                # and keep any failure path-free.
+                try:
+                    remove_tree(temporary_root, missing_ok=True)
+                except OSError:
+                    with self._lock:
+                        self._records.pop(selection_id, None)
+                    raise _error("personal_selection_snapshot_failed") from None
 
     def revoke(self, selection_id: str) -> None:
         with self._lock:
