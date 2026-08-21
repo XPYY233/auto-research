@@ -8,7 +8,7 @@
 - 完成冻结运行时审计：版本、发布契约和官方包资源统一从 PyInstaller `_MEIPASS` 解析；Windows 进程存活不再使用 `os.kill(pid, 0)`；平台启动失败在无控制台 EXE 中显示稳定中文错误；不可用的 publisher/v12 维护模块不再进入 package-center 启动闭包。
 - 构建套件新增并锁定 Microsoft 官方 WebView2 Evergreen x64 离线安装器。Setup 仅在缺失时静默安装；生成 Setup 前强制检查 WebView2/.NET/Python/PyMuPDF 原生组件、禁止模块、Fusion 资源，并实际运行无 UI 冻结 bootstrap smoke。
 - 文件名、ADS、Windows 保留设备名、末尾点/空格、junction/reparse point、含空格工具链路径和严格 SemVer 均有失败关闭处理；用户包、官方包、私人表格和设置清理不再依赖 macOS 可删除已打开文件的语义。
-- 目标包/个人/发布回归 182 项通过，Windows 平台契约 170/170 通过；真实 v1 官方包通过冻结输入验签与审计（SHA-256 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`，4,356 条四类实体）。源码修复提交为 `ff7b5d2`；构建契约绑定该提交，旧 Build Kit 必须作废并从新提交重新生成。
+- 目标包/个人/发布回归 182 项、Windows 平台契约 170/170、macOS 邻接 226/226 通过；真实 v1 官方包通过冻结输入验签与审计（SHA-256 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`，4,356 条四类实体）。共享全套779项中，699项通过，80项仍统一因用户已删除且未授权恢复的历史`data/pdfs/XJZQ42XP.pdf`在setup阶段报错；没有伪造或恢复论文。源码修复提交为 `ff7b5d2`；构建契约绑定该提交，旧 Build Kit 必须作废并从新提交重新生成。
 - 本轮仍不能称 Windows 正式版：Mac 无法替代真实 Win11 Setup、Credential Manager、WebView2、Defender、安装/升级/卸载验收。新套件只负责让用户在 Windows 端离线生成 RC Setup，最终验收前保持 `installer_ready=false / SETUP_PRESENT=NO`。
 
 ## 2026-08-21：Windows 离线 Build Kit 二进制文件边界修复
@@ -16,7 +16,7 @@
 - 真实 Windows 11 构建已通过离线 Python、锁定依赖与内置 Inno Setup，随后在 `[4/8]` 官方资料包审计处稳定返回“资料包复制过程中发生变化”。将套件从移动盘迁到 C 盘后错误不变，排除了盘符和下载占位因素。
 - 根因是共享核心通过 `os.open` 复制 `.aresearch` 时未显式请求 Windows `O_BINARY`；Windows CRT 文本模式可能翻译或提前结束归档字节流，使复制字节数与 `st_size` 不一致。修复统一覆盖官方/用户资料包、个人 CSV/TSV/XLSX、PDF、SQLite、签名密钥与设置文件的低层文件描述符；目录 `fsync` 保持原样。
 - 新增 Windows 二进制 flags 回归，使用含 CRLF 与控制字节的合成归档验证源、目标描述符均请求二进制模式且字节保持不变。相关包/个人/安全目标 139 项及完整 Windows 契约 158 项通过；Python 编译和差异检查通过。
-- 共享全测执行 774 项，其中 80 项历史六列表测试因已不存在且未授权恢复的 `data/pdfs/XJZQ42XP.pdf` 统一在 setup 阶段报错；其余 694 项无失败。该缺失不是本次 Windows 构建修复造成，也没有为通过测试伪造或恢复论文 PDF。
+- 共享全测后来随可移植性回归增长为 779 项，其中 80 项历史六列表测试因已不存在且未授权恢复的 `data/pdfs/XJZQ42XP.pdf` 统一在 setup 阶段报错；其余 699 项无失败。该缺失不是本次 Windows 构建修复造成，也没有为通过测试伪造或恢复论文 PDF。
 - 本条只冻结源码修复。新的离线 Windows Build Kit 必须从修复提交重新生成并更新源码身份与全部 SHA；旧 ZIP 必须标记为不可使用。Windows 仍为 RC，只有真实机器生成 Setup 并完成安装、导包、搜索、上传、BYOK 与卸载验收后才能把 `installer_ready` 改为 true。
 
 ## 2026-08-21：v1.0.0 build22 功能冻结与发布前验证
