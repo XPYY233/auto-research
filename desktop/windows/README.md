@@ -36,10 +36,12 @@ python3 desktop/windows/build_plan.py
 
 1. 把整个预览 ZIP 解压到本机普通目录；不要在压缩包内直接运行。
 2. 双击 `desktop\windows\Build-Windows-Preview.cmd`，或在 PowerShell 中运行 `desktop\windows\build_windows.ps1`。
-3. 脚本在 `%LOCALAPPDATA%\AutoResearchBuildKit\v1` 建立隔离 Python 3.12.10 和 Inno Setup 6.7.3，核对签名发布者、固定版本、依赖解析、共享资源及 v1 官方包。
-4. 脚本使用 PyInstaller 冻结程序，再由 Inno Setup 生成 `Windows-Output\Auto-Research-1.0.0-windows.rc.1-Setup.exe`，并分别计算 Setup 与资料包 SHA-256。
+3. 脚本只使用套件内已经锁定并校验的 Python 3.12.10、Python wheelhouse、Inno Setup 6.7.3 和 Microsoft WebView2 Evergreen x64 安装器；Windows 构建阶段不需要访问外网。
+4. 脚本使用 PyInstaller 冻结程序，检查原生运行组件并执行一次无窗口启动冒烟，再由 Inno Setup 生成 `Windows-Output\Auto-Research-1.0.0-windows.rc.1-Setup.exe`。Setup 会在目标电脑缺少 WebView2 时使用内置的微软安装器补齐运行时。
 5. 将 `Windows-Build-Report.txt`、`Windows-Build-Report.json`、`Windows-Output\SHA256SUMS.txt` 发回本任务。此时仍是 `INSTALLER_READY=NO`。
 
 构建脚本还会读取套件根目录的 `SOURCE_IDENTITY.txt`，把确切源码提交写入两份 Build Report。缺少或损坏该文件时会停止构建，避免把来源不明的源码误报为候选安装包。
+
+每次收到新套件都应删除旧的解压目录并重新完整解压；不要把新文件覆盖到旧源码树，也不要从 ZIP、OneDrive 占位文件或已打开的资料包中直接运行。旧套件中的构建哈希不会接受新源码，这是保护机制而不是可跳过的错误。
 
 只有冻结共享接口、生成真实 Setup，并在 Windows 11 clean machine 完成上述全流程后，才能改变 `installer_ready` 或向用户描述为 Windows 安装版。Mac 上的静态测试、backend parity 和构建资料夹都不能替代该门。

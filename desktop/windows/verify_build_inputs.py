@@ -75,6 +75,10 @@ def verify_build_inputs(project_root: Path, package_path: Path) -> dict[str, obj
         path = windows / relative
         if not path.is_file() or _sha256(path) != expected:
             raise WindowsBuildInputError(f"Windows 锁定构建文件已变化：{relative}")
+    for relative, expected in build_contract.get("locked_project_files", {}).items():
+        path = root / relative
+        if not path.is_file() or _sha256(path) != expected:
+            raise WindowsBuildInputError(f"共享锁定构建文件已变化：{relative}")
 
     package_report = verify_windows_v1_official_package(package_path)
     return {

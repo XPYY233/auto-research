@@ -9,7 +9,7 @@
 - 验证：共享核心 `773/773`、macOS `226/226`，合计 `999/999`；前端语法、Python 编译、发布哈希同步与差异检查通过。生产 SQLite 字节哈希未变。
 - 官方包：`auto-research-internal-evidence-1.0.0.aresearch`，SHA-256 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`；60 篇论文、4,356 条四类实体、零 PDF/零二进制资产，仍受课题组内部签名与 rights 契约约束。
 - 发布门：必须从最终干净提交构建 App/DMG，先把 0.9.2/build21 保存为不可启动回退，再完成真实 Mac 用户流程和 UserKit 哈希封箱。完成前本节只表示源码候选，不表示已经安装。
-- Windows：完全暂停；没有 v1 Windows 源码同步、Setup 或 Win11 验收。
+- Windows：v1 RC 可移植性源码已恢复并完成170项平台契约，构建链包含锁定的Python/Inno/WebView2离线工具和冻结EXE冒烟；仍没有经Win11验收的Setup，保持`installer_ready=false / SETUP_PRESENT=NO`。
 
 以下 0.9/0.8 小节是历史发布记录。
 

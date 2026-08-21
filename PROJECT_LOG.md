@@ -2,6 +2,15 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-21：Windows v1 RC 全离线与文件系统可移植性收口
+
+- 在真实 Windows 11 连续复现并修复三层阻断：归档文件描述符缺少 `O_BINARY`、Python 3.12 Windows 无 `os.fchmod` 且异常清理仍占用临时文件、Defender/索引器短时锁定原子替换与删除。共享普通文件操作现只对 WinError 5/32/33 有界重试，所有源/目标 fd 先关闭，其他错误继续失败关闭。
+- 完成冻结运行时审计：版本、发布契约和官方包资源统一从 PyInstaller `_MEIPASS` 解析；Windows 进程存活不再使用 `os.kill(pid, 0)`；平台启动失败在无控制台 EXE 中显示稳定中文错误；不可用的 publisher/v12 维护模块不再进入 package-center 启动闭包。
+- 构建套件新增并锁定 Microsoft 官方 WebView2 Evergreen x64 离线安装器。Setup 仅在缺失时静默安装；生成 Setup 前强制检查 WebView2/.NET/Python/PyMuPDF 原生组件、禁止模块、Fusion 资源，并实际运行无 UI 冻结 bootstrap smoke。
+- 文件名、ADS、Windows 保留设备名、末尾点/空格、junction/reparse point、含空格工具链路径和严格 SemVer 均有失败关闭处理；用户包、官方包、私人表格和设置清理不再依赖 macOS 可删除已打开文件的语义。
+- 目标包/个人/发布回归 182 项通过，Windows 平台契约 170/170 通过；真实 v1 官方包通过冻结输入验签与审计（SHA-256 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`，4,356 条四类实体）。源码修复提交为 `ff7b5d2`；构建契约绑定该提交，旧 Build Kit 必须作废并从新提交重新生成。
+- 本轮仍不能称 Windows 正式版：Mac 无法替代真实 Win11 Setup、Credential Manager、WebView2、Defender、安装/升级/卸载验收。新套件只负责让用户在 Windows 端离线生成 RC Setup，最终验收前保持 `installer_ready=false / SETUP_PRESENT=NO`。
+
 ## 2026-08-21：Windows 离线 Build Kit 二进制文件边界修复
 
 - 真实 Windows 11 构建已通过离线 Python、锁定依赖与内置 Inno Setup，随后在 `[4/8]` 官方资料包审计处稳定返回“资料包复制过程中发生变化”。将套件从移动盘迁到 C 盘后错误不变，排除了盘符和下载占位因素。

@@ -26,6 +26,18 @@ class VerifyWindowsBuildInputsTests(unittest.TestCase):
         )
         for relative, expected in contract["locked_files"].items():
             self.assertEqual(MODULE._sha256(WINDOWS_ROOT / relative), expected)
+        for relative, expected in contract["locked_project_files"].items():
+            self.assertEqual(MODULE._sha256(PROJECT_ROOT / relative), expected)
+
+    def test_portable_windows_file_contract_is_frozen_with_the_build_inputs(self) -> None:
+        contract = json.loads(
+            (WINDOWS_ROOT / "build-contract-v1.json").read_text(encoding="utf-8")
+        )
+        self.assertIn(
+            "src/auto_research/portable_file_ops.py",
+            contract["locked_project_files"],
+        )
+        self.assertIn("frozen_resources.py", contract["locked_files"])
 
     def test_release_candidate_keeps_installer_acceptance_gate_closed(self) -> None:
         version = json.loads((WINDOWS_ROOT / "version.json").read_text(encoding="utf-8"))
@@ -79,6 +91,10 @@ class VerifyWindowsBuildInputsTests(unittest.TestCase):
             contract["inno_setup_sha256"],
             "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732",
         )
+        self.assertEqual(
+            contract["webview2_installer_sha256"],
+            "82b2d8a7013e0c0ea15d48ff4742ee3778ba16bd8b7b4a47876645b3e48d4016",
+        )
         manifest = (WINDOWS_ROOT / "wheelhouse-sha256-v1.txt").read_text(
             encoding="ascii"
         ).splitlines()
@@ -88,11 +104,16 @@ class VerifyWindowsBuildInputsTests(unittest.TestCase):
         build_script = (WINDOWS_ROOT / "build_windows.ps1").read_text(encoding="utf-8")
         self.assertIn('Join-Path $KitRoot "Windows-Tools\\python-3.12.10-amd64.exe"', build_script)
         self.assertIn('Join-Path $KitRoot "Windows-Tools\\innosetup-6.7.3.exe"', build_script)
+        self.assertIn("MicrosoftEdgeWebView2RuntimeInstallerX64.exe", build_script)
         self.assertIn('Join-Path $KitRoot "Windows-Wheelhouse"', build_script)
         self.assertIn("Assert-OfflineWheelhouse", build_script)
         self.assertNotIn("Invoke-WebRequest", build_script)
         self.assertIn("Get-AuthenticodeSignature", build_script)
         self.assertIn('SignerCertificate.Subject -notmatch "Pyrsys B\\.V\\."', build_script)
+        self.assertIn("--frozen-smoke", build_script)
+        inno_script = (WINDOWS_ROOT / "AutoResearch.iss").read_text(encoding="utf-8")
+        self.assertIn("WebView2RuntimeInstalled", inno_script)
+        self.assertIn("/silent /install", inno_script)
 
     def test_inno_version_gate_uses_the_compiler_preprocessor_authority(self) -> None:
         build_script = (WINDOWS_ROOT / "build_windows.ps1").read_text(encoding="utf-8")

@@ -9,6 +9,7 @@
 - 官方 v1 资料包为 `auto-research-internal-evidence-1.0.0.aresearch`，SHA-256 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`；包含 60 篇论文元数据和 4,356 条四类实体（item 3,142 / finding 936 / table 46 / figure 232），不含 PDF、图片、私人实验、路径或密钥。其签名身份与 rights 仍是受保护的课题组内部发布者契约，不能改写成公开再分发许可。
 - 生产 SQLite 在本轮开发与测试前后 SHA-256 均为 `d3e225d35f4c9e21fcf825405d0e38f28210c4479caac67b87be9f8382fb6f72`。科学完成度仍独立为 17/50 data-ready、30/50 visual-ready；软件稳定不代表语料完成或有人类金标准验证。
 - 发布边界：v1 是 Apple Silicon macOS 课题组稳定版；当前机器没有 Developer ID 身份，因此采用 ad-hoc 签名、未公证，首次打开需遵循中文指南中的 Gatekeeper 安全步骤。Windows 仍无 Setup，必须等用户明确下令后才恢复迁移。
+- Windows v1 RC 已在用户明确下令后恢复，源码修复提交 `ff7b5d2` 关闭了 Windows 二进制模式、Python 3.12 `fchmod`、Defender 文件锁、冻结资源定位、Win32 进程探测、WebView2 离线部署、保留文件名/ADS与重解析点等平台差异。平台定向契约170项及真实v1官方包冻结输入审计通过；新的全离线Build Kit尚待重打并由用户在真实Win11生成Setup，因此仍是`installer_ready=false / SETUP_PRESENT=NO`。
 - 当前 `/Applications/Auto Research.app` 在 v1 安装事务完成前仍是 0.9.2/build21。构建、安装、DMG、标签和 UserKit 哈希只有在干净发布工作区及最终验收报告绑定同一提交后才可写入本节；不要提前把源码候选描述为已安装制品。
 
 以下 0.9/0.8 内容仅作历史回退与决策记录，不再是当前功能说明。
