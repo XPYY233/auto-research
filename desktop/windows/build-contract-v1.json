@@ -1,7 +1,7 @@
 {
   "contract": "auto-research-windows-build-v1",
   "candidate_version": "1.0.0-windows.rc.1",
-  "shared_source_commit": "1e6e329b5fe48927c86011e0d2f748fc99429afb",
+  "shared_source_commit": "1e6e329401bfd4c657a6c055c694a888660776b1",
   "shared_core_version": "1.0.0",
   "python_version": "3.12.10",
   "python_installer_url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe",
