@@ -11,7 +11,7 @@
   "inno_setup_sha256": "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732",
   "locked_files": {
     "version.json": "e33afaa843498bc493f0be16025124a48cee71ead1d08dcfa75fef0deff1eb5a",
-    "build_windows.ps1": "09b7ee5bfc2f7a655ab2504d0ee2012b74d0eacb9887e1f27e30120c13822c55",
+    "build_windows.ps1": "db48858f42f4f78ee068c5ab5810bae08a54e5a8c8502e43e27edeb0bd4e54d0",
     "Build-Windows-Preview.cmd": "682f319bc007ac8ef0aa8ac75fb824356f58c0cd99bec88f86f3c1138f51e7ec",
     "requirements-windows-x64.lock": "09c278a27059e1836c33833428dc802006d9e1d596596c6b0e22f1ccb50f5dd8",
     "wheelhouse-sha256-v1.txt": "90d2b5d8301d87ade70be86f5e88dcb7656fe1b18c148df17ecc8298da5668bd",

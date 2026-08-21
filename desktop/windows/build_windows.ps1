@@ -38,6 +38,20 @@ function Assert-FileSha256([string]$Path, [string]$Expected, [string]$Label) {
     }
 }
 
+function Assert-InnoSetup673Version([string]$Path, [string]$Label) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "$Label is missing. Re-extract the complete Windows Build Kit."
+    }
+    $VersionInfo = (Get-Item -LiteralPath $Path).VersionInfo
+    if (
+        $VersionInfo.FileMajorPart -ne 6 -or
+        $VersionInfo.FileMinorPart -ne 7 -or
+        $VersionInfo.FileBuildPart -ne 3
+    ) {
+        throw "$Label is not the locked 6.7.3 release."
+    }
+}
+
 function Assert-OfflineWheelhouse() {
     if (-not (Test-Path -LiteralPath $WheelhouseManifest -PathType Leaf)) {
         throw "The offline wheelhouse manifest is missing."
@@ -175,9 +189,7 @@ try {
             $InnoSignature.Status -ne "Valid" -or
             $InnoSignature.SignerCertificate.Subject -notmatch "Pyrsys B\.V\."
         ) { throw "The Inno Setup installer publisher identity is not trusted." }
-        if ((Get-Item $InnoInstaller).VersionInfo.ProductVersion -notlike "6.7.3*") {
-            throw "The bundled Inno Setup installer is not version 6.7.3."
-        }
+        Assert-InnoSetup673Version $InnoInstaller "The bundled Inno Setup installer"
         $InnoProcess = Start-Process -FilePath $InnoInstaller -Wait -PassThru -ArgumentList @(
             "/VERYSILENT", "/CURRENTUSER", "/NORESTART", "/SP-", "/DIR=$InnoRoot"
         )
@@ -185,9 +197,7 @@ try {
             throw "The isolated Inno Setup compiler could not be installed."
         }
     }
-    if ((Get-Item $Iscc).VersionInfo.ProductVersion -notlike "6.7.3*") {
-        throw "The Inno Setup compiler is not the locked 6.7.3 release."
-    }
+    Assert-InnoSetup673Version $Iscc "The Inno Setup compiler"
 
     Write-Host "[4/8] Verifying source, shared Fusion assets, and the exact v1 package..."
     Push-Location $ProjectRoot
