@@ -36,6 +36,8 @@ SHA-256: d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d
 
 7. 同时保留根目录中的 `Windows-Build-Report.txt` 和 `Windows-Build-Report.json`。成功状态是 `RC_SETUP_BUILT_ACCEPTANCE_PENDING`，不是正式发布。
 
+两份报告中的 `SOURCE_COMMIT` 必须与套件根目录 `SOURCE_IDENTITY.txt` 一致；如果该文件缺失或源码身份格式不正确，构建会直接停止。
+
 若失败，不要自行安装开发环境。把两个 Build Report 和黑色窗口最后十行截图发回本 Windows 对话；报告不应包含 API key、PDF 内容或私人数据。
 
 ## 二、安装与安全提示

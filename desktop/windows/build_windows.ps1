@@ -21,6 +21,7 @@ $JsonReport = Join-Path $KitRoot "Windows-Build-Report.json"
 $PackageName = "auto-research-internal-evidence-1.0.0.aresearch"
 $ResolvedDependenciesHash = ""
 $PackageHash = ""
+$SourceCommit = ""
 
 function Write-Report([string]$Status, [string]$Detail, [string]$SetupPresent = "NO", [string]$SetupHash = "") {
     @(
@@ -29,6 +30,7 @@ function Write-Report([string]$Status, [string]$Detail, [string]$SetupPresent = 
         "DETAIL=$Detail"
         "SETUP_PRESENT=$SetupPresent"
         "SETUP_SHA256=$SetupHash"
+        "SOURCE_COMMIT=$SourceCommit"
         "OFFICIAL_PACKAGE_SHA256=$PackageHash"
         "RESOLVED_DEPENDENCIES_SHA256=$ResolvedDependenciesHash"
         "INSTALLER_READY=NO"
@@ -42,6 +44,7 @@ function Write-Report([string]$Status, [string]$Detail, [string]$SetupPresent = 
         candidate_version = "1.0.0-windows.rc.1"
         setup_present = ($SetupPresent -eq "YES")
         setup_sha256 = $SetupHash
+        source_commit = $SourceCommit
         official_package_sha256 = $PackageHash
         resolved_dependencies_sha256 = $ResolvedDependenciesHash
         installer_ready = $false
@@ -57,6 +60,18 @@ try {
     if (-not [Environment]::Is64BitOperatingSystem) {
         throw "Windows x64 is required."
     }
+
+    $SourceIdentityPath = Join-Path $KitRoot "SOURCE_IDENTITY.txt"
+    if (-not (Test-Path -LiteralPath $SourceIdentityPath -PathType Leaf)) {
+        throw "SOURCE_IDENTITY.txt is missing. Use the complete Windows Build Kit."
+    }
+    $SourceIdentityLine = Get-Content -LiteralPath $SourceIdentityPath | Where-Object {
+        $_ -match '^SOURCE_COMMIT=[0-9a-f]{40}$'
+    } | Select-Object -First 1
+    if (-not $SourceIdentityLine) {
+        throw "SOURCE_IDENTITY.txt does not contain a valid source commit."
+    }
+    $SourceCommit = ($SourceIdentityLine -split '=', 2)[1]
 
     $PackageCandidates = @(
         (Join-Path $KitRoot $PackageName),

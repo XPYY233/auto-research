@@ -40,4 +40,6 @@ python3 desktop/windows/build_plan.py
 4. 脚本使用 PyInstaller 冻结程序，再由 Inno Setup 生成 `Windows-Output\Auto-Research-1.0.0-windows.rc.1-Setup.exe`，并分别计算 Setup 与资料包 SHA-256。
 5. 将 `Windows-Build-Report.txt`、`Windows-Build-Report.json`、`Windows-Output\SHA256SUMS.txt` 发回本任务。此时仍是 `INSTALLER_READY=NO`。
 
+构建脚本还会读取套件根目录的 `SOURCE_IDENTITY.txt`，把确切源码提交写入两份 Build Report。缺少或损坏该文件时会停止构建，避免把来源不明的源码误报为候选安装包。
+
 只有冻结共享接口、生成真实 Setup，并在 Windows 11 clean machine 完成上述全流程后，才能改变 `installer_ready` 或向用户描述为 Windows 安装版。Mac 上的静态测试、backend parity 和构建资料夹都不能替代该门。
