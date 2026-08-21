@@ -26,7 +26,7 @@ SHA-256: d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d
 1. 把完整源码套件和上面的 `.aresearch` 文件下载到普通本地文件夹。OneDrive 图标必须已经不是云朵；不要在 ZIP 内直接双击。
 2. 不要预装 Python、Git、Node.js，不要关闭 Defender、SmartScreen 或防火墙。
 3. 双击 `desktop\windows\Build-Windows-Preview.cmd`。
-4. 第一次运行会联网下载 Python 3.12.10 与 Inno Setup 6.4.3。脚本会核对 Authenticode、发布者、固定版本，建立仅当前用户使用的隔离工具链。
+4. 第一次运行会联网下载 Python 3.12.10 与 Inno Setup 6.7.3。脚本会核对 Authenticode、发布者、固定版本，建立仅当前用户使用的隔离工具链。
 5. 脚本随后核对共享 Fusion 资源哈希、构建文件锁、完整解析后的 Python 依赖清单，以及上面 v1 资料包的字节哈希、Ed25519 签名、checksums、rights、`distribution-sqlite-v1` 审计和官方/私人隔离。
 6. 成功后打开 `Windows-Output`。应有：
 

@@ -10,9 +10,9 @@ $Python = Join-Path $ToolchainRoot "python.exe"
 $CacheRoot = Join-Path $BuildKitRoot "Downloads"
 $PythonInstaller = Join-Path $CacheRoot "python-3.12.10-amd64.exe"
 $PythonUrl = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
-$InnoRoot = Join-Path $BuildKitRoot "InnoSetup-6.4.3"
-$InnoInstaller = Join-Path $CacheRoot "innosetup-6.4.3.exe"
-$InnoUrl = "https://files.jrsoftware.org/is/6/innosetup-6.4.3.exe"
+$InnoRoot = Join-Path $BuildKitRoot "InnoSetup-6.7.3"
+$InnoInstaller = Join-Path $CacheRoot "innosetup-6.7.3.exe"
+$InnoUrl = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe"
 $Iscc = Join-Path $InnoRoot "ISCC.exe"
 $OutputRoot = Join-Path $KitRoot "Windows-Output"
 $WorkRoot = Join-Path $BuildKitRoot "Work"
@@ -111,10 +111,10 @@ try {
         $InnoSignature = Get-AuthenticodeSignature -FilePath $InnoInstaller
         if (
             $InnoSignature.Status -ne "Valid" -or
-            $InnoSignature.SignerCertificate.Subject -notmatch "Open Source Developer, Martijn Laan"
+            $InnoSignature.SignerCertificate.Subject -notmatch "Pyrsys B\.V\."
         ) { throw "The Inno Setup installer publisher identity is not trusted." }
-        if ((Get-Item $InnoInstaller).VersionInfo.ProductVersion -notlike "6.4.3*") {
-            throw "The downloaded Inno Setup installer is not version 6.4.3."
+        if ((Get-Item $InnoInstaller).VersionInfo.ProductVersion -notlike "6.7.3*") {
+            throw "The downloaded Inno Setup installer is not version 6.7.3."
         }
         $InnoProcess = Start-Process -FilePath $InnoInstaller -Wait -PassThru -ArgumentList @(
             "/VERYSILENT", "/CURRENTUSER", "/NORESTART", "/SP-", "/DIR=$InnoRoot"
@@ -123,8 +123,8 @@ try {
             throw "The isolated Inno Setup compiler could not be installed."
         }
     }
-    if ((Get-Item $Iscc).VersionInfo.ProductVersion -notlike "6.4.3*") {
-        throw "The Inno Setup compiler is not the locked 6.4.3 release."
+    if ((Get-Item $Iscc).VersionInfo.ProductVersion -notlike "6.7.3*") {
+        throw "The Inno Setup compiler is not the locked 6.7.3 release."
     }
 
     Write-Host "[4/8] Verifying source, shared Fusion assets, and the exact v1 package..."

@@ -36,7 +36,7 @@ python3 desktop/windows/build_plan.py
 
 1. 把整个预览 ZIP 解压到本机普通目录；不要在压缩包内直接运行。
 2. 双击 `desktop\windows\Build-Windows-Preview.cmd`，或在 PowerShell 中运行 `desktop\windows\build_windows.ps1`。
-3. 脚本在 `%LOCALAPPDATA%\AutoResearchBuildKit\v1` 建立隔离 Python 3.12.10 和 Inno Setup 6.4.3，核对签名发布者、固定版本、依赖解析、共享资源及 v1 官方包。
+3. 脚本在 `%LOCALAPPDATA%\AutoResearchBuildKit\v1` 建立隔离 Python 3.12.10 和 Inno Setup 6.7.3，核对签名发布者、固定版本、依赖解析、共享资源及 v1 官方包。
 4. 脚本使用 PyInstaller 冻结程序，再由 Inno Setup 生成 `Windows-Output\Auto-Research-1.0.0-windows.rc.1-Setup.exe`，并分别计算 Setup 与资料包 SHA-256。
 5. 将 `Windows-Build-Report.txt`、`Windows-Build-Report.json`、`Windows-Output\SHA256SUMS.txt` 发回本任务。此时仍是 `INSTALLER_READY=NO`。
 
