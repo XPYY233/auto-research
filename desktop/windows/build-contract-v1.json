@@ -14,7 +14,7 @@
     "requirements-windows-x64.lock": "2a89655936c40f31b7b8116193debd6ba2373ea5a9022c9ce334a008a555991e",
     "AutoResearch.spec": "cf0b34615eb590af4fe46a5dc5c9887586124b1dd14d8f456e93074b6c962b2c",
     "AutoResearch.iss": "06d939cf2283381fa5e7318f0da049e1932ae89fb78030386ce745bc59f83ea8",
-    "verify_build_inputs.py": "e04745bb52588f1ff927c19be4d675b5da672da954a967735341250a8f108b5a",
+    "verify_build_inputs.py": "96408b5977f6bb9f993e2fce7ea5b5b6502c513da6d380cca0244494d17ce7bd",
     "finalize_runtime_candidate.py": "4bd952aaa56aa91cb2310fd7f441fe82497cd2ad12d2f869800f205e39e736a3",
     "v1_package_contract.py": "3f7cb84a97fb15480e991d04345dcdc353863e537ade9aa2ff4701accfee1b9a",
     "official-package-v1.json": "8f9a3951371d67af72b85ea085f646f9181cc38f68b15cfc1be04333f8922a19",

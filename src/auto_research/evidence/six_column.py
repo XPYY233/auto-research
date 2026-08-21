@@ -5,6 +5,7 @@ import difflib
 import hashlib
 import json
 import math
+import os
 import re
 import uuid
 from dataclasses import dataclass, replace
@@ -27,7 +28,12 @@ TARGET_ZOTERO_KEY = "JIKJJZ33"
 TARGET_LOCAL_ARTICLE_KEY = "XJZQ42XP"
 TARGET_FIRST_AUTHOR = "Wei-Ying Chen"
 TARGET_CORRESPONDING_AUTHOR = "Wei-Ying Chen"
-TARGET_PDF_PATH = Path("/Users/USER/Zotero/storage/XJZQ42XP/Chen 等 - 2018 - Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C.pdf")
+TARGET_PDF_PATH = Path(
+    os.environ.get(
+        "AUTO_RESEARCH_TARGET_PDF_PATH",
+        str(DATA_DIR / "pdfs" / f"{TARGET_LOCAL_ARTICLE_KEY}.pdf"),
+    )
+)
 TARGET_EXPORT = DATA_DIR / "extractions" / "XJZQ42XP_six_column_original.csv"
 SEARCH_FIELD_WEIGHTS = {
     "meaning": 6.0,

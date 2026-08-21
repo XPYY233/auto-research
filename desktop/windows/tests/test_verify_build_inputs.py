@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -31,6 +32,20 @@ class VerifyWindowsBuildInputsTests(unittest.TestCase):
         self.assertEqual(version["desktop_version"], "1.0.0-windows.rc.1")
         self.assertFalse(version["installer_ready"])
         self.assertFalse(version["setup_present"])
+
+    def test_release_source_has_no_maintainer_path_or_secret_assignment(self) -> None:
+        MODULE._assert_no_release_sensitive_literals(PROJECT_ROOT)
+
+    def test_sensitive_literal_scan_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "src" / "auto_research" / "unsafe.py"
+            target.parent.mkdir(parents=True)
+            forbidden_path = "/Users/" + "researcher/private"
+            target.write_text(f'PATH = "{forbidden_path}"\n', encoding="utf-8")
+            (root / "desktop" / "windows").mkdir(parents=True)
+            with self.assertRaises(MODULE.WindowsBuildInputError):
+                MODULE._assert_no_release_sensitive_literals(root)
 
 
 if __name__ == "__main__":

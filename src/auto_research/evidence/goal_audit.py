@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,12 @@ from .self_check import check_evidence_workflow
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 GOAL_AUDIT_DIR = DATA_DIR / "evidence" / "goal_audits"
-DEFAULT_BUNDLE_DIR = Path("/Users/USER/Zotero/auto-research-backups")
+DEFAULT_BUNDLE_DIR = Path(
+    os.environ.get(
+        "AUTO_RESEARCH_BACKUP_DIR",
+        str(Path.home() / "auto-research-backups"),
+    )
+)
 DEFAULT_CORPUS_AUDIT = PROJECT_ROOT / "data" / "evidence" / "test_sets" / "full-corpus-50-v1_audit.json"
 INITIAL_COMPLETED_PAPER_TARGET = 30
 
