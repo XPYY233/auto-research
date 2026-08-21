@@ -103,7 +103,7 @@ def _read_stable_pdf_snapshot(pdf_path: str) -> _StablePDFSnapshot:
     """Read one regular, non-symlink PDF through one verified descriptor."""
 
     path = Path(pdf_path).expanduser()
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
     flags |= getattr(os, "O_CLOEXEC", 0)
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     if nofollow:

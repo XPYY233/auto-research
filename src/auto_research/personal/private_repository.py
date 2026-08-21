@@ -327,11 +327,12 @@ class PrivateExperimentRepository:
                 details={"operation": "initialize"},
             )
         no_follow = getattr(os, "O_NOFOLLOW", 0)
+        binary = getattr(os, "O_BINARY", 0)
         created = False
         try:
             fd = os.open(
                 self.database_path,
-                os.O_RDWR | os.O_CREAT | os.O_EXCL | no_follow,
+                os.O_RDWR | os.O_CREAT | os.O_EXCL | binary | no_follow,
                 0o600,
             )
             created = True
@@ -343,7 +344,7 @@ class PrivateExperimentRepository:
                     details={"operation": "initialize"},
                 )
             try:
-                fd = os.open(self.database_path, os.O_RDWR | no_follow)
+                fd = os.open(self.database_path, os.O_RDWR | binary | no_follow)
             except OSError:
                 raise _failure(
                     "PRIVATE_DB_UNSAFE",
@@ -491,8 +492,9 @@ class PrivateExperimentRepository:
 
     def _prepare_existing_database_for_access(self) -> None:
         no_follow = getattr(os, "O_NOFOLLOW", 0)
+        binary = getattr(os, "O_BINARY", 0)
         try:
-            fd = os.open(self.database_path, os.O_RDONLY | no_follow)
+            fd = os.open(self.database_path, os.O_RDONLY | binary | no_follow)
         except OSError:
             raise _failure(
                 "PRIVATE_DB_UNSAFE",
@@ -756,7 +758,13 @@ class PrivateExperimentRepository:
         temporary: Path,
         source: PersonalSourceFile,
     ) -> None:
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
         descriptor = os.open(temporary, flags, 0o600)
         try:
             digest = hashlib.sha256()

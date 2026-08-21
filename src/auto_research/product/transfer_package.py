@@ -429,7 +429,11 @@ def _inspect_source(
     source = _absolute_without_resolving(source_value)
     descriptor = -1
     try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
         descriptor = os.open(source, flags)
         source_stat = os.fstat(descriptor)
         if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_size <= 0:
@@ -793,11 +797,23 @@ def _copy_plan_sources(plan: TransferPackagePlan, root: Path) -> dict[str, Path]
         digest = hashlib.sha256()
         size = 0
         try:
-            source_fd = os.open(entry.source_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            source_fd = os.open(
+                entry.source_path,
+                os.O_RDONLY
+                | getattr(os, "O_BINARY", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
             source_stat = os.fstat(source_fd)
             if not stat.S_ISREG(source_stat.st_mode):
                 raise TransferPackageError("transfer_source_invalid", "待传输文件不再安全")
-            destination_fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            destination_fd = os.open(
+                target,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_BINARY", 0),
+                0o600,
+            )
             while True:
                 chunk = os.read(source_fd, 1024 * 1024)
                 if not chunk:
@@ -918,7 +934,11 @@ def export_transfer_package_with_checksum(
         line = f"{exported.package_sha256}  {output.name}\n".encode("ascii")
         descriptor = os.open(
             temporary_sidecar,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_CLOEXEC", 0),
             0o600,
         )
         try:
@@ -1271,11 +1291,23 @@ def _snapshot_transfer_package(source: Path, staging_root: Path) -> tuple[Path, 
     snapshot = operation / "source.aresearch"
     source_fd = snapshot_fd = -1
     try:
-        source_fd = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        source_fd = os.open(
+            source,
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
         source_stat = os.fstat(source_fd)
         if not stat.S_ISREG(source_stat.st_mode):
             raise TransferPackageError("transfer_not_package", "请选择普通传输包文件")
-        snapshot_fd = os.open(snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        snapshot_fd = os.open(
+            snapshot,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_BINARY", 0),
+            0o600,
+        )
         copied = 0
         while True:
             chunk = os.read(source_fd, 1024 * 1024)

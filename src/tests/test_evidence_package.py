@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -169,6 +171,35 @@ class EvidencePackageTests(unittest.TestCase):
         self.assertTrue(repeated.already_installed)
         self.assertEqual(repeated.outcome, "already_active")
         self.assertEqual(repeated.active_state_path.read_bytes(), active_before)
+
+    def test_package_snapshot_requests_binary_file_descriptors_on_windows(self) -> None:
+        source = self.root / "binary-mode.aresearch"
+        payload = b"PK\x03\x04\r\n\x1a\narchive-bytes"
+        source.write_bytes(payload)
+        binary_flag = 0x8000
+        observed_flags: list[int] = []
+        real_open = os.open
+
+        def open_without_platform_only_flag(path, flags, mode=0o777):
+            observed_flags.append(flags)
+            return real_open(path, flags & ~binary_flag, mode)
+
+        with mock.patch.object(package_module.os, "O_BINARY", binary_flag, create=True):
+            with mock.patch.object(
+                package_module.os,
+                "open",
+                side_effect=open_without_platform_only_flag,
+            ):
+                operation, snapshot = package_module._snapshot_package(
+                    source,
+                    self.root / "binary-staging",
+                )
+        try:
+            self.assertEqual(snapshot.read_bytes(), payload)
+            self.assertEqual(len(observed_flags), 2)
+            self.assertTrue(all(flags & binary_flag for flags in observed_flags))
+        finally:
+            shutil.rmtree(operation, ignore_errors=True)
 
     def test_untrusted_signer_is_rejected(self) -> None:
         package = self.build()

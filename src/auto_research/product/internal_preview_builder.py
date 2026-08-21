@@ -153,7 +153,12 @@ def load_approved_paper_uids(path: Path | str) -> frozenset[str]:
     source = Path(path).expanduser()
     descriptor = -1
     try:
-        descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        descriptor = os.open(
+            source,
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 2 * 1024 * 1024:
             raise RuntimeError("批准论文清单不存在或不安全")
@@ -199,7 +204,11 @@ def initialize_preview_signing_key(path: Path | str) -> Ed25519PrivateKey:
         format=serialization.PrivateFormat.Raw,
         encryption_algorithm=serialization.NoEncryption(),
     )
-    descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    descriptor = os.open(
+        key_path,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+        0o600,
+    )
     try:
         view = memoryview(raw)
         while view:
@@ -223,7 +232,11 @@ def load_preview_signing_key(path: Path | str) -> Ed25519PrivateKey:
     key_path = Path(path).expanduser()
     if key_path.is_symlink() or not key_path.exists():
         raise RuntimeError("内部预览签名密钥不存在或路径不安全")
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
     try:
         descriptor = os.open(key_path, flags)
     except OSError as exc:

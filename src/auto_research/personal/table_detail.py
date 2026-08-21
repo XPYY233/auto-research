@@ -233,7 +233,11 @@ class PersonalTableDetailService:
             raise PersonalTableError("personal_table_unavailable") from None
         if expected_size < 0 or expected_size > self._limits.max_file_bytes:
             raise PersonalTableError("personal_table_invalid")
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
         try:
             fd = os.open(Path(path), flags)
         except OSError as exc:

@@ -46,7 +46,12 @@ def _fail(code: str, message: str) -> TransferPackageError:
 
 
 def _sha256_file(path: Path) -> str:
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
     digest = hashlib.sha256()
     try:
         descriptor = os.open(path, flags)
@@ -82,7 +87,12 @@ def _sha256_file(path: Path) -> str:
 
 
 def _read_file_prefix(path: Path, size: int) -> bytes:
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
     try:
         descriptor = os.open(path, flags)
         metadata = os.fstat(descriptor)

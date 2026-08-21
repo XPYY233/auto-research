@@ -43,7 +43,11 @@ class WindowsAtomicDesktopSettingsStore:
             raise OSError("desktop settings file is unsafe")
         if metadata.st_size > MAX_SETTINGS_FILE_BYTES:
             raise OSError("desktop settings file is too large")
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
         descriptor = os.open(self.path, flags)
         try:
             opened = os.fstat(descriptor)

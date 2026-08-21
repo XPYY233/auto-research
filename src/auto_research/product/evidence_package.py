@@ -604,14 +604,22 @@ def _snapshot_package(source_path: Path | str, staging_parent: Path) -> tuple[Pa
     source_fd = -1
     snapshot_fd = -1
     try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
         source_fd = os.open(source, flags)
         source_stat = os.fstat(source_fd)
         if not stat.S_ISREG(source_stat.st_mode):
             raise EvidencePackageError("not_package", "请选择普通的 .aresearch 文件")
         if source_stat.st_size <= 0 or source_stat.st_size > MAX_PACKAGE_BYTES:
             raise EvidencePackageError("package_size", "资料包为空或超过安全上限")
-        snapshot_fd = os.open(snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        snapshot_fd = os.open(
+            snapshot,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+            0o600,
+        )
         copied = 0
         while True:
             chunk = os.read(source_fd, 1024 * 1024)
@@ -1060,7 +1068,11 @@ def build_evidence_package(
             digest = hashlib.sha256()
             copied = 0
             try:
-                flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                flags = (
+                    os.O_RDONLY
+                    | getattr(os, "O_BINARY", 0)
+                    | getattr(os, "O_NOFOLLOW", 0)
+                )
                 source_fd = os.open(source, flags)
                 source_stat = os.fstat(source_fd)
                 if not stat.S_ISREG(source_stat.st_mode):
@@ -1068,7 +1080,12 @@ def build_evidence_package(
                         "missing_source", f"待打包文件不存在或不安全：{name}"
                     )
                 destination_fd = os.open(
-                    snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+                    snapshot,
+                    os.O_WRONLY
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_BINARY", 0),
+                    0o600,
                 )
                 while True:
                     chunk = os.read(source_fd, 1024 * 1024)

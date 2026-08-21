@@ -79,6 +79,7 @@ This project is a local literature automation workflow for fusion materials, rad
 - 共享接口顺序固定为 core freeze → macOS thin wiring/targeted acceptance → Windows thin parity。Windows 在真实 Win11 Setup/安装/导包/搜索/上传/BYOK 验收前保持 `installer_ready=false / SETUP_PRESENT=NO`。
 - 多对话协作使用项目已有 Codex 对话，不由 root 随意新建子 agent。root 唯一 stage/commit；其他对话只编辑明确文件并停手报告。电脑发热时最多两个开发对话，禁止并行全测、构建、App 和模型调用。
 - 前端重构必须删除被新工作台取代的旧选择器/DOM 所有权，不能在 `app.css` 尾部叠加第三套皮肤。personal/package 静态归位；主导航唯一 owner；异步完成不得抢页或滚动。
+- 跨平台代码用 `os.open` 读取或写入归档、PDF、CSV/TSV/XLSX、SQLite、密钥或设置等文件字节时，flags 必须包含 `getattr(os, "O_BINARY", 0)`；仅用于目录 `fsync` 的描述符除外。Windows CRT 文本模式会翻译或截断二进制流，不能依靠 macOS/Linux 测试推断可移植性。
 
 ## Current acquisition capability summary
 
