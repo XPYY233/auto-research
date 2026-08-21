@@ -9,9 +9,9 @@
       "target": "macOS arm64 Auto Research workbench"
     },
     "windows": {
-      "desktop_version": "0.8.0-internal.1",
+      "desktop_version": "1.0.0-windows.rc.1",
       "installer_ready": false,
-      "target": "Windows 11 x64 development skeleton"
+      "target": "Windows 11 x64 release candidate"
     }
   },
   "http_contract": {

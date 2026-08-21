@@ -228,8 +228,11 @@ class WindowsCompositionRoot:
         guard_factory: GuardFactory | None = None,
         compatibility_detector: CompatibilityDetector = detect_windows_compatibility,
     ) -> None:
-        if not current_app_version or "internal" not in current_app_version.casefold():
-            raise WindowsCompositionError("Windows 组合根当前只允许 internal development 版本")
+        identity = str(current_app_version).casefold()
+        if not current_app_version or not (
+            "internal" in identity or "windows.rc" in identity
+        ):
+            raise WindowsCompositionError("Windows 组合根当前只允许未验收的 internal/RC 版本")
         self.path_runtime = path_runtime
         self.current_app_version = current_app_version
         self.release_contract = release_contract or self._load_release_contract()
@@ -388,7 +391,7 @@ class WindowsCompositionRoot:
                 services=services,
                 release={
                     "label": "Windows internal development",
-                    "version": self.release_contract.windows_version,
+                    "version": self.current_app_version,
                     "evidence_schema": "distribution-sqlite-v1",
                 },
                 **kwargs,

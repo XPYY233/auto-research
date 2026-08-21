@@ -22,8 +22,8 @@ class WindowsBuildPlanTests(unittest.TestCase):
         path.write_text(
             json.dumps(
                 {
-                    "desktop_version": "0.1.0-dev.1",
-                    "target": "Windows 11 x64 development skeleton",
+                    "desktop_version": "1.0.0-windows.rc.1",
+                    "target": "Windows 11 x64 release candidate",
                     "distribution_schema": 1,
                     "bundle_contract_version": 1,
                     "installer_ready": ready,

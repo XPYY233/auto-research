@@ -1,0 +1,24 @@
+{
+  "contract": "auto-research-windows-official-package-v1",
+  "file_name": "auto-research-internal-evidence-1.0.0.aresearch",
+  "sha256": "d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d",
+  "package_id": "auto-research-internal-evidence",
+  "package_version": "1.0.0",
+  "signer_key_id": "auto-research-internal-preview-2026-v1",
+  "database_contract": "distribution-sqlite-v1",
+  "distribution_schema": 1,
+  "identity_version": 1,
+  "minimum_app_version": "0.6.0",
+  "maximum_app_version_exclusive": "2.0.0",
+  "content_fingerprint": "822cd4c6610f51f4f3be88264658e8b1f317e58745137e901f024fea23d8ebe0",
+  "counts": {
+    "papers": 60,
+    "entities": 4356,
+    "items": 3142,
+    "findings": 936,
+    "tables": 46,
+    "figures": 232
+  },
+  "official_private_isolation": true,
+  "remake_required": false
+}

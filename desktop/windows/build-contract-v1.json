@@ -1,0 +1,29 @@
+{
+  "contract": "auto-research-windows-build-v1",
+  "candidate_version": "1.0.0-windows.rc.1",
+  "shared_source_commit": "eef4e28ca01299bee5ff4c676b1078029dd6ed87",
+  "shared_core_version": "1.0.0",
+  "python_version": "3.12.10",
+  "python_installer_url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe",
+  "inno_setup_version": "6.4.3",
+  "inno_setup_url": "https://files.jrsoftware.org/is/6/innosetup-6.4.3.exe",
+  "locked_files": {
+    "version.json": "e33afaa843498bc493f0be16025124a48cee71ead1d08dcfa75fef0deff1eb5a",
+    "build_windows.ps1": "df61dc1f34c65c1a9b6d1b0a460dd0977451cf3736160279ce042f6b7625659e",
+    "Build-Windows-Preview.cmd": "682f319bc007ac8ef0aa8ac75fb824356f58c0cd99bec88f86f3c1138f51e7ec",
+    "requirements-windows-x64.lock": "2a89655936c40f31b7b8116193debd6ba2373ea5a9022c9ce334a008a555991e",
+    "AutoResearch.spec": "cf0b34615eb590af4fe46a5dc5c9887586124b1dd14d8f456e93074b6c962b2c",
+    "AutoResearch.iss": "06d939cf2283381fa5e7318f0da049e1932ae89fb78030386ce745bc59f83ea8",
+    "verify_build_inputs.py": "e04745bb52588f1ff927c19be4d675b5da672da954a967735341250a8f108b5a",
+    "finalize_runtime_candidate.py": "4bd952aaa56aa91cb2310fd7f441fe82497cd2ad12d2f869800f205e39e736a3",
+    "v1_package_contract.py": "3f7cb84a97fb15480e991d04345dcdc353863e537ade9aa2ff4701accfee1b9a",
+    "official-package-v1.json": "8f9a3951371d67af72b85ea085f646f9181cc38f68b15cfc1be04333f8922a19",
+    "launcher.py": "e2307ed49b53f7c11ea71dbed766c2341300614016a716508f68eedb0d6c5a91",
+    "composition_root.py": "1e5753c5679d8f819b31068d4d3b017d8e3ede4c88fc3324e17058f829136c5d",
+    "shared_http_bridge.py": "7a2d6547005ae25456ecec7664fd79b71f26b63c19c16a3393bd2c88afa85b96",
+    "production-dependencies.json": "e8a864fdbbba29b55a5cfc9ec8045082d79002eb9c4cb35ef4424140ac2f1d2c",
+    "architecture-migration-contract.json": "21745f3f05cfb663f3aee2114db9d8abcf3edaa2f46de6927f64292407e90167"
+  },
+  "installer_ready": false,
+  "setup_present_before_windows_build": false
+}

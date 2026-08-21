@@ -1,0 +1,6 @@
+cryptography==48.0.0
+PyMuPDF==1.28.0
+PyYAML==6.0.3
+requests==2.34.2
+pywebview==6.2.1
+pyinstaller==6.18.0

@@ -2,7 +2,7 @@
   "contract_version": 1,
   "architecture_migration_contract": "architecture-migration-contract.json",
   "release_status": "internal-development",
-  "dependency_closure_status": "0.8-ai-settings-and-prepared-contract-wired-preview-validation-pins-recorded-pending-scientific-workspace-resolver-win11-wheelhouse-build-and-setup",
+  "dependency_closure_status": "v1-fusion-assets-and-official-package-contract-wired-pending-scientific-workspace-resolver-win11-build-install-smoke",
   "target": "windows-11-x64",
   "python": "3.12.x-x64-bundled",
   "windows_modules": [
@@ -42,7 +42,10 @@
   "build_gate_modules": [
     "build_plan",
     "clean_machine_acceptance",
-    "runtime_bundle"
+    "runtime_bundle",
+    "verify_build_inputs",
+    "finalize_runtime_candidate",
+    "v1_package_contract"
   ],
   "shared_runtime_modules": [
     "auto_research.desktop.application_facade",
@@ -77,12 +80,8 @@
     "index.html",
     "app.css",
     "ai_consent.js",
-    "app.js",
-    "desktop_product.js",
-    "package_center.js",
     "workbench.css",
-    "workbench.js",
-    "librarian_brief.js"
+    "fusion_review.js"
   ],
   "external_runtime_components": [
     "cryptography",
@@ -109,7 +108,8 @@
     "package_center_runtime": "fail-closed-pending-safe-v12-private-resolvers-and-transfer-activation",
     "package_center_shared_web_asset": "package_center.js-frozen-shared-resource",
     "desktop_settings_runtime": "desktop-settings-v1-windows-atomic-store-wired",
-    "shared_release_contract": "windows-0.8.0-internal.1-consumed"
+    "shared_release_contract": "requires-exact-1.0.0-windows.rc.1-root-sync",
+    "fusion_scientific_workspace": "fail-closed-pending-windows-production-resolver-for-literature-visual-pdf-upload-extract-export-librarian"
   },
   "must_exclude_before_candidate": [
     "auto_research.product.internal_preview_builder",

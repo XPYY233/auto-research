@@ -1,6 +1,6 @@
 {
-  "desktop_version": "0.8.0-internal.1",
-  "target": "Windows 11 x64 development skeleton",
+  "desktop_version": "1.0.0-windows.rc.1",
+  "target": "Windows 11 x64 release candidate",
   "primary_os": "Windows 11 x64",
   "legacy_compatibility_os": "Windows 10 22H2 x64",
   "minimum_windows_build": 19045,
@@ -11,5 +11,7 @@
   "bundled_python_runtime": true,
   "requires_user_environment_setup": false,
   "first_run_entry": "import-evidence-package",
-  "installer_ready": false
+  "installer_ready": false,
+  "setup_present": false,
+  "acceptance_state": "requires-windows-11-build-install-smoke"
 }

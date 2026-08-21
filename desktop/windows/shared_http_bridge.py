@@ -63,6 +63,10 @@ _STATIC_FILES = {
         "ai_consent.js",
         "application/javascript; charset=utf-8",
     ),
+    "/static/fusion_review.js": (
+        "fusion_review.js",
+        "application/javascript; charset=utf-8",
+    ),
     "/static/app.js": ("app.js", "application/javascript; charset=utf-8"),
     "/static/desktop_product.js": (
         "desktop_product.js",

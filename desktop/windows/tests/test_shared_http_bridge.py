@@ -609,49 +609,31 @@ class SharedHttpBridgeTests(unittest.TestCase):
         self.assertEqual(no_store, "no-store")
         self.assertTrue(body.startswith(b"%PDF-"))
 
-    def test_shared_workbench_exposes_three_primary_destinations_and_personal_picker(self) -> None:
+    def test_shared_fusion_workbench_exposes_four_primary_destinations(self) -> None:
         status, index, no_store = self._get_text("/index.html")
         self.assertEqual(status, 200)
         self.assertEqual(no_store, "no-store")
-        for destination in ("paper", "search", "personal"):
+        for destination in ("paper", "search", "personal", "package"):
             self.assertIn(f'data-view="{destination}"', index)
-        self.assertNotIn('class="nav" data-view="review"', index)
-        self.assertNotIn('class="nav" data-view="upload"', index)
-        self.assertIn("文献处理", index)
-        self.assertIn("搜索数据", index)
-        self.assertIn("上传实验数据", index)
+        self.assertIn("文献", index)
+        self.assertIn("搜索", index)
+        self.assertIn("实验", index)
+        self.assertIn("资料包", index)
         self.assertNotIn('data-view="manual"', index)
         self.assertNotIn('data-view="history"', index)
-        self.assertIn('id="view-review"', index)
-        self.assertIn('id="view-upload"', index)
-        self.assertIn('id="paper-upload-mount"', index)
+        self.assertIn('id="view-paper"', index)
+        self.assertIn('id="fusion-import-pdf"', index)
+        self.assertIn('id="fusion-start-extraction"', index)
+        self.assertIn('id="fusion-open-librarian"', index)
         self.assertIn('id="view-personal"', index)
-        self.assertIn('<section class="personal-import-panel" id="personal-import-panel"', index)
+        self.assertIn('id="fusion-select-data-file"', index)
         self.assertIn('id="view-package"', index)
+        self.assertNotIn('<script src="/static/app.js"></script>', index)
+        self.assertNotIn('<script src="/static/workbench.js"></script>', index)
         self.assertLess(
-            index.index('<script src="/static/desktop_product.js"></script>'),
-            index.index('<script src="/static/app.js"></script>'),
+            index.index('<script src="/static/ai_consent.js"></script>'),
+            index.index('<script src="/static/fusion_review.js"></script>'),
         )
-        self.assertLess(
-            index.index('<script src="/static/app.js"></script>'),
-            index.index('<script src="/static/workbench.js"></script>'),
-        )
-
-        status, product, no_store = self._get_text("/static/desktop_product.js")
-        self.assertEqual(status, 200)
-        self.assertEqual(no_store, "no-store")
-        self.assertIn("select_personal_data_file", product)
-        self.assertIn("openPersonalImport", product)
-        self.assertIn("personalPanel?.parentElement === personalView", product)
-        self.assertNotIn("personalView.appendChild(personalPanel)", product)
-        self.assertIn("authorizePreparedAIAction", product)
-        self.assertIn("executePreparedAIAction", product)
-        self.assertIn("reviewed-import", product)
-        self.assertNotIn("selected.selection.path", product)
-        status, package_center, no_store = self._get_text("/static/package_center.js")
-        self.assertEqual((status, no_store), (200, "no-store"))
-        self.assertIn("AutoResearchPackageCenter", package_center)
-        self.assertIn("/api/desktop/package-center/export", package_center)
         status, ai_consent, media_type, _disposition, no_store = self._get_bytes(
             "/static/ai_consent.js"
         )
@@ -660,7 +642,7 @@ class SharedHttpBridgeTests(unittest.TestCase):
         self.assertIn(b"AutoResearchAIConsent", ai_consent)
         for path, media_type in (
             ("/static/workbench.css", "text/css; charset=utf-8"),
-            ("/static/workbench.js", "application/javascript; charset=utf-8"),
+            ("/static/fusion_review.js", "application/javascript; charset=utf-8"),
         ):
             status, body, actual_type, _disposition, no_store = self._get_bytes(path)
             self.assertEqual((status, actual_type, no_store), (200, media_type, "no-store"))

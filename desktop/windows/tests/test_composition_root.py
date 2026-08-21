@@ -113,7 +113,9 @@ class FakeSharedBridge:
 
 
 class FakeReleaseContract:
-    windows_version = "0.8.0-internal.1"
+    windows_version = "1.0.0-windows.rc.1"
+    official_package_version = "1.0.0"
+    value = {"core_version": "1.0.0"}
 
     def platform_version(self, platform):
         if platform != "windows":
@@ -185,7 +187,7 @@ class CompositionRootTests(unittest.TestCase):
         self.backend = FakeCredentialBackend()
         self.root = MODULE.WindowsCompositionRoot(
             path_runtime=self.paths,
-            current_app_version="0.8.0-internal.1",
+            current_app_version="1.0.0-windows.rc.1",
             release_contract=FakeReleaseContract(),
             shared_http_bridge=self.shared,
             package_window_bridge=FakePicker(),
@@ -271,7 +273,7 @@ class CompositionRootTests(unittest.TestCase):
         self.assertEqual(self.shared.calls[0]["first_run_entry"], "import-evidence-package")
         self.assertEqual(
             self.shared.calls[0]["release"]["version"],
-            "0.8.0-internal.1",
+            "1.0.0-windows.rc.1",
         )
         self.assertGreaterEqual(len(self.shared.calls[0]["bootstrap_token"]), 32)
         self.assertIn("window-show", self.events)
@@ -281,7 +283,7 @@ class CompositionRootTests(unittest.TestCase):
     def test_unfrozen_shared_bridge_fails_before_credentials_server_or_window(self) -> None:
         root = MODULE.WindowsCompositionRoot(
             path_runtime=self.paths,
-            current_app_version="0.8.0-internal.1",
+            current_app_version="1.0.0-windows.rc.1",
             release_contract=FakeReleaseContract(),
             credential_backend=self.backend,
             package_probe=FakeProbe(),
@@ -297,7 +299,7 @@ class CompositionRootTests(unittest.TestCase):
     def test_unfrozen_package_picker_fails_before_server_or_window(self) -> None:
         root = MODULE.WindowsCompositionRoot(
             path_runtime=self.paths,
-            current_app_version="0.8.0-internal.1",
+            current_app_version="1.0.0-windows.rc.1",
             release_contract=FakeReleaseContract(),
             shared_http_bridge=self.shared,
             credential_backend=self.backend,
@@ -340,22 +342,19 @@ class CompositionRootTests(unittest.TestCase):
             manifest["shared_runtime_modules"],
         )
         self.assertIn("auto_research.product.package_center", manifest["shared_runtime_modules"])
-        self.assertIn("package_center.js", manifest["shared_web_assets"])
+        self.assertIn("fusion_review.js", manifest["shared_web_assets"])
+        self.assertNotIn("package_center.js", manifest["shared_web_assets"])
         self.assertIn("ai_consent.js", manifest["shared_web_assets"])
         self.assertIn("workbench.css", manifest["shared_web_assets"])
-        self.assertIn("workbench.js", manifest["shared_web_assets"])
+        self.assertIn("fusion_review.js", manifest["shared_web_assets"])
         self.assertEqual(
             set(manifest["shared_web_assets"]),
             {
                 "index.html",
                 "app.css",
                 "ai_consent.js",
-                "app.js",
-                "desktop_product.js",
-                "package_center.js",
-                "librarian_brief.js",
                 "workbench.css",
-                "workbench.js",
+                "fusion_review.js",
             },
         )
         self.assertNotIn(

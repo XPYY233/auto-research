@@ -23,7 +23,7 @@ class LauncherTests(unittest.TestCase):
             (WINDOWS_ROOT / "version.json").read_text(encoding="utf-8")
         )
         self.assertEqual(MODULE._internal_app_version(), version["desktop_version"])
-        self.assertIn("internal", version["desktop_version"])
+        self.assertIn("windows.rc", version["desktop_version"])
         self.assertFalse(version["installer_ready"])
 
     def test_launcher_fails_closed_without_real_windows_and_shared_bridge(self) -> None:

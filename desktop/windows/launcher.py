@@ -13,8 +13,9 @@ def _internal_app_version() -> str:
         plan.validate_contract()
     except WindowsBuildError as exc:
         raise WindowsCompositionError("Windows internal version contract is invalid") from exc
-    if "internal" not in plan.desktop_version.casefold() or plan.installer_ready:
-        raise WindowsCompositionError("Windows launcher is not an internal development build")
+    identity = plan.desktop_version.casefold()
+    if not ("internal" in identity or "windows.rc" in identity) or plan.installer_ready:
+        raise WindowsCompositionError("Windows launcher is not an unaccepted internal RC build")
     return plan.desktop_version
 
 

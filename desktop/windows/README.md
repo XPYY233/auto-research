@@ -1,8 +1,8 @@
 # Auto Research Windows 客户端
 
-这里是 Windows 正式用户端的平台适配目录。0.8 预版本已组合共享 Workbench 日/夜界面、设置存储、DeepSeek/OpenAI 分槽 Credential Manager、prepared-action AI 控制器、原生资料包与私人表格选择、签名资料包导入、官方/私人联合精确搜索、私人导入确认流程和 readiness v2。Windows 层只做平台生命周期与安全投影，不复制共享搜索、私人仓库、模型协议或 Agent 逻辑。
+这里是 Windows 正式用户端的平台适配目录。当前源码身份是 `1.0.0-windows.rc.1`：直接消费 macOS v1 的 Fusion 四区前端、稳定 DTO、签名官方包、联合搜索、私人导入和受控 AI 契约。Windows 层只做平台生命周期、安全投影、Credential Manager、WebView2 和安装器，不复制共享搜索、抽取、私人仓库、模型协议或 Agent 逻辑。
 
-这仍不是可交付安装包。`production-dependencies.json` 必须保持 `installer_ready=false`，当前没有 `Setup.exe`，也没有 Windows 11 clean-machine、WebView2、Credential Manager、升级/卸载或真实 DeepSeek 调用验收。旧 OneDrive 资料夹只表示 `BUILD KIT READY / SETUP_PRESENT=NO`。
+仓库中的状态仍是 `installer_ready=false / SETUP_PRESENT=NO`。Win11 用户双击构建入口后可以生成一个 **未验收 RC Setup**；只有完成安装、四区、同一 v1 包、上传/抽取、私人表格、导出、双 provider、重启、升级和卸载检查后，才可分享为安装版。
 
 正式安装包必须“开罐即用”：自带运行时和依赖，不要求用户配置开发环境；首次启动只需选择并导入 `.aresearch` 数据包。
 
@@ -32,12 +32,12 @@ python3 desktop/windows/build_plan.py
 
 上述命令只验证构建契约，不会产生安装包。真正的 Windows 候选必须进一步通过内置运行时清单与 clean-machine acceptance harness。
 
-## 0.8 预览套件怎么用
+## v1 RC 源码套件怎么用
 
 1. 把整个预览 ZIP 解压到本机普通目录；不要在压缩包内直接运行。
 2. 双击 `desktop\windows\Build-Windows-Preview.cmd`，或在 PowerShell 中运行 `desktop\windows\build_windows.ps1`。
-3. 脚本会在当前用户的 `%LOCALAPPDATA%\AutoResearchBuildKit` 下建立隔离 Python 3.12 工具链，校验 Python 官方安装器签名，并运行 Windows 定向源码契约。
-4. 将生成的 `Windows-Build-Report.txt` 发回 Windows 开发任务。看到 `BUILD_KIT_READY / SETUP_PRESENT=NO` 只表示源码检查通过，不表示已经有可安装软件。
-5. 当前没有 `Setup.exe`；不要从未知来源下载所谓 0.8 安装器，也不要关闭 Defender 或 SmartScreen。
+3. 脚本在 `%LOCALAPPDATA%\AutoResearchBuildKit\v1` 建立隔离 Python 3.12.10 和 Inno Setup 6.4.3，核对签名发布者、固定版本、依赖解析、共享资源及 v1 官方包。
+4. 脚本使用 PyInstaller 冻结程序，再由 Inno Setup 生成 `Windows-Output\Auto-Research-1.0.0-windows.rc.1-Setup.exe`，并分别计算 Setup 与资料包 SHA-256。
+5. 将 `Windows-Build-Report.txt`、`Windows-Build-Report.json`、`Windows-Output\SHA256SUMS.txt` 发回本任务。此时仍是 `INSTALLER_READY=NO`。
 
 只有冻结共享接口、生成真实 Setup，并在 Windows 11 clean machine 完成上述全流程后，才能改变 `installer_ready` 或向用户描述为 Windows 安装版。Mac 上的静态测试、backend parity 和构建资料夹都不能替代该门。

@@ -46,7 +46,7 @@ class ArchitectureMigrationContractTests(unittest.TestCase):
         )
         self.assertEqual(
             self.contract["status"],
-            "shared-settings-and-ai-adapters-wired-scientific-workspace-pending",
+            "v1-fusion-static-and-package-contract-wired-scientific-workspace-pending",
         )
         self.assertFalse(self.contract["installer_ready"])
         self.assertFalse(self.dependencies["installer_ready"])

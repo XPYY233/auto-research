@@ -1,6 +1,6 @@
 {
   "schema_version": "windows-architecture-migration-v1",
-  "status": "shared-settings-and-ai-adapters-wired-scientific-workspace-pending",
+  "status": "v1-fusion-static-and-package-contract-wired-scientific-workspace-pending",
   "installer_ready": false,
   "current_bridge_contract_version": 1,
   "target_bridge_contract_version": 2,
@@ -54,7 +54,7 @@
     "application_facade": "not-runtime-wired",
     "route_catalog": "golden-subset-validated-not-runtime-wired",
     "shared_package_jobs": "stage-compatible-progress-projection-pending",
-    "release_contract": "version-validated-runtime-injection-complete",
+    "release_contract": "v1-windows.rc-exact-match-required",
     "route_ids": [
       "ui.mode",
       "desktop.readiness",
@@ -111,6 +111,13 @@
   ],
   "current_debt_inventory": {
     "hardcoded_release_literals": [],
+    "v1_fusion_route_gap": [
+      "workspace papers/search/detail/visual/PDF",
+      "PDF upload/staged extraction/commit",
+      "personal experiment paged table",
+      "single and bulk CSV/XLSX export",
+      "production Librarian and selected-evidence resolvers"
+    ],
     "ai_business_scope_status": {
       "personal_suggestion": "503-until-complete-shared-business-graph-injected",
       "selected_evidence_chat": "503-missing-scientific-workspace-resolver",

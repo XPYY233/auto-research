@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title Auto Research Windows Internal Test
+title Auto Research Windows v1 RC Builder
 set "AUTORESEARCH_SCRIPT=%~dp0build_windows.ps1"
 if not exist "%AUTORESEARCH_SCRIPT%" set "AUTORESEARCH_SCRIPT=%~dp0Auto-Research-Windows-Source\desktop\windows\build_windows.ps1"
 if not exist "%AUTORESEARCH_SCRIPT%" (
@@ -11,8 +11,8 @@ if not exist "%AUTORESEARCH_SCRIPT%" (
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%AUTORESEARCH_SCRIPT%"
 set "AUTORESEARCH_EXIT=%ERRORLEVEL%"
 echo.
-if not "%AUTORESEARCH_EXIT%"=="0" echo The check did not pass. Please keep Windows-Build-Report.txt.
-if "%AUTORESEARCH_EXIT%"=="0" echo The build kit check passed. Setup has NOT been generated in this preview kit.
+if not "%AUTORESEARCH_EXIT%"=="0" echo Build failed. Please keep Windows-Build-Report.txt.
+if "%AUTORESEARCH_EXIT%"=="0" echo RC Setup was generated. It is not accepted until you finish the Win11 checklist.
 echo.
 pause
 exit /b %AUTORESEARCH_EXIT%

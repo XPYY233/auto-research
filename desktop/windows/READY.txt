@@ -1,12 +1,14 @@
-AUTO RESEARCH WINDOWS INTERNAL TEST
-STATE=BUILD KIT READY
+AUTO RESEARCH WINDOWS v1 RELEASE CANDIDATE SOURCE
+STATE=WIN11 BUILD ENTRY READY
 SETUP_PRESENT=NO
 
-This folder is ready to copy to Windows 11 and run the one-click build-kit check.
-It is NOT a Windows installer release. A real Setup must still be generated and smoke-tested on Windows 11 after the production shared bridge is integrated.
+This source folder can be copied to Windows 11 and used to build an unaccepted RC Setup.
+It is NOT a Windows installer release. Mac cannot produce or accept a Windows Setup.
 
 FIRST_ACTION=Double-click Build-Windows-Preview.cmd
-RETURN_FILE=Windows-Build-Report.txt
+RETURN_FILES=Windows-Build-Report.txt,Windows-Build-Report.json,Windows-Output/SHA256SUMS.txt
+EXPECTED_RC=1.0.0-windows.rc.1
+INSTALLER_READY=NO
 
 Do not install Python, Git, or Node.js manually.
 Do not disable Defender or SmartScreen.
