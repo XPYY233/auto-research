@@ -24,6 +24,7 @@ $WorkRoot = Join-Path $BuildKitRoot "Work"
 $Report = Join-Path $KitRoot "Windows-Build-Report.txt"
 $JsonReport = Join-Path $KitRoot "Windows-Build-Report.json"
 $PackageName = "auto-research-internal-evidence-1.0.0.aresearch"
+$OfficialPackageSha256 = "d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d"
 $ResolvedDependenciesHash = ""
 $PackageHash = ""
 $SourceCommit = ""
@@ -127,10 +128,15 @@ try {
 
     Assert-FileSha256 $BundledPythonInstaller $PythonInstallerSha256 "Bundled Python 3.12.10 installer"
     Assert-FileSha256 $BundledInnoInstaller $InnoInstallerSha256 "Bundled Inno Setup 6.7.3 installer"
+    Assert-FileSha256 $PackagePath $OfficialPackageSha256 "The exact v1 official package"
     Assert-OfflineWheelhouse
 
     New-Item -ItemType Directory -Force -Path $CacheRoot, $OutputRoot, $WorkRoot | Out-Null
     New-Item -ItemType Directory -Force -Path $ToolchainRoot | Out-Null
+    $LocalPackagePath = Join-Path $WorkRoot $PackageName
+    Copy-Item -LiteralPath $PackagePath -Destination $LocalPackagePath -Force
+    Assert-FileSha256 $LocalPackagePath $OfficialPackageSha256 "The local v1 official package snapshot"
+    $PackagePath = $LocalPackagePath
 
     if (-not (Test-Path $Python)) {
         Write-Host "[1/8] Installing the bundled, verified Python toolchain..."

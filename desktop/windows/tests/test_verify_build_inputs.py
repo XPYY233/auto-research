@@ -106,6 +106,25 @@ class VerifyWindowsBuildInputsTests(unittest.TestCase):
         self.assertNotIn("if (-not (Test-Path $Iscc))", build_script)
         self.assertIn("$InnoProcess = Start-Process", build_script)
 
+    def test_official_package_is_hash_bound_then_copied_to_local_work_root(self) -> None:
+        build_script = (WINDOWS_ROOT / "build_windows.ps1").read_text(encoding="utf-8")
+        expected = "d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d"
+        self.assertIn(f'$OfficialPackageSha256 = "{expected}"', build_script)
+        self.assertIn(
+            'Assert-FileSha256 $PackagePath $OfficialPackageSha256 "The exact v1 official package"',
+            build_script,
+        )
+        self.assertIn('$LocalPackagePath = Join-Path $WorkRoot $PackageName', build_script)
+        self.assertIn(
+            'Copy-Item -LiteralPath $PackagePath -Destination $LocalPackagePath -Force',
+            build_script,
+        )
+        self.assertIn(
+            'Assert-FileSha256 $LocalPackagePath $OfficialPackageSha256 "The local v1 official package snapshot"',
+            build_script,
+        )
+        self.assertIn('$PackagePath = $LocalPackagePath', build_script)
+
 
 if __name__ == "__main__":
     unittest.main()
