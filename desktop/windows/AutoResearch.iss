@@ -1,3 +1,7 @@
+#if VER != EncodeVer(6, 7, 3)
+  #error Auto Research requires the locked Inno Setup 6.7.3 compiler
+#endif
+
 #ifndef AppVersion
   #error AppVersion is required
 #endif

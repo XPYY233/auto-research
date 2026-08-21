@@ -38,20 +38,6 @@ function Assert-FileSha256([string]$Path, [string]$Expected, [string]$Label) {
     }
 }
 
-function Assert-InnoSetup673Version([string]$Path, [string]$Label) {
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "$Label is missing. Re-extract the complete Windows Build Kit."
-    }
-    $VersionInfo = (Get-Item -LiteralPath $Path).VersionInfo
-    if (
-        $VersionInfo.FileMajorPart -ne 6 -or
-        $VersionInfo.FileMinorPart -ne 7 -or
-        $VersionInfo.FileBuildPart -ne 3
-    ) {
-        throw "$Label is not the locked 6.7.3 release."
-    }
-}
-
 function Assert-OfflineWheelhouse() {
     if (-not (Test-Path -LiteralPath $WheelhouseManifest -PathType Leaf)) {
         throw "The offline wheelhouse manifest is missing."
@@ -181,23 +167,19 @@ try {
     }
     $ResolvedDependenciesHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $DependencyAudit).Hash.ToLowerInvariant()
 
-    if (-not (Test-Path $Iscc)) {
-        Write-Host "[3/8] Installing the bundled, verified Inno Setup compiler..."
-        Copy-Item -LiteralPath $BundledInnoInstaller -Destination $InnoInstaller -Force
-        $InnoSignature = Get-AuthenticodeSignature -FilePath $InnoInstaller
-        if (
-            $InnoSignature.Status -ne "Valid" -or
-            $InnoSignature.SignerCertificate.Subject -notmatch "Pyrsys B\.V\."
-        ) { throw "The Inno Setup installer publisher identity is not trusted." }
-        Assert-InnoSetup673Version $InnoInstaller "The bundled Inno Setup installer"
-        $InnoProcess = Start-Process -FilePath $InnoInstaller -Wait -PassThru -ArgumentList @(
-            "/VERYSILENT", "/CURRENTUSER", "/NORESTART", "/SP-", "/DIR=$InnoRoot"
-        )
-        if ($InnoProcess.ExitCode -ne 0 -or -not (Test-Path $Iscc)) {
-            throw "The isolated Inno Setup compiler could not be installed."
-        }
+    Write-Host "[3/8] Installing the bundled, verified Inno Setup compiler..."
+    Copy-Item -LiteralPath $BundledInnoInstaller -Destination $InnoInstaller -Force
+    $InnoSignature = Get-AuthenticodeSignature -FilePath $InnoInstaller
+    if (
+        $InnoSignature.Status -ne "Valid" -or
+        $InnoSignature.SignerCertificate.Subject -notmatch "Pyrsys B\.V\."
+    ) { throw "The Inno Setup installer publisher identity is not trusted." }
+    $InnoProcess = Start-Process -FilePath $InnoInstaller -Wait -PassThru -ArgumentList @(
+        "/VERYSILENT", "/CURRENTUSER", "/NORESTART", "/SP-", "/DIR=$InnoRoot"
+    )
+    if ($InnoProcess.ExitCode -ne 0 -or -not (Test-Path $Iscc)) {
+        throw "The isolated Inno Setup compiler could not be installed."
     }
-    Assert-InnoSetup673Version $Iscc "The Inno Setup compiler"
 
     Write-Host "[4/8] Verifying source, shared Fusion assets, and the exact v1 package..."
     Push-Location $ProjectRoot

@@ -94,20 +94,17 @@ class VerifyWindowsBuildInputsTests(unittest.TestCase):
         self.assertIn("Get-AuthenticodeSignature", build_script)
         self.assertIn('SignerCertificate.Subject -notmatch "Pyrsys B\\.V\\."', build_script)
 
-    def test_inno_version_gate_uses_numeric_file_version_fields(self) -> None:
+    def test_inno_version_gate_uses_the_compiler_preprocessor_authority(self) -> None:
         build_script = (WINDOWS_ROOT / "build_windows.ps1").read_text(encoding="utf-8")
-        self.assertIn("function Assert-InnoSetup673Version", build_script)
-        self.assertIn("$VersionInfo.FileMajorPart -ne 6", build_script)
-        self.assertIn("$VersionInfo.FileMinorPart -ne 7", build_script)
-        self.assertIn("$VersionInfo.FileBuildPart -ne 3", build_script)
+        inno_script = (WINDOWS_ROOT / "AutoResearch.iss").read_text(encoding="utf-8")
+        self.assertIn("#if VER != EncodeVer(6, 7, 3)", inno_script)
         self.assertIn(
-            'Assert-InnoSetup673Version $Iscc "The Inno Setup compiler"',
-            build_script,
+            "#error Auto Research requires the locked Inno Setup 6.7.3 compiler",
+            inno_script,
         )
-        self.assertNotIn(
-            'VersionInfo.ProductVersion -notlike "6.7.3*"',
-            build_script,
-        )
+        self.assertNotIn("VersionInfo", build_script)
+        self.assertNotIn("if (-not (Test-Path $Iscc))", build_script)
+        self.assertIn("$InnoProcess = Start-Process", build_script)
 
 
 if __name__ == "__main__":
