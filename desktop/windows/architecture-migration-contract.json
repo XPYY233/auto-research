@@ -114,8 +114,7 @@
     "v1_fusion_route_gap": [
       "workspace papers/search/detail/visual/PDF",
       "PDF upload/staged extraction/commit",
-      "personal experiment paged table",
-      "single and bulk CSV/XLSX export",
+      "workspace-backed single and bulk CSV/XLSX export",
       "production Librarian and selected-evidence resolvers"
     ],
     "ai_business_scope_status": {

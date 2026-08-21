@@ -19,10 +19,12 @@
     "v1_package_contract.py": "3f7cb84a97fb15480e991d04345dcdc353863e537ade9aa2ff4701accfee1b9a",
     "official-package-v1.json": "8f9a3951371d67af72b85ea085f646f9181cc38f68b15cfc1be04333f8922a19",
     "launcher.py": "e2307ed49b53f7c11ea71dbed766c2341300614016a716508f68eedb0d6c5a91",
-    "composition_root.py": "1e5753c5679d8f819b31068d4d3b017d8e3ede4c88fc3324e17058f829136c5d",
-    "shared_http_bridge.py": "7a2d6547005ae25456ecec7664fd79b71f26b63c19c16a3393bd2c88afa85b96",
-    "production-dependencies.json": "e8a864fdbbba29b55a5cfc9ec8045082d79002eb9c4cb35ef4424140ac2f1d2c",
-    "architecture-migration-contract.json": "21745f3f05cfb663f3aee2114db9d8abcf3edaa2f46de6927f64292407e90167"
+    "composition_root.py": "79fcc1f2ca9dc259b99a5e41a7046c6a5fd2932357f454177dc91c6a6a852ace",
+    "shared_http_bridge.py": "99e3c27f630ace530f9295a395c0c53323558e4ba15731bf334a7dc55ccb4cf9",
+    "personal_table_bridge.py": "ad2b030dc588897dc61cf484f0074f9f0ab6e34181e53d76e695736bdcdf5f02",
+    "evidence_export_bridge.py": "bb696c495681d3cccf54d237a8c9364ea19ec64ece9cb0512c222c5fa70ae043",
+    "production-dependencies.json": "0f77e5fd4ff89cc45cd97a80eef02ffbce595359c0be05116583867a102bc8b2",
+    "architecture-migration-contract.json": "4333ac4b4aa18dd0cd54d7c83e561eaf46edde57691a855e8baef5b1dfd59dd7"
   },
   "installer_ready": false,
   "setup_present_before_windows_build": false

@@ -16,6 +16,7 @@
     "desktop_ai_bridge",
     "evidence_search_bridge",
     "evidence_search_service",
+    "evidence_export_bridge",
     "instance_guard",
     "launcher",
     "loopback_server_adapter",
@@ -30,6 +31,7 @@
     "package_input_window",
     "personal_file_selection",
     "personal_import_bridge",
+    "personal_table_bridge",
     "personal_ai_model",
     "librarian_bridge",
     "readiness_service",
@@ -71,10 +73,12 @@
     "auto_research.product.trusted_publishers",
     "auto_research.evidence.federated_search",
     "auto_research.evidence.federated_search_session",
+    "auto_research.evidence.evidence_export",
     "auto_research.personal.import_service",
     "auto_research.personal.ai_import_suggestions",
     "auto_research.personal.private_repository",
-    "auto_research.personal.search_source"
+    "auto_research.personal.search_source",
+    "auto_research.personal.table_detail"
   ],
   "shared_web_assets": [
     "index.html",
@@ -109,7 +113,9 @@
     "package_center_shared_web_asset": "package_center.js-frozen-shared-resource",
     "desktop_settings_runtime": "desktop-settings-v1-windows-atomic-store-wired",
     "shared_release_contract": "requires-exact-1.0.0-windows.rc.1-root-sync",
-    "fusion_scientific_workspace": "fail-closed-pending-windows-production-resolver-for-literature-visual-pdf-upload-extract-export-librarian"
+    "fusion_personal_table": "shared-personal-table-detail-service-wired",
+    "fusion_single_evidence_export": "shared-exporter-wired-for-official-private-workspace-fail-closed",
+    "fusion_scientific_workspace": "fail-closed-pending-shared-workspace-controller-for-literature-visual-pdf-upload-extract-bulk-export-librarian"
   },
   "must_exclude_before_candidate": [
     "auto_research.product.internal_preview_builder",

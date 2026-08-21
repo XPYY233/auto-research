@@ -479,6 +479,12 @@ class WindowsSharedHttpBridge:
                     return
                 if not parsed.query and self._serve_static(parsed.path):
                     return
+                personal_table = getattr(services, "personal_table", None)
+                if personal_table is not None and personal_table.handle_get(self):
+                    return
+                evidence_export = getattr(services, "evidence_export", None)
+                if evidence_export is not None and evidence_export.handle_get(self):
+                    return
                 try:
                     if parsed.path == "/api/ui-mode" and not parsed.query:
                         return self.json_response(

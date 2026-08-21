@@ -20,6 +20,10 @@ from ai_runtime_composition import (
 from desktop_ai_bridge import WindowsDesktopAIAPI
 from evidence_search_bridge import EvidenceSearchBridgeAdapter
 from evidence_search_service import WindowsEvidenceSearchService
+from evidence_export_bridge import (
+    WindowsEvidenceExportBridge,
+    windows_evidence_export_service,
+)
 from instance_guard import WindowsInstanceGuard
 from librarian_bridge import LibrarianV3BridgeAdapter, LibrarianV3Runtime
 from loopback_server_adapter import LoopbackServerAdapter, ServerLike
@@ -42,6 +46,7 @@ from personal_file_selection import (
     WindowsPersonalFileSelectionBroker,
 )
 from personal_import_bridge import PersonalImportBridgeAdapter
+from personal_table_bridge import WindowsPersonalTableBridge
 from readiness_service import WindowsReadinessV2Service
 from settings_bridge import WindowsSettingsBridge
 from settings_store import WindowsAtomicDesktopSettingsStore
@@ -52,6 +57,8 @@ from auto_research.personal.import_service import (
     PersonalImportService,
     SelectionSnapshotProvider,
 )
+from auto_research.personal.private_repository import PrivateExperimentRepository
+from auto_research.personal.table_detail import PersonalTableDetailService
 from auto_research.release_contract import ReleaseContract, load_release_contract
 from auto_research.settings.desktop_settings import DesktopSettingsService
 
@@ -179,6 +186,8 @@ class WindowsBridgeServices:
     ai: WindowsDesktopAIAPI
     personal_file_input: WindowsPersonalFileInputAdapter
     personal_import: PersonalImportBridgeAdapter
+    personal_table: WindowsPersonalTableBridge
+    evidence_export: WindowsEvidenceExportBridge
     librarian: LibrarianV3BridgeAdapter
     readiness: WindowsReadinessV2Service
     package_center: PackageCenterBridge
@@ -327,9 +336,13 @@ class WindowsCompositionRoot:
         personal_selection = self.personal_selection_provider or (
             WindowsPersonalFileSelectionBroker()
         )
+        personal_repository = PrivateExperimentRepository(
+            self.path_runtime.private_data_root
+        )
         personal_import_service = PersonalImportService(
             data_root=self.path_runtime.private_data_root,
             selection_provider=personal_selection,
+            repository=personal_repository,
         )
         settings = WindowsSettingsBridge(
             DesktopSettingsService(
@@ -368,6 +381,12 @@ class WindowsCompositionRoot:
             ai=ai_services.http_api,
             personal_file_input=personal_file_input,
             personal_import=personal_import,
+            personal_table=WindowsPersonalTableBridge(
+                PersonalTableDetailService(personal_repository)
+            ),
+            evidence_export=WindowsEvidenceExportBridge(
+                windows_evidence_export_service(search_service.session)
+            ),
             librarian=librarian,
             readiness=readiness,
             package_center=self.package_center_bridge,
