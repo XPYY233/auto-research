@@ -101,17 +101,37 @@ class _Jobs:
         return {"schema": "package-job-v1", "job_id": job_id, "stage": "completed"}
 
 
+class _Dataset:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    def plan(self, *, include_private):
+        self.calls.append(("plan", include_private))
+        return {"schema_version": "dataset-export-plan-v1", "plan_token": "dataset_plan_0123456789"}
+
+    def start(self, plan_token, destination_token, **acknowledgements):
+        self.calls.append(("export", plan_token, destination_token, acknowledgements))
+        return {
+            "schema": "package-job-v1",
+            "job_id": "dataset_job_0123456789",
+            "stage": "queued",
+            "terminal": False,
+        }
+
+
 class PackageCenterAPITests(unittest.TestCase):
     def setUp(self) -> None:
         self.center = _Center()
         self.export = _Export()
         self.importer = _Import()
+        self.dataset = _Dataset()
         self.api = PackageCenterAPI(
             summary_provider=_Summary(),
             center=self.center,
             export_service=self.export,
             import_service=self.importer,
             jobs=_Jobs(),
+            dataset_export_service=self.dataset,
         )
 
     def test_summary_and_job_are_path_free_get_routes(self) -> None:
@@ -181,6 +201,25 @@ class PackageCenterAPITests(unittest.TestCase):
         self.assertEqual(imported.responses[0][1], HTTPStatus.ACCEPTED)
         self.assertEqual(imported.responses[0][0]["stage"], "queued")
         self.assertFalse(imported.responses[0][0]["terminal"])
+
+        dataset_plan = _Handler(
+            "/api/desktop/package-center/dataset-plan",
+            {"include_private": False},
+        )
+        self.assertTrue(self.api.handle_post(dataset_plan))
+        self.assertEqual(self.dataset.calls[0], ("plan", False))
+        dataset_export = _Handler(
+            "/api/desktop/package-center/dataset-export",
+            {
+                "plan_token": "dataset_plan_0123456789",
+                "destination_token": "destination_0123456789abcdef",
+                "rights_acknowledged": True,
+                "unreviewed_acknowledged": True,
+            },
+        )
+        self.assertTrue(self.api.handle_post(dataset_export))
+        self.assertEqual(dataset_export.responses[0][1], HTTPStatus.ACCEPTED)
+        self.assertEqual(self.dataset.calls[1][0], "export")
 
     def test_extra_fields_query_and_oversized_body_fail_closed(self) -> None:
         unsafe = _Handler(

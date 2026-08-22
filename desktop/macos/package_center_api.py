@@ -13,6 +13,7 @@ from auto_research.product.package_center import (
     PackageTransferImportService,
 )
 from auto_research.product.package_center_models import PackageCenterError
+from auto_research.product.dataset_export_service import DatasetExportService
 
 
 PACKAGE_CENTER_PATH = "/api/desktop/package-center"
@@ -20,6 +21,8 @@ PACKAGE_CENTER_INSPECT_PATH = f"{PACKAGE_CENTER_PATH}/inspect"
 PACKAGE_CENTER_EXPORT_PLAN_PATH = f"{PACKAGE_CENTER_PATH}/export-plan"
 PACKAGE_CENTER_EXPORT_PATH = f"{PACKAGE_CENTER_PATH}/export"
 PACKAGE_CENTER_IMPORT_PATH = f"{PACKAGE_CENTER_PATH}/import"
+PACKAGE_CENTER_DATASET_PLAN_PATH = f"{PACKAGE_CENTER_PATH}/dataset-plan"
+PACKAGE_CENTER_DATASET_EXPORT_PATH = f"{PACKAGE_CENTER_PATH}/dataset-export"
 PACKAGE_CENTER_JOB_PATH_RE = re.compile(
     r"^/api/desktop/package-center/jobs/([A-Za-z0-9_-]{16,128})$"
 )
@@ -51,12 +54,14 @@ class PackageCenterAPI:
         export_service: PackageExportService,
         import_service: PackageTransferImportService,
         jobs: PackageJobService,
+        dataset_export_service: DatasetExportService | None = None,
     ) -> None:
         self._summary_provider = summary_provider
         self._center = center
         self._export_service = export_service
         self._import_service = import_service
         self._jobs = jobs
+        self._dataset_export_service = dataset_export_service
 
     @staticmethod
     def is_post_route(path: str) -> bool:
@@ -65,6 +70,8 @@ class PackageCenterAPI:
             PACKAGE_CENTER_EXPORT_PLAN_PATH,
             PACKAGE_CENTER_EXPORT_PATH,
             PACKAGE_CENTER_IMPORT_PATH,
+            PACKAGE_CENTER_DATASET_PLAN_PATH,
+            PACKAGE_CENTER_DATASET_EXPORT_PATH,
         }
 
     def handle_get(self, handler: PackageCenterHTTPHandler) -> bool:
@@ -128,6 +135,37 @@ class PackageCenterAPI:
                     body["plan_token"],
                     body["rights_confirmations"],
                     body["destination_token"],
+                )
+                status = HTTPStatus.ACCEPTED
+            elif parsed.path == PACKAGE_CENTER_DATASET_PLAN_PATH:
+                self._require_fields(body, {"include_private"})
+                if self._dataset_export_service is None:
+                    raise PackageCenterError(
+                        "dataset_export_unavailable", "数据集导出当前不可用。"
+                    )
+                result = self._dataset_export_service.plan(
+                    include_private=body["include_private"]
+                )
+                status = HTTPStatus.OK
+            elif parsed.path == PACKAGE_CENTER_DATASET_EXPORT_PATH:
+                self._require_fields(
+                    body,
+                    {
+                        "plan_token",
+                        "destination_token",
+                        "rights_acknowledged",
+                        "unreviewed_acknowledged",
+                    },
+                )
+                if self._dataset_export_service is None:
+                    raise PackageCenterError(
+                        "dataset_export_unavailable", "数据集导出当前不可用。"
+                    )
+                result = self._dataset_export_service.start(
+                    body["plan_token"],
+                    body["destination_token"],
+                    rights_acknowledged=body["rights_acknowledged"],
+                    unreviewed_acknowledged=body["unreviewed_acknowledged"],
                 )
                 status = HTTPStatus.ACCEPTED
             else:
@@ -208,6 +246,8 @@ __all__ = [
     "MAX_PACKAGE_CENTER_REQUEST_BYTES",
     "PACKAGE_CENTER_EXPORT_PATH",
     "PACKAGE_CENTER_EXPORT_PLAN_PATH",
+    "PACKAGE_CENTER_DATASET_EXPORT_PATH",
+    "PACKAGE_CENTER_DATASET_PLAN_PATH",
     "PACKAGE_CENTER_IMPORT_PATH",
     "PACKAGE_CENTER_INSPECT_PATH",
     "PACKAGE_CENTER_PATH",

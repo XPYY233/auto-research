@@ -33,6 +33,14 @@ from auto_research.product.runtime_api import (
     run_package_job_in_background,
     verify_transfer_package,
 )
+from auto_research.product.dataset_bundle import DatasetBundleBuilder
+from auto_research.product.dataset_bundle_sources import (
+    portable_export_dataset_rows,
+    private_selection_dataset_rows,
+)
+from auto_research.product.dataset_export_service import DatasetExportCandidate
+from auto_research.product.evidence_v12_export import plan_evidence_v12_export
+from auto_research.product.package_transfer_payloads import PayloadSelection
 
 from package_center_services import (
     DesktopPackageCenterServices,
@@ -318,6 +326,83 @@ class FreshWorkspacePackagePlanner:
                 shutil.rmtree(operation_root, ignore_errors=True)
 
 
+class DesktopDatasetExportSource:
+    """Build dataset plans from fresh workspace snapshots and explicit private opt-in."""
+
+    def __init__(
+        self,
+        *,
+        workspace_database: Path | str,
+        private_source: PrivateRepositoryPersonalPayloadSource,
+        snapshot_parent: Path | str,
+    ) -> None:
+        self._database = Path(workspace_database)
+        self._private_source = private_source
+        self._snapshot_parent = Path(snapshot_parent).expanduser().absolute()
+        try:
+            self._snapshot_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if self._snapshot_parent.is_symlink() or not self._snapshot_parent.is_dir():
+                raise OSError
+            if os.name != "nt":
+                os.chmod(self._snapshot_parent, 0o700)
+        except OSError:
+            raise PackageCenterRuntimeError(
+                "数据集导出快照目录不安全。"
+            ) from None
+        self._builder = DatasetBundleBuilder()
+        self._lock = threading.Lock()
+
+    def plan(self, *, include_private: bool) -> DatasetExportCandidate:
+        return self._build(include_private=include_private)
+
+    def current_source_fingerprint(
+        self, candidate: DatasetExportCandidate
+    ) -> str:
+        return self._build(
+            include_private=candidate.bundle_plan.include_private
+        ).source_fingerprint
+
+    def _build(self, *, include_private: bool) -> DatasetExportCandidate:
+        with self._lock:
+            try:
+                operation_root = Path(
+                    tempfile.mkdtemp(
+                        prefix=".dataset-plan-",
+                        dir=self._snapshot_parent,
+                    )
+                )
+            except OSError:
+                raise PackageCenterRuntimeError(
+                    "无法建立数据集导出快照。"
+                ) from None
+            try:
+                snapshot = create_workspace_snapshot(
+                    self._database,
+                    snapshot_root=operation_root,
+                )
+                portable = plan_evidence_v12_export(snapshot)
+                papers, evidence = portable_export_dataset_rows(
+                    portable,
+                    source_scope="workspace",
+                    source_id="workspace-v12",
+                )
+                private_records = ()
+                if include_private:
+                    selection = self._private_source.read_selection(
+                        PayloadSelection("all")
+                    )
+                    private_records = private_selection_dataset_rows(selection)
+                plan = self._builder.plan(
+                    papers=papers,
+                    evidence=evidence,
+                    include_private=include_private,
+                    private_records=private_records,
+                )
+                return DatasetExportCandidate(plan.content_fingerprint, plan)
+            finally:
+                shutil.rmtree(operation_root, ignore_errors=True)
+
+
 class DesktopPackageCenterRuntimeBuilder:
     """Production DI only; all transfer algorithms remain in shared core."""
 
@@ -346,6 +431,11 @@ class DesktopPackageCenterRuntimeBuilder:
         personal_source = PrivateRepositoryPersonalPayloadSource(
             self._private_repository,
             file_resolver=RepositoryPersonalFileResolver(self._private_repository),
+        )
+        dataset_source = DesktopDatasetExportSource(
+            workspace_database=self._workspace_database,
+            private_source=personal_source,
+            snapshot_parent=data_root / "dataset-export-session",
         )
         planner = FreshWorkspacePackagePlanner(
             workspace_database=self._workspace_database,
@@ -431,11 +521,13 @@ class DesktopPackageCenterRuntimeBuilder:
                 "restored_literature_packages": restored,
                 "recovery": recovery,
             },
+            dataset_source=dataset_source,
         )
 
 
 __all__ = [
     "DesktopPackageCenterRuntimeBuilder",
+    "DesktopDatasetExportSource",
     "FreshWorkspacePackagePlanner",
     "NoAutomaticLiteratureLicenseVerifier",
     "PackageCenterRuntimeError",

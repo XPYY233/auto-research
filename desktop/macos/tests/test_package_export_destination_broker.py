@@ -72,6 +72,17 @@ class PackageExportDestinationBrokerTests(unittest.TestCase):
             with self.assertRaisesRegex(PackageExportDestinationError, "失效"):
                 broker.resolve(snapshot.destination_token)
 
+    def test_dataset_zip_destination_uses_same_opaque_one_time_boundary(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="dataset-destination-test-") as temporary:
+            root = Path(temporary)
+            broker = PackageExportDestinationBroker(
+                local_volume_probe=lambda _path: True,
+                token_factory=lambda: "dataset_destination_1234",
+            )
+            snapshot = broker.select(root / "dataset.zip")
+            self.assertNotIn(str(root), str(snapshot.public_dict()))
+            self.assertEqual(broker.resolve(snapshot.destination_token).path.name, "dataset.zip")
+
     def test_existing_target_symlink_and_nonlocal_parent_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory(prefix="package-destination-test-") as temporary:
             root = Path(temporary)

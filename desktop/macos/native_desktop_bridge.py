@@ -40,3 +40,8 @@ class NativeDesktopBridge:
         self, suggested_name: str = ""
     ) -> dict[str, Any]:
         return self._package_exports.select_package_export_destination(suggested_name)
+
+    def select_dataset_export_destination(
+        self, suggested_name: str = ""
+    ) -> dict[str, Any]:
+        return self._package_exports.select_dataset_export_destination(suggested_name)

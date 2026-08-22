@@ -48,6 +48,21 @@ class NativePackageExportBridgeTests(unittest.TestCase):
                 "destination_1234567890",
             )
 
+    def test_dataset_picker_uses_shareable_zip_without_exposing_path(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="native-dataset-export-test-") as temporary:
+            root = Path(temporary)
+            broker = PackageExportDestinationBroker(
+                local_volume_probe=lambda _path: True,
+                token_factory=lambda: "destination_dataset_1234",
+            )
+            bridge = NativePackageExportBridge(broker)
+            bridge.bind_window(_Window([str(root / "training-dataset.zip")]))
+            response = bridge.select_dataset_export_destination("training-dataset.zip")
+            self.assertTrue(response["ok"])
+            self.assertNotIn(str(root), str(response))
+            resolved = broker.resolve(response["destination"]["destination_token"])
+            self.assertEqual(resolved.path.name, "training-dataset.zip")
+
 
 if __name__ == "__main__":
     unittest.main()

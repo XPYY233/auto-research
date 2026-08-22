@@ -18,6 +18,11 @@ from auto_research.product.package_center_models import (
     TransferActivator,
     assert_path_free,
 )
+from auto_research.product.dataset_bundle import DatasetBundleBuilder, DatasetBundlePlan
+from auto_research.product.dataset_export_service import (
+    DatasetExportService,
+    DatasetExportSource,
+)
 from auto_research.product.runtime_api import (
     EvidencePackageError,
     list_installed_official_packages,
@@ -70,6 +75,26 @@ class _PackageDestinationResolver:
         return self._broker.resolve(destination_token).path
 
 
+class _DatasetArchivePublisher:
+    def __init__(self) -> None:
+        self._builder = DatasetBundleBuilder()
+
+    def __call__(
+        self,
+        plan: DatasetBundlePlan,
+        destination: Path,
+        *,
+        rights_acknowledged: bool,
+        unreviewed_acknowledged: bool,
+    ) -> dict[str, Any]:
+        return self._builder.publish_archive(
+            plan,
+            destination,
+            rights_acknowledged=rights_acknowledged,
+            unreviewed_acknowledged=unreviewed_acknowledged,
+        )
+
+
 class OfficialPackageCenterSummary:
     """Use only the audited official-store helper; never scan desktop paths."""
 
@@ -81,12 +106,14 @@ class OfficialPackageCenterSummary:
         current_app_version: str,
         installed_lister: InstalledOfficialLister = list_installed_official_packages,
         source_status: Mapping[str, Any] | None = None,
+        dataset_export_available: bool = False,
     ) -> None:
         self._package_service = package_service
         self._data_root = Path(data_root)
         self._current_app_version = str(current_app_version)
         self._installed_lister = installed_lister
         self._source_status = dict(source_status or {})
+        self._dataset_export_available = bool(dataset_export_available)
 
     def summary(self) -> dict[str, Any]:
         try:
@@ -130,6 +157,7 @@ class OfficialPackageCenterSummary:
                 "literature_export": True,
                 "personal_export": True,
                 "transfer_import": True,
+                "dataset_export": self._dataset_export_available,
             },
             "transfer_policy": {
                 "integrity": "sha256-only",
@@ -152,6 +180,7 @@ class DesktopPackageCenterServices:
     jobs: PackageJobService
     summary_provider: OfficialPackageCenterSummary
     api: PackageCenterAPI
+    dataset_export_service: DatasetExportService | None = None
 
 
 def create_desktop_package_center_services(
@@ -169,6 +198,7 @@ def create_desktop_package_center_services(
     job_submitter: JobSubmitter = run_package_job_inline,
     installed_lister: InstalledOfficialLister = list_installed_official_packages,
     source_status: Mapping[str, Any] | None = None,
+    dataset_source: DatasetExportSource | None = None,
 ) -> DesktopPackageCenterServices:
     """Compose shared algorithms with native opaque-token resolvers."""
 
@@ -194,12 +224,24 @@ def create_desktop_package_center_services(
         jobs=jobs,
         job_submitter=job_submitter,
     )
+    dataset_export_service = (
+        DatasetExportService(
+            source=dataset_source,
+            destination_resolver=destination_resolver,
+            publisher=_DatasetArchivePublisher(),
+            jobs=jobs,
+            job_submitter=job_submitter,
+        )
+        if dataset_source is not None
+        else None
+    )
     summary = OfficialPackageCenterSummary(
         package_service=package_service,
         data_root=data_root,
         current_app_version=current_app_version,
         installed_lister=installed_lister,
         source_status=source_status,
+        dataset_export_available=dataset_export_service is not None,
     )
     api = PackageCenterAPI(
         summary_provider=summary,
@@ -207,6 +249,7 @@ def create_desktop_package_center_services(
         export_service=export_service,
         import_service=import_service,
         jobs=jobs,
+        dataset_export_service=dataset_export_service,
     )
     return DesktopPackageCenterServices(
         center=center,
@@ -215,6 +258,7 @@ def create_desktop_package_center_services(
         jobs=jobs,
         summary_provider=summary,
         api=api,
+        dataset_export_service=dataset_export_service,
     )
 
 

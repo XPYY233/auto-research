@@ -10,7 +10,7 @@ from typing import Callable
 
 
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
-_SAFE_NAME_RE = re.compile(r"^[^/\\\x00]{1,180}\.aresearch$", re.IGNORECASE)
+_SAFE_NAME_RE = re.compile(r"^[^/\\\x00]{1,180}(?:\.aresearch|\.zip)$", re.IGNORECASE)
 
 
 class PackageExportDestinationError(RuntimeError):
@@ -107,7 +107,7 @@ class PackageExportDestinationBroker:
         if not original.is_absolute() or original.is_symlink():
             self._fail("package_destination_invalid", "请选择本机普通文件位置。")
         if len(str(original)) > 1024 or not _SAFE_NAME_RE.fullmatch(original.name):
-            self._fail("package_destination_invalid", "资料包文件名无效。")
+            self._fail("package_destination_invalid", "导出文件名无效。")
         parent = original.parent
         if parent.is_symlink() or not parent.is_dir():
             self._fail("package_destination_invalid", "保存目录不存在或不安全。")

@@ -23,20 +23,43 @@ class NativePackageExportBridge:
             self._window = window
 
     def select_package_export_destination(self, suggested_name: str = "") -> dict[str, Any]:
+        return self._select_destination(
+            suggested_name,
+            fallback="Auto-Research-export.aresearch",
+            pattern=r"[^/\\\x00]{1,180}\.aresearch",
+            file_types=("Auto Research Package (*.aresearch)",),
+        )
+
+    def select_dataset_export_destination(self, suggested_name: str = "") -> dict[str, Any]:
+        return self._select_destination(
+            suggested_name,
+            fallback="Auto-Research-dataset.zip",
+            pattern=r"[^/\\\x00]{1,180}\.zip",
+            file_types=("Auto Research Dataset (*.zip)",),
+        )
+
+    def _select_destination(
+        self,
+        suggested_name: str,
+        *,
+        fallback: str,
+        pattern: str,
+        file_types: tuple[str, ...],
+    ) -> dict[str, Any]:
         with self._lock:
             window = self._window
         if window is None:
             return self._error("package_destination_unavailable", "系统保存窗口尚未就绪。")
-        name = str(suggested_name or "Auto-Research-export.aresearch")
-        if re.fullmatch(r"[^/\\\x00]{1,180}\.aresearch", name, re.IGNORECASE) is None:
-            name = "Auto-Research-export.aresearch"
+        name = str(suggested_name or fallback)
+        if re.fullmatch(pattern, name, re.IGNORECASE) is None:
+            name = fallback
         try:
             from webview import FileDialog
 
             selected = window.create_file_dialog(
                 FileDialog.SAVE,
                 save_filename=name,
-                file_types=("Auto Research Package (*.aresearch)",),
+                file_types=file_types,
             )
             if not selected:
                 return {"ok": True, "cancelled": True}

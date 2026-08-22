@@ -86,6 +86,15 @@ from .trusted_publishers import (
     trusted_publisher_policy,
     trusted_public_keys,
 )
+from .dataset_bundle import (
+    DatasetBundleBuilder,
+    DatasetBundleError,
+    DatasetBundlePlan,
+)
+from .dataset_export_service import (
+    DatasetExportCandidate,
+    DatasetExportService,
+)
 
 __all__ = [
     "ACTIVE_SELECTOR_RELATIVE_PATH",
@@ -129,6 +138,11 @@ __all__ = [
     "TransferPackageKind",
     "TrustedPublisherPolicy",
     "TrustedPublisherPolicyError",
+    "DatasetBundleBuilder",
+    "DatasetBundleError",
+    "DatasetBundlePlan",
+    "DatasetExportCandidate",
+    "DatasetExportService",
     "default_active_state_path",
     "advance_package_job",
     "begin_package_job",

@@ -152,6 +152,9 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and callable(
                 getattr(NativeDesktopBridge, "select_package_export_destination", None)
             )
+            and callable(
+                getattr(NativeDesktopBridge, "select_dataset_export_destination", None)
+            )
         ),
     }
 
