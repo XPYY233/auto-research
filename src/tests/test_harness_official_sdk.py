@@ -213,6 +213,19 @@ class OfficialHarnessSDKTests(unittest.TestCase):
                     target.resolve(),
                 )
 
+            with (
+                mock.patch("auto_research.ai.harness_official_sdk.sys.frozen", True, create=True),
+                mock.patch("auto_research.ai.harness_official_sdk.sys.executable", str(executable)),
+            ):
+                self.assertEqual(
+                    _verified_runtime_member(
+                        target,
+                        digest,
+                        frozen_sha256=frozen_digest,
+                    ),
+                    target.resolve(),
+                )
+
             outside = Path(directory) / "outside-runtime"
             outside.write_bytes(target.read_bytes())
             link.unlink()

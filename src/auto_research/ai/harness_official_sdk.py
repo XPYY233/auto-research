@@ -142,16 +142,17 @@ def _verified_runtime_member(
 
     candidate = path
     try:
+        frozen = getattr(sys, "frozen", False) is True
+        if path.is_symlink() and not frozen:
+            raise HarnessError("harness_dependency_mismatch")
         expected = expected_sha256
-        if path.is_symlink():
-            if getattr(sys, "frozen", False) is not True:
-                raise HarnessError("harness_dependency_mismatch")
+        if frozen:
             candidate = path.resolve(strict=True)
             contents = Path(sys.executable).resolve().parent.parent
             try:
                 candidate.relative_to(contents)
             except ValueError as exc:
-                raise HarnessError("harness_dependency_mismatch") from exc
+                raise HarnessError("harness_dependency_mismatch")
             if frozen_sha256 is not None:
                 expected = frozen_sha256
         if (
