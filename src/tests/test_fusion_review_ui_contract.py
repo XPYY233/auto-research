@@ -112,7 +112,7 @@ class FusionReviewUIContractTests(unittest.TestCase):
             "state.inspectorState.settings={kind:\"settings\"",
             "documentTabs?.beginRequest(tab.tabId)",
             "documentTabs?.completeRequest(tab.tabId,tabRequest",
-            'payload:{jobId:String(job.job_id),job}',
+            'openDocumentTab("package-job"', 'payload:{job}',
             'payload:{section:"answer",html:answerHTML}',
             'payload:{section:"citations",html:citationsHTML}',
             'payload:{section:"recommendations",html:recommendationsHTML}',
@@ -120,6 +120,8 @@ class FusionReviewUIContractTests(unittest.TestCase):
             self.assertIn(marker, self.runtime)
         for forbidden in ("/api/context-chat", "/api/agents/librarian/chat"):
             self.assertNotIn(forbidden, self.runtime)
+        self.assertNotIn('payload:{jobId:String(job.job_id),job}', self.runtime)
+        self.assertNotIn('任务 ${esc(job.job_id', self.runtime)
 
     def test_catalog_scroll_and_server_side_four_type_filters(self) -> None:
         for marker in (
@@ -249,6 +251,11 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
             "fusion-package-user-select", "fusion-package-user-sha",
             "fusion-package-checksum-ack", "fusion-package-unencrypted-ack",
             "fusion-package-source-ack", "fusion-package-user-import",
+            "fusion-package-dataset", "fusion-dataset-include-private",
+            "fusion-dataset-plan", "fusion-dataset-plan-button",
+            "fusion-dataset-result", "fusion-dataset-metrics",
+            "fusion-dataset-unreviewed-ack", "fusion-dataset-rights-ack",
+            "fusion-dataset-export", "fusion-dataset-receipt",
             "fusion-package-jobs",
         ):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
@@ -260,6 +267,12 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
             '"/api/desktop/package-center/export"',
             '"/api/desktop/package-center/inspect"',
             '"/api/desktop/package-center/import"',
+            '"/api/desktop/package-center/dataset-plan"',
+            '"/api/desktop/package-center/dataset-export"',
+            'select_dataset_export_destination', 'Auto-Research-dataset.zip',
+            'include_private:includePrivate', 'rights_acknowledged:',
+            'unreviewed_acknowledged:', 'dataset-export-plan-v1',
+            'dataset-bundle-v1', 'binary_assets_included!==false',
             'expected_sha:', 'checksum_ack:true', 'keep_conflicts:',
             'unencrypted_ack:true', 'unauthenticated_source_ack:true',
             'internal_use_only_ack:true', 'paper_rights:paperRights',
@@ -284,6 +297,9 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
         self.assertIn("另一条可信渠道", self.index + self.runtime)
         self.assertIn("未加密", self.index + self.runtime)
         self.assertIn("不认证发送者身份", self.index + self.runtime)
+        self.assertIn("JSONL、Parquet 和数据卡", self.index)
+        self.assertIn("PDF 和图片二进制不会复制进训练载荷", self.index)
+        self.assertRegex(self.index, r'id="fusion-dataset-include-private"(?![^>]*checked)')
         program = f"""
 globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
 globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
