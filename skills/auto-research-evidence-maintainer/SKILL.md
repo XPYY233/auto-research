@@ -50,7 +50,7 @@ Keep these invariants:
 
 ## Continue from the 1.1 Mac release line
 
-Before editing, read the top `PROJECT_HANDOFF.md` release section. The source contract is `1.1.0` build 23 for Apple Silicon Mac. Verify the installed App and artifact hashes live because source completion, build completion and installation acceptance are separate claims.
+Before editing, read the top `PROJECT_HANDOFF.md` release section. The stable source contract is `1.1.0` build 24 for Apple Silicon Mac. Verify the installed App and artifact hashes live because source completion, build completion and installation acceptance are separate claims.
 
 - Preserve the uncommitted production evidence database. The legacy paper_056 run/quality/visual artifacts were explicitly deleted by the user before the 0.8 build and should not be recreated unless a new real extraction is authorized.
 - Use existing project Codex threads for frontend/macOS, core, Windows and security. Root is the only Git writer; every other thread receives an exact file list and returns a no-stage/no-commit handoff.

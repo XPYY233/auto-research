@@ -2,13 +2,13 @@
 
 ## v1.1.0 Mac source checkpoint (2026-08-22)
 
-- Source contract: Auto Research `1.1.0` build 23 for Apple Silicon macOS. Windows 1.1 is frozen until user acceptance; do not edit or build `desktop/windows/**` in this line.
-- Fusion: independently scrollable and title/author/DOI-filterable literature tree, server-side four-type filtering, recoverable preview/pinned `DocumentTabStore`, at most two complete editor groups, module-isolated inspector state, source-highlighted in-app PDF return, and a real approve/reject/correct review queue.
+- Source contract: Auto Research `1.1.0` build 24 for Apple Silicon macOS. Windows 1.1 is frozen until user acceptance; do not edit or build `desktop/windows/**` in this line.
+- Fusion: independently scrollable and title/author/DOI-filterable literature tree, server-side four-type filtering, recoverable preview/pinned `DocumentTabStore`, at most two complete editor groups, module-isolated inspector state, source-highlighted in-app PDF return, and a real approve/reject/correct review queue. The context/editor/editor/inspector boundaries are pointer- and keyboard-resizable, resettable, responsive and stored as non-sensitive local preferences.
 - Production AI: pinned `deepseek-harness-sdk==0.1.1rc1` and `deepseek-harness-runtime-bin==0.1.1rc1`; eight read-only Auto Research tools only, prepared-action consent/budgets remain authoritative, no old-loop fallback. Encrypted history retains at most 20 sessions or 30 days.
 - Dataset: `dataset-bundle-v1` produces JSONL, Parquet, data card and manifest with deterministic paper-level train/validation/test split. Immutable source plan: 60 papers, 4,356 records, 2,417 unreviewed, content fingerprint `8f853102d0a4774efad59fdd3be88d2ca6b685930aeb767dfa09bd80ca0341ea`.
 - Scientific audit: 14 human-gold dimensions for numeric/unit/meaning/conditions/table/figure/finding/excerpt/locator quality. Software tests and model agreement are not scientific accuracy.
 - Official package v2: user froze an explicit 59-paper scope, excluding DOI `10.2172/6065200` as `source_pdf_unavailable` without deleting local/Zotero records. The signed candidate has 4,369 entities, 59 real PDFs and 291 visual assets; SHA-256 `909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`. Fresh import, repeat import and every installed PDF/asset passed runtime verification. Historical visual review status is still `draft`, so scientific review is not complete.
-- Final source commit `3b8957282254a43236dc7af7943a55cf1a7e074f` passed 874 shared tests (80 explicit skips) and 234 macOS tests, plus Python/JavaScript, release-contract and diff checks. A clean-worktree App/DMG rebuild, frozen smoke, strict ad-hoc signature, transactional installation, single-launchable-App check and DMG verification passed. DMG SHA-256: `631a99293ab951e66ea412773b495966767a2fabe1cdf4291ae0d3c284f8e161`; Mac UserKit SHA-256: `53379be6f54907cb9c4cd846a9a7562c223b00013eb029a9cba44954b18172b7`. Final read-only GUI click-through is still pending because macOS was locked.
+- Build 24 implementation commit `393efda` passed 880 shared tests (80 explicit skips) and 234 macOS tests, plus Python/JavaScript, release-contract and diff checks. A clean-worktree App/DMG rebuild, frozen smoke, strict ad-hoc signature, transactional installation, single-launchable-App check and DMG verification passed. Real Mac read-only review covered literature filtering, two full editor groups, accessible splitters, a real table image and the highlighted in-app PDF return/close chain. DMG SHA-256: `f3363092dc8dfea9af4aaa9fe1920e164781c585536e7146d718c0cd7e4dfc5c`; Mac UserKit SHA-256: `2c943904090bbcfde8ce1aa45c2b107f1482905f7090bdd3b648abe2596ca99c`.
 - Protection: tag `auto-research-v1.0.0-pre-1.1-protection`; external backup `/Users/USER/Zotero/auto-research-backups/v1.1-protection-20260822-154915`. The production `db/experimental_evidence.sqlite` remains the only expected dirty file and must not be staged, reset or tested.
 
 ## v1.0.0 stable-candidate checkpoint (2026-08-21)
@@ -62,7 +62,7 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 - Previous Librarian reasoning/presentation implementation commit: `8e9c4c1`
 - Research-brief implementation/documentation commit: use the current shared-core `git log -1`; this file does not self-reference its commit hash
 - Current desktop source/tag: 1.1 source is the current `git log -1`; create the annotated 1.1 tag only after final build/install acceptance
-- Current desktop version: Auto Research `1.1.0` build 23 source candidate for Apple Silicon macOS; verify the installed App live rather than trusting this note
+- Current desktop version: Auto Research `1.1.0` build 24 stable delivery for Apple Silicon macOS; verify the installed App live rather than trusting this note
 - Release: `2026.07.30-librarian-brief-stable.1`
 - Evidence schema: v12
 - Fixed evidence corpus: `config/evidence_test_set_50.json`
@@ -83,7 +83,7 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 | fixed PDFs valid and identity-matched | 50/50 |
 | data-ready fixed papers | 17/50 |
 | visual-ready fixed papers | 30/50 |
-| latest 1.1 release tests | 1,108: 874 shared plus 234 macOS; shared has 80 explicit external-fixture skips |
+| latest 1.1 release tests | 1,114: 880 shared plus 234 macOS; shared has 80 explicit external-fixture skips |
 
 Target DOI `10.1016/j.jnucmat.2018.08.031` has 231 independent facts and 403/403 source-localizable automatic records at this checkpoint.
 
@@ -91,10 +91,10 @@ Independent read-only browser acceptance: a tungsten question returned 65 candid
 
 ## Honest completion boundary
 
-- The installed application identity is drift-prone; read its Info.plist live. The protected v1 source/package remain rollback points while 1.1 completes build and installation acceptance.
+- The installed application identity is drift-prone; read its Info.plist live. Build 24 completed protected build and installation acceptance; the protected v1 source/package and build24 rollback remain recovery points.
 - The original at-least-30-processed-paper goal is incomplete: 13 more papers are needed to move from 17 to 30; 33/50 remain not data-ready.
 - Adversarial DeepSeek agreement is not independent scientific accuracy. A human gold standard remains missing.
-- The only supported product shape is a personal desktop workbench. The current source line is Auto Research `1.1.0` build 23 on macOS; the installed line changes only after protected acceptance. Its primary navigation is Literature, Search, Experiment and Package Center; manual entry/revision-history views and the pet scene are retired. Windows 1.1 work is paused and its release contract remains `installer_ready=false`. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
+- The only supported product shape is a personal desktop workbench. The current source and installed line is Auto Research `1.1.0` build 24 on macOS. Its primary navigation is Literature, Search, Experiment and Package Center; manual entry/revision-history views and the pet scene are retired. Windows 1.1 work is paused and its release contract remains `installer_ready=false`. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
 - GitHub is not configured. `origin` points to a local historical bundle.
 - Librarian reasoning now has deterministic hard-condition parsing, direct/adjacent/expansion classification, evidence bundles and a five-section research report. This did not change scientific evidence or corpus readiness.
 - The local deterministic parser plus bounded history is the only hard-condition authority. DeepSeek plans queries, selects bounded evidence and explains it; it cannot create or rewrite hard conditions. Scientific-notation fluence, equivalent units and particle/material role boundaries are covered by regression tests.
@@ -117,8 +117,8 @@ Independent read-only browser acceptance: a tungsten question returned 65 candid
 
 ## Stable recovery artifacts
 
-- macOS App: `/Applications/Auto Research.app` (bundle `0.9.2`, build `21` after installation).
-- macOS UserKit: `/Users/USER/Zotero/auto-research-releases/Auto-Research-0.9.2-preview.1-build21-UserKit.zip`; SHA-256 `1848453eeff79e1ad8fe206e3f3475282116afd3bbeac7de9a8657a80dfd0331`. DMG SHA-256 is `87e29d20d926111aac784d8883ea19330ac818b754b8f3f86171f22b94943a11`.
+- macOS App: `/Applications/Auto Research.app` (bundle `1.1.0`, build `24` after transactional installation).
+- macOS UserKit: `/Users/USER/Zotero/auto-research-releases/Auto-Research-1.1.0-build24-Mac-UserKit.zip`; SHA-256 `2c943904090bbcfde8ce1aa45c2b107f1482905f7090bdd3b648abe2596ca99c`. DMG SHA-256 is `f3363092dc8dfea9af4aaa9fe1920e164781c585536e7146d718c0cd7e4dfc5c`.
 - Historical stable SQLite snapshot: `/Users/USER/Zotero/auto-research-backups/experimental_evidence-librarian-brief-stable-2026-07-30-v1.sqlite`; recorded SHA-256 `d62dc5c43ac9e0fb97e0ad2ecb85deaf50447fb7a036acae5147e8f6111236f6`. Do not infer that the current active user database still has this hash.
 - Maintainer-only historical Git bundles remain under `/Users/USER/Zotero/auto-research-backups/source-bundles/`; they are intentionally excluded from user kits because repository history contains historical database blobs.
 - Previous stable tag and artifacts remain available under `evidence-demo-2026-07-30-librarian-reasoning-stable-1` and the `librarian-reasoning-stable-2026-07-30-v1` backup names.

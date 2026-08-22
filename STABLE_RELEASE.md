@@ -1,15 +1,16 @@
 # Auto Research Evidence 阶段发布状态
 
-> 当前发布候选为 Auto Research `1.1.0` / build `23`。它只面向 Apple Silicon macOS，采用 ad-hoc 签名、未公证，不是 App Store/Developer ID 公开发行。Windows 1.1迁移冻结。
+> 当前稳定交付为 Auto Research `1.1.0` / build `24`。它只面向 Apple Silicon macOS，采用 ad-hoc 签名、未公证，不是 App Store/Developer ID 公开发行。Windows 1.1迁移冻结。
 
-## v1.1.0 macOS 发布候选
+## v1.1.0 macOS 稳定交付
 
 - Fusion：独立滚动文献目录、真实服务端四类筛选、多标签/双编辑器组、五模块隔离检查器、应用内PDF临时高亮与完整返回链。
+- 布局：上下文栏、双编辑器和检查器之间的边界均可拖动，支持键盘调整与双击复位；布局偏好仅在本机保存，不包含论文正文或敏感字段。
 - AI：DeepSeek Harness精确锁定SDK/runtime及内含二进制哈希，只拥有八个只读科研工具；逐次授权、provider/model白名单、预算和引用门仍由Auto Research执行。Harness不可用时不回退旧图书管理员或旧证据AI。
 - 数据集：`dataset-bundle-v1`同时生成JSONL、Parquet、数据卡与manifest，按论文确定性划分；默认不复制PDF/图片、不混入私人实验。
 - 科学边界：不可变快照的结构化规模为60篇/4,356条，但2,417条仍未审核；稳定软件不能被表述为科学准确率完成。科学发布需另过14维人工金标准审计。
 - 官方包：按用户冻结范围发布59篇，并在manifest明确排除 DOI `10.2172/6065200`，不删除本地或Zotero记录。新包包含4,369条四类证据、59份真实PDF与291个图表资产，SHA-256为`909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`；首次导入、重复导入以及全部PDF/资产运行时校验已在隔离数据根通过。视觉资产旧状态仍为`draft`，科学人工审核没有被虚报为完成。
-- 已完成目标验证与发布级串行测试：共享874项（80项明确跳过）、macOS 234项，Python/JavaScript、发布契约和差异检查通过。最终源码`3b8957282254a43236dc7af7943a55cf1a7e074f`已从干净worktree重建并事务式安装；严格签名、唯一App、冻结冒烟和DMG校验通过。DMG SHA-256为`631a99293ab951e66ea412773b495966767a2fabe1cdf4291ae0d3c284f8e161`，Mac UserKit SHA-256为`53379be6f54907cb9c4cd846a9a7562c223b00013eb029a9cba44954b18172b7`。最后的真实窗口只读点击验收仍因系统锁屏待补，在此之前保持发布候选表述。
+- 已完成目标验证与发布级串行测试：共享880项（80项明确跳过）、macOS 234项，Python/JavaScript、发布契约和差异检查通过。build 24实现由`393efda`封口，并从独立干净worktree重建、事务式安装；严格签名、唯一App、冻结冒烟和DMG校验通过。真实Mac只读验收覆盖文献筛选、双编辑器、可拉伸边界、真实表格原图、应用内PDF高亮/返回/关闭链。DMG SHA-256为`f3363092dc8dfea9af4aaa9fe1920e164781c585536e7146d718c0cd7e4dfc5c`，Mac UserKit SHA-256为`2c943904090bbcfde8ce1aa45c2b107f1482905f7090bdd3b648abe2596ca99c`。
 - 回退：旧`auto-research-internal-evidence-1.0.0.aresearch`和1.0源码保护标签保持不可变；1.1失败不得覆盖活动包、生产SQLite或已安装1.0 App。
 
 以下 v1.0/0.9/0.8 小节是历史发布记录。
