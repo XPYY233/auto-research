@@ -22,6 +22,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sys
 import tempfile
 import threading
 import time
@@ -76,6 +77,27 @@ _PROVIDER_REQUEST_KEYS = frozenset(
         "reasoning_effort",
     }
 )
+
+
+def _safe_trace(event: str, **metadata: object) -> None:
+    """Emit opt-in structural diagnostics without content, credentials, or paths."""
+
+    if os.environ.get("AUTO_RESEARCH_AI_SAFE_TRACE") != "1":
+        return
+    safe: dict[str, object] = {"event": event}
+    for key, value in metadata.items():
+        if isinstance(value, (str, int, bool)) or value is None:
+            safe[key] = value
+        elif isinstance(value, (list, tuple)) and all(
+            isinstance(item, str) for item in value
+        ):
+            safe[key] = list(value)
+    print(
+        "AUTO_RESEARCH_AI_SAFE_TRACE "
+        + json.dumps(safe, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def safe_composition_metadata() -> dict[str, object]:
@@ -220,7 +242,8 @@ class _Bridge:
                     if self.path == "/mcp":
                         return bridge._mcp(self)
                     return bridge._error(self, HTTPStatus.NOT_FOUND)
-                except HarnessError:
+                except HarnessError as exc:
+                    bridge._trace_handler_failure(self.path, exc)
                     return bridge._error(self, HTTPStatus.BAD_REQUEST)
                 except Exception:
                     return bridge._error(self, HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -334,6 +357,32 @@ class _Bridge:
             )
         except Exception as exc:
             raise HarnessError("harness_runtime_failed") from exc
+        calls = message.get("tool_calls") or []
+        for call in calls if isinstance(calls, list) else []:
+            function = call.get("function") if isinstance(call, Mapping) else None
+            name = function.get("name") if isinstance(function, Mapping) else None
+            raw_arguments = (
+                function.get("arguments") if isinstance(function, Mapping) else None
+            )
+            argument_keys: list[str] = []
+            argument_types: list[str] = []
+            if isinstance(raw_arguments, str):
+                try:
+                    parsed_arguments = json.loads(raw_arguments)
+                except json.JSONDecodeError:
+                    parsed_arguments = None
+                if isinstance(parsed_arguments, Mapping):
+                    argument_keys = sorted(str(key) for key in parsed_arguments)
+                    argument_types = [
+                        f"{key}:{type(parsed_arguments[key]).__name__}"
+                        for key in argument_keys
+                    ]
+            _safe_trace(
+                "provider_tool_call",
+                tool=str(name or ""),
+                argument_keys=argument_keys,
+                argument_types=argument_types,
+            )
         response = {
             "id": f"harness-{secrets.token_hex(12)}",
             "object": "chat.completion",
@@ -430,6 +479,15 @@ class _Bridge:
             arguments = params.get("arguments", {})
             if not isinstance(name, str) or not isinstance(arguments, Mapping):
                 raise HarnessError("harness_tool_invalid")
+            _safe_trace(
+                "mcp_tool_call",
+                tool=name,
+                argument_keys=sorted(str(key) for key in arguments),
+                argument_types=[
+                    f"{key}:{type(arguments[key]).__name__}"
+                    for key in sorted(arguments)
+                ],
+            )
             value = self.tools.call(name, arguments)
             result = {
                 "content": [
@@ -447,6 +505,14 @@ class _Bridge:
                 {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}},
             )
         self._json(handler, {"jsonrpc": "2.0", "id": request_id, "result": result})
+
+    @staticmethod
+    def _trace_handler_failure(path: str, exc: HarnessError) -> None:
+        _safe_trace(
+            "bridge_failure",
+            route="provider" if path == "/v1/chat/completions" else "mcp",
+            code=exc.code,
+        )
 
 
 class OfficialDeepSeekHarnessRuntime:
