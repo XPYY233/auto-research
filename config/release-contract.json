@@ -46,11 +46,11 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "368dbd261b67b9914380d47d9a3d5f009ffe366027cf1223983ed37853d24944",
+    "src/auto_research/evidence/web/index.html": "8dab2318ca0dcf3967ae2a2faa5326ede783435e5a2a67063d1213604c94bc2d",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
-    "src/auto_research/evidence/web/workbench.css": "2810fe562f1abab45a9cec33a12b6ff54d31b3f7894159a627bfc8bffef75a1d",
+    "src/auto_research/evidence/web/workbench.css": "1899228b1c52536324db3dc5420e4769a313a22bcad50939b6a51b9f0b1debb7",
     "src/auto_research/evidence/web/ai_consent.js": "ada8842907ff40f01a0e3b681d0dd205cc62aaffec4f47ef29813104141cd582",
-    "src/auto_research/evidence/web/document_tab_store.js": "7df3dff11288c1967b843547d49ce8cd92a93d4f5f744c9b7014e813f225a0d5",
-    "src/auto_research/evidence/web/fusion_review.js": "723b2efe4a84007fa60c1be4d2ce3c7795784053e52ef9ba08160663d3e58b19"
+    "src/auto_research/evidence/web/document_tab_store.js": "8907e06f5e7fb6e729ed4e3dbeeac6283cce2d9090832125a57b10db4cd53d46",
+    "src/auto_research/evidence/web/fusion_review.js": "3da7d03af93a5563a460b1becd061c11119ad07e80485e8c3d0ac421439340a4"
   }
 }
