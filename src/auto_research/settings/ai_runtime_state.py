@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import threading
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from auto_research.ai.provider_registry import (
     trusted_provider_profile,
     validated_task_models,
 )
+from auto_research.ai.openai_compatible import AIProviderError
 
 
 AI_RUNTIME_STATE_SCHEMA_VERSION = "ai-runtime-state-v1"
@@ -66,24 +68,56 @@ _ERROR_CODES = frozenset(
 
 
 class AIRuntimeStateError(RuntimeError):
-    def __init__(self, code: str, safe_message: str, *, retryable: bool) -> None:
+    def __init__(
+        self,
+        code: str,
+        safe_message: str,
+        *,
+        retryable: bool,
+        cause_code: str = "",
+        stage: str = "",
+        next_action: str = "",
+    ) -> None:
         if code not in _ERROR_CODES:
             raise ValueError("unsupported AI runtime state error code")
         super().__init__(safe_message)
         self.code = code
         self.safe_message = safe_message
         self.retryable = retryable
+        self.cause_code = (
+            cause_code if re.fullmatch(r"[a-z][a-z0-9_]{2,95}", cause_code) else ""
+        )
+        self.stage = stage if re.fullmatch(r"[a-z][a-z0-9_]{2,95}", stage) else ""
+        self.next_action = (
+            next_action
+            if re.fullmatch(r"[a-z][a-z0-9_]{2,95}", next_action)
+            else ""
+        )
 
     def public_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "schema_version": AI_RUNTIME_ERROR_SCHEMA_VERSION,
             "code": self.code,
             "message": self.safe_message,
             "retryable": self.retryable,
         }
+        if self.cause_code:
+            result["cause_code"] = self.cause_code
+        if self.stage:
+            result["stage"] = self.stage
+        if self.next_action:
+            result["next_action"] = self.next_action
+        return result
 
 
-def _error(code: str) -> AIRuntimeStateError:
+def _error(
+    code: str,
+    *,
+    safe_message: str | None = None,
+    cause_code: str = "",
+    stage: str = "",
+    next_action: str = "",
+) -> AIRuntimeStateError:
     messages = {
         "ai_runtime_state_invalid": ("AI 运行设置内容无效。", False),
         "ai_runtime_revision_conflict": (
@@ -95,7 +129,14 @@ def _error(code: str) -> AIRuntimeStateError:
         "ai_runtime_verification_required": ("AI 提供商尚未完成能力验证。", False),
     }
     message, retryable = messages[code]
-    return AIRuntimeStateError(code, message, retryable=retryable)
+    return AIRuntimeStateError(
+        code,
+        safe_message or message,
+        retryable=retryable,
+        cause_code=cause_code,
+        stage=stage,
+        next_action=next_action,
+    )
 
 
 @dataclass(frozen=True)
@@ -290,6 +331,9 @@ class AIRuntimeStateService:
         self._business_lock = threading.RLock()
         self._business_verified: dict[
             tuple[str, int, int, str, tuple[tuple[str, str], ...]], int
+        ] = {}
+        self._models_verified: dict[
+            tuple[str, int, int, str, tuple[str, ...]], int
         ] = {}
 
     def _now(self) -> int:
@@ -487,6 +531,19 @@ class AIRuntimeStateService:
                 raise _error("ai_runtime_verification_failed")
         except AIRuntimeStateError:
             raise
+        except AIProviderError as exc:
+            next_action = {
+                "ai_provider_not_configured": "save_credential",
+                "ai_provider_unavailable": "retry_connection",
+                "ai_provider_capability_missing": "select_supported_model",
+            }.get(exc.code, "check_provider_configuration")
+            raise _error(
+                "ai_runtime_verification_failed",
+                safe_message=exc.safe_message,
+                cause_code=exc.code,
+                stage="connection_verification",
+                next_action=next_action,
+            ) from exc
         except Exception as exc:
             raise _error("ai_runtime_verification_failed") from exc
         attestation = json.loads(claims.decode("utf-8"))
@@ -520,6 +577,20 @@ class AIRuntimeStateService:
             credential.generation,
             scope,
             tuple((task, selection.task_models[task]) for task in AI_BUSINESS_TASKS[scope]),
+        )
+
+    def _model_key(
+        self,
+        selection: AIRuntimeSelection,
+        credential: BackendCredentialState,
+        model: str,
+    ) -> tuple[str, int, int, str, tuple[str, ...]]:
+        return (
+            selection.provider_id,
+            selection.revision,
+            credential.generation,
+            model,
+            self.REQUIRED_CAPABILITIES,
         )
 
     def business_verification(self, scope: str) -> int | None:
@@ -562,8 +633,22 @@ class AIRuntimeStateService:
             cached = self._business_verified.get(key)
             if cached is not None and now < cached:
                 return cached
+            for cached_key, cached_expiry in tuple(self._models_verified.items()):
+                if cached_expiry <= now:
+                    self._models_verified.pop(cached_key, None)
+            models = sorted(
+                {selection.task_models[task] for task in AI_BUSINESS_TASKS[scope]}
+            )
+            pending_models = [
+                model
+                for model in models
+                if self._models_verified.get(
+                    self._model_key(selection, credential, model), 0
+                )
+                <= now
+            ]
         try:
-            for model in sorted({selection.task_models[task] for task in AI_BUSINESS_TASKS[scope]}):
+            for model in pending_models:
                 result = self._verifier.verify_model(
                     provider_id=selection.provider_id,
                     model=model,
@@ -579,6 +664,19 @@ class AIRuntimeStateService:
                     raise _error("ai_runtime_verification_failed")
         except AIRuntimeStateError:
             raise
+        except AIProviderError as exc:
+            next_action = {
+                "ai_provider_not_configured": "save_credential",
+                "ai_provider_unavailable": "retry_connection",
+                "ai_provider_capability_missing": "select_supported_model",
+            }.get(exc.code, "check_provider_configuration")
+            raise _error(
+                "ai_runtime_verification_failed",
+                safe_message=exc.safe_message,
+                cause_code=exc.code,
+                stage="business_capability_verification",
+                next_action=next_action,
+            ) from exc
         except Exception as exc:
             raise _error("ai_runtime_verification_failed") from exc
         current_selection = self._read()
@@ -600,6 +698,17 @@ class AIRuntimeStateService:
             if key not in self._business_verified and len(self._business_verified) >= MAX_BUSINESS_VERIFICATION_RECORDS:
                 oldest = min(self._business_verified, key=self._business_verified.get)
                 self._business_verified.pop(oldest, None)
+            for model in pending_models:
+                model_key = self._model_key(
+                    current_selection, current_credential, model
+                )
+                if (
+                    model_key not in self._models_verified
+                    and len(self._models_verified) >= MAX_BUSINESS_VERIFICATION_RECORDS
+                ):
+                    oldest = min(self._models_verified, key=self._models_verified.get)
+                    self._models_verified.pop(oldest, None)
+                self._models_verified[model_key] = expiry
             self._business_verified[key] = expiry
         return expiry
 

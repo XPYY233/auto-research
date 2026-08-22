@@ -535,7 +535,7 @@ def _known_error(
         error.safe_message if status != 500 else "AI 设置请求未能完成。",
         error.retryable if status != 500 else True,
     )
-    if status != 500 and isinstance(error, BusinessActionError):
+    if status != 500:
         body = dict(response.body)
         for key in ("cause_code", "stage", "next_action"):
             value = getattr(error, key, "")

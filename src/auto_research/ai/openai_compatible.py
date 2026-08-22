@@ -31,6 +31,7 @@ from .provider_registry import (
 _CREDENTIAL_REF_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _Result = TypeVar("_Result")
 _BACKEND_ACTIVATIONS = frozenset({"legacy_compatible", "connection_verified"})
+_VERIFICATION_MAX_TOKENS = 256
 
 if TYPE_CHECKING:
     from auto_research.settings.ai_runtime_state import ResolvedAIRuntime
@@ -317,6 +318,11 @@ class OpenAICompatibleClient:
         ] = max_tokens
         if thinking is not None:
             payload["thinking"] = {"type": "enabled" if thinking else "disabled"}
+        elif verification_request and self.profile.provider_id == "deepseek":
+            # Capability verification checks response shape, not reasoning
+            # quality.  Disabling thinking makes the bounded probe stable and
+            # prevents hidden reasoning tokens from consuming its output cap.
+            payload["thinking"] = {"type": "disabled"}
         if temperature is not None:
             payload["temperature"] = min(max(float(temperature), 0.0), 1.5)
         def parse(response: Any) -> dict[str, Any]:
@@ -388,6 +394,12 @@ class OpenAICompatibleClient:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice
+        if verification_request and self.profile.provider_id == "deepseek":
+            # DeepSeek reasoning mode rejects a forced function tool_choice.
+            # The fixed capability probe deliberately disables thinking so it
+            # can verify tool-call support without changing ordinary runtime
+            # requests or weakening the exact-call assertion below.
+            payload["thinking"] = {"type": "disabled"}
         def parse(response: Any) -> dict[str, Any]:
             try:
                 message = response.json()["choices"][0]["message"]
@@ -429,7 +441,12 @@ class OpenAICompatibleClient:
                 {"role": "user", "content": "Run the fixed capability check."},
             ],
             task=TASK_ANALYSIS,
-            max_tokens=32,
+            # Reasoning models may spend part of the completion budget in
+            # reasoning_content before emitting the tiny JSON answer.  A
+            # 32-token probe produced a valid HTTP 200 but an empty content
+            # field on DeepSeek V4 Pro.  This remains a bounded, low-cost
+            # verification request while leaving room for the final object.
+            max_tokens=_VERIFICATION_MAX_TOKENS,
             thinking=None,
             temperature=0.0,
             verification_request=True,
@@ -471,7 +488,7 @@ class OpenAICompatibleClient:
                 }
             ],
             task=TASK_ANALYSIS,
-            max_tokens=32,
+            max_tokens=_VERIFICATION_MAX_TOKENS,
             temperature=0.0,
             tool_choice={"type": "function", "function": {"name": tool_name}},
             verification_request=True,

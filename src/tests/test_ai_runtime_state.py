@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import unittest
 
+from auto_research.ai.openai_compatible import AIProviderResponseError
 from auto_research.settings.ai_runtime_state import (
     AI_VERIFICATION_TTL_SECONDS,
     AIRuntimeStateError,
@@ -181,6 +182,28 @@ class AIRuntimeStateTests(unittest.TestCase):
         self.credentials.values["openai"] = BackendCredentialState("openai.default", 8, True)
         self.assertIsNone(self.service.business_verification("personal_suggestion"))
 
+    def test_model_capability_result_is_reused_across_scoped_business_gates(self):
+        self.select_openai()
+        self.service.record_verification()
+        self.service.record_business_verification(
+            "librarian", expected_provider_id="openai", expected_revision=2
+        )
+        calls_after_librarian = len(self.verifier.calls)
+        self.service.record_business_verification(
+            "selected_evidence_chat",
+            expected_provider_id="openai",
+            expected_revision=2,
+        )
+        self.service.record_business_verification(
+            "personal_suggestion", expected_provider_id="openai", expected_revision=2
+        )
+        self.assertEqual(len(self.verifier.calls), calls_after_librarian)
+        self.assertIsNotNone(self.service.business_verification("librarian"))
+        self.assertIsNotNone(
+            self.service.business_verification("selected_evidence_chat")
+        )
+        self.assertIsNotNone(self.service.business_verification("personal_suggestion"))
+
     def test_business_verification_rechecks_credential_after_model_calls(self):
         self.select_openai()
         self.service.record_verification()
@@ -288,6 +311,23 @@ class AIRuntimeStateTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "ai_runtime_verification_failed")
         self.assertEqual(self.store.value, before)
         self.assertTrue(self.service.get().verified)
+
+    def test_provider_verification_error_keeps_safe_cause_and_guidance(self):
+        self.select_openai()
+        self.verifier.verify_connection = lambda **_kwargs: (_ for _ in ()).throw(
+            AIProviderResponseError("AI 提供商返回了空内容。")
+        )
+        with self.assertRaises(AIRuntimeStateError) as raised:
+            self.service.record_verification()
+        error = raised.exception
+        self.assertEqual(error.code, "ai_runtime_verification_failed")
+        self.assertEqual(error.cause_code, "ai_provider_response_invalid")
+        self.assertEqual(error.stage, "connection_verification")
+        self.assertEqual(error.next_action, "check_provider_configuration")
+        self.assertEqual(error.safe_message, "AI 提供商返回了空内容。")
+        self.assertEqual(
+            error.public_dict()["cause_code"], "ai_provider_response_invalid"
+        )
 
     def test_attestation_token_tampering_fails_closed(self):
         self.select_openai()

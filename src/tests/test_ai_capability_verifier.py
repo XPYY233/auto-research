@@ -95,10 +95,11 @@ class CapabilityVerifierTests(unittest.TestCase):
             self.assertEqual(endpoint, "https://api.openai.com/v1/chat/completions")
             self.assertFalse(kwargs["allow_redirects"])
             self.assertEqual(kwargs["json"]["model"], "gpt-5.6-terra")
-            self.assertEqual(kwargs["json"]["max_completion_tokens"], 32)
+            self.assertEqual(kwargs["json"]["max_completion_tokens"], 256)
         structured = session.calls[0][1]["json"]
         self.assertEqual(structured["response_format"], {"type": "json_object"})
         tool = session.calls[1][1]["json"]
+        self.assertNotIn("thinking", tool)
         self.assertEqual(
             tool["tool_choice"],
             {
@@ -130,8 +131,14 @@ class CapabilityVerifierTests(unittest.TestCase):
         self.assertEqual(len(session.calls), 2)
         for endpoint, kwargs in session.calls:
             self.assertEqual(endpoint, "https://api.deepseek.com/chat/completions")
-            self.assertEqual(kwargs["json"]["max_tokens"], 32)
+            self.assertEqual(kwargs["json"]["max_tokens"], 256)
             self.assertNotIn("max_completion_tokens", kwargs["json"])
+        self.assertEqual(
+            session.calls[0][1]["json"]["thinking"], {"type": "disabled"}
+        )
+        self.assertEqual(
+            session.calls[1][1]["json"]["thinking"], {"type": "disabled"}
+        )
 
     def test_tool_response_must_be_the_unique_fixed_call_and_is_not_executed(self):
         for message in (

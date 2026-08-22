@@ -13,6 +13,7 @@ from auto_research.ai.desktop_controller import (
 )
 from auto_research.ai.prepared_actions import PreparedActionError
 from auto_research.settings.ai_desktop_service import AIDesktopServiceError
+from auto_research.settings.ai_runtime_state import AIRuntimeStateError
 
 
 @dataclass
@@ -222,6 +223,30 @@ class DesktopAIControllerTests(unittest.TestCase):
         self.prepared.failure = OSError("/Users/private/key secret")
         response = self.controller(self.request("POST", "/api/desktop/ai/consents", {"action_id": "x"}))
         self.assertEqual(response.status, 500)
+        self.assertNotIn("secret", repr(response.body).casefold())
+
+    def test_runtime_verification_error_projects_safe_cause_and_next_action(self):
+        self.settings.failure = AIRuntimeStateError(
+            "ai_runtime_verification_failed",
+            "AI 提供商返回了空内容。",
+            retryable=True,
+            cause_code="ai_provider_response_invalid",
+            stage="connection_verification",
+            next_action="check_provider_configuration",
+        )
+        response = self.controller(
+            self.request(
+                "POST",
+                "/api/desktop/ai/providers/openai/test",
+                {"action_id": "opaque-action", "consent_nonce": "opaque-nonce"},
+            )
+        )
+        self.assertEqual(response.status, 422)
+        self.assertEqual(response.body["cause_code"], "ai_provider_response_invalid")
+        self.assertEqual(response.body["stage"], "connection_verification")
+        self.assertEqual(
+            response.body["next_action"], "check_provider_configuration"
+        )
         self.assertNotIn("secret", repr(response.body).casefold())
 
 

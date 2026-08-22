@@ -81,7 +81,7 @@ Run real HTTP checks for editable and read-only modes. Verify a read-only write 
 
 Do not mark a release stable if required work remains or if the fixed-corpus failure is unexplained.
 
-For build25, the release remains blocked until the user saves a provider key in the App and the isolated paid acceptance verifies connection plus literature extraction, Librarian, selected-evidence chat and personal suggestion. Never ask the user to paste a key into Codex, logs or a shell command. Keep the run at or below the user-authorized 25 provider calls and record cancellation/timeout/429/budget behavior separately from successful scientific output.
+For build26, the release remains blocked until the App-saved provider key passes connection plus isolated literature extraction, Librarian, selected-evidence chat and personal suggestion acceptance. Never ask the user to paste a key into Codex, logs or a shell command. Keep the run at or below the user-authorized 25 provider calls and record cancellation/timeout/429/budget behavior separately from successful scientific output. Build25 must not be promoted because its 32-token DeepSeek reasoning probe returned empty final content.
 
 ## Windows offline Build Kit
 
