@@ -206,44 +206,33 @@ class HarnessOutputProjector:
             value = canonical_public(raw)
         except HarnessError as exc:
             raise HarnessError("harness_output_invalid") from exc
+        # Evidence identity is application-owned authority.  Asking a model to
+        # echo it made otherwise valid answers fail when a provider omitted an
+        # empty bundle_uid or copied descriptive evidence fields into entity.
+        # The model now supplies prose only; the projector restores the exact
+        # prepared-action identity and keeps related evidence empty unless a
+        # future reviewed reference contract is introduced.
         if not isinstance(value, dict) or set(value) != {
-            "schema_version", "answer", "entity", "related", "limitations"
+            "schema_version", "answer", "limitations"
         }:
             raise HarnessError("harness_output_invalid")
         if (
-            value.get("schema_version") != "selected-evidence-harness-result-v1"
+            value.get("schema_version") != "selected-evidence-harness-model-v1"
             or not isinstance(value.get("answer"), str)
             or not value["answer"].strip()
             or not isinstance(value.get("limitations"), list)
             or len(value.get("limitations", [])) > 32
             or any(not isinstance(item, str) for item in value.get("limitations", []))
-            or not isinstance(value.get("entity"), dict)
-            or not isinstance(value.get("related"), list)
             or job.current_entity is None
-            or value["entity"] != job.current_entity.public_dict()
         ):
             raise HarnessError("harness_output_invalid")
-        allowed = {item.public_dict()["entity_uid"]: item for item in job.allowed_neighbors}
-        for related in value["related"]:
-            if not isinstance(related, dict):
-                raise HarnessError("harness_output_invalid")
-            if set(related) - {
-                "source_scope", "source_id", "entity_type", "entity_uid", "bundle_uid"
-            }:
-                raise HarnessError("harness_output_invalid")
-            try:
-                identity = HarnessEvidenceIdentity(
-                    source_scope=str(related.get("source_scope") or ""),
-                    source_id=str(related.get("source_id") or ""),
-                    entity_type=str(related.get("entity_type") or ""),
-                    entity_uid=str(related.get("entity_uid") or ""),
-                    bundle_uid=str(related.get("bundle_uid") or ""),
-                )
-            except HarnessError as exc:
-                raise HarnessError("harness_output_invalid") from exc
-            if allowed.get(identity.entity_uid) != identity:
-                raise HarnessError("harness_output_invalid")
-        return value
+        return {
+            "schema_version": "selected-evidence-harness-result-v1",
+            "answer": value["answer"],
+            "entity": job.current_entity.public_dict(),
+            "related": [],
+            "limitations": value["limitations"],
+        }
 
 
 class DeepSeekHarnessAdapter:

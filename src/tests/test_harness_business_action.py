@@ -151,10 +151,8 @@ class Runtime:
         )
         if self.selected:
             return {
-                "schema_version": "selected-evidence-harness-result-v1",
+                "schema_version": "selected-evidence-harness-model-v1",
                 "answer": "当前证据显示硬度为4.2 GPa。",
-                "entity": job.current_entity.public_dict(),
-                "related": [],
                 "limitations": ["仅限当前官方证据。"],
             }
         search = tools.call(

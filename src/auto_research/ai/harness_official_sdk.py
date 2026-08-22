@@ -734,10 +734,8 @@ def _user_prompt(scope: str, payload: Mapping[str, Any]) -> str:
         }
     else:
         schema = {
-            "schema_version": "selected-evidence-harness-result-v1",
+            "schema_version": "selected-evidence-harness-model-v1",
             "answer": "",
-            "entity": {},
-            "related": [],
             "limitations": [],
         }
     return (

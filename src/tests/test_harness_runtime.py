@@ -102,10 +102,8 @@ class Runtime:
             return {"schema_version": "bad", "path": "/Users/name/secret"}
         if self.selected:
             return {
-                "schema_version": "selected-evidence-harness-result-v1",
+                "schema_version": "selected-evidence-harness-model-v1",
                 "answer": "当前证据说明硬度变化。",
-                "entity": job.current_entity.public_dict(),
-                "related": [],
                 "limitations": ["仅解释当前证据"],
             }
         tools.call("citation_verify", {"refs": ["R1"]})
