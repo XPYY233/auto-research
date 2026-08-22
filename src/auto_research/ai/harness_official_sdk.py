@@ -126,6 +126,33 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _verified_runtime_member(path: Path, expected_sha256: str) -> Path:
+    """Resolve PyInstaller's signed in-bundle symlink, rejecting all others."""
+
+    candidate = path
+    try:
+        if path.is_symlink():
+            if getattr(sys, "frozen", False) is not True:
+                raise HarnessError("harness_dependency_mismatch")
+            candidate = path.resolve(strict=True)
+            contents = Path(sys.executable).resolve().parent.parent
+            try:
+                candidate.relative_to(contents)
+            except ValueError as exc:
+                raise HarnessError("harness_dependency_mismatch") from exc
+        if (
+            not candidate.is_file()
+            or candidate.is_symlink()
+            or _sha256_file(candidate) != expected_sha256
+        ):
+            raise HarnessError("harness_dependency_mismatch")
+    except HarnessError:
+        raise
+    except OSError as exc:
+        raise HarnessError("harness_dependency_mismatch") from exc
+    return candidate
+
+
 def _default_dependency_set() -> HarnessDependencySet:
     try:
         sdk_version = metadata.version(HARNESS_SDK_PROTOCOL_PIN[0])
@@ -161,24 +188,15 @@ def _default_runtime_binary() -> str:
         binary = Path(bundled_runtime_path())
     except Exception as exc:
         raise HarnessError("harness_runtime_unavailable") from exc
-    siblings = (
+    members = (
         (binary, RUNTIME_BINARY_SHA256),
         (Path(f"{binary}-rg"), RUNTIME_RG_SHA256),
         (Path(f"{binary}-spawn-helper"), RUNTIME_SPAWN_HELPER_SHA256),
     )
-    try:
-        if any(
-            not path.is_file()
-            or path.is_symlink()
-            or _sha256_file(path) != expected
-            for path, expected in siblings
-        ):
-            raise HarnessError("harness_dependency_mismatch")
-    except HarnessError:
-        raise
-    except OSError as exc:
-        raise HarnessError("harness_dependency_mismatch") from exc
-    return str(binary)
+    verified = tuple(
+        _verified_runtime_member(path, expected) for path, expected in members
+    )
+    return str(verified[0])
 
 
 @contextmanager

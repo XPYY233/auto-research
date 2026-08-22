@@ -4,8 +4,10 @@ import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
+import tempfile
 import urllib.request
 import unittest
+from unittest import mock
 
 from auto_research.ai.business_actions import HarnessBudgetedBusinessAIClient
 from auto_research.ai.harness_contract import (
@@ -13,8 +15,12 @@ from auto_research.ai.harness_contract import (
     HARNESS_SDK_PROTOCOL_PIN,
     HarnessDependencyMetadata,
     HarnessDependencySet,
+    HarnessError,
 )
-from auto_research.ai.harness_official_sdk import OfficialDeepSeekHarnessRuntime
+from auto_research.ai.harness_official_sdk import (
+    OfficialDeepSeekHarnessRuntime,
+    _verified_runtime_member,
+)
 from auto_research.ai.harness_tools import HarnessToolGateway
 from auto_research.ai.prepared_actions import PreparedOutbound
 
@@ -173,6 +179,36 @@ class FakeHarness:
 
 
 class OfficialHarnessSDKTests(unittest.TestCase):
+    def test_frozen_bundle_accepts_only_verified_in_bundle_runtime_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            contents = Path(directory) / "Auto Research.app" / "Contents"
+            executable = contents / "MacOS" / "Auto Research"
+            target = contents / "Frameworks" / "runtime" / "dsh"
+            link = contents / "Resources" / "runtime" / "dsh"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"launcher")
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"verified-runtime")
+            link.parent.mkdir(parents=True)
+            link.symlink_to(target)
+            digest = hashlib.sha256(target.read_bytes()).hexdigest()
+            with (
+                mock.patch("auto_research.ai.harness_official_sdk.sys.frozen", True, create=True),
+                mock.patch("auto_research.ai.harness_official_sdk.sys.executable", str(executable)),
+            ):
+                self.assertEqual(_verified_runtime_member(link, digest), target.resolve())
+
+            outside = Path(directory) / "outside-runtime"
+            outside.write_bytes(target.read_bytes())
+            link.unlink()
+            link.symlink_to(outside)
+            with (
+                mock.patch("auto_research.ai.harness_official_sdk.sys.frozen", True, create=True),
+                mock.patch("auto_research.ai.harness_official_sdk.sys.executable", str(executable)),
+                self.assertRaises(HarnessError),
+            ):
+                _verified_runtime_member(link, digest)
+
     def test_exact_runtime_uses_authenticated_proxy_and_mcp_without_real_key(self):
         prepared = action()
         raw = RawClient()
