@@ -339,7 +339,13 @@ class FederatedSearchSession:
         except Exception as exc:
             code = str(getattr(exc, "code", "source_pdf_changed"))
             if code == "transfer_payload_changed":
-                code = "source_pdf_changed"
+                code = (
+                    "private_pdf_changed"
+                    if source_scope == "private"
+                    else "source_pdf_changed"
+                )
+            elif source_scope == "private" and code == "source_pdf_changed":
+                code = "private_pdf_changed"
             raise FederatedSearchSessionError(
                 code
                 if code in {

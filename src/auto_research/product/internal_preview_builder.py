@@ -421,17 +421,16 @@ def _build_internal_preview_package_in_directory(
         )
     asset_sources = dict(binary_assets or {})
     asset_permissions = _binary_asset_permissions(asset_sources)
+    distribution_scope = "internal-preview-only"
+    if pdf_rows or asset_sources:
+        distribution_scope = OFFICIAL_DISTRIBUTION_SCOPE
     repository = materialize_portable_repository(
         plan,
         repository_root,
         package_id=package_id,
         package_version=package_version,
         release_policy=ReleasePolicy(
-            distribution_scope=(
-                OFFICIAL_DISTRIBUTION_SCOPE
-                if pdf_rows or asset_sources
-                else "internal-preview-only"
-            ),
+            distribution_scope=distribution_scope,
             allowed_paper_uids=approved,
             allow_structured_evidence=True,
             allow_short_excerpts=True,

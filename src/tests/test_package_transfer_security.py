@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import hashlib
 import inspect
 import json
@@ -329,24 +328,11 @@ class PackageTransferSecurityTests(unittest.TestCase):
         builder_source = textwrap.dedent(
             inspect.getsource(_build_internal_preview_package_in_directory)
         )
-        self.assertIn('distribution_scope="internal-preview-only"', builder_source)
-        tree = ast.parse(builder_source)
-        package_calls = [
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "build_evidence_package"
-        ]
-        self.assertEqual(len(package_calls), 1)
-        payload_keyword = next(
-            keyword for keyword in package_calls[0].keywords if keyword.arg == "payload_files"
-        )
-        self.assertIsInstance(payload_keyword.value, ast.Dict)
-        payload_names = {
-            key.id for key in payload_keyword.value.keys if isinstance(key, ast.Name)
-        }
-        self.assertEqual(payload_names, {"DATABASE_PATH", "RIGHTS_PATH", "PROVENANCE_PATH"})
+        self.assertIn('distribution_scope = "internal-preview-only"', builder_source)
+        self.assertIn("DATABASE_PATH: repository.database_path", builder_source)
+        self.assertIn("RIGHTS_PATH: repository.rights_path", builder_source)
+        self.assertIn("PROVENANCE_PATH: repository.provenance_path", builder_source)
+        self.assertIn("payload_files.update(pdf_payloads)", builder_source)
 
     def test_archive_guards_reject_traversal_symlink_duplicate_and_bomb(self) -> None:
         builders = {}

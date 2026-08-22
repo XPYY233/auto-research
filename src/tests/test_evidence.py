@@ -858,6 +858,10 @@ class CorpusIntegrationTests(unittest.TestCase):
 
 class SixColumnWorkflowTests(unittest.TestCase):
     def setUp(self):
+        if not six_column_module.TARGET_PDF_PATH.is_file():
+            self.skipTest(
+                "historical XJZQ42XP PDF fixture is not present in this checkout"
+            )
         self.tmp = tempfile.TemporaryDirectory()
         self.db = EvidenceDB(Path(self.tmp.name) / "six.sqlite")
         self.paper_id = self.db.upsert_paper(
