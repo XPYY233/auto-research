@@ -23,6 +23,11 @@ from auto_research.portable_file_ops import best_effort_remove_tree, replace_fil
 
 from .evidence_package import build_evidence_package, verify_evidence_package
 from .evidence_v12_export import plan_evidence_v12_export
+from .official_package_assets import (
+    OFFICIAL_DISTRIBUTION_SCOPE,
+    OFFICIAL_PACKAGE_CONTRACT_V2,
+    plan_official_pdf_payloads,
+)
 from .official_package_store import (
     import_official_evidence_package,
     open_active_official_repository,
@@ -30,6 +35,7 @@ from .official_package_store import (
 from .portable_repository import (
     DATABASE_CONTRACT,
     DATABASE_PATH,
+    BinaryAssetPermission,
     DISTRIBUTION_SCHEMA_VERSION,
     IDENTITY_VERSION,
     PROVENANCE_PATH,
@@ -68,6 +74,8 @@ class InternalPreviewBuildReport:
     distribution_scope: str = "internal-preview-only"
     includes_pdfs: bool = False
     includes_binary_assets: bool = False
+    pdf_count: int = 0
+    binary_asset_count: int = 0
 
     def public_dict(self) -> dict[str, object]:
         value = asdict(self)
@@ -193,6 +201,45 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _binary_asset_permissions(
+    values: dict[str, Path | str],
+) -> dict[str, BinaryAssetPermission]:
+    permissions: dict[str, BinaryAssetPermission] = {}
+    for entity_uid, raw_path in sorted(values.items()):
+        path = Path(raw_path).expanduser()
+        suffix = path.suffix.casefold()
+        if suffix == ".png":
+            media_type = "image/png"
+        elif suffix in {".jpg", ".jpeg"}:
+            media_type = "image/jpeg"
+        else:
+            raise RuntimeError("官方二进制资产只允许 PNG 或 JPEG")
+        permissions[str(entity_uid)] = BinaryAssetPermission(
+            sha256=_sha256_file(path), media_type=media_type
+        )
+    return permissions
+
+
+def load_path_mapping(path: Path | str) -> dict[str, Path]:
+    source = Path(path).expanduser()
+    if source.is_symlink() or not source.is_file() or source.stat().st_size > 4 * 1024 * 1024:
+        raise RuntimeError("资产路径映射不存在或不安全")
+    try:
+        value = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("资产路径映射必须是 UTF-8 JSON 对象") from exc
+    if not isinstance(value, dict) or not value:
+        raise RuntimeError("资产路径映射必须是非空对象")
+    output: dict[str, Path] = {}
+    for identity, raw_path in value.items():
+        key = str(identity).strip()
+        candidate = Path(str(raw_path)).expanduser()
+        if not key or candidate.is_symlink() or not candidate.is_file():
+            raise RuntimeError("资产路径映射包含无效文件")
+        output[key] = candidate.resolve()
+    return output
+
+
 def initialize_preview_signing_key(path: Path | str) -> Ed25519PrivateKey:
     key_path = Path(path).expanduser()
     key_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -285,6 +332,8 @@ def build_internal_preview_package(
     current_app_version: str = "0.6.0-preview.1",
     app_minimum: str = "0.6.0",
     app_maximum_exclusive: str = "1.0.0",
+    paper_pdf_paths: dict[str, Path | str] | None = None,
+    binary_assets: dict[str, Path | str] | None = None,
 ) -> InternalPreviewBuildReport:
     output = Path(output_directory).expanduser().resolve()
     if output.exists() or output.is_symlink():
@@ -306,6 +355,8 @@ def build_internal_preview_package(
             current_app_version=current_app_version,
             app_minimum=app_minimum,
             app_maximum_exclusive=app_maximum_exclusive,
+            paper_pdf_paths=paper_pdf_paths,
+            binary_assets=binary_assets,
         )
         replace_file(staging, output)
         return report
@@ -327,6 +378,8 @@ def _build_internal_preview_package_in_directory(
     current_app_version: str,
     app_minimum: str,
     app_maximum_exclusive: str,
+    paper_pdf_paths: dict[str, Path | str] | None = None,
+    binary_assets: dict[str, Path | str] | None = None,
 ) -> InternalPreviewBuildReport:
     output = staging_directory
     repository_root = output / f"{package_id}-{package_version}-repository"
@@ -360,24 +413,38 @@ def _build_internal_preview_package_in_directory(
             f"批准论文清单与待发布论文不一致（缺少 {missing}，多出 {extra}）"
         )
     plan = _budget_official_excerpts(plan)
+    pdf_rows = ()
+    pdf_payloads: dict[str, Path] = {}
+    if paper_pdf_paths is not None:
+        pdf_rows, pdf_payloads = plan_official_pdf_payloads(
+            paper_pdf_paths, expected_paper_uids=approved
+        )
+    asset_sources = dict(binary_assets or {})
+    asset_permissions = _binary_asset_permissions(asset_sources)
     repository = materialize_portable_repository(
         plan,
         repository_root,
         package_id=package_id,
         package_version=package_version,
         release_policy=ReleasePolicy(
-            distribution_scope="internal-preview-only",
+            distribution_scope=(
+                OFFICIAL_DISTRIBUTION_SCOPE
+                if pdf_rows or asset_sources
+                else "internal-preview-only"
+            ),
             allowed_paper_uids=approved,
             allow_structured_evidence=True,
             allow_short_excerpts=True,
             maximum_excerpt_chars=MAX_EXCERPT_CHARS,
             maximum_excerpt_chars_per_paper=MAX_EXCERPT_CHARS_PER_PAPER,
             maximum_excerpt_chars_total=MAX_EXCERPT_CHARS_TOTAL,
+            binary_asset_allowlist=asset_permissions,
             accepted_dropped_by_reason={},
         ),
         provenance=provenance_for_papers(
             plan.papers, publisher="Auto Research internal preview"
         ),
+        binary_assets=asset_sources,
     )
     type_counts = Counter(str(entity["entity_type"]) for entity in plan.entities)
     counts = {
@@ -421,14 +488,36 @@ def _build_internal_preview_package_in_directory(
         "rights_path": RIGHTS_PATH,
         "provenance_path": PROVENANCE_PATH,
     }
+    if pdf_rows or asset_sources:
+        if not pdf_rows:
+            raise RuntimeError("official-package-v2 必须包含完整 PDF 清单")
+        manifest.update(
+            {
+                "official_package_contract": OFFICIAL_PACKAGE_CONTRACT_V2,
+                "distribution_scope": OFFICIAL_DISTRIBUTION_SCOPE,
+                "rights_notice": "仅限课题组内部非商业使用；未声明逐篇再分发权已清理。",
+                "paper_pdfs": [row.manifest_dict() for row in pdf_rows],
+                "asset_counts": {
+                    "paper_pdfs": len(pdf_rows),
+                    "visual_assets": repository.asset_count,
+                },
+            }
+        )
+    payload_files: dict[str, Path] = {
+        DATABASE_PATH: repository.database_path,
+        RIGHTS_PATH: repository.rights_path,
+        PROVENANCE_PATH: repository.provenance_path,
+    }
+    for candidate in repository.root.rglob("*"):
+        if candidate.is_file():
+            payload_files.setdefault(
+                candidate.relative_to(repository.root).as_posix(), candidate
+            )
+    payload_files.update(pdf_payloads)
     build_evidence_package(
         package_path,
         manifest=manifest,
-        payload_files={
-            DATABASE_PATH: repository.database_path,
-            RIGHTS_PATH: repository.rights_path,
-            PROVENANCE_PATH: repository.provenance_path,
-        },
+        payload_files=payload_files,
         signing_key=key,
         signer_key_id=signer_key_id,
     )
@@ -452,10 +541,19 @@ def _build_internal_preview_package_in_directory(
             trusted_public_keys=trusted,
             current_app_version=current_app_version,
         )
+        lease = (
+            active_repository.open_pdf(next(iter(sorted(approved))))
+            if pdf_rows
+            else None
+        )
+        pdf_ready = lease is not None
+        if lease is not None:
+            lease.close()
         if (
             imported.content_fingerprint != repository.content_fingerprint
             or active.content_fingerprint != repository.content_fingerprint
             or len(active_repository.list_papers()) != repository.paper_count
+            or bool(pdf_rows) != pdf_ready
         ):
             raise RuntimeError("内部预览资料包导入后验收失败")
     elapsed = time.perf_counter() - started
@@ -478,6 +576,13 @@ def _build_internal_preview_package_in_directory(
         figure_count=type_counts["figure"],
         dropped_by_reason=dict(plan.dropped_by_reason),
         verified_import_seconds=round(elapsed, 3),
+        distribution_scope=(
+            OFFICIAL_DISTRIBUTION_SCOPE if pdf_rows else "internal-preview-only"
+        ),
+        includes_pdfs=bool(pdf_rows),
+        includes_binary_assets=bool(repository.asset_count),
+        pdf_count=len(pdf_rows),
+        binary_asset_count=repository.asset_count,
     )
     report_path.write_text(
         json.dumps(report.public_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -497,6 +602,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--current-app-version", default="0.6.0-preview.1")
     parser.add_argument("--app-minimum", default="0.6.0")
     parser.add_argument("--app-maximum-exclusive", default="1.0.0")
+    parser.add_argument("--paper-pdf-map")
+    parser.add_argument("--binary-asset-map")
     parser.add_argument("--initialize-signing-key", action="store_true")
     arguments = parser.parse_args(argv)
     if arguments.initialize_signing_key:
@@ -513,6 +620,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         current_app_version=arguments.current_app_version,
         app_minimum=arguments.app_minimum,
         app_maximum_exclusive=arguments.app_maximum_exclusive,
+        paper_pdf_paths=(
+            load_path_mapping(arguments.paper_pdf_map)
+            if arguments.paper_pdf_map
+            else None
+        ),
+        binary_assets=(
+            load_path_mapping(arguments.binary_asset_map)
+            if arguments.binary_asset_map
+            else None
+        ),
     )
     print(json.dumps(report.public_dict(), ensure_ascii=False, sort_keys=True))
     return 0

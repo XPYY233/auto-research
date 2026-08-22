@@ -132,6 +132,10 @@ class FederatedSearchSessionProtocol(Protocol):
         self, source_id: str, paper_uid: str
     ) -> "PrivatePdfLeaseProtocol": ...
 
+    def open_pdf(
+        self, source_scope: str, source_id: str, paper_uid: str
+    ) -> "PrivatePdfLeaseProtocol": ...
+
     def clear_official(self) -> dict[str, Any]: ...
 
     def clear_private(self) -> dict[str, Any]: ...
@@ -294,36 +298,62 @@ class FederatedSearchSession:
     ) -> PrivatePdfLeaseProtocol:
         """Open an imported PDF as a path-free, same-descriptor lease."""
 
+        return self.open_pdf("private", source_id, paper_uid)
+
+    def open_pdf(
+        self, source_scope: str, source_id: str, paper_uid: str
+    ) -> PrivatePdfLeaseProtocol:
+        """Open a verified official or private PDF without exposing its path."""
+
+        if source_scope not in SOURCE_SCOPES:
+            raise ValueError("unsupported source scope")
+        unavailable_code = (
+            "private_pdf_unavailable"
+            if source_scope == "private"
+            else "source_pdf_unavailable"
+        )
         normalized_source = _stable_identity(source_id, "source_id")
         normalized_paper = _stable_identity(paper_uid, "paper_uid")
         with self._lock:
-            registration = self._privates.get(normalized_source)
+            if source_scope == "official":
+                registration = self._official
+                if registration is not None and registration.source_id != normalized_source:
+                    registration = None
+            else:
+                registration = self._privates.get(normalized_source)
         if registration is None:
             raise FederatedSearchSessionError(
-                "private_source_not_found", "找不到所选的私人文献来源。"
+                "pdf_source_not_found", "找不到所选的文献来源。"
             )
-        if registration.source_kind != "literature_collection":
+        if registration.source_kind not in {"literature_collection", "official_repository"}:
             raise FederatedSearchSessionError(
-                "private_pdf_unavailable", "该私人来源不提供论文 PDF。"
+                unavailable_code, "该资料来源不提供论文 PDF。"
             )
         resolver = getattr(registration.source, "open_pdf", None)
         if not callable(resolver):
             raise FederatedSearchSessionError(
-                "private_pdf_unavailable", "该私人来源不提供论文 PDF。"
+                unavailable_code, "该资料来源不提供论文 PDF。"
             )
         try:
             lease = resolver(normalized_paper)
         except Exception as exc:
-            code = str(getattr(exc, "code", "private_pdf_changed"))
+            code = str(getattr(exc, "code", "source_pdf_changed"))
             if code == "transfer_payload_changed":
-                code = "private_pdf_changed"
+                code = "source_pdf_changed"
             raise FederatedSearchSessionError(
-                code if code in {"private_pdf_changed", "private_pdf_unavailable"} else "private_pdf_changed",
+                code
+                if code in {
+                    "source_pdf_changed",
+                    "source_pdf_unavailable",
+                    "official_pdf_changed",
+                    "private_pdf_changed",
+                }
+                else "source_pdf_changed",
                 "论文 PDF 缺失或发生变化，请重新导入资料包。",
             ) from None
         if lease is None:
             raise FederatedSearchSessionError(
-                "private_pdf_unavailable", "该论文没有可用的 PDF。"
+                unavailable_code, "该论文没有可用的 PDF。"
             )
         if not isinstance(lease, PrivatePdfLeaseProtocol):
             try:
@@ -331,12 +361,17 @@ class FederatedSearchSession:
             except Exception:
                 pass
             raise FederatedSearchSessionError(
-                "private_pdf_unavailable", "该论文 PDF 无法安全打开。"
+                unavailable_code, "该论文 PDF 无法安全打开。"
             )
-        if lease.source_id != normalized_source or lease.paper_uid != normalized_paper:
+        metadata = lease.public_metadata()
+        if (
+            lease.source_id != normalized_source
+            or lease.paper_uid != normalized_paper
+            or metadata.get("source_scope") != source_scope
+        ):
             lease.close()
             raise FederatedSearchSessionError(
-                "private_pdf_unavailable", "论文 PDF 来源身份不一致。"
+                unavailable_code, "论文 PDF 来源身份不一致。"
             )
         return lease
 

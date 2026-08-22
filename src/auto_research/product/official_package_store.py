@@ -199,6 +199,7 @@ def _validate_official_repository(
             install_root,
             expected_package_id=str(manifest["package_id"]),
             expected_version=str(manifest["package_version"]),
+            manifest=manifest,
         )
     except Exception as exc:
         if isinstance(exc, EvidencePackageError):

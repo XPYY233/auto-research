@@ -54,11 +54,13 @@
           <button type="button" class="fusion-tree-row" data-search-source="official"><span>官方资料库</span><b>签名只读</b></button>
           <button type="button" class="fusion-tree-row" data-search-source="private"><span>我的实验</span><b>本机私人</b></button>
           <button type="button" class="fusion-tree-row" data-search-source="all"><span>全部资料源</span><b>联合</b></button>
-          <p class="fusion-section-label">证据类型</p>
-          <div class="fusion-tree-row static"><span>测量条目</span><b id="fusion-count-item">—</b></div>
-          <div class="fusion-tree-row static"><span>研究结论</span><b id="fusion-count-finding">—</b></div>
-          <div class="fusion-tree-row static"><span>完整表格</span><b id="fusion-count-table">—</b></div>
-          <div class="fusion-tree-row static"><span>论文图片</span><b id="fusion-count-figure">—</b></div>
+          <p class="fusion-section-label">证据类型（可多选）</p>
+          <div class="fusion-evidence-type-filters" role="group" aria-label="筛选四类证据">
+            <button type="button" class="fusion-tree-row active" data-evidence-type="item" aria-pressed="true"><span>测量条目</span><b id="fusion-count-item">—</b></button>
+            <button type="button" class="fusion-tree-row active" data-evidence-type="finding" aria-pressed="true"><span>研究结论</span><b id="fusion-count-finding">—</b></button>
+            <button type="button" class="fusion-tree-row active" data-evidence-type="table" aria-pressed="true"><span>完整表格</span><b id="fusion-count-table">—</b></button>
+            <button type="button" class="fusion-tree-row active" data-evidence-type="figure" aria-pressed="true"><span>论文图片</span><b id="fusion-count-figure">—</b></button>
+          </div>
         </section>
         <section class="fusion-context-view" data-context-view="personal" hidden>
           <p class="fusion-section-label">当前文件</p>
@@ -88,9 +90,13 @@
       </aside>
 
       <section class="fusion-editor" id="fusion-editor" tabindex="-1">
-        <div class="fusion-tabs" role="tablist" aria-label="中央编辑区标签">
-          <button type="button" class="fusion-tab active" role="tab" aria-selected="true" tabindex="0" data-tab="primary"><span id="fusion-primary-tab-label">当前论文</span></button>
-          <button type="button" class="fusion-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="detail" aria-controls="fusion-evidence-detail" disabled><span id="fusion-detail-tab-label">证据详情</span></button>
+        <div class="fusion-tabs" aria-label="中央编辑区文档标签">
+          <div class="fusion-document-tab-groups" id="fusion-document-tab-groups">
+            <div class="fusion-document-tab-group active" data-document-group="primary"><div class="fusion-document-tab-list" id="fusion-document-tabs-primary" role="tablist" aria-label="主编辑组标签"></div></div>
+            <div class="fusion-document-tab-group" data-document-group="secondary" hidden><div class="fusion-document-tab-list" id="fusion-document-tabs-secondary" role="tablist" aria-label="第二编辑组标签"></div></div>
+          </div>
+          <button type="button" class="fusion-tab-layout-action" id="fusion-split-tab" aria-label="在第二编辑组打开当前标签" title="分栏打开">◫</button>
+          <span id="fusion-primary-tab-label" hidden>当前论文</span><span id="fusion-detail-tab-label" hidden>证据详情</span>
         </div>
 
         <section class="fusion-view active" id="view-paper" data-view-panel="paper" aria-label="文献工作区">
@@ -200,6 +206,7 @@
     </div>
   </section>
   <script src="/static/ai_consent.js"></script>
+  <script src="/static/document_tab_store.js"></script>
   <script src="/static/fusion_review.js"></script>
 </body>
 </html>

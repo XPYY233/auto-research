@@ -17,6 +17,12 @@ from urllib.parse import urlsplit
 
 from auto_research.portable_file_ops import best_effort_remove_tree, replace_file
 
+from .official_package_assets import (
+    OfficialPaperPdf,
+    open_official_pdf_lease,
+    validate_official_package_asset_manifest,
+)
+
 
 DISTRIBUTION_SCHEMA_VERSION = 1
 IDENTITY_VERSION = 1
@@ -1712,12 +1718,19 @@ def audit_portable_repository(
 class OfficialEvidenceRepository:
     """Immutable runtime access to one already verified official repository."""
 
-    def __init__(self, root: Path, audit: RepositoryAudit) -> None:
+    def __init__(
+        self,
+        root: Path,
+        audit: RepositoryAudit,
+        *,
+        paper_pdfs: Iterable[OfficialPaperPdf] = (),
+    ) -> None:
         self.root = root
         self.database_path = root.joinpath(*PurePosixPath(DATABASE_PATH).parts)
         self.package_id = audit.package_id
         self.package_version = audit.package_version
         self.content_fingerprint = audit.content_fingerprint
+        self._paper_pdfs = {row.paper_uid: row for row in paper_pdfs}
 
     @classmethod
     def open(
@@ -1743,9 +1756,12 @@ class OfficialEvidenceRepository:
         *,
         expected_package_id: str,
         expected_version: str,
+        manifest: Mapping[str, Any] | None = None,
     ) -> "OfficialEvidenceRepository":
-        return cls.open(
-            root,
+        install_root = Path(root).expanduser()
+        paper_pdfs = validate_official_package_asset_manifest(manifest or {})
+        audit = audit_portable_repository(
+            install_root,
             expected_package_id=expected_package_id,
             expected_version=expected_version,
             allowed_extra_paths={
@@ -1753,8 +1769,18 @@ class OfficialEvidenceRepository:
                 "checksums.json",
                 "signature.json",
                 "install.json",
+                *(row.relative_path for row in paper_pdfs),
             },
         )
+        repository = cls(audit.root, audit, paper_pdfs=paper_pdfs)
+        expected_papers = {str(row["paper_uid"]) for row in repository.list_papers()}
+        validated = validate_official_package_asset_manifest(
+            manifest or {},
+            install_root=audit.root,
+            expected_paper_uids=expected_papers if paper_pdfs else None,
+        )
+        repository._paper_pdfs = {row.paper_uid: row for row in validated}
+        return repository
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -1799,6 +1825,13 @@ class OfficialEvidenceRepository:
                     sorted(selected),
                 )
             ]
+            asset_uids: dict[str, list[str]] = {}
+            for asset in connection.execute(
+                "SELECT entity_uid,asset_uid FROM asset_refs ORDER BY entity_uid,asset_uid"
+            ):
+                asset_uids.setdefault(str(asset["entity_uid"]), []).append(
+                    str(asset["asset_uid"])
+                )
         for row in rows:
             payload = json.loads(str(row.pop("payload_json")))
             row.update(payload)
@@ -1807,6 +1840,9 @@ class OfficialEvidenceRepository:
                     "source_scope": "official",
                     "source_id": self.package_id,
                     "entity_uid": str(row["entity_uid"]),
+                    "pdf_available": str(row["paper_uid"]) in self._paper_pdfs,
+                    "asset_available": bool(asset_uids.get(str(row["entity_uid"]))),
+                    "asset_uids": asset_uids.get(str(row["entity_uid"]), []),
                 }
             )
             yield row
@@ -1825,10 +1861,34 @@ class OfficialEvidenceRepository:
         result = dict(row)
         payload = json.loads(str(result.pop("payload_json")))
         result.update(payload)
+        assets = self.list_entity_assets(entity_uid)
         result.update(
-            {"source_scope": "official", "source_id": self.package_id, "entity_uid": entity_uid}
+            {
+                "source_scope": "official",
+                "source_id": self.package_id,
+                "entity_uid": entity_uid,
+                "pdf_available": str(result["paper_uid"]) in self._paper_pdfs,
+                "asset_available": bool(assets),
+                "asset_uids": [str(row["asset_uid"]) for row in assets],
+            }
         )
         return result
+
+    def list_entity_assets(self, entity_uid: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            return [
+                dict(row)
+                for row in connection.execute(
+                    "SELECT * FROM asset_refs WHERE entity_uid=? ORDER BY asset_uid",
+                    (str(entity_uid),),
+                )
+            ]
+
+    def open_pdf(self, paper_uid: str):
+        row = self._paper_pdfs.get(str(paper_uid))
+        if row is None:
+            return None
+        return open_official_pdf_lease(self.root, row, source_id=self.package_id)
 
     def resolve_asset(self, asset_uid: str) -> Path:
         with self._connect() as connection:

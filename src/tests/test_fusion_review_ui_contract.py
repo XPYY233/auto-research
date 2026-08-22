@@ -36,7 +36,9 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertEqual(len(parser.ids), len(set(parser.ids)))
         self.assertEqual(self.index.count('/static/fusion_review.js'), 1)
         self.assertEqual(self.index.count('/static/ai_consent.js'), 1)
+        self.assertEqual(self.index.count('/static/document_tab_store.js'), 1)
         self.assertLess(self.index.index('/static/ai_consent.js'), self.index.index('/static/fusion_review.js'))
+        self.assertLess(self.index.index('/static/document_tab_store.js'), self.index.index('/static/fusion_review.js'))
         for legacy in ("/static/app.js", "/static/workbench.js", "/static/desktop_product.js", "/static/package_center.js"):
             self.assertNotIn(legacy, self.index)
         self.assertNotIn("appendChild", self.runtime)
@@ -66,10 +68,9 @@ class FusionReviewUIContractTests(unittest.TestCase):
             "fusion-detail-pdf-frame",
         ):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
-        detail_tab = re.search(r'<button[^>]+data-tab="detail"[^>]*>', self.index)
-        self.assertIsNotNone(detail_tab)
-        self.assertNotIn("data-fusion-disabled", detail_tab.group(0))
-        self.assertIn('aria-controls="fusion-evidence-detail"', detail_tab.group(0))
+        self.assertEqual(self.index.count('id="fusion-document-tabs-primary"'), 1)
+        self.assertEqual(self.index.count('id="fusion-document-tabs-secondary"'), 1)
+        self.assertIn('id="fusion-evidence-detail"', self.index)
         for marker in (
             'const EVIDENCE_LABELS=Object.freeze({item:', "function openEvidenceDetail(",
             "function closeEvidenceDetail(", "function renderEvidenceDetail(",
@@ -79,6 +80,29 @@ class FusionReviewUIContractTests(unittest.TestCase):
             self.assertIn(marker, self.runtime)
         self.assertNotIn("#visual-dialog", self.runtime)
         self.assertNotIn("showModal()", self.runtime)
+
+    def test_catalog_scroll_and_server_side_four_type_filters(self) -> None:
+        for marker in (
+            "minmax(0,1fr)", "overflow:auto", "scrollbar-gutter:stable",
+            'data-evidence-type="item"', 'data-evidence-type="finding"',
+            'data-evidence-type="table"', 'data-evidence-type="figure"',
+            'aria-pressed="true"', 'scrollIntoView?.({block:"nearest",inline:"nearest"})',
+            '&types=${encodeURIComponent(types.join(","))}',
+            '&entity_type=${encodeURIComponent(type)}',
+        ):
+            self.assertIn(marker, self.index + self.runtime + self.css)
+        self.assertNotIn("state.evidence.slice(0,12)", self.runtime)
+        self.assertIn("types.join(\",\")!==selectedEvidenceTypes().join(\",\")", self.runtime)
+
+    def test_inspector_state_is_partitioned_by_view(self) -> None:
+        for marker in (
+            "selectionByView:{paper:null,search:null,personal:null,package:null,settings:null}",
+            "const INSPECTOR_RENDERERS=Object.freeze({",
+            'paper:()=>evidenceInspector("paper")',
+            'search:()=>evidenceInspector("search")',
+            "state.selectionByView[view]?.row",
+        ):
+            self.assertIn(marker, self.runtime)
 
     def test_detail_uses_public_fields_and_keeps_scientific_images_authoritative(self) -> None:
         for marker in (

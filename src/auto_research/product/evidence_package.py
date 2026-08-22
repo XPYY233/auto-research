@@ -30,6 +30,12 @@ from auto_research.portable_file_ops import (
     unlink_file,
 )
 
+from .official_package_assets import (
+    OFFICIAL_PACKAGE_CONTRACT_V2,
+    OfficialPackageAssetError,
+    validate_official_package_asset_manifest,
+)
+
 
 ARESEARCH_FORMAT = "auto-research-evidence-package"
 ARESEARCH_FORMAT_VERSION = 1
@@ -99,6 +105,8 @@ class ImportedEvidencePackage:
     content_fingerprint: str | None = None
     previous_package_id: str | None = None
     outcome: str = "installed"
+    content_counts: Mapping[str, int] | None = None
+    asset_counts: Mapping[str, int] | None = None
 
     def public_dict(self) -> dict[str, Any]:
         return {
@@ -111,6 +119,12 @@ class ImportedEvidencePackage:
             "previous_package_id": self.previous_package_id,
             "previous_version": self.previous_version,
             "content_fingerprint": self.content_fingerprint,
+            "content_counts": dict(self.content_counts or {}),
+            "asset_counts": dict(self.asset_counts or {}),
+            "next_action": {
+                "view": "search",
+                "search_source": "official",
+            },
         }
 
 
@@ -272,6 +286,15 @@ def _validate_manifest(
     maximum_tuple = _version_tuple(maximum_exclusive)
     if minimum_tuple >= maximum_tuple:
         raise EvidencePackageError("invalid_compatibility", "资料包 App 兼容范围无效")
+    if manifest.get("official_package_contract") == OFFICIAL_PACKAGE_CONTRACT_V2:
+        if minimum_tuple < (1, 1, 0):
+            raise EvidencePackageError(
+                "invalid_compatibility", "含 PDF 的官方资料包最低要求 App 1.1.0"
+            )
+        try:
+            validate_official_package_asset_manifest(manifest)
+        except OfficialPackageAssetError as exc:
+            raise EvidencePackageError(exc.code, str(exc)) from exc
     if current_app_version is not None:
         current = _version_tuple(current_app_version)
         if current < minimum_tuple or current >= maximum_tuple:
@@ -929,6 +952,16 @@ def import_evidence_package(
                 content_fingerprint=content_fingerprint,
                 previous_package_id=previous_package_id,
                 outcome="already_active",
+                content_counts=(
+                    dict(verified.manifest.get("content_counts") or {})
+                    if isinstance(verified.manifest.get("content_counts"), Mapping)
+                    else None
+                ),
+                asset_counts=(
+                    dict(verified.manifest.get("asset_counts") or {})
+                    if isinstance(verified.manifest.get("asset_counts"), Mapping)
+                    else None
+                ),
             )
         if active_before and (
             previous_package_id != verified.package_id
@@ -961,6 +994,16 @@ def import_evidence_package(
             content_fingerprint=content_fingerprint,
             previous_package_id=previous_package_id,
             outcome="activated" if already_installed else "installed",
+            content_counts=(
+                dict(verified.manifest.get("content_counts") or {})
+                if isinstance(verified.manifest.get("content_counts"), Mapping)
+                else None
+            ),
+            asset_counts=(
+                dict(verified.manifest.get("asset_counts") or {})
+                if isinstance(verified.manifest.get("asset_counts"), Mapping)
+                else None
+            ),
         )
     finally:
         try:
@@ -1028,6 +1071,16 @@ def rollback_evidence_package(
             content_fingerprint=content_fingerprint,
             previous_package_id=previous_package_id,
             outcome="already_active",
+            content_counts=(
+                dict(manifest.get("content_counts") or {})
+                if isinstance(manifest.get("content_counts"), Mapping)
+                else None
+            ),
+            asset_counts=(
+                dict(manifest.get("asset_counts") or {})
+                if isinstance(manifest.get("asset_counts"), Mapping)
+                else None
+            ),
         )
     previous_package = None
     if active_before and (
@@ -1060,6 +1113,16 @@ def rollback_evidence_package(
         content_fingerprint=content_fingerprint,
         previous_package_id=previous_package_id,
         outcome="activated",
+        content_counts=(
+            dict(manifest.get("content_counts") or {})
+            if isinstance(manifest.get("content_counts"), Mapping)
+            else None
+        ),
+        asset_counts=(
+            dict(manifest.get("asset_counts") or {})
+            if isinstance(manifest.get("asset_counts"), Mapping)
+            else None
+        ),
     )
 
 

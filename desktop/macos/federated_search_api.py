@@ -152,8 +152,20 @@ class DesktopFederatedSearchService:
             ) from exc
 
     def open_private_pdf(self, *, source_id: str, paper_uid: str):
+        return self.open_pdf(
+            source_scope="private", source_id=source_id, paper_uid=paper_uid
+        )
+
+    def open_pdf(self, *, source_scope: str, source_id: str, paper_uid: str):
         try:
-            return self.session.open_private_pdf(source_id, paper_uid)
+            resolver = getattr(self.session, "open_pdf", None)
+            if callable(resolver):
+                return resolver(source_scope, source_id, paper_uid)
+            if source_scope == "private":
+                return self.session.open_private_pdf(source_id, paper_uid)
+            raise FederatedSearchSessionError(
+                "source_pdf_unavailable", "该资料来源不提供论文 PDF。"
+            )
         except ValueError as exc:
             raise DesktopFederatedSearchError(
                 "federated_identity_invalid",
@@ -161,7 +173,12 @@ class DesktopFederatedSearchService:
                 status=HTTPStatus.BAD_REQUEST,
             ) from exc
         except FederatedSearchSessionError as exc:
-            if exc.code in {"private_source_not_found", "private_pdf_unavailable"}:
+            if exc.code in {
+                "private_source_not_found",
+                "private_pdf_unavailable",
+                "pdf_source_not_found",
+                "source_pdf_unavailable",
+            }:
                 status = HTTPStatus.NOT_FOUND
                 code = "federated_pdf_not_found"
                 message = "该论文集合没有可打开的 PDF。"
@@ -211,7 +228,7 @@ class FederatedSearchAPI:
             elif parsed.path == FEDERATED_EVIDENCE_PATH:
                 payload = self.service.get(**self._identity_arguments(query))
             else:
-                lease = self.service.open_private_pdf(
+                lease = self.service.open_pdf(
                     **self._pdf_arguments(query)
                 )
                 self._serve_pdf(handler, lease)
@@ -225,9 +242,13 @@ class FederatedSearchAPI:
     @classmethod
     def _pdf_arguments(cls, query: dict[str, list[str]]) -> dict[str, str]:
         required = {"source_id", "paper_uid"}
-        if set(query) != required:
+        allowed = required | {"source_scope"}
+        if not required.issubset(query) or set(query) - allowed:
             cls._invalid_identity()
-        return {key: cls._single(query, key) for key in sorted(required)}
+        return {
+            "source_scope": cls._single(query, "source_scope", default="private"),
+            **{key: cls._single(query, key) for key in sorted(required)},
+        }
 
     @staticmethod
     def _serve_pdf(handler: FederatedHTTPHandler, lease: Any) -> None:

@@ -1,0 +1,72 @@
+schema_version: auto-research-cordis-composition-v1
+status: blocked-until-official-sdk-artifacts-are-audited
+
+dependency_contract:
+  sdk:
+    distribution: deepseek-harness-sdk
+    version: 0.1.1rc1
+    platform_tag: mac-independent
+    wheel_sha256: 2113aec229039da435bc44b275b487216d2b1c308d850521b88cea6ce3c1b762
+  runtime:
+    distribution: deepseek-harness-runtime-bin
+    version: 0.1.1rc1
+    platform_tag: macos-14-arm64
+    wheel_sha256: 2707cd666ba49ee0963228873abf7850ca7ec5e782cca61e3603793bace0d1cf
+    size_bytes: 55190958
+  python_requirements:
+    pydantic: ">=2.12,<3"
+  exact_sdk_runtime_version_match: true
+  external_artifact_lock: required-before-production-activation
+
+composition:
+  provider_authority: auto-research-runtime-state
+  prepared_action_authority: auto-research-business-prepared-action-registry
+  consent_authority: auto-research-ai-consent
+  budget_authority: auto-research-budgeted-business-ai-client
+  default_provider: deepseek
+  compatible_providers: audited-agent-capable-registry-only
+  arbitrary_base_url: false
+  plugin_allowlist:
+    - auto-research-domain-tools
+    - auto-research-model-port
+
+capabilities:
+  bash: false
+  editor: false
+  filesystem: false
+  pty: false
+  subagent: false
+  arbitrary_network: false
+  credential_access: false
+  local_path_access: false
+
+domain_tools:
+  schema_version: auto-research-harness-tools-v1
+  allow:
+    - exact_search
+    - federated_search
+    - evidence_detail
+    - evidence_metadata
+    - source_locator
+    - source_view
+    - citation_verify
+    - recommend_papers
+  evidence_types: [item, finding, table, figure]
+  private_experiments: false
+  source_view_requires_protected_backend: true
+
+scope_policy:
+  librarian:
+    source_scope: official-only
+    output: five-section-report-with-verified-citations-and-recommendations
+    cross_bundle_quantitative_comparison: false
+  selected_evidence_chat:
+    source_scope: current-non-private-entity-and-reviewed-neighbors-only
+    max_model_calls: 1
+    writes_scientific_database: false
+
+failure_policy:
+  restore_legacy_agent_loop: false
+  retry_with_unreviewed_provider: false
+  retry_with_arbitrary_network: false
+  fail_closed: true

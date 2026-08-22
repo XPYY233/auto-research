@@ -23,6 +23,7 @@ class TrustedPublisher:
     channel: str
     allowed_package_ids: tuple[str, ...]
     required_rights_redistribution: str
+    additional_rights_redistributions: tuple[str, ...] = ()
 
     def public_key_bytes(self) -> bytes:
         try:
@@ -44,6 +45,10 @@ class TrustedPublisher:
             ).hexdigest(),
             "allowed_package_ids": list(self.allowed_package_ids),
             "required_rights_redistribution": self.required_rights_redistribution,
+            "allowed_rights_redistributions": [
+                self.required_rights_redistribution,
+                *self.additional_rights_redistributions,
+            ],
         }
 
 
@@ -80,6 +85,8 @@ class TrustedPublisherPolicy:
                 raise ValueError("受信发布者必须至少授权一个 package_id")
             if not publisher.required_rights_redistribution:
                 raise ValueError("受信发布者必须明确权利范围")
+            if any(not value for value in publisher.additional_rights_redistributions):
+                raise ValueError("受信发布者附加权利范围无效")
             key_ids.add(publisher.key_id)
 
     def public_keys(self) -> Mapping[str, bytes]:
@@ -136,7 +143,10 @@ class TrustedPublisherPolicy:
                     "untrusted_package_identity",
                     "资料包身份不在受信发布者允许范围内",
                 )
-            if rights_redistribution != publisher.required_rights_redistribution:
+            if rights_redistribution not in {
+                publisher.required_rights_redistribution,
+                *publisher.additional_rights_redistributions,
+            }:
                 raise TrustedPublisherPolicyError(
                     "untrusted_rights_scope",
                     "资料包权利范围与受信发布通道不一致",
@@ -156,6 +166,7 @@ _PUBLISHERS = (
         channel="internal-preview",
         allowed_package_ids=("auto-research-internal-evidence",),
         required_rights_redistribution="internal-preview-only",
+        additional_rights_redistributions=("internal-group-restricted",),
     ),
 )
 
