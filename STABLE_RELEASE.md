@@ -1,6 +1,18 @@
 # Auto Research Evidence 阶段发布状态
 
-> 当前发布候选为 Auto Research `1.0.0` / build `22`。它是 Apple Silicon macOS 课题组稳定版，完整使用 Fusion 工作台并恢复现有核心功能；采用 ad-hoc 签名、未公证，不是 App Store/Developer ID 公开发行，也不是 Windows 安装版。
+> 当前发布候选为 Auto Research `1.1.0` / build `23`。它只面向 Apple Silicon macOS，采用 ad-hoc 签名、未公证，不是 App Store/Developer ID 公开发行。Windows 1.1迁移冻结。
+
+## v1.1.0 macOS 发布候选
+
+- Fusion：独立滚动文献目录、真实服务端四类筛选、多标签/双编辑器组、五模块隔离检查器、应用内PDF临时高亮与完整返回链。
+- AI：DeepSeek Harness精确锁定SDK/runtime及内含二进制哈希，只拥有八个只读科研工具；逐次授权、provider/model白名单、预算和引用门仍由Auto Research执行。Harness不可用时不回退旧图书管理员或旧证据AI。
+- 数据集：`dataset-bundle-v1`同时生成JSONL、Parquet、数据卡与manifest，按论文确定性划分；默认不复制PDF/图片、不混入私人实验。
+- 科学边界：不可变快照的结构化规模为60篇/4,356条，但2,417条仍未审核；稳定软件不能被表述为科学准确率完成。科学发布需另过14维人工金标准审计。
+- 官方包：`official-package-v2`要求60/60真实PDF、视觉资产、来源锚点和权利清单并受2GB上限约束。当前仍有DOI `10.2172/6065200`的官方40页报告无法从本机网络物化，因此v2包尚未生成；发布门正确失败关闭，不允许以期刊版替代或发布59/60。
+- 已完成目标验证：Harness/数据集33项、版本契约28项、Fusion/资料包/Mac70项、科学审计10项。最终共享全套、Mac全套、App/DMG与实机验收尚未执行，当前只能称源码发布候选。
+- 回退：旧`auto-research-internal-evidence-1.0.0.aresearch`和1.0源码保护标签保持不可变；1.1失败不得覆盖活动包、生产SQLite或已安装1.0 App。
+
+以下 v1.0/0.9/0.8 小节是历史发布记录。
 
 ## v1.0.0 macOS 稳定候选
 

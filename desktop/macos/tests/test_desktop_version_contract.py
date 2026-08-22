@@ -111,7 +111,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn("课题组稳定版", version_command)
         self.assertIn("Apple Silicon", current_readme)
         self.assertIn("未经 Apple 公证", current_readme)
-        self.assertIn("Windows 暂停且未发布", current_readme)
+        self.assertIn("Windows：1.1迁移冻结", current_readme)
 
     def test_build_manifest_records_the_distribution_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

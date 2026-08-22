@@ -1,5 +1,26 @@
 # Auto Research 阶段性交班总览
 
+## v1.1.0 macOS 核心能力恢复线（2026-08-22，当前开发权威）
+
+- 当前源码与发布契约固定为 Auto Research `1.1.0` / build `23`；Windows 1.1迁移完全冻结，现有 Windows 1.0身份仍为`installer_ready=false`，不得因Mac源码变化生成或宣称新的Setup。
+- Fusion工作台已恢复独立滚动文献目录、服务端四类多选筛选、可持久恢复的多标签与两个编辑器组、按模块隔离的检查器、中央PDF来源高亮/返回链和图书管理员独立标签。新上传论文会自动选中并滚动到可见位置，迟到请求绑定原标签。
+- 生产图书管理员和选中证据AI已迁到精确锁定的DeepSeek Harness SDK/runtime；八个工具全部只读，不提供Shell、文件系统、PTY、编辑器、子Agent或任意网络。prepared action、逐次授权、provider/model白名单、token/调用预算、凭据与引用完整性仍由Auto Research掌握；校验失败不回退旧AI。
+- Harness历史使用本机加密状态区，默认最多20个会话或30天并支持立即清除；旧收费路由在Mac桌面固定410。旧Librarian V3仅保留兼容测试/历史简报边界，列为P1物理退役债务。
+- 新增`dataset-bundle-v1`：同一规范投影生成JSONL、真实Parquet、数据卡和manifest，以论文为单位确定性划分train/validation/test；默认不复制PDF/图片、不包含私人实验，不泄露路径、密钥、会话或内部数据库主键。
+- 不可变官方快照的数据集计划为60篇/4,356条（item 3,142、finding 936、table 46、figure 232），train 3,556、validation 425、test 375；缺失DOI 3，未审核记录2,417，内容指纹`8f853102d0a4774efad59fdd3be88d2ca6b685930aeb767dfa09bd80ca0341ea`。这些数量不代表科学人工验收完成，含未审核记录的导出必须显式确认。
+- 科学发布审计独立覆盖数值、单位、意义、条件、表格、图片、结论、片段和定位等14类指标，并要求论文级人工金标准、TP/FP/FN、页码/IoU和泄漏检查；自动测试通过不能替代科学准确率。
+- `official-package-v2`构建器已要求普通PDF魔数/页数/哈希/身份、视觉资产、来源锚点、权利清单和2GB上限。不可变快照的60个历史路径中有5个是HTML占位，已从官方/开放来源取得并核验4份真实PDF；DOI `10.2172/6065200`的40页DOE报告仍因当前网络无法物化而失败关闭。不得用14页期刊版、网页打印或相似文献替代，也不得发布59/60的不完整v2包。
+- 架构与技术债事实已写入`docs/ARCHITECTURE_AUDIT_1_1.md`、`config/architecture-debt.json`和`config/module-ownership.json`。全仓Python约109,950行，Fusion前端约7,338行，`app.js`约4,379行；仓库目录内历史Mac制品约1.06GB仍是P2迁移债务。
+- 当前工作树仍只允许用户的`db/experimental_evidence.sqlite`作为未提交现场；禁止暂存、还原、清理或用于发布测试。1.1保护标签为`auto-research-v1.0.0-pre-1.1-protection`，仓库外保护目录为`/Users/USER/Zotero/auto-research-backups/v1.1-protection-20260822-154915`。
+- 已通过Harness/数据集目标33项、版本/发布契约28项、Fusion/资料包/Mac目标70项和科学审计10项；这些不是最终发布数。下一步必须先解决60/60 PDF输入，再串行执行共享全套、Mac全套、构建、签名、DMG、安装和真实用户流程。
+
+### Windows 全离线 Build Kit 长期规则
+
+- Windows构建包必须在Mac端预先物化并校验离线Python、锁定wheelhouse、Inno Setup 6.7.3与WebView2 Evergreen x64；Windows端只负责从本机C盘生成Setup，不应联网补依赖。
+- 所有云同步/移动盘输入先复制到本机普通短路径，再核验大小和SHA；资料包审计使用私有临时副本，避开OneDrive占位、Defender/索引器锁和打开文件删除差异。
+- 二进制文件描述符必须带`O_BINARY`；Python 3.12 Windows不得假设`os.fchmod`存在；关闭所有句柄后再replace/unlink，对WinError 5/32/33仅做有界重试。
+- Inno、wheel、WebView2、源码ZIP和官方包均绑定精确哈希；Setup生成后仍需在真实Win11完成安装、导包、搜索、上传、BYOK、升级与卸载。Mac验证不能解除`installer_ready=false`。
+
 ## v1.0.0 macOS 首个稳定交付线（2026-08-21，当前权威）
 
 - 当前源码身份固定为 Auto Research `1.0.0` / build `22`，唯一生产界面是 Fusion 四区工作台：文献、搜索、实验、资料包；设置是底部工具入口，不是第五个科研工作流。当前主工作区仅保留用户的 `db/experimental_evidence.sqlite` 未提交现场，禁止暂存、还原、清理或用于发布测试。

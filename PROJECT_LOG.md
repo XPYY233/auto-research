@@ -2,6 +2,23 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-22：v1.1 Mac核心恢复、Harness与数据集发布门
+
+- Fusion新增可恢复`DocumentTabStore`、最多两个编辑器组、服务端四类证据过滤、独立滚动文献目录、五模块检查器隔离与PDF临时高亮返回链。新增功能放入独立脚本/模块，没有恢复0.8 DOM、第二导航或跨页搬运节点。
+- 图书管理员和选中证据AI改用`deepseek-harness-sdk==0.1.1rc1`与`deepseek-harness-runtime-bin==0.1.1rc1`。SDK wheel SHA-256为`2113aec229039da435bc44b275b487216d2b1c308d850521b88cea6ce3c1b762`，runtime wheel为`2707cd666ba49ee0963228873abf7850ca7ec5e782cca61e3603793bace0d1cf`；composition仅开放八个只读Auto Research工具，移除Shell、文件、PTY、编辑器、子Agent和任意网络。
+- Harness继续受prepared action、一次性授权、provider/model白名单、调用/token预算、Credential generation与引用完整性门约束。加密历史最多20个会话或30天，设置可立即清除；旧收费路由固定410，版本/安全策略失败不回退旧循环。
+- 新增`dataset-bundle-v1`三层实现：安全来源投影、JSONL/Parquet/数据卡与论文级确定性划分、异步原子导出。真实不可变快照计划为60篇、4,356条，缺失DOI 3、未审核2,417；含未审核记录必须再次确认，默认不含私人实验或PDF/图片。
+- 新增14维人工金标准科学审计；测试覆盖TP/FP/FN、页码/IoU、重复、数据泄漏和路径/内部字段。禁止以模型一致性或软件回归通过推导科学准确率。
+- 官方包v2输入规划发现60个历史PDF路径中5个实际为HTML；4份已从合法来源取得并核验。`10.2172/6065200`的DOE 40页报告仍无法从当前网络下载，构建器因此返回`official_pdf_invalid`。没有使用同名14页期刊论文替代，也没有发布不完整包。
+- 更新机器可读模块所有权与债务：全仓Python约109,950行，Fusion前端约7,338行；`app.js`与若干大Python模块仍是P1，历史浏览器兼容与仓库内约1.06GB Mac制品仍是P2。
+- 当前已完成目标验证33+28+70+10项；最终全套、构建、签名、DMG和真实安装仍须在包输入完整后串行执行。生产SQLite保持用户未提交现场，未进入上述测试或提交。
+
+## 2026-08-22：Windows离线Setup成功经验冻结
+
+- 成功路径固定为：Mac端物化离线Python、完整wheelhouse、锁定Inno Setup 6.7.3、WebView2 Evergreen x64、源码与官方包，并生成逐文件SHA；Windows端将整个Build Kit复制到C盘普通短路径后只运行本机构建脚本。
+- 失败经验包括：网络无法取得`proxy_tools`/Inno、错误Inno版本、云端占位文件、Windows CRT文本模式破坏归档、Python 3.12缺少`os.fchmod`、Defender/索引器WinError 5/32/33以及临时文件句柄未关闭。构建脚本已分别用离线依赖、精确版本、输入物化、`O_BINARY`、条件权限、关闭句柄与有界重试处理。
+- Setup能生成不等于正式Windows发布。仍需真实Win11安装、导包、搜索、PDF、上传、BYOK、升级和卸载验收后才允许改变`installer_ready=false / SETUP_PRESENT=NO`。本轮1.1不做Windows迁移。
+
 ## 2026-08-21：Windows v1 RC 全离线与文件系统可移植性收口
 
 - 在真实 Windows 11 连续复现并修复三层阻断：归档文件描述符缺少 `O_BINARY`、Python 3.12 Windows 无 `os.fchmod` 且异常清理仍占用临时文件、Defender/索引器短时锁定原子替换与删除。共享普通文件操作现只对 WinError 5/32/33 有界重试，所有源/目标 fd 先关闭，其他错误继续失败关闭。

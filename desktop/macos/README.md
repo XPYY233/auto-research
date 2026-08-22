@@ -1,22 +1,22 @@
-# Auto Research macOS v1.0.0
+# Auto Research macOS v1.1.0
 
 这是 Auto Research 面向课题组本机使用的 macOS 稳定版。核心、`.aresearch` 资料包、私人库和凭据接口保持跨平台，但当前只发布 Apple Silicon Mac 版。用户唯一入口是 App，不再使用浏览器工作台、导师只读或 ngrok。
 
 ## 当前阶段
 
-- 当前发行身份：`1.0.0`（bundle `1.0.0`，build `22`）
+- 当前发行身份：`1.1.0`（bundle `1.1.0`，build `23`）
 - 当前构建：macOS arm64（Apple Silicon）课题组稳定版
 - 界面：继续使用项目唯一的 `src/auto_research/evidence/web/` 前端
-- 核心：继续使用项目现有 Python、SQLite、PyMuPDF 和 DeepSeek 运行边界
+- 核心：继续使用项目现有 Python、SQLite 和 PyMuPDF；图书管理员与选中证据问答统一由锁定的 DeepSeek Harness 运行时执行
 - 数据：v12 本地文献工作区继续可编辑；官方 `.aresearch` 和本机私人实验库作为相互隔离的只读检索来源，不复制回 v12
 - 分发：ad-hoc 签名，未使用 Developer ID，未经 Apple 公证，不是 App Store 发行版
-- Windows：开发与发布已暂停，当前没有 Windows 安装版
+- Windows：1.1迁移冻结；本Mac套件不包含Windows文件，既有Windows 1.0本机构建经验单独保留
 
 桌面壳不复制第二套搜索、Agent 或证据逻辑。应用、科学数据工作区、官方资料包和每位用户的私人库保持相互分离。
 
-当前版本包含 Fusion 科研工作台、Librarian V3、原生资料包导入与回退、官方/私人/全部联合精确搜索、个人 CSV/TSV/XLSX 导入确认门、分阶段文献提取与 BYOK 设置。图书管理员只查官方文献，不读取私人实验。
+当前版本包含 Fusion 科研工作台、多标签和双编辑器组、四类服务端筛选、DeepSeek Harness 图书管理员、原文临时高亮与返回链、原生资料包导入与回退、官方/私人/全部联合精确搜索、个人 CSV/TSV/XLSX 导入确认门、分阶段文献提取、`dataset-bundle-v1` 数据集导出与 BYOK 设置。图书管理员只查官方文献，不读取私人实验。
 
-源码中的 `version.json` 和发布契约已冻结为 `1.0.0` / build `22`。App、DMG、签名和实机验收结果应以本次从干净提交串行构建生成的制品清单为准，不沿用历史版本的测试数或哈希。
+源码中的 `version.json` 和发布契约已冻结为 `1.1.0` / build `23`。App、DMG、签名和实机验收结果应以本次从干净提交串行构建生成的制品清单为准，不沿用历史版本的测试数或哈希。
 
 ## 文件入口
 
@@ -31,7 +31,7 @@
 | 查看安全边界 | 阅读 `SECURITY.md` |
 | 查看数据包路线 | 阅读 `../PRODUCT_DATA_PACKAGE_PLAN.md` |
 
-生成物位于 `desktop/macos/dist/Auto Research.app` 和 `desktop/macos/dist/Auto-Research-1.0.0-macOS-arm64.dmg`，上一版保存在 `desktop/macos/releases/`。二者都不进入 Git，应用更新与科学数据更新分离。
+生成物位于 `desktop/macos/dist/Auto Research.app` 和 `desktop/macos/dist/Auto-Research-1.1.0-macOS-arm64.dmg`，上一版保存在 `desktop/macos/releases/`。二者都不进入 Git，应用更新与科学数据更新分离。
 
 ## 首次打开
 
@@ -43,7 +43,9 @@
 
 - 不把生产 SQLite、PDF、截图和模型历史烘焙进 `.app`。
 - 不声称另一台电脑已经能无迁移使用当前生产库。
-- 当前只发布 Apple Silicon Mac 版；Windows 暂停且未发布，Linux 没有安装包。
+- 当前只发布 Apple Silicon Mac 版；Windows 1.0 安装线保持冻结，不同步 1.1，Linux 没有安装包。
+- DeepSeek Harness 依赖是开发预览版本，发行版核验精确 SDK/runtime/二进制哈希；不匹配时 AI 明确不可用且不回退旧循环。
+- 软件稳定、资料包完整和科学人工准确率是三个不同结论；1.1 不把自动测试或模型一致性写成科学审核完成。
 - 不做自动更新服务器、App Store 或公网部署。
 - 不把 ad-hoc 签名描述为 Developer ID 签名或 Apple 公证。
 

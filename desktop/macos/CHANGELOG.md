@@ -1,5 +1,17 @@
 # macOS Desktop Changelog
 
+## 1.1.0 — 2026-08-22
+
+- 文献目录成为独立滚动区，新导入论文自动选中并滚动到可见位置；四类证据改为真实服务端多选筛选，不在有限前端结果中假过滤。
+- Fusion 引入可恢复的 `DocumentTabStore`：论文、证据、PDF、私人实验表格和资料包任务均可独立打开；最多两个编辑器组，异步结果不能抢夺当前标签。
+- 文献、搜索、实验、资料包、设置共用一个物理检查器但保存五套隔离状态，杜绝跨模块残留。
+- 图书管理员和选中证据问答迁移到精确锁定的 DeepSeek Harness；composition 不提供 Shell、文件系统、PTY、编辑器、子 Agent 或任意网络工具。旧收费接口固定退役，不作为故障回退。
+- Harness 会话使用本机加密历史，默认最多20个会话或30天；逐次授权、提供商/模型白名单、token/调用预算和凭据仍由 Auto Research 掌握。
+- 新增 `official-package-v2` 输入审计、PDF/视觉资产/来源锚点能力和导入后的数量、PDF覆盖与“前往搜索官方资料”动作；任一无效PDF、资源变化或超过2GB均失败关闭。
+- 新增 `dataset-bundle-v1`：JSONL、真实 Parquet、数据卡、manifest、确定性论文级 train/validation/test 划分和原子导出；默认不复制PDF/图片或私人实验。
+- 新增独立科学发布审计，分别度量数值、单位、意义、条件、表格、图片、结论、片段和定位，不把软件测试通过当作科学准确率。
+- 本轮仅发布 Apple Silicon Mac；Windows 1.1迁移冻结到用户认可Mac主流程之后。App继续使用 ad-hoc 签名且未经 Apple 公证。
+
 ## 1.0.0 — 2026-08-21
 
 - 发行身份升级为 macOS `1.0.0` / build `22` 课题组稳定版，目标设备为 Apple Silicon Mac。
