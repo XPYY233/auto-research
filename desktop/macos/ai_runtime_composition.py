@@ -4,27 +4,26 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 
 from auto_research.ai.business_actions import BusinessPreparedActionRegistry
 from auto_research.ai.capability_verifier import OpenAICompatibleCapabilityVerifier
 from auto_research.ai.consent import AIConsentService
 from auto_research.ai.desktop_controller import DesktopAIController
+from auto_research.ai.harness_official_sdk import OfficialDeepSeekHarnessRuntime
+from auto_research.ai.harness_runtime import DeepSeekHarnessRuntime
 from auto_research.ai.prepared_actions import (
     CompositeContentSnapshotAuthority,
     PreparedActionService,
 )
-from auto_research.ai.provider_registry import trusted_provider_profile
 from auto_research.ai.runtime_factory import RuntimeAIClientFactory
-from auto_research.evidence.agent_runtime import LibrarianAgentRuntime
-from auto_research.evidence.context_chat_ai_business_action import (
-    SelectedEvidenceChatBusinessPorts,
-    selected_evidence_chat_business_ports,
-)
 from auto_research.evidence.db import EvidenceDB
-from auto_research.evidence.librarian_ai_business_action import (
-    LibrarianBusinessPorts,
-    librarian_business_ports,
+from auto_research.evidence.federated_search_session import (
+    FederatedSearchSessionProtocol,
+)
+from auto_research.evidence.harness_business_action import (
+    HarnessBusinessPorts,
+    HarnessScopeBusinessPorts,
+    harness_business_ports,
 )
 from auto_research.evidence.literature_extraction_business_action import (
     LiteratureExtractionBusinessPorts,
@@ -74,11 +73,14 @@ class MacAIRuntimeServices:
     database: EvidenceDB | None = None
     personal_import_service: PersonalImportService | None = None
     desktop_session_id: str | None = None
+    federated_search_session: FederatedSearchSessionProtocol | None = None
+    harness_runtime: DeepSeekHarnessRuntime | None = None
     snapshot_authority: CompositeContentSnapshotAuthority | None = None
     business_actions: BusinessPreparedActionRegistry | None = None
     personal_suggestion_ports: PersonalSuggestionBusinessPorts | None = None
-    selected_evidence_chat_ports: SelectedEvidenceChatBusinessPorts | None = None
-    librarian_ports: LibrarianBusinessPorts | None = None
+    harness_ports: HarnessBusinessPorts | None = None
+    selected_evidence_chat_ports: HarnessScopeBusinessPorts | None = None
+    librarian_ports: HarnessScopeBusinessPorts | None = None
     literature_extraction_ports: LiteratureExtractionBusinessPorts | None = None
     literature_jobs: LiteratureExtractionJobStore | None = None
 
@@ -93,36 +95,6 @@ def disable_legacy_environment_credentials() -> None:
     os.environ.pop("DEEPSEEK_API_KEY", None)
 
 
-class _PreparedOnlyLibrarianClient:
-    """Metadata-only client for zero-model Librarian paths.
-
-    Paid calls are supplied exclusively by BusinessPreparedActionRegistry's
-    generation-bound RuntimeAIClientFactory.  This object therefore cannot
-    create a second provider or credential authority.
-    """
-
-    def __init__(self, runtime_state: AIRuntimeStateService) -> None:
-        self._runtime_state = runtime_state
-
-    @property
-    def settings(self) -> SimpleNamespace:
-        state = self._runtime_state.get()
-        profile = trusted_provider_profile(state.provider_id)
-        return SimpleNamespace(
-            provider_display_name=profile.display_name,
-            librarian_planning_model=state.task_models["librarian_planning"],
-            librarian_synthesis_model=state.task_models["librarian_synthesis"],
-        )
-
-    @staticmethod
-    def request_json(*_args, **_kwargs):
-        raise RuntimeError("prepared Librarian execution is required")
-
-    @staticmethod
-    def request_tool_message(*_args, **_kwargs):
-        raise RuntimeError("prepared Librarian execution is required")
-
-
 def create_mac_ai_runtime_services(
     *,
     state_path: Path | str = DEFAULT_AI_RUNTIME_STATE_PATH,
@@ -133,12 +105,24 @@ def create_mac_ai_runtime_services(
     database: EvidenceDB | None = None,
     personal_import_service: PersonalImportService | None = None,
     desktop_session_id: str | None = None,
+    federated_search_session: FederatedSearchSessionProtocol | None = None,
+    harness_runtime: DeepSeekHarnessRuntime | None = None,
+    harness_cordis_path: Path | str | None = None,
 ) -> MacAIRuntimeServices:
-    business_inputs = (database, personal_import_service, desktop_session_id)
+    business_inputs = (
+        database,
+        personal_import_service,
+        desktop_session_id,
+        federated_search_session,
+    )
     if any(value is not None for value in business_inputs) and not all(
         value is not None for value in business_inputs
     ):
         raise ValueError("mac AI business composition inputs must be complete")
+    if all(value is not None for value in business_inputs) and (
+        harness_runtime is None and harness_cordis_path is None
+    ):
+        raise ValueError("mac AI Harness runtime input is required")
     if desktop_session_id is not None and (
         not isinstance(desktop_session_id, str)
         or not desktop_session_id
@@ -191,15 +175,19 @@ def create_mac_ai_runtime_services(
     literature_jobs = None
     snapshots = None
     business_actions = None
+    harness_ports = None
+    effective_harness_runtime = harness_runtime
     if database is not None and personal_import_service is not None:
-        personal_ports = personal_suggestion_business_ports(personal_import_service)
-        selected_ports = selected_evidence_chat_business_ports(database)
-        librarian_ports = librarian_business_ports(
-            LibrarianAgentRuntime(
-                database,
-                client=_PreparedOnlyLibrarianClient(runtime_state),
-            )
+        effective_harness_runtime = effective_harness_runtime or OfficialDeepSeekHarnessRuntime(
+            cordis_path=Path(str(harness_cordis_path))
         )
+        personal_ports = personal_suggestion_business_ports(personal_import_service)
+        harness_ports = harness_business_ports(
+            session=federated_search_session,
+            runtime=effective_harness_runtime,
+        )
+        selected_ports = harness_ports.selected_evidence_chat
+        librarian_ports = harness_ports.librarian
         literature_jobs = LiteratureExtractionJobStore()
         literature_ports = literature_extraction_business_ports(
             literature_jobs,
@@ -210,8 +198,7 @@ def create_mac_ai_runtime_services(
         snapshots = CompositeContentSnapshotAuthority(
             {
                 "personal_table": personal_ports.snapshots,
-                "selected_evidence": selected_ports.snapshots,
-                "librarian_job": librarian_ports.snapshots,
+                "harness_official": harness_ports.snapshots,
                 "literature_extraction_stage": literature_ports.snapshots,
             }
         )
@@ -262,9 +249,12 @@ def create_mac_ai_runtime_services(
         database=database,
         personal_import_service=personal_import_service,
         desktop_session_id=desktop_session_id,
+        federated_search_session=federated_search_session,
+        harness_runtime=effective_harness_runtime,
         snapshot_authority=snapshots,
         business_actions=business_actions,
         personal_suggestion_ports=personal_ports,
+        harness_ports=harness_ports,
         selected_evidence_chat_ports=selected_ports,
         librarian_ports=librarian_ports,
         literature_extraction_ports=literature_ports,
@@ -277,22 +267,41 @@ def mac_ai_runtime_services(
     database: EvidenceDB | None = None,
     personal_import_service: PersonalImportService | None = None,
     desktop_session_id: str | None = None,
+    federated_search_session: FederatedSearchSessionProtocol | None = None,
+    harness_cordis_path: Path | str | None = None,
 ) -> MacAIRuntimeServices:
     global _SERVICES
     with _SERVICES_LOCK:
         if _SERVICES is None:
-            if database is None or personal_import_service is None or desktop_session_id is None:
+            if (
+                database is None
+                or personal_import_service is None
+                or desktop_session_id is None
+                or federated_search_session is None
+                or harness_cordis_path is None
+            ):
                 raise RuntimeError("mac AI runtime requires the desktop composition inputs")
             _SERVICES = create_mac_ai_runtime_services(
                 database=database,
                 personal_import_service=personal_import_service,
                 desktop_session_id=desktop_session_id,
+                federated_search_session=federated_search_session,
+                harness_cordis_path=harness_cordis_path,
             )
-        elif any(value is not None for value in (database, personal_import_service, desktop_session_id)):
+        elif any(
+            value is not None
+            for value in (
+                database,
+                personal_import_service,
+                desktop_session_id,
+                federated_search_session,
+            )
+        ):
             if (
                 database is not _SERVICES.database
                 or personal_import_service is not _SERVICES.personal_import_service
                 or desktop_session_id != _SERVICES.desktop_session_id
+                or federated_search_session is not _SERVICES.federated_search_session
             ):
                 raise RuntimeError("mac AI runtime is already bound to another desktop graph")
         return _SERVICES

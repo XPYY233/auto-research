@@ -521,6 +521,7 @@ class HarnessBudgetedBusinessAIClient:
     )
     _PUBLIC_ATTRIBUTES = frozenset(
         {
+            "__class__",
             "request_tool_message",
             "remaining_calls",
             "remaining_tokens",
@@ -722,7 +723,7 @@ _POLICIES = MappingProxyType(
             ("extraction",),
             "selected_evidence_chat_executor",
             "v1",
-            1,
+            2,
             32_000,
         ),
         "literature_extraction": _Policy(

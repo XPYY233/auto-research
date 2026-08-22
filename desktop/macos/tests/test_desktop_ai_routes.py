@@ -21,7 +21,15 @@ for path in (DESKTOP_ROOT, SOURCE_ROOT):
         sys.path.insert(0, str(path))
 
 from ai_runtime_composition import create_mac_ai_runtime_services  # noqa: E402
+from auto_research.ai.business_actions import BusinessActionError  # noqa: E402
 from auto_research.ai.desktop_controller import DESKTOP_AI_ROUTES  # noqa: E402
+from auto_research.ai.harness_contract import (  # noqa: E402
+    CORDIS_RUNTIME_PROTOCOL_PIN,
+    HARNESS_SDK_PROTOCOL_PIN,
+    HarnessDependencyMetadata,
+    HarnessDependencySet,
+)
+from auto_research.ai.harness_official_sdk import safe_composition_metadata  # noqa: E402
 from auto_research.evidence.db import EvidenceDB  # noqa: E402
 from desktop_product_services import create_desktop_product_services  # noqa: E402
 from desktop_ai_api import MacDesktopAIAPI  # noqa: E402
@@ -57,6 +65,21 @@ class MemoryBackend:
         self.value = None
 
 
+class FakeHarnessRuntime:
+    def dependency_metadata(self):
+        return HarnessDependencySet(
+            HarnessDependencyMetadata.from_pin(HARNESS_SDK_PROTOCOL_PIN),
+            HarnessDependencyMetadata.from_pin(CORDIS_RUNTIME_PROTOCOL_PIN),
+            "2.12.0",
+        )
+
+    def composition_metadata(self):
+        return safe_composition_metadata()
+
+    def execute(self, **_kwargs):
+        raise AssertionError("Harness must not execute in route framing tests")
+
+
 class DesktopAIRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -81,6 +104,8 @@ class DesktopAIRouteTests(unittest.TestCase):
             database=self.database,
             personal_import_service=self.product.personal_import_service,
             desktop_session_id=self.desktop_session,
+            federated_search_session=self.product.federated_search_service.session,
+            harness_runtime=FakeHarnessRuntime(),
         )
         self.token = new_session_token()
         self.server, _ = create_desktop_server(
@@ -202,13 +227,12 @@ class DesktopAIRouteTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 403)
         raised.exception.close()
 
-    def test_local_librarian_assembler_needs_no_key_and_makes_no_network_call(self):
-        result = self.services.librarian_ports.assembler.local_result(
-            {"question": "你好", "conversation_id": "local-c1"}
-        )
-        self.assertEqual(result["librarian_core_version"], "librarian-v3")
-        self.assertEqual(result["search_operations"], 0)
-        self.assertEqual(result["tool_calls"], 0)
+    def test_librarian_without_official_source_fails_closed_without_legacy_fallback(self):
+        with self.assertRaises(BusinessActionError) as raised:
+            self.services.librarian_ports.assembler.assemble(
+                {"question": "你好", "conversation_id": "local-c1"}
+            )
+        self.assertEqual(raised.exception.code, "business_action_prepare_failed")
         self.assertFalse(
             self.services.desktop_service.credential_status("deepseek")["configured"]
         )

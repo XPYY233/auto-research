@@ -23,6 +23,13 @@ from ai_runtime_composition import (  # noqa: E402
     disable_legacy_environment_credentials,
 )
 from auto_research.ai.business_actions import BUSINESS_ACTION_SCOPES  # noqa: E402
+from auto_research.ai.harness_contract import (  # noqa: E402
+    CORDIS_RUNTIME_PROTOCOL_PIN,
+    HARNESS_SDK_PROTOCOL_PIN,
+    HarnessDependencyMetadata,
+    HarnessDependencySet,
+)
+from auto_research.ai.harness_official_sdk import safe_composition_metadata  # noqa: E402
 from auto_research.evidence.db import EvidenceDB  # noqa: E402
 from desktop_product_services import create_desktop_product_services  # noqa: E402
 from secure_credentials import (  # noqa: E402
@@ -54,6 +61,21 @@ class MemoryBackend:
 class RejectNetwork:
     def request(self, *_args, **_kwargs):
         raise AssertionError("network must not be used during composition")
+
+
+class FakeHarnessRuntime:
+    def dependency_metadata(self):
+        return HarnessDependencySet(
+            HarnessDependencyMetadata.from_pin(HARNESS_SDK_PROTOCOL_PIN),
+            HarnessDependencyMetadata.from_pin(CORDIS_RUNTIME_PROTOCOL_PIN),
+            "2.12.0",
+        )
+
+    def composition_metadata(self):
+        return safe_composition_metadata()
+
+    def execute(self, **_kwargs):
+        raise AssertionError("Harness must not execute during composition")
 
 
 class MacAIRuntimeCompositionTests(unittest.TestCase):
@@ -94,6 +116,8 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 database=database,
                 personal_import_service=product.personal_import_service,
                 desktop_session_id=session_id,
+                federated_search_session=product.federated_search_service.session,
+                harness_runtime=FakeHarnessRuntime(),
             )
             self.assertIs(services.credential_manager, manager)
             self.assertIs(services.legacy_deepseek_store.manager, manager)
@@ -112,8 +136,18 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 services.personal_suggestion_ports.assembler._service,
                 product.personal_import_service,
             )
-            self.assertIs(services.selected_evidence_chat_ports.assembler._db, database)
-            self.assertIs(services.librarian_ports.assembler._runtime.db, database)
+            self.assertIs(
+                services.federated_search_session,
+                product.federated_search_service.session,
+            )
+            self.assertIsNotNone(services.harness_ports)
+            self.assertEqual(
+                services.selected_evidence_chat_ports.assembler._scope,
+                "selected_evidence_chat",
+            )
+            self.assertEqual(services.librarian_ports.assembler._scope, "librarian")
+            self.assertTrue(services.selected_evidence_chat_ports.executor.requires_harness_budget)
+            self.assertTrue(services.librarian_ports.executor.requires_harness_budget)
             self.assertIs(
                 services.literature_extraction_ports.assembler._store,
                 services.literature_jobs,
@@ -132,8 +166,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 set(services.snapshot_authority._authorities),
                 {
                     "personal_table",
-                    "selected_evidence",
-                    "librarian_job",
+                    "harness_official",
                     "literature_extraction_stage",
                 },
             )
@@ -150,6 +183,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
     def test_process_accessor_constructs_exactly_one_graph(self) -> None:
         database = object()
         personal = object()
+        federated = object()
         session_id = "desktop-session-" + "x" * 32
         sentinel = type(
             "Sentinel",
@@ -158,6 +192,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 "database": database,
                 "personal_import_service": personal,
                 "desktop_session_id": session_id,
+                "federated_search_session": federated,
             },
         )()
         previous = ai_runtime_composition._SERVICES
@@ -172,6 +207,8 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                     "database": database,
                     "personal_import_service": personal,
                     "desktop_session_id": session_id,
+                    "federated_search_session": federated,
+                    "harness_cordis_path": Path("/tmp/harness.cordis.yml"),
                 }
                 self.assertIs(ai_runtime_composition.mac_ai_runtime_services(**kwargs), sentinel)
                 self.assertIs(ai_runtime_composition.mac_ai_runtime_services(**kwargs), sentinel)
@@ -233,6 +270,13 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             "personal_import_service=product_services.personal_import_service",
             production,
         )
+        self.assertIn(
+            "federated_search_session=product_services.federated_search_service.session",
+            production,
+        )
+        self.assertIn("auto-research-harness.runtime.cordis.yml", production)
+        self.assertNotIn("librarian_business_ports(", production)
+        self.assertNotIn("selected_evidence_chat_business_ports(", production)
         self.assertNotIn("read_for_runtime()", production)
         self.assertIn('experience_mode="fusion-product"', production)
         self.assertNotIn('os.environ["OPENAI_API_KEY"]', production)

@@ -367,6 +367,8 @@ def _run_smoke_test(project_root: Path) -> int:
             database=database,
             personal_import_service=product_services.personal_import_service,
             desktop_session_id=desktop_session_id,
+            federated_search_session=product_services.federated_search_service.session,
+            harness_cordis_path=project_root / "config" / "auto-research-harness.runtime.cordis.yml",
         )
         server, _ = create_desktop_server(
             database,
@@ -484,6 +486,8 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             database=database,
             personal_import_service=product_services.personal_import_service,
             desktop_session_id=desktop_session_id,
+            federated_search_session=product_services.federated_search_service.session,
+            harness_cordis_path=project_root / "config" / "auto-research-harness.runtime.cordis.yml",
         )
         native_desktop_bridge = NativeDesktopBridge(
             product_services.package_service.broker,
