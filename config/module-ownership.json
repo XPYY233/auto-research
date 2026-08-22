@@ -1,6 +1,6 @@
 {
   "schema": "auto-research-module-ownership-v1",
-  "updated_at": "2026-08-09",
+  "updated_at": "2026-08-22",
   "allowed_statuses": ["stable", "experimental", "compatibility", "retired"],
   "modules": [
     {
@@ -11,11 +11,18 @@
       "authority": "schema-v12 evidence, four public evidence types, extraction and quality gates"
     },
     {
-      "id": "librarian-v3",
+      "id": "librarian-v3-compatibility",
       "paths": ["src/auto_research/evidence/agent_runtime.py", "src/auto_research/evidence/librarian_*.py"],
       "owner": "shared-librarian-core",
+      "status": "compatibility",
+      "authority": "historical deterministic recall and signed brief compatibility only; production desktop AI must not execute this loop"
+    },
+    {
+      "id": "deepseek-harness-runtime",
+      "paths": ["src/auto_research/ai/harness_*.py", "src/auto_research/evidence/harness_*.py", "config/auto-research-harness*.yml"],
+      "owner": "shared-ai-runtime",
       "status": "stable",
-      "authority": "intent, bounded recall, signed research state and evidence-only synthesis"
+      "authority": "pinned Harness composition, read-only tool gateway, prepared-action execution, citation and budget validation"
     },
     {
       "id": "federated-search",
@@ -46,6 +53,20 @@
       "authority": "path-free package plans, jobs, export and import orchestration"
     },
     {
+      "id": "dataset-bundle-runtime",
+      "paths": ["src/auto_research/product/dataset_bundle.py", "src/auto_research/product/dataset_bundle_sources.py", "src/auto_research/product/dataset_export_service.py"],
+      "owner": "shared-product-runtime",
+      "status": "stable",
+      "authority": "dataset-bundle-v1 JSONL/Parquet projection, deterministic paper split, data card and atomic archive publication"
+    },
+    {
+      "id": "scientific-release-audit",
+      "paths": ["src/auto_research/evidence/scientific_release_audit.py"],
+      "owner": "scientific-quality",
+      "status": "stable",
+      "authority": "human-gold scientific metrics and leakage/duplicate release gates; never inferred from software test success"
+    },
+    {
       "id": "personal-data-core",
       "paths": ["src/auto_research/personal"],
       "owner": "shared-personal-core",
@@ -64,7 +85,7 @@
       "paths": ["src/auto_research/evidence/web"],
       "owner": "shared-frontend",
       "status": "stable",
-      "authority": "single macOS and Windows workbench UI; platforms must not fork HTML or business state"
+      "authority": "single Fusion workbench UI, DocumentTabStore, evidence filters and inspector projections; platforms must not fork HTML or business state"
     },
     {
       "id": "macos-shell",

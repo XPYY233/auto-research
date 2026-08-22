@@ -1,6 +1,6 @@
 {
   "schema": "auto-research-architecture-debt-v1",
-  "generated_at": "2026-08-09",
+  "generated_at": "2026-08-22",
   "policy": {
     "allowed_statuses": ["stable", "experimental", "compatibility", "retired"],
     "owner_required": true,
@@ -38,12 +38,32 @@
       "removal_gate": "平台版本文件和构建清单均由契约生成或验证"
     },
     {
+      "id": "ARCH-P0-004",
+      "priority": "P0",
+      "area": "harness-runtime",
+      "owner": "shared-ai-runtime",
+      "status": "experimental",
+      "problem": "DeepSeek Harness仍为Developer Preview，上游可发生破坏性更新，且运行时二进制进入桌面可信计算边界",
+      "target": "精确锁定SDK、runtime wheel和内含二进制哈希；版本或策略不匹配时失败关闭且不回退旧AI循环",
+      "removal_gate": "Mac真实App完成版本校验、无越权工具、无授权零调用、预算超限零额外调用与会话清除验收"
+    },
+    {
+      "id": "ARCH-P0-005",
+      "priority": "P0",
+      "area": "official-package-v2",
+      "owner": "release-lead",
+      "status": "experimental",
+      "problem": "官方包v2要求60篇原始PDF和视觉资产完整入包，任一HTML占位、来源变化或权利清单缺失都会破坏可复用性",
+      "target": "从不可变证据快照和逐文件审核清单生成，60份PDF全部通过魔数、页数、哈希和身份核验；不允许静默遗漏或替代文献",
+      "removal_gate": "包小于2GB、签名验真、60/60 PDF、全部声明资产可读、导入失败原子性与1.0回退通过"
+    },
+    {
       "id": "ARCH-P1-001",
       "priority": "P1",
       "area": "frontend",
       "owner": "shared-frontend",
       "status": "experimental",
-      "problem": "app.js约3992行、desktop_product.js约857行，状态与视图职责集中",
+      "problem": "Fusion已抽出DocumentTabStore，但app.js仍约4379行、desktop_product.js约968行，历史状态与视图职责仍集中",
       "target": "无构建器ES模块：api-store、literature、search-librarian、personal、package-center、evidence、history",
       "removal_gate": "原DOM ID和endpoint黄金契约、macOS/Windows共享资源哈希一致"
     },
@@ -66,6 +86,16 @@
       "problem": "transfer_package与personal transfer merge已接近单文件治理阈值",
       "target": "保持公开DTO不变，拆分contract/plan、archive/install与clone/storage",
       "removal_gate": "0.7真实往返验收后，在下一次格式扩展前完成职责拆分"
+    },
+    {
+      "id": "ARCH-P1-004",
+      "priority": "P1",
+      "area": "legacy-ai-compatibility",
+      "owner": "shared-ai-runtime",
+      "status": "compatibility",
+      "problem": "历史Librarian V3和context-chat代码仍用于兼容测试与旧研究简报，容易被误认为生产AI权威",
+      "target": "生产桌面只注册Harness prepared action；旧收费路由固定410，旧循环不得成为Harness不可用时的回退",
+      "removal_gate": "所有兼容测试迁到Harness结果契约后删除旧执行循环，仅保留可验证的历史数据迁移器"
     },
     {
       "id": "ARCH-P2-001",
