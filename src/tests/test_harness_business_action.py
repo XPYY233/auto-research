@@ -10,6 +10,7 @@ from auto_research.ai.harness_contract import (
     HARNESS_SDK_PROTOCOL_PIN,
     HarnessDependencyMetadata,
     HarnessDependencySet,
+    HarnessError,
 )
 from auto_research.ai.harness_official_sdk import safe_composition_metadata
 from auto_research.ai.prepared_actions import PreparedOutbound
@@ -423,6 +424,27 @@ class HarnessBusinessActionTests(unittest.TestCase):
         self.assertEqual(failed.exception.cause_code, "harness_runtime_failed")
         self.assertEqual(failed.exception.stage, "harness_execute")
         self.assertEqual(failed.exception.next_action, "repair_harness_runtime")
+        self.assertEqual(raw.calls, 0)
+
+    def test_budget_exhaustion_is_not_reported_as_runtime_failure(self):
+        class BudgetRuntime(Runtime):
+            def execute(self, **_kwargs):
+                raise HarnessError("harness_budget_exhausted")
+
+        ports = harness_business_ports(session=Session(), runtime=BudgetRuntime())
+        draft = ports.librarian.assembler.assemble(
+            {"question": "硬度", "conversation_id": "c", "history": []}
+        )
+        prepared = action(draft, "librarian")
+        raw = RawClient()
+        with self.assertRaises(BusinessActionError) as failed:
+            ports.librarian.executor.execute(
+                action=prepared,
+                ai_client=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
+            )
+        self.assertEqual(failed.exception.cause_code, "harness_budget_exhausted")
+        self.assertEqual(failed.exception.stage, "harness_execute")
+        self.assertEqual(failed.exception.next_action, "refine_librarian_question")
         self.assertEqual(raw.calls, 0)
 
     def test_unreviewed_runtime_is_rejected_before_prepare(self):

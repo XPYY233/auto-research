@@ -74,6 +74,7 @@ _ERRORS = {
     "harness_tool_forbidden": ("Harness 请求了未授权工具。", False),
     "harness_tool_invalid": ("Harness 工具参数或结果无效。", False),
     "harness_output_invalid": ("Harness 返回结果未通过科研完整性检查。", False),
+    "harness_budget_exhausted": ("Harness 已用完本次授权预算，未自动继续收费。", False),
     "harness_runtime_unavailable": ("Harness 运行时暂时不可用。", True),
     "harness_runtime_failed": ("Harness 任务未能完成。", True),
     "harness_job_expired": ("Harness 任务已过期。", False),

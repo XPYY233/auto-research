@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import urllib.error
 import urllib.request
 import unittest
 from unittest import mock
@@ -178,6 +179,38 @@ class FakeHarness:
         )
 
 
+class BudgetExhaustingHarness(FakeHarness):
+    def run(self, _prompt, *, session_id):
+        del session_id
+        token = self.kwargs["api_key"]
+        tools = [{
+            "type": "function",
+            "function": {
+                "name": "mcp__auto_research__exact_search",
+                "description": "bounded",
+                "parameters": {"type": "object", "additionalProperties": False},
+            },
+        }]
+        for index in range(3):
+            try:
+                post(
+                    self.kwargs["base_url"] + "/chat/completions",
+                    token,
+                    {
+                        "model": self.kwargs["model"],
+                        "messages": [{"role": "user", "content": f"derived-{index}"}],
+                        "tools": tools,
+                        "max_tokens": self.kwargs["max_tokens"],
+                        "temperature": 0.1,
+                        "stream": False,
+                    },
+                )
+            except urllib.error.HTTPError as exc:
+                exc.close()
+                raise
+        raise AssertionError("budget gate did not stop the third provider request")
+
+
 class OfficialHarnessSDKTests(unittest.TestCase):
     def test_frozen_bundle_accepts_only_verified_in_bundle_runtime_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -261,8 +294,31 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertEqual(result["citations"], [{"ref": "R1"}])
         self.assertEqual(len(raw.calls), 1)
         self.assertEqual(model.remaining_calls, 1)
+        self.assertEqual(FakeHarness.latest.kwargs["max_tokens"], 1_000)
+        self.assertIn("第六轮必须输出最终 JSON", FakeHarness.latest.kwargs["env"]["AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"])
         self.assertNotIn("real-key", repr(FakeHarness.latest.kwargs))
         self.assertIsNone(FakeHarness.latest.kwargs["session_root"])
+
+    def test_budget_exhaustion_preserves_stable_failure_code(self):
+        prepared = action()
+        raw = RawClient()
+        model = HarnessBudgetedBusinessAIClient(client=raw, action=prepared)
+        gateway = HarnessToolGateway(backend=Backend(), job=job(), allow_source_view=True)
+        runtime = OfficialDeepSeekHarnessRuntime(
+            cordis_path="config/auto-research-harness.runtime.cordis.yml",
+            harness_factory=BudgetExhaustingHarness,
+            dependency_resolver=dependencies,
+            runtime_path_resolver=lambda: "/verified/runtime",
+        )
+        with self.assertRaises(HarnessError) as failed:
+            runtime.execute(
+                job=job(),
+                model=model,
+                tools=gateway,
+                prompt={"question": "硬度如何变化？"},
+            )
+        self.assertEqual(failed.exception.code, "harness_budget_exhausted")
+        self.assertEqual(len(raw.calls), 2)
 
     def test_checked_in_composition_has_only_four_runtime_rows(self):
         text = Path("config/auto-research-harness.runtime.cordis.yml").read_text()

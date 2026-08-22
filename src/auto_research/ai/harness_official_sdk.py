@@ -266,6 +266,8 @@ class _Bridge:
         self.token = secrets.token_urlsafe(32)
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._failure_code = ""
+        self._failure_lock = threading.Lock()
 
     def __enter__(self) -> "_Bridge":
         bridge = self
@@ -292,7 +294,7 @@ class _Bridge:
                         return bridge._mcp(self)
                     return bridge._error(self, HTTPStatus.NOT_FOUND)
                 except HarnessError as exc:
-                    bridge._trace_handler_failure(self.path, exc)
+                    bridge._record_handler_failure(self.path, exc)
                     return bridge._error(self, HTTPStatus.BAD_REQUEST)
                 except Exception:
                     return bridge._error(self, HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -322,6 +324,11 @@ class _Bridge:
         if self._server is None:
             raise HarnessError("harness_runtime_unavailable")
         return f"127.0.0.1:{self._server.server_address[1]}"
+
+    @property
+    def failure_code(self) -> str:
+        with self._failure_lock:
+            return self._failure_code
 
     def _authorized(self, handler: BaseHTTPRequestHandler) -> bool:
         hosts = handler.headers.get_all("Host") or []
@@ -396,6 +403,16 @@ class _Bridge:
             or not isinstance(body.get("stream", False), bool)
         ):
             raise HarnessError("harness_invalid")
+        remaining_calls = self.model.remaining_calls
+        remaining_tokens = self.model.remaining_tokens
+        _safe_trace(
+            "provider_budget",
+            remaining_calls=remaining_calls,
+            remaining_tokens=remaining_tokens,
+            requested_tokens=tokens,
+        )
+        if remaining_calls < 1 or tokens > remaining_tokens:
+            raise HarnessError("harness_budget_exhausted")
         try:
             message = self.model.request_tool_message(
                 messages,
@@ -555,8 +572,10 @@ class _Bridge:
             )
         self._json(handler, {"jsonrpc": "2.0", "id": request_id, "result": result})
 
-    @staticmethod
-    def _trace_handler_failure(path: str, exc: HarnessError) -> None:
+    def _record_handler_failure(self, path: str, exc: HarnessError) -> None:
+        with self._failure_lock:
+            if not self._failure_code:
+                self._failure_code = exc.code
         _safe_trace(
             "bridge_failure",
             route="provider" if path == "/v1/chat/completions" else "mcp",
@@ -621,11 +640,15 @@ class OfficialDeepSeekHarnessRuntime:
                     "AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT": _system_prompt(job.session.scope),
                     "DSH_MODEL": job.model,
                 }
+                per_turn_max_tokens = min(
+                    16_000,
+                    max(1, job.max_tokens // job.max_calls),
+                )
                 try:
                     harness = factory(
                         provider="deepseek-official",
                         model=job.model,
-                        max_tokens=min(job.max_tokens, 32_000),
+                        max_tokens=per_turn_max_tokens,
                         cwd=workspace,
                         runtime_cwd=workspace,
                         session_root=None,
@@ -644,7 +667,11 @@ class OfficialDeepSeekHarnessRuntime:
                 except HarnessError:
                     raise
                 except Exception as exc:
+                    if bridge.failure_code:
+                        raise HarnessError(bridge.failure_code) from exc
                     raise HarnessError("harness_runtime_failed") from exc
+        if bridge.failure_code:
+            raise HarnessError(bridge.failure_code)
         final = getattr(result, "final_response", None)
         finish = getattr(result, "finish_reason", None)
         session_root = getattr(result, "session_root", None)
@@ -672,7 +699,12 @@ def _system_prompt(scope: str) -> str:
         "最终仅输出严格 JSON 对象，不要 Markdown。"
     )
     if scope == "librarian":
-        return common + "回答必须包含条件解释、检索过程、证据回答、引用卡片、相关文章建议和局限。"
+        return common + (
+            "回答必须包含条件解释、检索过程、证据回答、引用卡片、相关文章建议和局限。"
+            "优先使用任务输入中的已召回证据，只为补足明确缺口调用工具；"
+            "不得用相同参数重复调用工具。最多进行五轮工具核验，第六轮必须输出最终 JSON；"
+            "证据不足时在局限中如实说明，不得为了继续搜索而耗尽授权预算。"
+        )
     return common + "只解释当前实体及明确允许的相邻证据，不得跨证据包拼接定量结论。"
 
 

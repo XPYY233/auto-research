@@ -328,6 +328,7 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
             "prepared.disclosure_version!==disclosureVersion", "librarian-ai-stage-v1",
             "literature-extraction-stage-summary-v1", "literature-extraction-commit-result-v2",
             "librarian:8", "selected_evidence_chat:2", "personal_suggestion:2", "calls>AI_CALL_LIMITS[scope]",
+            "librarianBusy:false", "if(state.librarianBusy)return", "harness_budget_exhausted",
             "本阶段最多调用 ${calls} 次", "harness_dependency_mismatch",
             "AI 执行环境版本不兼容", "文献证据源当前不可用",
         ):

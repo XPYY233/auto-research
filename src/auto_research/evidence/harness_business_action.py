@@ -193,6 +193,8 @@ def _harness_failure(exc: HarnessError, *, stage: str) -> BusinessActionError:
     _safe_trace(stage, exc.code)
     if exc.code in {"harness_dependency_mismatch", "harness_runtime_unavailable", "harness_runtime_failed"}:
         next_action = "repair_harness_runtime"
+    elif exc.code == "harness_budget_exhausted":
+        next_action = "refine_librarian_question"
     elif exc.code == "harness_provider_untrusted":
         next_action = "select_supported_provider"
     else:
