@@ -4,8 +4,10 @@ import base64
 import json
 import os
 import tempfile
+import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -20,7 +22,9 @@ KEYCHAIN_SERVICE = f"{APP_IDENTIFIER}.librarian-history.v2"
 KEYCHAIN_ACCOUNT = "local-encryption-key-v2"
 HISTORY_AAD = f"{APP_IDENTIFIER}:librarian-history:v2".encode("utf-8")
 MAX_HISTORY_BYTES = 2_500_000
-MAX_SESSIONS = 16
+MAX_SESSIONS = 20
+MAX_SESSION_AGE_SECONDS = 30 * 24 * 60 * 60
+MAX_FUTURE_SKEW_SECONDS = 5 * 60
 
 
 class SecureHistoryError(RuntimeError):
@@ -173,17 +177,32 @@ class SecureHistoryStore:
         key_provider: HistoryKeyProvider,
         *,
         storage_label: str = "local-aes-256-gcm",
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self.path = path.expanduser()
         self.key_provider = key_provider
         self.storage_label = storage_label
+        self._clock = clock
 
     @staticmethod
-    def _serialize_sessions(sessions: object) -> bytes:
+    def _session_timestamp(session: dict) -> float | None:
+        raw = session.get("updated_at") or session.get("created_at")
+        if not isinstance(raw, str) or not raw.strip():
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+
+    def _retained_sessions(self, sessions: object) -> list[dict]:
         if not isinstance(sessions, list):
             raise SecureHistoryError("对话历史必须是列表")
-        if len(sessions) > MAX_SESSIONS:
-            raise SecureHistoryError(f"对话历史最多保留 {MAX_SESSIONS} 组")
+        now = float(self._clock())
+        cutoff = now - MAX_SESSION_AGE_SECONDS
+        retained: list[tuple[float, dict]] = []
         for session in sessions:
             if not isinstance(session, dict):
                 raise SecureHistoryError("对话历史包含无效会话")
@@ -191,9 +210,18 @@ class SecureHistoryStore:
                 raise SecureHistoryError("对话会话缺少有效 ID")
             if not isinstance(session.get("messages"), list):
                 raise SecureHistoryError("对话会话缺少消息列表")
+            timestamp = self._session_timestamp(session)
+            if timestamp is None or timestamp < cutoff or timestamp > now + MAX_FUTURE_SKEW_SECONDS:
+                continue
+            retained.append((timestamp, session))
+        retained.sort(key=lambda value: value[0], reverse=True)
+        return [session for _timestamp, session in retained[:MAX_SESSIONS]]
+
+    def _serialize_sessions(self, sessions: object) -> bytes:
+        retained = self._retained_sessions(sessions)
         try:
             payload = json.dumps(
-                sessions,
+                retained,
                 ensure_ascii=False,
                 separators=(",", ":"),
             ).encode("utf-8")
@@ -218,8 +246,7 @@ class SecureHistoryStore:
                 HISTORY_AAD,
             )
             sessions = json.loads(plaintext.decode("utf-8"))
-            self._serialize_sessions(sessions)
-            return sessions
+            return self._retained_sessions(sessions)
         except SecureHistoryError:
             raise
         except (OSError, KeyError, TypeError, ValueError, UnicodeDecodeError, InvalidTag) as exc:

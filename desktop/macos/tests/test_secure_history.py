@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from secure_history import (
@@ -20,6 +22,8 @@ def sample_sessions(marker: str = "保密科研问题") -> list[dict]:
         {
             "id": "session-1",
             "title": marker,
+            "created_at": "2026-08-22T08:00:00+00:00",
+            "updated_at": "2026-08-22T08:00:00+00:00",
             "messages": [
                 {"role": "user", "content": marker},
                 {"role": "assistant", "content": "带证据的回答 [R1]"},
@@ -37,6 +41,7 @@ class SecureHistoryStoreTests(unittest.TestCase):
         self.store = SecureHistoryStore(
             self.path,
             StaticHistoryKeyProvider(b"\x17" * 32),
+            clock=lambda: datetime(2026, 8, 22, 9, tzinfo=timezone.utc).timestamp(),
         )
 
     def tearDown(self) -> None:
@@ -59,9 +64,9 @@ class SecureHistoryStoreTests(unittest.TestCase):
     def test_tampering_fails_closed(self) -> None:
         self.store.save(sample_sessions())
         envelope = json.loads(self.path.read_text(encoding="utf-8"))
-        ciphertext = list(envelope["ciphertext"])
-        ciphertext[-3] = "A" if ciphertext[-3] != "A" else "B"
-        envelope["ciphertext"] = "".join(ciphertext)
+        ciphertext = bytearray(base64.b64decode(envelope["ciphertext"]))
+        ciphertext[-1] ^= 0x01
+        envelope["ciphertext"] = base64.b64encode(ciphertext).decode("ascii")
         self.path.write_text(json.dumps(envelope), encoding="utf-8")
 
         with self.assertRaisesRegex(SecureHistoryError, "损坏、被篡改或密钥不可用"):
@@ -76,15 +81,37 @@ class SecureHistoryStoreTests(unittest.TestCase):
         with self.assertRaises(SecureHistoryError):
             other.load()
 
-    def test_rejects_invalid_or_oversized_session_collection(self) -> None:
+    def test_rejects_invalid_and_retains_only_recent_twenty_sessions(self) -> None:
         with self.assertRaisesRegex(SecureHistoryError, "必须是列表"):
             self.store.save({"id": "not-a-list"})
-        too_many = [
-            {"id": f"session-{index}", "messages": []}
-            for index in range(MAX_SESSIONS + 1)
+        recent = [
+            {
+                "id": f"session-{index}",
+                "messages": [],
+                "updated_at": (
+                    datetime(2026, 8, 22, 8, tzinfo=timezone.utc) - timedelta(minutes=index)
+                ).isoformat(),
+            }
+            for index in range(MAX_SESSIONS + 4)
         ]
-        with self.assertRaisesRegex(SecureHistoryError, "最多保留"):
-            self.store.save(too_many)
+        self.store.save(recent)
+        loaded = self.store.load()
+        self.assertEqual(len(loaded), MAX_SESSIONS)
+        self.assertEqual(loaded[0]["id"], "session-0")
+        self.assertEqual(loaded[-1]["id"], f"session-{MAX_SESSIONS - 1}")
+
+    def test_discards_expired_invalid_and_implausibly_future_sessions(self) -> None:
+        now = datetime(2026, 8, 22, 9, tzinfo=timezone.utc)
+        sessions = sample_sessions()
+        sessions.extend(
+            [
+                {"id": "expired", "messages": [], "updated_at": (now - timedelta(days=31)).isoformat()},
+                {"id": "invalid", "messages": [], "updated_at": "not-a-date"},
+                {"id": "future", "messages": [], "updated_at": (now + timedelta(hours=1)).isoformat()},
+            ]
+        )
+        self.store.save(sessions)
+        self.assertEqual([session["id"] for session in self.store.load()], ["session-1"])
 
     def test_clear_removes_ciphertext(self) -> None:
         self.store.save(sample_sessions())
