@@ -147,7 +147,7 @@ class DatasetBundleTests(unittest.TestCase):
             self.builder.plan(papers=[], evidence=[], include_private=True, private_records=[row])
         self.assertEqual("dataset_bundle_unreviewed", caught.exception.code)
 
-    def test_unreviewed_public_record_is_reported_but_cannot_publish(self):
+    def test_unreviewed_public_record_requires_explicit_acknowledgement(self):
         row = evidence("item", "item-1")
         row.pop("quality_gate_status")
         plan = self.builder.plan(papers=[paper()], evidence=[row])
@@ -158,6 +158,10 @@ class DatasetBundleTests(unittest.TestCase):
                 self.builder.publish(plan, target)
             self.assertEqual("dataset_bundle_unreviewed", caught.exception.code)
             self.assertFalse(target.exists())
+            result = self.builder.publish(plan, target, unreviewed_acknowledged=True)
+            self.assertEqual("published", result["status"])
+            manifest = json.loads((target / "manifest.json").read_text())
+            self.assertTrue(manifest["unreviewed_acknowledged"])
 
     def test_plan_reports_missing_fields_and_rights_risk(self):
         plan = self.builder.plan(
@@ -268,6 +272,39 @@ class DatasetBundleTests(unittest.TestCase):
     def test_default_writer_is_real_pyarrow_adapter(self):
         builder = DatasetBundleBuilder()
         self.assertIsInstance(builder._parquet_writer, PyArrowParquetWriter)
+
+    def test_publish_archive_is_deterministic_and_contains_verified_bundle(self):
+        plan = self.builder.plan(papers=[paper()], evidence=self._four_records())
+        with tempfile.TemporaryDirectory() as directory:
+            first = Path(directory) / "dataset-first.zip"
+            second = Path(directory) / "dataset-second.zip"
+            first_result = self.builder.publish_archive(plan, first)
+            second_result = self.builder.publish_archive(plan, second)
+            self.assertEqual(first_result["archive_sha256"], second_result["archive_sha256"])
+            self.assertEqual(first_result["checksum_code"], first_result["archive_sha256"][:12])
+            self.assertFalse((Path(directory) / "dataset-bundle-v1").exists())
+            import zipfile
+
+            with zipfile.ZipFile(first) as archive:
+                self.assertEqual(
+                    ["DATA_CARD.md", "dataset.jsonl", "dataset.parquet", "manifest.json"],
+                    archive.namelist(),
+                )
+                self.assertIsNone(archive.testzip())
+
+    def test_publish_archive_failure_leaves_no_partial_artifact(self):
+        builder = DatasetBundleBuilder(
+            FakeParquetWriter(
+                fail=DatasetBundleError("dataset_bundle_parquet_unavailable", "Parquet unavailable")
+            )
+        )
+        plan = builder.plan(papers=[paper()], evidence=[evidence("item", "item-1")])
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "dataset.zip"
+            with self.assertRaises(DatasetBundleError):
+                builder.publish_archive(plan, target)
+            self.assertFalse(target.exists())
+            self.assertEqual([], list(Path(directory).glob(".dataset-archive-*")))
 
     def test_tampered_plan_is_rejected_before_any_output(self):
         plan = self.builder.plan(papers=[paper()], evidence=[evidence("item", "item-1")])

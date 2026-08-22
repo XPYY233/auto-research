@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+import zipfile
 from typing import Any, Iterable, Mapping, Protocol, Sequence
 
 
@@ -478,14 +479,15 @@ class DatasetBundleBuilder:
         destination: str | os.PathLike[str],
         *,
         rights_acknowledged: bool = False,
+        unreviewed_acknowledged: bool = False,
     ) -> dict[str, Any]:
         if not isinstance(plan, DatasetBundlePlan) or plan.schema_version != SCHEMA_VERSION:
             raise DatasetBundleError("dataset_bundle_invalid", "数据集计划无效。")
         papers, records = self._verified_plan_rows(plan)
-        if plan.unreviewed_count:
+        if plan.unreviewed_count and not unreviewed_acknowledged:
             raise DatasetBundleError(
                 "dataset_bundle_unreviewed",
-                "数据集中仍有未审核记录，未发布。",
+                "数据集中仍有未审核记录，请明确确认后再发布。",
                 details={"count": plan.unreviewed_count},
             )
         if plan.rights_risks and not rights_acknowledged:
@@ -571,6 +573,7 @@ class DatasetBundleBuilder:
                 "split_counts": dict(plan.split_counts),
                 "missing_fields": dict(plan.missing_fields),
                 "unreviewed_count": plan.unreviewed_count,
+                "unreviewed_acknowledged": bool(unreviewed_acknowledged),
                 "rights_risks": list(plan.rights_risks),
                 "rights_acknowledged": bool(rights_acknowledged),
                 "include_private": plan.include_private,
@@ -603,6 +606,87 @@ class DatasetBundleBuilder:
         finally:
             if staging is not None:
                 shutil.rmtree(staging, ignore_errors=True)
+
+    def publish_archive(
+        self,
+        plan: DatasetBundlePlan,
+        destination: str | os.PathLike[str],
+        *,
+        rights_acknowledged: bool = False,
+        unreviewed_acknowledged: bool = False,
+    ) -> dict[str, Any]:
+        """Publish one deterministic, shareable ZIP without partial output."""
+
+        target = Path(destination)
+        if target.suffix.casefold() != ".zip" or not _SAFE_DESTINATION_RE.fullmatch(target.name):
+            raise DatasetBundleError("dataset_bundle_unsafe_destination", "数据集压缩包名称无效。")
+        parent = target.parent
+        try:
+            if parent.is_symlink() or not parent.is_dir() or target.exists() or target.is_symlink():
+                code = "dataset_bundle_destination_exists" if target.exists() or target.is_symlink() else "dataset_bundle_unsafe_destination"
+                raise DatasetBundleError(code, "数据集压缩包目标不可用。")
+        except OSError as exc:
+            raise DatasetBundleError("dataset_bundle_unsafe_destination", "数据集压缩包目标不可用。") from exc
+
+        workspace: Path | None = None
+        temporary_archive: Path | None = None
+        try:
+            workspace = Path(tempfile.mkdtemp(prefix=".dataset-archive-", dir=parent))
+            bundle = workspace / "dataset-bundle-v1"
+            result = self.publish(
+                plan,
+                bundle,
+                rights_acknowledged=rights_acknowledged,
+                unreviewed_acknowledged=unreviewed_acknowledged,
+            )
+            descriptor, raw_temporary = tempfile.mkstemp(prefix=".dataset-archive-", suffix=".zip", dir=parent)
+            os.close(descriptor)
+            temporary_archive = Path(raw_temporary)
+            with zipfile.ZipFile(
+                temporary_archive,
+                mode="w",
+                compression=zipfile.ZIP_DEFLATED,
+                compresslevel=9,
+            ) as archive:
+                for source in sorted(bundle.iterdir(), key=lambda value: value.name):
+                    if source.is_symlink() or not source.is_file():
+                        raise DatasetBundleError("dataset_bundle_write_failed", "数据集压缩包输入无效。")
+                    info = zipfile.ZipInfo(source.name, date_time=(1980, 1, 1, 0, 0, 0))
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    info.external_attr = 0o100600 << 16
+                    archive.writestr(info, source.read_bytes(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+            with temporary_archive.open("rb") as handle:
+                os.fsync(handle.fileno())
+            with zipfile.ZipFile(temporary_archive, mode="r") as archive:
+                names = archive.namelist()
+                expected = sorted(path.name for path in bundle.iterdir())
+                if names != expected or archive.testzip() is not None:
+                    raise DatasetBundleError("dataset_bundle_write_failed", "数据集压缩包校验失败，未发布。")
+            archive_sha256, archive_size = _file_metadata(temporary_archive)["sha256"], temporary_archive.stat().st_size
+            os.replace(temporary_archive, target)
+            temporary_archive = None
+            directory_descriptor = os.open(parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
+            return {
+                **result,
+                "status": "published",
+                "artifact_format": "zip",
+                "archive_sha256": archive_sha256,
+                "archive_size": archive_size,
+                "checksum_code": archive_sha256[:12],
+            }
+        except DatasetBundleError:
+            raise
+        except (OSError, zipfile.BadZipFile) as exc:
+            raise DatasetBundleError("dataset_bundle_write_failed", "数据集压缩包写入失败，未发布。") from exc
+        finally:
+            if temporary_archive is not None:
+                temporary_archive.unlink(missing_ok=True)
+            if workspace is not None:
+                shutil.rmtree(workspace, ignore_errors=True)
 
     def _verified_plan_rows(
         self, plan: DatasetBundlePlan
