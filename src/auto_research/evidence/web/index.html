@@ -96,8 +96,12 @@
             <div class="fusion-document-tab-group" data-document-group="secondary" hidden><div class="fusion-document-tab-list" id="fusion-document-tabs-secondary" role="tablist" aria-label="第二编辑组标签"></div></div>
           </div>
           <button type="button" class="fusion-tab-layout-action" id="fusion-split-tab" aria-label="在第二编辑组打开当前标签" title="分栏打开">◫</button>
+          <button type="button" class="fusion-tab-layout-action" id="fusion-reopen-tab" aria-label="重新打开最近关闭的标签" title="重新打开标签">↶</button>
           <span id="fusion-primary-tab-label" hidden>当前论文</span><span id="fusion-detail-tab-label" hidden>证据详情</span>
         </div>
+
+        <div class="fusion-editor-group-content" id="fusion-editor-group-content">
+          <div class="fusion-editor-surface active" id="fusion-primary-editor-surface" data-editor-surface="primary">
 
         <section class="fusion-view active" id="view-paper" data-view-panel="paper" aria-label="文献工作区">
           <header class="fusion-toolbar">
@@ -179,10 +183,17 @@
           </header>
           <div class="fusion-evidence-detail-scroll fusion-scroll" id="fusion-evidence-detail-body" aria-live="polite" aria-busy="false"></div>
           <section class="fusion-detail-pdf" id="fusion-detail-pdf" hidden aria-label="证据来源 PDF 查看器">
-            <header><button type="button" id="fusion-detail-close-pdf">← 返回证据详情</button><strong id="fusion-detail-pdf-title">证据来源原文</strong><span>本机同源查看 · 不离开工作台</span></header>
+            <header><button type="button" id="fusion-detail-close-pdf">← 返回证据详情</button><button type="button" id="fusion-detail-show-highlight" disabled>重新显示高亮</button><button type="button" id="fusion-detail-close-pdf-view">关闭 PDF</button><strong id="fusion-detail-pdf-title">证据来源原文</strong><span>本机同源查看 · 不离开工作台</span></header>
+            <figure class="fusion-source-highlight" id="fusion-detail-source-highlight" hidden><img id="fusion-detail-highlight-image" alt="证据在原文中的高亮位置"><figcaption id="fusion-detail-highlight-status">高亮位置尚未读取。</figcaption></figure>
             <iframe id="fusion-detail-pdf-frame" title="证据来源 PDF" loading="lazy"></iframe>
           </section>
         </section>
+          </div>
+          <section class="fusion-editor-surface fusion-secondary-editor" id="fusion-secondary-editor-surface" data-editor-surface="secondary" aria-label="第二编辑组" hidden tabindex="-1">
+            <header><strong id="fusion-secondary-editor-title">第二编辑组</strong><button type="button" id="fusion-secondary-move-primary">移回主编辑组</button></header>
+            <div class="fusion-secondary-editor-body fusion-scroll" id="fusion-secondary-editor-body"><div class="fusion-state-card"><strong>选择或移动一个标签到这里</strong><span>宽屏时可与主编辑区同时查看；窄屏合并显示但不会丢失分组。</span></div></div>
+          </section>
+        </div>
       </section>
 
       <aside class="fusion-inspector" id="fusion-inspector" aria-label="详情与检查器">

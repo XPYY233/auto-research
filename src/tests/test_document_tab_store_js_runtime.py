@@ -10,7 +10,7 @@ STORE = ROOT / "src" / "auto_research" / "evidence" / "web" / "document_tab_stor
 
 
 class DocumentTabStoreRuntimeTests(unittest.TestCase):
-    def test_identity_only_persistence_split_merge_close_and_restore(self) -> None:
+    def test_two_groups_survive_narrow_reopen_and_async_updates_stay_on_tab(self) -> None:
         program = f"""
 const fs=require('fs'),assert=require('assert');
 const memory=new Map();globalThis.localStorage={{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value)}};
@@ -21,9 +21,12 @@ const evidence=store.open({{tabId:'evidence:sourceScope=workspace&entityUid=9',k
 assert.equal(store.snapshot().tabs.length,2);assert.equal(store.activeTab().tabId,evidence.tabId);
 assert(store.split(evidence.tabId));assert.equal(store.snapshot().groups.length,2);assert.equal(store.activeGroupId,'secondary');
 const saved=memory.get('auto-research-workspace-layout-v1');assert(saved.includes('workspace-layout-v1'));assert(!saved.includes('secretBody'));assert(!saved.includes('private body'));assert(!saved.includes('payload'));
-assert(store.setNarrow(true));assert.equal(store.snapshot().groups.length,1);assert.equal(store.snapshot().tabs.length,2);
-const restored=new Store();assert.equal(restored.snapshot().tabs.length,2);assert.equal(restored.snapshot().groups.length,1);assert.equal(restored.snapshot().tabs[0].payload,undefined);
-const closed=restored.close(paper.tabId);assert.equal(closed.tabId,paper.tabId);assert.equal(restored.snapshot().tabs.length,1);
+const request=store.beginRequest(evidence.tabId);assert.equal(store.completeRequest(evidence.tabId,request,{{payload:{{resolved:'old tab only'}}}}).payload.resolved,'old tab only');assert.equal(store.completeRequest(evidence.tabId,request-1,{{payload:{{resolved:'late'}}}}),null);
+assert(store.setNarrow(true));assert.equal(store.snapshot().groups.length,2);assert.equal(store.snapshot().tabs.length,2);assert.equal(store.snapshot().narrow,true);assert.equal(store.snapshot().tabs.find(tab=>tab.tabId===evidence.tabId).groupId,'secondary');
+assert(store.focusGroup('primary'));assert.equal(store.snapshot().activeGroupId,'primary');
+const closed=store.close(paper.tabId);assert.equal(closed.tabId,paper.tabId);assert.equal(store.snapshot().tabs.length,1);const reopened=store.reopenClosed();assert.equal(reopened.tabId,paper.tabId);assert.equal(store.snapshot().tabs.length,2);
+assert(store.move(evidence.tabId,'primary'));assert.equal(store.snapshot().tabs.find(tab=>tab.tabId===evidence.tabId).groupId,'primary');
+const restored=new Store();assert.equal(restored.snapshot().tabs.length,2);assert.equal(restored.snapshot().tabs[0].payload,undefined);
 assert.equal(restored.open({{tabId:'evil:x',kind:'evil',ownerView:'paper',title:'x',identity:{{paperId:'1'}}}}),null);
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)

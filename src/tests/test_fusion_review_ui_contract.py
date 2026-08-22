@@ -81,6 +81,46 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertNotIn("#visual-dialog", self.runtime)
         self.assertNotIn("showModal()", self.runtime)
 
+    def test_two_editor_groups_keep_identity_and_pdf_return_highlight_chain(self) -> None:
+        for element_id in (
+            "fusion-editor-group-content", "fusion-primary-editor-surface",
+            "fusion-secondary-editor-surface", "fusion-secondary-editor-body",
+            "fusion-split-tab", "fusion-reopen-tab", "fusion-secondary-move-primary",
+            "fusion-detail-show-highlight", "fusion-detail-close-pdf-view",
+            "fusion-detail-source-highlight", "fusion-detail-highlight-image",
+        ):
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        for marker in (
+            "function renderEditorSurfaces(", "function secondaryDocumentHTML(",
+            'documentTabs?.reopenClosed()', 'documentTabs.move(active.tabId,"primary")',
+            'data-document-group-id=', "snapshot.groups.length===2&&!snapshot.narrow",
+            '/api/six-data/${row.itemId}/source-view',
+            '/api/six-data/${row.itemId}/source-highlight.png',
+            "state.evidenceDetailReturn.scrollTop", "state.sourceHighlightRequest+=1",
+        ):
+            self.assertIn(marker, self.runtime)
+        self.assertIn(".fusion-editor-group-content.split", self.css)
+        self.assertIn(".fusion-secondary-editor", self.css)
+        self.assertIn(".fusion-source-highlight", self.css)
+
+    def test_tabs_async_and_inspector_states_are_partitioned(self) -> None:
+        for marker in (
+            "inspectorState:{paper:null,search:null,personal:null,package:null,settings:null}",
+            "state.inspectorState[view]={kind:\"evidence\"",
+            "state.inspectorState.personal={kind:\"cell\"",
+            "state.inspectorState.package={kind:\"package-job\"",
+            "state.inspectorState.settings={kind:\"settings\"",
+            "documentTabs?.beginRequest(tab.tabId)",
+            "documentTabs?.completeRequest(tab.tabId,tabRequest",
+            'payload:{jobId:String(job.job_id),job}',
+            'payload:{section:"answer",html:answerHTML}',
+            'payload:{section:"citations",html:citationsHTML}',
+            'payload:{section:"recommendations",html:recommendationsHTML}',
+        ):
+            self.assertIn(marker, self.runtime)
+        for forbidden in ("/api/context-chat", "/api/agents/librarian/chat"):
+            self.assertNotIn(forbidden, self.runtime)
+
     def test_catalog_scroll_and_server_side_four_type_filters(self) -> None:
         for marker in (
             "minmax(0,1fr)", "overflow:auto", "scrollbar-gutter:stable",
@@ -100,7 +140,7 @@ class FusionReviewUIContractTests(unittest.TestCase):
             "const INSPECTOR_RENDERERS=Object.freeze({",
             'paper:()=>evidenceInspector("paper")',
             'search:()=>evidenceInspector("search")',
-            "state.selectionByView[view]?.row",
+            "state.inspectorState[view]?.row",
         ):
             self.assertIn(marker, self.runtime)
 

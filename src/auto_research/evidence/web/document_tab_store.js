@@ -36,6 +36,9 @@
       this.tabs = [];
       this.groups = [{ id: "primary", activeTabId: null }];
       this.activeGroupId = "primary";
+      this.narrow = false;
+      this.recentlyClosed = [];
+      this.requestGenerations = new Map();
       this.listeners = new Set();
       this.restore();
     }
@@ -69,7 +72,7 @@
     }
 
     snapshot() {
-      return { schemaVersion: SCHEMA_VERSION, activeGroupId: this.activeGroupId, groups: this.groups.map(group => ({ ...group })), tabs: this.tabs.map(tab => ({ ...tab, identity: { ...tab.identity } })) };
+      return { schemaVersion: SCHEMA_VERSION, activeGroupId: this.activeGroupId, narrow: this.narrow, groups: this.groups.map(group => ({ ...group })), tabs: this.tabs.map(tab => ({ ...tab, identity: { ...tab.identity } })) };
     }
 
     subscribe(listener) { if (typeof listener !== "function") return () => {}; this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -77,8 +80,12 @@
     group(id = this.activeGroupId) { return this.groups.find(group => group.id === id) || null; }
     activeTab(groupId = this.activeGroupId) { const group = this.group(groupId); return this.tabs.find(tab => tab.groupId === groupId && tab.tabId === group?.activeTabId) || null; }
 
-    open(raw, { activate = true, groupId = this.activeGroupId } = {}) {
-      const tab = normalizedTab({ ...raw, groupId });
+    focusGroup(groupId) { if (!this.group(groupId)) return false; if (this.activeGroupId === groupId) return false; this.activeGroupId = groupId; this.emit(); return true; }
+
+    open(raw, { activate = true, groupId = null } = {}) {
+      const prior = this.tabs.find(value => value.tabId === raw?.tabId), selectedGroup = groupId || prior?.groupId || this.activeGroupId;
+      if (selectedGroup === "secondary" && !this.group("secondary")) this.groups.push({ id: "secondary", activeTabId: null });
+      const tab = normalizedTab({ ...raw, groupId: selectedGroup });
       if (!tab) return null;
       let existing = this.tabs.find(value => value.tabId === tab.tabId);
       if (existing) Object.assign(existing, tab);
@@ -93,13 +100,37 @@
       this.activeGroupId = tab.groupId; this.group(tab.groupId).activeTabId = tab.tabId; this.emit(); return { ...tab };
     }
 
-    split(tabId = this.activeTab()?.tabId) {
+    update(tabId, patch = {}) {
+      const tab = this.tabs.find(value => value.tabId === tabId); if (!tab || !patch || typeof patch !== "object") return null;
+      if (patch.title !== undefined) tab.title = clean(patch.title, 160) || tab.title;
+      if (patch.payload !== undefined) tab.payload = patch.payload;
+      this.emit(); return { ...tab };
+    }
+
+    beginRequest(tabId) {
+      if (!this.tabs.some(tab => tab.tabId === tabId)) return 0;
+      const generation = (this.requestGenerations.get(tabId) || 0) + 1;
+      this.requestGenerations.set(tabId, generation); return generation;
+    }
+
+    completeRequest(tabId, generation, patch = {}) {
+      if (!generation || this.requestGenerations.get(tabId) !== generation) return null;
+      return this.update(tabId, patch);
+    }
+
+    move(tabId, targetGroupId) {
+      if (!["primary", "secondary"].includes(targetGroupId)) return false;
       const tab = this.tabs.find(value => value.tabId === tabId); if (!tab) return false;
-      if (!this.group("secondary") && this.groups.length >= MAX_GROUPS) return false;
-      if (!this.group("secondary")) this.groups.push({ id: "secondary", activeTabId: null });
-      tab.groupId = "secondary"; this.activeGroupId = "secondary"; this.group("secondary").activeTabId = tab.tabId;
-      const primary = this.group("primary"); if (primary.activeTabId === tab.tabId) primary.activeTabId = this.tabs.find(value => value.groupId === "primary")?.tabId || null;
+      if (targetGroupId === "secondary" && !this.group("secondary")) this.groups.push({ id: "secondary", activeTabId: null });
+      const previous = this.group(tab.groupId); tab.groupId = targetGroupId;
+      if (previous?.activeTabId === tabId) previous.activeTabId = this.tabs.find(value => value.groupId === previous.id)?.tabId || null;
+      this.activeGroupId = targetGroupId; this.group(targetGroupId).activeTabId = tabId;
+      if (previous?.id === "secondary" && !this.tabs.some(value => value.groupId === "secondary")) this.groups = this.groups.filter(group => group.id !== "secondary");
       this.emit(); return true;
+    }
+
+    split(tabId = this.activeTab()?.tabId) {
+      return this.move(tabId, "secondary");
     }
 
     merge() {
@@ -112,12 +143,18 @@
     close(tabId) {
       const index = this.tabs.findIndex(tab => tab.tabId === tabId); if (index < 0) return null;
       const [closed] = this.tabs.splice(index, 1), group = this.group(closed.groupId);
+      this.recentlyClosed.unshift({ ...closed }); this.recentlyClosed = this.recentlyClosed.slice(0, 10); this.requestGenerations.delete(tabId);
       if (group?.activeTabId === tabId) group.activeTabId = this.tabs.filter(tab => tab.groupId === closed.groupId).at(-1)?.tabId || null;
       if (closed.groupId === "secondary" && !this.tabs.some(tab => tab.groupId === "secondary")) this.merge(); else this.emit();
       return { ...closed };
     }
 
-    setNarrow(narrow) { if (narrow) return this.merge(); return false; }
+    reopenClosed({ activate = true, groupId = null } = {}) {
+      const closed = this.recentlyClosed.shift(); if (!closed) return null;
+      return this.open(closed, { activate, groupId: groupId || closed.groupId });
+    }
+
+    setNarrow(narrow) { const next = Boolean(narrow); if (this.narrow === next) return false; this.narrow = next; this.emit(); return true; }
   }
 
   globalThis.AutoResearchDocumentTabs = Object.freeze({ DocumentTabStore, SCHEMA_VERSION, STORAGE_KEY });
