@@ -147,13 +147,20 @@
       return this.update(tabId, patch);
     }
 
+    fallbackTabId(groupId, tabId) {
+      const groupTabs = this.tabs.filter(tab => tab.groupId === groupId);
+      const index = groupTabs.findIndex(tab => tab.tabId === tabId);
+      if (index < 0) return groupTabs.at(-1)?.tabId || null;
+      return groupTabs[index - 1]?.tabId || groupTabs[index + 1]?.tabId || null;
+    }
+
     move(tabId, targetGroupId) {
       if (!["primary", "secondary"].includes(targetGroupId)) return false;
       const tab = this.tabs.find(value => value.tabId === tabId); if (!tab) return false;
       if (targetGroupId === "secondary" && !this.group("secondary")) this.groups.push({ id: "secondary", activeTabId: null });
-      const previous = this.group(tab.groupId); tab.groupId = targetGroupId;
+      const previous = this.group(tab.groupId), previousFallback = this.fallbackTabId(tab.groupId, tabId); tab.groupId = targetGroupId;
       tab.pinned = true; tab.preview = false;
-      if (previous?.activeTabId === tabId) previous.activeTabId = this.tabs.find(value => value.groupId === previous.id)?.tabId || null;
+      if (previous?.activeTabId === tabId) previous.activeTabId = previousFallback;
       this.activeGroupId = targetGroupId; this.group(targetGroupId).activeTabId = tabId;
       if (previous?.id === "secondary" && !this.tabs.some(value => value.groupId === "secondary")) this.groups = this.groups.filter(group => group.id !== "secondary");
       this.emit(); return true;
@@ -172,9 +179,9 @@
 
     close(tabId) {
       const index = this.tabs.findIndex(tab => tab.tabId === tabId); if (index < 0) return null;
-      const [closed] = this.tabs.splice(index, 1), group = this.group(closed.groupId);
+      const closing = this.tabs[index], fallback = this.fallbackTabId(closing.groupId, tabId), [closed] = this.tabs.splice(index, 1), group = this.group(closed.groupId);
       this.recentlyClosed.unshift({ ...closed }); this.recentlyClosed = this.recentlyClosed.slice(0, 10); this.requestGenerations.delete(tabId);
-      if (group?.activeTabId === tabId) group.activeTabId = this.tabs.filter(tab => tab.groupId === closed.groupId).at(-1)?.tabId || null;
+      if (group?.activeTabId === tabId) group.activeTabId = fallback;
       if (closed.groupId === "secondary" && !this.tabs.some(tab => tab.groupId === "secondary")) this.merge(); else this.emit();
       return { ...closed };
     }

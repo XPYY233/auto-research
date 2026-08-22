@@ -137,6 +137,34 @@ const tableHTML=api.secondaryDocumentHTML({{tabId:'personal-table:x',kind:'perso
             self.assertIn(marker, self.runtime)
         self.assertNotIn('button.addEventListener("dblclick",()=>selectPaper', self.runtime)
 
+    def test_editor_groups_render_their_own_payload_and_visual_pdf_highlight(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert');
+class Classes{{constructor(){{this.values=new Set()}}toggle(key,value){{value?this.values.add(key):this.values.delete(key)}}add(key){{this.values.add(key)}}remove(key){{this.values.delete(key)}}}}
+class El{{constructor(){{this.hidden=false;this.disabled=false;this.textContent='';this.innerHTML='';this.src='';this.scrollTop=0;this.classList=new Classes();this.attrs={{}};this.listeners={{}};}}setAttribute(key,value){{this.attrs[key]=String(value)}}removeAttribute(key){{delete this.attrs[key];if(key==='src')this.src=''}}addEventListener(key,fn){{(this.listeners[key]??=[]).push(fn)}}focus(){{globalThis.focused=this}}closest(){{return null}}}}
+const ids={{}};for(const id of ['fusion-editor-group-content','fusion-primary-editor-surface','fusion-secondary-editor-surface','fusion-secondary-editor-title','fusion-secondary-editor-body','fusion-evidence-detail','fusion-evidence-detail-body','fusion-detail-heading','fusion-detail-identity','fusion-detail-pdf','fusion-detail-pdf-frame','fusion-detail-pdf-title','fusion-detail-open-pdf','fusion-detail-close-pdf','fusion-detail-show-highlight','fusion-detail-source-highlight','fusion-detail-highlight-image','fusion-detail-highlight-status'])ids['#'+id]=new El();
+const all={{'[data-view-panel]':[],'[data-secondary-return-tab]':[],'[data-secondary-open-pdf]':[],'[data-secondary-open-paper-pdf]':[],'[data-secondary-paper-evidence]':[],'[data-secondary-table-page]':[]}};
+globalThis.document={{readyState:'loading',querySelector:selector=>ids[selector]||null,querySelectorAll:selector=>all[selector]||[],addEventListener:()=>{{}}}};globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+let timer=null;globalThis.setTimeout=fn=>{{timer=fn;return 1}};globalThis.clearTimeout=()=>{{timer=null}};
+eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion,tabs=api.documentTabs;
+const row=(assetId,title,page)=>({{type:'table',title,label:title,caption:title+' caption',sourceScope:'workspace',assetId,paperId:56,page,articleTitle:'论文',imageUrl:'/api/visual-assets/'+assetId+'/image',bbox:[51,606,278,737],quantities:['硬度'],variables:{{column:'value'}},materials:['W'],tags:[]}});
+const A=row(1357,'Table 2 · 纯bcc金属与MoNbTaVW基本性质对比表',7),B=row(1358,'Table 3 · 不同PKA类型级联缺陷统计表',8),C=row(1359,'Table 4 · 第三张表',9);
+const a=tabs.open({{tabId:'evidence:a',kind:'evidence',ownerView:'paper',title:A.title,identity:{{sourceScope:'workspace',entityType:'table',entityUid:'1357'}},payload:{{row:A,status:'ready'}}}},{{pin:true}});
+const c=tabs.open({{tabId:'evidence:c',kind:'evidence',ownerView:'paper',title:C.title,identity:{{sourceScope:'workspace',entityType:'table',entityUid:'1359'}},payload:{{row:C,status:'ready'}}}},{{pin:true}});tabs.activate(a.tabId);
+const b=tabs.open({{tabId:'evidence:b',kind:'evidence',ownerView:'paper',title:B.title,identity:{{sourceScope:'workspace',entityType:'table',entityUid:'1358'}},payload:{{row:B,status:'ready'}}}},{{groupId:'secondary',pin:true}});
+api.state.evidenceDetailOpen=true;api.renderEditorSurfaces();
+assert(ids['#fusion-evidence-detail-body'].innerHTML.includes(A.title));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('/api/visual-assets/1357/image'));assert(!ids['#fusion-evidence-detail-body'].innerHTML.includes(B.title));
+assert(ids['#fusion-secondary-editor-body'].innerHTML.includes(B.title));assert(ids['#fusion-secondary-editor-body'].innerHTML.includes('/api/visual-assets/1358/image'));assert(!ids['#fusion-secondary-editor-body'].innerHTML.includes(A.title));
+const generation=tabs.beginRequest(b.tabId);tabs.completeRequest(b.tabId,generation,{{payload:{{row:{{...B,caption:'Table 3 late complete'}},status:'ready'}}}});api.renderEditorSurfaces();assert(ids['#fusion-evidence-detail-body'].innerHTML.includes(A.title));assert(ids['#fusion-secondary-editor-body'].innerHTML.includes('Table 3 late complete'));
+tabs.activate(c.tabId);api.renderEditorSurfaces();assert(ids['#fusion-evidence-detail-body'].innerHTML.includes(C.title));assert(ids['#fusion-secondary-editor-body'].innerHTML.includes(B.title));
+tabs.move(c.tabId,'secondary');assert.equal(tabs.activeTab('primary').tabId,a.tabId);tabs.move(c.tabId,'primary');assert.equal(tabs.activeTab('secondary').tabId,b.tabId);
+const projected=api.publicEvidence({{asset_type:'table',id:1358,paper_id:56,page_start:8,bbox:[51.172,606.053,278.053,737.169],label:B.title,image_url:'/api/visual-assets/1358/image'}});assert.deepEqual(projected.bbox,[51.172,606.053,278.053,737.169]);
+tabs.move(a.tabId,'secondary');tabs.activate(b.tabId);tabs.move(b.tabId,'primary');assert.equal(tabs.activeTab('secondary').tabId,a.tabId);api.state.evidenceDetail=projected;api.state.evidenceDetailOpen=true;assert(api.openDetailPDF({{openTab:false}}));assert.equal(ids['#fusion-detail-pdf-frame'].src,'/api/papers/56/pdf#page=8');
+setImmediate(()=>{{assert.equal(ids['#fusion-detail-show-highlight'].disabled,false);assert.equal(ids['#fusion-detail-source-highlight'].hidden,false);assert.equal(ids['#fusion-detail-highlight-image'].src,'/api/visual-assets/1358/image');assert.equal(api.state.sourceHighlight.sourceTabId,b.tabId);timer();assert.equal(ids['#fusion-detail-source-highlight'].hidden,true);assert.equal(ids['#fusion-detail-show-highlight'].textContent,'重新显示高亮');api.toggleSourceHighlight();setImmediate(()=>{{assert.equal(ids['#fusion-detail-source-highlight'].hidden,false);assert.equal(ids['#fusion-detail-highlight-image'].src,'/api/visual-assets/1358/image');assert.equal(tabs.activeTab('secondary').tabId,a.tabId);}});}});
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_workspace_search_pagination_uses_server_offset_not_projected_rows(self) -> None:
         program = f"""
 const fs=require('fs'),assert=require('assert');
