@@ -14,6 +14,9 @@ from .harness_contract import (
 HARNESS_TOOL_SCHEMA_VERSION = "auto-research-harness-tools-v1"
 MAX_TOOL_CALLS = 32
 MAX_TOOL_RESULTS = 256
+SELECTED_EVIDENCE_TOOL_NAMES = frozenset(
+    {"evidence_detail", "evidence_metadata", "source_locator", "source_view"}
+)
 _INTERNAL_RESULT_KEYS = frozenset(
     {
         "id", "paper_id", "item_id", "asset_id", "file_id", "draft_id",
@@ -209,8 +212,12 @@ class HarnessToolGateway:
         self.__recommended_papers: set[str] = set()
         self.__allow_source_view = allow_source_view
 
-    @staticmethod
-    def public_catalog() -> dict[str, object]:
+    def public_catalog(self) -> dict[str, object]:
+        names = (
+            SELECTED_EVIDENCE_TOOL_NAMES
+            if self.__job.session.scope == "selected_evidence_chat"
+            else frozenset(TOOL_SCHEMAS)
+        )
         value = {
             "schema_version": HARNESS_TOOL_SCHEMA_VERSION,
             "tools": [
@@ -220,6 +227,7 @@ class HarnessToolGateway:
                     "input_schema": value["input_schema"],
                 }
                 for name, value in TOOL_SCHEMAS.items()
+                if name in names
             ],
             "generic_capabilities": [],
         }

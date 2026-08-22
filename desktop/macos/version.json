@@ -1,7 +1,7 @@
 {
   "desktop_version": "1.1.0",
   "bundle_short_version": "1.1.0",
-  "build_number": "37",
+  "build_number": "38",
   "target": "macOS arm64 Auto Research workbench",
   "product_target": "macOS research workbench; Windows release paused",
   "data_mode": "workspace-schema-v12-plus-private-library-and-versioned-evidence-packages",

@@ -56,7 +56,7 @@ class Backend:
 
 class HarnessToolTests(unittest.TestCase):
     def test_only_fixed_domain_tools_are_visible(self) -> None:
-        catalog = HarnessToolGateway.public_catalog()
+        catalog = HarnessToolGateway(backend=Backend(), job=job()).public_catalog()
         names = {item["name"] for item in catalog["tools"]}
         self.assertEqual(
             names,
@@ -93,6 +93,10 @@ class HarnessToolTests(unittest.TestCase):
 
     def test_selected_evidence_is_current_entity_only_and_no_search(self) -> None:
         gateway = HarnessToolGateway(backend=Backend(), job=job("selected_evidence_chat"))
+        self.assertEqual(
+            {item["name"] for item in gateway.public_catalog()["tools"]},
+            {"evidence_detail", "evidence_metadata", "source_locator", "source_view"},
+        )
         detail = gateway.call("evidence_detail", {
             "source_scope": "official", "source_id": "official-v1",
             "entity_type": "item", "entity_uid": "item-1",
