@@ -198,6 +198,21 @@ class OfficialHarnessSDKTests(unittest.TestCase):
             ):
                 self.assertEqual(_verified_runtime_member(link, digest), target.resolve())
 
+            target.write_bytes(b"pyinstaller-resigned-runtime")
+            frozen_digest = hashlib.sha256(target.read_bytes()).hexdigest()
+            with (
+                mock.patch("auto_research.ai.harness_official_sdk.sys.frozen", True, create=True),
+                mock.patch("auto_research.ai.harness_official_sdk.sys.executable", str(executable)),
+            ):
+                self.assertEqual(
+                    _verified_runtime_member(
+                        link,
+                        digest,
+                        frozen_sha256=frozen_digest,
+                    ),
+                    target.resolve(),
+                )
+
             outside = Path(directory) / "outside-runtime"
             outside.write_bytes(target.read_bytes())
             link.unlink()
@@ -207,7 +222,11 @@ class OfficialHarnessSDKTests(unittest.TestCase):
                 mock.patch("auto_research.ai.harness_official_sdk.sys.executable", str(executable)),
                 self.assertRaises(HarnessError),
             ):
-                _verified_runtime_member(link, digest)
+                _verified_runtime_member(
+                    link,
+                    digest,
+                    frozen_sha256=frozen_digest,
+                )
 
     def test_exact_runtime_uses_authenticated_proxy_and_mcp_without_real_key(self):
         prepared = action()

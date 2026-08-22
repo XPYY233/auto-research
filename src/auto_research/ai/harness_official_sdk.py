@@ -44,6 +44,11 @@ from .harness_tools import HarnessToolGateway
 RUNTIME_BINARY_SHA256 = "8f8014cc519e9c9df50c84714aed35ca417e8467b41401cf925fbb05341adf02"
 RUNTIME_RG_SHA256 = "6ef40346bf31fcce79d9614c7745c198542925a0c7d4911e1ffe794c53392ac1"
 RUNTIME_SPAWN_HELPER_SHA256 = "08bc83a084651d095645010d34783f94b9af443614747e953e66d6578027e999"
+# PyInstaller re-signs the two small Mach-O helpers while assembling the App.
+# These deterministic digests are for that exact pinned 0.1.1rc1 transformation;
+# accepting them is limited to an in-bundle symlink below.
+FROZEN_RUNTIME_RG_SHA256 = "f8c49e473e4cf61700e3808a5eb254b1662386bd40498c66e503638692144852"
+FROZEN_RUNTIME_SPAWN_HELPER_SHA256 = "9d41c4cbfd7407963a4ba244ebe2cba189a47dca18eeb90d4659e9ece5187414"
 MAX_PROVIDER_BODY_BYTES = 4 * 1024 * 1024
 MAX_MCP_BODY_BYTES = 512 * 1024
 MAX_FINAL_RESPONSE_BYTES = 1024 * 1024
@@ -126,11 +131,17 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _verified_runtime_member(path: Path, expected_sha256: str) -> Path:
+def _verified_runtime_member(
+    path: Path,
+    expected_sha256: str,
+    *,
+    frozen_sha256: str | None = None,
+) -> Path:
     """Resolve PyInstaller's signed in-bundle symlink, rejecting all others."""
 
     candidate = path
     try:
+        expected = expected_sha256
         if path.is_symlink():
             if getattr(sys, "frozen", False) is not True:
                 raise HarnessError("harness_dependency_mismatch")
@@ -140,10 +151,12 @@ def _verified_runtime_member(path: Path, expected_sha256: str) -> Path:
                 candidate.relative_to(contents)
             except ValueError as exc:
                 raise HarnessError("harness_dependency_mismatch") from exc
+            if frozen_sha256 is not None:
+                expected = frozen_sha256
         if (
             not candidate.is_file()
             or candidate.is_symlink()
-            or _sha256_file(candidate) != expected_sha256
+            or _sha256_file(candidate) != expected
         ):
             raise HarnessError("harness_dependency_mismatch")
     except HarnessError:
@@ -189,12 +202,17 @@ def _default_runtime_binary() -> str:
     except Exception as exc:
         raise HarnessError("harness_runtime_unavailable") from exc
     members = (
-        (binary, RUNTIME_BINARY_SHA256),
-        (Path(f"{binary}-rg"), RUNTIME_RG_SHA256),
-        (Path(f"{binary}-spawn-helper"), RUNTIME_SPAWN_HELPER_SHA256),
+        (binary, RUNTIME_BINARY_SHA256, None),
+        (Path(f"{binary}-rg"), RUNTIME_RG_SHA256, FROZEN_RUNTIME_RG_SHA256),
+        (
+            Path(f"{binary}-spawn-helper"),
+            RUNTIME_SPAWN_HELPER_SHA256,
+            FROZEN_RUNTIME_SPAWN_HELPER_SHA256,
+        ),
     )
     verified = tuple(
-        _verified_runtime_member(path, expected) for path, expected in members
+        _verified_runtime_member(path, expected, frozen_sha256=frozen)
+        for path, expected, frozen in members
     )
     return str(verified[0])
 
