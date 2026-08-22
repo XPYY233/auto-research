@@ -19,10 +19,12 @@ from auto_research.settings.ai_runtime_state import BackendCredentialState
 APP_IDENTIFIER = "com.researcher.autoresearch"
 DEEPSEEK_PROVIDER = "deepseek"
 OPENAI_PROVIDER = "openai"
-SUPPORTED_PROVIDERS = (DEEPSEEK_PROVIDER, OPENAI_PROVIDER)
+CUSTOM_PROVIDER = "custom"
+SUPPORTED_PROVIDERS = (DEEPSEEK_PROVIDER, OPENAI_PROVIDER, CUSTOM_PROVIDER)
 FIXED_CREDENTIAL_REFS = {
     DEEPSEEK_PROVIDER: "deepseek.default",
     OPENAI_PROVIDER: "openai.default",
+    CUSTOM_PROVIDER: "custom.default",
 }
 PROVIDER_CREDENTIAL_ENVELOPE_SCHEMA = "provider-credential-envelope-v1"
 
@@ -33,8 +35,11 @@ DEEPSEEK_KEYCHAIN_SERVICE = f"{APP_IDENTIFIER}.deepseek-api.v1"
 DEEPSEEK_KEYCHAIN_ACCOUNT = "deepseek-api-key"
 OPENAI_KEYCHAIN_SERVICE = f"{APP_IDENTIFIER}.openai-api.v1"
 OPENAI_KEYCHAIN_ACCOUNT = "openai-api-key"
+CUSTOM_KEYCHAIN_SERVICE = f"{APP_IDENTIFIER}.custom-ai-api.v1"
+CUSTOM_KEYCHAIN_ACCOUNT = "custom-ai-api-key"
 DEEPSEEK_AAD = f"{APP_IDENTIFIER}:deepseek-api:v1".encode("utf-8")
 OPENAI_AAD = f"{APP_IDENTIFIER}:openai-api:v1".encode("utf-8")
+CUSTOM_AAD = f"{APP_IDENTIFIER}:custom-ai-api:v1".encode("utf-8")
 
 MIN_API_KEY_CHARS = 8
 MAX_API_KEY_CHARS = 4096
@@ -668,6 +673,10 @@ def default_provider_credential_manager(
                     service=OPENAI_KEYCHAIN_SERVICE,
                     account=OPENAI_KEYCHAIN_ACCOUNT,
                 ),
+                CUSTOM_PROVIDER: MacKeychainCredentialBackend(
+                    service=CUSTOM_KEYCHAIN_SERVICE,
+                    account=CUSTOM_KEYCHAIN_ACCOUNT,
+                ),
             },
             execution_lock=execution_lock,
         )
@@ -693,6 +702,12 @@ def default_provider_credential_manager(
                 private_directory / "openai-api-key-v1.key",
                 aad=OPENAI_AAD,
                 temporary_prefix=".openai-api-key-",
+            ),
+            CUSTOM_PROVIDER: LocalPreviewCredentialBackend(
+                private_directory / "custom-ai-api-key-v1.enc",
+                private_directory / "custom-ai-api-key-v1.key",
+                aad=CUSTOM_AAD,
+                temporary_prefix=".custom-ai-api-key-",
             ),
         },
         execution_lock=execution_lock,

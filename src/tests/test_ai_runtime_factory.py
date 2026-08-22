@@ -4,7 +4,7 @@ import unittest
 import threading
 from contextlib import contextmanager
 
-from auto_research.ai.openai_compatible import AIProviderCapabilityError
+from auto_research.ai.openai_compatible import AIProviderCapabilityError, AIProviderNotConfigured
 from auto_research.ai.runtime_factory import AIRuntimeBindingError, RuntimeAIClientFactory
 from auto_research.settings.ai_runtime_state import (
     AIRuntimeStateError,
@@ -120,12 +120,12 @@ class RuntimeAIClientFactoryTests(unittest.TestCase):
         with self.assertRaises(AIProviderCapabilityError):
             OpenAICompatibleClient(settings, session=object()).request_json([])
 
-    def test_deepseek_legacy_compatible_remains_available(self):
-        client = RuntimeAIClientFactory(
-            runtime_state=_Runtime(self.runtime("deepseek", DEEPSEEK_MODELS, "legacy_compatible")),
-            credential_resolver=_Credentials(),
-        ).create()
-        self.assertTrue(client.settings.models_verified)
+    def test_deepseek_legacy_credential_cannot_bypass_connection_verification(self):
+        with self.assertRaises(AIProviderNotConfigured):
+            RuntimeAIClientFactory(
+                runtime_state=_Runtime(self.runtime("deepseek", DEEPSEEK_MODELS, "legacy_compatible")),
+                credential_resolver=_Credentials(),
+            ).create()
 
     def test_expired_changed_key_or_model_fail_before_credential_resolution(self):
         for label in ("expired", "credential_changed", "model_changed"):

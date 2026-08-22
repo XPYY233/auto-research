@@ -103,7 +103,7 @@ class AIProviderSettingsTests(unittest.TestCase):
     def test_runtime_secret_is_resolved_late_and_not_persisted(self) -> None:
         selection = AIProviderSelection.default()
         resolver = _Resolver()
-        settings = self.service.runtime_settings(selection, resolver)
+        settings = self.service.runtime_settings(selection, resolver, verification_mode=True)
         self.assertEqual(resolver.refs, ["deepseek.default"])
         self.assertEqual(settings.api_key, "sk-runtime-secret")
         self.assertNotIn("sk-runtime-secret", repr(settings))

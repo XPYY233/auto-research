@@ -64,6 +64,8 @@ class RuntimeAIClientFactory:
         ):
             raise AIProviderNotConfigured("AI 运行参数无效。")
         runtime = self._runtime_state.resolve_runtime()
+        if runtime.activation != "connection_verified":
+            raise AIProviderNotConfigured("AI 提供商需要先完成连接验证。")
         try:
             api_key = self._credentials.resolve(runtime.credential_ref)
         except Exception as exc:
@@ -125,7 +127,7 @@ class RuntimeAIClientFactory:
             or runtime.selection_revision != action.runtime_revision
             or runtime.credential_generation != action.credential_generation
             or runtime.activation != action.runtime_activation
-            or runtime.activation not in {"legacy_compatible", "connection_verified"}
+            or runtime.activation != "connection_verified"
             or dict(runtime.task_models) != expected_models
         ):
             raise AIRuntimeBindingError("AI 运行绑定已变化。")

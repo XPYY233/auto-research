@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+import threading
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol
@@ -23,6 +24,17 @@ AI_RUNTIME_PUBLIC_SCHEMA_VERSION = "ai-runtime-public-state-v1"
 AI_RUNTIME_ERROR_SCHEMA_VERSION = "ai-runtime-state-error-v1"
 AI_VERIFICATION_ATTESTATION_VERSION = "ai-verification-attestation-v1"
 AI_VERIFICATION_TTL_SECONDS = 15 * 60
+AI_BUSINESS_VERIFICATION_TTL_SECONDS = 15 * 60
+MAX_BUSINESS_VERIFICATION_RECORDS = 64
+AI_BUSINESS_SCOPES = frozenset(
+    {"librarian", "selected_evidence_chat", "literature_extraction", "personal_suggestion"}
+)
+AI_BUSINESS_TASKS = MappingProxyType({
+    "librarian": ("librarian_planning", "librarian_synthesis"),
+    "selected_evidence_chat": ("extraction",),
+    "literature_extraction": ("analysis", "extraction"),
+    "personal_suggestion": ("analysis",),
+})
 
 _PATCH_KEYS = frozenset({"provider_id", "task_models"})
 _STORED_KEYS = frozenset(
@@ -125,6 +137,10 @@ class CredentialStateProvider(Protocol):
 
 
 class ProviderCapabilityVerifier(Protocol):
+    def verify_connection(
+        self, *, provider_id: str, model: str, credential_ref: str
+    ) -> ModelCapabilityResult: ...
+
     def verify_model(
         self,
         *,
@@ -193,6 +209,7 @@ class AIRuntimePublicState:
     verified: bool
     availability: str
     revision: int
+    verified_until: int | None = None
 
     def public_dict(self) -> dict[str, object]:
         return {
@@ -203,6 +220,7 @@ class AIRuntimePublicState:
             "configured": self.configured,
             "verified": self.verified,
             "availability": self.availability,
+            "verified_until": self.verified_until,
         }
 
 
@@ -269,6 +287,10 @@ class AIRuntimeStateService:
         self._verifier = verifier
         self._signer = signer
         self._clock = clock or SystemClock()
+        self._business_lock = threading.RLock()
+        self._business_verified: dict[
+            tuple[str, int, int, str, tuple[tuple[str, str], ...]], int
+        ] = {}
 
     def _now(self) -> int:
         try:
@@ -375,6 +397,11 @@ class AIRuntimeStateService:
             verified=verified,
             availability=availability,
             revision=selection.revision,
+            verified_until=(
+                int(selection.attestation["expires_at"])
+                if verified and selection.attestation is not None
+                else None
+            ),
         )
 
     def patch_selection(
@@ -430,20 +457,18 @@ class AIRuntimeStateService:
         if not credential.configured:
             raise _error("ai_runtime_verification_failed")
         try:
-            for model in sorted(set(selection.task_models.values())):
-                result = self._verifier.verify_model(
-                    provider_id=selection.provider_id,
-                    model=model,
-                    credential_ref=credential.credential_ref,
-                    required_capabilities=self.REQUIRED_CAPABILITIES,
-                )
-                if (
-                    result.provider_id != selection.provider_id
-                    or result.model != model
-                    or result.structured_json is not True
-                    or result.tool_calling is not True
-                ):
-                    raise _error("ai_runtime_verification_failed")
+            model = selection.task_models["analysis"]
+            result = self._verifier.verify_connection(
+                provider_id=selection.provider_id,
+                model=model,
+                credential_ref=credential.credential_ref,
+            )
+            if (
+                result.provider_id != selection.provider_id
+                or result.model != model
+                or result.structured_json is not True
+            ):
+                raise _error("ai_runtime_verification_failed")
             attested_selection = AIRuntimeSelection(
                 selection.provider_id,
                 selection.task_models,
@@ -483,15 +508,111 @@ class AIRuntimeStateService:
             raise _error("ai_runtime_revision_conflict")
         return self.get()
 
+    def _business_key(
+        self,
+        selection: AIRuntimeSelection,
+        credential: BackendCredentialState,
+        scope: str,
+    ) -> tuple[str, int, int, str, tuple[tuple[str, str], ...]]:
+        return (
+            selection.provider_id,
+            selection.revision,
+            credential.generation,
+            scope,
+            tuple((task, selection.task_models[task]) for task in AI_BUSINESS_TASKS[scope]),
+        )
+
+    def business_verification(self, scope: str) -> int | None:
+        if scope not in AI_BUSINESS_SCOPES:
+            raise _error("ai_runtime_state_invalid")
+        selection = self._read()
+        credential = self._credential(selection.provider_id)
+        if not credential.configured or not self._attestation_valid(selection, credential):
+            return None
+        key = self._business_key(selection, credential, scope)
+        now = self._now()
+        with self._business_lock:
+            for cached, expiry in tuple(self._business_verified.items()):
+                if expiry <= now:
+                    self._business_verified.pop(cached, None)
+            expiry = self._business_verified.get(key)
+        return expiry if expiry is not None and now < expiry else None
+
+    def record_business_verification(
+        self,
+        scope: str,
+        *,
+        expected_provider_id: str,
+        expected_revision: int,
+    ) -> int:
+        if scope not in AI_BUSINESS_SCOPES:
+            raise _error("ai_runtime_state_invalid")
+        selection = self._read()
+        credential = self._credential(selection.provider_id)
+        if (
+            selection.provider_id != expected_provider_id
+            or selection.revision != expected_revision
+            or not credential.configured
+            or not self._attestation_valid(selection, credential)
+        ):
+            raise _error("ai_runtime_verification_required")
+        key = self._business_key(selection, credential, scope)
+        now = self._now()
+        with self._business_lock:
+            cached = self._business_verified.get(key)
+            if cached is not None and now < cached:
+                return cached
+        try:
+            for model in sorted({selection.task_models[task] for task in AI_BUSINESS_TASKS[scope]}):
+                result = self._verifier.verify_model(
+                    provider_id=selection.provider_id,
+                    model=model,
+                    credential_ref=credential.credential_ref,
+                    required_capabilities=self.REQUIRED_CAPABILITIES,
+                )
+                if (
+                    result.provider_id != selection.provider_id
+                    or result.model != model
+                    or result.structured_json is not True
+                    or result.tool_calling is not True
+                ):
+                    raise _error("ai_runtime_verification_failed")
+        except AIRuntimeStateError:
+            raise
+        except Exception as exc:
+            raise _error("ai_runtime_verification_failed") from exc
+        current_selection = self._read()
+        current_credential = self._credential(current_selection.provider_id)
+        if (
+            current_selection.provider_id != selection.provider_id
+            or current_selection.revision != selection.revision
+            or dict(current_selection.task_models) != dict(selection.task_models)
+            or current_credential.generation != credential.generation
+            or not current_credential.configured
+            or not self._attestation_valid(current_selection, current_credential)
+        ):
+            raise _error("ai_runtime_verification_required")
+        expiry = now + AI_BUSINESS_VERIFICATION_TTL_SECONDS
+        with self._business_lock:
+            for cached_key, cached_expiry in tuple(self._business_verified.items()):
+                if cached_expiry <= now:
+                    self._business_verified.pop(cached_key, None)
+            if key not in self._business_verified and len(self._business_verified) >= MAX_BUSINESS_VERIFICATION_RECORDS:
+                oldest = min(self._business_verified, key=self._business_verified.get)
+                self._business_verified.pop(oldest, None)
+            self._business_verified[key] = expiry
+        return expiry
+
+    def require_business_verification(self, scope: str) -> None:
+        if self.business_verification(scope) is None:
+            raise _error("ai_runtime_verification_required")
+
     def resolve_runtime(self) -> ResolvedAIRuntime:
         selection = self._read()
         credential = self._credential(selection.provider_id)
-        profile = trusted_provider_profile(selection.provider_id)
         if not credential.configured:
             raise _error("ai_runtime_verification_required")
-        if profile.runtime_activation == RUNTIME_ACTIVATION_LEGACY:
-            activation = "legacy_compatible"
-        elif self._attestation_valid(selection, credential):
+        if self._attestation_valid(selection, credential):
             activation = "connection_verified"
         else:
             raise _error("ai_runtime_verification_required")
@@ -504,18 +625,17 @@ class AIRuntimeStateService:
             activation,
         )
 
-    def action_binding(self) -> RuntimeActionBinding:
+    def action_binding(self, scope: str | None = None) -> RuntimeActionBinding:
         selection = self._read()
         credential = self._credential(selection.provider_id)
         if not credential.configured:
             raise _error("ai_runtime_verification_required")
-        profile = trusted_provider_profile(selection.provider_id)
-        if profile.runtime_activation == RUNTIME_ACTIVATION_LEGACY:
-            activation = "legacy_compatible"
-        elif self._attestation_valid(selection, credential):
+        if self._attestation_valid(selection, credential):
             activation = "connection_verified"
         else:
             activation = "unverified_configured"
+        if scope is not None:
+            self.require_business_verification(scope)
         return RuntimeActionBinding(
             selection.provider_id,
             selection.task_models,
@@ -533,6 +653,10 @@ __all__ = [
     "AIRuntimeStateService",
     "AtomicAIRuntimeStateStore",
     "AI_VERIFICATION_TTL_SECONDS",
+    "AI_BUSINESS_SCOPES",
+    "AI_BUSINESS_TASKS",
+    "AI_BUSINESS_VERIFICATION_TTL_SECONDS",
+    "MAX_BUSINESS_VERIFICATION_RECORDS",
     "BackendCredentialState",
     "CredentialStateProvider",
     "Clock",

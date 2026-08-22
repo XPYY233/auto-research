@@ -41,7 +41,7 @@ class _Runtime:
     provider = "deepseek"
     revision = 4
     generation = 2
-    activation = "legacy_compatible"
+    activation = "connection_verified"
 
     def action_binding(self):
         return RuntimeActionBinding(
@@ -52,6 +52,16 @@ class _Runtime:
 
 class _Snapshots:
     def fingerprint_for(self, **kwargs): return "a" * 64
+
+
+class _ReadinessGate:
+    def __init__(self): self.ready = set(); self.calls = []
+    def require_business_verification(self, scope):
+        self.calls.append(scope)
+        if scope not in self.ready:
+            error = RuntimeError("not ready")
+            error.code = "ai_runtime_verification_required"
+            raise error
 
 
 def _call(task, *, method="json", message="bounded", tokens=100, tools=(), options=None):
@@ -201,6 +211,42 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
                 self.assertEqual(len(self.projectors[scope].calls), 2)
                 self.assertEqual(self.factory.actions[-1], (action, 1))
                 self.assertEqual(self.factory.events[-2:], ["enter", "exit"])
+
+    def test_production_readiness_gate_blocks_before_assembler_or_client(self):
+        gate = _ReadinessGate()
+        registry = self.make_registry(readiness_gate=gate)
+        with self.assertRaises(BusinessActionError) as blocked:
+            registry.prepare(scope="personal_suggestion", session_id="ready", request=object())
+        self.assertEqual(blocked.exception.cause_code, "ai_business_verification_required")
+        self.assertEqual(blocked.exception.stage, "readiness")
+        self.assertEqual(self.factory.actions, [])
+        gate.ready.add("personal_suggestion")
+        summary = registry.prepare(scope="personal_suggestion", session_id="ready", request=object())
+        self.assertEqual(summary["scope"], "personal_suggestion")
+
+    def test_free_local_preflight_runs_before_readiness_without_assembling(self):
+        class _PreflightAssembler(_Assembler):
+            def __init__(self, scope):
+                super().__init__(scope)
+                self.preflight_calls = 0
+                self.assemble_calls = 0
+
+            def preflight(self, request):
+                self.preflight_calls += 1
+
+            def assemble(self, request):
+                self.assemble_calls += 1
+                return super().assemble(request)
+
+        assembler = _PreflightAssembler("personal_suggestion")
+        self.assemblers["personal_suggestion"] = assembler
+        registry = self.make_registry(readiness_gate=_ReadinessGate())
+        with self.assertRaises(BusinessActionError):
+            registry.prepare(
+                scope="personal_suggestion", session_id="ready", request=object()
+            )
+        self.assertEqual(assembler.preflight_calls, 1)
+        self.assertEqual(assembler.assemble_calls, 0)
 
     def test_local_result_is_projected_without_runtime_binding_or_model_call(self):
         self.assemblers["librarian"] = _LocalAssembler("librarian")

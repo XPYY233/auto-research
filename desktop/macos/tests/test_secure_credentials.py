@@ -21,10 +21,24 @@ from secure_credentials import (  # noqa: E402
     LocalPreviewCredentialBackend,
     MacKeychainCredentialBackend,
     SecureCredentialError,
+    ProviderCredentialManager,
+    DEEPSEEK_PROVIDER,
+    OPENAI_PROVIDER,
+    CUSTOM_PROVIDER,
+    FIXED_CREDENTIAL_REFS,
 )
 
 
 SECRET = "sk-test-deepseek-credential-1234567890"
+
+
+class MemoryBackend:
+    storage_label = "memory"
+    def __init__(self): self.value = None
+    def exists(self): return self.value is not None
+    def read(self): return self.value
+    def write(self, value): self.value = value
+    def delete(self): self.value = None
 
 
 class FakeSecurity:
@@ -170,6 +184,27 @@ class KeychainCredentialTests(unittest.TestCase):
         with self.assertRaises(SecureCredentialError) as raised:
             self.store.status()
         self.assertEqual(raised.exception.code, ERROR_DENIED)
+
+
+class ProviderCredentialManagerTests(unittest.TestCase):
+    def test_custom_provider_has_an_independent_non_echoing_slot(self):
+        manager = ProviderCredentialManager({
+            DEEPSEEK_PROVIDER: MemoryBackend(),
+            OPENAI_PROVIDER: MemoryBackend(),
+            CUSTOM_PROVIDER: MemoryBackend(),
+        })
+        saved = manager.save(
+            provider_id=CUSTOM_PROVIDER,
+            credential_ref=FIXED_CREDENTIAL_REFS[CUSTOM_PROVIDER],
+            api_key="sk-custom-private-value",
+        )
+        self.assertTrue(saved.configured)
+        self.assertEqual(saved.generation, 1)
+        self.assertEqual(
+            manager.resolve_bound(FIXED_CREDENTIAL_REFS[CUSTOM_PROVIDER], 1),
+            "sk-custom-private-value",
+        )
+        self.assertIsNone(manager.resolve(FIXED_CREDENTIAL_REFS[OPENAI_PROVIDER]))
 
 
 if __name__ == "__main__":

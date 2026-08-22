@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import time
 import unittest
 
-from auto_research.ai.business_actions import HarnessBudgetedBusinessAIClient
+from auto_research.ai.business_actions import BusinessActionError, HarnessBudgetedBusinessAIClient
 from auto_research.ai.harness_contract import (
     CORDIS_RUNTIME_PROTOCOL_PIN,
     HARNESS_SDK_PROTOCOL_PIN,
@@ -363,11 +363,14 @@ class HarnessBusinessActionTests(unittest.TestCase):
         )
         prepared = action(failed_draft, "librarian")
         raw = RawClient()
-        with self.assertRaises(Exception):
+        with self.assertRaises(BusinessActionError) as failed:
             failing.librarian.executor.execute(
                 action=prepared,
                 ai_client=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
             )
+        self.assertEqual(failed.exception.cause_code, "harness_runtime_failed")
+        self.assertEqual(failed.exception.stage, "harness_execute")
+        self.assertEqual(failed.exception.next_action, "repair_harness_runtime")
         self.assertEqual(raw.calls, 0)
 
     def test_unreviewed_runtime_is_rejected_before_prepare(self):
@@ -380,10 +383,13 @@ class HarnessBusinessActionTests(unittest.TestCase):
                 )
 
         ports = harness_business_ports(session=Session(), runtime=UnreviewedRuntime())
-        with self.assertRaises(Exception):
+        with self.assertRaises(BusinessActionError) as rejected:
             ports.librarian.assembler.assemble(
                 {"question": "硬度", "conversation_id": "c", "history": []}
             )
+        self.assertEqual(rejected.exception.cause_code, "harness_dependency_mismatch")
+        self.assertEqual(rejected.exception.stage, "harness_preflight")
+        self.assertEqual(rejected.exception.next_action, "repair_harness_runtime")
 
 
 if __name__ == "__main__":

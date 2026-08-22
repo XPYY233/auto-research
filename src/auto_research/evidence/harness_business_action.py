@@ -99,9 +99,29 @@ def _runtime_ready(runtime: _HarnessRuntimePort) -> None:
         dependencies.verify_production_protocols()
         verify_cordis_composition(runtime.composition_metadata())
     except HarnessError as exc:
-        raise BusinessActionError("business_action_prepare_failed") from exc
+        raise _harness_failure(exc, stage="harness_preflight") from exc
     except Exception as exc:
-        raise BusinessActionError("business_action_prepare_failed") from exc
+        raise BusinessActionError(
+            "business_action_prepare_failed",
+            cause_code="harness_runtime_unavailable",
+            stage="harness_preflight",
+            next_action="repair_harness_runtime",
+        ) from exc
+
+
+def _harness_failure(exc: HarnessError, *, stage: str) -> BusinessActionError:
+    if exc.code in {"harness_dependency_mismatch", "harness_runtime_unavailable", "harness_runtime_failed"}:
+        next_action = "repair_harness_runtime"
+    elif exc.code == "harness_provider_untrusted":
+        next_action = "select_supported_provider"
+    else:
+        next_action = "retry_harness_action"
+    return BusinessActionError(
+        "business_action_prepare_failed" if stage != "harness_execute" else "business_action_execution_failed",
+        cause_code=exc.code,
+        stage=stage,
+        next_action=next_action,
+    )
 
 
 def _literature_source_binding(
@@ -194,9 +214,14 @@ class HarnessBusinessAssembler:
         except BusinessActionError:
             raise
         except HarnessError as exc:
-            raise BusinessActionError("business_action_prepare_failed") from exc
+            raise _harness_failure(exc, stage="harness_prepare") from exc
         except Exception as exc:
-            raise BusinessActionError("business_action_prepare_failed") from exc
+            raise BusinessActionError(
+                "business_action_prepare_failed",
+                cause_code="harness_runtime_unavailable",
+                stage="harness_prepare",
+                next_action="repair_harness_runtime",
+            ) from exc
 
     def _librarian(self, request: Mapping[str, Any]) -> BusinessActionDraft:
         if set(request) - _LIBRARIAN_KEYS or not {"question", "conversation_id"} <= set(request):
@@ -414,9 +439,14 @@ class HarnessBusinessExecutor:
         except BusinessActionError:
             raise
         except HarnessError as exc:
-            raise BusinessActionError("business_action_execution_failed") from exc
+            raise _harness_failure(exc, stage="harness_execute") from exc
         except Exception as exc:
-            raise BusinessActionError("business_action_execution_failed") from exc
+            raise BusinessActionError(
+                "business_action_execution_failed",
+                cause_code="harness_runtime_unavailable",
+                stage="harness_execute",
+                next_action="repair_harness_runtime",
+            ) from exc
 
     @staticmethod
     def _identity(value: object) -> HarnessEvidenceIdentity | None:

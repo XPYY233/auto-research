@@ -5,7 +5,7 @@
     "macos": {
       "desktop_version": "1.1.0",
       "bundle_short_version": "1.1.0",
-      "build_number": "24",
+      "build_number": "25",
       "target": "macOS arm64 Auto Research workbench"
     },
     "windows": {
@@ -46,11 +46,12 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "8dab2318ca0dcf3967ae2a2faa5326ede783435e5a2a67063d1213604c94bc2d",
+    "src/auto_research/evidence/web/index.html": "2f0317a06dec4765195b3f621a2c84babf6451b14eb0695e466aec0fbbe6d72d",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
-    "src/auto_research/evidence/web/workbench.css": "1899228b1c52536324db3dc5420e4769a313a22bcad50939b6a51b9f0b1debb7",
+    "src/auto_research/evidence/web/workbench.css": "0f243ecc471f2c3274ae2c57b7da42e756e9a296bfe0792dea9c7e7d67ec3553",
     "src/auto_research/evidence/web/ai_consent.js": "ada8842907ff40f01a0e3b681d0dd205cc62aaffec4f47ef29813104141cd582",
     "src/auto_research/evidence/web/document_tab_store.js": "8907e06f5e7fb6e729ed4e3dbeeac6283cce2d9090832125a57b10db4cd53d46",
-    "src/auto_research/evidence/web/fusion_review.js": "3da7d03af93a5563a460b1becd061c11119ad07e80485e8c3d0ac421439340a4"
+    "src/auto_research/evidence/web/pane_layout_controller.js": "146f32f4121e5cfecaaa676084bac85db33f2423b5f2dc0456c8f95f3d0f5086",
+    "src/auto_research/evidence/web/fusion_review.js": "2d79cf8311e9658ea4bcea9f8f83573e95878b30246f402dc01a676777f8fe20"
   }
 }

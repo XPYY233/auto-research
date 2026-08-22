@@ -15,6 +15,13 @@
 
 ## 2. 1.1 已完成的结构收敛
 
+### build25 布局与AI可用性收敛
+
+- `PaneLayoutController` 单独拥有宽度、收起状态与编辑器比例；Fusion仍是唯一DOM、导航和标签内容投影所有者。`48/96px`仅是吸附阈值，不是内容硬最小宽度。
+- `ai-readiness-v1`把provider连接、Harness完整性和四项业务能力分离；设置页不再以一个通用“AI不可用”遮盖具体阶段。
+- 内置provider与custom配置共用同一prepared-action、credential generation、预算和能力验证。custom endpoint只作为经过共享安全门校验的公开HTTPS Chat Completions地址存在，不能扩大Harness工具或科研数据范围。
+- `fusion_review.js`仍持有唯一AI设置监听，不构成build25发布阻断；把设置渲染/状态适配拆出独立模块列为P1，禁止借拆分创建第二请求包装器或第二监听器。
+
 ### Fusion 工作台
 
 - `DocumentTabStore` 已成为论文、证据、PDF、私人实验表格和资料包任务的标签身份权威。
@@ -52,6 +59,7 @@
 | P0 | official-package-v2 的59份PDF、视觉资产与权利完整性 | 建立失败关闭输入规划器，并以签入的排除声明仅从发布范围排除 `10.2172/6065200` | 必须59/59真实PDF后才发布；排除声明不得删除或修改用户本地/Zotero记录 |
 | P0 | macOS仍继承历史 EvidenceHandler | 生产AI与新业务由共享facade/专用API接管 | 继续把剩余业务控制器迁到 RouteSpec 权威 |
 | P1 | `app.js` 与若干Python大模块 | 新功能均放入独立模块，未继续膨胀旧AI循环 | 按API/store、搜索、证据、历史与controller拆分 |
+| P1 | Fusion的AI设置渲染仍位于`fusion_review.js` | 保持唯一监听与请求包装器，布局已拆到独立Controller | 只拆纯渲染/状态适配，不创建第二AI controller |
 | P1 | 旧 Librarian/context-chat 兼容实现 | 桌面固定410且Fusion无调用 | 兼容测试迁移后物理删除执行循环 |
 | P2 | browser/read-only/ngrok历史引用 | 用户入口保持退役 | 权限测试迁移后删除启动器和固定端口文档 |
 | P2 | 仓库目录历史App/DMG约1.06GB | 本轮不把制品提交Git | 核验哈希后迁出源码树 |

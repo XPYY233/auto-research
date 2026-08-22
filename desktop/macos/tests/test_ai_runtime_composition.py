@@ -33,6 +33,7 @@ from auto_research.ai.harness_official_sdk import safe_composition_metadata  # n
 from auto_research.evidence.db import EvidenceDB  # noqa: E402
 from desktop_product_services import create_desktop_product_services  # noqa: E402
 from secure_credentials import (  # noqa: E402
+    CUSTOM_PROVIDER,
     DEEPSEEK_PROVIDER,
     OPENAI_PROVIDER,
     ProviderCredentialManager,
@@ -78,7 +79,47 @@ class FakeHarnessRuntime:
         raise AssertionError("Harness must not execute during composition")
 
 
+class PublicResolver:
+    def resolve(self, _hostname):
+        return ("93.184.216.34",)
+
+
 class MacAIRuntimeCompositionTests(unittest.TestCase):
+    def test_custom_provider_config_is_atomic_path_free_and_reopens(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manager = ProviderCredentialManager({
+                DEEPSEEK_PROVIDER: MemoryBackend(),
+                OPENAI_PROVIDER: MemoryBackend(),
+                CUSTOM_PROVIDER: MemoryBackend(),
+            })
+            first = create_mac_ai_runtime_services(
+                state_path=root / "state.json",
+                attestation_key_path=root / "attestation.key",
+                custom_provider_path=root / "custom.json",
+                custom_host_resolver=PublicResolver(),
+                credential_manager=manager,
+            )
+            public = first.desktop_service.custom_provider_save({
+                "display_name": "lab gateway",
+                "chat_endpoint": "https://ai.example.com/v1/chat/completions",
+                "task_models": {
+                    "extraction": "model-a", "analysis": "model-a",
+                    "librarian_planning": "model-b", "librarian_synthesis": "model-b",
+                },
+                "expected_revision": 0,
+            })
+            self.assertEqual(public["revision"], 1)
+            second = create_mac_ai_runtime_services(
+                state_path=root / "state-2.json",
+                attestation_key_path=root / "attestation-2.key",
+                custom_provider_path=root / "custom.json",
+                custom_host_resolver=PublicResolver(),
+                credential_manager=manager,
+            )
+            reopened = second.desktop_service.custom_provider_get()
+            self.assertEqual(reopened["revision"], 1)
+            self.assertNotIn("endpoint", repr(reopened).casefold())
     def test_desktop_startup_discards_ambient_deepseek_key(self) -> None:
         previous = os.environ.get("DEEPSEEK_API_KEY")
         os.environ["DEEPSEEK_API_KEY"] = "sk-ambient-must-not-run"
@@ -122,7 +163,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             self.assertIs(services.credential_manager, manager)
             self.assertIs(services.legacy_deepseek_store.manager, manager)
             self.assertIs(services.execution_lock, manager.execution_lock)
-            self.assertEqual(len(services.controller.route_contract()), 11)
+            self.assertEqual(len(services.controller.route_contract()), 14)
             self.assertIs(services.database, database)
             self.assertIs(
                 services.personal_import_service,

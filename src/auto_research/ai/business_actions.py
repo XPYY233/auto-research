@@ -259,6 +259,10 @@ class BusinessAIClientFactory(Protocol):
     ) -> ContextManager[object]: ...
 
 
+class BusinessReadinessGate(Protocol):
+    def require_business_verification(self, scope: str) -> None: ...
+
+
 class BusinessResultProjector(Protocol):
     def project(self, result: Mapping[str, Any]) -> Mapping[str, Any]: ...
 
@@ -778,6 +782,7 @@ class BusinessPreparedActionRegistry:
         projectors: Mapping[str, BusinessResultProjector],
         clock: BusinessActionClock | None = None,
         receipt_capacity: int = MAX_EXECUTION_RECEIPTS,
+        readiness_gate: BusinessReadinessGate | None = None,
     ) -> None:
         if (
             set(assemblers) != BUSINESS_ACTION_SCOPES
@@ -794,6 +799,7 @@ class BusinessPreparedActionRegistry:
         self._executors = MappingProxyType(dict(executors))
         self._projectors = MappingProxyType(dict(projectors))
         self._clock = clock or SystemBusinessActionClock()
+        self._readiness_gate = readiness_gate
         self._receipt_capacity = receipt_capacity
         self._lock = threading.Lock()
         self._executed: dict[str, int] = {}
@@ -821,6 +827,18 @@ class BusinessPreparedActionRegistry:
                     raise
                 except Exception as exc:
                     raise BusinessActionError("business_action_result_invalid") from exc
+        # Run only a domain-owned, non-mutating local prerequisite check before
+        # the provider readiness gate.  This keeps actionable failures such as
+        # a missing PDF visible without creating a job or making a model call.
+        preflight = getattr(self._assemblers[scope], "preflight", None)
+        if callable(preflight):
+            try:
+                preflight(request)
+            except BusinessActionError:
+                raise
+            except Exception as exc:
+                raise BusinessActionError("business_action_prepare_failed") from exc
+        self._require_ready(scope, error_code="business_action_prepare_failed")
         try:
             draft = self._assemblers[scope].assemble(request)
         except BusinessActionError:
@@ -859,6 +877,7 @@ class BusinessPreparedActionRegistry:
         if not isinstance(action, PreparedOutbound):
             raise BusinessActionError("business_action_invalid")
         policy = self._policy(action.scope)
+        self._require_ready(action.scope, error_code="business_action_execution_failed")
         self._validate_consumed_action(action, policy)
         with self._lock:
             now = self._now()
@@ -909,6 +928,27 @@ class BusinessPreparedActionRegistry:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise BusinessActionError("business_action_execution_failed")
         return value
+
+    def _require_ready(self, scope: str, *, error_code: str) -> None:
+        if self._readiness_gate is None:
+            return
+        try:
+            self._readiness_gate.require_business_verification(scope)
+        except Exception as exc:
+            runtime_code = getattr(exc, "code", "")
+            needs_test = runtime_code == "ai_runtime_verification_required"
+            raise BusinessActionError(
+                error_code,
+                cause_code=(
+                    "ai_business_verification_required"
+                    if needs_test
+                    else "ai_readiness_unavailable"
+                ),
+                stage="readiness",
+                next_action=(
+                    "test_business_capability" if needs_test else "retry_readiness"
+                ),
+            ) from exc
 
     @staticmethod
     def _policy(scope: object) -> _Policy:
@@ -1001,6 +1041,7 @@ __all__ = [
     "BUSINESS_ACTION_SCOPES",
     "AuthorizedCall",
     "BusinessAIClientFactory",
+    "BusinessReadinessGate",
     "BusinessActionClock",
     "BusinessActionAssembler",
     "BusinessActionDraft",

@@ -12,7 +12,11 @@ from types import MappingProxyType
 from typing import Any, Mapping, Protocol, Sequence
 
 from auto_research.ai.provider_registry import TASK_IDS
-from auto_research.settings.ai_runtime_state import RuntimeActionBinding
+from auto_research.settings.ai_runtime_state import (
+    AI_BUSINESS_SCOPES,
+    AI_BUSINESS_TASKS,
+    RuntimeActionBinding,
+)
 
 from .consent import (
     AI_CONSENT_SCOPES,
@@ -58,6 +62,7 @@ _ERRORS = {
     "prepared_action_stale": ("AI 待执行内容或运行设置已变化，请重新准备。", False),
     "prepared_action_store_full": ("AI 待执行动作过多，请稍后再试。", True),
     "prepared_action_state_unavailable": ("AI 待执行动作服务暂时不可用。", True),
+    "prepared_action_business_verification_required": ("请先验证该 AI 功能所用模型。", False),
 }
 
 
@@ -428,6 +433,7 @@ class PreparedActionService:
         session_id: str,
         provider_id: str,
         expected_revision: int,
+        business_scope: str | None = None,
     ) -> dict[str, object]:
         binding = self._binding()
         if (
@@ -435,24 +441,34 @@ class PreparedActionService:
             or binding.selection_revision != expected_revision
         ):
             raise PreparedActionError("prepared_action_stale")
-        models = tuple(sorted(set(binding.task_models.values())))
+        if business_scope is None:
+            models = (binding.task_models["analysis"],)
+            kind = "connection_test"
+            maximum_calls = 1
+        else:
+            if business_scope not in AI_BUSINESS_SCOPES:
+                raise PreparedActionError("prepared_action_invalid")
+            models = tuple(sorted({binding.task_models[task] for task in AI_BUSINESS_TASKS[business_scope]}))
+            kind = "business_capability_test"
+            maximum_calls = 2 * len(models)
         return self.prepare(
             session_id=session_id,
             scope="capability_test",
             task="capability_test",
             outbound={
-                "kind": "capability_test",
+                "kind": kind,
                 "provider_id": binding.provider_id,
                 "runtime_revision": binding.selection_revision,
                 "models": list(models),
-                "maximum_model_calls": 2 * len(models),
+                "maximum_model_calls": maximum_calls,
+                **({"business_scope": business_scope} if business_scope else {}),
             },
             models=models,
             executor_id="provider_capability_verifier",
             executor_version="v1",
-            estimated_calls=2 * len(models),
-            max_calls=2 * len(models),
-            max_tokens=32 * 2 * len(models),
+            estimated_calls=maximum_calls,
+            max_calls=maximum_calls,
+            max_tokens=32 * maximum_calls,
             expected_provider_id=provider_id,
             expected_revision=expected_revision,
         )
@@ -513,7 +529,7 @@ class PreparedActionService:
             or binding.credential_generation != action.credential_generation
             or binding.activation != action.runtime_activation
             or tuple(sorted(binding.task_models.items())) != action.runtime_task_models
-            or binding.activation not in {"legacy_compatible", "connection_verified"}
+            or binding.activation != "connection_verified"
             and action.scope != "capability_test"
             or self._task_models(
                 binding,
@@ -552,8 +568,13 @@ class PreparedActionService:
         if scope == "capability_test":
             if task != "capability_test":
                 raise PreparedActionError("prepared_action_invalid")
-            expected = tuple(sorted(set(binding.task_models.values())))
-            if models is not None and tuple(models) != expected:
+            expected = tuple(models or ())
+            available = set(binding.task_models.values())
+            if (
+                not expected
+                or expected != tuple(sorted(set(expected)))
+                or any(model not in available for model in expected)
+            ):
                 raise PreparedActionError("prepared_action_stale")
             expected_mapping = tuple(
                 (f"capability_test:{index}", model)

@@ -2,6 +2,8 @@
 
 > 当前稳定交付为 Auto Research `1.1.0` / build `24`。它只面向 Apple Silicon macOS，采用 ad-hoc 签名、未公证，不是 App Store/Developer ID 公开发行。Windows 1.1迁移冻结。
 
+> build `25` 目前只是源码候选：VS Code式可收起分栏、自动右侧详情预览、`ai-readiness-v1` 和三类提供商API管理已通过共享896项与macOS 236项测试。它尚未完成真实App安装和DeepSeek付费四业务验收，因此不得称为稳定交付；失败时继续使用build 24。
+
 ## v1.1.0 macOS 稳定交付
 
 - Fusion：独立滚动文献目录、真实服务端四类筛选、多标签/双编辑器组、五模块隔离检查器、应用内PDF临时高亮与完整返回链。

@@ -108,6 +108,21 @@ class CapabilityVerifierTests(unittest.TestCase):
         )
         self.assertEqual(len(tool["tools"]), 1)
 
+    def test_connection_probe_is_exactly_one_small_structured_request(self):
+        verifier, resolver, session = self.verifier(
+            responses=[_Response({"content": '{"status":"ok"}'})]
+        )
+        result = verifier.verify_connection(
+            provider_id="openai",
+            model="gpt-5.6-terra",
+            credential_ref="openai.default",
+        )
+        self.assertTrue(result.structured_json)
+        self.assertFalse(result.tool_calling)
+        self.assertEqual(resolver.refs, ["openai.default"])
+        self.assertEqual(len(session.calls), 1)
+        self.assertFalse(session.calls[0][1]["allow_redirects"])
+
     def test_deepseek_uses_same_client_with_provider_payload_shape(self):
         verifier, _, session = self.verifier(provider="deepseek")
         result = self.verify(verifier, "deepseek", "deepseek-v4-pro")

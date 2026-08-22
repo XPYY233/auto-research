@@ -176,7 +176,7 @@ class DesktopAIRouteTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 403)
         raised.exception.close()
 
-    def test_all_eleven_shared_routes_are_owned_by_the_mac_adapter(self):
+    def test_all_shared_routes_are_owned_by_the_mac_adapter(self):
         expected = {
             ("GET", "/api/desktop/ai/providers"),
             ("GET", "/api/desktop/ai/settings"),
@@ -190,7 +190,7 @@ class DesktopAIRouteTests(unittest.TestCase):
             ("POST", "/api/desktop/ai/actions/personal_suggestion/prepare"),
             ("POST", "/api/desktop/ai/actions/personal_suggestion/execute"),
         }
-        self.assertEqual(len(DESKTOP_AI_ROUTES), 11)
+        self.assertEqual(len(DESKTOP_AI_ROUTES), 14)
         for method, path in expected:
             with self.subTest(method=method, path=path):
                 self.assertTrue(MacDesktopAIAPI.is_path(path))

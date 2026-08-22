@@ -23,6 +23,10 @@
       <div class="fusion-window-mark" aria-hidden="true"><i></i><i></i><i></i></div>
       <strong>Auto Research</strong>
       <span id="fusion-breadcrumb">文献 / 当前论文</span>
+      <div class="fusion-layout-actions" role="group" aria-label="工作台栏位">
+        <button type="button" data-pane-toggle="context" aria-controls="fusion-context" aria-expanded="true" title="显示或收起上下文栏">左栏</button>
+        <button type="button" data-pane-toggle="inspector" aria-controls="fusion-inspector" aria-expanded="true" title="显示或收起检查器">检查器</button>
+      </div>
       <button type="button" class="fusion-command" id="fusion-command" aria-keyshortcuts="Meta+K Control+K" aria-haspopup="dialog" aria-expanded="false" aria-controls="fusion-command-palette">命令与快速跳转 <kbd>⌘K</kbd></button>
       <span class="fusion-release-badge" id="fusion-release-badge">本机数据 · AI 逐次授权</span>
     </header>
@@ -90,7 +94,7 @@
         </section>
       </aside>
 
-      <div class="fusion-pane-separator fusion-context-separator" id="fusion-context-separator" data-pane-separator="context" role="separator" aria-label="调整上下文栏宽度" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="480" aria-valuenow="244" tabindex="0"></div>
+      <div class="fusion-pane-separator fusion-context-separator" id="fusion-context-separator" data-pane-separator="context" role="separator" aria-label="调整上下文栏宽度" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="480" aria-valuenow="244" tabindex="0"></div>
 
       <section class="fusion-editor" id="fusion-editor" tabindex="-1">
         <div class="fusion-tabs" aria-label="中央编辑区文档标签">
@@ -98,8 +102,7 @@
             <div class="fusion-document-tab-group active" data-document-group="primary"><div class="fusion-document-tab-list" id="fusion-document-tabs-primary" role="tablist" aria-label="主编辑组标签"></div></div>
             <div class="fusion-document-tab-group" data-document-group="secondary" hidden><div class="fusion-document-tab-list" id="fusion-document-tabs-secondary" role="tablist" aria-label="第二编辑组标签"></div></div>
           </div>
-          <button type="button" class="fusion-tab-layout-action fusion-split-action" id="fusion-split-tab" aria-label="在第二编辑组打开当前标签" title="在右侧打开">◫ <span>在右侧打开</span></button>
-          <button type="button" class="fusion-tab-layout-action" id="fusion-reopen-tab" aria-label="重新打开最近关闭的标签" title="重新打开标签">↶</button>
+          <details class="fusion-tab-more" id="fusion-tab-more"><summary class="fusion-tab-layout-action" aria-label="更多标签操作" title="更多标签操作">⋯</summary><div role="menu" aria-label="标签与编辑组操作"><button type="button" id="fusion-split-tab" role="menuitem">在右侧打开当前标签</button><button type="button" id="fusion-reopen-tab" role="menuitem">重新打开最近关闭标签</button><button type="button" data-pane-toggle="primary" role="menuitem" aria-controls="fusion-primary-editor-surface" aria-expanded="true">显示或收起主编辑组</button><button type="button" data-pane-toggle="secondary" role="menuitem" aria-controls="fusion-secondary-editor-surface" aria-expanded="true">显示或收起第二编辑组</button></div></details>
           <span id="fusion-primary-tab-label" hidden>当前论文</span><span id="fusion-detail-tab-label" hidden>证据详情</span>
         </div>
 
@@ -172,7 +175,7 @@
           <div class="fusion-scroll fusion-settings-page">
             <section data-settings-panel="appearance"><h1>外观</h1><p>主题与密度只影响这台设备的界面，不改变论文、实验值或单位。桌面设置是权威，本地缓存只用于避免首屏闪烁。</p><p class="fusion-settings-status" id="fusion-settings-status" aria-live="polite">正在同步桌面外观设置…</p><div class="fusion-setting-row"><div><strong>主题</strong><small>跟随系统、日间或夜间</small></div><div class="fusion-segmented" role="group" aria-label="主题"><button type="button" data-theme-choice="system">跟随系统</button><button type="button" data-theme-choice="light">日间</button><button type="button" data-theme-choice="dark">夜间</button></div></div><div class="fusion-setting-row"><div><strong>界面密度</strong><small>紧凑模式减少间距，不缩小实验数值</small></div><div class="fusion-segmented" role="group" aria-label="密度"><button type="button" data-density-choice="comfortable">舒适</button><button type="button" data-density-choice="compact">紧凑</button></div></div></section>
             <section data-settings-panel="language"><h2>语言与区域</h2><div class="fusion-setting-row"><div><strong>简体中文</strong><small>当前完整支持</small></div><span>已启用</span></div><div class="fusion-setting-row muted"><div><strong>英语</strong><small>英语界面尚未提供</small></div><span>不可用</span></div></section>
-            <section data-settings-panel="ai"><h2>AI 与 API 密钥</h2><p>只允许内置的 DeepSeek / OpenAI 受信目录与固定模型；密钥保存到当前电脑的私有加密存储，不会回显或写入页面缓存。</p><p class="fusion-settings-status" id="fusion-ai-settings-status" aria-live="polite">正在读取受信提供商状态…</p><div class="fusion-setting-row"><div><strong>提供商</strong><small>不接受自定义 URL</small></div><select id="fusion-ai-provider" disabled></select></div><div id="fusion-ai-models" class="fusion-ai-models"></div><div class="fusion-setting-row"><div><strong>API 密钥</strong><small id="fusion-ai-credential-state">尚未读取</small></div><input id="fusion-ai-key" type="password" autocomplete="off" maxlength="4096" placeholder="粘贴后安全保存；不会回显"></div><div class="fusion-placeholder-actions"><button type="button" id="fusion-ai-model-save" disabled>保存提供商与模型</button><button type="button" id="fusion-ai-key-save" disabled>安全保存密钥</button><button type="button" id="fusion-ai-key-delete" disabled>删除密钥</button><button type="button" id="fusion-ai-test" disabled>验证连接</button></div><small id="fusion-ai-test-plan">读取设置后显示精确连接验证调用上限。</small></section>
+            <section data-settings-panel="ai"><h2>AI 与 API 密钥</h2><p>选择提供商、分配四项任务模型，并查看连接、Harness 与各业务是否可以安全运行。密钥只保存到当前电脑的私有加密存储，不会回显或写入页面缓存。</p><p class="fusion-settings-status" id="fusion-ai-settings-status" aria-live="polite">正在读取 AI 状态…</p><div class="fusion-ai-readiness-summary"><section><span>提供商连接</span><strong id="fusion-ai-connection-state">正在读取</strong><small id="fusion-ai-connection-reason">—</small></section><section><span>Harness</span><strong id="fusion-ai-harness-state">正在读取</strong><small id="fusion-ai-harness-reason">—</small></section></div><div class="fusion-setting-row"><div><strong>提供商</strong><small>DeepSeek、OpenAI 或已配置的高级提供商</small></div><select id="fusion-ai-provider" disabled></select></div><div id="fusion-ai-models" class="fusion-ai-models"></div><div class="fusion-setting-row"><div><strong>API 密钥</strong><small id="fusion-ai-credential-state">尚未读取</small></div><input id="fusion-ai-key" type="password" autocomplete="off" maxlength="4096" placeholder="粘贴后保存；不会回显"></div><div class="fusion-placeholder-actions"><button type="button" id="fusion-ai-model-save" disabled>保存提供商与模型</button><button type="button" id="fusion-ai-key-save" disabled>保存密钥并验证连接</button><button type="button" id="fusion-ai-key-delete" disabled>删除密钥</button><button type="button" id="fusion-ai-test" disabled>验证连接</button></div><small id="fusion-ai-test-plan">连接验证最多调用模型 1 次，执行前会再次确认可能产生费用。</small><section class="fusion-ai-readiness"><header><strong>业务可用状态</strong><small>每项能力独立验证；尚未就绪时不会发送业务请求。</small></header><div id="fusion-ai-business-readiness" role="list"></div></section><details class="fusion-ai-custom"><summary>高级提供商配置</summary><p>可配置公开 HTTPS Chat Completions 地址。已保存的地址和密钥不会回显；修改时需要重新输入完整地址。</p><div class="fusion-setting-row"><label for="fusion-ai-custom-name">显示名称</label><input id="fusion-ai-custom-name" maxlength="80" autocomplete="off"></div><div class="fusion-setting-row"><label for="fusion-ai-custom-endpoint">Chat Completions 地址</label><input id="fusion-ai-custom-endpoint" type="url" maxlength="2048" autocomplete="off" placeholder="https://example.com/v1/chat/completions"></div><div class="fusion-ai-custom-models"><label>文献提取<input data-fusion-custom-task="extraction" maxlength="160" autocomplete="off"></label><label>证据分析<input data-fusion-custom-task="analysis" maxlength="160" autocomplete="off"></label><label>图书管理员规划<input data-fusion-custom-task="librarian_planning" maxlength="160" autocomplete="off"></label><label>图书管理员回答<input data-fusion-custom-task="librarian_synthesis" maxlength="160" autocomplete="off"></label></div><div class="fusion-placeholder-actions"><button type="button" id="fusion-ai-custom-save">保存高级提供商</button><button type="button" id="fusion-ai-custom-delete" disabled>删除高级提供商</button></div><small id="fusion-ai-custom-status">尚未读取高级提供商状态。</small></details></section>
             <section data-settings-panel="data"><h2>数据与资料库</h2><p>文献检索使用公开安全 DTO；实验文件先在本机受限检查，只有你集中核验并确认后才写入私人库。</p></section>
             <section data-settings-panel="about"><h2>关于</h2><div class="fusion-setting-row"><div><strong id="fusion-about-release">Auto Research</strong><small id="fusion-about-build">版本由桌面发布清单管理</small></div><span>macOS</span></div><p>文献、搜索、个人实验、资料包与受信 AI 设置都在同一个本机科研工作台内运行。</p></section>
           </div>
@@ -195,7 +198,7 @@
           </section>
         </section>
           </div>
-          <div class="fusion-pane-separator fusion-editor-group-separator" id="fusion-editor-group-separator" data-pane-separator="editor-groups" role="separator" aria-label="调整两个编辑组的宽度" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="70" aria-valuenow="58" tabindex="0" hidden></div>
+          <div class="fusion-pane-separator fusion-editor-group-separator" id="fusion-editor-group-separator" data-pane-separator="editor-groups" role="separator" aria-label="调整两个编辑组的宽度" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="58" tabindex="0" hidden></div>
           <section class="fusion-editor-surface fusion-secondary-editor" id="fusion-secondary-editor-surface" data-editor-surface="secondary" aria-label="第二编辑组" hidden tabindex="-1">
             <header><strong id="fusion-secondary-editor-title">第二编辑组</strong><button type="button" id="fusion-secondary-move-primary">移回主编辑组</button></header>
             <div class="fusion-secondary-editor-body fusion-scroll" id="fusion-secondary-editor-body"><div class="fusion-state-card"><strong>选择或移动一个标签到这里</strong><span>宽屏时可与主编辑区同时查看；窄屏合并显示但不会丢失分组。</span></div></div>
@@ -203,7 +206,7 @@
         </div>
       </section>
 
-      <div class="fusion-pane-separator fusion-inspector-separator" id="fusion-inspector-separator" data-pane-separator="inspector" role="separator" aria-label="调整右侧检查器宽度" aria-orientation="vertical" aria-valuemin="260" aria-valuemax="560" aria-valuenow="340" tabindex="0"></div>
+      <div class="fusion-pane-separator fusion-inspector-separator" id="fusion-inspector-separator" data-pane-separator="inspector" role="separator" aria-label="调整右侧检查器宽度" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="560" aria-valuenow="340" tabindex="0"></div>
 
       <aside class="fusion-inspector" id="fusion-inspector" aria-label="详情与检查器">
         <header><strong id="fusion-inspector-title">论文检查器</strong><button type="button" class="fusion-drawer-close" data-close-drawer="inspector" aria-label="关闭检查器">×</button></header>
@@ -212,7 +215,7 @@
       </aside>
     </section>
 
-    <footer class="fusion-statusbar"><span><b>●</b> Auto Research</span><span id="fusion-status-context">真实文献</span><span id="fusion-status-operation">就绪</span><span class="fusion-status-right">敏感操作逐次授权 · 数据默认留在本机</span></footer>
+    <footer class="fusion-statusbar"><span><b>●</b> Auto Research</span><span id="fusion-status-context">真实文献</span><span id="fusion-status-operation">就绪</span><span id="fusion-status-ai">AI 状态载入中</span><span class="fusion-status-right">敏感操作逐次授权 · 数据默认留在本机</span></footer>
   </main>
   <div class="fusion-scrim" data-close-all-drawers hidden></div>
   <section class="fusion-command-palette" id="fusion-command-palette" role="dialog" aria-modal="true" aria-label="命令与快速跳转" hidden>
@@ -223,10 +226,17 @@
       <button type="button" role="option" tabindex="-1" data-command-view="personal">转到：实验 <kbd>⌘3</kbd></button>
       <button type="button" role="option" tabindex="-1" data-command-view="package">转到：资料包 <kbd>⌘4</kbd></button>
       <button type="button" role="option" tabindex="-1" data-command-view="settings">打开设置 <kbd>⌘,</kbd></button>
+      <button type="button" role="option" tabindex="-1" data-command-action="toggle-context">显示或收起上下文栏</button>
+      <button type="button" role="option" tabindex="-1" data-command-action="toggle-inspector">显示或收起检查器</button>
+      <button type="button" role="option" tabindex="-1" data-command-action="toggle-primary">显示或收起主编辑组</button>
+      <button type="button" role="option" tabindex="-1" data-command-action="toggle-secondary">显示或收起第二编辑组</button>
+      <button type="button" role="option" tabindex="-1" data-command-action="split-active">在右侧打开当前标签</button>
+      <button type="button" role="option" tabindex="-1" data-command-action="reopen-closed">重新打开最近关闭标签</button>
     </div>
   </section>
   <script src="/static/ai_consent.js"></script>
   <script src="/static/document_tab_store.js"></script>
+  <script src="/static/pane_layout_controller.js"></script>
   <script src="/static/fusion_review.js"></script>
 </body>
 </html>

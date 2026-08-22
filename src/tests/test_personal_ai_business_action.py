@@ -133,7 +133,7 @@ class _Runtime:
             "deepseek.default",
             2,
             4,
-            "legacy_compatible",
+            "connection_verified",
         )
 
 

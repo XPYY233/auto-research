@@ -2,6 +2,15 @@
 
 > 2026-08-01 之前关于浏览器工作台、导师只读页、固定端口和 ngrok 的条目只保留为历史决策记录，不是当前启动或交付说明。当前唯一产品入口是桌面 App，localhost 仅为 App 内部实现和维护测试边界。
 
+## 2026-08-22：v1.1 build25 分栏易用性与AI可用性候选
+
+- 按用户要求继续使用同项目可见Codex任务协作：前端任务只负责Fusion分栏、自动右侧预览和AI设置投影，功能任务冻结provider/readiness/错误血缘，root唯一审查、暂存、提交与发布；其他任务未stage/commit，也未并行构建或调用模型。
+- 新增独立`PaneLayoutController`和`fusion-pane-layout-v2`。侧栏48px内、编辑组96px内吸附为收起，至少保留一个编辑组；鼠标、键盘、按钮和命令面板共用同一状态源。证据单击自动进入secondary未固定预览，固定详情不会被下一次单击覆盖。
+- 新增`ai-readiness-v1`、DeepSeek/OpenAI/custom三类provider管理、连接与四业务分层验证、稳定`reason_code/next_action`以及状态栏摘要。custom只允许通过本地SSRF、DNS重绑定、重定向和地址安全门的公开HTTPS Chat Completions服务；密钥和保存后的endpoint不回显。
+- 文献提取增加免费本地preflight，缺失PDF等错误不再被AI通用错误遮蔽；prepared action仍是唯一收费授权，取消保持零业务调用，Harness失败不回退旧AI。
+- 冻结接口后串行通过共享896项（80项显式外部样本跳过）与macOS 236项；前端/AI/发布目标测试、JavaScript/Python语法、release-contract同步与diff检查通过。生产SQLite SHA-256保持`18b9a4a3a4cbdf9ffcbe4fe14fa0e4855727a6211c1f61902e3d30324903bc84`。
+- 当前只完成源码候选。干净构建、事务式安装、WebView分栏验收、用户在App内保存密钥后的最多25次真实付费AI验收、DMG和UserKit仍是发布阻断；build24保持稳定回退，Windows继续冻结。
+
 ## 2026-08-22：v1.1 build24 可拉伸Fusion工作台与最终Mac验收
 
 - 在不恢复旧DOM、第二导航或平台算法副本的前提下，为上下文栏、两个完整编辑器组和右侧检查器加入三条VS Code式可拉伸边界；支持指针拖动、键盘方向键/Shift/Home/End、双击复位、响应式收敛和本机非敏感宽度记忆。

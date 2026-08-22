@@ -8,6 +8,7 @@ from auto_research.ai.openai_compatible import (
     OpenAICompatibleClient,
     OpenAICompatibleSettings,
 )
+from auto_research.settings.ai_runtime_state import ResolvedAIRuntime
 
 
 MODELS = {
@@ -45,10 +46,20 @@ class _FalseySession(_Session):
 
 
 class OpenAICompatibleProviderTests(unittest.TestCase):
-    def settings(self, provider="openai", models=None):
+    def settings(self, provider="openai", models=None, *, activated=False):
+        selected = models or MODELS
+        if activated:
+            return OpenAICompatibleSettings.from_resolved_runtime(
+                ResolvedAIRuntime(
+                    provider, selected, f"{provider}.default", 1, 1,
+                    "connection_verified",
+                ),
+                api_key="sk-test-secret",
+                max_attempts=1,
+            )
         return OpenAICompatibleSettings(
             provider_id=provider,
-            task_models=models or MODELS,
+            task_models=selected,
             api_key="sk-test-secret",
             credential_ref=f"{provider}.default",
             max_attempts=1,
@@ -83,17 +94,12 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
             )
         )
         client = OpenAICompatibleClient(
-            OpenAICompatibleSettings(
-                provider_id="deepseek",
-                task_models={
+            self.settings("deepseek", models={
                     "extraction": "deepseek-v4-pro",
                     "analysis": "deepseek-v4-pro",
                     "librarian_planning": "deepseek-v4-flash",
                     "librarian_synthesis": "deepseek-v4-pro",
-                },
-                api_key="sk-test-secret",
-                max_attempts=1,
-            ),
+                }, activated=True),
             session=session,
         )
         result = client.request_tool_message(
@@ -119,7 +125,7 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         }
         session = _Session(_Response({"content": '{"ok":true}'}))
         client = OpenAICompatibleClient(
-            self.settings("deepseek", models=models), session=session
+            self.settings("deepseek", models=models, activated=True), session=session
         )
         client.request_json([], thinking=False)
         endpoint, kwargs = session.calls[0]
@@ -132,7 +138,7 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         response = _Response({"content": "ignored"})
         response.ok = False
         response.status_code = 307
-        client = OpenAICompatibleClient(self.settings(), session=_Session(response))
+        client = OpenAICompatibleClient(self.settings(activated=True), session=_Session(response))
         with self.assertRaises(AIProviderResponseError):
             client.request_json([])
 

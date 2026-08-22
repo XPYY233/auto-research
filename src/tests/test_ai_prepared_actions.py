@@ -35,7 +35,7 @@ class _Runtime:
         self.revision = 3
         self.generation = 7
         self.models = dict(MODELS)
-        self.activation = "legacy_compatible"
+        self.activation = "connection_verified"
 
     def action_binding(self):
         return RuntimeActionBinding(
@@ -167,7 +167,7 @@ class PreparedActionServiceTests(unittest.TestCase):
             session_id="session-1",
         )
         self.assertEqual(prepared.outbound["question"], "compare")
-        self.assertEqual(prepared.runtime_activation, "legacy_compatible")
+        self.assertEqual(prepared.runtime_activation, "connection_verified")
         self.assertEqual(prepared.runtime_task_models, tuple(sorted(MODELS.items())))
         self.assertEqual(prepared.task_models, (("librarian_synthesis", "deepseek-v4-pro"),))
         with self.assertRaises(TypeError):
@@ -242,9 +242,23 @@ class PreparedActionServiceTests(unittest.TestCase):
             expected_revision=3,
         )
         self.assertEqual(summary["scope"], "capability_test")
-        self.assertEqual(summary["estimated_calls"], 4)
-        self.assertEqual(summary["maximum_calls"], 4)
-        self.assertEqual(summary["maximum_tokens"], 128)
+        self.assertEqual(summary["estimated_calls"], 1)
+        self.assertEqual(summary["maximum_calls"], 1)
+        self.assertEqual(summary["maximum_tokens"], 32)
+
+        business = self.service.prepare_capability_test(
+            session_id="session-business",
+            provider_id="deepseek",
+            expected_revision=3,
+            business_scope="librarian",
+        )
+        self.assertEqual(business["estimated_calls"], 4)
+        self.assertEqual(business["maximum_calls"], 4)
+        with self.assertRaises(PreparedActionError):
+            self.service.prepare_capability_test(
+                session_id="session-bad", provider_id="deepseek",
+                expected_revision=3, business_scope="arbitrary",
+            )
 
     def test_multi_task_action_binds_strict_task_model_mapping(self):
         summary = self.service.prepare(

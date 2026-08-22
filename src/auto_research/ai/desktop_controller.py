@@ -10,6 +10,7 @@ from auto_research.settings.ai_desktop_service import (
     AIDesktopServiceError,
 )
 from auto_research.settings.ai_runtime_state import AIRuntimeStateError
+from .custom_provider import CustomProviderError
 
 from .consent import AIConsentError
 from .business_actions import (
@@ -27,7 +28,7 @@ MAX_TEST_BODY_BYTES = 4 * 1024
 MAX_CONSENT_BODY_BYTES = 4 * 1024
 MAX_PROTECTED_ACTION_BODY_BYTES = 4 * 1024
 MAX_BUSINESS_PREPARE_BODY_BYTES = 256 * 1024
-_PROVIDER_PATH = r"(?P<provider_id>deepseek|openai)"
+_PROVIDER_PATH = r"(?P<provider_id>deepseek|openai|custom)"
 _BUSINESS_SCOPE_PATH = (
     r"(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)"
 )
@@ -52,6 +53,10 @@ class DesktopAISettings(Protocol):
     def test(
         self, provider_id: str, prepared_action: object, *, session_id: str
     ) -> dict[str, object]: ...
+
+    def custom_provider_get(self) -> dict[str, object]: ...
+    def custom_provider_save(self, payload: Mapping[str, Any]) -> dict[str, object]: ...
+    def custom_provider_delete(self, expected_revision: object) -> dict[str, object]: ...
 
 
 class DesktopAIRequestContext(Protocol):
@@ -138,6 +143,24 @@ DESKTOP_AI_ROUTES = (
         MAX_SETTINGS_BODY_BYTES,
     ),
     DesktopAIRoute(
+        "desktop_ai.custom_provider_get",
+        "GET",
+        r"^/api/desktop/ai/custom-provider$",
+        0,
+    ),
+    DesktopAIRoute(
+        "desktop_ai.custom_provider_save",
+        "POST",
+        r"^/api/desktop/ai/custom-provider$",
+        MAX_SETTINGS_BODY_BYTES,
+    ),
+    DesktopAIRoute(
+        "desktop_ai.custom_provider_delete",
+        "DELETE",
+        r"^/api/desktop/ai/custom-provider/(?P<revision>[1-9][0-9]{0,8})$",
+        0,
+    ),
+    DesktopAIRoute(
         "desktop_ai.credential_get",
         "GET",
         rf"^/api/desktop/ai/credentials/{_PROVIDER_PATH}$",
@@ -197,6 +220,7 @@ _ERROR_STATUS = {
     "ai_desktop_credential_unavailable": 503,
     "ai_desktop_consent_required": 428,
     "ai_desktop_test_busy": 409,
+    "ai_desktop_custom_active": 409,
     "ai_runtime_state_invalid": 400,
     "ai_runtime_revision_conflict": 409,
     "ai_runtime_store_unavailable": 503,
@@ -222,6 +246,10 @@ _ERROR_STATUS = {
     "business_action_replayed": 409,
     "business_action_store_full": 429,
     "business_action_result_invalid": 502,
+    "custom_provider_invalid": 400,
+    "custom_provider_conflict": 409,
+    "custom_provider_unavailable": 503,
+    "custom_provider_endpoint_unsafe": 400,
 }
 
 
@@ -255,6 +283,7 @@ class DesktopAIController:
             AIConsentError,
             PreparedActionError,
             BusinessActionError,
+            CustomProviderError,
         ) as exc:
             return _known_error(exc)
         except Exception:
@@ -307,6 +336,12 @@ class DesktopAIController:
             result = self._settings.get()
         elif route.route_id == "desktop_ai.settings_patch":
             result = self._settings.patch(payload)
+        elif route.route_id == "desktop_ai.custom_provider_get":
+            result = self._settings.custom_provider_get()
+        elif route.route_id == "desktop_ai.custom_provider_save":
+            result = self._settings.custom_provider_save(payload)
+        elif route.route_id == "desktop_ai.custom_provider_delete":
+            result = self._settings.custom_provider_delete(int(parameters["revision"]))
         elif route.route_id == "desktop_ai.credential_get":
             result = self._settings.credential_status(str(provider_id))
         elif route.route_id == "desktop_ai.credential_save":
@@ -317,11 +352,13 @@ class DesktopAIController:
         elif route.route_id == "desktop_ai.credential_delete":
             result = self._settings.credential_delete(str(provider_id))
         elif route.route_id == "desktop_ai.provider_test_prepare":
-            _exact_keys(payload, {"expected_revision"})
+            if set(payload) not in ({"expected_revision"}, {"expected_revision", "scope"}):
+                raise AIDesktopServiceError("ai_desktop_request_invalid")
             result = self._prepared.prepare_capability_test(
                 session_id=_session_id(request),
                 provider_id=str(provider_id),
                 expected_revision=payload.get("expected_revision"),
+                business_scope=payload.get("scope"),
             )
         elif route.route_id == "desktop_ai.provider_test":
             _exact_keys(payload, {"action_id", "consent_nonce"})

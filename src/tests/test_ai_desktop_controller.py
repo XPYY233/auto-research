@@ -43,6 +43,9 @@ class _Settings:
     def credential_status(self, provider_id): return self._result("credential_status", provider_id)
     def credential_save(self, provider_id, api_key): return self._result("credential_save", provider_id, bool(api_key))
     def credential_delete(self, provider_id): return self._result("credential_delete", provider_id)
+    def custom_provider_get(self): return self._result("custom_provider_get")
+    def custom_provider_save(self, payload): return self._result("custom_provider_save", dict(payload))
+    def custom_provider_delete(self, revision): return self._result("custom_provider_delete", revision)
     def test(self, provider_id, action, *, session_id):
         return self._result("provider_test", provider_id, action, session_id)
 
@@ -92,13 +95,13 @@ class DesktopAIControllerTests(unittest.TestCase):
 
     def test_route_contract_has_server_prepare_consent_and_execute(self):
         contract = DesktopAIController.route_contract()
-        self.assertEqual(len(contract), 11)
+        self.assertEqual(len(contract), 14)
         patterns = {(row["method"], row["pattern"]) for row in contract}
-        self.assertIn(("POST", r"^/api/desktop/ai/providers/(?P<provider_id>deepseek|openai)/test-actions$"), patterns)
+        self.assertIn(("POST", r"^/api/desktop/ai/providers/(?P<provider_id>deepseek|openai|custom)/test-actions$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/consents$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/prepare$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/execute$"), patterns)
-        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 11)
+        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 14)
 
     def test_business_prepare_and_execute_bind_scope_and_platform_session(self):
         business = _Business()
@@ -152,10 +155,43 @@ class DesktopAIControllerTests(unittest.TestCase):
         consent = self.controller(self.request("POST", "/api/desktop/ai/consents", {"action_id": "opaque-action"}, session_id="s-9"))
         tested = self.controller(self.request("POST", "/api/desktop/ai/providers/openai/test", {"action_id": "opaque-action", "consent_nonce": "opaque-nonce"}, session_id="s-9"))
         self.assertEqual((prepared.status, consent.status, tested.status), (201, 201, 200))
-        self.assertEqual(self.prepared.calls[0], ("prepare", {"session_id": "s-9", "provider_id": "openai", "expected_revision": 3}))
+        self.assertEqual(self.prepared.calls[0], ("prepare", {"session_id": "s-9", "provider_id": "openai", "expected_revision": 3, "business_scope": None}))
         self.assertEqual(self.prepared.calls[1], ("consent", {"action_id": "opaque-action", "session_id": "s-9"}))
         self.assertEqual(self.prepared.calls[2][0], "consume")
         self.assertEqual(self.settings.calls[-1], ("provider_test", "openai", self.prepared.action, "s-9"))
+
+    def test_business_capability_prepare_accepts_only_a_frozen_scope(self):
+        response = self.controller(self.request(
+            "POST", "/api/desktop/ai/providers/deepseek/test-actions",
+            {"expected_revision": 2, "scope": "librarian"}, session_id="s-10",
+        ))
+        self.assertEqual(response.status, 201)
+        self.assertEqual(
+            self.prepared.calls[-1],
+            ("prepare", {
+                "session_id": "s-10", "provider_id": "deepseek",
+                "expected_revision": 2, "business_scope": "librarian",
+            }),
+        )
+        rejected = self.controller(self.request(
+            "POST", "/api/desktop/ai/providers/deepseek/test-actions",
+            {"expected_revision": 2, "scope": "librarian", "model": "evil"},
+        ))
+        self.assertEqual(rejected.status, 400)
+
+    def test_custom_provider_crud_is_strict_and_never_uses_renderer_secret_fields(self):
+        payload = {
+            "display_name": "lab gateway",
+            "chat_endpoint": "https://ai.example.com/v1/chat/completions",
+            "task_models": {},
+            "expected_revision": 0,
+        }
+        saved = self.controller(self.request("POST", "/api/desktop/ai/custom-provider", payload))
+        deleted = self.controller(self.request("DELETE", "/api/desktop/ai/custom-provider/1"))
+        self.assertEqual((saved.status, deleted.status), (200, 200))
+        self.assertEqual(self.settings.calls[-1], ("custom_provider_delete", 1))
+        rejected = self.controller(self.request("DELETE", "/api/desktop/ai/custom-provider/0"))
+        self.assertEqual(rejected.status, 404)
 
     def test_renderer_action_or_scope_and_old_direct_test_are_rejected(self):
         old_consent = self.controller(self.request("POST", "/api/desktop/ai/consents", {"scope": "librarian", "action": {"secret": "x"}}))

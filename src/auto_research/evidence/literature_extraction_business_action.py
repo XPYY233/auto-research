@@ -127,6 +127,39 @@ class EvidenceDBLiteratureJobStarter:
             learning_guidance=guidance,
         )
 
+    def preflight(self, *, paper_id: int, force_rescan: bool) -> None:
+        """Validate free local prerequisites without creating a staged job."""
+
+        if (
+            isinstance(paper_id, bool)
+            or not isinstance(paper_id, int)
+            or paper_id < 1
+            or not isinstance(force_rescan, bool)
+        ):
+            raise LiteratureExtractionJobError(
+                "literature_request_invalid", "文献抽取请求无效"
+            )
+        paper = self._db.get_paper(paper_id)
+        if not paper:
+            raise LiteratureExtractionJobError(
+                "literature_paper_missing", "目标文献不存在"
+            )
+        if not paper.get("pdf_path"):
+            raise LiteratureExtractionJobError(
+                "literature_pdf_missing", "当前文献没有可读取的 PDF"
+            )
+        try:
+            scanned = bool(get_six_extraction_status(self._db, paper_id).get("scanned"))
+        except KeyError as exc:
+            raise LiteratureExtractionJobError(
+                "literature_paper_missing", "目标文献不存在"
+            ) from exc
+        if scanned and not force_rescan:
+            raise LiteratureExtractionJobError(
+                "literature_rescan_confirmation_required",
+                "这篇文献已有抽取记录，请明确确认后新建重扫任务",
+            )
+
 
 class LiteratureExtractionStageSnapshotAuthority:
     _KIND = "literature_extraction_stage"
@@ -225,6 +258,31 @@ class LiteratureExtractionBusinessAssembler:
             max_tokens=sum(call.max_tokens for call in stage.calls),
             call_plan=calls,
         )
+
+    def preflight(self, request: object) -> None:
+        """Expose only free local validation before provider capability checks."""
+
+        if not isinstance(request, Mapping):
+            raise BusinessActionError("business_action_invalid")
+        request_keys = set(request)
+        try:
+            if request_keys == _INITIAL_REQUEST_KEYS:
+                if self._starter is None:
+                    raise BusinessActionError("business_action_prepare_failed")
+                self._starter.preflight(
+                    paper_id=request.get("paper_id"),
+                    force_rescan=request.get("force_rescan"),
+                )
+                return
+            if request_keys == _CONTINUATION_REQUEST_KEYS:
+                token = request.get("job_token")
+                if not isinstance(token, str) or not token or len(token) > 256:
+                    raise BusinessActionError("business_action_invalid")
+                self._store.peek_stage(token, session_id=self._session_id)
+                return
+            raise BusinessActionError("business_action_invalid")
+        except LiteratureExtractionJobError as exc:
+            raise _project_literature_error(exc, phase="preflight") from exc
 
     @staticmethod
     def _assert_shared_policy(stage: FrozenExtractionStage) -> None:

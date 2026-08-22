@@ -79,5 +79,45 @@ class OpenAICompatibleCapabilityVerifier:
             tool_calling=True,
         )
 
+    def verify_connection(
+        self,
+        *,
+        provider_id: str,
+        model: str,
+        credential_ref: str,
+    ) -> "ModelCapabilityResult":
+        """Run one minimal JSON probe; business capabilities are verified later."""
+
+        from auto_research.settings.ai_runtime_state import ModelCapabilityResult
+
+        try:
+            profile = trusted_provider_profile(provider_id)
+            if model not in profile.allowed_task_models["analysis"]:
+                raise AIProviderResponseError("AI 连接验证模型不受支持。")
+            api_key = self._credential_resolver.resolve(credential_ref)
+            if not isinstance(api_key, str) or not api_key.strip():
+                raise AIProviderNotConfigured("AI 提供商尚未配置本机凭据。")
+            client = OpenAICompatibleClient(
+                OpenAICompatibleSettings(
+                    provider_id=profile.provider_id,
+                    task_models={task: model for task in TASK_IDS},
+                    api_key=api_key,
+                    credential_ref=credential_ref,
+                    timeout_seconds=30,
+                    max_attempts=1,
+                    retry_base_seconds=0,
+                    verification_mode=True,
+                ),
+                session=self._session,
+            )
+            structured = client.verify_structured_json_capability()
+        except AIProviderError:
+            raise
+        except Exception as exc:
+            raise AIProviderResponseError("AI 提供商连接验证未能完成。") from exc
+        if structured is not True:
+            raise AIProviderResponseError("AI 提供商连接验证未通过。")
+        return ModelCapabilityResult(profile.provider_id, model, True, False)
+
 
 __all__ = ["BackendCredentialResolver", "OpenAICompatibleCapabilityVerifier"]

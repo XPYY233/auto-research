@@ -59,6 +59,7 @@ python3 -m compileall -q src
 node --check src/auto_research/evidence/web/app.js
 node --check src/auto_research/evidence/web/fusion_review.js
 node --check src/auto_research/evidence/web/document_tab_store.js
+node --check src/auto_research/evidence/web/pane_layout_controller.js
 zsh -n scripts/*.command
 git diff --check
 git fsck --full
@@ -79,6 +80,8 @@ Run real HTTP checks for editable and read-only modes. Verify a read-only write 
 9. Confirm a clean worktree.
 
 Do not mark a release stable if required work remains or if the fixed-corpus failure is unexplained.
+
+For build25, the release remains blocked until the user saves a provider key in the App and the isolated paid acceptance verifies connection plus literature extraction, Librarian, selected-evidence chat and personal suggestion. Never ask the user to paste a key into Codex, logs or a shell command. Keep the run at or below the user-authorized 25 provider calls and record cancellation/timeout/429/budget behavior separately from successful scientific output.
 
 ## Windows offline Build Kit
 

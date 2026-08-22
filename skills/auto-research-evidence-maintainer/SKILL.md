@@ -50,11 +50,13 @@ Keep these invariants:
 
 ## Continue from the 1.1 Mac release line
 
-Before editing, read the top `PROJECT_HANDOFF.md` release section. The stable source contract is `1.1.0` build 24 for Apple Silicon Mac. Verify the installed App and artifact hashes live because source completion, build completion and installation acceptance are separate claims.
+Before editing, read the top `PROJECT_HANDOFF.md` release section. The stable installed contract is `1.1.0` build 24 for Apple Silicon Mac. Build25 is a source candidate until a clean build, transactional installation, WebView review and real paid DeepSeek acceptance pass. Verify the installed App and artifact hashes live because source completion, build completion and installation acceptance are separate claims.
 
 - Preserve the uncommitted production evidence database. The legacy paper_056 run/quality/visual artifacts were explicitly deleted by the user before the 0.8 build and should not be recreated unless a new real extraction is authorized.
 - Use existing project Codex threads for frontend/macOS, core, Windows and security. Root is the only Git writer; every other thread receives an exact file list and returns a no-stage/no-commit handoff.
 - Keep the four-scope prepared-action registry, pinned Harness runtime and provider registry as the only billable AI authority. Do not restore legacy direct Librarian, context-chat, personal-suggestion or workflow model routes. Harness failure must remain explicit and must not fall back to an old loop.
+- Use `ai-readiness-v1` as the only renderer-facing AI availability projection. Built-in DeepSeek/OpenAI and an optional user-configured public HTTPS OpenAI-compatible endpoint must share provider-separated credentials, connection verification, per-scope capability verification and the same prepared-action budgets. A custom endpoint never expands Harness tools or source scope.
+- Keep `PaneLayoutController` as the only pane geometry authority and Fusion as the only navigation/content owner. Collapse must preserve tabs, requests and scroll state; `48/96px` are snap thresholds, not content minimum widths.
 - On a hot machine, run at most two development threads and only targeted tests. Run the shared full suite, build and real App flow serially once after interfaces freeze.
 - Keep the Fusion DOM, `DocumentTabStore`, at most two editor groups and single navigation controller authoritative. Reuse audited services behind narrow controllers; do not restore hidden 0.8 pages, duplicate navigation listeners, cross-view DOM reparenting or CSS skin overlays.
 - Four-type filtering is a server-side `evidence-filter-v1` contract. Never reintroduce a client-only filter over the first page or first 100 results.

@@ -187,6 +187,15 @@ class FusionReviewModeTests(unittest.TestCase):
                 ) as response:
                     self.assertEqual(response.status, 200)
                     self.assertIn(b"AutoResearchDocumentTabs", response.read())
+                with opener.open(
+                    f"{base}/static/pane_layout_controller.js", timeout=5
+                ) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(
+                        response.headers.get_content_type(), "text/javascript"
+                    )
+                    self.assertEqual(response.headers.get("Cache-Control"), "no-store")
+                    self.assertIn(b"AutoResearchPaneLayout", response.read())
             finally:
                 server.shutdown()
                 server.server_close()

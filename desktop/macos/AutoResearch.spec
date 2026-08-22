@@ -25,6 +25,7 @@ analysis = Analysis(
                 "workbench.css",
                 "ai_consent.js",
                 "document_tab_store.js",
+                "pane_layout_controller.js",
                 "fusion_review.js",
             )
         ],

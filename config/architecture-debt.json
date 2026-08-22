@@ -98,6 +98,26 @@
       "removal_gate": "所有兼容测试迁到Harness结果契约后删除旧执行循环，仅保留可验证的历史数据迁移器"
     },
     {
+      "id": "ARCH-P1-005",
+      "priority": "P1",
+      "area": "fusion-ai-settings",
+      "owner": "shared-frontend",
+      "status": "experimental",
+      "problem": "build25已将分栏几何拆为独立PaneLayoutController，但AI设置的渲染和状态适配仍位于fusion_review.js",
+      "target": "保持Fusion唯一导航、唯一请求包装器与唯一监听，仅把AI设置纯渲染和状态适配拆成无副作用模块",
+      "removal_gate": "生产DOM、prepared-action、readiness和四业务黄金契约通过，且没有第二AI controller或重复监听"
+    },
+    {
+      "id": "ARCH-P1-006",
+      "priority": "P1",
+      "area": "custom-ai-provider",
+      "owner": "shared-ai-runtime",
+      "status": "experimental",
+      "problem": "用户配置的公开HTTPS OpenAI-compatible服务虽然受SSRF和DNS重绑定门保护，但尚未完成真实App连接和四业务能力验收",
+      "target": "custom与内置provider共用凭据generation、连接验证、分业务能力缓存、prepared-action预算和path-free错误",
+      "removal_gate": "真实Mac App通过连接、结构化输出、工具调用、取消零业务请求、重定向/DNS重绑定攻击回归"
+    },
+    {
       "id": "ARCH-P2-001",
       "priority": "P2",
       "area": "retired-browser-product",

@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from auto_research.ai.business_actions import BusinessPreparedActionRegistry
+from auto_research.ai.custom_provider import CustomProviderService
 from auto_research.ai.capability_verifier import OpenAICompatibleCapabilityVerifier
 from auto_research.ai.consent import AIConsentService
 from auto_research.ai.desktop_controller import DesktopAIController
 from auto_research.ai.harness_official_sdk import OfficialDeepSeekHarnessRuntime
 from auto_research.ai.harness_runtime import DeepSeekHarnessRuntime
+from auto_research.ai.harness_contract import HarnessError, verify_cordis_composition
 from auto_research.ai.prepared_actions import (
     CompositeContentSnapshotAuthority,
     PreparedActionService,
@@ -43,6 +45,7 @@ from auto_research.personal.ai_business_action import (
 from auto_research.personal.import_service import PersonalImportService
 from auto_research.settings.ai_desktop_service import AIDesktopService
 from auto_research.settings.ai_runtime_state import AIRuntimeStateService
+from auto_research.settings.ai_readiness import AIReadinessService
 
 from ai_runtime_security import (
     DEFAULT_AI_ATTESTATION_KEY_PATH,
@@ -56,6 +59,61 @@ from secure_credentials import (
     ProviderCredentialManager,
     default_provider_credential_manager,
 )
+from desktop_settings_store import MacAtomicDesktopSettingsStore
+
+
+DEFAULT_CUSTOM_PROVIDER_STATE_PATH = (
+    Path.home() / "Library" / "Application Support" / "Auto Research" / "State" /
+    "custom-ai-provider-v1.json"
+)
+
+
+class _MacAtomicCustomProviderStore:
+    def __init__(self, path: Path | str) -> None:
+        self._store = MacAtomicDesktopSettingsStore(path)
+
+    def read(self):
+        value = self._store.read()
+        if value is None:
+            return None
+        if not isinstance(value, dict) or set(value) != {"revision", "record"}:
+            raise OSError("custom provider state is invalid")
+        return value["record"]
+
+    def revision(self) -> int:
+        value = self._store.read()
+        if value is None:
+            return 0
+        if not isinstance(value, dict) or set(value) != {"revision", "record"}:
+            raise OSError("custom provider state is invalid")
+        revision = value["revision"]
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+            raise OSError("custom provider state is invalid")
+        return revision
+
+    def compare_and_swap(self, *, expected_revision: int, value):
+        return self._store.compare_and_swap(
+            expected_revision=expected_revision,
+            value={"revision": expected_revision + 1, "record": value},
+        )
+
+
+class _HarnessReadiness:
+    def __init__(self, runtime: DeepSeekHarnessRuntime | None) -> None:
+        self._runtime = runtime
+
+    def readiness(self):
+        if self._runtime is None:
+            return {"state": "unavailable", "reason_code": "harness_runtime_unavailable", "next_action": "repair_harness_runtime"}
+        try:
+            dependencies = self._runtime.dependency_metadata()
+            dependencies.verify_production_protocols()
+            verify_cordis_composition(self._runtime.composition_metadata())
+        except HarnessError as exc:
+            return {"state": "unavailable", "reason_code": exc.code, "next_action": "repair_harness_runtime"}
+        except Exception:
+            return {"state": "unavailable", "reason_code": "harness_runtime_unavailable", "next_action": "repair_harness_runtime"}
+        return {"state": "ready", "reason_code": "harness_runtime_ready", "next_action": "none"}
 
 
 @dataclass(frozen=True)
@@ -71,6 +129,8 @@ class MacAIRuntimeServices:
     controller: DesktopAIController
     client_factory: RuntimeAIClientFactory
     execution_lease: MacAIExecutionLeaseAuthority
+    custom_provider: CustomProviderService
+    readiness: AIReadinessService
     database: EvidenceDB | None = None
     personal_import_service: PersonalImportService | None = None
     desktop_session_id: str | None = None
@@ -100,6 +160,8 @@ def create_mac_ai_runtime_services(
     *,
     state_path: Path | str = DEFAULT_AI_RUNTIME_STATE_PATH,
     attestation_key_path: Path | str = DEFAULT_AI_ATTESTATION_KEY_PATH,
+    custom_provider_path: Path | str | None = None,
+    custom_host_resolver=None,
     credential_manager: ProviderCredentialManager | None = None,
     verifier_session=None,
     client_session=None,
@@ -138,6 +200,14 @@ def create_mac_ai_runtime_services(
     manager = credential_manager or default_provider_credential_manager(
         execution_lock=execution_lock
     )
+    custom_state_path = (
+        Path(custom_provider_path)
+        if custom_provider_path is not None
+        else Path(state_path).with_name("custom-ai-provider-v1.json")
+    )
+    custom_provider = CustomProviderService(
+        _MacAtomicCustomProviderStore(custom_state_path), resolver=custom_host_resolver
+    )
     state_store = MacAtomicAIRuntimeStateStore(
         state_path,
         execution_lock=execution_lock,
@@ -153,9 +223,17 @@ def create_mac_ai_runtime_services(
         verifier=verifier,
         signer=signer,
     )
+    effective_harness_runtime = harness_runtime
+    if database is not None and personal_import_service is not None:
+        effective_harness_runtime = effective_harness_runtime or OfficialDeepSeekHarnessRuntime(
+            cordis_path=Path(str(harness_cordis_path))
+        )
+    readiness = AIReadinessService(runtime_state, _HarnessReadiness(effective_harness_runtime))
     desktop_service = AIDesktopService(
         runtime_state=runtime_state,
         credential_manager=manager,
+        readiness=readiness,
+        custom_provider=custom_provider,
     )
     consent_service = AIConsentService()
     prepared_actions = PreparedActionService(
@@ -177,11 +255,7 @@ def create_mac_ai_runtime_services(
     snapshots = None
     business_actions = None
     harness_ports = None
-    effective_harness_runtime = harness_runtime
     if database is not None and personal_import_service is not None:
-        effective_harness_runtime = effective_harness_runtime or OfficialDeepSeekHarnessRuntime(
-            cordis_path=Path(str(harness_cordis_path))
-        )
         personal_ports = personal_suggestion_business_ports(personal_import_service)
         harness_ports = harness_business_ports(
             session=federated_search_session,
@@ -230,6 +304,7 @@ def create_mac_ai_runtime_services(
                 "librarian": librarian_ports.projector,
                 "literature_extraction": literature_ports.projector,
             },
+            readiness_gate=runtime_state,
         )
     controller = DesktopAIController(
         settings=desktop_service,
@@ -248,6 +323,8 @@ def create_mac_ai_runtime_services(
         controller=controller,
         client_factory=client_factory,
         execution_lease=execution_lease,
+        custom_provider=custom_provider,
+        readiness=readiness,
         database=database,
         personal_import_service=personal_import_service,
         desktop_session_id=desktop_session_id,

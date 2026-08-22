@@ -72,6 +72,12 @@ class _Verifier:
             tool_calling=model != self.fail_model,
         )
 
+    def verify_connection(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        return ModelCapabilityResult(
+            kwargs["provider_id"], kwargs["model"], True, False
+        )
+
 
 class _Signer:
     secret = b"test-only-attestation-key"
@@ -130,7 +136,7 @@ class AIRuntimeStateTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, "ai_runtime_state_invalid")
         self.assertIsNone(self.store.value)
 
-    def test_openai_requires_verification_and_unique_models_are_checked_once(self):
+    def test_openai_requires_one_connection_probe_then_business_verification(self):
         state = self.select_openai()
         self.assertFalse(state.verified)
         self.assertEqual(state.availability, "verification_required")
@@ -140,17 +146,17 @@ class AIRuntimeStateTests(unittest.TestCase):
         self.assertTrue(verified.verified)
         self.assertEqual(verified.availability, "available")
         self.assertEqual(verified.revision, 2)
-        self.assertEqual(
-            [call["model"] for call in self.verifier.calls],
-            ["gpt-5.6-sol", "gpt-5.6-terra"],
-        )
-        for call in self.verifier.calls:
-            self.assertEqual(
-                call["required_capabilities"],
-                ("structured_json", "tool_calling"),
-            )
+        self.assertEqual([call["model"] for call in self.verifier.calls], ["gpt-5.6-terra"])
         resolved = self.service.resolve_runtime()
         self.assertEqual(resolved.activation, "connection_verified")
+        expiry = self.service.record_business_verification(
+            "librarian", expected_provider_id="openai", expected_revision=2
+        )
+        self.assertGreater(expiry, self.clock.value)
+        self.assertEqual(
+            [call["model"] for call in self.verifier.calls[1:]],
+            ["gpt-5.6-sol", "gpt-5.6-terra"],
+        )
 
     def test_credential_generation_change_invalidates_attestation(self):
         self.select_openai()
@@ -163,6 +169,33 @@ class AIRuntimeStateTests(unittest.TestCase):
         self.assertEqual(state.availability, "verification_required")
         with self.assertRaises(AIRuntimeStateError):
             self.service.resolve_runtime()
+
+    def test_business_verification_is_scoped_and_precisely_invalidated(self):
+        self.select_openai()
+        self.service.record_verification()
+        expiry = self.service.record_business_verification(
+            "personal_suggestion", expected_provider_id="openai", expected_revision=2
+        )
+        self.assertEqual(self.service.business_verification("personal_suggestion"), expiry)
+        self.assertIsNone(self.service.business_verification("librarian"))
+        self.credentials.values["openai"] = BackendCredentialState("openai.default", 8, True)
+        self.assertIsNone(self.service.business_verification("personal_suggestion"))
+
+    def test_business_verification_rechecks_credential_after_model_calls(self):
+        self.select_openai()
+        self.service.record_verification()
+        original = self.verifier.verify_model
+        def changing(**kwargs):
+            result = original(**kwargs)
+            self.credentials.values["openai"] = BackendCredentialState("openai.default", 8, True)
+            return result
+        self.verifier.verify_model = changing
+        with self.assertRaises(AIRuntimeStateError) as rejected:
+            self.service.record_business_verification(
+                "personal_suggestion", expected_provider_id="openai", expected_revision=2
+            )
+        self.assertEqual(rejected.exception.code, "ai_runtime_verification_required")
+        self.assertIsNone(self.service.business_verification("personal_suggestion"))
 
     def test_attestation_time_boundaries_and_signed_times_fail_closed(self):
         self.select_openai()
@@ -249,7 +282,7 @@ class AIRuntimeStateTests(unittest.TestCase):
         self.select_openai()
         self.service.record_verification()
         before = copy.deepcopy(self.store.value)
-        self.verifier.fail_model = "gpt-5.6-sol"
+        self.verifier.verify_connection = lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("secret"))
         with self.assertRaises(AIRuntimeStateError) as raised:
             self.service.record_verification()
         self.assertEqual(raised.exception.code, "ai_runtime_verification_failed")
@@ -277,12 +310,13 @@ class AIRuntimeStateTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, "ai_runtime_revision_conflict")
         self.assertEqual(self.verifier.calls, [])
 
-    def test_deepseek_is_explicitly_legacy_not_connection_verified(self):
+    def test_deepseek_legacy_credential_requires_connection_verification(self):
         state = self.service.get()
         self.assertTrue(state.configured)
         self.assertFalse(state.verified)
-        self.assertEqual(state.availability, "legacy_compatible")
-        self.assertEqual(self.service.resolve_runtime().activation, "legacy_compatible")
+        self.assertEqual(state.availability, "verification_required")
+        with self.assertRaises(AIRuntimeStateError):
+            self.service.resolve_runtime()
         self.assertEqual(self.verifier.calls, [])
 
     def test_store_errors_conflicts_and_public_dto_are_sanitized(self):

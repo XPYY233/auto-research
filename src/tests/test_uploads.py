@@ -16,8 +16,13 @@ from auto_research.ai.deepseek import (
     DeepSeekSettings,
     DeepSeekUnavailableError,
 )
+from auto_research.ai.openai_compatible import (
+    OpenAICompatibleClient,
+    OpenAICompatibleSettings,
+)
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.uploads import UploadService
+from auto_research.settings.ai_runtime_state import ResolvedAIRuntime
 
 
 def make_pdf(text: str, *, metadata_title: str = "") -> bytes:
@@ -126,6 +131,40 @@ class UploadWorkflowTests(unittest.TestCase):
 
 
 class DeepSeekFrameworkTests(unittest.TestCase):
+    @staticmethod
+    def verified_client(settings: DeepSeekSettings, session) -> DeepSeekClient:
+        """Exercise the legacy facade over an explicitly verified backend.
+
+        Production callers cannot construct this activation from an API key;
+        it is issued only by AIRuntimeStateService after connection validation.
+        """
+
+        client = DeepSeekClient.__new__(DeepSeekClient)
+        client.settings = settings
+        runtime = ResolvedAIRuntime(
+            provider_id="deepseek",
+            task_models={
+                "extraction": settings.extraction_model,
+                "analysis": settings.analysis_model,
+                "librarian_planning": settings.librarian_planning_model,
+                "librarian_synthesis": settings.librarian_synthesis_model,
+            },
+            credential_ref="deepseek.default",
+            credential_generation=1,
+            selection_revision=1,
+            activation="connection_verified",
+        )
+        client._client = OpenAICompatibleClient(
+            OpenAICompatibleSettings.from_resolved_runtime(
+                runtime,
+                api_key=str(settings.api_key or ""),
+                timeout_seconds=settings.timeout_seconds,
+                max_attempts=settings.max_attempts,
+                retry_base_seconds=settings.retry_base_seconds,
+            ),
+            session=session,
+        )
+        return client
     def test_untrusted_base_url_never_receives_api_key(self):
         class Session:
             calls = []
@@ -202,7 +241,7 @@ class DeepSeekFrameworkTests(unittest.TestCase):
             def post(*args, **kwargs):
                 return Response()
 
-        client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=Session())
+        client = self.verified_client(DeepSeekSettings(api_key="fake"), Session())
         result = client.request_json([{"role": "user", "content": "Return json"}])
         self.assertEqual(result, {"text": "line 1\nline 2"})
 
@@ -225,7 +264,7 @@ class DeepSeekFrameworkTests(unittest.TestCase):
                 cls.calls += 1
                 return Response("not-json" if cls.calls == 1 else '{"status":"ok"}')
 
-        client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=Session())
+        client = self.verified_client(DeepSeekSettings(api_key="fake"), Session())
         self.assertEqual(client.request_json([{"role": "user", "content": "Return json"}]), {"status": "ok"})
         self.assertEqual(Session.calls, 2)
 
@@ -248,7 +287,7 @@ class DeepSeekFrameworkTests(unittest.TestCase):
                     raise requests.Timeout("temporary timeout")
                 return Response()
 
-        client = DeepSeekClient(DeepSeekSettings(api_key="fake-secret"), session=Session())
+        client = self.verified_client(DeepSeekSettings(api_key="fake-secret"), Session())
         self.assertEqual(client.request_json([{"role": "user", "content": "Return json"}]), {"status": "ok"})
         self.assertEqual(Session.calls, 2)
 
@@ -269,7 +308,7 @@ class DeepSeekFrameworkTests(unittest.TestCase):
                 cls.calls += 1
                 return Response(429 if cls.calls == 1 else 200)
 
-        client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=Session())
+        client = self.verified_client(DeepSeekSettings(api_key="fake"), Session())
         self.assertEqual(client.request_json([{"role": "user", "content": "Return json"}]), {"status": "ok"})
         self.assertEqual(Session.calls, 2)
 
@@ -286,7 +325,7 @@ class DeepSeekFrameworkTests(unittest.TestCase):
                 cls.calls += 1
                 return Response()
 
-        client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=Session())
+        client = self.verified_client(DeepSeekSettings(api_key="fake"), Session())
         with self.assertRaises(DeepSeekUnavailableError):
             client.request_json([{"role": "user", "content": "Return json"}])
         self.assertEqual(Session.calls, 2)

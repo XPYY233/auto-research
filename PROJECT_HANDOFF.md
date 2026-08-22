@@ -1,5 +1,14 @@
 # Auto Research 阶段性交班总览
 
+## v1.1.0 build 25 Mac 候选（2026-08-22，尚未宣称稳定）
+
+- build 24 仍是已安装、已验证的稳定回退点。build 25 源码候选保持 `1.1.0` 语义版本，当前只完成代码与自动化发布门；在真实 App、真实 DeepSeek 付费四业务和用户流程通过前，不得覆盖稳定结论或创建正式标签。
+- 新增唯一 `PaneLayoutController` 与 `fusion-pane-layout-v2`：上下文栏、检查器和两个编辑器组均可吸附收起，保留标签/请求/滚动状态并恢复上次宽度。宽屏点击文献或搜索证据会自动在右侧打开可替换预览；双击、提问或打开 PDF 后固定。主工具栏不再显示含糊的 `↶`。
+- 新增 `ai-readiness-v1`，分别投影提供商连接、Harness 和文献提取/图书管理员/选中证据问答/实验预填四项能力。设置页可管理 DeepSeek、OpenAI 和受本地 SSRF/DNS 重绑定安全门限制的公开 HTTPS OpenAI-compatible 提供商；密钥和已保存 endpoint 永不回显。
+- 保存密钥只触发用户确认后最多一次低成本连接验证；四项业务首次使用再分别执行有界能力验证。取消保持零业务请求。底层错误保留 `cause_code / stage / next_action`，缺少 PDF 等免费本地前置错误不会再被 AI readiness 通用错误遮蔽。
+- 当前验证：共享测试 896 项通过（80 项外部样本显式跳过），macOS 测试 236 项通过；前端/核心目标测试、JavaScript/Python语法、发布契约哈希和差异检查通过。生产 SQLite SHA-256 仍为 `18b9a4a3a4cbdf9ffcbe4fe14fa0e4855727a6211c1f61902e3d30324903bc84`，未进入测试、构建或 Git。
+- 尚未完成：干净提交构建、事务式安装、真实 WebView 拖拽/焦点验收、用户在 App 内保存 API 密钥后的最多25次真实付费验收、DMG/UserKit/教程封箱。Windows继续冻结；其 Fusion 新静态资源清单缺口只记录为后续迁移门，本轮不修改。
+
 ## v1.1.0 macOS 核心能力恢复线（2026-08-22，当前开发权威）
 
 - 当前源码与发布契约固定为 Auto Research `1.1.0` / build `24`；Windows 1.1迁移完全冻结，现有 Windows 1.0身份仍为`installer_ready=false`，不得因Mac源码变化生成或宣称新的Setup。

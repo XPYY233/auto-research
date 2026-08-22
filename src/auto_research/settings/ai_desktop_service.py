@@ -13,11 +13,18 @@ from auto_research.ai.provider_registry import (
     trusted_provider_profile,
     trusted_provider_public_catalog,
 )
+from auto_research.ai.custom_provider import (
+    CUSTOM_PROVIDER_ID,
+    CustomProviderError,
+    CustomProviderService,
+)
 
 from .ai_runtime_state import (
+    AI_BUSINESS_TASKS,
     AIRuntimeStateService,
     BackendCredentialState,
 )
+from .ai_readiness import AIReadinessService
 
 
 AI_DESKTOP_CATALOG_SCHEMA_VERSION = "ai-desktop-catalog-v1"
@@ -26,6 +33,7 @@ AI_CAPABILITY_TEST_CONSENT_VERSION = "ai-capability-test-consent-v1"
 _FIXED_CREDENTIAL_REFS = {
     "deepseek": "deepseek.default",
     "openai": "openai.default",
+    "custom": "custom.default",
 }
 _PATCH_KEYS = frozenset({"provider_id", "task_models", "expected_revision"})
 _ERRORS = {
@@ -36,6 +44,7 @@ _ERRORS = {
     "ai_desktop_consent_required": ("请先确认可能产生费用的能力测试。", False),
     "ai_desktop_test_busy": ("该 AI 设置正在进行能力测试，请稍后再试。", True),
     "ai_desktop_test_cooldown": ("能力测试请求过于频繁，请稍后再试。", True),
+    "ai_desktop_custom_active": ("请先切换到内置 AI 提供商，再删除自定义配置。", False),
 }
 _TEST_GUARD = threading.Lock()
 _TESTS_IN_PROGRESS: set[tuple[str, int]] = set()
@@ -122,14 +131,19 @@ class AIDesktopService:
         runtime_state: AIRuntimeStateService,
         credential_manager: CredentialManager,
         clock: AIDesktopClock | None = None,
+        readiness: AIReadinessService | None = None,
+        custom_provider: CustomProviderService | None = None,
     ) -> None:
         self._runtime_state = runtime_state
         self._credentials = credential_manager
         self._clock = clock or SystemAIDesktopClock()
+        self._readiness = readiness or AIReadinessService(runtime_state)
+        self._custom_provider = custom_provider
+        self._custom_lock = threading.RLock()
         self._rate_lock = threading.Lock()
-        self._attempts: dict[tuple[str, str], int] = {}
+        self._attempts: dict[tuple[str, str, str, str], int] = {}
         self._successes: dict[
-            tuple[str, str, int, int, tuple[str, ...]],
+            tuple[str, str, int, int, str, str, tuple[str, ...]],
             tuple[int, dict[str, object]],
         ] = {}
 
@@ -145,7 +159,43 @@ class AIDesktopService:
         }
 
     def get(self) -> dict[str, object]:
-        return self._runtime_state.get().public_dict()
+        result = self._runtime_state.get().public_dict()
+        result["readiness"] = self._readiness.public_dict()
+        return result
+
+    def custom_provider_get(self) -> dict[str, object]:
+        if self._custom_provider is None:
+            raise AIDesktopServiceError("ai_desktop_credential_unavailable")
+        return self._custom_provider.get()
+
+    def custom_provider_save(self, payload: Mapping[str, Any]) -> dict[str, object]:
+        if self._custom_provider is None:
+            raise AIDesktopServiceError("ai_desktop_credential_unavailable")
+        with self._custom_lock:
+            if self._runtime_state.get().provider_id == CUSTOM_PROVIDER_ID:
+                raise AIDesktopServiceError("ai_desktop_custom_active")
+            try:
+                return self._custom_provider.save(payload)
+            except CustomProviderError:
+                raise
+
+    def custom_provider_delete(self, expected_revision: object) -> dict[str, object]:
+        if self._custom_provider is None:
+            raise AIDesktopServiceError("ai_desktop_credential_unavailable")
+        with self._custom_lock:
+            if self._runtime_state.get().provider_id == CUSTOM_PROVIDER_ID:
+                raise AIDesktopServiceError("ai_desktop_custom_active")
+            current = self._custom_provider.get()
+            if (
+                current.get("configured") is not True
+                or current.get("revision") != expected_revision
+            ):
+                raise CustomProviderError("custom_provider_conflict")
+            # Remove the provider-specific secret while the reviewed profile
+            # still exists; the service lock prevents an in-process edit from
+            # racing between the credential and CAS operations.
+            self.credential_delete(CUSTOM_PROVIDER_ID)
+            return self._custom_provider.delete(expected_revision=expected_revision)
 
     def patch(self, payload: Mapping[str, Any]) -> dict[str, object]:
         if not isinstance(payload, Mapping) or set(payload) != _PATCH_KEYS:
@@ -230,14 +280,28 @@ class AIDesktopService:
         ):
             raise AIDesktopServiceError("ai_desktop_request_invalid")
         binding = self._runtime_state.action_binding()
-        expected_models = tuple(sorted(set(binding.task_models.values())))
-        expected_outbound = {
-            "kind": "capability_test",
-            "provider_id": provider,
-            "runtime_revision": binding.selection_revision,
-            "models": expected_models,
-            "maximum_model_calls": 2 * len(expected_models),
-        }
+        outbound = dict(action.outbound)
+        kind = outbound.get("kind")
+        business_scope = outbound.get("business_scope")
+        if kind == "connection_test":
+            expected_models = (binding.task_models["analysis"],)
+            maximum_calls = 1
+            expected_outbound = {
+                "kind": kind, "provider_id": provider,
+                "runtime_revision": binding.selection_revision,
+                "models": expected_models, "maximum_model_calls": maximum_calls,
+            }
+        elif kind == "business_capability_test" and business_scope in AI_BUSINESS_TASKS:
+            expected_models = tuple(sorted({binding.task_models[task] for task in AI_BUSINESS_TASKS[str(business_scope)]}))
+            maximum_calls = 2 * len(expected_models)
+            expected_outbound = {
+                "kind": kind, "provider_id": provider,
+                "runtime_revision": binding.selection_revision,
+                "models": expected_models, "maximum_model_calls": maximum_calls,
+                "business_scope": business_scope,
+            }
+        else:
+            raise AIDesktopServiceError("ai_desktop_request_invalid")
         if (
             binding.provider_id != provider
             or binding.selection_revision != action.runtime_revision
@@ -252,6 +316,8 @@ class AIDesktopService:
             provider,
             binding.selection_revision,
             binding.credential_generation,
+            str(kind),
+            str(business_scope or ""),
             expected_models,
         )
         key = (provider, binding.selection_revision)
@@ -260,7 +326,7 @@ class AIDesktopService:
                 raise AIDesktopServiceError("ai_desktop_test_busy")
             _TESTS_IN_PROGRESS.add(key)
         try:
-            attempt_key = (session_id, provider)
+            attempt_key = (session_id, provider, str(kind), str(business_scope or ""))
             with self._rate_lock:
                 cached = self._successes.get(cache_key)
                 if cached is not None and now < cached[0]:
@@ -272,17 +338,33 @@ class AIDesktopService:
                 ):
                     raise AIDesktopServiceError("ai_desktop_test_cooldown")
                 self._attempts[attempt_key] = now
-            result = self._runtime_state.record_verification(
-                expected_provider_id=provider,
-                expected_revision=binding.selection_revision,
-            ).public_dict()
+            if kind == "connection_test":
+                result = self._runtime_state.record_verification(
+                    expected_provider_id=provider,
+                    expected_revision=binding.selection_revision,
+                ).public_dict()
+            else:
+                expiry = self._runtime_state.record_business_verification(
+                    str(business_scope),
+                    expected_provider_id=provider,
+                    expected_revision=binding.selection_revision,
+                )
+                result = {
+                    "schema_version": "ai-business-verification-v1",
+                    "provider_id": provider,
+                    "scope": business_scope,
+                    "verified": True,
+                    "verified_until": expiry,
+                }
             post_binding = self._runtime_state.action_binding()
             post_key = (
                 session_id,
                 provider,
                 post_binding.selection_revision,
                 post_binding.credential_generation,
-                tuple(sorted(set(post_binding.task_models.values()))),
+                str(kind),
+                str(business_scope or ""),
+                expected_models,
             )
             with self._rate_lock:
                 self._successes[post_key] = (
@@ -307,14 +389,16 @@ class AIDesktopService:
         models = current.get("task_models")
         if not isinstance(models, Mapping):
             raise AIDesktopServiceError("ai_desktop_request_invalid")
-        unique_model_count = len(set(models.values()))
         return {
             "consent_version": AI_CAPABILITY_TEST_CONSENT_VERSION,
             "prepare_required": True,
             "provider_id": current.get("provider_id"),
             "expected_revision": current.get("revision"),
-            "unique_model_count": unique_model_count,
-            "maximum_model_calls": 2 * unique_model_count,
+            "connection_maximum_model_calls": 1,
+            "business_maximum_model_calls": {
+                scope: 2 * len({models[task] for task in tasks})
+                for scope, tasks in AI_BUSINESS_TASKS.items()
+            },
         }
 
     def _credential_state(self, provider_id: str) -> BackendCredentialState:

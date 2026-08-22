@@ -25,6 +25,13 @@
       "authority": "pinned Harness composition, read-only tool gateway, prepared-action execution, citation and budget validation"
     },
     {
+      "id": "ai-provider-readiness",
+      "paths": ["src/auto_research/ai/provider_registry.py", "src/auto_research/ai/custom_provider.py", "src/auto_research/ai/capability_verifier.py", "src/auto_research/settings/ai_readiness.py", "src/auto_research/settings/ai_runtime_state.py"],
+      "owner": "shared-ai-runtime",
+      "status": "experimental",
+      "authority": "ai-readiness-v1, provider connection, per-scope capability verification, safe custom HTTPS endpoint and stable path-free error lineage"
+    },
+    {
       "id": "federated-search",
       "paths": ["src/auto_research/evidence/federated_search.py", "src/auto_research/evidence/federated_search_session.py"],
       "owner": "shared-search-core",
@@ -82,10 +89,10 @@
     },
     {
       "id": "shared-desktop-ui",
-      "paths": ["src/auto_research/evidence/web"],
+      "paths": ["src/auto_research/evidence/web", "src/auto_research/evidence/web/pane_layout_controller.js"],
       "owner": "shared-frontend",
       "status": "stable",
-      "authority": "single Fusion workbench UI, DocumentTabStore, evidence filters and inspector projections; platforms must not fork HTML or business state"
+      "authority": "single Fusion workbench UI, DocumentTabStore, PaneLayoutController, evidence filters and inspector projections; platforms must not fork HTML, layout geometry or business state"
     },
     {
       "id": "macos-shell",

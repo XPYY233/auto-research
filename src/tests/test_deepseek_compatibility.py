@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from auto_research.ai.deepseek import DeepSeekClient, DeepSeekSettings
+from auto_research.ai.deepseek import DeepSeekClient, DeepSeekResponseError, DeepSeekSettings
 
 
 class _Response:
@@ -28,13 +28,11 @@ class DeepSeekCompatibilityTests(unittest.TestCase):
     def setUp(self) -> None:
         _Session.calls = []
 
-    def test_legacy_client_delegates_to_one_redirect_safe_transport(self) -> None:
+    def test_legacy_client_cannot_bypass_backend_connection_verification(self) -> None:
         client = DeepSeekClient(DeepSeekSettings(api_key="fake"), session=_Session())
-        self.assertEqual(client.request_json([]), {"status": "ok"})
-        endpoint, kwargs = _Session.calls[0]
-        self.assertEqual(endpoint, "https://api.deepseek.com/chat/completions")
-        self.assertFalse(kwargs["allow_redirects"])
-        self.assertEqual(kwargs["json"]["max_tokens"], 16_000)
+        with self.assertRaises(DeepSeekResponseError):
+            client.request_json([])
+        self.assertEqual(_Session.calls, [])
 
     def test_compatibility_module_has_no_duplicate_http_transport(self) -> None:
         source = inspect.getsource(__import__(

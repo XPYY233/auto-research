@@ -75,6 +75,14 @@ class ReleaseContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ReleaseContractError, "全部共享前端资产"):
             validate_release_contract(value)
 
+    def test_pane_layout_controller_asset_cannot_be_omitted(self) -> None:
+        value = json.loads((PROJECT_ROOT / "config" / "release-contract.json").read_text())
+        value["web_assets"].pop(
+            "src/auto_research/evidence/web/pane_layout_controller.js", None
+        )
+        with self.assertRaisesRegex(ReleaseContractError, "全部共享前端资产"):
+            validate_release_contract(value)
+
     def test_fusion_shell_assets_cannot_be_omitted(self) -> None:
         for relative in (
             "src/auto_research/evidence/web/index.html",

@@ -56,6 +56,10 @@ class FusionReviewUIContractTests(unittest.TestCase):
             "fusion-pdf-viewer", "fusion-close-pdf", "fusion-pdf-frame",
         ):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        self.assertEqual(self.index.count('id="fusion-tab-more"'), 1)
+        self.assertNotIn(">↶<", self.index)
+        for action in ("toggle-context", "toggle-inspector", "toggle-primary", "toggle-secondary", "split-active", "reopen-closed"):
+            self.assertEqual(self.index.count(f'data-command-action="{action}"'), 1)
         self.assertNotIn("globalThis.open", self.runtime)
         self.assertNotIn("_blank", self.runtime)
         self.assertIn("不离开工作台", self.index)
@@ -93,7 +97,10 @@ class FusionReviewUIContractTests(unittest.TestCase):
         for marker in (
             "function renderEditorSurfaces(", "function secondaryDocumentHTML(",
             'documentTabs?.reopenClosed()', 'documentTabs.move(active.tabId,"primary")',
-            'data-document-group-id=', "snapshot.groups.length===2&&!snapshot.narrow",
+            'data-document-group-id=', "const geometry=paneGeometry(snapshot)",
+            'primaryHidden=geometry.narrow?', 'secondaryHidden=!geometry.hasSecondary',
+            'openTab&&documentTabs&&Number(globalThis.innerWidth||1440)>=900',
+            'openSecondaryEvidence(row,state.view,{preview,pin})',
             '/api/six-data/${row.itemId}/source-view',
             '/api/six-data/${row.itemId}/source-highlight.png',
             "state.evidenceDetailReturn.scrollTop", "state.sourceHighlightRequest+=1",
@@ -117,12 +124,17 @@ class FusionReviewUIContractTests(unittest.TestCase):
             self.assertIn('role="separator"', markup)
             self.assertIn('aria-orientation="vertical"', markup)
             self.assertIn('tabindex="0"', markup)
+        self.assertIn('/static/pane_layout_controller.js', self.index)
+        controller = (WEB / "pane_layout_controller.js").read_text(encoding="utf-8")
+        for marker in ('const SCHEMA_VERSION = "fusion-pane-layout-v2"', "const SIDE_SNAP = 48", "const EDITOR_SNAP = 96", "!(value.primaryCollapsed && value.secondaryCollapsed)"):
+            self.assertIn(marker, controller)
         for marker in (
-            'const PANE_LAYOUT_KEY = "fusion-pane-layout-v1"',
+            "const PaneLayoutController=globalThis.AutoResearchPaneLayout?.PaneLayoutController",
             "function readPaneLayout(", "function persistPaneLayout(",
             "function startPaneDrag(", "function movePaneDrag(", "function endPaneDrag(",
             "setPointerCapture", "releasePointerCapture", "function handlePaneKey(",
             'addEventListener("dblclick"', 'addEventListener?.("resize",syncResponsivePaneLayout)',
+            'function togglePane(', 'function splitActiveTab(', 'function reopenClosedTab(',
         ):
             self.assertIn(marker, self.runtime)
         self.assertIn(".fusion-pane-separator", self.css)
@@ -337,15 +349,19 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
         self.assertNotIn('id="fusion-demo-suggestion"', self.index)
         self.assertNotIn("showDemoSuggestion", self.runtime)
 
-    def test_provider_settings_use_trusted_catalog_and_secure_credentials(self) -> None:
+    def test_provider_settings_use_runtime_readiness_and_secure_credentials(self) -> None:
         for marker in (
             "/api/desktop/ai/providers", "/api/desktop/ai/settings", "/api/desktop/ai/credentials/",
             "test-actions", "expected_revision", "task_models", "api_key", 'type="password"',
-            "不接受自定义 URL", "不会回显",
+            "/api/desktop/ai/custom-provider", "ai-readiness-v1", "provider_connection",
+            "businesses", "连接验证最多调用模型 1 次", "不会回显",
+            "fusion-status-ai", "data-ai-readiness-scope", "高级提供商配置",
         ):
             self.assertIn(marker, self.index + self.runtime)
         self.assertNotIn("base_url", self.runtime)
-        self.assertNotIn("chat_endpoint", self.runtime)
+        self.assertIn("chat_endpoint", self.runtime)
+        self.assertNotIn("固定受信模型", self.index + self.runtime)
+        self.assertNotIn("不接受自定义 URL", self.index + self.runtime)
 
     def test_package_center_has_complete_safe_sequences(self) -> None:
         for element_id in (
@@ -525,8 +541,10 @@ let confirmed='',consentCalls=0,preparedCalls=2;
 globalThis.confirm=message=>{{confirmed=message;return true;}};
 globalThis.AutoResearchAIConsent={{disclosureVersions:{{selected_evidence_chat:'selected-v1'}},ensure:()=>true,updateTrustedProviders:()=>true}};
 globalThis.fetch=async(url,options={{}})=>{{const headers={{get:()=>null}};
- if(url==='/api/desktop/ai/providers')return{{ok:true,headers,json:async()=>({{schema_version:'ai-desktop-catalog-v1',providers:[{{provider_id:'deepseek',display_name:'DeepSeek'}}]}})}};
- if(url==='/api/desktop/ai/settings')return{{ok:true,headers,json:async()=>({{schema_version:'ai-runtime-public-state-v1',provider_id:'deepseek'}})}};
+ if(url==='/api/desktop/ai/providers')return{{ok:true,headers,json:async()=>({{schema_version:'ai-desktop-catalog-v1',providers:[{{provider_id:'deepseek',display_name:'DeepSeek',model_options:{{}}}}],capability_test:{{provider_id:'deepseek',connection_maximum_model_calls:1,business_maximum_model_calls:{{selected_evidence_chat:2,librarian:8,literature_extraction:8,personal_suggestion:1}}}}}})}};
+ if(url==='/api/desktop/ai/settings')return{{ok:true,headers,json:async()=>({{schema_version:'ai-runtime-public-state-v1',provider_id:'deepseek',revision:1,task_models:{{}},readiness:{{schema_version:'ai-readiness-v1',provider_connection:{{state:'ready',reason_code:'ai_connection_ready',next_action:'none'}},harness:{{state:'ready',reason_code:'harness_runtime_ready',next_action:'none'}},businesses:{{literature_extraction:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}},librarian:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}},selected_evidence_chat:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}},personal_suggestion:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}}}}}}}})}};
+ if(url==='/api/desktop/ai/custom-provider')return{{ok:true,headers,json:async()=>({{schema_version:'custom-ai-provider-v1',provider_id:'custom',revision:0,configured:false}})}};
+ if(url==='/api/desktop/ai/credentials/deepseek')return{{ok:true,headers,json:async()=>({{schema_version:'ai-credential-status-v1',provider_id:'deepseek',configured:true}})}};
  if(url==='/api/desktop/ai/actions/selected_evidence_chat/prepare')return{{ok:true,headers,json:async()=>({{schema_version:'server-prepared-ai-action-v1',scope:'selected_evidence_chat',provider_id:'deepseek',disclosure_version:'selected-v1',action_id:'action-selected',maximum_calls:preparedCalls,model:'deepseek-v4-pro',display:'官方证据解释'}})}};
  if(url==='/api/desktop/ai/consents'){{consentCalls+=1;return{{ok:true,headers,json:async()=>({{schema_version:'ai-consent-v1',scope:'selected_evidence_chat',nonce:'nonce-selected'}})}};}}
  throw new Error('unexpected:'+url);
@@ -674,12 +692,15 @@ ids['.fusion-sheet-tabs']=new El();ids['[data-context-view="personal"] .fusion-t
 const all={{'[data-view-panel]':panels,'.fusion-nav[data-view]':navs,'[data-context-view]':contexts,'[data-search-mode-panel]':modes,'[data-search-source]':sources,'[data-evidence-index],[data-search-evidence-index]':[],'[data-search-evidence-index]':[],'[data-open-drawer]':[],'[data-personal-column]':[],'[data-context-view="personal"] [data-sheet]':[],'[data-fusion-ai-task]':[]}};
 globalThis.document={{readyState:'loading',documentElement:{{dataset:{{}}}},body:{{dataset:{{view:'paper'}}}},querySelector:s=>ids[s]||null,querySelectorAll:s=>all[s]||[],addEventListener:()=>{{}}}};globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};globalThis.confirm=()=>true;
 let pendingResolvers=[];const calls=[];globalThis.fetch=async(url,options={{}})=>{{url=String(url);calls.push([url,options.method||'GET',options.body]);const headers={{get:()=> 'csrf-next'}};
- if(url==='/api/desktop/ai/providers')return{{ok:true,headers,json:async()=>({{schema_version:'ai-desktop-catalog-v1',providers:[{{provider_id:'deepseek',display_name:'DeepSeek',model_options:{{}}}}],capability_test:{{provider_id:'deepseek',maximum_model_calls:2,unique_model_count:1}}}})}};
- if(url==='/api/desktop/ai/settings')return{{ok:true,headers,json:async()=>({{schema_version:'ai-runtime-public-state-v1',provider_id:'deepseek',revision:1,task_models:{{}}}})}};
+ if(url==='/api/desktop/ai/providers')return{{ok:true,headers,json:async()=>({{schema_version:'ai-desktop-catalog-v1',providers:[{{provider_id:'deepseek',display_name:'DeepSeek',model_options:{{}}}}],capability_test:{{provider_id:'deepseek',connection_maximum_model_calls:1,business_maximum_model_calls:{{literature_extraction:8,librarian:8,selected_evidence_chat:2,personal_suggestion:1}}}}}})}};
+ if(url==='/api/desktop/ai/settings')return{{ok:true,headers,json:async()=>({{schema_version:'ai-runtime-public-state-v1',provider_id:'deepseek',revision:1,task_models:{{}},readiness:{{schema_version:'ai-readiness-v1',provider_connection:{{state:'ready',reason_code:'ai_connection_ready',next_action:'none'}},harness:{{state:'ready',reason_code:'harness_runtime_ready',next_action:'none'}},businesses:{{literature_extraction:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}},librarian:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}},selected_evidence_chat:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}},personal_suggestion:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}}}}}}}})}};
+ if(url==='/api/desktop/ai/custom-provider')return{{ok:true,headers,json:async()=>({{schema_version:'custom-ai-provider-v1',provider_id:'custom',revision:0,configured:false}})}};
  if(url==='/api/desktop/ai/credentials/deepseek'&&(options.method||'GET')==='GET')return{{ok:true,headers,json:async()=>({{schema_version:'ai-credential-status-v1',provider_id:'deepseek',configured:true}})}};
  if(url==='/api/desktop/ai/credentials/deepseek'&&options.method==='POST')return{{ok:true,headers,json:async()=>({{schema_version:'ai-credential-status-v1',provider_id:'deepseek',configured:true}})}};
+ if(url==='/api/desktop/ai/providers/deepseek/test-actions')return{{ok:true,headers,json:async()=>({{schema_version:'server-prepared-ai-action-v1',scope:'capability_test',provider_id:'deepseek',action_id:'action-test',maximum_calls:1,model:'deepseek-v4-pro',display:'连接验证'}})}};
+ if(url==='/api/desktop/ai/providers/deepseek/test')return{{ok:true,headers,json:async()=>({{schema_version:'ai-capability-test-result-v1',status:'verified'}})}};
  if(url==='/api/desktop/ai/actions/personal_suggestion/prepare')return{{ok:true,headers,json:async()=>({{schema_version:'server-prepared-ai-action-v1',scope:'personal_suggestion',provider_id:'deepseek',disclosure_version:'personal-suggestion-disclosure-v1',action_id:'action-1',maximum_calls:1,model:'deepseek-v4-pro',display:'实验预填'}})}};
- if(url==='/api/desktop/ai/consents')return{{ok:true,headers,json:async()=>({{schema_version:'ai-consent-v1',scope:'personal_suggestion',nonce:'nonce-1'}})}};
+ if(url==='/api/desktop/ai/consents'){{const action=JSON.parse(options.body).action_id;return{{ok:true,headers,json:async()=>({{schema_version:'ai-consent-v1',scope:action==='action-test'?'capability_test':'personal_suggestion',nonce:'nonce-1'}})}};}}
  if(url==='/api/desktop/ai/actions/personal_suggestion/execute')return{{ok:true,headers,json:async()=>({{schema_version:'personal-import-suggestion-v1',import_id:'personal_import_abcdefghijklmnop',project:{{name:'W-Ta'}},sample:{{name:'S1'}},run:{{name:'R1',method:'nanoindentation'}},columns:[],series:[]}})}};
  if(url==='/api/desktop/personal-imports/preview')return{{ok:true,headers,json:async()=>({{schema_version:'personal-import-preview-v1',status:{{schema_version:'personal-import-status-v1',import_id:'personal_import_abcdefghijklmnop',revision:null,indexable:false}},preview:{{schema_version:'personal-tabular-preview-v1',source_file:{{original_name:'real.csv'}},sheets:[{{sheet_name:'Sheet1',row_count:2,columns:[{{source_name:'Dose',data_type:'number',role:'independent',meaning:'剂量',unit:'dpa'}}],sample_rows:[{{Dose:1}},{{Dose:2}}]}}]}}}})}};
  if(url==='/api/desktop/personal-imports/personal_import_abcdefghijklmnop/reviewed-import')return{{ok:true,headers,json:async()=>({{schema_version:'personal-import-status-v1',import_id:'personal_import_abcdefghijklmnop',revision:1,indexable:true}})}};

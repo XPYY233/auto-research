@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import threading
 from types import MappingProxyType
 from typing import Iterable, Mapping
 from urllib.parse import urlsplit
@@ -89,6 +90,7 @@ class TrustedProviderProfile:
     allowed_task_models: Mapping[str, tuple[str, ...]]
     model_validation: str
     runtime_activation: str
+    provider_kind: str = "builtin"
 
     def __post_init__(self) -> None:
         # ``frozen=True`` does not freeze a caller-owned mapping.  Copy it so a
@@ -118,6 +120,7 @@ class TrustedProviderProfile:
             "requires_explicit_models": not bool(self.default_task_models),
             "model_validation": self.model_validation,
             "runtime_activation": self.runtime_activation,
+            "provider_kind": self.provider_kind,
             "model_options": {
                 task: list(models)
                 for task, models in self.allowed_task_models.items()
@@ -164,7 +167,9 @@ _TRUSTED_PROVIDERS: Mapping[str, TrustedProviderProfile] = MappingProxyType(
             default_task_models=_DEEPSEEK_DEFAULT_MODELS,
             allowed_task_models=_DEEPSEEK_MODEL_OPTIONS,
             model_validation=MODEL_VALIDATION_BUILTIN,
-            runtime_activation=RUNTIME_ACTIVATION_LEGACY,
+            # Historical credentials remain readable, but a stored secret is
+            # no longer treated as proof that the account/endpoint is usable.
+            runtime_activation=RUNTIME_ACTIVATION_CONNECTION_REQUIRED,
         ),
         "openai": TrustedProviderProfile(
             provider_id="openai",
@@ -184,6 +189,11 @@ _TRUSTED_PROVIDERS: Mapping[str, TrustedProviderProfile] = MappingProxyType(
         ),
     }
 )
+
+_CUSTOM_PROVIDER_ID = "custom"
+_CUSTOM_PROVIDER_LOCK = threading.RLock()
+_CUSTOM_PROVIDER: TrustedProviderProfile | None = None
+_CUSTOM_ENDPOINT_GUARD = None
 
 
 def _validate_endpoint(provider_id: str, endpoint: str) -> None:
@@ -248,6 +258,9 @@ _validate_registry()
 def trusted_provider_profile(provider_id: str) -> TrustedProviderProfile:
     normalized = str(provider_id or "").strip().casefold()
     profile = _TRUSTED_PROVIDERS.get(normalized)
+    if profile is None and normalized == _CUSTOM_PROVIDER_ID:
+        with _CUSTOM_PROVIDER_LOCK:
+            profile = _CUSTOM_PROVIDER
     if profile is None:
         raise TrustedProviderRegistryError(
             "ai_provider_untrusted",
@@ -258,8 +271,16 @@ def trusted_provider_profile(provider_id: str) -> TrustedProviderProfile:
 
 def trusted_chat_endpoint(provider_id: str) -> str:
     """Resolve a credential recipient solely from the built-in registry."""
-
-    return trusted_provider_profile(provider_id).chat_endpoint
+    profile = trusted_provider_profile(provider_id)
+    if profile.provider_kind == "custom":
+        with _CUSTOM_PROVIDER_LOCK:
+            guard = _CUSTOM_ENDPOINT_GUARD
+        if not callable(guard) or guard(profile.chat_endpoint) is not True:
+            raise TrustedProviderRegistryError(
+                "ai_provider_endpoint_changed",
+                "自定义 AI 提供商地址未通过当前安全核验。",
+            )
+    return profile.chat_endpoint
 
 
 def validated_task_models(
@@ -296,8 +317,65 @@ def trusted_provider_public_catalog(
         raise TrustedProviderRegistryError(
             "ai_capability_unknown", "请求的 AI 能力无法识别。"
         )
+    with _CUSTOM_PROVIDER_LOCK:
+        custom = (_CUSTOM_PROVIDER,) if _CUSTOM_PROVIDER is not None else ()
     return tuple(
         profile.public_dict()
-        for profile in _TRUSTED_PROVIDERS.values()
+        for profile in (*_TRUSTED_PROVIDERS.values(), *custom)
         if all(profile.capabilities.supports(capability) for capability in required)
     )
+
+
+def install_custom_provider_profile(
+    profile: TrustedProviderProfile,
+    *,
+    endpoint_guard,
+) -> None:
+    """Install the single backend-reviewed custom provider for this process."""
+
+    if (
+        not isinstance(profile, TrustedProviderProfile)
+        or profile.provider_id != _CUSTOM_PROVIDER_ID
+        or profile.provider_kind != "custom"
+        or profile.protocol != OPENAI_CHAT_COMPLETIONS_PROTOCOL
+        or profile.runtime_activation != RUNTIME_ACTIVATION_CONNECTION_REQUIRED
+        or not callable(endpoint_guard)
+    ):
+        raise TrustedProviderRegistryError(
+            "ai_provider_untrusted", "自定义 AI 提供商配置无效。"
+        )
+    with _CUSTOM_PROVIDER_LOCK:
+        global _CUSTOM_PROVIDER, _CUSTOM_ENDPOINT_GUARD
+        _CUSTOM_PROVIDER = profile
+        _CUSTOM_ENDPOINT_GUARD = endpoint_guard
+
+
+def clear_custom_provider_profile() -> None:
+    with _CUSTOM_PROVIDER_LOCK:
+        global _CUSTOM_PROVIDER, _CUSTOM_ENDPOINT_GUARD
+        _CUSTOM_PROVIDER = None
+        _CUSTOM_ENDPOINT_GUARD = None
+
+
+__all__ = [
+    "CAPABILITY_AGENT",
+    "CAPABILITY_STRUCTURED_JSON",
+    "CAPABILITY_TOOL_CALLING",
+    "CAPABILITY_VENDOR_THINKING",
+    "MODEL_VALIDATION_BUILTIN",
+    "MODEL_VALIDATION_CONNECTION_REQUIRED",
+    "OPENAI_CHAT_COMPLETIONS_PROTOCOL",
+    "ProviderCapabilities",
+    "RUNTIME_ACTIVATION_CONNECTION_REQUIRED",
+    "RUNTIME_ACTIVATION_LEGACY",
+    "PROVIDER_REGISTRY_VERSION",
+    "TASK_IDS",
+    "TrustedProviderProfile",
+    "TrustedProviderRegistryError",
+    "clear_custom_provider_profile",
+    "install_custom_provider_profile",
+    "trusted_chat_endpoint",
+    "trusted_provider_profile",
+    "trusted_provider_public_catalog",
+    "validated_task_models",
+]

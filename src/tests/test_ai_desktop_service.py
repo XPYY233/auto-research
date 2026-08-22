@@ -49,6 +49,10 @@ class _Verifier:
         if self.started: self.started.set(); self.release.wait(2)
         self.calls.append(dict(kwargs))
         return ModelCapabilityResult(kwargs["provider_id"], kwargs["model"], True, True)
+    def verify_connection(self, **kwargs):
+        if self.started: self.started.set(); self.release.wait(2)
+        self.calls.append(dict(kwargs))
+        return ModelCapabilityResult(kwargs["provider_id"], kwargs["model"], True, False)
 
 
 class _Signer:
@@ -77,15 +81,15 @@ class AIDesktopServiceTests(unittest.TestCase):
         self.service.patch({"provider_id": "openai", "task_models": OPENAI_MODELS, "expected_revision": 0})
         self.service.credential_save("openai", "sk-test-private-value")
 
-    def prepared_test(self, *, session="session-1", revision=1):
-        summary = self.prepared.prepare_capability_test(session_id=session, provider_id="openai", expected_revision=revision)
+    def prepared_test(self, *, session="session-1", revision=1, scope=None):
+        summary = self.prepared.prepare_capability_test(session_id=session, provider_id="openai", expected_revision=revision, business_scope=scope)
         consent = self.prepared.issue_consent(action_id=summary["action_id"], session_id=session)
         return self.prepared.consume(action_id=summary["action_id"], consent_nonce=consent["nonce"], session_id=session)
 
     def test_catalog_public_state_and_test_plan_are_path_free(self):
         catalog = self.service.catalog()
         self.assertTrue(catalog["capability_test"]["prepare_required"])
-        self.assertEqual(catalog["capability_test"]["maximum_model_calls"], 4)
+        self.assertEqual(catalog["capability_test"]["connection_maximum_model_calls"], 1)
         rendered = repr(catalog).casefold()
         for forbidden in ("endpoint", "credential_ref", "generation", "attestation", "api_key", "/users/"):
             self.assertNotIn(forbidden, rendered)
@@ -105,7 +109,18 @@ class AIDesktopServiceTests(unittest.TestCase):
         result = self.service.test("openai", self.prepared_test(), session_id="session-1")
         self.assertTrue(result["verified"])
         self.assertEqual(result["revision"], 2)
-        self.assertEqual([call["model"] for call in self.verifier.calls], ["gpt-5.6-sol", "gpt-5.6-terra"])
+        self.assertEqual([call["model"] for call in self.verifier.calls], ["gpt-5.6-terra"])
+
+    def test_business_first_use_has_separate_consent_and_capability_cache(self):
+        self.activate_openai()
+        self.service.test("openai", self.prepared_test(), session_id="session-1")
+        action = self.prepared_test(revision=2, scope="librarian")
+        result = self.service.test("openai", action, session_id="session-1")
+        self.assertEqual(result["schema_version"], "ai-business-verification-v1")
+        self.assertEqual(result["scope"], "librarian")
+        self.assertTrue(result["verified"])
+        self.assertIsNotNone(self.runtime.business_verification("librarian"))
+        self.assertEqual(len(self.verifier.calls), 3)
 
     def test_wrong_session_provider_or_stale_revision_fail_closed(self):
         self.activate_openai(); action = self.prepared_test(session="s1")

@@ -46,6 +46,11 @@ assert(isolated.move(a.tabId,'secondary'));assert.equal(isolated.activeTab('prim
 assert(isolated.move(a.tabId,'primary'));assert.equal(isolated.activeTab('secondary').tabId,b.tabId);assert.equal(isolated.activeTab('primary').tabId,a.tabId);
 const closedA=isolated.close(a.tabId);assert.equal(closedA.tabId,a.tabId);assert.equal(isolated.activeTab('primary').tabId,c.tabId);
 const reopenedA=isolated.reopenClosed({{groupId:'primary'}});assert.equal(reopenedA.tabId,a.tabId);assert.equal(isolated.activeTab('primary').tabId,a.tabId);assert.equal(isolated.activeTab('secondary').tabId,b.tabId);
+const previewOne=isolated.open({{tabId:'evidence:preview=one',kind:'evidence',ownerView:'search',title:'preview one',identity:{{sourceScope:'official',sourceId:'official',entityType:'finding',entityUid:'one'}},payload:{{row:{{title:'preview one'}}}}}},{{groupId:'secondary',preview:true}});
+const stalePreviewGeneration=isolated.beginRequest(previewOne.tabId);
+const previewTwo=isolated.open({{tabId:'evidence:preview=two',kind:'evidence',ownerView:'search',title:'preview two',identity:{{sourceScope:'official',sourceId:'official',entityType:'finding',entityUid:'two'}},payload:{{row:{{title:'preview two'}}}}}},{{groupId:'secondary',preview:true}});
+assert.equal(isolated.snapshot().tabs.some(tab=>tab.tabId===previewOne.tabId),false);assert.equal(isolated.activeTab('secondary').tabId,previewTwo.tabId);assert.equal(isolated.completeRequest(previewOne.tabId,stalePreviewGeneration,{{payload:{{row:{{title:'late preview'}}}}}}),null);
+isolated.pin(previewTwo.tabId);const previewThree=isolated.open({{tabId:'evidence:preview=three',kind:'evidence',ownerView:'search',title:'preview three',identity:{{sourceScope:'official',sourceId:'official',entityType:'finding',entityUid:'three'}},payload:{{row:{{title:'preview three'}}}}}},{{groupId:'secondary',preview:true}});assert(isolated.snapshot().tabs.some(tab=>tab.tabId===previewTwo.tabId));assert.equal(isolated.activeTab('secondary').tabId,previewThree.tabId);
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -1,5 +1,13 @@
 # Current state checkpoint
 
+## v1.1.0 build25 candidate checkpoint (2026-08-23)
+
+- Stable installed rollback remains build24. Source/release contract now targets build25, but it is not stable until clean App installation and real paid DeepSeek acceptance pass.
+- Pane layout: `fusion-pane-layout-v2`, one `PaneLayoutController`, collapsible context/inspector/two editor groups, automatic right-side unpinned evidence preview, preserved pinned details and narrow-window single-group fallback.
+- AI: `ai-readiness-v1`, separate provider/Harness/four-scope states, DeepSeek/OpenAI plus security-gated public HTTPS OpenAI-compatible configuration, provider-separated credentials, one-call connection test and per-scope capability verification.
+- Validation so far: 896 shared tests with 80 explicit external-fixture skips and 236 macOS tests, plus targeted frontend/AI/release checks. No real provider call, App replacement, DMG or UserKit has yet occurred.
+- Production DB SHA-256 at the candidate checkpoint is `18b9a4a3a4cbdf9ffcbe4fe14fa0e4855727a6211c1f61902e3d30324903bc84`; keep it and `paper_056` user artifacts untracked and untouched.
+
 ## v1.1.0 Mac source checkpoint (2026-08-22)
 
 - Source contract: Auto Research `1.1.0` build 24 for Apple Silicon macOS. Windows 1.1 is frozen until user acceptance; do not edit or build `desktop/windows/**` in this line.
