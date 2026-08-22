@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 from typing import Any, Mapping, Protocol, Sequence
 
 from auto_research.ai.business_actions import (
@@ -30,6 +31,7 @@ from .harness_federated_backend import (
     official_source_binding,
     sanitize_official_documents,
 )
+from .librarian_reasoning import build_query_analysis, soft_recall_queries
 
 
 HARNESS_SNAPSHOT_KIND = "harness_literature"
@@ -44,6 +46,13 @@ _SELECTED_KEYS = frozenset(
     {"source_scope", "source_id", "entity_type", "entity_uid", "question", "history"}
 )
 _ENTITY_TYPES = frozenset({"item", "finding", "table", "figure"})
+_RECALL_STOPWORDS = frozenset(
+    {
+        "and", "are", "citations", "describe", "describes", "evidence", "for",
+        "from", "give", "include", "limitations", "papers", "please", "related",
+        "show", "the", "traceable", "what", "which", "with",
+    }
+)
 
 
 class _HarnessRuntimePort(DeepSeekHarnessRuntime, Protocol):
@@ -89,6 +98,58 @@ def _history(value: object) -> list[dict[str, str]]:
             raise BusinessActionError("business_action_invalid")
         result.append({"role": str(role), "content": _safe_text(row.get("content"), maximum=6_000)})
     return result
+
+
+def _librarian_recall_queries(
+    question: str, history: Sequence[Mapping[str, str]]
+) -> tuple[str, ...]:
+    """Build bounded local recall queries from a natural-language question.
+
+    Search V2 deliberately requires high term coverage. Passing an entire
+    question (including words such as "citations" and "limitations") can
+    therefore produce zero candidates even when its scientific terms are
+    present. Keep the original query, then add only deterministic scientific
+    constraints and meaningful tokens; the model never chooses search scope.
+    """
+
+    analysis = build_query_analysis(question, history=list(history))
+    candidates: list[str] = [question]
+    for values in analysis.constraints.values():
+        candidates.extend(str(value) for value in values)
+    candidates.extend(soft_recall_queries(analysis, limit=6))
+    for token in re.findall(r"[A-Za-z][A-Za-z0-9+_.-]{2,}", question):
+        if token.casefold() not in _RECALL_STOPWORDS:
+            candidates.append(token)
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in candidates:
+        cleaned = " ".join(str(value or "").split()).strip()[:500]
+        key = cleaned.casefold()
+        if not cleaned or key in seen:
+            continue
+        seen.add(key)
+        output.append(cleaned)
+        if len(output) >= 12:
+            break
+    return tuple(output)
+
+
+def _append_unique_documents(
+    target: list[dict[str, Any]],
+    rows: Sequence[Mapping[str, Any]],
+    seen: set[tuple[str, str, str, str]],
+) -> None:
+    for row in rows:
+        identity = tuple(
+            str(row.get(key) or "")
+            for key in ("source_scope", "source_id", "entity_type", "entity_uid")
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        target.append(dict(row))
+        if len(target) >= MAX_HARNESS_CANDIDATES:
+            return
 
 
 def _runtime_ready(runtime: _HarnessRuntimePort) -> None:
@@ -234,18 +295,35 @@ class HarnessBusinessAssembler:
         conversation_id = _safe_text(request.get("conversation_id"), maximum=256)
         history = _history(request.get("history", []))
         documents: list[dict[str, Any]] = []
-        try:
-            documents.extend(official_candidates(self._session, query=question, limit=32))
-        except HarnessError:
-            pass
-        if self._workspace is not None:
+        seen: set[tuple[str, str, str, str]] = set()
+        recall_queries = _librarian_recall_queries(question, history)
+        for recall_query in recall_queries:
             try:
-                documents.extend(self._workspace.candidates(query=question, limit=32))
+                _append_unique_documents(
+                    documents,
+                    official_candidates(self._session, query=recall_query, limit=8),
+                    seen,
+                )
             except HarnessError:
                 pass
-        documents = documents[:MAX_HARNESS_CANDIDATES]
+            if self._workspace is not None and len(documents) < MAX_HARNESS_CANDIDATES:
+                try:
+                    _append_unique_documents(
+                        documents,
+                        self._workspace.candidates(query=recall_query, limit=8),
+                        seen,
+                    )
+                except HarnessError:
+                    pass
+            if len(documents) >= MAX_HARNESS_CANDIDATES:
+                break
         if not documents:
-            raise BusinessActionError("business_action_prepare_failed")
+            raise BusinessActionError(
+                "business_action_prepare_failed",
+                cause_code="harness_recall_empty",
+                stage="harness_prepare",
+                next_action="refine_librarian_question",
+            )
         prompt = {
             "question": question,
             "conversation_id": conversation_id,
@@ -253,6 +331,7 @@ class HarnessBusinessAssembler:
             "source_scope": "literature",
             "source_scopes": sorted({str(row["source_scope"]) for row in documents}),
             "evidence_count": len(documents),
+            "recall_queries": list(recall_queries),
         }
         return self._draft(
             documents=documents,
@@ -592,7 +671,7 @@ class HarnessBusinessProjector:
             "cited_count": len(rows),
             "match_counts": {kind: sum(row["entity_type"] == kind for row in result["documents"]) for kind in _ENTITY_TYPES},
             "bundle_count": len({row.get("bundle_uid") for row in result["documents"]}),
-            "recall_queries": [str(prompt["question"])],
+            "recall_queries": [str(value) for value in prompt.get("recall_queries", ())],
             "plan_mode": "harness_literature_bounded",
             "summary_mode": "deepseek_harness",
             "clarification_required": False,

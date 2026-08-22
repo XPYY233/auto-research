@@ -64,6 +64,19 @@ class Session:
         return next(dict(row) for row in self.documents if row["entity_uid"] == identity["entity_uid"])
 
 
+class NaturalLanguageSession(Session):
+    def __init__(self):
+        super().__init__()
+        self.queries = []
+
+    def search(self, query="", **_filters):
+        self.queries.append(query)
+        rows = self.documents if query.casefold() == "irradiation" else ()
+        return SimpleNamespace(
+            hits=tuple(SimpleNamespace(document=row) for row in rows)
+        )
+
+
 class Workspace:
     def __init__(self):
         self.fingerprint = "w" * 64
@@ -276,6 +289,33 @@ class HarnessBusinessActionTests(unittest.TestCase):
             set(draft.outbound["source_binding"]), {"official", "workspace"}
         )
         self.assertNotIn("private", str(draft.outbound).casefold())
+
+    def test_librarian_decomposes_natural_question_before_bounded_recall(self):
+        session = NaturalLanguageSession()
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        question = (
+            "What traceable evidence describes irradiation damage evolution? "
+            "Include citations, related papers, and limitations."
+        )
+        draft = ports.librarian.assembler.assemble(
+            {"question": question, "conversation_id": "natural", "history": []}
+        )
+        self.assertIn(question, session.queries)
+        self.assertIn("irradiation", session.queries)
+        self.assertEqual(len(draft.outbound["documents"]), 2)
+        self.assertIn("irradiation", draft.outbound["prompt"]["recall_queries"])
+
+    def test_librarian_empty_recall_exposes_safe_recovery_lineage(self):
+        session = NaturalLanguageSession()
+        session.documents = []
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        with self.assertRaises(BusinessActionError) as raised:
+            ports.librarian.assembler.assemble(
+                {"question": "unknown phenomenon", "conversation_id": "empty", "history": []}
+            )
+        self.assertEqual(raised.exception.cause_code, "harness_recall_empty")
+        self.assertEqual(raised.exception.stage, "harness_prepare")
+        self.assertEqual(raised.exception.next_action, "refine_librarian_question")
 
     def test_selected_workspace_evidence_uses_same_paper_neighbors(self):
         workspace = Workspace()
