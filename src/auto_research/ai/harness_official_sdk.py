@@ -77,12 +77,13 @@ _PROVIDER_REQUEST_KEYS = frozenset(
         "reasoning_effort",
     }
 )
+_SAFE_TRACE_ENABLED = os.environ.get("AUTO_RESEARCH_AI_SAFE_TRACE") == "1"
 
 
 def _safe_trace(event: str, **metadata: object) -> None:
     """Emit opt-in structural diagnostics without content, credentials, or paths."""
 
-    if os.environ.get("AUTO_RESEARCH_AI_SAFE_TRACE") != "1":
+    if not _SAFE_TRACE_ENABLED:
         return
     safe: dict[str, object] = {"event": event}
     for key, value in metadata.items():

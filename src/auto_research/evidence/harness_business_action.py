@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 import re
+import sys
 from typing import Any, Mapping, Protocol, Sequence
 
 from auto_research.ai.business_actions import (
@@ -53,6 +55,23 @@ _RECALL_STOPWORDS = frozenset(
         "show", "the", "traceable", "what", "which", "with",
     }
 )
+_SAFE_TRACE_ENABLED = os.environ.get("AUTO_RESEARCH_AI_SAFE_TRACE") == "1"
+
+
+def _safe_trace(stage: str, code: str) -> None:
+    if not _SAFE_TRACE_ENABLED:
+        return
+    print(
+        "AUTO_RESEARCH_AI_SAFE_TRACE "
+        + json.dumps(
+            {"event": "harness_failure", "stage": stage, "code": code},
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 class _HarnessRuntimePort(DeepSeekHarnessRuntime, Protocol):
@@ -171,6 +190,7 @@ def _runtime_ready(runtime: _HarnessRuntimePort) -> None:
 
 
 def _harness_failure(exc: HarnessError, *, stage: str) -> BusinessActionError:
+    _safe_trace(stage, exc.code)
     if exc.code in {"harness_dependency_mismatch", "harness_runtime_unavailable", "harness_runtime_failed"}:
         next_action = "repair_harness_runtime"
     elif exc.code == "harness_provider_untrusted":
