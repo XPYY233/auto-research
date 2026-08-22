@@ -25,8 +25,15 @@ AI_RUNTIME_STATE_SCHEMA_VERSION = "ai-runtime-state-v1"
 AI_RUNTIME_PUBLIC_SCHEMA_VERSION = "ai-runtime-public-state-v1"
 AI_RUNTIME_ERROR_SCHEMA_VERSION = "ai-runtime-state-error-v1"
 AI_VERIFICATION_ATTESTATION_VERSION = "ai-verification-attestation-v1"
-AI_VERIFICATION_TTL_SECONDS = 15 * 60
-AI_BUSINESS_VERIFICATION_TTL_SECONDS = 15 * 60
+# Connection and model-capability checks are paid, deterministic attestations
+# bound to the selected provider, model map, credential generation and local
+# signing key.  A fifteen-minute lease made the UI report "verified" and then
+# fail while the user was still completing the next confirmation dialog.  Keep
+# the connection recent for one day and cache unchanged model capabilities for
+# one week; changing the key, provider or model revision still invalidates both
+# immediately.
+AI_VERIFICATION_TTL_SECONDS = 24 * 60 * 60
+AI_BUSINESS_VERIFICATION_TTL_SECONDS = 7 * 24 * 60 * 60
 MAX_BUSINESS_VERIFICATION_RECORDS = 64
 AI_BUSINESS_SCOPES = frozenset(
     {"librarian", "selected_evidence_chat", "literature_extraction", "personal_suggestion"}
@@ -626,7 +633,13 @@ class AIRuntimeStateService:
             or not credential.configured
             or not self._attestation_valid(selection, credential)
         ):
-            raise _error("ai_runtime_verification_required")
+            raise _error(
+                "ai_runtime_verification_required",
+                safe_message="AI 连接验证已过期或配置已变化，请先重新验证连接。",
+                cause_code="ai_connection_verification_expired",
+                stage="business_capability_preflight",
+                next_action="verify_connection",
+            )
         key = self._business_key(selection, credential, scope)
         now = self._now()
         with self._business_lock:
@@ -689,7 +702,13 @@ class AIRuntimeStateService:
             or not current_credential.configured
             or not self._attestation_valid(current_selection, current_credential)
         ):
-            raise _error("ai_runtime_verification_required")
+            raise _error(
+                "ai_runtime_verification_required",
+                safe_message="AI 能力验证期间连接状态已变化，请重新验证连接后再试。",
+                cause_code="ai_connection_verification_changed",
+                stage="business_capability_commit",
+                next_action="verify_connection",
+            )
         expiry = now + AI_BUSINESS_VERIFICATION_TTL_SECONDS
         with self._business_lock:
             for cached_key, cached_expiry in tuple(self._business_verified.items()):

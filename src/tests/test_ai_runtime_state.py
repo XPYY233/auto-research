@@ -236,6 +236,21 @@ class AIRuntimeStateTests(unittest.TestCase):
         state = self.service.get()
         self.assertFalse(state.verified)
         self.assertEqual(state.availability, "verification_required")
+        with self.assertRaises(AIRuntimeStateError) as business_rejected:
+            self.service.record_business_verification(
+                "personal_suggestion",
+                expected_provider_id="openai",
+                expected_revision=2,
+            )
+        self.assertEqual(
+            business_rejected.exception.cause_code,
+            "ai_connection_verification_expired",
+        )
+        self.assertEqual(
+            business_rejected.exception.stage,
+            "business_capability_preflight",
+        )
+        self.assertEqual(business_rejected.exception.next_action, "verify_connection")
         with self.assertRaises(AIRuntimeStateError):
             self.service.resolve_runtime()
 
