@@ -103,6 +103,34 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertIn(".fusion-secondary-editor", self.css)
         self.assertIn(".fusion-source-highlight", self.css)
 
+    def test_three_accessible_pane_separators_share_one_layout_owner(self) -> None:
+        for element_id, kind in (
+            ("fusion-context-separator", "context"),
+            ("fusion-editor-group-separator", "editor-groups"),
+            ("fusion-inspector-separator", "inspector"),
+        ):
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+            tag = re.search(rf'<[^>]+id="{element_id}"[^>]*>', self.index)
+            self.assertIsNotNone(tag)
+            markup = tag.group(0)
+            self.assertIn(f'data-pane-separator="{kind}"', markup)
+            self.assertIn('role="separator"', markup)
+            self.assertIn('aria-orientation="vertical"', markup)
+            self.assertIn('tabindex="0"', markup)
+        for marker in (
+            'const PANE_LAYOUT_KEY = "fusion-pane-layout-v1"',
+            "function readPaneLayout(", "function persistPaneLayout(",
+            "function startPaneDrag(", "function movePaneDrag(", "function endPaneDrag(",
+            "setPointerCapture", "releasePointerCapture", "function handlePaneKey(",
+            'addEventListener("dblclick"', 'addEventListener?.("resize",syncResponsivePaneLayout)',
+        ):
+            self.assertIn(marker, self.runtime)
+        self.assertIn(".fusion-pane-separator", self.css)
+        self.assertIn("--fusion-context-size", self.css)
+        self.assertIn("--fusion-primary-fr", self.css)
+        self.assertIn('html[data-pane-resizing="true"]', self.css)
+        self.assertNotIn("appendChild", self.runtime)
+
     def test_preview_tabs_pin_and_secondary_group_renders_complete_documents(self) -> None:
         program = f"""
 const fs=require('fs'),assert=require('assert'),memory=new Map();
