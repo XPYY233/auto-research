@@ -19,8 +19,9 @@ Retain `value_text`, `meaning`, `unit`, `article_title`, `doi`, and `context_exp
 
 ## Model boundary
 
-- Runtime AI is DeepSeek; Codex is a development tool.
-- DeepSeek receives bounded extracted text, not a claim of visual pixel inspection.
+- Production Librarian and selected-evidence AI run through the exact pinned DeepSeek Harness composition; Codex is a development tool.
+- Harness receives bounded safe DTOs, never a claim of visual pixel inspection, and has no shell, filesystem, PTY, editor, subagent or arbitrary network tools.
+- Prepared actions, explicit consent, provider/model allowlists, call/token budgets, credential generation and citation completeness remain Auto Research authority. Harness failure is explicit; never fall back to legacy Librarian/context-chat loops.
 - Treat API/network/model JSON as unreliable and preserve local non-AI functions on failure.
 - Do not bypass the adversarial gate for automatic publication.
 - Do not expose keys, prompts with sensitive content, full PDFs, or response bodies in logs.
@@ -37,18 +38,20 @@ Retain `value_text`, `meaning`, `unit`, `article_title`, `doi`, and `context_exp
 
 - Search indexes are rebuildable projections, never evidence authority.
 - Keep public types fixed to item/finding/table/figure.
-- Keep Librarian read-only and full-corpus; paper scoping belongs to exact search.
+- Keep Harness Librarian read-only and official full-corpus; paper scoping belongs to exact search and selected-evidence scope cannot access private experiments.
 - Keep direct and related evidence separate.
 - Every `[R#]` must resolve to a returned record.
-- Browser-local history is convenience state, not server evidence.
+- Encrypted desktop Harness history is convenience state, not scientific evidence; retain at most 20 sessions or 30 days and support immediate clear.
 - Selected-evidence chat cannot write or review records.
 
 ## UI and sharing boundary
 
-- The only product shape is a personal desktop workbench. macOS is the current development preview; Windows is the intended end-user target.
+- The only product shape is a personal desktop workbench. macOS 1.1 is the current release line; Windows 1.1 remains frozen until explicit user approval.
 - The embedded frontend and loopback service are App internals. Historical editable/read-only modes share one frontend and remain permission tests only.
 - Do not expose or document ports 8765/8766, ngrok, a mentor page or a browser workbench as user entry points.
 - Distribute the App separately from versioned evidence packages. Packages must be portable, sanitized, verifiable and rollback-safe; official packages and user-private data never overwrite one another.
+- An official-package-v2 release is complete only with every declared source PDF and visual asset validated. Do not substitute a related article for a missing report, silently omit a paper or weaken the 2GB/resource/rights gate.
+- Dataset bundles default to no private experiments and no PDF/image payload. Split by paper, expose missing/unreviewed/rights risk, and never leak paths, keys, sessions or internal database identifiers.
 
 ## Workspace and Git boundary
 

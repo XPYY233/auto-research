@@ -1,5 +1,16 @@
 # Current state checkpoint
 
+## v1.1.0 Mac source checkpoint (2026-08-22)
+
+- Source contract: Auto Research `1.1.0` build 23 for Apple Silicon macOS. Windows 1.1 is frozen until user acceptance; do not edit or build `desktop/windows/**` in this line.
+- Fusion: independently scrollable literature tree, server-side four-type filtering, recoverable `DocumentTabStore`, at most two editor groups, module-isolated inspector state and source-highlighted in-app PDF return.
+- Production AI: pinned `deepseek-harness-sdk==0.1.1rc1` and `deepseek-harness-runtime-bin==0.1.1rc1`; eight read-only Auto Research tools only, prepared-action consent/budgets remain authoritative, no old-loop fallback. Encrypted history retains at most 20 sessions or 30 days.
+- Dataset: `dataset-bundle-v1` produces JSONL, Parquet, data card and manifest with deterministic paper-level train/validation/test split. Immutable source plan: 60 papers, 4,356 records, 2,417 unreviewed, content fingerprint `8f853102d0a4774efad59fdd3be88d2ca6b685930aeb767dfa09bd80ca0341ea`.
+- Scientific audit: 14 human-gold dimensions for numeric/unit/meaning/conditions/table/figure/finding/excerpt/locator quality. Software tests and model agreement are not scientific accuracy.
+- Official package v2: requires 60/60 real PDFs and audited visual assets. Five historical PDF paths were HTML; four were repaired. DOI `10.2172/6065200` still needs the exact 40-page DOE report, so the package must remain unbuilt rather than shipping 59/60 or substituting the 14-page journal version.
+- Targeted validation completed before final release: Harness/dataset 33, release/version 28, Fusion/package/Mac 70, scientific audit 10. Full shared/Mac suites, App/DMG and real installation remain separate final gates.
+- Protection: tag `auto-research-v1.0.0-pre-1.1-protection`; external backup `/Users/USER/Zotero/auto-research-backups/v1.1-protection-20260822-154915`. The production `db/experimental_evidence.sqlite` remains the only expected dirty file and must not be staged, reset or tested.
+
 ## v1.0.0 stable-candidate checkpoint (2026-08-21)
 
 - Source identity: Auto Research `1.0.0` build 22 for Apple Silicon macOS. The final commit/tag/artifact hashes must be filled only after the clean-worktree build and real installation acceptance; the currently installed App remains 0.9.2/build21 until that transaction succeeds.
@@ -50,8 +61,8 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 - Research-brief pre-change tag: `evidence-demo-2026-07-30-pre-research-brief-1`
 - Previous Librarian reasoning/presentation implementation commit: `8e9c4c1`
 - Research-brief implementation/documentation commit: use the current shared-core `git log -1`; this file does not self-reference its commit hash
-- Current desktop source/tag: v1 source is the current `git log -1`; fill the annotated `auto-research-v1.0.0-build22` tag only after final build/install acceptance
-- Current desktop version: Auto Research `1.0.0` build 22 source candidate for Apple Silicon macOS; installed App remains 0.9.2/build21 until the protected replacement completes
+- Current desktop source/tag: 1.1 source is the current `git log -1`; create the annotated 1.1 tag only after final build/install acceptance
+- Current desktop version: Auto Research `1.1.0` build 23 source candidate for Apple Silicon macOS; verify the installed App live rather than trusting this note
 - Release: `2026.07.30-librarian-brief-stable.1`
 - Evidence schema: v12
 - Fixed evidence corpus: `config/evidence_test_set_50.json`
@@ -72,7 +83,7 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 | fixed PDFs valid and identity-matched | 50/50 |
 | data-ready fixed papers | 17/50 |
 | visual-ready fixed papers | 30/50 |
-| latest Mac release tests | 968: 753 shared, 215 macOS; Windows deliberately paused |
+| latest 1.1 targeted tests | 141: 33 Harness/dataset, 28 release/version, 70 Fusion/package/Mac, 10 scientific audit |
 
 Target DOI `10.1016/j.jnucmat.2018.08.031` has 231 independent facts and 403/403 source-localizable automatic records at this checkpoint.
 
@@ -80,10 +91,10 @@ Independent read-only browser acceptance: a tungsten question returned 65 candid
 
 ## Honest completion boundary
 
-- The installed build21 application is the rollback source while v1 build22 completes its protected build and installation acceptance.
+- The installed application identity is drift-prone; read its Info.plist live. The protected v1 source/package remain rollback points while 1.1 completes build and installation acceptance.
 - The original at-least-30-processed-paper goal is incomplete: 13 more papers are needed to move from 17 to 30; 33/50 remain not data-ready.
 - Adversarial DeepSeek agreement is not independent scientific accuracy. A human gold standard remains missing.
-- The only supported product shape is a personal desktop workbench. The current source line is Auto Research `1.0.0` build 22 on macOS; the installed line changes only after protected acceptance. Its primary navigation is Literature, Search, Experiment and Package Center; manual entry/revision-history views and the pet scene are retired. Windows work is paused, remains `installer_ready=false`, has no Setup and has no clean-machine acceptance. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
+- The only supported product shape is a personal desktop workbench. The current source line is Auto Research `1.1.0` build 23 on macOS; the installed line changes only after protected acceptance. Its primary navigation is Literature, Search, Experiment and Package Center; manual entry/revision-history views and the pet scene are retired. Windows 1.1 work is paused and its release contract remains `installer_ready=false`. Browser workbench, mentor read-only, ports 8765/8766 and ngrok are retired historical compatibility paths, not sharing options.
 - GitHub is not configured. `origin` points to a local historical bundle.
 - Librarian reasoning now has deterministic hard-condition parsing, direct/adjacent/expansion classification, evidence bundles and a five-section research report. This did not change scientific evidence or corpus readiness.
 - The local deterministic parser plus bounded history is the only hard-condition authority. DeepSeek plans queries, selects bounded evidence and explains it; it cannot create or rewrite hard conditions. Scientific-notation fluence, equivalent units and particle/material role boundaries are covered by regression tests.

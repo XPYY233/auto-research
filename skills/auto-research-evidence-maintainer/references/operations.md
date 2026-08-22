@@ -8,8 +8,11 @@
 | DB and six columns | `docs/irradiation_evidence_database.md` | `src/auto_research/evidence/db.py`, `six_column.py`, `fact_model.py` |
 | extraction and quality | `docs/adversarial_quality_gate.md` | `deepseek_extraction.py`, `quality_pipeline.py`, `prompts.py` |
 | visuals | `AGENT.md` visual sections | `visual_evidence.py` |
-| search/Librarian | `docs/SEARCH_AND_AGENT_ARCHITECTURE.md` | `search_index.py`, `agent_runtime.py` |
-| selected chat | `AGENT.md` evidence-chat section | `context_chat.py` |
+| search/Harness | `docs/SEARCH_AND_AGENT_ARCHITECTURE.md`, `config/auto-research-harness.cordis.yml` | `harness_business_action.py`, `harness_federated_backend.py`, `../ai/harness_*.py` |
+| selected chat | `AGENT.md` evidence-chat section | Harness selected-evidence scope; legacy `context_chat.py` is compatibility only |
+| dataset export | `docs/ARCHITECTURE_AUDIT_1_1.md` | `../product/dataset_bundle.py`, `dataset_bundle_sources.py`, `dataset_export_service.py` |
+| official package v2 | `PROJECT_HANDOFF.md` | `../product/official_package_assets.py`, `official_package_v2_release.py` |
+| scientific audit | `docs/ARCHITECTURE_AUDIT_1_1.md` | `scientific_release_audit.py` |
 | upload/dedup | `README.md` | `uploads.py`, `document_recognition.py` |
 | web UI | `STABLE_RELEASE.md` | `webapp.py`, `web/index.html`, `web/app.js`, `web/app.css` |
 | health/release | `MAINTENANCE_WORKFLOW.md` | `maintenance.py`, `db_health.py`, `self_check.py` |
@@ -19,7 +22,7 @@ All implementation paths above are under `src/auto_research/evidence/` unless st
 
 ## Start the product and internal services
 
-Users open the desktop workbench. Auto Research.app is the current macOS development preview; Windows is the intended end-user target. The commands below are maintainer-only internal checks:
+Users open the desktop workbench. Auto Research.app is the current macOS release line; Windows 1.1 migration is frozen. The commands below are maintainer-only internal checks:
 
 ```bash
 PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --port 8765
@@ -54,6 +57,8 @@ This command must not change evidence, visuals, review history, or extraction ar
 PYTHONPATH=src python3 -m unittest discover -s src/tests -p 'test_*.py'
 python3 -m compileall -q src
 node --check src/auto_research/evidence/web/app.js
+node --check src/auto_research/evidence/web/fusion_review.js
+node --check src/auto_research/evidence/web/document_tab_store.js
 zsh -n scripts/*.command
 git diff --check
 git fsck --full
@@ -74,6 +79,15 @@ Run real HTTP checks for editable and read-only modes. Verify a read-only write 
 9. Confirm a clean worktree.
 
 Do not mark a release stable if required work remains or if the fixed-corpus failure is unexplained.
+
+## Windows offline Build Kit
+
+1. Materialize the exact Python 3.12 runtime, locked wheelhouse, Inno Setup 6.7.3, WebView2 Evergreen x64, source archive and official package on the Mac side.
+2. Verify every tool and payload against the release manifest before copying. Do not ship cloud placeholders or let Windows fetch dependencies from the public network.
+3. On Windows, copy the entire kit to a short ordinary local path such as `C:\\AutoResearch`; do not build from OneDrive, a mobile disk or a previewed archive.
+4. Open archives/PDF/SQLite/tabular files with `O_BINARY`; guard absent `os.fchmod` on Python 3.12 Windows; close every descriptor before replace/unlink/remove.
+5. Retry only WinError 5/32/33 for bounded Defender/indexer interference. All other errors fail closed.
+6. A generated Setup is still a release candidate until real Win11 install, package import, search, PDF, upload, BYOK, upgrade and uninstall pass. Keep `installer_ready=false` until then.
 
 ## Interrupted-development checkpoint
 
