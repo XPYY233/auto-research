@@ -250,7 +250,7 @@ class FusionReviewModeTests(unittest.TestCase):
                 release_info={
                     "label": "Auto Research 1.1.0",
                     "version": "1.1.0",
-                    "build": "23",
+                    "build": "24",
                     "evidence_schema": 12,
                 },
                 experience_mode="fusion-product",
@@ -272,7 +272,7 @@ class FusionReviewModeTests(unittest.TestCase):
                 self.assertTrue(mode["experience"]["mutations"])
                 self.assertTrue(mode["experience"]["model_calls"])
                 self.assertEqual(mode["release"]["version"], "1.1.0")
-                self.assertEqual(mode["release"]["build"], "23")
+                self.assertEqual(mode["release"]["build"], "24")
 
                 with opener.open(
                     f"{base}/api/visual-assets/{asset_id}", timeout=5
