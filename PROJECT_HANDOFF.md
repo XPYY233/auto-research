@@ -12,9 +12,9 @@
 - 新版官方资料包按用户冻结范围明确发布59篇，并在manifest排除 DOI `10.2172/6065200`（`source_pdf_unavailable`）；这不删除本机或Zotero记录。其余4个HTML占位输入已由期刊/Europe PMC真实PDF替换并逐份核对DOI、题名、页数和哈希。签名包包含4,369条证据（item 3,142 / finding 936 / table 49 / figure 242）、59份PDF和291个图表资产，大小374,780,867 bytes，SHA-256 `909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`。隔离新根验收为首次`installed`、重复`already_active`，59份PDF与291个资产全部通过安装后运行时校验；视觉状态仍诚实报告为历史`draft`，不能写成科学人工审核完成。
 - 架构与技术债事实已写入`docs/ARCHITECTURE_AUDIT_1_1.md`、`config/architecture-debt.json`和`config/module-ownership.json`。全仓Python约109,950行，Fusion前端约7,338行，`app.js`约4,379行；仓库目录内历史Mac制品约1.06GB仍是P2迁移债务。
 - 当前工作树仍只允许用户的`db/experimental_evidence.sqlite`作为未提交现场；禁止暂存、还原、清理或用于发布测试。1.1保护标签为`auto-research-v1.0.0-pre-1.1-protection`，仓库外保护目录为`/Users/USER/Zotero/auto-research-backups/v1.1-protection-20260822-154915`。
-- 当前整合工作树已串行通过共享874项（其中80项因仓库未携带历史外部样本而明确跳过）和macOS 234项；Python/JavaScript语法、发布契约与差异检查通过。测试日志仍暴露少量SQLite `ResourceWarning`，列为后续连接生命周期债务，不伪装为科学错误。
+- 最终源码提交为`3b8957282254a43236dc7af7943a55cf1a7e074f`。冻结接口后串行通过共享874项（其中80项因仓库未携带历史外部样本而明确跳过）和macOS 234项；Python/JavaScript语法、发布契约与差异检查通过。测试日志仍暴露少量SQLite `ResourceWarning`，列为后续连接生命周期债务，不伪装为科学错误。
 - 本轮新增人工审核队列及原子发布/索引恢复、工作区+官方联合Harness只读检索、完整PDF分段提取、视觉资产事务式暂存、正式证据搜索过滤和path-free稳定错误；旧收费路由、旧DOM和第二导航没有恢复。
-- 现有`/Applications/Auto Research.app`和DMG来自本轮修复前的build23；必须从本节最终源码提交重新构建、隔离冒烟、ad-hoc签名、事务式替换并完成真实Mac流程后，才可把新制品写为最终交付。旧1.0.0/build22回退副本继续保留。
+- 已从独立干净worktree重建、冻结冒烟、ad-hoc签名并事务式安装`/Applications/Auto Research.app`；版本`1.1.0`/build`23`、严格签名、唯一可启动副本和DMG镜像均已复核。DMG位于`/Users/USER/Zotero/auto-research-releases/v1.1.0-build23-mac/Auto-Research-1.1.0-macOS-arm64.dmg`，SHA-256为`631a99293ab951e66ea412773b495966767a2fabe1cdf4291ae0d3c284f8e161`；完整Mac UserKit SHA-256为`53379be6f54907cb9c4cd846a9a7562c223b00013eb029a9cba44954b18172b7`。旧build23 App已保存为不可启动rollback。系统锁屏暂时阻断最后一轮只读点击验收；解锁后必须补完文献/搜索/双栏/资料包/设置检查再关闭本发布门。
 
 ### Windows 全离线 Build Kit 长期规则
 

@@ -4,6 +4,7 @@
 
 ## 2026-08-22：v1.1 Mac核心恢复、Harness与数据集发布门
 
+- 本轮使用同项目Codex任务协作而非子Agent：前端任务独占Fusion文献滚动/筛选、真实标签双栏和审核队列界面；功能任务独占审核事务、共享服务与Mac安全路由；root保持唯一Git写入者，审查后修正稳定论文身份和递归路径泄漏，再统一集成。两个协作任务均未自行暂存、提交、全测、构建或调用模型。
 - Fusion新增可恢复`DocumentTabStore`、最多两个完整编辑器组、服务端四类证据过滤、独立滚动文献目录、题名/作者/DOI筛选、五模块检查器隔离与PDF临时高亮返回链。新增人工审核标签支持批准、不采用、公开字段纠正及索引待恢复重试；没有恢复0.8 DOM、第二导航或跨页搬运节点。
 - 图书管理员和选中证据AI改用`deepseek-harness-sdk==0.1.1rc1`与`deepseek-harness-runtime-bin==0.1.1rc1`。SDK wheel SHA-256为`2113aec229039da435bc44b275b487216d2b1c308d850521b88cea6ce3c1b762`，runtime wheel为`2707cd666ba49ee0963228873abf7850ca7ec5e782cca61e3603793bace0d1cf`；composition仅开放八个只读Auto Research工具，移除Shell、文件、PTY、编辑器、子Agent和任意网络。
 - Harness继续受prepared action、一次性授权、provider/model白名单、调用/token预算、Credential generation与引用完整性门约束。加密历史最多20个会话或30天，设置可立即清除；旧收费路由固定410，版本/安全策略失败不回退旧循环。
@@ -12,7 +13,7 @@
 - 官方包v2输入规划发现60个历史PDF路径中5个实际为HTML；4份已从期刊静态资源或Europe PMC取得并核验。按用户冻结范围在manifest明确排除`10.2172/6065200`，不删除本机/Zotero条目。签名包为59篇、4,369条、59 PDF、291图表资产，SHA-256 `909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`；隔离导入、重复导入、全部PDF与全部资产运行时复核通过。旧视觉`review_status=draft`被诚实保留，不能称为科学人工审核完成。
 - 更新机器可读模块所有权与债务：全仓Python约109,950行，Fusion前端约7,338行；`app.js`与若干大Python模块仍是P1，历史浏览器兼容与仓库内约1.06GB Mac制品仍是P2。
 - 本轮冻结接口后串行通过共享874项（80项因未携带历史外部样本而明确跳过）与macOS 234项；Python/JavaScript、发布契约和差异检查通过。测试仍报告少量既有SQLite `ResourceWarning`，继续列为连接生命周期债务。
-- 此时磁盘上的Auto Research 1.1.0/build23 App与DMG仍是本轮可靠性修复前制品；必须从最终干净提交重建、签名、安装和验收后才能替换发布哈希。旧1.0.0/build22回退ZIP SHA-256仍为`a97891a5cdf5f36b44c674e8916e6d0c188829717764f5dcf898e06bb409224e`。
+- 最终源码`3b8957282254a43236dc7af7943a55cf1a7e074f`已在独立干净worktree重建，冻结App冒烟、严格ad-hoc签名、事务式安装、版本/构建号、唯一可启动App与DMG校验通过。DMG SHA-256为`631a99293ab951e66ea412773b495966767a2fabe1cdf4291ae0d3c284f8e161`；包含DMG、1.1官方包、中文教程和校验清单的Mac UserKit SHA-256为`53379be6f54907cb9c4cd846a9a7562c223b00013eb029a9cba44954b18172b7`。系统锁屏暂时阻断最后一轮只读点击验收，发布门保持未关闭；旧App已保存为仓库外不可启动rollback。
 - 生产SQLite SHA-256为`dab4ed3aba74278a4a75db9424b3559edc83716ba29bc754175268852726e946`，保持用户未提交现场，未进入资料包源、测试、App或DMG。
 
 ## 2026-08-22：Windows离线Setup成功经验冻结
