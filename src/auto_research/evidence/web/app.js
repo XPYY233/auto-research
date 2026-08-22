@@ -30,7 +30,8 @@ const librarianDesktopStorageLabels = new Set([
   'macos-keychain-aes-256-gcm',
   'macos-preview-local-key-aes-256-gcm',
 ]);
-const librarianHistoryLimit = 16;
+const librarianHistoryLimit = 20;
+const librarianHistoryRetentionMs = 30 * 24 * 60 * 60 * 1000;
 const librarianHistoryByteLimit = 2_500_000;
 let librarianHistoryBackend = "unknown";
 let librarianHistorySaveChain = Promise.resolve();
@@ -2282,10 +2283,22 @@ function librarianSessionTitle(messages) {
   return first.length > 34 ? `${first.slice(0, 34)}…` : first;
 }
 
-function validLibrarianSessions(value) {
-  return Array.isArray(value)
-    ? value.filter(session => session?.id && Array.isArray(session.messages)).slice(0, librarianHistoryLimit)
-    : [];
+function librarianSessionTimestamp(session) {
+  const raw = session?.updated_at ?? session?.created_at;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const timestamp = Date.parse(raw);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function validLibrarianSessions(value, now = Date.now()) {
+  if (!Array.isArray(value) || !Number.isFinite(now)) return [];
+  const oldest = now - librarianHistoryRetentionMs;
+  return value
+    .map(session => ({ session, timestamp: librarianSessionTimestamp(session) }))
+    .filter(({ session, timestamp }) => session?.id && Array.isArray(session.messages) && timestamp !== null && timestamp <= now && timestamp >= oldest)
+    .sort((left, right) => right.timestamp - left.timestamp)
+    .slice(0, librarianHistoryLimit)
+    .map(({ session }) => session);
 }
 
 function readLocalLibrarianHistory() {
@@ -2336,7 +2349,7 @@ function queueLibrarianHistorySave(sessions) {
 }
 
 function compactLibrarianHistory() {
-  let sessions = state.librarianSessions.slice(0, librarianHistoryLimit);
+  let sessions = validLibrarianSessions(state.librarianSessions);
   while (sessions.length > 1 && JSON.stringify(sessions).length > librarianHistoryByteLimit) sessions.pop();
   state.librarianSessions = sessions;
   try {

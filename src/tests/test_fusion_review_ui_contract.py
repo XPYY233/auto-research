@@ -208,10 +208,15 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
             "updateTrustedProviders", "prepared.provider_id!==context.provider_id",
             "prepared.disclosure_version!==disclosureVersion", "librarian-ai-stage-v1",
             "literature-extraction-stage-summary-v1", "literature-extraction-commit-result-v1",
+            "librarian:8", "selected_evidence_chat:2", "calls>AI_CALL_LIMITS[scope]",
+            "本阶段最多调用 ${calls} 次", "harness_dependency_mismatch",
+            "AI 执行环境版本不兼容", "官方资料库尚未启用",
         ):
             self.assertIn(marker, self.runtime)
         self.assertNotIn("consent:true", self.runtime)
         self.assertNotIn('localStorage.setItem("job_token', self.runtime)
+        self.assertNotIn("/api/agents/librarian/chat", self.runtime)
+        self.assertNotIn("/api/context-chat", self.runtime)
 
     def test_personal_preview_review_and_single_import_are_real(self) -> None:
         for marker in (
@@ -238,6 +243,7 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
     def test_package_center_has_complete_safe_sequences(self) -> None:
         for element_id in (
             "fusion-package-official-select", "fusion-package-installed",
+            "fusion-package-official-result", "fusion-package-open-official-search",
             "fusion-package-literature-plan", "fusion-package-literature-export",
             "fusion-package-personal-plan", "fusion-package-personal-export",
             "fusion-package-user-select", "fusion-package-user-sha",
@@ -258,8 +264,12 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
             'unencrypted_ack:true', 'unauthenticated_source_ack:true',
             'internal_use_only_ack:true', 'paper_rights:paperRights',
             'plan.exceeds_size_limit===true', 'await waitPackageJob',
+            'schema==="package-summary-v1"', 'raw.next_action',
+            'next.search_source!=="official"', 'rememberOfficialPackageResult(completed)',
+            'setSearchSource("official")',
         ):
             self.assertIn(marker, self.runtime)
+        self.assertIn("前往搜索官方资料", self.index)
         export_body = re.search(
             r"async function exportPlannedPackage\(kind\)\{(?P<body>.*?)\n  function updateUserPackageImportButton",
             self.runtime,
@@ -274,6 +284,20 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
         self.assertIn("另一条可信渠道", self.index + self.runtime)
         self.assertIn("未加密", self.index + self.runtime)
         self.assertIn("不认证发送者身份", self.index + self.runtime)
+        program = f"""
+globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
+const api=globalThis.AutoResearchFusion,assert=require('assert');
+const summary={{schema:'package-summary-v1',package_kind:'official_evidence',package_id:'official-main',package_version:'1.1',outcome:'activated',trusted_official:true,content_counts:{{paper_count:60,item_count:3142,finding_count:936,table_count:46,figure_count:232}},asset_counts:{{pdf_count:42,visual_asset_count:278}},next_action:{{view:'search',search_source:'official'}}}};
+const result=api.publicOfficialPackageResult({{result:summary}});
+assert.equal(result.outcome,'activated');assert.equal(result.nextAction.searchSource,'official');assert(result.counts.some(row=>row[0]==='PDF'&&row[1]===42));
+assert.equal(api.publicOfficialPackageResult({{result:{{...summary,next_action:{{view:'search',search_source:'private'}}}}}}),null);
+assert.equal(api.publicOfficialPackageResult({{result:{{...summary,trusted_official:false}}}}),null);
+assert(api.rememberOfficialPackageResult({{result:summary}}));assert.equal(api.state.package.lastOfficialResult.packageId,'official-main');
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_fixed_download_routes_and_workspace_gate(self) -> None:
         for element_id in (
@@ -336,7 +360,7 @@ assert.equal(api.evidenceExportURL({{sourceScope:'private',type:'table',sourceId
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_selected_evidence_ai_is_workspace_numeric_only(self) -> None:
+    def test_selected_evidence_ai_requires_stable_official_identity(self) -> None:
         for element_id in (
             "fusion-evidence-ai-question", "fusion-evidence-ai",
             "fusion-evidence-ai-reason", "fusion-evidence-ai-output",
@@ -345,30 +369,51 @@ assert.equal(api.evidenceExportURL({{sourceScope:'private',type:'table',sourceId
         for marker in (
             'preparedAuthorization("selected_evidence_chat"',
             'executePrepared("selected_evidence_chat"',
-            'entity_type:identity.entityType', 'entity_id:identity.entityId',
-            'row.sourceScope!=="workspace"', 'Number.isSafeInteger(candidate)',
+            'source_scope:identity.sourceScope', 'source_id:identity.sourceId',
+            'entity_type:identity.entityType', 'entity_uid:identity.entityUid',
+            'row.sourceScope!=="official"', '该来源暂不支持 Harness 解释',
         ):
             self.assertIn(marker, self.runtime)
+        self.assertNotIn('entity_id:identity.entityId', self.runtime)
         program = f"""
 globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
 globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
 eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
 const api=globalThis.AutoResearchFusion,assert=require('assert');
 api.state.view='search';
+api.state.selectedEvidence={{type:'item',sourceScope:'official',sourceId:'official-main',entityUid:'item:17'}};
+assert.deepEqual(api.selectedEvidenceAIIdentity(),{{key:'official:official-main:item:item:17',sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:17'}});
+api.state.selectedEvidence={{type:'figure',sourceScope:'official',sourceId:'official-main',entityUid:'figure:23'}};
+assert.equal(api.selectedEvidenceAIIdentity().entityUid,'figure:23');
 api.state.selectedEvidence={{type:'item',sourceScope:'workspace',itemId:17}};
-assert.deepEqual(api.selectedEvidenceAIIdentity(),{{key:'item:17',entityType:'item',entityId:17}});
-api.state.selectedEvidence={{type:'figure',sourceScope:'workspace',assetId:23}};
-assert.equal(api.selectedEvidenceAIIdentity().entityId,23);
-api.state.selectedEvidence={{type:'item',sourceScope:'official',itemId:17}};
 assert.equal(api.selectedEvidenceAIIdentity(),null);
 api.state.selectedEvidence={{type:'item',sourceScope:'private',itemId:17}};
 assert.equal(api.selectedEvidenceAIIdentity(),null);
-api.state.selectedEvidence={{type:'item',sourceScope:'workspace',itemId:'17'}};
+api.state.selectedEvidence={{type:'item',sourceScope:'official',sourceId:'official-main',entityUid:''}};
 assert.equal(api.selectedEvidenceAIIdentity(),null);
-api.state.selectedEvidence={{type:'figure',sourceScope:'workspace',assetId:-1}};
+api.state.selectedEvidence={{type:'figure',sourceScope:'official',sourceId:'',entityUid:'figure:23'}};
 assert.equal(api.selectedEvidenceAIIdentity(),null);
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        authorization_program = f"""
+globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+let confirmed='',consentCalls=0,preparedCalls=2;
+globalThis.confirm=message=>{{confirmed=message;return true;}};
+globalThis.AutoResearchAIConsent={{disclosureVersions:{{selected_evidence_chat:'selected-v1'}},ensure:()=>true,updateTrustedProviders:()=>true}};
+globalThis.fetch=async(url,options={{}})=>{{const headers={{get:()=>null}};
+ if(url==='/api/desktop/ai/providers')return{{ok:true,headers,json:async()=>({{schema_version:'ai-desktop-catalog-v1',providers:[{{provider_id:'deepseek',display_name:'DeepSeek'}}]}})}};
+ if(url==='/api/desktop/ai/settings')return{{ok:true,headers,json:async()=>({{schema_version:'ai-runtime-public-state-v1',provider_id:'deepseek'}})}};
+ if(url==='/api/desktop/ai/actions/selected_evidence_chat/prepare')return{{ok:true,headers,json:async()=>({{schema_version:'server-prepared-ai-action-v1',scope:'selected_evidence_chat',provider_id:'deepseek',disclosure_version:'selected-v1',action_id:'action-selected',maximum_calls:preparedCalls,model:'deepseek-v4-pro',display:'官方证据解释'}})}};
+ if(url==='/api/desktop/ai/consents'){{consentCalls+=1;return{{ok:true,headers,json:async()=>({{schema_version:'ai-consent-v1',scope:'selected_evidence_chat',nonce:'nonce-selected'}})}};}}
+ throw new Error('unexpected:'+url);
+}};
+eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
+const api=globalThis.AutoResearchFusion,assert=require('assert');
+(async()=>{{const body={{source_scope:'official',source_id:'official-main',entity_type:'item',entity_uid:'item:17',question:'解释',history:[]}};const authorization=await api.preparedAuthorization('selected_evidence_chat',body);assert.equal(authorization.actionId,'action-selected');assert(confirmed.includes('本阶段最多调用 2 次'));assert.equal(consentCalls,1);preparedCalls=3;await api.preparedAuthorization('selected_evidence_chat',body).then(()=>assert.fail('cap must reject'),error=>assert.equal(error.code,'ai_prepared_action_invalid'));assert.equal(consentCalls,1);}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(["node", "-e", authorization_program], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_personal_starts_empty_and_user_copy_is_release_neutral(self) -> None:
