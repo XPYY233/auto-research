@@ -1,17 +1,17 @@
 # Auto Research 阶段性交班总览
 
-## v1.1.0 build 26 Mac 候选（2026-08-23，尚未宣称稳定）
+## v1.1.0 build 27 Mac 候选（2026-08-23，尚未宣称稳定）
 
-- build 24 仍是已验证的稳定回退点。build 25 虽完成工作台布局与安装验收，但真实 DeepSeek 连接探针因 32-token 预算被推理内容耗尽、最终正文为空而失败，已撤回稳定候选身份。build 26 保持 `1.1.0` 语义版本；在真实 App、真实 DeepSeek 付费四业务和用户流程通过前，不得覆盖稳定结论或创建正式标签。
+- build 24 仍是已验证的稳定回退点。build 25 因 DeepSeek 推理探针正文为空撤回；build 26 修复连接与工具能力后，在真实 App 发现实验预填验证计划为2次、前端硬上限却为1次，导致无确认框直接失败，也已撤回。build 27 保持 `1.1.0` 语义版本；在真实 App、真实 DeepSeek 付费四业务和用户流程通过前，不得覆盖稳定结论或创建正式标签。
 - 新增唯一 `PaneLayoutController` 与 `fusion-pane-layout-v2`：上下文栏、检查器和两个编辑器组均可吸附收起，保留标签/请求/滚动状态并恢复上次宽度。宽屏点击文献或搜索证据会自动在右侧打开可替换预览；双击、提问或打开 PDF 后固定。主工具栏不再显示含糊的 `↶`。
 - 新增 `ai-readiness-v1`，分别投影提供商连接、Harness 和文献提取/图书管理员/选中证据问答/实验预填四项能力。设置页可管理 DeepSeek、OpenAI 和受本地 SSRF/DNS 重绑定安全门限制的公开 HTTPS OpenAI-compatible 提供商；密钥和已保存 endpoint 永不回显。
 - 保存密钥只触发用户确认后最多一次低成本连接验证；四项业务首次使用再分别执行有界能力验证。取消保持零业务请求。底层错误保留 `cause_code / stage / next_action`，缺少 PDF 等免费本地前置错误不会再被 AI readiness 通用错误遮蔽。
-- build 26 已用用户保存的本机 DeepSeek 凭据完成一次真实、低成本连接探针，修复后返回结构化 JSON 成功；密钥未输出。目标测试已通过，完整共享/macOS测试和构建尚待串行执行。生产 SQLite SHA-256 基线仍为 `18b9a4a3a4cbdf9ffcbe4fe14fa0e4855727a6211c1f61902e3d30324903bc84`，禁止进入测试、构建或 Git。
+- build 26 已用用户保存的本机 DeepSeek 凭据完成连接、V4 Pro/Flash结构化输出与工具调用，以及文献提取/图书管理员/证据问答三个能力门；个人预填因前端验证上限错误未发模型请求。build 27 将业务动作预算与能力验证预算分离。密钥未输出。生产 SQLite SHA-256 基线仍为 `18b9a4a3a4cbdf9ffcbe4fe14fa0e4855727a6211c1f61902e3d30324903bc84`，禁止进入测试、构建或 Git。
 - 尚未完成：四项真实业务能力与端到端付费验收、完整测试、干净提交构建、事务式安装、DMG/UserKit/教程封箱。Windows继续冻结；其 Fusion 新静态资源清单缺口只记录为后续迁移门，本轮不修改。
 
 ## v1.1.0 macOS 核心能力恢复线（2026-08-22，当前开发权威）
 
-- 当前源码与发布契约固定为 Auto Research `1.1.0` / build `26` 候选；Windows 1.1迁移完全冻结，现有 Windows 1.0身份仍为`installer_ready=false`，不得因Mac源码变化生成或宣称新的Setup。
+- 当前源码与发布契约固定为 Auto Research `1.1.0` / build `27` 候选；Windows 1.1迁移完全冻结，现有 Windows 1.0身份仍为`installer_ready=false`，不得因Mac源码变化生成或宣称新的Setup。
 - Fusion工作台已恢复独立滚动文献目录、题名/作者/DOI筛选、服务端四类多选筛选、可持久恢复的预览/固定标签与两个完整编辑器组、按模块隔离的检查器、中央PDF来源高亮/返回链和图书管理员独立标签。新上传论文会自动选中并滚动到可见位置，迟到请求绑定原标签。
 - 上下文栏、两个编辑器组和右侧检查器之间的三条边界可像VS Code一样拖动调整；支持键盘方向键、Shift步进、Home/End、双击复位，并只在本机保存非敏感宽度偏好。窄窗口仍按既有抽屉/单组规则收敛，不丢失标签状态。
 - 生产图书管理员和选中证据AI已迁到精确锁定的DeepSeek Harness SDK/runtime；八个工具全部只读，不提供Shell、文件系统、PTY、编辑器、子Agent或任意网络。prepared action、逐次授权、provider/model白名单、token/调用预算、凭据与引用完整性仍由Auto Research掌握；校验失败不回退旧AI。

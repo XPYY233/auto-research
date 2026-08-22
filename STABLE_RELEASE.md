@@ -2,7 +2,7 @@
 
 > 当前稳定交付为 Auto Research `1.1.0` / build `24`。它只面向 Apple Silicon macOS，采用 ad-hoc 签名、未公证，不是 App Store/Developer ID 公开发行。Windows 1.1迁移冻结。
 
-> build `26` 目前只是源码候选：build 25 已完成工作台布局验收，但真实 DeepSeek 验证暴露了推理模型输出预算过小的问题，因此已撤回。build 26 修复连接探针和安全错误提示后，仍须重新通过四项付费AI、完整测试和安装验收；失败时继续使用build 24。
+> build `27` 目前只是源码候选：build 25 的 DeepSeek 推理探针失败；build 26 修复连接与工具能力后，真实 App 又发现实验预填能力验证的前后端上限不一致。build 27 修复独立验证预算后，仍须重新通过四项付费AI、完整测试和安装验收；失败时继续使用build 24。
 
 ## v1.1.0 macOS 稳定交付
 

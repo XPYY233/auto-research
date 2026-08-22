@@ -1,9 +1,9 @@
 # Current state checkpoint
 
-## v1.1.0 build26 candidate checkpoint (2026-08-23)
+## v1.1.0 build27 candidate checkpoint (2026-08-23)
 
-- Stable rollback remains build24. Build25 completed Fusion layout installation but failed its real DeepSeek connection acceptance because a 32-token probe exhausted its budget in reasoning content. Source/release contract now targets build26; it is not stable until clean App installation and real paid DeepSeek acceptance pass.
-- Build26 raises both fixed verification probes to a bounded 256-token output budget and preserves safe provider `cause_code / stage / next_action` through the desktop response and settings UI. One direct DeepSeek V4 Pro connection probe using the App-saved credential has passed; the four business capabilities remain pending.
+- Stable rollback remains build24. Build25 failed its real DeepSeek connection acceptance because a 32-token probe exhausted its budget in reasoning content. Build26 fixed connection and forced-tool verification, but real App acceptance exposed a separate frontend cap mismatch that blocked personal-suggestion capability verification. Source/release contract now targets build27.
+- Build27 uses a distinct capability-verification budget (`personal_suggestion=2`) instead of conflating it with the one-call business action budget. DeepSeek V4 Pro and Flash have both passed real structured-output and tool-call probes; all four App business gates and real business outputs remain release requirements.
 - Pane layout: `fusion-pane-layout-v2`, one `PaneLayoutController`, collapsible context/inspector/two editor groups, automatic right-side unpinned evidence preview, preserved pinned details and narrow-window single-group fallback.
 - AI: `ai-readiness-v1`, separate provider/Harness/four-scope states, DeepSeek/OpenAI plus security-gated public HTTPS OpenAI-compatible configuration, provider-separated credentials, one-call connection test and per-scope capability verification.
 - Validation so far: 896 shared tests with 80 explicit external-fixture skips and 236 macOS tests, plus targeted frontend/AI/release checks. No real provider call, App replacement, DMG or UserKit has yet occurred.

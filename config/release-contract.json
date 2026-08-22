@@ -5,7 +5,7 @@
     "macos": {
       "desktop_version": "1.1.0",
       "bundle_short_version": "1.1.0",
-      "build_number": "26",
+      "build_number": "27",
       "target": "macOS arm64 Auto Research workbench"
     },
     "windows": {
@@ -52,6 +52,6 @@
     "src/auto_research/evidence/web/ai_consent.js": "ada8842907ff40f01a0e3b681d0dd205cc62aaffec4f47ef29813104141cd582",
     "src/auto_research/evidence/web/document_tab_store.js": "8907e06f5e7fb6e729ed4e3dbeeac6283cce2d9090832125a57b10db4cd53d46",
     "src/auto_research/evidence/web/pane_layout_controller.js": "146f32f4121e5cfecaaa676084bac85db33f2423b5f2dc0456c8f95f3d0f5086",
-    "src/auto_research/evidence/web/fusion_review.js": "15fee6c86b31d3254158c0c7ee49cf2647092816603244a9ee7d59038b0f520d"
+    "src/auto_research/evidence/web/fusion_review.js": "d84faa3d9a47b41f2f6cae5f722e0c7720528585542af1f4772c07e2ae4c25e7"
   }
 }
