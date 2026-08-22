@@ -231,19 +231,27 @@ class HarnessRuntimeTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "harness_output_invalid")
 
-    def test_librarian_rejects_workspace_evidence_before_runtime(self) -> None:
+    def test_librarian_accepts_published_workspace_evidence(self) -> None:
         prepared = action()
         raw, model = self.budgeted(prepared)
-        workspace = HarnessEvidenceIdentity("workspace", "workspace", "item", "item-1")
-        with self.assertRaises(HarnessError) as raised:
-            self.adapter(Runtime()).execute_consumed(
-                action=prepared,
-                session_id="session-1",
-                model=model,
-                evidence=(workspace,),
-            )
-        self.assertEqual(raised.exception.code, "harness_scope_unsupported")
-        self.assertEqual(raw.calls, 0)
+        workspace = HarnessEvidenceIdentity(
+            "workspace", "workspace", "item", "item-1", "bundle-1"
+        )
+
+        class WorkspaceBackend(Backend):
+            def citation_verify(self, refs):
+                return [workspace.public_dict() | {"ref": ref} for ref in refs]
+
+        result = DeepSeekHarnessAdapter(
+            runtime=Runtime(), backend=WorkspaceBackend()
+        ).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(workspace,),
+        )
+        self.assertEqual(result["answer"], "直接结论")
+        self.assertEqual(raw.calls, 1)
 
 
 if __name__ == "__main__":

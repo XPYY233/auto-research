@@ -210,6 +210,51 @@ def sanitize_workspace_documents(
     return tuple(result)
 
 
+def sanitize_workspace_public_documents(
+    documents: Iterable[Mapping[str, Any]], *, expected_source_id: str = "workspace"
+) -> tuple[dict[str, Any], ...]:
+    """Revalidate the already path-free workspace projection after consent.
+
+    The prepared action deliberately removes database row identifiers before it
+    is frozen.  Execution must validate that public projection directly rather
+    than feeding it back through ``sanitize_workspace_documents``, whose input
+    contract is an internal Search V2 row containing ``entity_id``.
+    """
+
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw in documents:
+        if (
+            not isinstance(raw, Mapping)
+            or set(raw) - _DETAIL_KEYS
+            or raw.get("source_scope") != "workspace"
+            or raw.get("source_id") != expected_source_id
+            or raw.get("entity_type") not in _ENTITY_TYPES
+        ):
+            raise HarnessError("harness_tool_invalid")
+        required = ("entity_uid", "paper_uid", "bundle_uid")
+        if any(not isinstance(raw.get(key), str) or not raw[key] for key in required):
+            raise HarnessError("harness_tool_invalid")
+        try:
+            HarnessEvidenceIdentity(
+                source_scope="workspace",
+                source_id=expected_source_id,
+                entity_type=str(raw["entity_type"]),
+                entity_uid=str(raw["entity_uid"]),
+                bundle_uid=str(raw["bundle_uid"]),
+            )
+        except HarnessError as exc:
+            raise HarnessError("harness_tool_invalid") from exc
+        identity = (str(raw["entity_type"]), str(raw["entity_uid"]))
+        if identity in seen:
+            raise HarnessError("harness_tool_invalid")
+        seen.add(identity)
+        result.append({key: _clean_value(raw[key]) for key in _DETAIL_KEYS if key in raw})
+        if len(result) > MAX_HARNESS_CANDIDATES:
+            raise HarnessError("harness_tool_invalid")
+    return tuple(result)
+
+
 def sanitize_literature_documents(
     documents: Iterable[Mapping[str, Any]],
 ) -> tuple[dict[str, Any], ...]:
@@ -234,6 +279,12 @@ def sanitize_literature_documents(
         rows = grouped[(scope, source_id)]
         if scope == "official":
             result.extend(sanitize_official_documents(rows, expected_source_id=source_id))
+        elif all("entity_uid" in row and "entity_id" not in row for row in rows):
+            result.extend(
+                sanitize_workspace_public_documents(
+                    rows, expected_source_id=source_id
+                )
+            )
         else:
             result.extend(sanitize_workspace_documents(rows, expected_source_id=source_id))
     identities = {
@@ -398,6 +449,7 @@ __all__ = [
     "official_candidates",
     "official_source_binding",
     "sanitize_literature_documents",
+    "sanitize_workspace_public_documents",
     "sanitize_official_documents",
     "sanitize_workspace_documents",
 ]

@@ -69,6 +69,13 @@ class HarnessToolTests(unittest.TestCase):
         self.assertEqual(catalog["generic_capabilities"], [])
         for item in catalog["tools"]:
             self.assertEqual(item["input_schema"]["additionalProperties"], False)
+        federated = next(
+            item for item in catalog["tools"] if item["name"] == "federated_search"
+        )
+        self.assertEqual(
+            federated["input_schema"]["properties"]["source_scope"]["enum"],
+            ["official", "workspace"],
+        )
         with self.assertRaises(TypeError):
             TOOL_SCHEMAS["exact_search"]["description"] = "changed"
 

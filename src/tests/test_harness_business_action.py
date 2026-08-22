@@ -289,6 +289,18 @@ class HarnessBusinessActionTests(unittest.TestCase):
             set(draft.outbound["source_binding"]), {"official", "workspace"}
         )
         self.assertNotIn("private", str(draft.outbound).casefold())
+        prepared = action(draft, "librarian")
+        raw = RawClient()
+        client = HarnessBudgetedBusinessAIClient(client=raw, action=prepared)
+        internal = ports.librarian.executor.execute(
+            action=prepared, ai_client=client
+        )
+        result = ports.librarian.projector.project(internal)
+        self.assertEqual(
+            {row["source_scope"] for row in result["results"]},
+            {"official", "workspace"},
+        )
+        self.assertEqual(raw.calls, 1)
 
     def test_librarian_decomposes_natural_question_before_bounded_recall(self):
         session = NaturalLanguageSession()

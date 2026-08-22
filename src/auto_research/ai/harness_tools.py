@@ -52,7 +52,7 @@ TOOL_SCHEMAS = MappingProxyType(
                 "required": ["query", "source_scope", "entity_types", "limit"],
                 "properties": {
                     "query": {"type": "string", "maxLength": 2000},
-                    "source_scope": {"const": "official"},
+                    "source_scope": {"enum": ["official", "workspace"]},
                     "entity_types": {
                         "type": "array", "minItems": 1, "maxItems": 4,
                         "uniqueItems": True,
@@ -290,7 +290,9 @@ class HarnessToolGateway:
                 or len(request["query"]) > 2_000
             ):
                 raise HarnessError("harness_tool_invalid")
-            if name == "federated_search" and request.get("source_scope") != "official":
+            if name == "federated_search" and request.get("source_scope") not in {
+                "official", "workspace"
+            }:
                 raise HarnessError("harness_private_forbidden")
             if job.session.scope == "selected_evidence_chat":
                 raise HarnessError("harness_tool_forbidden")

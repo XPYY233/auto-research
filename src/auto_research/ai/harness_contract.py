@@ -340,11 +340,9 @@ class HarnessJobV1:
         ):
             raise HarnessError("harness_invalid")
         if self.session.scope == "librarian" and any(
-            item.source_scope != "official" for item in self.evidence
+            item.source_scope == "private" for item in self.evidence
         ):
-            if any(item.source_scope == "private" for item in self.evidence):
-                raise HarnessError("harness_private_forbidden")
-            raise HarnessError("harness_scope_unsupported")
+            raise HarnessError("harness_private_forbidden")
         expected_task = {
             "librarian": "librarian_synthesis",
             "selected_evidence_chat": "extraction",
