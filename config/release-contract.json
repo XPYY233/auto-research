@@ -1,11 +1,11 @@
 {
   "schema": "auto-research-release-contract-v1",
-  "core_version": "1.0.0",
+  "core_version": "1.1.0",
   "desktop": {
     "macos": {
-      "desktop_version": "1.0.0",
-      "bundle_short_version": "1.0.0",
-      "build_number": "22",
+      "desktop_version": "1.1.0",
+      "bundle_short_version": "1.1.0",
+      "build_number": "23",
       "target": "macOS arm64 Auto Research workbench"
     },
     "windows": {
@@ -29,8 +29,8 @@
       "format_version": 1,
       "distribution_schema": 1,
       "identity_version": 1,
-      "current_version": "1.0.0",
-      "minimum_app_version": "0.6.0",
+      "current_version": "1.1.0",
+      "minimum_app_version": "1.1.0",
       "maximum_app_version_exclusive": "2.0.0"
     },
     "transfer": {
@@ -46,10 +46,10 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "5011d09158fa45fa762914b8a9e660af03c5b8f475158999515e058e967ba339",
+    "src/auto_research/evidence/web/index.html": "67c94be3175ca9a77ecce188fd35e035a3eb4563724cd5e131cc5dd9672c4b96",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
-    "src/auto_research/evidence/web/workbench.css": "e36145ec9bed05ee3599e5b14f1f3733b522f5f033df4c52e1dec32a19432445",
+    "src/auto_research/evidence/web/workbench.css": "3e08a329a8f741b9b7d80584852ea64faec03ddffcc90867bc70fded0cc2f9dc",
     "src/auto_research/evidence/web/ai_consent.js": "ada8842907ff40f01a0e3b681d0dd205cc62aaffec4f47ef29813104141cd582",
-    "src/auto_research/evidence/web/fusion_review.js": "87acf6275edfd44c5938f02e792baed5680b4d126ca4b6822e06eff80de5dff7"
+    "src/auto_research/evidence/web/fusion_review.js": "15916cb2b6dea180f0095db012fc8a90f9f59734e44a74b308d8caae5c67426d"
   }
 }

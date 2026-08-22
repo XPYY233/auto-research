@@ -30,9 +30,9 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertEqual(metadata["desktop_version"], contract["desktop"]["macos"]["desktop_version"])
         self.assertEqual(metadata["bundle_short_version"], contract["desktop"]["macos"]["bundle_short_version"])
         self.assertEqual(metadata["build_number"], contract["desktop"]["macos"]["build_number"])
-        self.assertEqual(launcher.DESKTOP_VERSION, "1.0.0")
-        self.assertEqual(metadata["bundle_short_version"], "1.0.0")
-        self.assertEqual(metadata["build_number"], "22")
+        self.assertEqual(launcher.DESKTOP_VERSION, "1.1.0")
+        self.assertEqual(metadata["bundle_short_version"], "1.1.0")
+        self.assertEqual(metadata["build_number"], "23")
         self.assertEqual(metadata["target"], "macOS arm64 Auto Research workbench")
         self.assertIn("workspace-schema-v12", metadata["data_mode"])
         self.assertIn("private-library", metadata["data_mode"])
@@ -44,6 +44,10 @@ class DesktopVersionContractTests(unittest.TestCase):
         spec = (DESKTOP_ROOT / "AutoResearch.spec").read_text(encoding="utf-8")
         self.assertIn('str(desktop_root / "version.json")', spec)
         self.assertIn('"desktop/macos"', spec)
+        self.assertIn("auto-research-harness.runtime.cordis.yml", spec)
+        self.assertIn('collect_data_files("deepseek_harness_runtime")', spec)
+        self.assertIn('copy_metadata("deepseek-harness-sdk")', spec)
+        self.assertIn('"pyarrow.parquet"', spec)
 
     def test_launcher_defers_core_imports_until_runtime_paths_are_bound(self) -> None:
         launcher_source = (DESKTOP_ROOT / "launcher.py").read_text(encoding="utf-8")
@@ -117,8 +121,8 @@ class DesktopVersionContractTests(unittest.TestCase):
             (desktop_root / "version.json").write_text(
                 json.dumps(
                     {
-                        "desktop_version": "1.0.0",
-                        "build_number": "22",
+                        "desktop_version": "1.1.0",
+                        "build_number": "23",
                         "target": "macOS arm64 Auto Research workbench",
                         "product_target": "macOS research workbench; Windows release paused",
                         "data_mode": "workspace-schema-v12-plus-private-library",
@@ -129,19 +133,19 @@ class DesktopVersionContractTests(unittest.TestCase):
             )
             with (
                 mock.patch.object(desktop_build_manifest, "git", side_effect=["", "abc123", ""]),
-                mock.patch.object(desktop_build_manifest, "core_release", return_value="1.0.0"),
+                mock.patch.object(desktop_build_manifest, "core_release", return_value="1.1.0"),
             ):
                 manifest = desktop_build_manifest.build_manifest(project_root)
 
-        self.assertEqual(manifest["desktop_version"], "1.0.0")
-        self.assertEqual(manifest["build_number"], "22")
+        self.assertEqual(manifest["desktop_version"], "1.1.0")
+        self.assertEqual(manifest["build_number"], "23")
         self.assertEqual(manifest["release_channel"], "research-group-stable")
         self.assertEqual(manifest["supported_architecture"], "arm64")
         self.assertEqual(manifest["code_signing"], "ad-hoc")
         self.assertFalse(manifest["apple_notarized"])
         self.assertFalse(manifest["windows_released"])
         self.assertFalse(manifest["public_distribution_ready"])
-        self.assertIn("build 22", manifest["publication_note"])
+        self.assertIn("build 23", manifest["publication_note"])
 
     def test_fusion_installer_uses_a_zsh_safe_transaction_exit_variable(self) -> None:
         command = (DESKTOP_ROOT / "install_fusion_review.command").read_text(

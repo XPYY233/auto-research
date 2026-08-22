@@ -91,6 +91,8 @@ class HarnessContractTests(unittest.TestCase):
             "2707cd666ba49ee0963228873abf7850ca7ec5e782cca61e3603793bace0d1cf",
             "size_bytes: 55190958",
             'pydantic: ">=2.12,<3"',
+            "status: pinned-production-composition",
+            "max_model_calls: 2",
             "bash: false",
             "filesystem: false",
             "arbitrary_network: false",

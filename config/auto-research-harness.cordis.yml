@@ -1,5 +1,5 @@
 schema_version: auto-research-cordis-composition-v1
-status: blocked-until-official-sdk-artifacts-are-audited
+status: pinned-production-composition
 
 dependency_contract:
   sdk:
@@ -62,7 +62,7 @@ scope_policy:
     cross_bundle_quantitative_comparison: false
   selected_evidence_chat:
     source_scope: current-non-private-entity-and-reviewed-neighbors-only
-    max_model_calls: 1
+    max_model_calls: 2
     writes_scientific_database: false
 
 failure_policy:

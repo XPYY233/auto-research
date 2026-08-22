@@ -92,8 +92,8 @@ from .uploads import MAX_UPLOAD_BYTES, UploadService
 
 WEB_DIR = Path(__file__).parent / "web"
 RELEASE_INFO = {
-    "version": "2026.07.30-librarian-brief-stable.1",
-    "label": "图书管理员研究简报稳定版 2026.07.30",
+    "version": "1.1.0",
+    "label": "Auto Research 1.1",
     "evidence_schema": 12,
 }
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})

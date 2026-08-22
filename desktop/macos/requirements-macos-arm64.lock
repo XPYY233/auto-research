@@ -1,5 +1,6 @@
 # Reproducible private Alpha environment captured on Apple Silicon macOS.
 # Regenerate intentionally after dependency tests; do not silently upgrade during a build.
+annotated-types==0.8.0
 PyYAML==6.0.3
 altgraph==0.17.5
 bottle==0.13.4
@@ -7,14 +8,19 @@ certifi==2026.7.22
 cffi==2.1.0
 charset-normalizer==3.4.9
 cryptography==48.0.0
+deepseek-harness-runtime-bin==0.1.1rc1
+deepseek-harness-sdk==0.1.1rc1
 idna==3.18
 macholib==1.16.4
 packaging==26.2
+pyarrow==24.0.0
 proxy_tools==0.1.0
 pycparser==3.0
 pyinstaller-hooks-contrib==2026.6
 pyinstaller==6.21.0
 pymupdf==1.28.0
+pydantic==2.13.3
+pydantic-core==2.46.3
 pyobjc-core==12.2.1
 pyobjc-framework-Cocoa==12.2.1
 pyobjc-framework-Quartz==12.2.1
@@ -25,4 +31,5 @@ pywebview==6.2.1
 requests==2.34.2
 setuptools==83.0.0
 typing_extensions==4.16.0
+typing-inspection==0.4.4
 urllib3==2.7.0

@@ -2,6 +2,8 @@ from pathlib import Path
 import json
 import os
 
+from PyInstaller.utils.hooks import collect_data_files, copy_metadata
+
 
 project_root = Path(os.environ["AUTO_RESEARCH_DESKTOP_BUILD_ROOT"]).resolve()
 desktop_root = project_root / "desktop" / "macos"
@@ -29,8 +31,24 @@ analysis = Analysis(
             str(desktop_root / "version.json"),
             "desktop/macos",
         ),
+        (
+            str(project_root / "config" / "auto-research-harness.runtime.cordis.yml"),
+            "config",
+        ),
+        *collect_data_files("deepseek_harness_runtime"),
+        *copy_metadata("deepseek-harness-sdk"),
+        *copy_metadata("deepseek-harness-runtime-bin"),
+        *copy_metadata("pydantic"),
+        *copy_metadata("pyarrow"),
     ],
-    hiddenimports=["webview.platforms.cocoa", "Security"],
+    hiddenimports=[
+        "webview.platforms.cocoa",
+        "Security",
+        "deepseek_harness",
+        "deepseek_harness_runtime",
+        "pyarrow",
+        "pyarrow.parquet",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
