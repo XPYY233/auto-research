@@ -84,6 +84,11 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertNotIn('echo "桌面版本: 0.3.0-preview.1"', command)
         self.assertIn("CFBundleShortVersionString", command)
         self.assertIn("CFBundleVersion", command)
+        self.assertIn('/usr/bin/xattr -cr "${CANDIDATE_APP}"', command)
+        self.assertLess(
+            command.index('/usr/bin/xattr -cr "${CANDIDATE_APP}"'),
+            command.index('codesign --force --deep --sign - "${CANDIDATE_APP}"'),
+        )
         self.assertIn("${PREVIOUS_SHORT_VERSION}-build${PREVIOUS_BUILD_NUMBER}", command)
         self.assertIn("macOS 课题组稳定版构建器", command)
         self.assertIn("ad-hoc 签名，未经 Apple 公证", command)

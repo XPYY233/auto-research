@@ -95,6 +95,11 @@ echo "正在执行只读冒烟检查。"
 "${VENV_ROOT}/bin/python" "${SCRIPT_DIR}/build_manifest.py" \
   --project-root "${PROJECT_ROOT}" \
   --app "${CANDIDATE_APP}"
+# Downloaded, hash-pinned runtime payloads can retain Finder provenance on
+# recent macOS releases.  PyInstaller has already copied and verified them;
+# remove those non-product attributes from the disposable candidate before
+# signing so codesign does not fail inside a nested runtime binary.
+/usr/bin/xattr -cr "${CANDIDATE_APP}"
 codesign --force --deep --sign - "${CANDIDATE_APP}"
 codesign --verify --deep --strict "${CANDIDATE_APP}"
 plutil -lint "${CANDIDATE_APP}/Contents/Info.plist"
