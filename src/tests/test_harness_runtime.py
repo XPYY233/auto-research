@@ -90,7 +90,7 @@ class Runtime:
     def composition_metadata(self):
         return safe_composition()
 
-    def execute(self, *, job, model, tools):
+    def execute(self, *, job, model, tools, prompt=None):
         model.request_json(
             MESSAGES,
             task=job.task,

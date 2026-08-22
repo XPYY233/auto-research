@@ -30,6 +30,10 @@ BUSINESS_ACTION_SCOPES = frozenset(
 MAX_PUBLIC_RESULT_BYTES = 1024 * 1024
 MAX_EXECUTION_RECEIPTS = 256
 _SAFE_EXECUTOR_RE = re.compile(r"^[a-z][a-z0-9_.-]{2,95}$")
+_HARNESS_TOOL_NAME_RE = re.compile(
+    r"^mcp__auto_research__(?:exact_search|federated_search|evidence_detail|"
+    r"evidence_metadata|source_locator|source_view|citation_verify|recommend_papers)$"
+)
 _SENSITIVE_KEY_RE = re.compile(
     r"(?:^|_)(?:api_?key|secret|password|credential|token|nonce|path|endpoint)(?:$|_)",
     re.IGNORECASE,
@@ -496,6 +500,188 @@ class BudgetedBusinessAIClient:
             raise BusinessActionError("business_action_invalid")
 
 
+class HarnessBudgetedBusinessAIClient:
+    """Cumulative budget used only by the audited Harness executor.
+
+    Harness derives later model messages from verified tool results, so those
+    messages cannot be byte-for-byte frozen before consent.  This client keeps
+    the security boundary at the consumed prepared action: fixed provider and
+    model binding, fixed task set, maximum calls/tokens, and an exact tool-name
+    allowlist.  It never exposes the underlying credential or endpoint.
+    """
+
+    __slots__ = (
+        "__client",
+        "__allowed",
+        "__minimum_calls",
+        "__remaining_calls",
+        "__remaining_tokens",
+        "__settings",
+        "__used_calls",
+    )
+    _PUBLIC_ATTRIBUTES = frozenset(
+        {
+            "request_tool_message",
+            "remaining_calls",
+            "remaining_tokens",
+            "settings",
+        }
+    )
+
+    def __init__(self, *, client: object, action: PreparedOutbound) -> None:
+        if action.scope not in {"librarian", "selected_evidence_chat"}:
+            raise BusinessActionError("business_action_invalid")
+        object.__setattr__(self, "_HarnessBudgetedBusinessAIClient__client", client)
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__allowed",
+            MappingProxyType(dict(action.task_models)),
+        )
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__minimum_calls",
+            action.estimated_calls,
+        )
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__remaining_calls",
+            action.max_calls,
+        )
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__remaining_tokens",
+            action.max_tokens,
+        )
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__settings",
+            SafeBusinessModelSettings(dict(action.task_models)),
+        )
+        object.__setattr__(self, "_HarnessBudgetedBusinessAIClient__used_calls", 0)
+
+    def __getattribute__(self, name: str) -> object:
+        if name not in object.__getattribute__(self, "_PUBLIC_ATTRIBUTES"):
+            raise BusinessActionError("business_action_invalid")
+        return object.__getattribute__(self, name)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise BusinessActionError("business_action_invalid")
+
+    @property
+    def remaining_calls(self) -> int:
+        return object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__remaining_calls"
+        )
+
+    @property
+    def remaining_tokens(self) -> int:
+        return object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__remaining_tokens"
+        )
+
+    @property
+    def settings(self) -> SafeBusinessModelSettings:
+        return object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__settings"
+        )
+
+    def request_tool_message(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        task: str,
+        max_tokens: int,
+        temperature: float = 0.1,
+    ) -> dict[str, Any]:
+        allowed = object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__allowed"
+        )
+        remaining_calls = object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__remaining_calls"
+        )
+        remaining_tokens = object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__remaining_tokens"
+        )
+        normalized_messages = _canonical_call_value(messages)
+        normalized_tools = _canonical_call_value(tools)
+        if (
+            not isinstance(task, str)
+            or task not in allowed
+            or isinstance(max_tokens, bool)
+            or not isinstance(max_tokens, int)
+            or max_tokens < 1
+            or remaining_calls < 1
+            or max_tokens > remaining_tokens
+            or not isinstance(normalized_messages, list)
+            or not normalized_messages
+            or not isinstance(normalized_tools, list)
+            or not _harness_tools_allowed(normalized_tools)
+            or isinstance(temperature, bool)
+            or not isinstance(temperature, (int, float))
+            or not math.isfinite(float(temperature))
+            or not 0 <= float(temperature) <= 1.5
+        ):
+            raise BusinessActionError("business_action_invalid")
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__remaining_calls",
+            remaining_calls - 1,
+        )
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__remaining_tokens",
+            remaining_tokens - max_tokens,
+        )
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__used_calls",
+            object.__getattribute__(
+                self, "_HarnessBudgetedBusinessAIClient__used_calls"
+            )
+            + 1,
+        )
+        try:
+            client = object.__getattribute__(
+                self, "_HarnessBudgetedBusinessAIClient__client"
+            )
+            method = client.request_tool_message
+        except AttributeError as exc:
+            raise BusinessActionError("business_action_execution_failed") from exc
+        return method(
+            normalized_messages,
+            normalized_tools,
+            task=task,
+            max_tokens=max_tokens,
+            temperature=float(temperature),
+        )
+
+    def _assert_complete(self) -> None:
+        used = object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__used_calls"
+        )
+        minimum = object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__minimum_calls"
+        )
+        if used < minimum:
+            raise BusinessActionError("business_action_invalid")
+
+
+def _harness_tools_allowed(tools: list[object]) -> bool:
+    for value in tools:
+        if not isinstance(value, Mapping) or set(value) != {"type", "function"}:
+            return False
+        function = value.get("function")
+        if (
+            value.get("type") != "function"
+            or not isinstance(function, Mapping)
+            or set(function) - {"name", "description", "parameters", "strict"}
+            or _HARNESS_TOOL_NAME_RE.fullmatch(str(function.get("name") or "")) is None
+        ):
+            return False
+    return True
+
+
 @dataclass(frozen=True)
 class AuthorizedCall:
     """Fresh plain copy of one call from the immutable authorized plan."""
@@ -674,11 +860,18 @@ class BusinessPreparedActionRegistry:
             with self._client_factory.acquire_bound(
                 action, max_attempts=1
             ) as raw_client:
-                client = BudgetedBusinessAIClient(
-                    client=raw_client,
-                    action=action,
-                )
-                result = self._executors[action.scope].execute(
+                executor = self._executors[action.scope]
+                if getattr(executor, "requires_harness_budget", False) is True:
+                    client = HarnessBudgetedBusinessAIClient(
+                        client=raw_client,
+                        action=action,
+                    )
+                else:
+                    client = BudgetedBusinessAIClient(
+                        client=raw_client,
+                        action=action,
+                    )
+                result = executor.execute(
                     action=action,
                     ai_client=client,
                 )
@@ -798,6 +991,7 @@ __all__ = [
     "BusinessPreparedActionRegistry",
     "BusinessResultProjector",
     "BudgetedBusinessAIClient",
+    "HarnessBudgetedBusinessAIClient",
     "SafeBusinessModelSettings",
     "PreparedBusinessCall",
     "SystemBusinessActionClock",

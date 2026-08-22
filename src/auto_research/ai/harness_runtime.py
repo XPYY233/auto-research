@@ -16,7 +16,10 @@ from .harness_contract import (
 )
 from .harness_tools import AutoResearchHarnessBackend, HarnessToolGateway
 from .prepared_actions import PreparedOutbound
-from .business_actions import BudgetedBusinessAIClient
+from .business_actions import (
+    BudgetedBusinessAIClient,
+    HarnessBudgetedBusinessAIClient,
+)
 
 
 HARNESS_EXECUTION_RESULT_SCHEMA_VERSION = "harness-execution-result-v1"
@@ -54,6 +57,7 @@ class DeepSeekHarnessRuntime(Protocol):
         job: HarnessJobV1,
         model: HarnessModelPort,
         tools: HarnessToolGateway,
+        prompt: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]: ...
 
 
@@ -276,8 +280,11 @@ class DeepSeekHarnessAdapter:
         current_entity: HarnessEvidenceIdentity | None = None,
         allowed_neighbors: Sequence[HarnessEvidenceIdentity] = (),
         allow_source_view: bool = False,
+        prompt: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if not isinstance(model, BudgetedBusinessAIClient):
+        if not isinstance(
+            model, (BudgetedBusinessAIClient, HarnessBudgetedBusinessAIClient)
+        ):
             raise HarnessError("harness_invalid")
         job = job_from_prepared_action(
             action,
@@ -294,7 +301,12 @@ class DeepSeekHarnessAdapter:
             allow_source_view=allow_source_view,
         )
         try:
-            raw = self._runtime.execute(job=running, model=model, tools=tools)
+            raw = self._runtime.execute(
+                job=running,
+                model=model,
+                tools=tools,
+                prompt=prompt,
+            )
             if not isinstance(raw, Mapping):
                 raise HarnessError("harness_output_invalid")
             if running.session.scope == "librarian":

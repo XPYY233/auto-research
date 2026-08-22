@@ -118,6 +118,33 @@ class _Executor:
         return {"answer": "raw", "state_token": "signed-state"}
 
 
+class _HarnessExecutor:
+    requires_harness_budget = True
+
+    def __init__(self, *, bad_tool: bool = False):
+        self.bad_tool = bad_tool
+
+    def execute(self, *, action, ai_client):
+        name = "bash" if self.bad_tool else "mcp__auto_research__exact_search"
+        tools = [{
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": "bounded",
+                "parameters": {"type": "object", "additionalProperties": False},
+            },
+        }]
+        for index in range(2):
+            ai_client.request_tool_message(
+                [{"role": "user", "content": f"derived-step-{index}"}],
+                tools,
+                task="librarian_synthesis",
+                max_tokens=80,
+                temperature=0.1,
+            )
+        return {"answer": "harness", "state_token": "signed-state"}
+
+
 def _plain(value):
     if isinstance(value, dict) or hasattr(value, "items"):
         return {key: _plain(child) for key, child in value.items()}
@@ -294,6 +321,38 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
         self.executors["librarian"].mutate = lambda index, call: ({**call, "messages": list(call["messages"]) + [{"role": "assistant", "content": "first model output"}]} if index == 1 else call)
         with self.assertRaises(BusinessActionError): self.registry.execute(action)
         self.assertEqual(len(self.factory.client.calls), 1)
+
+    def test_harness_executor_uses_cumulative_budget_and_fixed_tool_namespace(self):
+        sentinel = _call("librarian_synthesis", tokens=80)
+        self.assemblers["librarian"].override = BusinessActionDraft(
+            {"scope": "librarian"}, (), 1, 2, 160, (sentinel,)
+        )
+        self.executors["librarian"] = _HarnessExecutor()
+        registry = self.make_registry()
+        summary = registry.prepare(
+            scope="librarian", session_id="harness-budget", request=object()
+        )
+        result = registry.execute(self.consume(summary, "harness-budget"))
+        self.assertEqual(result["answer"], "harness")
+        self.assertEqual(len(self.factory.client.calls), 2)
+        self.assertEqual(
+            [call[3]["task"] for call in self.factory.client.calls],
+            ["librarian_synthesis", "librarian_synthesis"],
+        )
+
+        self.setUp()
+        self.assemblers["librarian"].override = BusinessActionDraft(
+            {"scope": "librarian"}, (), 1, 2, 160, (sentinel,)
+        )
+        self.executors["librarian"] = _HarnessExecutor(bad_tool=True)
+        registry = self.make_registry()
+        summary = registry.prepare(
+            scope="librarian", session_id="harness-bad-tool", request=object()
+        )
+        with self.assertRaises(BusinessActionError) as rejected:
+            registry.execute(self.consume(summary, "harness-bad-tool"))
+        self.assertEqual(rejected.exception.code, "business_action_invalid")
+        self.assertEqual(self.factory.client.calls, [])
 
     def test_prepare_rejects_unapproved_task_before_action_exists(self):
         self.assemblers["personal_suggestion"].override = BusinessActionDraft(

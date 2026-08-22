@@ -1,0 +1,45 @@
+# Auto Research 1.1 pinned DeepSeek Harness composition.
+#
+# Deliberately absent: sandbox, subprocess, terminal, Bash, filesystem,
+# editor, jobs, tasks, subagents, skills, browser/network tools and plaintext
+# session persistence.  The only model-facing tools come from the authenticated
+# process-local MCP endpoint owned by Auto Research.
+
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  config:
+    maxTokensAsSuccess: false
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  config:
+    apiKeyEnv: AUTO_RESEARCH_HARNESS_PROXY_TOKEN
+    streamIdleTimeoutMs: 120000
+    models:
+      - id: !!js process.env.DSH_MODEL
+        contextWindow: 128000
+
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    persona: !!js process.env.AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+
+- id: auto-research-domain-tools
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: auto_research
+    transport: streamable-http
+    url: !!js process.env.AUTO_RESEARCH_HARNESS_MCP_URL
+    headers:
+      Authorization: !!js '`Bearer ${process.env.AUTO_RESEARCH_HARNESS_PROXY_TOKEN}`'
+    toolCallTimeoutMs: 30000
+    failOnStartupError: true
+    reconnect:
+      enabled: false
