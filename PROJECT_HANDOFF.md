@@ -12,7 +12,9 @@
 - `official-package-v2`构建器已要求普通PDF魔数/页数/哈希/身份、视觉资产、来源锚点、权利清单和2GB上限。不可变快照的60个历史路径中有5个是HTML占位，已从官方/开放来源取得并核验4份真实PDF；DOI `10.2172/6065200`的40页DOE报告仍因当前网络无法物化而失败关闭。不得用14页期刊版、网页打印或相似文献替代，也不得发布59/60的不完整v2包。
 - 架构与技术债事实已写入`docs/ARCHITECTURE_AUDIT_1_1.md`、`config/architecture-debt.json`和`config/module-ownership.json`。全仓Python约109,950行，Fusion前端约7,338行，`app.js`约4,379行；仓库目录内历史Mac制品约1.06GB仍是P2迁移债务。
 - 当前工作树仍只允许用户的`db/experimental_evidence.sqlite`作为未提交现场；禁止暂存、还原、清理或用于发布测试。1.1保护标签为`auto-research-v1.0.0-pre-1.1-protection`，仓库外保护目录为`/Users/USER/Zotero/auto-research-backups/v1.1-protection-20260822-154915`。
-- 已通过Harness/数据集目标33项、版本/发布契约28项、Fusion/资料包/Mac目标70项和科学审计10项；这些不是最终发布数。下一步必须先解决60/60 PDF输入，再串行执行共享全套、Mac全套、构建、签名、DMG、安装和真实用户流程。
+- 源码发布身份为`a3fd136`。干净发布工作树已串行通过共享851项（其中80项因仓库未携带历史外部`XJZQ42XP.pdf`而明确跳过）和macOS 229项；Python编译、8个生产JavaScript、发布契约与差异检查通过。测试日志仍暴露少量SQLite `ResourceWarning`，列为后续连接生命周期债务，不伪装为科学错误。
+- 已从干净工作树构建、隔离冒烟、ad-hoc签名并安装`/Applications/Auto Research.app` 1.1.0/build23；DMG位于`/Users/USER/Zotero/auto-research-releases/v1.1.0-build23-mac/Auto-Research-1.1.0-macOS-arm64.dmg`，SHA-256为`8bee879ac471e5000c2fe2e20848937a84bab40ca8a731e8f348716614d6e34b`。旧1.0.0/build22已保存为完整ZIP并另存去执行权限的回退副本。
+- 当前不能宣布1.1整套发布完成：`official-package-v2`仍缺DOI `10.2172/6065200`的准确40页DOE原报告。人工通过UNT页面验证后应保存原始PDF，再执行60/60身份、页数、权利和哈希核验；随后才可构建资料包、完成真实导入/搜索/PDF高亮/回退用户流程、生成最终套件与稳定标签。
 
 ### Windows 全离线 Build Kit 长期规则
 
