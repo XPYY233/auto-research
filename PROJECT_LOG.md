@@ -4,16 +4,16 @@
 
 ## 2026-08-22：v1.1 Mac核心恢复、Harness与数据集发布门
 
-- Fusion新增可恢复`DocumentTabStore`、最多两个编辑器组、服务端四类证据过滤、独立滚动文献目录、五模块检查器隔离与PDF临时高亮返回链。新增功能放入独立脚本/模块，没有恢复0.8 DOM、第二导航或跨页搬运节点。
+- Fusion新增可恢复`DocumentTabStore`、最多两个完整编辑器组、服务端四类证据过滤、独立滚动文献目录、题名/作者/DOI筛选、五模块检查器隔离与PDF临时高亮返回链。新增人工审核标签支持批准、不采用、公开字段纠正及索引待恢复重试；没有恢复0.8 DOM、第二导航或跨页搬运节点。
 - 图书管理员和选中证据AI改用`deepseek-harness-sdk==0.1.1rc1`与`deepseek-harness-runtime-bin==0.1.1rc1`。SDK wheel SHA-256为`2113aec229039da435bc44b275b487216d2b1c308d850521b88cea6ce3c1b762`，runtime wheel为`2707cd666ba49ee0963228873abf7850ca7ec5e782cca61e3603793bace0d1cf`；composition仅开放八个只读Auto Research工具，移除Shell、文件、PTY、编辑器、子Agent和任意网络。
 - Harness继续受prepared action、一次性授权、provider/model白名单、调用/token预算、Credential generation与引用完整性门约束。加密历史最多20个会话或30天，设置可立即清除；旧收费路由固定410，版本/安全策略失败不回退旧循环。
 - 新增`dataset-bundle-v1`三层实现：安全来源投影、JSONL/Parquet/数据卡与论文级确定性划分、异步原子导出。真实不可变快照计划为60篇、4,356条，缺失DOI 3、未审核2,417；含未审核记录必须再次确认，默认不含私人实验或PDF/图片。
 - 新增14维人工金标准科学审计；测试覆盖TP/FP/FN、页码/IoU、重复、数据泄漏和路径/内部字段。禁止以模型一致性或软件回归通过推导科学准确率。
-- 官方包v2输入规划发现60个历史PDF路径中5个实际为HTML；4份已从合法来源取得并核验。`10.2172/6065200`的DOE 40页报告仍无法从当前网络下载，构建器因此返回`official_pdf_invalid`。没有使用同名14页期刊论文替代，也没有发布不完整包。
+- 官方包v2输入规划发现60个历史PDF路径中5个实际为HTML；4份已从期刊静态资源或Europe PMC取得并核验。按用户冻结范围在manifest明确排除`10.2172/6065200`，不删除本机/Zotero条目。签名包为59篇、4,369条、59 PDF、291图表资产，SHA-256 `909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`；隔离导入、重复导入、全部PDF与全部资产运行时复核通过。旧视觉`review_status=draft`被诚实保留，不能称为科学人工审核完成。
 - 更新机器可读模块所有权与债务：全仓Python约109,950行，Fusion前端约7,338行；`app.js`与若干大Python模块仍是P1，历史浏览器兼容与仓库内约1.06GB Mac制品仍是P2。
-- 回归修复提交`a3fd136`后，干净发布工作树串行通过共享851项（80项因未携带历史外部PDF而明确跳过）与macOS 229项；Python编译、8个生产JavaScript、发布契约和差异检查通过。构建后的隔离冒烟读取60篇/schema-v12并覆盖Fusion、设置、AI、私人搜索与加密历史，隔离数据库哈希未变。
-- 已生成并安装Auto Research 1.1.0/build23；DMG经镜像校验、挂载版本检查和签名复验，SHA-256为`8bee879ac471e5000c2fe2e20848937a84bab40ca8a731e8f348716614d6e34b`。旧1.0.0/build22回退ZIP SHA-256为`a97891a5cdf5f36b44c674e8916e6d0c188829717764f5dcf898e06bb409224e`，另有去执行权限副本。
-- 1.1完整套件仍被唯一外部输入阻塞：必须人工通过UNT/OSTI验证取得DOI `10.2172/6065200`对应的准确40页DOE报告。此前不得生成或宣称60/60 `official-package-v2`，也不得用同名14页期刊论文替代。生产SQLite保持用户未提交现场，未进入干净发布工作树、App或DMG。
+- 本轮冻结接口后串行通过共享874项（80项因未携带历史外部样本而明确跳过）与macOS 234项；Python/JavaScript、发布契约和差异检查通过。测试仍报告少量既有SQLite `ResourceWarning`，继续列为连接生命周期债务。
+- 此时磁盘上的Auto Research 1.1.0/build23 App与DMG仍是本轮可靠性修复前制品；必须从最终干净提交重建、签名、安装和验收后才能替换发布哈希。旧1.0.0/build22回退ZIP SHA-256仍为`a97891a5cdf5f36b44c674e8916e6d0c188829717764f5dcf898e06bb409224e`。
+- 生产SQLite SHA-256为`dab4ed3aba74278a4a75db9424b3559edc83716ba29bc754175268852726e946`，保持用户未提交现场，未进入资料包源、测试、App或DMG。
 
 ## 2026-08-22：Windows离线Setup成功经验冻结
 

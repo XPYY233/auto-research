@@ -946,6 +946,12 @@ class SearchAgentTests(unittest.TestCase):
             ).lastrowid
         index = EvidenceSearchIndex(self.db)
         index.rebuild()
+        self.assertEqual(
+            index.search(
+                "旧表格标题", entity_types={"table"}, quality_filter="published"
+            ).total,
+            1,
+        )
         before = index.source_fingerprint()
         review_visual_asset(
             self.db, asset_id, {"display_name": "高熵合金辐照硬度表"}, "correction",
@@ -956,6 +962,61 @@ class SearchAgentTests(unittest.TestCase):
         self.assertTrue(status["rebuilt"])
         rows = index.search("高熵合金辐照硬度表", entity_types={"table"}).rows
         self.assertEqual(rows[0]["display_name"], "高熵合金辐照硬度表")
+        published = index.search(
+            "高熵合金辐照硬度表",
+            entity_types={"table"},
+            quality_filter="published",
+        )
+        self.assertEqual(published.total, 1)
+
+    def test_new_visual_manual_review_is_not_published(self):
+        stamp = now()
+        with self.db.connect() as conn:
+            asset_id = conn.execute(
+                """INSERT INTO visual_assets(
+                paper_id,asset_type,label,display_name,asset_number,caption,page_start,page_end,
+                bbox_json,image_path,image_sha256,physical_quantities_json,variables_json,
+                materials_json,conditions_text,methods_text,context_explanation,tags_json,
+                source_context,review_status,extraction_method,metadata_source,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    self.paper_id, "figure", "Figure 99", "待审核新图片", 99,
+                    "candidate", 3, 3, "[0,0,1,1]", "/tmp/not-public-99.png", "hash99",
+                    "[]", "{}", "[]", "", "", "", "[]", "candidate context",
+                    "draft", "pdf_layout", "deterministic", stamp, stamp,
+                ),
+            ).lastrowid
+            run_id = conn.execute(
+                """INSERT INTO quality_pipeline_runs(
+                paper_id,status,stage,progress,quality_threshold,summary_json,created_at
+                ) VALUES(?,?,?,?,?,?,?)""",
+                (self.paper_id, "completed", "manual_review", 100, 85, "{}", stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO quality_candidates(
+                pipeline_run_id,paper_id,entity_type,candidate_key,chosen_source,candidate_json,
+                gate_status,gate_reason,published_asset_id,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    run_id, self.paper_id, "figure", "new-figure-99", "merged",
+                    '{"is_new_asset":true}', "manual_review", "等待人工审核", asset_id,
+                    stamp, stamp,
+                ),
+            )
+        index = EvidenceSearchIndex(self.db)
+        index.rebuild()
+        self.assertEqual(
+            index.search(
+                "待审核新图片", entity_types={"figure"}, quality_filter="published"
+            ).total,
+            0,
+        )
+        self.assertEqual(
+            index.search(
+                "待审核新图片", entity_types={"figure"}, quality_filter="all"
+            ).total,
+            1,
+        )
 
 
 if __name__ == "__main__":

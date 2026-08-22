@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from collections import Counter
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ class OfficialPackageV2Inputs:
     pdf_override_count: int
     visual_total_bytes: int
     visual_review_counts: Mapping[str, int]
+    excluded_papers: tuple[Mapping[str, str], ...] = ()
 
     def public_summary(self) -> dict[str, Any]:
         return {
@@ -52,11 +54,117 @@ class OfficialPackageV2Inputs:
             "visual_asset_count": len(self.binary_assets),
             "visual_total_bytes": self.visual_total_bytes,
             "visual_review_counts": dict(sorted(self.visual_review_counts.items())),
+            "excluded_papers": [dict(row) for row in self.excluded_papers],
             "identity_audit": "matched",
             "visual_content_hash_audit": "matched",
             "scientific_review_complete": bool(self.visual_review_counts)
             and set(self.visual_review_counts) <= {"verified"},
         }
+
+
+def apply_official_package_v2_exclusions(
+    plan: PortableExportPlan,
+    excluded_dois: Mapping[str, str] | None,
+) -> tuple[PortableExportPlan, tuple[Mapping[str, str], ...]]:
+    """Filter only the declared distribution plan, never the source snapshot."""
+
+    exclusions = {
+        str(doi).strip().casefold(): str(reason).strip()
+        for doi, reason in dict(excluded_dois or {}).items()
+        if str(doi).strip() and str(reason).strip()
+    }
+    if not exclusions:
+        return plan, ()
+    declarations: list[Mapping[str, str]] = []
+    excluded_uids: set[str] = set()
+    papers: list[Mapping[str, Any]] = []
+    for paper in plan.papers:
+        doi = str(paper.get("doi") or "").strip()
+        reason = exclusions.get(doi.casefold())
+        if reason:
+            excluded_uids.add(str(paper["paper_uid"]))
+            declarations.append({"doi": doi, "reason": reason})
+        else:
+            papers.append(paper)
+    unresolved = set(exclusions) - {row["doi"].casefold() for row in declarations}
+    if unresolved:
+        raise OfficialPackageV2ReleaseError(
+            "release_exclusion_invalid", "排除声明引用了稳定快照中不存在的 DOI"
+        )
+    entities = tuple(
+        entity for entity in plan.entities
+        if str(entity.get("paper_uid") or "") not in excluded_uids
+    )
+    if not papers:
+        raise OfficialPackageV2ReleaseError(
+            "release_paper_scope", "排除声明不能移除全部论文"
+        )
+    return (
+        PortableExportPlan(
+            papers=tuple(papers),
+            entities=entities,
+            dropped_by_reason=plan.dropped_by_reason,
+            private_source_sha256=plan.private_source_sha256,
+        ),
+        tuple(sorted(declarations, key=lambda row: row["doi"].casefold())),
+    )
+
+
+def load_official_package_v2_exclusions(path: Path | str) -> dict[str, str]:
+    source = Path(path).expanduser()
+    if source.is_symlink() or not source.is_file():
+        raise OfficialPackageV2ReleaseError(
+            "release_exclusion_invalid", "官方资料包排除声明缺失或不是普通文件"
+        )
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OfficialPackageV2ReleaseError(
+            "release_exclusion_invalid", "官方资料包排除声明无法读取"
+        ) from exc
+    if (
+        not isinstance(payload, Mapping)
+        or set(payload) != {"schema_version", "excluded_papers"}
+        or payload.get("schema_version") != "official-package-v2-exclusions-v1"
+        or not isinstance(payload.get("excluded_papers"), list)
+    ):
+        raise OfficialPackageV2ReleaseError(
+            "release_exclusion_invalid", "官方资料包排除声明结构无效"
+        )
+    result: dict[str, str] = {}
+    for row in payload["excluded_papers"]:
+        if not isinstance(row, Mapping) or set(row) != {"doi", "reason"}:
+            raise OfficialPackageV2ReleaseError(
+                "release_exclusion_invalid", "官方资料包排除条目无效"
+            )
+        doi = str(row.get("doi") or "").strip()
+        reason = str(row.get("reason") or "").strip()
+        if not doi or not reason or doi.casefold() in result:
+            raise OfficialPackageV2ReleaseError(
+                "release_exclusion_invalid", "官方资料包排除条目重复或为空"
+            )
+        result[doi.casefold()] = reason
+    return result
+
+
+def normalize_official_package_v2_approved_scope(
+    *,
+    original_plan: PortableExportPlan,
+    filtered_plan: PortableExportPlan,
+    approved_paper_uids: Iterable[str],
+) -> frozenset[str]:
+    """Narrow an immutable approval only through declared exclusions."""
+
+    approved = frozenset(
+        str(value).strip() for value in approved_paper_uids if str(value).strip()
+    )
+    original = frozenset(str(row["paper_uid"]) for row in original_plan.papers)
+    filtered = frozenset(str(row["paper_uid"]) for row in filtered_plan.papers)
+    if not approved or approved not in {original, filtered}:
+        raise OfficialPackageV2ReleaseError(
+            "release_paper_scope", "批准论文清单与稳定导出计划不一致"
+        )
+    return filtered
 
 
 def _sha256_file(path: Path) -> tuple[str, int]:
@@ -126,6 +234,7 @@ def plan_official_package_v2_inputs(
     approved_paper_uids: Iterable[str],
     paper_pdf_overrides: Mapping[str, Path | str] | None = None,
     export_plan: PortableExportPlan | None = None,
+    excluded_dois: Mapping[str, str] | None = None,
 ) -> OfficialPackageV2Inputs:
     """Resolve complete PDF and visual payloads from one immutable v12 snapshot.
 
@@ -135,13 +244,15 @@ def plan_official_package_v2_inputs(
     """
 
     source = Path(snapshot)
-    plan = export_plan or plan_evidence_v12_export(source)
-    approved = frozenset(str(value).strip() for value in approved_paper_uids if str(value).strip())
-    planned_papers = frozenset(str(row["paper_uid"]) for row in plan.papers)
-    if not approved or approved != planned_papers:
-        raise OfficialPackageV2ReleaseError(
-            "release_paper_scope", "批准论文清单与稳定导出计划不一致"
-        )
+    original_plan = export_plan or plan_evidence_v12_export(source)
+    plan, exclusion_declarations = apply_official_package_v2_exclusions(
+        original_plan, excluded_dois
+    )
+    approved = normalize_official_package_v2_approved_scope(
+        original_plan=original_plan,
+        filtered_plan=plan,
+        approved_paper_uids=approved_paper_uids,
+    )
     overrides = {
         str(paper_uid): Path(path).expanduser()
         for paper_uid, path in dict(paper_pdf_overrides or {}).items()
@@ -246,7 +357,7 @@ def plan_official_package_v2_inputs(
 
     if set(pdf_paths) != set(approved):
         raise OfficialPackageV2ReleaseError(
-            "release_pdf_coverage", "官方资料包未完整覆盖 60 篇论文 PDF"
+            "release_pdf_coverage", "官方资料包未完整覆盖已批准论文的 PDF"
         )
     if set(visual_paths) != set(visual_entity_uids):
         raise OfficialPackageV2ReleaseError(
@@ -262,11 +373,15 @@ def plan_official_package_v2_inputs(
         pdf_override_count=len(overrides),
         visual_total_bytes=sum(visual_sizes.values()),
         visual_review_counts=dict(review_counts),
+        excluded_papers=exclusion_declarations,
     )
 
 
 __all__ = [
     "OfficialPackageV2Inputs",
     "OfficialPackageV2ReleaseError",
+    "apply_official_package_v2_exclusions",
+    "load_official_package_v2_exclusions",
+    "normalize_official_package_v2_approved_scope",
     "plan_official_package_v2_inputs",
 ]

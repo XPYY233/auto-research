@@ -18,6 +18,7 @@ REQUIRED_WEB_ASSETS = frozenset(
         "src/auto_research/evidence/web/app.css",
         "src/auto_research/evidence/web/workbench.css",
         "src/auto_research/evidence/web/ai_consent.js",
+        "src/auto_research/evidence/web/document_tab_store.js",
         "src/auto_research/evidence/web/fusion_review.js",
     }
 )

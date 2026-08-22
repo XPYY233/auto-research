@@ -18,7 +18,11 @@ from .visual_evidence import list_visual_assets
 
 ENTITY_TYPES = {"item", "table", "figure", "finding"}
 QUALITY_PASSED = {"dual_pass", "third_pass", "manual_approved"}
-QUALITY_FILTERS = {"all", "quality_passed", "dual_pass", "third_pass", "manual_approved", "legacy_stable"}
+PUBLISHED_EVIDENCE = {*QUALITY_PASSED, "legacy_stable"}
+QUALITY_FILTERS = {
+    "all", "published", "quality_passed", "dual_pass", "third_pass",
+    "manual_approved", "legacy_stable",
+}
 INDEX_FORMAT_VERSION = "3"
 
 # This is intentionally a small query lexicon, not a second scientific data
@@ -245,6 +249,22 @@ class EvidenceSearchIndex:
             evidence = _join(row, ("source_context", "caption", "label"))
             metadata = _join(row, ("tags", "article_title", "doi", "first_author", "corresponding_author"))
             source_kind = entity_type
+            visual_status = str(row.get("review_status") or "draft")
+            review_action = str(row.get("visual_review_action") or "")
+            candidate_status = str(row.get("quality_gate_status") or "")
+            if review_action in {"confirmation", "correction"} or visual_status == "verified":
+                publish_status = "manual_approved"
+            elif row.get("quality_is_new_asset") is True:
+                publish_status = candidate_status or "manual_review"
+            else:
+                # Existing visual assets predate the adversarial visual gate.
+                # Keep that audited compatibility set searchable; only newly
+                # extracted assets are quarantined until their gate passes.
+                publish_status = candidate_status or "legacy_stable"
+            row = {
+                **row,
+                "quality_gate_status": publish_status,
+            }
         aliases = _alias_text(" ".join((meaning, context, evidence, metadata)))
         metadata = f"{metadata} {aliases}".strip()
         payload = json.dumps(row, ensure_ascii=False, sort_keys=True, default=str)
@@ -434,7 +454,10 @@ class EvidenceSearchIndex:
             params.extend(selected_papers)
         if quality_filter not in QUALITY_FILTERS:
             raise ValueError(f"unsupported quality filter: {quality_filter}")
-        if quality_filter == "quality_passed":
+        if quality_filter == "published":
+            clauses.append(f"d.quality_gate_status IN ({','.join('?' for _ in PUBLISHED_EVIDENCE)})")
+            params.extend(sorted(PUBLISHED_EVIDENCE))
+        elif quality_filter == "quality_passed":
             clauses.append(f"d.quality_gate_status IN ({','.join('?' for _ in QUALITY_PASSED)})")
             params.extend(sorted(QUALITY_PASSED))
         elif quality_filter != "all":

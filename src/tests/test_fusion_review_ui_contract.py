@@ -103,6 +103,55 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertIn(".fusion-secondary-editor", self.css)
         self.assertIn(".fusion-source-highlight", self.css)
 
+    def test_preview_tabs_pin_and_secondary_group_renders_complete_documents(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert'),memory=new Map();
+globalThis.localStorage={{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value)}};
+globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));
+const Store=globalThis.AutoResearchDocumentTabs.DocumentTabStore,store=new Store();
+const first=store.open({{tabId:'paper:paperId=1',kind:'paper',ownerView:'paper',title:'论文一',identity:{{paperId:'1'}},payload:{{body:'never persist'}}}},{{preview:true}});
+const second=store.open({{tabId:'paper:paperId=2',kind:'paper',ownerView:'paper',title:'论文二',identity:{{paperId:'2'}}}},{{preview:true}});
+assert.equal(store.snapshot().tabs.length,1);assert.equal(store.activeTab().tabId,second.tabId);assert.equal(store.activeTab().preview,true);
+store.pin(second.tabId);store.open({{tabId:'paper:paperId=3',kind:'paper',ownerView:'paper',title:'论文三',identity:{{paperId:'3'}}}},{{preview:true}});
+assert.equal(store.snapshot().tabs.length,2);assert.equal(store.snapshot().tabs.find(tab=>tab.tabId===second.tabId).pinned,true);
+assert(store.split(second.tabId));assert(store.setNarrow(true));assert.equal(store.snapshot().groups.length,2);assert.equal(store.snapshot().tabs.find(tab=>tab.tabId===second.tabId).groupId,'secondary');
+const persisted=memory.get('auto-research-workspace-layout-v1');assert(persisted.includes('workspace-layout-v2'));assert(!persisted.includes('never persist'));assert(!persisted.includes('payload'));
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
+const evidence={{type:'finding',title:'硬度提高',findingText:'论文报告硬度显著提高。',excerpt:'原文片段',sourceScope:'workspace',itemId:7,paperId:2,page:4,articleTitle:'论文二',quantities:[],variables:{{}},materials:[],tags:[]}};
+const paperHTML=api.secondaryDocumentHTML({{tabId:'paper:paperId=2',kind:'paper',title:'论文二',payload:{{paper:{{id:2,title:'论文二',firstAuthor:'作者甲',doi:'10.1/demo'}},evidence:[evidence],evidenceCount:1}}}});assert(paperHTML.includes('论文二'));assert(paperHTML.includes('硬度提高'));assert(paperHTML.includes('data-secondary-paper-evidence'));
+const evidenceHTML=api.secondaryDocumentHTML({{tabId:'evidence:x',kind:'evidence',title:'硬度提高',payload:{{row:evidence,status:'ready'}}}});assert(evidenceHTML.includes('论文报告硬度显著提高'));assert(evidenceHTML.includes('原文片段'));assert(evidenceHTML.includes('查看原文'));
+const pdfHTML=api.secondaryDocumentHTML({{tabId:'pdf:x',kind:'pdf',title:'论文二 PDF',payload:{{url:'/api/papers/2/pdf',returnTabId:'paper:paperId=2'}}}});assert(pdfHTML.includes('<iframe'));assert(pdfHTML.includes('返回来源标签'));
+const tableHTML=api.secondaryDocumentHTML({{tabId:'personal-table:x',kind:'personal-table',title:'实验表',payload:{{row:{{title:'实验表'}},page:{{title:'实验表',sheetName:'Sheet1',page:2,pageSize:50,total:80,hasNext:false,columns:[{{name:'硬度',meaning:'纳米硬度',unit:'GPa'}}],rows:[{{硬度:'4.1'}}]}}}}}});assert(tableHTML.includes('4.1'));assert(tableHTML.includes('上一页'));assert(tableHTML.includes('第 2 页'));
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for marker in (
+            'event.detail>1', 'addEventListener("dblclick"',
+            'pinDocumentIdentity("paper"', 'pinDocumentTab();',
+            'function openSecondaryEvidence(', 'function loadSecondaryPersonalTablePage(',
+            'state.searchOffset=offset+raw.length', 'pageNumber=append?state.searchPage+1:1',
+            'payload.cause_code||payload.code', 'error.stage=cleanText(detail?.stage',
+            'error.nextAction=cleanText(detail?.next_action',
+        ):
+            self.assertIn(marker, self.runtime)
+        self.assertNotIn('button.addEventListener("dblclick",()=>selectPaper', self.runtime)
+
+    def test_workspace_search_pagination_uses_server_offset_not_projected_rows(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert');
+class Classes{{toggle(){{}}add(){{}}remove(){{}}}}
+class El{{constructor(){{this.hidden=false;this.disabled=false;this.value='dose';this.textContent='';this.innerHTML='';this.dataset={{}};this.classList=new Classes();this.attrs={{}};}}setAttribute(k,v){{this.attrs[k]=String(v)}}removeAttribute(k){{delete this.attrs[k]}}addEventListener(){{}}insertAdjacentHTML(_where,html){{this.innerHTML+=html}}focus(){{}}querySelector(){{return null}}querySelectorAll(){{return []}}}}
+const ids={{}};for(const id of ['fusion-search-query','fusion-search-results','fusion-primary-tab-label','fusion-run-precise-search','fusion-open-librarian','fusion-inspector-title','fusion-inspector-body','fusion-evidence-ai','fusion-evidence-ai-reason','fusion-evidence-ai-question','fusion-evidence-ai-output','fusion-search-export-note','fusion-status-operation','fusion-count-item','fusion-count-finding','fusion-count-table','fusion-count-figure'])ids['#'+id]=new El();
+const panels=[{{dataset:{{searchModePanel:'precise'}},hidden:false}},{{dataset:{{searchModePanel:'librarian'}},hidden:true}}];
+globalThis.document={{readyState:'loading',querySelector:selector=>ids[selector]||null,querySelectorAll:selector=>selector==='[data-search-mode-panel]'?panels:[],addEventListener:()=>{{}}}};globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+const urls=[];globalThis.fetch=async url=>{{url=String(url);urls.push(url);const offset=Number(new URL(url,'http://local').searchParams.get('offset')||0),rows=offset===0?[{{entity_type:'item',id:1,item_id:1,paper_id:1,meaning:'硬度'}},{{entity_type:'unsupported',id:2}}]:[{{entity_type:'finding',id:3,item_id:3,paper_id:1,finding_text:'结论'}}];return{{ok:true,headers:{{get:()=>null}},json:async()=>({{rows,total:3}})}};}};
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;api.state.view='search';api.state.searchSource='workspace';
+(async()=>{{await api.runPreciseSearch();assert.equal(api.state.searchResults.length,1);assert.equal(api.state.searchOffset,2);assert.equal(api.state.searchHasMore,true);await api.runPreciseSearch({{append:true}});assert.equal(api.state.searchResults.length,2);assert.equal(api.state.searchOffset,3);assert.equal(api.state.searchHasMore,false);assert(urls[1].includes('offset=2'));}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_tabs_async_and_inspector_states_are_partitioned(self) -> None:
         for marker in (
             "inspectorState:{paper:null,search:null,personal:null,package:null,settings:null}",
@@ -209,10 +258,10 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
             "globalThis.AutoResearchAIConsent.ensure", "ai_consent_gate_unavailable",
             "updateTrustedProviders", "prepared.provider_id!==context.provider_id",
             "prepared.disclosure_version!==disclosureVersion", "librarian-ai-stage-v1",
-            "literature-extraction-stage-summary-v1", "literature-extraction-commit-result-v1",
+            "literature-extraction-stage-summary-v1", "literature-extraction-commit-result-v2",
             "librarian:8", "selected_evidence_chat:2", "calls>AI_CALL_LIMITS[scope]",
             "本阶段最多调用 ${calls} 次", "harness_dependency_mismatch",
-            "AI 执行环境版本不兼容", "官方资料库尚未启用",
+            "AI 执行环境版本不兼容", "文献证据源当前不可用",
         ):
             self.assertIn(marker, self.runtime)
         self.assertNotIn("consent:true", self.runtime)
@@ -376,7 +425,7 @@ assert.equal(api.evidenceExportURL({{sourceScope:'private',type:'table',sourceId
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_selected_evidence_ai_requires_stable_official_identity(self) -> None:
+    def test_selected_evidence_ai_requires_stable_literature_identity(self) -> None:
         for element_id in (
             "fusion-evidence-ai-question", "fusion-evidence-ai",
             "fusion-evidence-ai-reason", "fusion-evidence-ai-output",
@@ -387,7 +436,8 @@ assert.equal(api.evidenceExportURL({{sourceScope:'private',type:'table',sourceId
             'executePrepared("selected_evidence_chat"',
             'source_scope:identity.sourceScope', 'source_id:identity.sourceId',
             'entity_type:identity.entityType', 'entity_uid:identity.entityUid',
-            'row.sourceScope!=="official"', '该来源暂不支持 Harness 解释',
+            '!["official","workspace"].includes(row.sourceScope)',
+            '该来源暂不支持 Harness 解释',
         ):
             self.assertIn(marker, self.runtime)
         self.assertNotIn('entity_id:identity.entityId', self.runtime)
@@ -402,7 +452,7 @@ assert.deepEqual(api.selectedEvidenceAIIdentity(),{{key:'official:official-main:
 api.state.selectedEvidence={{type:'figure',sourceScope:'official',sourceId:'official-main',entityUid:'figure:23'}};
 assert.equal(api.selectedEvidenceAIIdentity().entityUid,'figure:23');
 api.state.selectedEvidence={{type:'item',sourceScope:'workspace',itemId:17}};
-assert.equal(api.selectedEvidenceAIIdentity(),null);
+assert.deepEqual(api.selectedEvidenceAIIdentity(),{{key:'workspace:workspace:item:17',sourceScope:'workspace',sourceId:'workspace',entityType:'item',entityUid:'17'}});
 api.state.selectedEvidence={{type:'item',sourceScope:'private',itemId:17}};
 assert.equal(api.selectedEvidenceAIIdentity(),null);
 api.state.selectedEvidence={{type:'item',sourceScope:'official',sourceId:'official-main',entityUid:''}};
@@ -491,6 +541,58 @@ api.renderLibrarianFinal({{librarian_core_version:'librarian-v3',answer:'完整�
         self.assertNotIn("raw?.file_id", self.runtime)
         for forbidden in ("体验版", "合成示例", "测试连接", "能力测试", "后续版本", "功能恢复"):
             self.assertNotIn(forbidden, self.index + self.runtime)
+
+    def test_review_queue_uses_one_central_tab_and_no_token_dom(self) -> None:
+        for element_id in ("fusion-open-review-queue", "fusion-review-queue-count"):
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        for marker in (
+            'reviewQueue:"/api/desktop/review-queue"',
+            'reviewActions:"/api/desktop/review-queue/actions"',
+            'schema_version!=="review-queue-v1"',
+            'schema_version!=="review-result-v1"',
+            'data-review-action="approve"', 'data-review-action="reject"',
+            'data-review-action="correct"', 'data-review-retry',
+            'saved_index_pending', 'retry_same_request',
+            'review_token:item.reviewToken', 'body:JSON.stringify(body)',
+            'closeReviewDetail', 'review-candidate',
+        ):
+            self.assertIn(marker, self.runtime + self.index)
+        self.assertNotIn('data-review-token', self.runtime + self.index)
+        self.assertNotIn('localStorage.setItem("review', self.runtime)
+        self.assertNotIn('localStorage.setItem("candidate', self.runtime)
+
+    def test_review_queue_public_projection_and_candidate_runtime(self) -> None:
+        program = f"""
+globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
+const api=globalThis.AutoResearchFusion,assert=require('assert');
+const token='rq_'+('A'.repeat(40)),paperUid='paper_0123456789abcdef0123456789abcdef';
+const dto={{schema_version:'review-queue-v1',source_scope:'workspace',source_id:'workspace',paper_uid:null,total:1,items:[{{review_token:token,expires_at:1999999999,source_scope:'workspace',source_id:'workspace',paper_uid:paperUid,paper:{{title:'W-Ta 论文',doi:'10.1/example'}},entity_type:'item',candidate:{{value_text:'4.1',unit:'GPa',source_page:7,source_excerpt:'原文短摘录',paper_id:99,image_path:'/private/a.png',reviewer:'secret'}},alternate:{{value_text:'4.0',unit:'GPa',source_page:7,source_excerpt:'备选短摘录'}},conflict_reason:'数值不一致',scores:{{agreement:.5,factuality:.8,completeness:.7,evidence:.9,overall:.72}},allowed_operations:{{approve:{{available:true}},reject:{{available:true}},correct:{{available:true}},merge:{{available:false}},split:{{available:false}}}}}}]}};
+const projected=api.publicReviewQueue(dto);assert(projected);assert.equal(projected.total,1);const item=projected.items[0];assert.equal(item.paperUid,paperUid);assert.equal(item.candidate.value_text,'4.1');assert.equal(item.candidate.source_page,7);assert.equal(item.candidate.paper_id,undefined);assert.equal(item.candidate.image_path,undefined);assert.equal(item.candidate.reviewer,undefined);
+const html=api.reviewCandidateHTML(item);for(const text of ['主候选','备选','冲突原因','五项评分','原文页','原文短摘录','批准','不采用','确认纠正'])assert(html.includes(text),text);assert(!html.includes(token));assert(!html.includes('/private/a.png'));assert(!html.includes('secret'));
+assert.equal(api.publicReviewQueue({{...dto,total:2}}),null);assert.equal(api.publicReviewQueue({{...dto,items:[{{...dto.items[0],entity_type:'unknown'}}]}}),null);assert.equal(api.publicReviewQueue({{...dto,items:[{{...dto.items[0],paper_uid:'paper_bad'}}]}}),null);
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_review_queue_safety_contract_is_bounded(self) -> None:
+        for field in (
+            "value_text", "finding_text", "caption", "source_page", "source_excerpt",
+            "agreement", "factuality", "completeness", "evidence", "overall",
+        ):
+            self.assertIn(field, self.runtime)
+        for marker in (
+            "state.reviewQueue.pending.has(tabId)",
+            "state.reviewQueue.request", "state.searchRequest+=1",
+            "review_token_expired", "review_candidate_changed",
+            'error?.nextAction==="refresh_queue"',
+            'error?.stage?` · 阶段',
+            "数据已保存，索引待恢复。",
+        ):
+            self.assertIn(marker, self.runtime)
+        for forbidden in ("paper_id", "candidate_id", "image_path", "pdf_path", "reviewer"):
+            self.assertNotIn(f'data-review-{forbidden}', self.runtime + self.index)
 
     def test_fusion_layout_accessibility_and_responsive_contract(self) -> None:
         for marker in (

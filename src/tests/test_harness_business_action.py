@@ -14,6 +14,7 @@ from auto_research.ai.harness_contract import (
 from auto_research.ai.harness_official_sdk import safe_composition_metadata
 from auto_research.ai.prepared_actions import PreparedOutbound
 from auto_research.evidence.harness_business_action import harness_business_ports
+from auto_research.evidence.harness_federated_backend import sanitize_workspace_documents
 
 
 def document(uid="item-1", kind="item", **updates):
@@ -61,6 +62,35 @@ class Session:
 
     def get(self, **identity):
         return next(dict(row) for row in self.documents if row["entity_uid"] == identity["entity_uid"])
+
+
+class Workspace:
+    def __init__(self):
+        self.fingerprint = "w" * 64
+        self.documents = [
+            document(
+                "31",
+                source_scope="workspace",
+                source_id="workspace",
+                entity_uid="31",
+                paper_uid="workspace-paper-1",
+                bundle_uid="workspace-paper-1",
+                article_title="Published local irradiation study",
+            )
+        ]
+
+    def binding(self):
+        return "workspace", self.fingerprint
+
+    def candidates(self, *, query, limit=64):
+        return tuple(dict(row) for row in self.documents[:limit])
+
+    def get(self, *, entity_type, entity_uid):
+        return next(
+            dict(row)
+            for row in self.documents
+            if row["entity_type"] == entity_type and row["entity_uid"] == entity_uid
+        )
 
 
 class RawClient:
@@ -180,6 +210,31 @@ def action(draft, scope):
 
 
 class HarnessBusinessActionTests(unittest.TestCase):
+    def test_workspace_sanitizer_replaces_internal_ids_with_stable_public_identity(self):
+        rows = sanitize_workspace_documents(
+            (
+                {
+                    "entity_type": "item",
+                    "entity_id": 31,
+                    "paper_id": 7,
+                    "stable_key": "published-stable-key",
+                    "article_title": "Published local irradiation study",
+                    "doi": "10.1000/workspace",
+                    "year": 2026,
+                    "first_author": "A Researcher",
+                    "meaning": "辐照硬度",
+                    "value_text": "4.2",
+                    "unit": "GPa",
+                    "source_page": 5,
+                },
+            )
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertRegex(rows[0]["paper_uid"], r"^paper_[0-9a-f]{32}$")
+        self.assertRegex(rows[0]["entity_uid"], r"^entity_item_[0-9a-f]{32}$")
+        self.assertNotEqual(rows[0]["entity_uid"], "31")
+        self.assertNotIn("paper_id", rows[0])
+
     def test_librarian_prepares_official_snapshot_and_projects_v3(self):
         session = Session()
         runtime = Runtime()
@@ -192,7 +247,7 @@ class HarnessBusinessActionTests(unittest.TestCase):
             }
         )
         self.assertEqual((draft.max_calls, draft.max_tokens), (8, 128_000))
-        self.assertEqual(draft.content_units[0].kind, "harness_official")
+        self.assertEqual(draft.content_units[0].kind, "harness_literature")
         prepared = action(draft, "librarian")
         raw = RawClient()
         client = HarnessBudgetedBusinessAIClient(client=raw, action=prepared)
@@ -204,6 +259,41 @@ class HarnessBusinessActionTests(unittest.TestCase):
         self.assertEqual({row["source_scope"] for row in result["results"]}, {"official"})
         self.assertTrue(result["recommended_articles"])
         self.assertNotIn("path", str(result).casefold())
+
+    def test_librarian_combines_official_and_published_workspace_only(self):
+        workspace = Workspace()
+        ports = harness_business_ports(
+            session=Session(), runtime=Runtime(), workspace=workspace
+        )
+        draft = ports.librarian.assembler.assemble(
+            {"question": "硬度", "conversation_id": "c", "history": []}
+        )
+        self.assertEqual(
+            {row["source_scope"] for row in draft.outbound["documents"]},
+            {"official", "workspace"},
+        )
+        self.assertEqual(
+            set(draft.outbound["source_binding"]), {"official", "workspace"}
+        )
+        self.assertNotIn("private", str(draft.outbound).casefold())
+
+    def test_selected_workspace_evidence_uses_same_paper_neighbors(self):
+        workspace = Workspace()
+        ports = harness_business_ports(
+            session=Session(), runtime=Runtime(selected=True), workspace=workspace
+        )
+        draft = ports.selected_evidence_chat.assembler.assemble(
+            {
+                "source_scope": "workspace",
+                "source_id": "workspace",
+                "entity_type": "item",
+                "entity_uid": "31",
+                "question": "这条数据代表什么？",
+                "history": [],
+            }
+        )
+        self.assertEqual(draft.outbound["current_entity"]["source_scope"], "workspace")
+        self.assertEqual(draft.outbound["current_entity"]["entity_uid"], "31")
 
     def test_selected_uses_stable_official_identity_and_existing_top_level_fields(self):
         session = Session()

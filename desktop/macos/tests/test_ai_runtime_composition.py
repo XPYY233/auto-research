@@ -166,7 +166,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 set(services.snapshot_authority._authorities),
                 {
                     "personal_table",
-                    "harness_official",
+                    "harness_literature",
                     "literature_extraction_stage",
                 },
             )

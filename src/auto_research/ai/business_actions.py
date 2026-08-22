@@ -57,7 +57,14 @@ _ERRORS = {
 
 
 class BusinessActionError(RuntimeError):
-    def __init__(self, code: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        cause_code: str = "",
+        stage: str = "",
+        next_action: str = "",
+    ) -> None:
         if code not in _ERRORS:
             raise ValueError("unsupported AI business action error code")
         message, retryable = _ERRORS[code]
@@ -65,14 +72,24 @@ class BusinessActionError(RuntimeError):
         self.code = code
         self.safe_message = message
         self.retryable = retryable
+        self.cause_code = cause_code if re.fullmatch(r"[a-z][a-z0-9_]{2,95}", cause_code) else ""
+        self.stage = stage if re.fullmatch(r"[a-z][a-z0-9_]{2,63}", stage) else ""
+        self.next_action = next_action.strip()[:300] if isinstance(next_action, str) else ""
 
     def public_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "schema_version": BUSINESS_ACTION_ERROR_SCHEMA_VERSION,
             "code": self.code,
             "message": self.safe_message,
             "retryable": self.retryable,
         }
+        if self.cause_code:
+            result["cause_code"] = self.cause_code
+        if self.stage:
+            result["stage"] = self.stage
+        if self.next_action:
+            result["next_action"] = self.next_action
+        return result
 
 
 def _canonical_call_value(value: object) -> object:

@@ -8,6 +8,9 @@ from pathlib import Path
 
 from auto_research.product.official_package_v2_release import (
     OfficialPackageV2ReleaseError,
+    apply_official_package_v2_exclusions,
+    load_official_package_v2_exclusions,
+    normalize_official_package_v2_approved_scope,
     plan_official_package_v2_inputs,
 )
 from auto_research.product.portable_repository import (
@@ -18,6 +21,67 @@ from auto_research.product.portable_repository import (
 
 
 class OfficialPackageV2ReleaseTests(unittest.TestCase):
+    def test_repository_exclusion_declaration_is_strict_and_path_free(self) -> None:
+        config = Path(__file__).resolve().parents[2] / "config" / "official-package-v2-exclusions.json"
+        self.assertEqual(
+            load_official_package_v2_exclusions(config),
+            {"10.2172/6065200": "source_pdf_unavailable"},
+        )
+
+    def test_declared_exclusion_filters_distribution_only(self) -> None:
+        kept_uid = "paper_" + "1" * 32
+        excluded_uid = "paper_" + "2" * 32
+        plan = PortableExportPlan(
+            papers=(
+                {"paper_uid": kept_uid, "doi": "10.1/kept"},
+                {"paper_uid": excluded_uid, "doi": "10.2172/6065200"},
+            ),
+            entities=(
+                {"paper_uid": kept_uid, "entity_uid": "e1"},
+                {"paper_uid": excluded_uid, "entity_uid": "e2"},
+            ),
+        )
+        filtered, declarations = apply_official_package_v2_exclusions(
+            plan, {"10.2172/6065200": "source_pdf_unavailable"}
+        )
+        self.assertEqual([row["paper_uid"] for row in filtered.papers], [kept_uid])
+        self.assertEqual([row["entity_uid"] for row in filtered.entities], ["e1"])
+        self.assertEqual(
+            declarations,
+            ({"doi": "10.2172/6065200", "reason": "source_pdf_unavailable"},),
+        )
+        self.assertEqual(len(plan.papers), 2)
+
+    def test_historical_approval_is_narrowed_only_by_declared_exclusion(self) -> None:
+        kept_uid = "paper_" + "1" * 32
+        excluded_uid = "paper_" + "2" * 32
+        original = PortableExportPlan(
+            papers=(
+                {"paper_uid": kept_uid, "doi": "10.1/kept"},
+                {"paper_uid": excluded_uid, "doi": "10.2172/6065200"},
+            ),
+            entities=(),
+        )
+        filtered, _ = apply_official_package_v2_exclusions(
+            original, {"10.2172/6065200": "source_pdf_unavailable"}
+        )
+        for approved in ({kept_uid, excluded_uid}, {kept_uid}):
+            self.assertEqual(
+                normalize_official_package_v2_approved_scope(
+                    original_plan=original,
+                    filtered_plan=filtered,
+                    approved_paper_uids=approved,
+                ),
+                frozenset({kept_uid}),
+            )
+        with self.assertRaises(OfficialPackageV2ReleaseError) as raised:
+            normalize_official_package_v2_approved_scope(
+                original_plan=original,
+                filtered_plan=filtered,
+                approved_paper_uids={kept_uid, "paper_" + "3" * 32},
+            )
+        self.assertEqual(raised.exception.code, "release_paper_scope")
+
     def _fixture(self, root: Path) -> tuple[Path, PortableExportPlan, str, Path]:
         pdf = root / "paper.pdf"
         pdf.write_bytes(b"%PDF-1.7\nsynthetic\n%%EOF\n")

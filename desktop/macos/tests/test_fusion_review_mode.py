@@ -182,6 +182,11 @@ class FusionReviewModeTests(unittest.TestCase):
                 with opener.open(f"{base}/static/ai_consent.js", timeout=5) as response:
                     self.assertEqual(response.status, 200)
                     self.assertIn(b"AutoResearchAIConsent", response.read())
+                with opener.open(
+                    f"{base}/static/document_tab_store.js", timeout=5
+                ) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertIn(b"AutoResearchDocumentTabs", response.read())
             finally:
                 server.shutdown()
                 server.server_close()

@@ -250,6 +250,66 @@ class InternalPreviewBuilderTests(unittest.TestCase):
             self.assertEqual(call["package_version"], "0.2.0-preview.1")
             self.assertNotIn("/private/tmp/secret", output.getvalue())
 
+    def test_cli_loads_official_v2_exclusions_without_mutating_source_scope(self) -> None:
+        report = InternalPreviewBuildReport(
+            package_id="auto-research-internal-evidence",
+            package_version="1.1.0",
+            signer_key_id="test-key",
+            package_path="auto-research-internal-evidence-1.1.0.aresearch",
+            package_size_bytes=1,
+            package_sha256="a" * 64,
+            manifest_sha256="b" * 64,
+            repository_sha256="c" * 64,
+            content_fingerprint="d" * 64,
+            source_snapshot_sha256="e" * 64,
+            paper_count=59,
+            entity_count=0,
+            item_count=0,
+            finding_count=0,
+            table_count=0,
+            figure_count=0,
+            dropped_by_reason={},
+            verified_import_seconds=0.1,
+        )
+        with tempfile.TemporaryDirectory(prefix="preview-cli-exclusions-") as temporary:
+            root = Path(temporary)
+            approved = root / "approved.txt"
+            approved.write_text(SYNTHETIC_UID + "\n", encoding="utf-8")
+            exclusions = root / "exclusions.json"
+            exclusions.write_text(
+                '{"schema_version":"official-package-v2-exclusions-v1",'
+                '"excluded_papers":[{"doi":"10.2172/6065200",'
+                '"reason":"source_pdf_unavailable"}]}\n',
+                encoding="utf-8",
+            )
+            with patch(
+                "auto_research.product.internal_preview_builder.build_internal_preview_package",
+                return_value=report,
+            ) as builder, redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(
+                        [
+                            "--source-snapshot",
+                            "synthetic.sqlite",
+                            "--output-directory",
+                            "published",
+                            "--signing-key",
+                            "preview.key",
+                            "--expected-source-sha256",
+                            "a" * 64,
+                            "--approved-paper-uids-file",
+                            str(approved),
+                            "--official-package-v2-exclusions",
+                            str(exclusions),
+                        ]
+                    ),
+                    0,
+                )
+            self.assertEqual(
+                builder.call_args.kwargs["excluded_dois"],
+                {"10.2172/6065200": "source_pdf_unavailable"},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

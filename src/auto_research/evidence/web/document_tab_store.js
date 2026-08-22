@@ -1,18 +1,19 @@
 (() => {
   "use strict";
 
-  const SCHEMA_VERSION = "workspace-layout-v1";
+  const SCHEMA_VERSION = "workspace-layout-v2";
+  const LEGACY_SCHEMA_VERSION = "workspace-layout-v1";
   const STORAGE_KEY = "auto-research-workspace-layout-v1";
   const MAX_GROUPS = 2;
   const MAX_TABS = 40;
-  const KINDS = new Set(["paper", "evidence", "pdf", "personal-table", "package-job", "librarian"]);
+  const KINDS = new Set(["paper", "evidence", "pdf", "personal-table", "package-job", "librarian", "review-candidate"]);
   const VIEWS = new Set(["paper", "search", "personal", "package"]);
   const clean = (value, limit = 300) => String(value ?? "").trim().slice(0, limit);
 
   function publicIdentity(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const result = {};
-    for (const key of ["paperId", "sourceScope", "sourceId", "entityType", "entityUid", "jobId", "conversationId"]) {
+    for (const key of ["paperId", "paperUid", "sourceScope", "sourceId", "entityType", "entityUid", "jobId", "conversationId", "reviewOrdinal"]) {
       const text = clean(value[key], 500);
       if (text) result[key] = text;
     }
@@ -24,7 +25,8 @@
     if (!KINDS.has(kind) || !VIEWS.has(ownerView) || !tabId || !tabId.startsWith(`${kind}:`)) return null;
     const identity = publicIdentity(raw.identity);
     if (!identity) return null;
-    const tab = { tabId, kind, ownerView, title: clean(raw.title, 160) || "未命名标签", identity, groupId: raw.groupId === "secondary" ? "secondary" : "primary" };
+    const pinned = persisted && raw.pinned === undefined ? true : raw.pinned !== false;
+    const tab = { tabId, kind, ownerView, title: clean(raw.title, 160) || "未命名标签", identity, groupId: raw.groupId === "secondary" ? "secondary" : "primary", pinned, preview: !pinned };
     if (!persisted && raw.payload !== undefined) tab.payload = raw.payload;
     return tab;
   }
@@ -46,7 +48,7 @@
     restore() {
       let raw = null;
       try { raw = JSON.parse(this.storage?.getItem?.(this.storageKey) || "null"); } catch (_error) { raw = null; }
-      if (raw?.schema_version !== SCHEMA_VERSION || !Array.isArray(raw.tabs) || !Array.isArray(raw.groups)) return false;
+      if (![SCHEMA_VERSION, LEGACY_SCHEMA_VERSION].includes(raw?.schema_version) || !Array.isArray(raw.tabs) || !Array.isArray(raw.groups)) return false;
       const tabs = raw.tabs.slice(0, MAX_TABS).map(value => normalizedTab(value, { persisted: true })).filter(Boolean);
       const ids = new Set();
       this.tabs = tabs.filter(tab => !ids.has(tab.tabId) && ids.add(tab.tabId));
@@ -63,9 +65,10 @@
     persist() {
       const payload = {
         schema_version: SCHEMA_VERSION,
+        migrates_from: LEGACY_SCHEMA_VERSION,
         active_group_id: this.activeGroupId,
         groups: this.groups.map(group => ({ id: group.id, activeTabId: group.activeTabId })),
-        tabs: this.tabs.map(({ tabId, kind, ownerView, title, identity, groupId }) => ({ tabId, kind, ownerView, title, identity, groupId }))
+        tabs: this.tabs.map(({ tabId, kind, ownerView, title, identity, groupId, pinned }) => ({ tabId, kind, ownerView, title, identity, groupId, pinned }))
       };
       try { this.storage?.setItem?.(this.storageKey, JSON.stringify(payload)); } catch (_error) {}
       return payload;
@@ -82,14 +85,34 @@
 
     focusGroup(groupId) { if (!this.group(groupId)) return false; if (this.activeGroupId === groupId) return false; this.activeGroupId = groupId; this.emit(); return true; }
 
-    open(raw, { activate = true, groupId = null } = {}) {
+    open(raw, { activate = true, groupId = null, preview = false, pin = false } = {}) {
       const prior = this.tabs.find(value => value.tabId === raw?.tabId), selectedGroup = groupId || prior?.groupId || this.activeGroupId;
       if (selectedGroup === "secondary" && !this.group("secondary")) this.groups.push({ id: "secondary", activeTabId: null });
-      const tab = normalizedTab({ ...raw, groupId: selectedGroup });
+      const tab = normalizedTab({ ...raw, groupId: selectedGroup, pinned: pin || !preview });
       if (!tab) return null;
       let existing = this.tabs.find(value => value.tabId === tab.tabId);
-      if (existing) Object.assign(existing, tab);
-      else { if (this.tabs.length >= MAX_TABS) this.tabs.shift(); this.tabs.push(tab); existing = tab; }
+      if (existing) {
+        const previousGroupId = existing.groupId;
+        Object.assign(existing, tab, {
+          pinned: existing.pinned || pin || !preview,
+          preview: !(existing.pinned || pin || !preview),
+        });
+        if (previousGroupId !== existing.groupId) {
+          const previousGroup = this.group(previousGroupId);
+          if (previousGroup?.activeTabId === existing.tabId) previousGroup.activeTabId = this.tabs.find(value => value.groupId === previousGroupId && value.tabId !== existing.tabId)?.tabId || null;
+        }
+      } else {
+        if (preview) {
+          const replace = this.tabs.findIndex(value => value.groupId === selectedGroup && value.preview && !value.pinned);
+          if (replace >= 0) {
+            const [removed] = this.tabs.splice(replace, 1), group = this.group(selectedGroup);
+            this.requestGenerations.delete(removed.tabId);
+            if (group?.activeTabId === removed.tabId) group.activeTabId = null;
+          }
+        }
+        if (this.tabs.length >= MAX_TABS) this.tabs.shift();
+        this.tabs.push(tab); existing = tab;
+      }
       if (activate) { this.activeGroupId = existing.groupId; this.group(existing.groupId).activeTabId = existing.tabId; }
       this.emit();
       return { ...existing };
@@ -104,7 +127,13 @@
       const tab = this.tabs.find(value => value.tabId === tabId); if (!tab || !patch || typeof patch !== "object") return null;
       if (patch.title !== undefined) tab.title = clean(patch.title, 160) || tab.title;
       if (patch.payload !== undefined) tab.payload = patch.payload;
+      if (patch.pin === true) { tab.pinned = true; tab.preview = false; }
       this.emit(); return { ...tab };
+    }
+
+    pin(tabId) {
+      const tab = this.tabs.find(value => value.tabId === tabId); if (!tab) return null;
+      tab.pinned = true; tab.preview = false; this.emit(); return { ...tab };
     }
 
     beginRequest(tabId) {
@@ -123,6 +152,7 @@
       const tab = this.tabs.find(value => value.tabId === tabId); if (!tab) return false;
       if (targetGroupId === "secondary" && !this.group("secondary")) this.groups.push({ id: "secondary", activeTabId: null });
       const previous = this.group(tab.groupId); tab.groupId = targetGroupId;
+      tab.pinned = true; tab.preview = false;
       if (previous?.activeTabId === tabId) previous.activeTabId = this.tabs.find(value => value.groupId === previous.id)?.tabId || null;
       this.activeGroupId = targetGroupId; this.group(targetGroupId).activeTabId = tabId;
       if (previous?.id === "secondary" && !this.tabs.some(value => value.groupId === "secondary")) this.groups = this.groups.filter(group => group.id !== "secondary");

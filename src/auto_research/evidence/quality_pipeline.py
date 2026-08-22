@@ -4,10 +4,11 @@ import difflib
 import hashlib
 import json
 import re
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, Callable
 
 from auto_research.ai.deepseek import DeepSeekClient, DeepSeekResponseError, DeepSeekSettings
 from auto_research.paths import DATA_DIR
@@ -17,9 +18,12 @@ from .deepseek_extraction import DeepSeekEvidenceExtractor, _read_pages
 from .extraction_benchmark import _maximum_cardinality_edges, score_pair
 from .six_column import (
     _ai_stable_key,
+    _context_from_ai_measurement,
     add_qualitative_item,
     import_ai_result_to_six_column,
+    is_reportable_value_text,
 )
+from .fact_model import classify_nonreportable_row
 from .visual_evidence import (
     _clean_model_visual_metadata,
     _visual_metadata_messages,
@@ -522,6 +526,197 @@ def _apply_visual_semantics(db: EvidenceDB, candidate: dict[str, Any]) -> int:
     return asset_id
 
 
+def _insert_reviewed_data(
+    conn: sqlite3.Connection,
+    paper: sqlite3.Row,
+    candidate: dict[str, Any],
+    *,
+    review_action: str,
+    reviewer: str,
+    note: str,
+) -> int:
+    measurement = _measurement_payload(candidate)
+    if not is_reportable_value_text(measurement.get("value_raw")):
+        raise ValueError("reviewed measurement is not reportable")
+    stable_key = _ai_stable_key(measurement)
+    row = conn.execute(
+        "SELECT id FROM data_items WHERE paper_id=? AND stable_key=?",
+        (int(paper["id"]), stable_key),
+    ).fetchone()
+    if row is None:
+        cur = conn.execute(
+            "INSERT INTO data_items(paper_id,stable_key,origin_type,created_at) VALUES(?,?,?,?)",
+            (int(paper["id"]), stable_key, "automatic", now()),
+        )
+        item_id = int(cur.lastrowid)
+        version_no = 0
+    else:
+        item_id = int(row["id"])
+        latest = conn.execute(
+            "SELECT COALESCE(MAX(version_no),-1) version_no FROM data_versions WHERE item_id=?",
+            (item_id,),
+        ).fetchone()
+        version_no = int(latest["version_no"]) + 1
+    conn.execute(
+        """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
+           context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,
+           review_action,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            item_id,
+            version_no,
+            str(measurement["value_raw"]),
+            str(measurement["parameter"]),
+            str(measurement.get("unit_raw") or ""),
+            str(paper["title"]),
+            str(paper["doi"] or ""),
+            _context_from_ai_measurement(measurement),
+            int(measurement["page_number"]),
+            str(measurement.get("locator") or ""),
+            str(measurement["excerpt"]),
+            reviewer,
+            note or "人工审核质量候选",
+            review_action,
+            now(),
+        ),
+    )
+    return item_id
+
+
+def _insert_reviewed_finding(
+    conn: sqlite3.Connection,
+    paper: sqlite3.Row,
+    candidate: dict[str, Any],
+    *,
+    review_action: str,
+    reviewer: str,
+    note: str,
+) -> int:
+    fields = {
+        "value_text": str(candidate.get("finding_text") or candidate.get("value_text") or "").strip(),
+        "meaning": str(candidate.get("meaning") or "").strip(),
+        "unit": "",
+        "article_title": str(paper["title"] or "").strip(),
+        "doi": str(paper["doi"] or "").strip(),
+        "context_explanation": str(candidate.get("context_explanation") or "").strip(),
+    }
+    if any(not fields[key] for key in ("value_text", "meaning", "article_title", "context_explanation")):
+        raise ValueError("reviewed finding is incomplete")
+    if is_reportable_value_text(fields["value_text"]):
+        raise ValueError("numeric values belong in reviewed data")
+    if classify_nonreportable_row(fields) != "qualitative_finding":
+        raise ValueError("reviewed finding is not qualitative evidence")
+    stable_key = _finding_stable_key(candidate)
+    row = conn.execute(
+        "SELECT id FROM data_items WHERE paper_id=? AND stable_key=?",
+        (int(paper["id"]), stable_key),
+    ).fetchone()
+    if row is None:
+        cur = conn.execute(
+            "INSERT INTO data_items(paper_id,stable_key,origin_type,created_at) VALUES(?,?,?,?)",
+            (int(paper["id"]), stable_key, "automatic", now()),
+        )
+        item_id = int(cur.lastrowid)
+        version_no = 0
+    else:
+        item_id = int(row["id"])
+        latest = conn.execute(
+            "SELECT COALESCE(MAX(version_no),-1) version_no FROM data_versions WHERE item_id=?",
+            (item_id,),
+        ).fetchone()
+        version_no = int(latest["version_no"]) + 1
+    conn.execute(
+        """INSERT INTO data_versions(item_id,version_no,value_text,meaning,unit,article_title,doi,
+           context_explanation,source_page,source_locator,source_excerpt,editor,edit_note,
+           review_action,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            item_id,
+            version_no,
+            fields["value_text"],
+            fields["meaning"],
+            "",
+            fields["article_title"],
+            fields["doi"],
+            fields["context_explanation"],
+            candidate.get("source_page"),
+            str(candidate.get("source_locator") or ""),
+            str(candidate.get("source_excerpt") or ""),
+            reviewer,
+            note or "人工审核质量候选",
+            review_action,
+            now(),
+        ),
+    )
+    return item_id
+
+
+def _apply_reviewed_visual(
+    conn: sqlite3.Connection,
+    paper_id: int,
+    entity_type: str,
+    candidate: dict[str, Any],
+    *,
+    review_action: str,
+    reviewer: str,
+    note: str,
+) -> int:
+    asset_id = int(candidate["asset_id"])
+    asset = conn.execute(
+        "SELECT id,paper_id,asset_type FROM visual_assets WHERE id=?", (asset_id,)
+    ).fetchone()
+    if asset is None or int(asset["paper_id"]) != paper_id or str(asset["asset_type"]) != entity_type:
+        raise ValueError("reviewed visual identity is invalid")
+    clean = _clean_model_visual_metadata(candidate)
+    conn.execute(
+        """UPDATE visual_assets SET display_name=?,physical_quantities_json=?,variables_json=?,
+           materials_json=?,conditions_text=?,methods_text=?,context_explanation=?,tags_json=?,
+           metadata_source='manual',updated_at=? WHERE id=?""",
+        (
+            clean["display_name"], _json(clean["physical_quantities"]), _json(clean["variables"]),
+            _json(clean["materials"]), clean["conditions_text"], clean["methods_text"],
+            clean["context_explanation"], _json(clean["tags"]), now(), asset_id,
+        ),
+    )
+    row = conn.execute(
+        "SELECT COALESCE(MAX(version_no),0) version_no FROM visual_asset_reviews WHERE asset_id=?",
+        (asset_id,),
+    ).fetchone()
+    conn.execute(
+        """INSERT INTO visual_asset_reviews(asset_id,version_no,review_action,fields_json,
+           reviewer,note,created_at) VALUES(?,?,?,?,?,?,?)""",
+        (
+            asset_id, int(row["version_no"]) + 1, review_action, _json(clean), reviewer,
+            note or "人工审核质量候选", now(),
+        ),
+    )
+    return asset_id
+
+
+def _publish_candidate_in_transaction(
+    conn: sqlite3.Connection,
+    paper: sqlite3.Row,
+    entity_type: str,
+    candidate: dict[str, Any],
+    *,
+    review_action: str,
+    reviewer: str,
+    note: str,
+) -> tuple[int | None, int | None]:
+    if entity_type == "data":
+        return _insert_reviewed_data(
+            conn, paper, candidate, review_action=review_action, reviewer=reviewer, note=note
+        ), None
+    if entity_type == "finding":
+        return _insert_reviewed_finding(
+            conn, paper, candidate, review_action=review_action, reviewer=reviewer, note=note
+        ), None
+    if entity_type in {"table", "figure"}:
+        return None, _apply_reviewed_visual(
+            conn, int(paper["id"]), entity_type, candidate,
+            review_action=review_action, reviewer=reviewer, note=note,
+        )
+    raise ValueError("unsupported quality candidate type")
+
+
 def _publish_candidate(db: EvidenceDB, paper_id: int, entity_type: str,
                        candidate: dict[str, Any]) -> tuple[int | None, int | None]:
     if entity_type == "data":
@@ -647,44 +842,114 @@ def quality_for_assets(db: EvidenceDB, asset_ids: list[int]) -> dict[int, dict[s
     return result
 
 
-def review_quality_candidate(db: EvidenceDB, candidate_id: int, *, decision: str,
-                             fields: dict[str, Any] | None = None,
-                             reviewer: str = "本地研究者", note: str = "") -> dict[str, Any]:
+def quality_candidate_snapshot(row: Any) -> str:
+    """Internal optimistic-lock fingerprint; never include it in renderer DTOs."""
+
+    payload = {
+        key: row[key]
+        for key in (
+            "id", "paper_id", "entity_type", "candidate_json", "alternate_json",
+            "gate_status", "published_item_id", "published_asset_id", "updated_at",
+        )
+    }
+    return hashlib.sha256(_json(payload).encode("utf-8")).hexdigest()
+
+
+def _decoded_candidate_row(row: Any) -> dict[str, Any]:
+    result = dict(row)
+    for source, target in (
+        ("candidate_json", "candidate"),
+        ("alternate_json", "alternate"),
+        ("third_review_json", "third_review"),
+    ):
+        try:
+            result[target] = json.loads(str(result.pop(source) or "null"))
+        except json.JSONDecodeError:
+            result[target] = None
+    return result
+
+
+def review_quality_candidate(
+    db: EvidenceDB,
+    candidate_id: int,
+    *,
+    decision: str,
+    fields: dict[str, Any] | None = None,
+    reviewer: str = "本地研究者",
+    note: str = "",
+    expected_snapshot: str | None = None,
+    _fault_injector: Callable[[], None] | None = None,
+) -> dict[str, Any]:
+    """Review and publish one candidate inside one SQLite write transaction."""
+
     if decision not in {"approve", "reject"}:
         raise ValueError("quality decision must be approve or reject")
+    db.init()
     with db.connect() as conn:
-        row = conn.execute("SELECT * FROM quality_candidates WHERE id=?", (candidate_id,)).fetchone()
-    if not row:
-        raise KeyError(f"quality candidate not found: {candidate_id}")
-    if str(row["gate_status"]) != "manual_review":
-        raise ValueError("only candidates awaiting manual review can be approved or rejected")
-    candidate = json.loads(str(row["candidate_json"]))
-    if fields:
-        for key, value in fields.items():
-            if key in candidate:
-                candidate[key] = value
-    item_id = row["published_item_id"]
-    asset_id = row["published_asset_id"]
-    if decision == "approve":
-        item_id, applied_asset_id = _publish_candidate(
-            db, int(row["paper_id"]), str(row["entity_type"]), candidate
-        )
-        asset_id = applied_asset_id or asset_id
-        gate_status = "manual_approved"
-    else:
-        gate_status = "rejected"
-    with db.connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT * FROM quality_candidates WHERE id=?", (candidate_id,)
+        ).fetchone()
+        if not row:
+            raise KeyError(f"quality candidate not found: {candidate_id}")
+        if str(row["gate_status"]) != "manual_review":
+            raise ValueError("only candidates awaiting manual review can be approved or rejected")
+        if expected_snapshot is not None and not hmac_compare(
+            quality_candidate_snapshot(row), expected_snapshot
+        ):
+            raise ValueError("quality candidate changed")
+        candidate = json.loads(str(row["candidate_json"]))
+        if not isinstance(candidate, dict):
+            raise ValueError("quality candidate payload is invalid")
+        if fields:
+            candidate.update(fields)
+        paper = conn.execute(
+            "SELECT id,title,doi FROM papers WHERE id=?", (int(row["paper_id"]),)
+        ).fetchone()
+        if paper is None:
+            raise KeyError("quality candidate paper not found")
+        item_id = row["published_item_id"]
+        asset_id = row["published_asset_id"]
+        corrected = bool(fields)
+        if decision == "approve":
+            item_id, applied_asset_id = _publish_candidate_in_transaction(
+                conn,
+                paper,
+                str(row["entity_type"]),
+                candidate,
+                review_action="correction" if corrected else "confirmation",
+                reviewer=reviewer,
+                note=note,
+            )
+            asset_id = applied_asset_id or asset_id
+            gate_status = "manual_approved"
+        else:
+            gate_status = "rejected"
+        if _fault_injector is not None:
+            _fault_injector()
+        stamp = now()
         conn.execute(
             """UPDATE quality_candidates SET candidate_json=?,gate_status=?,gate_reason=?,
                published_item_id=?,published_asset_id=?,reviewer=?,review_note=?,updated_at=? WHERE id=?""",
             (
                 _json(candidate), gate_status,
                 "人工审核通过" if decision == "approve" else "人工审核不采用",
-                item_id, asset_id, reviewer, note, now(), candidate_id,
+                item_id, asset_id, reviewer, note, stamp, candidate_id,
             ),
         )
-    return next(item for item in list_quality_candidates(db, int(row["paper_id"]))
-                if int(item["id"]) == candidate_id)
+        result = conn.execute(
+            "SELECT * FROM quality_candidates WHERE id=?", (candidate_id,)
+        ).fetchone()
+    assert result is not None
+    return _decoded_candidate_row(result)
+
+
+def hmac_compare(left: str, right: str) -> bool:
+    """Constant-time comparison kept local to avoid exposing snapshot material."""
+
+    import hmac
+
+    return hmac.compare_digest(str(left), str(right))
 
 
 class AdversarialQualityPipeline:

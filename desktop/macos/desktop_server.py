@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import io
 import json
+import mimetypes
 import secrets
 import threading
 from http import HTTPStatus
@@ -18,6 +19,7 @@ from auto_research.evidence.uploads import UploadService
 from auto_research.evidence.webapp import (
     EvidenceHandler,
     RELEASE_INFO,
+    WEB_DIR,
     is_read_only_mutation,
     require_loopback_host,
 )
@@ -37,6 +39,7 @@ from package_center_api import PackageCenterAPI
 from package_import_service import PackageImportService, PackageImportServiceError
 from personal_import_api import PersonalImportAPI
 from personal_table_api import PersonalTableAPI
+from review_queue_api import ReviewQueueAPI
 from desktop_ai_api import MacDesktopAIAPI
 
 
@@ -78,7 +81,10 @@ FUSION_REVIEW_ALLOWED_GETS = frozenset(
     }
 )
 FUSION_REVIEW_STATIC_ASSETS = frozenset(
-    {"index.html", "app.css", "workbench.css", "ai_consent.js", "fusion_review.js"}
+    {
+        "index.html", "app.css", "workbench.css", "ai_consent.js", "fusion_review.js",
+        "document_tab_store.js",
+    }
 )
 
 
@@ -164,6 +170,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     federated_search_api: FederatedSearchAPI | None = None
     personal_import_api: PersonalImportAPI | None = None
     personal_table_api: PersonalTableAPI | None = None
+    review_queue_api: ReviewQueueAPI | None = None
     desktop_ai_api: MacDesktopAIAPI | None = None
     release_info: Mapping[str, object] = RELEASE_INFO
     experience_mode: str = "standard"
@@ -519,6 +526,24 @@ class DesktopEvidenceHandler(EvidenceHandler):
             self.send_header(CSRF_HEADER, self.security_state.csrf_token)
         super().end_headers()
 
+    def serve_static(self, name: str) -> None:
+        if self.experience_mode != "fusion-review":
+            return super().serve_static(name)
+        safe_name = Path(name).name
+        path = WEB_DIR / safe_name
+        if safe_name != name or safe_name not in FUSION_REVIEW_STATIC_ASSETS or not path.is_file():
+            return self.send_error(HTTPStatus.NOT_FOUND)
+        data = path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header(
+            "Content-Type",
+            mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+        )
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == HEALTH_PATH and not parsed.query:
@@ -604,6 +629,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
             self.personal_table_api is not None
             and self.personal_table_api.handle_get(self)
         ):
+            return
+        if self.review_queue_api is not None and self.review_queue_api.handle_get(self):
             return
         if (
             self.evidence_export_api is not None
@@ -693,6 +720,18 @@ class DesktopEvidenceHandler(EvidenceHandler):
                         HTTPStatus.FORBIDDEN,
                     )
                 return self.personal_import_api.handle_post(self)
+            if self.review_queue_api is not None and self.review_queue_api.is_post_route(
+                self.path
+            ):
+                if self.read_only:
+                    return self.json_response(
+                        {
+                            "error": "当前为只读模式，不允许审核科学候选。",
+                            "code": "read_only",
+                        },
+                        HTTPStatus.FORBIDDEN,
+                    )
+                return self.review_queue_api.handle_post(self)
             return super().do_POST()
         finally:
             if high_cost:
@@ -776,6 +815,7 @@ def create_desktop_server(
     federated_search_api: FederatedSearchAPI | None = None,
     personal_import_api: PersonalImportAPI | None = None,
     personal_table_api: PersonalTableAPI | None = None,
+    review_queue_api: ReviewQueueAPI | None = None,
     desktop_ai_api: MacDesktopAIAPI | None = None,
     release_info: Mapping[str, object] | None = None,
     session_token: str | None = None,
@@ -794,6 +834,12 @@ def create_desktop_server(
     else:
         document_index = {**upload_service.index_existing_pdfs(), "disabled": False}
     search_index = EvidenceSearchIndex(database).ensure_fresh()
+    if review_queue_api is None:
+        from auto_research.evidence.review_queue import ReviewQueueService
+
+        review_queue_api = ReviewQueueAPI(
+            ReviewQueueService(database, search_index=search_index)
+        )
     if evidence_export_api is None:
         from auto_research.evidence.evidence_export import (
             EvidenceExportService,
@@ -834,6 +880,7 @@ def create_desktop_server(
             "federated_search_api": federated_search_api,
             "personal_import_api": personal_import_api,
             "personal_table_api": personal_table_api,
+            "review_queue_api": review_queue_api,
             "desktop_ai_api": desktop_ai_api,
             "release_info": dict(release_info or RELEASE_INFO),
             "experience_mode": experience_mode,

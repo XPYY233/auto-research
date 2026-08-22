@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import MappingProxyType
@@ -74,7 +75,7 @@ def record(key: str, entity_type: str, gate: str, candidate: dict) -> dict:
     }
 
 
-def package(paper_id: int, title: str, doi: str) -> ValidatedLiteraturePackage:
+def package(paper_id: int, title: str, doi: str, pdf_path: Path) -> ValidatedLiteraturePackage:
     records = [
         record("data-pass", "data", "dual_pass", data_candidate()),
         record("finding-pass", "finding", "third_pass", finding_candidate()),
@@ -103,7 +104,7 @@ def package(paper_id: int, title: str, doi: str) -> ValidatedLiteraturePackage:
         paper_id=paper_id,
         paper=MappingProxyType({"title": title, "doi": doi}),
         snapshot_fingerprint="a" * 64,
-        pdf_sha256="b" * 64,
+        pdf_sha256=hashlib.sha256(pdf_path.read_bytes()).hexdigest(),
         experiment_profile=MappingProxyType({"paper_mode": "experimental"}),
         quality_result=MappingProxyType(result),
     )
@@ -130,21 +131,18 @@ def counts(db: EvidenceDB) -> dict[str, int]:
 
 
 def test_atomic_success_publishes_only_quality_passed_text_records(evidence) -> None:
-    db, _pdf, paper_id = evidence
+    db, pdf, paper_id = evidence
     result = AtomicEvidenceDBFinalizer(db).finalize(
-        package(paper_id, "Safe experiment", "10.1/safe")
+        package(paper_id, "Safe experiment", "10.1/safe", pdf)
     )
-    assert result == {
-        "schema_version": "literature-extraction-commit-result-v1",
-        "status": "completed",
-        "paper": {"title": "Safe experiment", "doi": "10.1/safe"},
-        "candidate_count": 3,
-        "published_item_count": 2,
-        "existing_item_count": 0,
-        "manual_review_count": 1,
-        "visual_evidence_ready": False,
-        "idempotent": False,
-    }
+    assert result["schema_version"] == "literature-extraction-commit-result-v2"
+    assert result["status"] == "completed"
+    assert result["candidate_count"] == 3
+    assert result["published_item_count"] == 2
+    assert result["visual_evidence_ready"] is True
+    assert result["extraction_receipt"]["schema_version"] == "literature-extraction-receipt-v1"
+    assert result["publication_receipt"]["schema_version"] == "literature-publication-receipt-v1"
+    assert result["dataset_receipt"]["schema_version"] == "dataset-membership-receipt-v1"
     assert counts(db) == {
         "quality_pipeline_runs": 1,
         "quality_candidates": 3,
@@ -160,13 +158,13 @@ def test_atomic_success_publishes_only_quality_passed_text_records(evidence) -> 
             "SELECT summary_json FROM quality_pipeline_runs"
         ).fetchone()["summary_json"])
     assert len(summary["commit_fingerprint"]) == 64
-    assert summary["visual_evidence_ready"] is False
+    assert summary["visual_evidence_ready"] is True
 
 
 def test_repeat_is_idempotent_inside_transaction_lock(evidence) -> None:
-    db, _pdf, paper_id = evidence
+    db, pdf, paper_id = evidence
     finalizer = AtomicEvidenceDBFinalizer(db)
-    payload = package(paper_id, "Safe experiment", "10.1/safe")
+    payload = package(paper_id, "Safe experiment", "10.1/safe", pdf)
     first = finalizer.finalize(payload)
     before = counts(db)
     second = finalizer.finalize(payload)
@@ -176,9 +174,9 @@ def test_repeat_is_idempotent_inside_transaction_lock(evidence) -> None:
 
 
 def test_same_process_concurrent_commit_is_single_flight_and_idempotent(evidence) -> None:
-    db, _pdf, paper_id = evidence
+    db, pdf, paper_id = evidence
     finalizer = AtomicEvidenceDBFinalizer(db)
-    payload = package(paper_id, "Safe experiment", "10.1/safe")
+    payload = package(paper_id, "Safe experiment", "10.1/safe", pdf)
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(lambda _index: finalizer.finalize(payload), range(2)))
     assert sorted(result["idempotent"] for result in results) == [False, True]
@@ -192,7 +190,7 @@ def test_same_process_concurrent_commit_is_single_flight_and_idempotent(evidence
 
 @pytest.mark.parametrize("fault_stage", ["after_run", "after_candidate", "before_commit"])
 def test_any_write_failure_rolls_back_every_new_row(evidence, fault_stage: str) -> None:
-    db, _pdf, paper_id = evidence
+    db, pdf, paper_id = evidence
     with db.connect() as connection:
         item = connection.execute(
             "INSERT INTO data_items(paper_id,stable_key,origin_type,created_at) VALUES(?,?,?,?)",
@@ -218,7 +216,7 @@ def test_any_write_failure_rolls_back_every_new_row(evidence, fault_stage: str) 
 
     with pytest.raises(RuntimeError):
         AtomicEvidenceDBFinalizer(db, fault_injector=fail).finalize(
-            package(paper_id, "Safe experiment", "10.1/safe")
+            package(paper_id, "Safe experiment", "10.1/safe", pdf)
         )
     assert counts(db) == before
     with db.connect() as connection:
@@ -229,8 +227,8 @@ def test_any_write_failure_rolls_back_every_new_row(evidence, fault_stage: str) 
 
 
 def test_inconsistent_gate_summary_is_rejected_before_write(evidence) -> None:
-    db, _pdf, paper_id = evidence
-    source = package(paper_id, "Safe experiment", "10.1/safe")
+    db, pdf, paper_id = evidence
+    source = package(paper_id, "Safe experiment", "10.1/safe", pdf)
     payload = dict(source.quality_result)
     payload["summary"] = {**payload["summary"], "dual_pass_count": 99}
     malformed = ValidatedLiteraturePackage(
@@ -258,7 +256,7 @@ def test_job_store_requires_trusted_finalizer_and_rechecks_source(evidence) -> N
     summary = store.create(Papers(), paper_id=paper_id, session_id="owner")
     job = store._jobs[summary["job_token"]]
     job.status = "validated"
-    job.validated_package = package(paper_id, "Safe experiment", "10.1/safe")
+    job.validated_package = package(paper_id, "Safe experiment", "10.1/safe", pdf)
 
     class Untrusted:
         def finalize(self, package):
@@ -279,7 +277,7 @@ def test_job_store_requires_trusted_finalizer_and_rechecks_source(evidence) -> N
 
 
 def test_job_store_trusted_finalize_consumes_job_and_snapshot(evidence) -> None:
-    db, _pdf, paper_id = evidence
+    db, pdf, paper_id = evidence
 
     class Papers:
         def get_paper(self, requested: int):
@@ -290,11 +288,11 @@ def test_job_store_trusted_finalize_consumes_job_and_snapshot(evidence) -> None:
     job = store._jobs[summary["job_token"]]
     snapshot_handle = job.snapshot_handle
     job.status = "validated"
-    job.validated_package = package(paper_id, "Safe experiment", "10.1/safe")
+    job.validated_package = package(paper_id, "Safe experiment", "10.1/safe", pdf)
     result = store.finalize(
         summary["job_token"], session_id="owner", finalizer=AtomicEvidenceDBFinalizer(db)
     )
     assert result["status"] == "completed"
-    assert result["visual_evidence_ready"] is False
+    assert result["visual_evidence_ready"] is True
     assert summary["job_token"] not in store._jobs
     assert snapshot_handle not in store._snapshots._records

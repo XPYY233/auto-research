@@ -30,6 +30,31 @@ _INITIAL_REQUEST_KEYS = frozenset({"paper_id", "force_rescan"})
 _CONTINUATION_REQUEST_KEYS = frozenset({"job_token"})
 _PAYLOAD_KEYS = frozenset({"job_handle", "stage_fingerprint", "stage", "call_count"})
 
+_LITERATURE_ERROR_GUIDANCE = {
+    "literature_pdf_missing": ("preflight", "重新导入可读取的 PDF 后再开始提取。"),
+    "literature_pdf_invalid": ("preflight", "请确认文件是真实 PDF，且未加密或损坏。"),
+    "literature_pdf_empty": ("preflight", "该 PDF 没有可读取文字层；请更换可检索版本。"),
+    "literature_source_stale": ("source_verification", "原始 PDF 已变化，请重新选择文件并新建任务。"),
+    "literature_rescan_confirmation_required": ("preflight", "该论文已有记录；确认重新扫描后再开始。"),
+    "literature_not_validated": ("quality_gate", "查看冲突与低置信候选，完成审核后再发布。"),
+    "literature_commit_unavailable": ("commit", "原子保存组件不可用；请重新验证本机工作区。"),
+    "literature_stage_busy": ("execution", "当前阶段仍在运行，请等待任务状态更新。"),
+    "literature_job_expired": ("execution", "任务已过期，请从当前论文重新开始。"),
+    "literature_job_store_full": ("execution", "任务队列繁忙，请稍后重试；已完成阶段不会重复收费。"),
+}
+
+
+def _project_literature_error(exc: LiteratureExtractionJobError, *, phase: str) -> BusinessActionError:
+    stage, next_action = _LITERATURE_ERROR_GUIDANCE.get(
+        exc.code, (phase, "根据当前阶段提示重试；现有已发布数据不受影响。")
+    )
+    return BusinessActionError(
+        "business_action_prepare_failed" if phase == "preflight" else "business_action_execution_failed",
+        cause_code=exc.code,
+        stage=stage,
+        next_action=next_action,
+    )
+
 
 def _runtime_task(stage_task: str) -> str:
     """Map scientific sub-stages onto the four reviewed provider task slots."""
@@ -52,8 +77,11 @@ class LiteratureExtractionBusinessPorts:
 class EvidenceDBLiteratureJobStarter:
     """Create a bounded in-memory job from trusted EvidenceDB state."""
 
-    MAX_PAGES = 8
-    CHUNK_PAGES = 2
+    # The Fusion regression silently truncated every paper after page eight.
+    # Sixty-four pages covers the supported article class while the four-page
+    # chunks keep the reviewed 512-call and 128 MiB snapshot caps enforceable.
+    MAX_PAGES = 64
+    CHUNK_PAGES = 4
 
     def __init__(self, db: EvidenceDB, store: LiteratureExtractionJobStore) -> None:
         if not isinstance(db, EvidenceDB):
@@ -149,7 +177,7 @@ class LiteratureExtractionBusinessAssembler:
                 )
                 token = summary["job_token"]
             except LiteratureExtractionJobError as exc:
-                raise BusinessActionError("business_action_prepare_failed") from exc
+                raise _project_literature_error(exc, phase="preflight") from exc
             except Exception as exc:
                 raise BusinessActionError("business_action_prepare_failed") from exc
         elif request_keys == _CONTINUATION_REQUEST_KEYS:
@@ -161,7 +189,7 @@ class LiteratureExtractionBusinessAssembler:
         try:
             stage = self._store.peek_stage(token, session_id=self._session_id)
         except LiteratureExtractionJobError as exc:
-            raise BusinessActionError("business_action_prepare_failed") from exc
+            raise _project_literature_error(exc, phase="preflight") from exc
         self._assert_shared_policy(stage)
         calls = tuple(
             PreparedBusinessCall(
@@ -276,7 +304,7 @@ class LiteratureExtractionBusinessExecutor:
         except BusinessActionError:
             raise
         except LiteratureExtractionJobError as exc:
-            raise BusinessActionError("business_action_execution_failed") from exc
+            raise _project_literature_error(exc, phase="execution") from exc
         except (KeyError, TypeError, ValueError) as exc:
             raise BusinessActionError("business_action_invalid") from exc
 
@@ -290,7 +318,9 @@ class LiteratureExtractionBusinessProjector:
     _COMMIT_KEYS = frozenset({
         "schema_version", "status", "paper", "candidate_count",
         "published_item_count", "existing_item_count", "manual_review_count",
-        "visual_evidence_ready", "idempotent",
+        "visual_evidence_ready", "table_candidate_count", "figure_candidate_count",
+        "idempotent", "extraction_receipt", "publication_receipt",
+        "dataset_receipt", "search_index",
     })
     _PAPER_KEYS = frozenset({"title", "doi"})
     _SENDING_SCOPE_KEYS = frozenset({
@@ -330,19 +360,24 @@ class LiteratureExtractionBusinessProjector:
                 )
             ):
                 raise BusinessActionError("business_action_result_invalid")
-        elif summary.get("schema_version") == "literature-extraction-commit-result-v1":
+        elif summary.get("schema_version") == "literature-extraction-commit-result-v2":
             if (
                 set(summary) != self._COMMIT_KEYS
-                or summary.get("status") != "completed"
+                or summary.get("status") not in {"completed", "saved_index_pending"}
                 or not self._valid_paper(summary.get("paper"))
-                or summary.get("visual_evidence_ready") is not False
+                or summary.get("visual_evidence_ready") is not True
                 or not isinstance(summary.get("idempotent"), bool)
+                or not isinstance(summary.get("extraction_receipt"), Mapping)
+                or not isinstance(summary.get("publication_receipt"), Mapping)
+                or not isinstance(summary.get("dataset_receipt"), Mapping)
+                or not isinstance(summary.get("search_index"), Mapping)
                 or any(
                     isinstance(summary.get(key), bool) or not isinstance(summary.get(key), int)
                     or summary.get(key) < 0
                     for key in (
                         "candidate_count", "published_item_count",
                         "existing_item_count", "manual_review_count",
+                        "table_candidate_count", "figure_candidate_count",
                     )
                 )
             ):

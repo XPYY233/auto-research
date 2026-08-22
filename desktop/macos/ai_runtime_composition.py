@@ -25,6 +25,7 @@ from auto_research.evidence.harness_business_action import (
     HarnessScopeBusinessPorts,
     harness_business_ports,
 )
+from auto_research.evidence.harness_workspace_source import HarnessWorkspaceSource
 from auto_research.evidence.literature_extraction_business_action import (
     LiteratureExtractionBusinessPorts,
     literature_extraction_business_ports,
@@ -185,6 +186,7 @@ def create_mac_ai_runtime_services(
         harness_ports = harness_business_ports(
             session=federated_search_session,
             runtime=effective_harness_runtime,
+            workspace=HarnessWorkspaceSource(database),
         )
         selected_ports = harness_ports.selected_evidence_chat
         librarian_ports = harness_ports.librarian
@@ -198,7 +200,7 @@ def create_mac_ai_runtime_services(
         snapshots = CompositeContentSnapshotAuthority(
             {
                 "personal_table": personal_ports.snapshots,
-                "harness_official": harness_ports.snapshots,
+                "harness_literature": harness_ports.snapshots,
                 "literature_extraction_stage": literature_ports.snapshots,
             }
         )

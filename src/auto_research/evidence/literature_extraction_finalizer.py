@@ -15,6 +15,11 @@ from .literature_extraction_job import (
     _canonical_bytes,
     _plain,
 )
+from .literature_visual_stage import (
+    StagedVisualEvidence,
+    prepare_visual_evidence,
+    publish_staged_visual_evidence,
+)
 from .quality_pipeline import (
     PUBLISHABLE_STATUSES,
     _finding_stable_key,
@@ -55,14 +60,44 @@ class AtomicEvidenceDBFinalizer:
             "snapshot_fingerprint": package.snapshot_fingerprint,
             "quality_result": payload,
         })).hexdigest()
-        with self._lock:
-            return self._commit(package, payload, commit_fingerprint)
+        staged = prepare_visual_evidence(
+            self._db,
+            paper_id=package.paper_id,
+            expected_pdf_sha256=package.pdf_sha256,
+        )
+        committed = False
+        try:
+            with self._lock:
+                result = self._commit(
+                    package, payload, commit_fingerprint, staged_visuals=staged
+                )
+            committed = True
+        finally:
+            staged.cleanup(rollback_published=not committed)
+        try:
+            from .search_index import EvidenceSearchIndex
+
+            refreshed = EvidenceSearchIndex(self._db).refresh_papers((package.paper_id,))
+            result["search_index"] = {
+                "status": "refreshed",
+                "document_count": int(refreshed.get("documents", 0)),
+            }
+        except Exception:
+            result["status"] = "saved_index_pending"
+            result["search_index"] = {
+                "status": "pending",
+                "next_action": "重新验证搜索索引",
+            }
+        result["publication_receipt"]["search_index"] = dict(result["search_index"])
+        return result
 
     def _commit(
         self,
         package: ValidatedLiteraturePackage,
         payload: dict[str, Any],
         commit_fingerprint: str,
+        *,
+        staged_visuals: StagedVisualEvidence,
     ) -> Mapping[str, Any]:
         connection = sqlite3.connect(self._db.path, timeout=30, isolation_level=None)
         connection.row_factory = sqlite3.Row
@@ -85,7 +120,7 @@ class AtomicEvidenceDBFinalizer:
                     "literature_commit_failed", "目标文献身份已变化，未保存任何科学记录"
                 )
             existing = self._find_existing(connection, package.paper_id, commit_fingerprint)
-            if existing is not None:
+            if existing is not None and existing["summary"].get("visual_evidence_ready") is True:
                 connection.commit()
                 return self._public_result(
                     package, existing["summary"], idempotent=True
@@ -117,6 +152,7 @@ class AtomicEvidenceDBFinalizer:
             published_items = 0
             existing_items = 0
             manual_review = 0
+            entity_uids: list[str] = []
             for record in payload["records"]:
                 item_id = None
                 if record["gate_status"] in _PUBLISHABLE:
@@ -125,6 +161,14 @@ class AtomicEvidenceDBFinalizer:
                     )
                     published_items += int(inserted)
                     existing_items += int(not inserted)
+                    entity_uids.append(
+                        "workspace-"
+                        + ("item" if record["entity_type"] == "data" else "finding")
+                        + "-"
+                        + hashlib.sha256(
+                            f"{package.pdf_sha256}\0{record['candidate_key']}".encode("utf-8")
+                        ).hexdigest()[:32]
+                    )
                 else:
                     manual_review += 1
                 connection.execute(
@@ -156,11 +200,28 @@ class AtomicEvidenceDBFinalizer:
                     ),
                 )
                 self._inject("after_candidate")
+            visual_summary = publish_staged_visual_evidence(
+                self._db,
+                connection=connection,
+                paper={"id": package.paper_id, **dict(package.paper)},
+                staged=staged_visuals,
+            )
+            entity_uids.extend(
+                "workspace-visual-" + hashlib.sha256(value.encode("ascii")).hexdigest()[:32]
+                for value in visual_summary["asset_hashes"]
+            )
             final_summary = {
                 **internal_summary,
                 "published_item_count": published_items,
                 "existing_item_count": existing_items,
-                "manual_review_count": manual_review,
+                "manual_review_count": manual_review + int(visual_summary["manual_review_count"]),
+                "text_manual_review_count": manual_review,
+                "visual_manual_review_count": int(visual_summary["manual_review_count"]),
+                "visual_evidence_ready": True,
+                "table_candidate_count": int(visual_summary["table_count"]),
+                "figure_candidate_count": int(visual_summary["figure_count"]),
+                "visual_asset_hashes": list(visual_summary["asset_hashes"]),
+                "entity_uids": entity_uids,
             }
             connection.execute(
                 "UPDATE quality_pipeline_runs SET summary_json=? WHERE id=?",
@@ -355,16 +416,43 @@ class AtomicEvidenceDBFinalizer:
         idempotent: bool,
     ) -> dict[str, Any]:
         return {
-            "schema_version": "literature-extraction-commit-result-v1",
+            "schema_version": "literature-extraction-commit-result-v2",
             "status": "completed",
             "paper": dict(package.paper),
             "candidate_count": int(summary.get("candidate_count", 0)),
             "published_item_count": int(summary.get("published_item_count", 0)),
             "existing_item_count": int(summary.get("existing_item_count", 0)),
             "manual_review_count": int(summary.get("manual_review_count", 0)),
-            "visual_evidence_ready": False,
+            "visual_evidence_ready": bool(summary.get("visual_evidence_ready")),
+            "table_candidate_count": int(summary.get("table_candidate_count", 0)),
+            "figure_candidate_count": int(summary.get("figure_candidate_count", 0)),
             "idempotent": idempotent,
+            "extraction_receipt": {
+                "schema_version": "literature-extraction-receipt-v1",
+                "source_fingerprint": package.snapshot_fingerprint,
+                "candidate_count": int(summary.get("candidate_count", 0)),
+                "quality_gate": "dual-branch-v1",
+            },
+            "publication_receipt": {
+                "schema_version": "literature-publication-receipt-v1",
+                "entity_uids": list(summary.get("entity_uids") or ()),
+                "visual_asset_hashes": list(summary.get("visual_asset_hashes") or ()),
+                "content_fingerprint": str(summary.get("commit_fingerprint") or ""),
+            },
+            "dataset_receipt": {
+                "schema_version": "dataset-membership-receipt-v1",
+                "schema": "dataset-bundle-v1",
+                "paper_partition": AtomicEvidenceDBFinalizer._paper_partition(
+                    package.pdf_sha256
+                ),
+                "content_fingerprint": str(summary.get("commit_fingerprint") or ""),
+            },
         }
+
+    @staticmethod
+    def _paper_partition(pdf_sha256: str) -> str:
+        bucket = int(hashlib.sha256(pdf_sha256.encode("ascii")).hexdigest()[:8], 16) % 10
+        return "test" if bucket == 0 else "validation" if bucket == 1 else "train"
 
     @staticmethod
     def _json(value: Any) -> str:

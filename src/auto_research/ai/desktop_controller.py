@@ -492,12 +492,20 @@ def _known_error(
     | BusinessActionError,
 ) -> DesktopAIHTTPResponse:
     status = _ERROR_STATUS.get(error.code, 500)
-    return _error_response(
+    response = _error_response(
         status,
         error.code if status != 500 else "desktop_ai_request_failed",
         error.safe_message if status != 500 else "AI 设置请求未能完成。",
         error.retryable if status != 500 else True,
     )
+    if status != 500 and isinstance(error, BusinessActionError):
+        body = dict(response.body)
+        for key in ("cause_code", "stage", "next_action"):
+            value = getattr(error, key, "")
+            if value:
+                body[key] = value
+        response = DesktopAIHTTPResponse(status, body)
+    return response
 
 
 def _error_response(

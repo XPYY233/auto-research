@@ -227,6 +227,28 @@ class DesktopAIRouteTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 403)
         raised.exception.close()
 
+    def test_literature_prepare_error_keeps_safe_stage_and_recovery_action(self):
+        paper_id = self.database.upsert_paper(
+            title="Paper without PDF", doi="10.1/no-pdf"
+        )
+        opener, csrf = self.bootstrap()
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            self.request(
+                opener,
+                "POST",
+                "/api/desktop/ai/actions/literature_extraction/prepare",
+                payload={"paper_id": paper_id, "force_rescan": False},
+                csrf=csrf,
+            )
+        self.assertEqual(raised.exception.code, 422)
+        payload = json.load(raised.exception)
+        self.assertEqual(payload["code"], "business_action_prepare_failed")
+        self.assertEqual(payload["cause_code"], "literature_pdf_missing")
+        self.assertEqual(payload["stage"], "preflight")
+        self.assertIn("重新导入", payload["next_action"])
+        self.assertNotIn(str(Path(self.temporary.name)), json.dumps(payload))
+        raised.exception.close()
+
     def test_librarian_without_official_source_fails_closed_without_legacy_fallback(self):
         with self.assertRaises(BusinessActionError) as raised:
             self.services.librarian_ports.assembler.assemble(

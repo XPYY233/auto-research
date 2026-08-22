@@ -3,18 +3,18 @@
 ## v1.1.0 macOS 核心能力恢复线（2026-08-22，当前开发权威）
 
 - 当前源码与发布契约固定为 Auto Research `1.1.0` / build `23`；Windows 1.1迁移完全冻结，现有 Windows 1.0身份仍为`installer_ready=false`，不得因Mac源码变化生成或宣称新的Setup。
-- Fusion工作台已恢复独立滚动文献目录、服务端四类多选筛选、可持久恢复的多标签与两个编辑器组、按模块隔离的检查器、中央PDF来源高亮/返回链和图书管理员独立标签。新上传论文会自动选中并滚动到可见位置，迟到请求绑定原标签。
+- Fusion工作台已恢复独立滚动文献目录、题名/作者/DOI筛选、服务端四类多选筛选、可持久恢复的预览/固定标签与两个完整编辑器组、按模块隔离的检查器、中央PDF来源高亮/返回链和图书管理员独立标签。新上传论文会自动选中并滚动到可见位置，迟到请求绑定原标签。
 - 生产图书管理员和选中证据AI已迁到精确锁定的DeepSeek Harness SDK/runtime；八个工具全部只读，不提供Shell、文件系统、PTY、编辑器、子Agent或任意网络。prepared action、逐次授权、provider/model白名单、token/调用预算、凭据与引用完整性仍由Auto Research掌握；校验失败不回退旧AI。
 - Harness历史使用本机加密状态区，默认最多20个会话或30天并支持立即清除；旧收费路由在Mac桌面固定410。旧Librarian V3仅保留兼容测试/历史简报边界，列为P1物理退役债务。
 - 新增`dataset-bundle-v1`：同一规范投影生成JSONL、真实Parquet、数据卡和manifest，以论文为单位确定性划分train/validation/test；默认不复制PDF/图片、不包含私人实验，不泄露路径、密钥、会话或内部数据库主键。
 - 不可变官方快照的数据集计划为60篇/4,356条（item 3,142、finding 936、table 46、figure 232），train 3,556、validation 425、test 375；缺失DOI 3，未审核记录2,417，内容指纹`8f853102d0a4774efad59fdd3be88d2ca6b685930aeb767dfa09bd80ca0341ea`。这些数量不代表科学人工验收完成，含未审核记录的导出必须显式确认。
 - 科学发布审计独立覆盖数值、单位、意义、条件、表格、图片、结论、片段和定位等14类指标，并要求论文级人工金标准、TP/FP/FN、页码/IoU和泄漏检查；自动测试通过不能替代科学准确率。
-- `official-package-v2`构建器已要求普通PDF魔数/页数/哈希/身份、视觉资产、来源锚点、权利清单和2GB上限。不可变快照的60个历史路径中有5个是HTML占位，已从官方/开放来源取得并核验4份真实PDF；DOI `10.2172/6065200`的40页DOE报告仍因当前网络无法物化而失败关闭。不得用14页期刊版、网页打印或相似文献替代，也不得发布59/60的不完整v2包。
+- 新版官方资料包按用户冻结范围明确发布59篇，并在manifest排除 DOI `10.2172/6065200`（`source_pdf_unavailable`）；这不删除本机或Zotero记录。其余4个HTML占位输入已由期刊/Europe PMC真实PDF替换并逐份核对DOI、题名、页数和哈希。签名包包含4,369条证据（item 3,142 / finding 936 / table 49 / figure 242）、59份PDF和291个图表资产，大小374,780,867 bytes，SHA-256 `909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`。隔离新根验收为首次`installed`、重复`already_active`，59份PDF与291个资产全部通过安装后运行时校验；视觉状态仍诚实报告为历史`draft`，不能写成科学人工审核完成。
 - 架构与技术债事实已写入`docs/ARCHITECTURE_AUDIT_1_1.md`、`config/architecture-debt.json`和`config/module-ownership.json`。全仓Python约109,950行，Fusion前端约7,338行，`app.js`约4,379行；仓库目录内历史Mac制品约1.06GB仍是P2迁移债务。
 - 当前工作树仍只允许用户的`db/experimental_evidence.sqlite`作为未提交现场；禁止暂存、还原、清理或用于发布测试。1.1保护标签为`auto-research-v1.0.0-pre-1.1-protection`，仓库外保护目录为`/Users/USER/Zotero/auto-research-backups/v1.1-protection-20260822-154915`。
-- 源码发布身份为`a3fd136`。干净发布工作树已串行通过共享851项（其中80项因仓库未携带历史外部`XJZQ42XP.pdf`而明确跳过）和macOS 229项；Python编译、8个生产JavaScript、发布契约与差异检查通过。测试日志仍暴露少量SQLite `ResourceWarning`，列为后续连接生命周期债务，不伪装为科学错误。
-- 已从干净工作树构建、隔离冒烟、ad-hoc签名并安装`/Applications/Auto Research.app` 1.1.0/build23；DMG位于`/Users/USER/Zotero/auto-research-releases/v1.1.0-build23-mac/Auto-Research-1.1.0-macOS-arm64.dmg`，SHA-256为`8bee879ac471e5000c2fe2e20848937a84bab40ca8a731e8f348716614d6e34b`。旧1.0.0/build22已保存为完整ZIP并另存去执行权限的回退副本。
-- 当前不能宣布1.1整套发布完成：`official-package-v2`仍缺DOI `10.2172/6065200`的准确40页DOE原报告。人工通过UNT页面验证后应保存原始PDF，再执行60/60身份、页数、权利和哈希核验；随后才可构建资料包、完成真实导入/搜索/PDF高亮/回退用户流程、生成最终套件与稳定标签。
+- 当前整合工作树已串行通过共享874项（其中80项因仓库未携带历史外部样本而明确跳过）和macOS 234项；Python/JavaScript语法、发布契约与差异检查通过。测试日志仍暴露少量SQLite `ResourceWarning`，列为后续连接生命周期债务，不伪装为科学错误。
+- 本轮新增人工审核队列及原子发布/索引恢复、工作区+官方联合Harness只读检索、完整PDF分段提取、视觉资产事务式暂存、正式证据搜索过滤和path-free稳定错误；旧收费路由、旧DOM和第二导航没有恢复。
+- 现有`/Applications/Auto Research.app`和DMG来自本轮修复前的build23；必须从本节最终源码提交重新构建、隔离冒烟、ad-hoc签名、事务式替换并完成真实Mac流程后，才可把新制品写为最终交付。旧1.0.0/build22回退副本继续保留。
 
 ### Windows 全离线 Build Kit 长期规则
 

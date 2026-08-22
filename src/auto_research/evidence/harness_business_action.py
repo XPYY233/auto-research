@@ -1,4 +1,4 @@
-"""Prepared-action adapters for official Librarian and selected-evidence Harness."""
+"""Prepared-action adapters for bounded literature Harness actions."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from auto_research.ai.prepared_actions import ContentUnit, PreparedOutbound
 from auto_research.evidence.federated_search_session import FederatedSearchSessionProtocol
 
 from .harness_federated_backend import (
+    MAX_HARNESS_CANDIDATES,
     HarnessFederatedBackend,
     evidence_identities,
     official_candidates,
@@ -31,7 +32,7 @@ from .harness_federated_backend import (
 )
 
 
-HARNESS_SNAPSHOT_KIND = "harness_official"
+HARNESS_SNAPSHOT_KIND = "harness_literature"
 LIBRARIAN_MAX_CALLS = 8
 LIBRARIAN_MAX_TOKENS = 128_000
 SELECTED_MAX_CALLS = 2
@@ -47,6 +48,16 @@ _ENTITY_TYPES = frozenset({"item", "finding", "table", "figure"})
 
 class _HarnessRuntimePort(DeepSeekHarnessRuntime, Protocol):
     pass
+
+
+class HarnessWorkspaceSourcePort(Protocol):
+    def binding(self) -> tuple[str, str]: ...
+
+    def candidates(
+        self, *, query: str, limit: int = MAX_HARNESS_CANDIDATES
+    ) -> tuple[dict[str, Any], ...]: ...
+
+    def get(self, *, entity_type: str, entity_uid: str) -> Mapping[str, Any]: ...
 
 
 def _canonical(value: object) -> bytes:
@@ -93,21 +104,50 @@ def _runtime_ready(runtime: _HarnessRuntimePort) -> None:
         raise BusinessActionError("business_action_prepare_failed") from exc
 
 
-class HarnessFederatedSnapshotAuthority:
-    def __init__(self, session: FederatedSearchSessionProtocol) -> None:
-        self._session = session
+def _literature_source_binding(
+    session: FederatedSearchSessionProtocol,
+    workspace: HarnessWorkspaceSourcePort | None,
+) -> tuple[str, str, dict[str, Any]]:
+    sources: dict[str, Any] = {}
+    try:
+        source_id, fingerprint = official_source_binding(session)
+        sources["official"] = {"source_id": source_id, "fingerprint": fingerprint}
+    except HarnessError:
+        pass
+    if workspace is not None:
+        try:
+            source_id, fingerprint = workspace.binding()
+            sources["workspace"] = {"source_id": source_id, "fingerprint": fingerprint}
+        except HarnessError:
+            pass
+    if not sources:
+        raise HarnessError("harness_runtime_unavailable")
+    encoded = _canonical({"schema_version": "harness-literature-binding-v1", "sources": sources})
+    fingerprint = hashlib.sha256(encoded).hexdigest()
+    identity = "literature:" + hashlib.sha256(
+        _canonical({scope: row["source_id"] for scope, row in sources.items()})
+    ).hexdigest()[:32]
+    return identity, fingerprint, sources
 
-    @staticmethod
-    def identity(source_id: str) -> str:
-        return "official-harness:" + hashlib.sha256(source_id.encode("utf-8")).hexdigest()[:32]
+
+class HarnessFederatedSnapshotAuthority:
+    def __init__(
+        self,
+        session: FederatedSearchSessionProtocol,
+        workspace: HarnessWorkspaceSourcePort | None = None,
+    ) -> None:
+        self._session = session
+        self._workspace = workspace
 
     def fingerprint_for(self, *, kind: str, stable_source_identity: str) -> str:
         try:
-            source_id, fingerprint = official_source_binding(self._session)
+            identity, fingerprint, _sources = _literature_source_binding(
+                self._session, self._workspace
+            )
         except HarnessError as exc:
-            raise ValueError("official Harness source unavailable") from exc
-        if kind != HARNESS_SNAPSHOT_KIND or stable_source_identity != self.identity(source_id):
-            raise ValueError("official Harness source identity changed")
+            raise ValueError("Harness literature source unavailable") from exc
+        if kind != HARNESS_SNAPSHOT_KIND or stable_source_identity != identity:
+            raise ValueError("Harness literature source identity changed")
         return fingerprint
 
 
@@ -133,13 +173,15 @@ class HarnessBusinessAssembler:
         scope: str,
         session: FederatedSearchSessionProtocol,
         runtime: _HarnessRuntimePort,
+        workspace: HarnessWorkspaceSourcePort | None = None,
     ) -> None:
         if scope not in {"librarian", "selected_evidence_chat"}:
             raise ValueError("unsupported Harness business scope")
         self._scope = scope
         self._session = session
         self._runtime = runtime
-        self._snapshots = HarnessFederatedSnapshotAuthority(session)
+        self._workspace = workspace
+        self._snapshots = HarnessFederatedSnapshotAuthority(session, workspace)
 
     def assemble(self, request: object) -> BusinessActionDraft:
         _runtime_ready(self._runtime)
@@ -166,14 +208,25 @@ class HarnessBusinessAssembler:
         question = _safe_text(request.get("question"), maximum=2_000)
         conversation_id = _safe_text(request.get("conversation_id"), maximum=256)
         history = _history(request.get("history", []))
-        documents = official_candidates(self._session, query=question)
+        documents: list[dict[str, Any]] = []
+        try:
+            documents.extend(official_candidates(self._session, query=question, limit=32))
+        except HarnessError:
+            pass
+        if self._workspace is not None:
+            try:
+                documents.extend(self._workspace.candidates(query=question, limit=32))
+            except HarnessError:
+                pass
+        documents = documents[:MAX_HARNESS_CANDIDATES]
         if not documents:
             raise BusinessActionError("business_action_prepare_failed")
         prompt = {
             "question": question,
             "conversation_id": conversation_id,
             "history": history,
-            "source_scope": "official",
+            "source_scope": "literature",
+            "source_scopes": sorted({str(row["source_scope"]) for row in documents}),
             "evidence_count": len(documents),
         }
         return self._draft(
@@ -189,30 +242,51 @@ class HarnessBusinessAssembler:
     def _selected(self, request: Mapping[str, Any]) -> BusinessActionDraft:
         if set(request) != _SELECTED_KEYS:
             raise BusinessActionError("business_action_invalid")
-        if request.get("source_scope") != "official" or request.get("entity_type") not in _ENTITY_TYPES:
+        source_scope = request.get("source_scope")
+        if source_scope not in {"official", "workspace"} or request.get("entity_type") not in _ENTITY_TYPES:
             raise BusinessActionError("business_action_invalid")
         source_id = _safe_text(request.get("source_id"), maximum=256)
         entity_uid = _safe_text(request.get("entity_uid"), maximum=256)
         question = _safe_text(request.get("question"), maximum=2_000)
         history = _history(request.get("history", []))
-        active_source, _fingerprint = official_source_binding(self._session)
-        if source_id != active_source:
-            raise BusinessActionError("business_action_prepare_failed")
-        try:
-            current_raw = self._session.get(
-                source_scope="official", source_id=source_id, entity_uid=entity_uid
+        if source_scope == "official":
+            active_source, _fingerprint = official_source_binding(self._session)
+            if source_id != active_source:
+                raise BusinessActionError("business_action_prepare_failed")
+            try:
+                current_raw = self._session.get(
+                    source_scope="official", source_id=source_id, entity_uid=entity_uid
+                )
+            except Exception as exc:
+                raise BusinessActionError("business_action_prepare_failed") from exc
+            current = sanitize_official_documents(
+                (current_raw,), expected_source_id=source_id
+            )[0]
+            neighbor_rows = official_candidates(
+                self._session,
+                query=str(current.get("doi") or current.get("article_title") or question),
+                limit=32,
             )
-        except Exception as exc:
-            raise BusinessActionError("business_action_prepare_failed") from exc
-        current = sanitize_official_documents(
-            (current_raw,), expected_source_id=source_id
-        )[0]
+        else:
+            if self._workspace is None:
+                raise BusinessActionError("business_action_prepare_failed")
+            active_source, _fingerprint = self._workspace.binding()
+            if source_id != active_source:
+                raise BusinessActionError("business_action_prepare_failed")
+            current = dict(
+                self._workspace.get(
+                    entity_type=str(request.get("entity_type")), entity_uid=entity_uid
+                )
+            )
+            neighbor_rows = self._workspace.candidates(
+                query=str(current.get("doi") or current.get("article_title") or question),
+                limit=32,
+            )
         if current.get("entity_type") != request.get("entity_type"):
             raise BusinessActionError("business_action_invalid")
-        neighbor_query = str(current.get("doi") or current.get("article_title") or question)
         neighbors = tuple(
             row
-            for row in official_candidates(self._session, query=neighbor_query, limit=32)
+            for row in neighbor_rows
             if row["entity_uid"] != current["entity_uid"]
             and (
                 not current.get("paper_uid")
@@ -252,7 +326,9 @@ class HarnessBusinessAssembler:
         current: Mapping[str, Any] | None,
         neighbors: Sequence[Mapping[str, Any]],
     ) -> BusinessActionDraft:
-        source_id, snapshot = official_source_binding(self._session)
+        source_identity, snapshot, source_binding = _literature_source_binding(
+            self._session, self._workspace
+        )
         payload = {
             "scope": self._scope,
             "prompt": dict(prompt),
@@ -260,12 +336,13 @@ class HarnessBusinessAssembler:
             "current_entity": dict(current) if current is not None else None,
             "allowed_neighbors": [dict(row) for row in neighbors],
             "source_fingerprint": snapshot,
+            "source_binding": source_binding,
         }
         encoded = _canonical(payload)
         content_sha = hashlib.sha256(encoded).hexdigest()
         unit = ContentUnit(
             kind=HARNESS_SNAPSHOT_KIND,
-            stable_source_identity=self._snapshots.identity(source_id),
+            stable_source_identity=source_identity,
             snapshot_fingerprint=snapshot,
             length=len(encoded),
             sha256=content_sha,
@@ -303,7 +380,7 @@ class HarnessBusinessExecutor:
             payload = action.outbound.get("payload")
             if not isinstance(payload, Mapping) or set(payload) != {
                 "scope", "prompt", "documents", "current_entity",
-                "allowed_neighbors", "source_fingerprint",
+                "allowed_neighbors", "source_fingerprint", "source_binding",
             } or payload.get("scope") != self._scope:
                 raise HarnessError("harness_invalid")
             documents = tuple(payload.get("documents") or ())
@@ -332,6 +409,7 @@ class HarnessBusinessExecutor:
                 "prompt": dict(payload["prompt"]),
                 "answered_at": action.issued_at,
                 "source_fingerprint": str(payload["source_fingerprint"]),
+                "source_binding": dict(payload["source_binding"]),
             }
         except BusinessActionError:
             raise
@@ -362,7 +440,7 @@ class HarnessBusinessProjector:
     def project(self, result: Mapping[str, Any]) -> Mapping[str, Any]:
         if not isinstance(result, Mapping) or set(result) != {
             "schema_version", "scope", "raw", "documents", "prompt",
-            "answered_at", "source_fingerprint",
+            "answered_at", "source_fingerprint", "source_binding",
         } or result.get("schema_version") != "harness-business-internal-v1" or result.get("scope") != self._scope:
             raise BusinessActionError("business_action_result_invalid")
         try:
@@ -469,7 +547,11 @@ class HarnessBusinessProjector:
             "evidence_version": result["source_fingerprint"],
             "answer": str(raw["answer"]),
             "report": report,
-            "query_analysis": {"question": str(prompt["question"]), "source_scope": "official"},
+            "query_analysis": {
+                "question": str(prompt["question"]),
+                "source_scope": "literature",
+                "source_scopes": list(prompt.get("source_scopes") or ()),
+            },
             "evidence_bundles": [],
             "results": rows,
             "recommended_articles": recommended,
@@ -481,10 +563,10 @@ class HarnessBusinessProjector:
             "match_counts": {kind: sum(row["entity_type"] == kind for row in result["documents"]) for kind in _ENTITY_TYPES},
             "bundle_count": len({row.get("bundle_uid") for row in result["documents"]}),
             "recall_queries": [str(prompt["question"])],
-            "plan_mode": "harness_official_bounded",
+            "plan_mode": "harness_literature_bounded",
             "summary_mode": "deepseek_harness",
             "clarification_required": False,
-            "scope": "official",
+            "scope": "literature",
             "model": model,
             "planning_model": model,
             "cache_hit": False,
@@ -539,16 +621,24 @@ def harness_business_ports(
     *,
     session: FederatedSearchSessionProtocol,
     runtime: _HarnessRuntimePort,
+    workspace: HarnessWorkspaceSourcePort | None = None,
 ) -> HarnessBusinessPorts:
-    snapshots = HarnessFederatedSnapshotAuthority(session)
+    snapshots = HarnessFederatedSnapshotAuthority(session, workspace)
     librarian = HarnessScopeBusinessPorts(
-        assembler=HarnessBusinessAssembler(scope="librarian", session=session, runtime=runtime),
+        assembler=HarnessBusinessAssembler(
+            scope="librarian", session=session, runtime=runtime, workspace=workspace
+        ),
         executor=HarnessBusinessExecutor(scope="librarian", runtime=runtime),
         projector=HarnessBusinessProjector("librarian"),
         snapshots=snapshots,
     )
     selected = HarnessScopeBusinessPorts(
-        assembler=HarnessBusinessAssembler(scope="selected_evidence_chat", session=session, runtime=runtime),
+        assembler=HarnessBusinessAssembler(
+            scope="selected_evidence_chat",
+            session=session,
+            runtime=runtime,
+            workspace=workspace,
+        ),
         executor=HarnessBusinessExecutor(scope="selected_evidence_chat", runtime=runtime),
         projector=HarnessBusinessProjector("selected_evidence_chat"),
         snapshots=snapshots,
@@ -564,5 +654,6 @@ __all__ = [
     "HarnessBusinessProjector",
     "HarnessFederatedSnapshotAuthority",
     "HarnessScopeBusinessPorts",
+    "HarnessWorkspaceSourcePort",
     "harness_business_ports",
 ]

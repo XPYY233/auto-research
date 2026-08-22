@@ -70,6 +70,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
 
     index_source = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     runtime_source = (WEB_DIR / "fusion_review.js").read_text(encoding="utf-8")
+    tab_store_source = (WEB_DIR / "document_tab_store.js").read_text(encoding="utf-8")
     ai_consent_source = (WEB_DIR / "ai_consent.js").read_text(encoding="utf-8")
     workbench_styles = (WEB_DIR / "workbench.css").read_text(encoding="utf-8")
     server_parameters = signature(create_desktop_server).parameters
@@ -96,13 +97,17 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
         "fusion_runtime_contract": bool(
             '<link rel="stylesheet" href="/static/workbench.css">' in index_source
             and '<script src="/static/ai_consent.js"></script>' in index_source
+            and '<script src="/static/document_tab_store.js"></script>' in index_source
             and '<script src="/static/fusion_review.js"></script>' in index_source
             and index_source.index('<script src="/static/ai_consent.js"></script>')
+            < index_source.index('<script src="/static/document_tab_store.js"></script>')
             < index_source.index('<script src="/static/fusion_review.js"></script>')
             and '<script src="/static/app.js"></script>' not in index_source
             and '<script src="/static/desktop_product.js"></script>' not in index_source
             and '<script src="/static/package_center.js"></script>' not in index_source
             and "AutoResearchFusion" in runtime_source
+            and "AutoResearchDocumentTabs" in tab_store_source
+            and "workspace-layout-v2" in tab_store_source
             and "/api/search-papers" in runtime_source
             and "/api/search-v2" in runtime_source
             and "/api/desktop/federated-search" in runtime_source
@@ -242,8 +247,14 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
                 "fusion-open-librarian",
                 "fusion-select-data-file",
                 "/static/ai_consent.js",
+                "/static/document_tab_store.js",
                 "/static/fusion_review.js",
             ),
+        ),
+        (
+            "document_tab_store_runtime",
+            "/static/document_tab_store.js",
+            ("AutoResearchDocumentTabs", "workspace-layout-v2"),
         ),
         (
             "fusion_runtime",

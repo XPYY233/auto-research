@@ -3,12 +3,12 @@
 ## v1.1.0 Mac source checkpoint (2026-08-22)
 
 - Source contract: Auto Research `1.1.0` build 23 for Apple Silicon macOS. Windows 1.1 is frozen until user acceptance; do not edit or build `desktop/windows/**` in this line.
-- Fusion: independently scrollable literature tree, server-side four-type filtering, recoverable `DocumentTabStore`, at most two editor groups, module-isolated inspector state and source-highlighted in-app PDF return.
+- Fusion: independently scrollable and title/author/DOI-filterable literature tree, server-side four-type filtering, recoverable preview/pinned `DocumentTabStore`, at most two complete editor groups, module-isolated inspector state, source-highlighted in-app PDF return, and a real approve/reject/correct review queue.
 - Production AI: pinned `deepseek-harness-sdk==0.1.1rc1` and `deepseek-harness-runtime-bin==0.1.1rc1`; eight read-only Auto Research tools only, prepared-action consent/budgets remain authoritative, no old-loop fallback. Encrypted history retains at most 20 sessions or 30 days.
 - Dataset: `dataset-bundle-v1` produces JSONL, Parquet, data card and manifest with deterministic paper-level train/validation/test split. Immutable source plan: 60 papers, 4,356 records, 2,417 unreviewed, content fingerprint `8f853102d0a4774efad59fdd3be88d2ca6b685930aeb767dfa09bd80ca0341ea`.
 - Scientific audit: 14 human-gold dimensions for numeric/unit/meaning/conditions/table/figure/finding/excerpt/locator quality. Software tests and model agreement are not scientific accuracy.
-- Official package v2: requires 60/60 real PDFs and audited visual assets. Five historical PDF paths were HTML; four were repaired. DOI `10.2172/6065200` still needs the exact 40-page DOE report, so the package must remain unbuilt rather than shipping 59/60 or substituting the 14-page journal version.
-- Targeted validation completed before final release: Harness/dataset 33, release/version 28, Fusion/package/Mac 70, scientific audit 10. Full shared/Mac suites, App/DMG and real installation remain separate final gates.
+- Official package v2: user froze an explicit 59-paper scope, excluding DOI `10.2172/6065200` as `source_pdf_unavailable` without deleting local/Zotero records. The signed candidate has 4,369 entities, 59 real PDFs and 291 visual assets; SHA-256 `909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`. Fresh import, repeat import and every installed PDF/asset passed runtime verification. Historical visual review status is still `draft`, so scientific review is not complete.
+- Final frozen-interface validation: 874 shared tests (80 explicit skips) and 234 macOS tests passed, plus Python/JavaScript, release-contract and diff checks. App/DMG rebuild and real installation remain separate final gates.
 - Protection: tag `auto-research-v1.0.0-pre-1.1-protection`; external backup `/Users/USER/Zotero/auto-research-backups/v1.1-protection-20260822-154915`. The production `db/experimental_evidence.sqlite` remains the only expected dirty file and must not be staged, reset or tested.
 
 ## v1.0.0 stable-candidate checkpoint (2026-08-21)
@@ -83,7 +83,7 @@ Use this file for fast orientation. Verify drift-prone counts with read-only com
 | fixed PDFs valid and identity-matched | 50/50 |
 | data-ready fixed papers | 17/50 |
 | visual-ready fixed papers | 30/50 |
-| latest 1.1 targeted tests | 141: 33 Harness/dataset, 28 release/version, 70 Fusion/package/Mac, 10 scientific audit |
+| latest 1.1 release tests | 1,108: 874 shared plus 234 macOS; shared has 80 explicit external-fixture skips |
 
 Target DOI `10.1016/j.jnucmat.2018.08.031` has 231 independent facts and 403/403 source-localizable automatic records at this checkpoint.
 

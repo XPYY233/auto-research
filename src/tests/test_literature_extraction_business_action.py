@@ -130,7 +130,7 @@ def test_initial_request_is_server_started_with_fixed_bounds_and_no_write(eviden
     assert _counts(db) == before
 
 
-def test_starter_enforces_eight_page_two_page_block_limit(tmp_path: Path) -> None:
+def test_starter_covers_supported_article_without_eight_page_truncation(tmp_path: Path) -> None:
     db = EvidenceDB(tmp_path / "evidence.sqlite")
     db.init()
     pdf = tmp_path / "long.pdf"
@@ -140,8 +140,8 @@ def test_starter_enforces_eight_page_two_page_block_limit(tmp_path: Path) -> Non
     summary = EvidenceDBLiteratureJobStarter(db, store).start(
         paper_id=paper_id, force_rescan=False, session_id="owner"
     )
-    assert summary["sending_scope"]["pdf_page_count"] == 8
-    assert summary["sending_scope"]["page_block_count"] == 4
+    assert summary["sending_scope"]["pdf_page_count"] == 10
+    assert summary["sending_scope"]["page_block_count"] == 3
 
 
 @pytest.mark.parametrize(
@@ -186,6 +186,10 @@ def test_rescan_requires_explicit_confirmation_and_creates_a_new_job(evidence) -
     with pytest.raises(BusinessActionError) as rejected:
         assembler.assemble({"paper_id": paper_id, "force_rescan": False})
     assert rejected.value.code == "business_action_prepare_failed"
+    assert rejected.value.cause_code == "literature_rescan_confirmation_required"
+    assert rejected.value.stage == "preflight"
+    assert "确认重新扫描" in rejected.value.next_action
+    assert rejected.value.public_dict()["cause_code"] == "literature_rescan_confirmation_required"
     assert rejected.value.__cause__.code == "literature_rescan_confirmation_required"
     assert store._jobs == {}
 
@@ -237,17 +241,13 @@ def test_continuations_finish_with_atomic_commit_and_strict_public_dto(evidence)
             assert public["stage"] == expected_stage
             request = {"job_token": public["job_token"]}
         else:
-            assert public == {
-                "schema_version": "literature-extraction-commit-result-v1",
-                "status": "completed",
-                "paper": {"title": "Safe experiment", "doi": "10.1/safe"},
-                "candidate_count": 1,
-                "published_item_count": 1,
-                "existing_item_count": 0,
-                "manual_review_count": 0,
-                "visual_evidence_ready": False,
-                "idempotent": False,
-            }
+            assert public["schema_version"] == "literature-extraction-commit-result-v2"
+            assert public["status"] == "completed"
+            assert public["paper"] == {"title": "Safe experiment", "doi": "10.1/safe"}
+            assert public["candidate_count"] == 1
+            assert public["published_item_count"] == 1
+            assert public["visual_evidence_ready"] is True
+            assert public["search_index"]["status"] == "refreshed"
     assert total_calls > 0
     assert _counts(db)["quality_pipeline_runs"] == 1
     assert str(db.path) not in repr(public)
@@ -288,21 +288,27 @@ def test_final_stage_without_trusted_finalizer_never_claims_saved(evidence) -> N
 def test_projector_rejects_extra_or_false_commit_fields() -> None:
     projector = LiteratureExtractionBusinessProjector()
     valid = {
-        "schema_version": "literature-extraction-commit-result-v1",
+        "schema_version": "literature-extraction-commit-result-v2",
         "status": "completed",
         "paper": {"title": "Safe experiment", "doi": "10.1/safe"},
         "candidate_count": 1,
         "published_item_count": 1,
         "existing_item_count": 0,
         "manual_review_count": 0,
-        "visual_evidence_ready": False,
+        "visual_evidence_ready": True,
+        "table_candidate_count": 0,
+        "figure_candidate_count": 0,
         "idempotent": False,
+        "extraction_receipt": {"schema_version": "literature-extraction-receipt-v1"},
+        "publication_receipt": {"schema_version": "literature-publication-receipt-v1"},
+        "dataset_receipt": {"schema_version": "dataset-membership-receipt-v1"},
+        "search_index": {"status": "refreshed"},
     }
     assert projector.project({"summary": valid}) == valid
     with pytest.raises(BusinessActionError):
         projector.project({"summary": {**valid, "pdf_path": "/private/a.pdf"}})
     with pytest.raises(BusinessActionError):
-        projector.project({"summary": {**valid, "visual_evidence_ready": True}})
+        projector.project({"summary": {**valid, "visual_evidence_ready": False}})
     with pytest.raises(BusinessActionError):
         projector.project({
             "summary": {**valid, "paper": {**valid["paper"], "pdf_path": "/tmp/a.pdf"}}

@@ -199,6 +199,7 @@ class DesktopVersionContractTests(unittest.TestCase):
             '"app.css"',
             '"workbench.css"',
             '"ai_consent.js"',
+            '"document_tab_store.js"',
             '"fusion_review.js"',
         ):
             self.assertIn(asset, spec)

@@ -1,0 +1,9 @@
+{
+  "schema_version": "official-package-v2-exclusions-v1",
+  "excluded_papers": [
+    {
+      "doi": "10.2172/6065200",
+      "reason": "source_pdf_unavailable"
+    }
+  ]
+}

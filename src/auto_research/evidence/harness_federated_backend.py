@@ -1,4 +1,4 @@
-"""Official-only, path-free Harness tools over a frozen federated snapshot."""
+"""Path-free Harness tools over one frozen official/workspace literature snapshot."""
 
 from __future__ import annotations
 
@@ -9,11 +9,14 @@ from typing import Any, Iterable, Mapping, Sequence
 from auto_research.ai.harness_contract import HarnessError, HarnessEvidenceIdentity
 from auto_research.evidence.federated_search import validate_public_evidence_document
 from auto_research.evidence.federated_search_session import FederatedSearchSessionProtocol
+from auto_research.evidence.public_dto import public_evidence_dto
+from auto_research.product.portable_repository import stable_entity_uid, stable_paper_uid
 
 
 MAX_HARNESS_CANDIDATES = 64
 MAX_TOOL_TEXT = 8_000
 _ENTITY_TYPES = ("item", "finding", "table", "figure")
+_LITERATURE_SCOPES = frozenset({"official", "workspace"})
 _DETAIL_KEYS = frozenset(
     {
         "source_scope", "source_id", "entity_type", "entity_uid", "paper_uid",
@@ -137,12 +140,117 @@ def sanitize_official_documents(
     return tuple(result)
 
 
+def sanitize_workspace_documents(
+    documents: Iterable[Mapping[str, Any]], *, expected_source_id: str = "workspace"
+) -> tuple[dict[str, Any], ...]:
+    """Create the same bounded Harness projection from Search V2 workspace rows."""
+
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw in documents:
+        if not isinstance(raw, Mapping):
+            raise HarnessError("harness_tool_invalid")
+        entity_type = str(raw.get("entity_type") or "")
+        entity_id = raw.get("entity_id")
+        if (
+            entity_type not in _ENTITY_TYPES
+            or isinstance(entity_id, bool)
+            or not isinstance(entity_id, int)
+            or entity_id < 1
+        ):
+            raise HarnessError("harness_tool_invalid")
+        public = public_evidence_dto(dict(raw))
+        try:
+            paper_uid = stable_paper_uid(
+                doi=raw.get("doi"),
+                title=raw.get("article_title"),
+                year=raw.get("year"),
+                first_author=raw.get("first_author"),
+            )
+            if entity_type in {"table", "figure"}:
+                identity_key = (
+                    f"visual:{entity_type}:{raw.get('label') or ''}:"
+                    f"{int(raw.get('asset_number') or 0)}"
+                )
+            else:
+                identity_key = str(raw.get("stable_key") or "").strip() or "\0".join(
+                    str(raw.get(key) or "")
+                    for key in (
+                        "value_text",
+                        "finding_text",
+                        "meaning",
+                        "unit",
+                        "source_page",
+                        "source_locator",
+                    )
+                )
+            entity_uid = stable_entity_uid(paper_uid, entity_type, identity_key)
+        except Exception as exc:
+            raise HarnessError("harness_tool_invalid") from exc
+        public.update(
+            {
+                "source_scope": "workspace",
+                "source_id": expected_source_id,
+                "entity_type": entity_type,
+                "entity_uid": entity_uid,
+                "paper_uid": paper_uid,
+            }
+        )
+        identity = (entity_type, entity_uid)
+        if identity in seen:
+            raise HarnessError("harness_tool_invalid")
+        seen.add(identity)
+        selected = {
+            key: _clean_value(public[key]) for key in _DETAIL_KEYS if key in public
+        }
+        selected["bundle_uid"] = _bundle_uid(selected)
+        result.append(selected)
+        if len(result) > MAX_HARNESS_CANDIDATES:
+            raise HarnessError("harness_tool_invalid")
+    return tuple(result)
+
+
+def sanitize_literature_documents(
+    documents: Iterable[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    """Validate a mixed frozen snapshot without accepting private experiments."""
+
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+    order: list[tuple[str, str]] = []
+    for raw in documents:
+        if not isinstance(raw, Mapping):
+            raise HarnessError("harness_tool_invalid")
+        scope = str(raw.get("source_scope") or "")
+        source_id = str(raw.get("source_id") or "")
+        if scope not in _LITERATURE_SCOPES or not source_id:
+            raise HarnessError("harness_private_forbidden")
+        key = (scope, source_id)
+        if key not in grouped:
+            grouped[key] = []
+            order.append(key)
+        grouped[key].append(raw)
+    result: list[dict[str, Any]] = []
+    for scope, source_id in order:
+        rows = grouped[(scope, source_id)]
+        if scope == "official":
+            result.extend(sanitize_official_documents(rows, expected_source_id=source_id))
+        else:
+            result.extend(sanitize_workspace_documents(rows, expected_source_id=source_id))
+    identities = {
+        (row["source_scope"], row["source_id"], row["entity_type"], row["entity_uid"])
+        for row in result
+    }
+    if len(identities) != len(result) or len(result) > MAX_HARNESS_CANDIDATES:
+        raise HarnessError("harness_tool_invalid")
+    return tuple(result)
+
+
 def evidence_identities(
     documents: Sequence[Mapping[str, Any]],
 ) -> tuple[HarnessEvidenceIdentity, ...]:
     return tuple(
         HarnessEvidenceIdentity(
-            "official",
+            str(document["source_scope"]),
             str(document["source_id"]),
             str(document["entity_type"]),
             str(document["entity_uid"]),
@@ -158,14 +266,9 @@ class HarnessFederatedBackend:
     def __init__(self, documents: Sequence[Mapping[str, Any]]) -> None:
         if not documents:
             raise HarnessError("harness_runtime_unavailable")
-        source_ids = {str(row.get("source_id") or "") for row in documents}
-        if len(source_ids) != 1 or "" in source_ids:
-            raise HarnessError("harness_tool_invalid")
-        self._documents = sanitize_official_documents(
-            documents, expected_source_id=next(iter(source_ids))
-        )
+        self._documents = sanitize_literature_documents(documents)
         self._by_identity = {
-            (str(row["source_id"]), str(row["entity_type"]), str(row["entity_uid"])): row
+            (str(row["source_scope"]), str(row["source_id"]), str(row["entity_type"]), str(row["entity_uid"])): row
             for row in self._documents
         }
         self._refs = {
@@ -197,14 +300,15 @@ class HarnessFederatedBackend:
         return self._search(request)
 
     def federated_search(self, request: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
-        if request.get("source_scope") != "official":
+        if request.get("source_scope") not in _LITERATURE_SCOPES:
             raise HarnessError("harness_private_forbidden")
         return self._search(request)
 
     def _resolve(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        if request.get("source_scope") != "official":
+        if request.get("source_scope") not in _LITERATURE_SCOPES:
             raise HarnessError("harness_private_forbidden")
         key = (
+            str(request.get("source_scope") or ""),
             str(request.get("source_id") or ""),
             str(request.get("entity_type") or ""),
             str(request.get("entity_uid") or ""),
@@ -293,5 +397,7 @@ __all__ = [
     "evidence_identities",
     "official_candidates",
     "official_source_binding",
+    "sanitize_literature_documents",
     "sanitize_official_documents",
+    "sanitize_workspace_documents",
 ]

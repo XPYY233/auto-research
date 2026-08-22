@@ -669,15 +669,29 @@ def _decode_asset(row: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _upsert_asset(db: EvidenceDB, paper: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+def _upsert_asset(
+    db: EvidenceDB,
+    paper: dict[str, Any],
+    spec: dict[str, Any],
+    *,
+    connection: Any | None = None,
+) -> dict[str, Any]:
     asset_type = str(spec["asset_type"])
     number = int(spec["number"])
     label = _asset_label(asset_type, number)
     portable_identity = f"{str(paper.get('doi') or '').lower()}|{paper.get('title') or ''}"
     identity_hash = hashlib.sha256(portable_identity.encode("utf-8")).hexdigest()[:10]
     output_root = VISUAL_ASSET_DIR if db.path.resolve() == EVIDENCE_DB_PATH.resolve() else db.path.parent / "visual_assets"
-    output = output_root / f"paper_{int(paper['id']):03d}_{identity_hash}" / f"{asset_type}_{number:02d}.png"
-    image_sha = _render_crop(Path(str(paper["pdf_path"])), int(spec["page"]), list(spec["bbox"]), output)
+    output = Path(str(spec.get("_image_path") or (
+        output_root
+        / f"paper_{int(paper['id']):03d}_{identity_hash}"
+        / f"{asset_type}_{number:02d}.png"
+    )))
+    image_sha = str(spec.get("_image_sha256") or "")
+    if not image_sha:
+        image_sha = _render_crop(
+            Path(str(paper["pdf_path"])), int(spec["page"]), list(spec["bbox"]), output
+        )
     try:
         relative_path = str(output.relative_to(ROOT))
     except ValueError:
@@ -696,8 +710,15 @@ def _upsert_asset(db: EvidenceDB, paper: dict[str, Any], spec: dict[str, Any]) -
         str(spec.get("review_status") or "draft"), str(spec.get("extraction_method") or "pdf_layout"),
         str(spec.get("metadata_source") or "deterministic"), stamp, stamp,
     )
-    with db.connect() as conn:
-        conn.execute(
+    if connection is None:
+        with db.connect() as conn:
+            return _upsert_asset(
+                db,
+                paper,
+                {**spec, "_image_path": str(output), "_image_sha256": image_sha},
+                connection=conn,
+            )
+    connection.execute(
             """INSERT INTO visual_assets(
               paper_id,asset_type,label,display_name,asset_number,caption,page_start,page_end,bbox_json,image_path,image_sha256,
               physical_quantities_json,variables_json,materials_json,conditions_text,methods_text,
@@ -737,12 +758,12 @@ def _upsert_asset(db: EvidenceDB, paper: dict[str, Any], spec: dict[str, Any]) -
                 (visual_assets.metadata_source='deepseek' AND visual_assets.caption=excluded.caption))
                 AND excluded.metadata_source='deterministic' THEN visual_assets.metadata_source ELSE excluded.metadata_source END,
               updated_at=excluded.updated_at""",
-            values,
-        )
-        row = conn.execute(
-            "SELECT * FROM visual_assets WHERE paper_id=? AND asset_type=? AND label=?",
-            (int(paper["id"]), asset_type, label),
-        ).fetchone()
+        values,
+    )
+    row = connection.execute(
+        "SELECT * FROM visual_assets WHERE paper_id=? AND asset_type=? AND label=?",
+        (int(paper["id"]), asset_type, label),
+    ).fetchone()
     return _decode_asset(dict(row))
 
 
@@ -756,42 +777,46 @@ def _numbers_for_kind(text: str, asset_type: str) -> set[int]:
     return numbers
 
 
-def link_data_items_to_visuals(db: EvidenceDB, paper_id: int) -> dict[str, int]:
-    with db.connect() as conn:
-        assets = [dict(row) for row in conn.execute(
+def link_data_items_to_visuals(
+    db: EvidenceDB, paper_id: int, *, connection: Any | None = None
+) -> dict[str, int]:
+    if connection is None:
+        with db.connect() as conn:
+            return link_data_items_to_visuals(db, paper_id, connection=conn)
+    assets = [dict(row) for row in connection.execute(
             "SELECT id,asset_type,asset_number FROM visual_assets WHERE paper_id=?", (paper_id,)
         )]
-        rows = [dict(row) for row in conn.execute(
+    rows = [dict(row) for row in connection.execute(
             "SELECT item_id,stable_key,source_locator,source_excerpt,context_explanation "
             "FROM v_current_six_column_data WHERE paper_id=?", (paper_id,)
         )]
-        by_key = {(row["asset_type"], int(row["asset_number"])): int(row["id"]) for row in assets}
-        inserted = 0
-        for row in rows:
-            locator = str(row.get("source_locator") or "")
-            stable_key = str(row.get("stable_key") or "")
-            table_numbers = _numbers_for_kind(locator, "table")
-            if not table_numbers:
-                table_match = re.match(r"table([1-4])_", stable_key, re.I)
-                if table_match:
-                    table_numbers.add(int(table_match.group(1)))
-                elif stable_key.startswith("comp_"):
-                    table_numbers.add(1)
-            figure_numbers = _numbers_for_kind(locator, "figure")
-            for asset_type, numbers in (("table", table_numbers), ("figure", figure_numbers)):
-                for number in numbers:
-                    asset_id = by_key.get((asset_type, number))
-                    if not asset_id:
-                        continue
-                    relation = "primary" if asset_type == "table" else "supporting"
-                    before = conn.total_changes
-                    conn.execute(
-                        "INSERT OR IGNORE INTO data_item_visual_links(item_id,asset_id,relation_kind,cell_locator,created_at) "
-                        "VALUES(?,?,?,?,?)",
-                        (int(row["item_id"]), asset_id, relation, locator or None, now()),
-                    )
-                    inserted += conn.total_changes - before
-        return {"linked": inserted, "asset_count": len(assets), "row_count": len(rows)}
+    by_key = {(row["asset_type"], int(row["asset_number"])): int(row["id"]) for row in assets}
+    inserted = 0
+    for row in rows:
+        locator = str(row.get("source_locator") or "")
+        stable_key = str(row.get("stable_key") or "")
+        table_numbers = _numbers_for_kind(locator, "table")
+        if not table_numbers:
+            table_match = re.match(r"table([1-4])_", stable_key, re.I)
+            if table_match:
+                table_numbers.add(int(table_match.group(1)))
+            elif stable_key.startswith("comp_"):
+                table_numbers.add(1)
+        figure_numbers = _numbers_for_kind(locator, "figure")
+        for asset_type, numbers in (("table", table_numbers), ("figure", figure_numbers)):
+            for number in numbers:
+                asset_id = by_key.get((asset_type, number))
+                if not asset_id:
+                    continue
+                relation = "primary" if asset_type == "table" else "supporting"
+                before = connection.total_changes
+                connection.execute(
+                    "INSERT OR IGNORE INTO data_item_visual_links(item_id,asset_id,relation_kind,cell_locator,created_at) "
+                    "VALUES(?,?,?,?,?)",
+                    (int(row["item_id"]), asset_id, relation, locator or None, now()),
+                )
+                inserted += connection.total_changes - before
+    return {"linked": inserted, "asset_count": len(assets), "row_count": len(rows)}
 
 
 def index_visual_evidence(db: EvidenceDB, paper_id: int) -> dict[str, Any]:

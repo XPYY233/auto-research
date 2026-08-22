@@ -14,7 +14,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -27,6 +27,11 @@ from .official_package_assets import (
     OFFICIAL_DISTRIBUTION_SCOPE,
     OFFICIAL_PACKAGE_CONTRACT_V2,
     plan_official_pdf_payloads,
+)
+from .official_package_v2_release import (
+    apply_official_package_v2_exclusions,
+    load_official_package_v2_exclusions,
+    normalize_official_package_v2_approved_scope,
 )
 from .official_package_store import (
     import_official_evidence_package,
@@ -334,6 +339,7 @@ def build_internal_preview_package(
     app_maximum_exclusive: str = "1.0.0",
     paper_pdf_paths: dict[str, Path | str] | None = None,
     binary_assets: dict[str, Path | str] | None = None,
+    excluded_dois: Mapping[str, str] | None = None,
 ) -> InternalPreviewBuildReport:
     output = Path(output_directory).expanduser().resolve()
     if output.exists() or output.is_symlink():
@@ -357,6 +363,7 @@ def build_internal_preview_package(
             app_maximum_exclusive=app_maximum_exclusive,
             paper_pdf_paths=paper_pdf_paths,
             binary_assets=binary_assets,
+            excluded_dois=excluded_dois,
         )
         replace_file(staging, output)
         return report
@@ -380,6 +387,7 @@ def _build_internal_preview_package_in_directory(
     app_maximum_exclusive: str,
     paper_pdf_paths: dict[str, Path | str] | None = None,
     binary_assets: dict[str, Path | str] | None = None,
+    excluded_dois: Mapping[str, str] | None = None,
 ) -> InternalPreviewBuildReport:
     output = staging_directory
     repository_root = output / f"{package_id}-{package_version}-repository"
@@ -394,7 +402,10 @@ def _build_internal_preview_package_in_directory(
         character not in "0123456789abcdef" for character in expected_digest
     ):
         raise RuntimeError("必须提供有效的稳定源快照 SHA-256")
-    plan = plan_evidence_v12_export(source_snapshot)
+    original_plan = plan_evidence_v12_export(source_snapshot)
+    plan, exclusion_declarations = apply_official_package_v2_exclusions(
+        original_plan, excluded_dois
+    )
     if plan.private_source_sha256 != expected_digest:
         raise RuntimeError("稳定源快照 SHA-256 不匹配，拒绝构建资料包")
     unexplained_drops = {
@@ -404,7 +415,11 @@ def _build_internal_preview_package_in_directory(
     }
     if unexplained_drops:
         raise RuntimeError("官方资料包发布要求 dropped_by_reason 全部为零")
-    approved = normalize_approved_paper_uids(approved_paper_uids)
+    approved = normalize_official_package_v2_approved_scope(
+        original_plan=original_plan,
+        filtered_plan=plan,
+        approved_paper_uids=normalize_approved_paper_uids(approved_paper_uids),
+    )
     planned = frozenset(str(paper["paper_uid"]) for paper in plan.papers)
     if approved != planned:
         missing = len(planned - approved)
@@ -500,6 +515,7 @@ def _build_internal_preview_package_in_directory(
                     "paper_pdfs": len(pdf_rows),
                     "visual_assets": repository.asset_count,
                 },
+                "excluded_papers": [dict(row) for row in exclusion_declarations],
             }
         )
     payload_files: dict[str, Path] = {
@@ -603,6 +619,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--app-maximum-exclusive", default="1.0.0")
     parser.add_argument("--paper-pdf-map")
     parser.add_argument("--binary-asset-map")
+    parser.add_argument(
+        "--official-package-v2-exclusions",
+        help="official-package-v2 排除声明 JSON；只影响发布范围，不修改源快照",
+    )
     parser.add_argument("--initialize-signing-key", action="store_true")
     arguments = parser.parse_args(argv)
     if arguments.initialize_signing_key:
@@ -627,6 +647,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         binary_assets=(
             load_path_mapping(arguments.binary_asset_map)
             if arguments.binary_asset_map
+            else None
+        ),
+        excluded_dois=(
+            load_official_package_v2_exclusions(
+                arguments.official_package_v2_exclusions
+            )
+            if arguments.official_package_v2_exclusions
             else None
         ),
     )
