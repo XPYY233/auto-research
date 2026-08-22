@@ -136,6 +136,7 @@ def _verified_runtime_member(
     expected_sha256: str,
     *,
     frozen_sha256: str | None = None,
+    role: str = "runtime",
 ) -> Path:
     """Resolve PyInstaller's signed in-bundle symlink, rejecting all others."""
 
@@ -163,6 +164,7 @@ def _verified_runtime_member(
         raise
     except OSError as exc:
         raise HarnessError("harness_dependency_mismatch") from exc
+    _safe_trace("harness_stage", stage=f"{role}_verified")
     return candidate
 
 
@@ -211,8 +213,17 @@ def _default_runtime_binary() -> str:
         ),
     )
     verified = tuple(
-        _verified_runtime_member(path, expected, frozen_sha256=frozen)
-        for path, expected, frozen in members
+        _verified_runtime_member(
+            path,
+            expected,
+            frozen_sha256=frozen,
+            role=role,
+        )
+        for role, path, expected, frozen in (
+            ("runtime_main", *members[0]),
+            ("runtime_rg", *members[1]),
+            ("runtime_spawn_helper", *members[2]),
+        )
     )
     return str(verified[0])
 
@@ -583,10 +594,14 @@ class OfficialDeepSeekHarnessRuntime:
         tools: HarnessToolGateway,
         prompt: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
+        _safe_trace("harness_stage", stage="execute_entered")
         self.dependency_metadata().verify_production_protocols()
+        _safe_trace("harness_stage", stage="dependencies_verified")
         if not self._cordis_path.is_file() or self._cordis_path.is_symlink():
             raise HarnessError("harness_dependency_mismatch")
+        _safe_trace("harness_stage", stage="composition_file_verified")
         runtime_bin = self._runtime_path()
+        _safe_trace("harness_stage", stage="runtime_bundle_verified")
         factory = self._factory
         if factory is None:
             try:
