@@ -16,6 +16,7 @@ class PackageOperation(str, Enum):
     OFFICIAL_ROLLBACK = "official_rollback"
     TRANSFER_EXPORT = "transfer_export"
     TRANSFER_IMPORT = "transfer_import"
+    DATASET_EXPORT = "dataset_export"
 
 
 class PackageJobStage(str, Enum):
@@ -78,6 +79,16 @@ _OPERATION_STAGES: Mapping[PackageOperation, tuple[tuple[PackageJobStage, int], 
         (PackageJobStage.EXTRACT_STAGING, 68),
         (PackageJobStage.AUDIT_PAYLOAD, 86),
         (PackageJobStage.ACTIVATE, 96),
+        (PackageJobStage.COMPLETED, 100),
+    ),
+    PackageOperation.DATASET_EXPORT: (
+        (PackageJobStage.QUEUED, 0),
+        (PackageJobStage.PLAN, 10),
+        (PackageJobStage.SNAPSHOT_SOURCE, 25),
+        (PackageJobStage.RIGHTS_AUDIT, 40),
+        (PackageJobStage.BUILD_ARCHIVE, 62),
+        (PackageJobStage.VERIFY_CHECKSUMS, 80),
+        (PackageJobStage.PUBLISH, 96),
         (PackageJobStage.COMPLETED, 100),
     ),
 }
