@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 from typing import Any
 
 
@@ -29,8 +31,33 @@ def _public_visual_link(value: Any) -> dict[str, Any] | None:
     return {key: value.get(key) for key in allowed if value.get(key) not in (None, "")}
 
 
+def _public_bbox(value: Any) -> list[int | float] | None:
+    if isinstance(value, str):
+        if len(value) > 256:
+            return None
+        try:
+            value = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return None
+    coordinates: list[int | float] = []
+    for coordinate in value:
+        if isinstance(coordinate, bool) or not isinstance(coordinate, (int, float)):
+            return None
+        if isinstance(coordinate, float) and not math.isfinite(coordinate):
+            return None
+        coordinates.append(coordinate)
+    return coordinates
+
+
 def public_evidence_dto(row: dict[str, Any]) -> dict[str, Any]:
     public = {key: row.get(key) for key in PUBLIC_EVIDENCE_FIELDS if key in row}
+    bbox = _public_bbox(row.get("bbox"))
+    if bbox is None:
+        bbox = _public_bbox(row.get("bbox_json"))
+    if bbox is not None:
+        public["bbox"] = bbox
     links = [
         cleaned for value in row.get("visual_assets") or []
         if (cleaned := _public_visual_link(value)) is not None
