@@ -110,9 +110,11 @@ class Workspace:
 class RawClient:
     def __init__(self):
         self.calls = 0
+        self.last_task = None
 
     def request_tool_message(self, messages, tools, **kwargs):
         self.calls += 1
+        self.last_task = kwargs.get("task")
         return {"role": "assistant", "content": "ok"}
 
 
@@ -180,9 +182,9 @@ class Runtime:
 
 def action(draft, scope):
     now = int(time.time())
-    task = "librarian_synthesis" if scope == "librarian" else "extraction"
+    task = draft.call_plan[0].task if scope == "librarian" else "extraction"
     task_models = (
-        (("librarian_planning", "deepseek-v4-flash"), ("librarian_synthesis", "deepseek-v4-pro"))
+        ((task, "deepseek-v4-flash"),)
         if scope == "librarian"
         else (("extraction", "deepseek-v4-pro"),)
     )
@@ -258,7 +260,8 @@ class HarnessBusinessActionTests(unittest.TestCase):
                 "history": [],
             }
         )
-        self.assertEqual((draft.max_calls, draft.max_tokens), (2, 8_000))
+        self.assertEqual((draft.max_calls, draft.max_tokens), (1, 2_400))
+        self.assertEqual(draft.call_plan[0].task, "librarian_planning")
         seed = draft.outbound["prompt"]["seed_evidence"]
         self.assertTrue(seed)
         self.assertEqual(seed[0]["ref"], "R1")
@@ -269,6 +272,7 @@ class HarnessBusinessActionTests(unittest.TestCase):
         internal = ports.librarian.executor.execute(action=prepared, ai_client=client)
         result = ports.librarian.projector.project(internal)
         self.assertEqual(raw.calls, 1)
+        self.assertEqual(raw.last_task, "librarian_planning")
         self.assertEqual(result["librarian_core_version"], "librarian-v3")
         self.assertEqual(result["report"]["schema_version"], "research-report-v1")
         self.assertEqual({row["source_scope"] for row in result["results"]}, {"official"})

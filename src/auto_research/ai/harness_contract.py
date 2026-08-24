@@ -346,11 +346,14 @@ class HarnessJobV1:
             item.source_scope == "private" for item in self.evidence
         ):
             raise HarnessError("harness_private_forbidden")
-        expected_task = {
-            "librarian": "librarian_synthesis",
-            "selected_evidence_chat": "extraction",
+        allowed_tasks = {
+            # Search V2 may prepare either a fast, locally seeded planning turn
+            # or the historical two-stage synthesis turn.  Both remain inside
+            # the pinned Librarian scope and provider registry.
+            "librarian": frozenset({"librarian_planning", "librarian_synthesis"}),
+            "selected_evidence_chat": frozenset({"extraction"}),
         }[self.session.scope]
-        if self.task != expected_task:
+        if self.task not in allowed_tasks:
             raise HarnessError("harness_scope_unsupported")
         if self.session.scope == "selected_evidence_chat":
             if self.current_entity is None or self.current_entity.source_scope == "private":

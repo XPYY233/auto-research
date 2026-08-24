@@ -37,8 +37,8 @@ from .librarian_reasoning import build_query_analysis, soft_recall_queries
 
 
 HARNESS_SNAPSHOT_KIND = "harness_literature"
-LIBRARIAN_MAX_CALLS = 2
-LIBRARIAN_MAX_TOKENS = 8_000
+LIBRARIAN_MAX_CALLS = 1
+LIBRARIAN_MAX_TOKENS = 2_400
 SELECTED_MAX_CALLS = 2
 SELECTED_MAX_TOKENS = 32_000
 _LIBRARIAN_KEYS = frozenset(
@@ -390,7 +390,10 @@ class HarnessBusinessAssembler:
         return self._draft(
             documents=documents,
             prompt=prompt,
-            task="librarian_synthesis",
+            # Local Search V2 already owns recall and hard-condition parsing.
+            # The Librarian therefore needs one bounded Flash turn to explain
+            # and cite the frozen seed, not a second Pro synthesis round.
+            task="librarian_planning",
             max_calls=LIBRARIAN_MAX_CALLS,
             max_tokens=LIBRARIAN_MAX_TOKENS,
             current=None,

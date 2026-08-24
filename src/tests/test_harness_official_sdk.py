@@ -250,6 +250,38 @@ class FinalizingHarness(FakeHarness):
         )
 
 
+class OneTurnFinalHarness(FakeHarness):
+    def run(self, _prompt, *, session_id):
+        del session_id
+        token = self.kwargs["api_key"]
+        status, raw, _ = post(
+            self.kwargs["base_url"] + "/chat/completions",
+            token,
+            {
+                "model": self.kwargs["model"],
+                "messages": [{"role": "user", "content": "one-turn"}],
+                "tools": [{
+                    "type": "function",
+                    "function": {
+                        "name": "mcp__auto_research__exact_search",
+                        "description": "bounded",
+                        "parameters": {"type": "object", "additionalProperties": False},
+                    },
+                }],
+                "max_tokens": self.kwargs["max_tokens"],
+                "temperature": 0.1,
+                "stream": False,
+            },
+        )
+        assert status == 200
+        json.loads(raw)
+        return SimpleNamespace(
+            final_response=json.dumps({"ok": True}),
+            finish_reason="completed",
+            session_root=None,
+        )
+
+
 class OfficialHarnessSDKTests(unittest.TestCase):
     def test_single_json_fence_is_unwrapped_without_recovering_prose(self):
         self.assertEqual(_parse_final_json("```json\n{\"ok\":true}\n```"), {"ok": True})
@@ -258,7 +290,7 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         with self.assertRaises(json.JSONDecodeError):
             _parse_final_json("```json\n{\"ok\":true}\n尾注```")
 
-    def test_librarian_reserves_second_call_for_tool_free_finalization(self):
+    def test_librarian_finalization_is_tool_free_and_bounded(self):
         prepared = action()
         prepared = PreparedOutbound(
             **{
@@ -284,8 +316,34 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertEqual(len(raw.calls), 2)
         self.assertTrue(raw.calls[0][1])
         self.assertEqual(raw.calls[1][1], [])
-        self.assertEqual(raw.calls[1][2]["max_tokens"], 3_600)
+        self.assertEqual(raw.calls[1][2]["max_tokens"], 2_400)
         self.assertIn("不得再调用任何工具", raw.calls[1][0][-1]["content"])
+
+    def test_one_turn_librarian_is_forced_tool_free_on_its_only_call(self):
+        prepared = PreparedOutbound(
+            **{**action().__dict__, "max_calls": 1, "max_tokens": 2_400}
+        )
+        raw = RawClient()
+        runtime = OfficialDeepSeekHarnessRuntime(
+            cordis_path="config/auto-research-harness.runtime.cordis.yml",
+            harness_factory=OneTurnFinalHarness,
+            dependency_resolver=dependencies,
+            runtime_path_resolver=lambda: "/verified/runtime",
+        )
+        harness_job = replace(job(), max_calls=1, max_tokens=2_400)
+        self.assertEqual(
+            runtime.execute(
+                job=harness_job,
+                model=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
+                tools=HarnessToolGateway(backend=Backend(), job=harness_job, allow_source_view=True),
+                prompt={"question": "bounded", "seed_evidence": [{"ref": "R1"}]},
+            ),
+            {"ok": True},
+        )
+        self.assertEqual(len(raw.calls), 1)
+        self.assertEqual(raw.calls[0][1], [])
+        self.assertEqual(raw.calls[0][2]["max_tokens"], 2_400)
+        self.assertIn("seed_evidence", raw.calls[0][0][-1]["content"])
 
     def test_finalization_rejects_tool_calls_and_all_later_provider_requests(self):
         class ToolCallingClient(RawClient):
@@ -415,7 +473,7 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertEqual(len(raw.calls), 1)
         self.assertEqual(model.remaining_calls, 1)
         self.assertEqual(FakeHarness.latest.kwargs["max_tokens"], 1_000)
-        self.assertIn("第二轮必须输出最终 JSON", FakeHarness.latest.kwargs["env"]["AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"])
+        self.assertIn("本次只有一个模型回合", FakeHarness.latest.kwargs["env"]["AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"])
         self.assertNotIn("real-key", repr(FakeHarness.latest.kwargs))
         self.assertIsNone(FakeHarness.latest.kwargs["session_root"])
         codes = [event["code"] for event in activities]

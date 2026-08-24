@@ -60,7 +60,7 @@ MAX_PROVIDER_BODY_BYTES = 4 * 1024 * 1024
 MAX_MCP_BODY_BYTES = 512 * 1024
 MAX_FINAL_RESPONSE_BYTES = 1024 * 1024
 LIBRARIAN_FINALIZATION_REMAINING_CALLS = 1
-LIBRARIAN_FINAL_MAX_TOKENS = 3_600
+LIBRARIAN_FINAL_MAX_TOKENS = 2_400
 _ENVIRONMENT_LOCK = threading.RLock()
 _SAFE_ENVIRONMENT_KEYS = frozenset(
     {
@@ -783,6 +783,12 @@ class OfficialDeepSeekHarnessRuntime:
         final = getattr(result, "final_response", None)
         finish = getattr(result, "finish_reason", None)
         session_root = getattr(result, "session_root", None)
+        _safe_trace(
+            "harness_result_shape",
+            final_bytes=len(final.encode("utf-8")) if isinstance(final, str) else -1,
+            finish_reason=str(finish or ""),
+            has_session_root=bool(session_root),
+        )
         if (
             not isinstance(final, str)
             or not final.strip()
@@ -830,12 +836,22 @@ def _forced_final_instruction(
     if scope == "librarian":
         refs = sorted(verified_refs)
         papers = sorted(recommended_papers)
+        citation_rule = (
+            f"citations 只能使用这些已核验引用：{json.dumps(refs, ensure_ascii=False)}；"
+            if refs
+            else "citations 只能使用任务输入 seed_evidence 中实际存在的 R 编号；"
+        )
+        paper_rule = (
+            f"recommended_articles 的 paper_uid 只能使用这些已核验论文：{json.dumps(papers, ensure_ascii=False)}；"
+            if papers
+            else "recommended_articles 的 paper_uid 只能使用 seed_evidence 中实际存在的 paper_uid；"
+        )
         return (
             "现在必须结束工具循环：本轮不得再调用任何工具，只输出一个严格 JSON 对象，"
             "不要 Markdown 或解释。严格使用任务最初给出的 librarian-harness-result-v1 结构；"
-            f"citations 只能使用这些已核验引用：{json.dumps(refs, ensure_ascii=False)}；"
-            f"recommended_articles 的 paper_uid 只能使用这些已核验论文：{json.dumps(papers, ensure_ascii=False)}；"
-            "没有已核验推荐时返回空数组；comparison_bundle_uids 无法确认时返回空数组。"
+            + citation_rule
+            + paper_rule
+            + "没有已核验推荐时返回空数组；comparison_bundle_uids 无法确认时返回空数组。"
         )
     return (
         "现在必须结束工具循环：本轮不得再调用任何工具，只输出一个严格 JSON 对象，"
@@ -852,10 +868,9 @@ def _system_prompt(scope: str) -> str:
     if scope == "librarian":
         return common + (
             "回答必须包含条件解释、检索过程、证据回答、引用卡片、相关文章建议和局限。"
-            "任务输入已包含本机召回的 seed_evidence 和稳定 R 编号。第一轮只核验准备引用的 R 编号、"
-            "获取相关文章，或在确有缺口时进行一次补充检索；第二轮必须输出最终 JSON。"
-            "不得用相同参数重复调用工具；"
-            "证据不足时在局限中如实说明，不得为了继续搜索而耗尽授权预算。"
+            "任务输入已包含本机 Search V2 召回的 seed_evidence 和稳定 R 编号。"
+            "本次只有一个模型回合，不得调用工具；直接依据 seed_evidence 输出最终 JSON。"
+            "应用会再次核验每个 R 编号和 paper_uid，证据不足时必须在局限中如实说明。"
         )
     return common + (
         "只解释当前实体及明确允许的相邻证据，不得跨证据包拼接定量结论。"
@@ -891,7 +906,7 @@ def _user_prompt(scope: str, payload: Mapping[str, Any]) -> str:
             "limitations": [],
         }
     return (
-        "完成下面的受控科研任务。先用允许的工具核验，再严格按给定 JSON 结构输出。\n"
+        "完成下面的受控科研任务。严格按给定 JSON 结构输出。\n"
         f"任务输入：{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n"
         f"输出结构：{json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}"
     )
