@@ -70,6 +70,8 @@ _ERRORS = {
     "harness_dependency_mismatch": ("Harness 运行依赖未通过版本核验。", False),
     "harness_scope_unsupported": ("该科研场景不允许使用 Harness。", False),
     "harness_provider_untrusted": ("当前 AI 提供商未通过 Harness 审核。", False),
+    "harness_provider_unavailable": ("AI 提供商当前无法完成 Harness 请求。", True),
+    "harness_provider_response_invalid": ("AI 提供商返回了 Harness 无法安全使用的结果。", True),
     "harness_private_forbidden": ("私人实验数据不允许进入该 Harness 场景。", False),
     "harness_tool_forbidden": ("Harness 请求了未授权工具。", False),
     "harness_tool_invalid": ("Harness 工具参数或结果无效。", False),

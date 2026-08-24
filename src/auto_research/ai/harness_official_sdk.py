@@ -45,6 +45,7 @@ from .harness_contract import (
     canonical_public,
 )
 from .harness_tools import HarnessToolGateway
+from .openai_compatible import AIProviderResponseError, AIProviderUnavailableError
 
 
 RUNTIME_BINARY_SHA256 = "8f8014cc519e9c9df50c84714aed35ca417e8467b41401cf925fbb05341adf02"
@@ -59,6 +60,7 @@ MAX_PROVIDER_BODY_BYTES = 4 * 1024 * 1024
 MAX_MCP_BODY_BYTES = 512 * 1024
 MAX_FINAL_RESPONSE_BYTES = 1024 * 1024
 LIBRARIAN_FINALIZATION_REMAINING_CALLS = 3
+LIBRARIAN_FINAL_MAX_TOKENS = 3_600
 _ENVIRONMENT_LOCK = threading.RLock()
 _SAFE_ENVIRONMENT_KEYS = frozenset(
     {
@@ -485,6 +487,13 @@ class _Bridge:
                 },
             ]
             tools = []
+            # A final answer is a bounded research report, not another broad
+            # reasoning turn.  The Developer Preview runtime otherwise asks
+            # for up to 16k output tokens; on real DeepSeek connections that
+            # can spend minutes in a single terminal call and eventually fail
+            # upstream after the preceding tool work has already succeeded.
+            # Keep the established Librarian synthesis budget here.
+            tokens = min(tokens, LIBRARIAN_FINAL_MAX_TOKENS)
         try:
             message = self.model.request_tool_message(
                 messages,
@@ -493,6 +502,10 @@ class _Bridge:
                 max_tokens=tokens,
                 temperature=float(temperature),
             )
+        except AIProviderUnavailableError as exc:
+            raise HarnessError("harness_provider_unavailable") from exc
+        except AIProviderResponseError as exc:
+            raise HarnessError("harness_provider_response_invalid") from exc
         except Exception as exc:
             raise HarnessError("harness_runtime_failed") from exc
         self._emit_activity(

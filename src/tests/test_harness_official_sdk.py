@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -235,7 +236,7 @@ class FinalizingHarness(FakeHarness):
                     "model": self.kwargs["model"],
                     "messages": [{"role": "user", "content": f"turn-{index}"}],
                     "tools": [tool],
-                    "max_tokens": 500,
+                    "max_tokens": self.kwargs["max_tokens"],
                     "temperature": 0.1,
                     "stream": False,
                 },
@@ -263,7 +264,7 @@ class OfficialHarnessSDKTests(unittest.TestCase):
             **{
                 **prepared.__dict__,
                 "max_calls": 4,
-                "max_tokens": 4_000,
+                "max_tokens": 20_000,
             }
         )
         raw = RawClient()
@@ -273,15 +274,17 @@ class OfficialHarnessSDKTests(unittest.TestCase):
             dependency_resolver=dependencies,
             runtime_path_resolver=lambda: "/verified/runtime",
         )
+        harness_job = replace(job(), max_calls=4, max_tokens=20_000)
         runtime.execute(
-            job=job(),
+            job=harness_job,
             model=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
-            tools=HarnessToolGateway(backend=Backend(), job=job(), allow_source_view=True),
+            tools=HarnessToolGateway(backend=Backend(), job=harness_job, allow_source_view=True),
             prompt={"question": "bounded"},
         )
         self.assertEqual(len(raw.calls), 2)
         self.assertTrue(raw.calls[0][1])
         self.assertEqual(raw.calls[1][1], [])
+        self.assertEqual(raw.calls[1][2]["max_tokens"], 3_600)
         self.assertIn("不得再调用任何工具", raw.calls[1][0][-1]["content"])
 
     def test_finalization_rejects_tool_calls_and_all_later_provider_requests(self):
