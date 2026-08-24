@@ -72,6 +72,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
     runtime_source = (WEB_DIR / "fusion_review.js").read_text(encoding="utf-8")
     tab_store_source = (WEB_DIR / "document_tab_store.js").read_text(encoding="utf-8")
     pane_layout_source = (WEB_DIR / "pane_layout_controller.js").read_text(encoding="utf-8")
+    pdf_controller_source = (WEB_DIR / "fusion_pdf_controller.js").read_text(encoding="utf-8")
     ai_experience_source = (WEB_DIR / "fusion_ai_experience.js").read_text(encoding="utf-8")
     ai_consent_source = (WEB_DIR / "ai_consent.js").read_text(encoding="utf-8")
     workbench_styles = (WEB_DIR / "workbench.css").read_text(encoding="utf-8")
@@ -101,11 +102,13 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and '<script src="/static/ai_consent.js"></script>' in index_source
             and '<script src="/static/document_tab_store.js"></script>' in index_source
             and '<script src="/static/pane_layout_controller.js"></script>' in index_source
+            and '<script src="/static/fusion_pdf_controller.js"></script>' in index_source
             and '<script src="/static/fusion_ai_experience.js"></script>' in index_source
             and '<script src="/static/fusion_review.js"></script>' in index_source
             and index_source.index('<script src="/static/ai_consent.js"></script>')
             < index_source.index('<script src="/static/document_tab_store.js"></script>')
             < index_source.index('<script src="/static/pane_layout_controller.js"></script>')
+            < index_source.index('<script src="/static/fusion_pdf_controller.js"></script>')
             < index_source.index('<script src="/static/fusion_ai_experience.js"></script>')
             < index_source.index('<script src="/static/fusion_review.js"></script>')
             and '<script src="/static/app.js"></script>' not in index_source
@@ -116,6 +119,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and "workspace-layout-v2" in tab_store_source
             and "AutoResearchPaneLayout" in pane_layout_source
             and "fusion-pane-layout-v2" in pane_layout_source
+            and "AutoResearchFusionPDF" in pdf_controller_source
             and "AutoResearchAIExperience" in ai_experience_source
             and "fusion-ai-experience-v1" in ai_experience_source
             and "/api/search-papers" in runtime_source
@@ -265,6 +269,7 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
                 "/static/ai_consent.js",
                 "/static/document_tab_store.js",
                 "/static/pane_layout_controller.js",
+                "/static/fusion_pdf_controller.js",
                 "/static/fusion_ai_experience.js",
                 "/static/fusion_review.js",
             ),
@@ -278,6 +283,11 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
             "pane_layout_runtime",
             "/static/pane_layout_controller.js",
             ("AutoResearchPaneLayout", "fusion-pane-layout-v2"),
+        ),
+        (
+            "fusion_pdf_runtime",
+            "/static/fusion_pdf_controller.js",
+            ("AutoResearchFusionPDF", "fitWidth", "fitPage", "zoomIn", "zoomOut"),
         ),
         (
             "ai_experience_runtime",

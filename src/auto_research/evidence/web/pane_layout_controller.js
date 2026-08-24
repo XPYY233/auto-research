@@ -8,6 +8,7 @@
   const EDITOR_SNAP = 96;
   const SIDE_MAX = Object.freeze({ context: 480, inspector: 560 });
   const DEFAULTS = Object.freeze({ context: 244, inspector: 340, split: 0.58 });
+  const LAYOUT_BREAKPOINTS = Object.freeze({ narrow: 900, medium: 1440 });
   const finite = value => typeof value === "number" && Number.isFinite(value);
   const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, Number(value)));
   const exactKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join(",") === [...keys].sort().join(",");
@@ -22,6 +23,11 @@
       inspector: sideState(DEFAULTS.inspector),
       editors: { primaryCollapsed: false, secondaryCollapsed: false, split: DEFAULTS.split, lastSplit: DEFAULTS.split },
     };
+  }
+
+  function layoutMode(width) {
+    const value = Math.max(0, Number(width) || 0);
+    return value < LAYOUT_BREAKPOINTS.narrow ? "narrow" : value < LAYOUT_BREAKPOINTS.medium ? "medium" : "wide";
   }
 
   function validSide(value, maximum) {
@@ -186,5 +192,5 @@
     }
   }
 
-  globalThis.AutoResearchPaneLayout = Object.freeze({ PaneLayoutController, SCHEMA_VERSION, STORAGE_KEY, SIDE_SNAP, EDITOR_SNAP, DEFAULTS, SIDE_MAX });
+  globalThis.AutoResearchPaneLayout = Object.freeze({ PaneLayoutController, SCHEMA_VERSION, STORAGE_KEY, SIDE_SNAP, EDITOR_SNAP, DEFAULTS, SIDE_MAX, LAYOUT_BREAKPOINTS, layoutMode });
 })();

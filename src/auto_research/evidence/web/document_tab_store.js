@@ -137,13 +137,20 @@
     }
 
     beginRequest(tabId) {
-      if (!this.tabs.some(tab => tab.tabId === tabId)) return 0;
-      const generation = (this.requestGenerations.get(tabId) || 0) + 1;
-      this.requestGenerations.set(tabId, generation); return generation;
+      const tab = this.tabs.find(value => value.tabId === tabId); if (!tab) return 0;
+      const previous = this.requestGenerations.get(tabId), generation = Number(previous?.generation || 0) + 1;
+      this.requestGenerations.set(tabId, { generation, groupId: tab.groupId }); return generation;
     }
 
-    completeRequest(tabId, generation, patch = {}) {
-      if (!generation || this.requestGenerations.get(tabId) !== generation) return null;
+    requestBinding(tabId) {
+      const value = this.requestGenerations.get(tabId);
+      return value ? { generation: value.generation, groupId: value.groupId } : null;
+    }
+
+    completeRequest(tabId, generation, patch = {}, expectedGroupId = null) {
+      const tab = this.tabs.find(value => value.tabId === tabId), binding = this.requestGenerations.get(tabId);
+      if (!tab || !generation || binding?.generation !== generation || binding.groupId !== tab.groupId) return null;
+      if (expectedGroupId && tab.groupId !== expectedGroupId) return null;
       return this.update(tabId, patch);
     }
 
@@ -159,6 +166,7 @@
       const tab = this.tabs.find(value => value.tabId === tabId); if (!tab) return false;
       if (targetGroupId === "secondary" && !this.group("secondary")) this.groups.push({ id: "secondary", activeTabId: null });
       const previous = this.group(tab.groupId), previousFallback = this.fallbackTabId(tab.groupId, tabId); tab.groupId = targetGroupId;
+      const request = this.requestGenerations.get(tabId); if (request) request.groupId = targetGroupId;
       tab.pinned = true; tab.preview = false;
       if (previous?.activeTabId === tabId) previous.activeTabId = previousFallback;
       this.activeGroupId = targetGroupId; this.group(targetGroupId).activeTabId = tabId;

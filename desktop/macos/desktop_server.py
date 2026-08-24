@@ -89,7 +89,8 @@ FUSION_REVIEW_ALLOWED_GETS = frozenset(
 FUSION_REVIEW_STATIC_ASSETS = frozenset(
     {
         "index.html", "app.css", "workbench.css", "ai_consent.js", "fusion_review.js",
-        "document_tab_store.js", "pane_layout_controller.js", "fusion_ai_experience.js",
+        "document_tab_store.js", "pane_layout_controller.js", "fusion_pdf_controller.js",
+        "fusion_ai_experience.js",
         "codex-pet-working.webp",
     }
 )

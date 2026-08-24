@@ -6,7 +6,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-RUNTIME = ROOT / "src" / "auto_research" / "evidence" / "web" / "fusion_review.js"
+WEB = ROOT / "src" / "auto_research" / "evidence" / "web"
+RUNTIME = WEB / "fusion_review.js"
 
 
 class FusionEvidenceDetailRuntimeTests(unittest.TestCase):
@@ -27,14 +28,14 @@ const calls=[];let lateResolve=null;globalThis.fetch=async(url,options={{}})=>{{
  if(url==='/api/visual-assets/9')return new Promise(resolve=>{{lateResolve=()=>resolve({{ok:true,headers,json:async()=>({{id:9,asset_type:'figure',paper_id:3,label:'Figure 9',display_name:'晚到标题',image_url:'/api/visual-assets/9/image'}})}})}});
  throw new Error('unexpected:'+url);
 }};
-eval(fs.readFileSync({str(RUNTIME)!r},'utf8'));const api=globalThis.AutoResearchFusion;
+    eval(fs.readFileSync({str(WEB / 'fusion_pdf_controller.js')!r},'utf8'));eval(fs.readFileSync({str(RUNTIME)!r},'utf8'));const api=globalThis.AutoResearchFusion;
 (async()=>{{
  const privateRaw={{entity_type:'table',source_scope:'private',source_id:'lab',entity_uid:'private-table',display_title:'私人实验表',variables:{{dose:'dpa'}},image_url:'/api/visual-assets/999/image',pdf_path:'/secret/paper.pdf',zotero_key:'SECRET'}};
  const privateRow=api.publicEvidence(privateRaw);assert.equal(privateRow.sourceScope,'private');assert.equal(privateRow.imageUrl,'');assert.equal(privateRow.assetId,null);assert(!JSON.stringify(privateRow).includes('/secret'));assert(!JSON.stringify(privateRow).includes('SECRET'));
  api.state.view='paper';document.body.dataset.view='paper';api.state.evidence=[api.publicEvidence({{entity_type:'item',item_id:4,paper_id:3,value_text:'4.2',unit:'GPa',meaning:'纳米硬度',source_excerpt:'原文数值',context_explanation:'室温压痕',article_title:'Real paper',source_page:2}})];
  const itemButton=new El();assert(await api.openEvidenceDetail(0,itemButton));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('4.2 GPa'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('原文数值'));assert.equal(calls.length,0,'item detail must not fetch');assert(api.closeEvidenceDetail());assert.equal(globalThis.focused,itemButton);
  api.state.evidence=[api.publicEvidence({{entity_type:'finding',item_id:5,paper_id:3,finding_text:'硬度随温度升高而下降',meaning:'温度效应',source_excerpt:'decreased with temperature',article_title:'Real paper',source_page:5}})];assert(await api.openEvidenceDetail(0,new El()));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('硬度随温度升高而下降'));api.closeEvidenceDetail({{focus:false}});
- api.state.evidence=[api.publicEvidence({{entity_type:'figure',id:7,paper_id:3,label:'Figure 2',display_name:'形貌图',image_url:'/api/visual-assets/7/image'}})];assert(await api.openEvidenceDetail(0,new El()));assert(calls.includes('/api/visual-assets/7'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('/api/visual-assets/7/image'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('Defect morphology'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('缺陷密度'));assert(api.openDetailPDF());assert.equal(ids['#fusion-detail-pdf-frame'].src,'/api/papers/3/pdf#page=4');assert(api.closeDetailPDF());api.closeEvidenceDetail({{focus:false}});
+     api.state.evidence=[api.publicEvidence({{entity_type:'figure',id:7,paper_id:3,label:'Figure 2',display_name:'形貌图',image_url:'/api/visual-assets/7/image'}})];assert(await api.openEvidenceDetail(0,new El()));assert(calls.includes('/api/visual-assets/7'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('/api/visual-assets/7/image'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('Defect morphology'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('缺陷密度'));assert(api.openDetailPDF());assert.equal(ids['#fusion-detail-pdf-frame'].src,'/api/papers/3/pdf#page=4&zoom=page-width');assert(api.closeDetailPDF());api.closeEvidenceDetail({{focus:false}});
  api.state.view='search';document.body.dataset.view='search';api.state.searchResults=[api.publicEvidence({{entity_type:'table',source_scope:'official',source_id:'official-pack',entity_uid:'entity-table',display_title:'官方材料性能表'}})];assert(await api.openEvidenceDetail(0,new El()));assert(calls.some(url=>url.includes('/api/desktop/federated-evidence?source_scope=official')));assert(!calls.some(url=>url==='/api/visual-assets/999'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('该资料源不提供原图'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('Mechanical properties'));api.closeEvidenceDetail({{focus:false}});
  api.state.view='paper';document.body.dataset.view='paper';api.state.evidence=[api.publicEvidence({{entity_type:'figure',id:9,paper_id:3,label:'Figure 9',display_name:'原始选择',image_url:'/api/visual-assets/9/image'}})];const late=api.openEvidenceDetail(0,new El());assert(lateResolve);api.closeEvidenceDetail({{focus:false}});lateResolve();await late;assert(!ids['#fusion-evidence-detail-body'].innerHTML.includes('晚到标题'),'late detail must not replace closed workspace');
  assert(!calls.some(url=>url.includes('private-table')),'private detail was only projected and must not use a workspace route');

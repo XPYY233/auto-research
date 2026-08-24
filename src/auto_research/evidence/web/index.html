@@ -31,7 +31,7 @@
       <span class="fusion-release-badge" id="fusion-release-badge">本机数据 · AI 逐次授权</span>
     </header>
 
-    <section class="fusion-shell">
+    <section class="fusion-shell" id="fusion-shell">
       <nav class="fusion-activity" aria-label="工作区">
         <div class="fusion-logo" aria-label="Auto Research">AR</div>
         <button type="button" class="fusion-nav active" data-view="paper" aria-current="page" aria-label="文献"><span aria-hidden="true">▤</span><small>文献</small></button>
@@ -132,7 +132,7 @@
           <div class="fusion-scroll" id="fusion-literature-content" aria-live="polite" aria-busy="true">
             <div class="fusion-state-card large" data-literature-state="loading"><strong>正在载入真实文献快照…</strong><span>文献标题、公开元数据与四类证据来自现有只读接口。</span></div>
           </div>
-          <section class="fusion-pdf-viewer" id="fusion-pdf-viewer" hidden aria-label="当前论文 PDF 查看器"><header><button type="button" id="fusion-close-pdf">← 返回当前论文</button><strong id="fusion-pdf-title">当前论文原文</strong><span>本机同源查看 · 不离开工作台</span></header><iframe id="fusion-pdf-frame" title="当前论文 PDF" loading="lazy"></iframe></section>
+          <section class="fusion-pdf-viewer" id="fusion-pdf-viewer" hidden aria-label="当前论文 PDF 查看器"><header><button type="button" id="fusion-close-pdf">← 返回当前论文</button><strong id="fusion-pdf-title">当前论文原文</strong><div class="fusion-pdf-controls" role="toolbar" aria-label="PDF 缩放"><button type="button" data-pdf-action="fit-width" data-pdf-viewer="paper">适合宽度</button><button type="button" data-pdf-action="fit-page" data-pdf-viewer="paper">适合页面</button><button type="button" data-pdf-action="zoom-out" data-pdf-viewer="paper" aria-label="缩小">−</button><button type="button" data-pdf-action="reset" data-pdf-viewer="paper">100%</button><button type="button" data-pdf-action="zoom-in" data-pdf-viewer="paper" aria-label="放大">＋</button></div><span>本机同源查看 · 不离开工作台</span></header><iframe id="fusion-pdf-frame" title="当前论文 PDF" loading="lazy"></iframe></section>
         </section>
 
         <section class="fusion-view" id="view-search" data-view-panel="search" hidden aria-label="搜索工作区">
@@ -149,8 +149,7 @@
             <section class="fusion-librarian-chat" aria-label="图书管理员聊天">
               <header><div><strong>图书管理员</strong><small>检索、核验引用并支持连续追问</small></div><button type="button" id="fusion-librarian-remember" disabled>记住本轮结论</button><button type="button" class="fusion-librarian-results-toggle" id="fusion-librarian-results-toggle" hidden aria-controls="fusion-librarian-results" aria-expanded="false">检索结果 <b id="fusion-librarian-results-count">0</b></button><span id="fusion-librarian-status" aria-live="polite">可以开始新的研究问题</span></header>
               <div class="fusion-scroll fusion-librarian-output fusion-chat-thread" id="fusion-librarian-output" aria-live="polite"><div class="fusion-chat-welcome"><strong>直接描述你的研究问题</strong><p>我会先理解条件，再检索四类证据，最后给出可追溯回答、引用论文和相关建议。</p></div></div>
-              <section class="fusion-ai-progress" id="fusion-librarian-progress" data-state="idle" hidden aria-live="polite" aria-busy="false"><div class="fusion-ai-progress-agent"><img src="/static/codex-pet-working.webp" alt="" aria-hidden="true"><span>图书管理员</span></div><div class="fusion-ai-progress-main"><header><strong data-ai-progress-label>理解研究问题与约束</strong><b data-ai-progress-value>0%</b></header><div class="fusion-ai-progress-track" role="progressbar" aria-label="图书管理员进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i data-ai-progress-bar></i></div><small data-ai-progress-detail hidden></small><ol class="fusion-ai-progress-stages"><li data-ai-stage="prepare">理解问题</li><li data-ai-stage="planner">检索</li><li data-ai-stage="plan_ready">核对候选</li><li data-ai-stage="synthesis">回答</li><li data-ai-stage="completed">完成</li></ol><div class="fusion-ai-activity"><header><strong>Harness 活动</strong><span data-ai-elapsed>0 秒</span></header><small>显示检索、只读工具与引用核验，不展示模型内部思维链。</small><ol data-ai-activity></ol></div></div></section>
-              <section class="fusion-librarian-stage" id="fusion-librarian-stage" hidden><strong>检索规划已完成，尚未生成最终回答</strong><dl><div><dt>候选</dt><dd id="fusion-librarian-candidates">0</dd></div><div><dt>证据组</dt><dd id="fusion-librarian-bundles">0</dd></div><div><dt>主题</dt><dd id="fusion-librarian-themes">0</dd></div></dl><div><button type="button" class="fusion-primary-action" id="fusion-librarian-continue">继续生成回答（可能再调用模型 1 次）</button><button type="button" id="fusion-librarian-cancel">停止</button></div></section>
+              <section class="fusion-ai-progress" id="fusion-librarian-progress" data-state="idle" hidden aria-live="polite" aria-busy="false"><div class="fusion-ai-progress-agent"><img src="/static/codex-pet-working.webp" alt="" aria-hidden="true"><span>图书管理员</span></div><div class="fusion-ai-progress-main"><header><strong data-ai-progress-label>理解研究问题与约束</strong><b data-ai-progress-value>0%</b></header><div class="fusion-ai-progress-track" role="progressbar" aria-label="图书管理员进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i data-ai-progress-bar></i></div><small data-ai-progress-detail hidden></small><ol class="fusion-ai-progress-stages"><li data-ai-stage="prepare">理解问题</li><li data-ai-stage="planner">检索证据</li><li data-ai-stage="organizing">核验并回答</li><li data-ai-stage="completed">完成</li></ol><div class="fusion-ai-activity"><header><strong>Harness 活动</strong><span data-ai-elapsed>0 秒</span></header><small>显示检索、只读工具与引用核验，不展示模型内部思维链。</small><ol data-ai-activity></ol></div></div></section>
               <form class="fusion-chat-composer fusion-librarian-form" id="fusion-librarian-form"><label class="sr-only" for="fusion-librarian-question">研究问题</label><textarea id="fusion-librarian-question" rows="2" maxlength="4000" placeholder="询问材料、条件、物理量或继续追问…"></textarea><button type="submit" class="fusion-primary-action" id="fusion-librarian-send" aria-label="发送给图书管理员">发送</button><small>Enter 发送 · Shift+Enter 换行</small></form>
             </section>
             <aside class="fusion-librarian-results" id="fusion-librarian-results" hidden aria-label="图书管理员检索结果"><header><div><strong>可跳转结果</strong><small>证据与推荐论文</small></div><button type="button" id="fusion-librarian-results-close" aria-label="收起检索结果">×</button></header><div class="fusion-scroll" id="fusion-librarian-results-body"></div></aside>
@@ -208,7 +207,7 @@
           </header>
           <div class="fusion-evidence-detail-scroll fusion-scroll" id="fusion-evidence-detail-body" aria-live="polite" aria-busy="false"></div>
           <section class="fusion-detail-pdf" id="fusion-detail-pdf" hidden aria-label="证据来源 PDF 查看器">
-            <header><button type="button" id="fusion-detail-close-pdf">← 返回证据详情</button><button type="button" id="fusion-detail-show-highlight" disabled>重新显示高亮</button><button type="button" id="fusion-detail-close-pdf-view">关闭 PDF</button><strong id="fusion-detail-pdf-title">证据来源原文</strong><span>本机同源查看 · 不离开工作台</span></header>
+            <header><button type="button" id="fusion-detail-close-pdf">← 返回证据详情</button><button type="button" id="fusion-detail-show-highlight" disabled>重新显示高亮</button><button type="button" id="fusion-detail-close-pdf-view">关闭 PDF</button><strong id="fusion-detail-pdf-title">证据来源原文</strong><div class="fusion-pdf-controls" role="toolbar" aria-label="PDF 缩放"><button type="button" data-pdf-action="fit-width" data-pdf-viewer="detail">适合宽度</button><button type="button" data-pdf-action="fit-page" data-pdf-viewer="detail">适合页面</button><button type="button" data-pdf-action="zoom-out" data-pdf-viewer="detail" aria-label="缩小">−</button><button type="button" data-pdf-action="reset" data-pdf-viewer="detail">100%</button><button type="button" data-pdf-action="zoom-in" data-pdf-viewer="detail" aria-label="放大">＋</button></div><span>本机同源查看 · 不离开工作台</span></header>
             <figure class="fusion-source-highlight" id="fusion-detail-source-highlight" hidden><img id="fusion-detail-highlight-image" alt="证据在原文中的高亮位置"><figcaption id="fusion-detail-highlight-status">高亮位置尚未读取。</figcaption></figure>
             <iframe id="fusion-detail-pdf-frame" title="证据来源 PDF" loading="lazy"></iframe>
           </section>
@@ -227,7 +226,6 @@
       <aside class="fusion-inspector" id="fusion-inspector" aria-label="详情与检查器">
         <header><strong id="fusion-inspector-title">论文检查器</strong><button type="button" class="fusion-drawer-close" data-close-drawer="inspector" aria-label="关闭检查器">×</button></header>
         <div class="fusion-inspector-body" id="fusion-inspector-body" aria-live="polite"></div>
-        <footer class="fusion-evidence-chat"><header><div><strong>证据 AI 对话</strong><small id="fusion-evidence-ai-reason">请选择本机文献工作区中的测量条目、结论、表格或图片。</small></div><span id="fusion-evidence-ai-context">仅当前证据</span></header><div class="fusion-chat-thread fusion-evidence-ai-output" id="fusion-evidence-ai-output" aria-live="polite"><div class="fusion-chat-welcome"><strong>围绕当前证据连续追问</strong><p>选择证据后可以询问含义、条件、来源和与同论文证据的关系。</p></div></div><section class="fusion-ai-progress compact" id="fusion-evidence-ai-progress" data-state="idle" hidden aria-live="polite" aria-busy="false"><div class="fusion-ai-progress-main"><header><strong data-ai-progress-label>冻结当前证据</strong><b data-ai-progress-value>0%</b></header><div class="fusion-ai-progress-track" role="progressbar" aria-label="证据 AI 回答进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i data-ai-progress-bar></i></div><small data-ai-progress-detail hidden></small><div class="fusion-ai-activity compact"><header><strong>Harness 活动</strong><span data-ai-elapsed>0 秒</span></header><small>仅显示受控工具和阶段，不展示模型内部思维链。</small><ol data-ai-activity></ol></div></div></section><form class="fusion-chat-composer" id="fusion-evidence-ai-form"><label class="sr-only" for="fusion-evidence-ai-question">选中证据问题</label><textarea id="fusion-evidence-ai-question" rows="2" maxlength="2000" placeholder="围绕当前证据提问…">说明这个数据本身的含义，并总结该数据在文章中的具体含义</textarea><button type="submit" id="fusion-evidence-ai" disabled aria-label="发送证据问题">发送</button><small>Enter 发送 · Shift+Enter 换行</small></form></footer>
       </aside>
     </section>
 
@@ -253,6 +251,7 @@
   <script src="/static/ai_consent.js"></script>
   <script src="/static/document_tab_store.js"></script>
   <script src="/static/pane_layout_controller.js"></script>
+  <script src="/static/fusion_pdf_controller.js"></script>
   <script src="/static/fusion_ai_experience.js"></script>
   <script src="/static/fusion_review.js"></script>
 </body>

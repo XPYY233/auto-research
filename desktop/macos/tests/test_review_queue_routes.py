@@ -186,6 +186,11 @@ class ReviewQueueRouteTests(unittest.TestCase):
     def test_fusion_ai_experience_and_pet_assets_are_session_protected(self) -> None:
         for path, mime_marker, body_marker in (
             (
+                "/static/fusion_pdf_controller.js",
+                "javascript",
+                b"AutoResearchFusionPDF",
+            ),
+            (
                 "/static/fusion_ai_experience.js",
                 "javascript",
                 b"AutoResearchAIExperience",

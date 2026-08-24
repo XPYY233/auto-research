@@ -67,12 +67,12 @@ class FusionReviewUIContractTests(unittest.TestCase):
             "fusion-literature-progress",
             "fusion-personal-progress",
             "fusion-librarian-progress",
-            "fusion-evidence-ai-progress",
             "fusion-librarian-form",
-            "fusion-evidence-ai-form",
             "fusion-librarian-new",
         ):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        self.assertIn('data-evidence-ai-form', self.runtime)
+        self.assertIn('data-evidence-ai-inline-progress', self.runtime)
         self.assertIn("fusion-ai-experience-v1", self.ai_experience)
         self.assertIn("AIExperienceController", self.ai_experience)
         self.assertIn("renderConversation", self.ai_experience)
@@ -139,8 +139,8 @@ class FusionReviewUIContractTests(unittest.TestCase):
             "function renderEditorSurfaces(", "function secondaryDocumentHTML(",
             'documentTabs?.reopenClosed()', 'documentTabs.move(active.tabId,"primary")',
             'data-document-group-id=', "const geometry=paneGeometry(snapshot)",
-            'if(hasSecondary&&!narrow&&primaryCollapsed&&secondaryCollapsed)', 'secondary.hidden=!geometry.hasSecondary',
-            'openTab&&documentTabs&&Number(globalThis.innerWidth||1440)>=900',
+            'else if(primaryCollapsed&&secondaryCollapsed)', 'secondary.hidden=!geometry.hasSecondary',
+            'openTab&&documentTabs&&paneViewport()>=900',
             'openSecondaryEvidence(row,state.view,{preview,pin})',
             '/api/six-data/${row.itemId}/source-view',
             '/api/six-data/${row.itemId}/source-highlight.png',
@@ -215,7 +215,7 @@ const tableHTML=api.secondaryDocumentHTML({{tabId:'personal-table:x',kind:'perso
         self.assertEqual(result.returncode, 0, result.stderr)
         for marker in (
             'event.detail>1', 'addEventListener("dblclick"',
-            'pinDocumentIdentity("paper"', 'pinDocumentTab();',
+                'pinDocumentIdentity("paper"', 'pinDocumentTab(detail.tab.tabId)',
             'function openSecondaryEvidence(', 'function loadSecondaryPersonalTablePage(',
             'state.searchOffset=offset+raw.length', 'pageNumber=append?state.searchPage+1:1',
             'payload.cause_code||payload.code', 'error.stage=cleanText(detail?.stage',
@@ -234,7 +234,7 @@ const ids={{}};for(const id of ['fusion-editor-group-content','fusion-primary-ed
 const all={{'[data-view-panel]':[],'[data-secondary-return-tab]':[],'[data-secondary-open-pdf]':[],'[data-secondary-open-paper-pdf]':[],'[data-secondary-paper-evidence]':[],'[data-secondary-table-page]':[]}};
 globalThis.document={{readyState:'loading',querySelector:selector=>ids[selector]||null,querySelectorAll:selector=>all[selector]||[],addEventListener:()=>{{}}}};globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
 let timer=null;globalThis.setTimeout=fn=>{{timer=fn;return 1}};globalThis.clearTimeout=()=>{{timer=null}};
-eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion,tabs=api.documentTabs;
+    eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_pdf_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion,tabs=api.documentTabs;
 const row=(assetId,title,page)=>({{type:'table',title,label:title,caption:title+' caption',sourceScope:'workspace',assetId,paperId:56,page,articleTitle:'论文',imageUrl:'/api/visual-assets/'+assetId+'/image',bbox:[51,606,278,737],quantities:['硬度'],variables:{{column:'value'}},materials:['W'],tags:[]}});
 const A=row(1357,'Table 2 · 纯bcc金属与MoNbTaVW基本性质对比表',7),B=row(1358,'Table 3 · 不同PKA类型级联缺陷统计表',8),C=row(1359,'Table 4 · 第三张表',9);
 const a=tabs.open({{tabId:'evidence:a',kind:'evidence',ownerView:'paper',title:A.title,identity:{{sourceScope:'workspace',entityType:'table',entityUid:'1357'}},payload:{{row:A,status:'ready'}}}},{{pin:true}});
@@ -247,7 +247,7 @@ const generation=tabs.beginRequest(b.tabId);tabs.completeRequest(b.tabId,generat
 tabs.activate(c.tabId);api.renderEditorSurfaces();assert(ids['#fusion-evidence-detail-body'].innerHTML.includes(C.title));assert(ids['#fusion-secondary-editor-body'].innerHTML.includes(B.title));
 tabs.move(c.tabId,'secondary');assert.equal(tabs.activeTab('primary').tabId,a.tabId);tabs.move(c.tabId,'primary');assert.equal(tabs.activeTab('secondary').tabId,b.tabId);
 const projected=api.publicEvidence({{asset_type:'table',id:1358,paper_id:56,page_start:8,bbox:[51.172,606.053,278.053,737.169],label:B.title,image_url:'/api/visual-assets/1358/image'}});assert.deepEqual(projected.bbox,[51.172,606.053,278.053,737.169]);
-tabs.move(a.tabId,'secondary');tabs.activate(b.tabId);tabs.move(b.tabId,'primary');assert.equal(tabs.activeTab('secondary').tabId,a.tabId);api.state.evidenceDetail=projected;api.state.evidenceDetailOpen=true;assert(api.openDetailPDF({{openTab:false}}));assert.equal(ids['#fusion-detail-pdf-frame'].src,'/api/papers/56/pdf#page=8');
+    tabs.move(a.tabId,'secondary');tabs.activate(b.tabId);tabs.move(b.tabId,'primary');assert.equal(tabs.activeTab('secondary').tabId,a.tabId);api.state.evidenceDetail=projected;api.state.evidenceDetailOpen=true;assert(api.openDetailPDF({{openTab:false}}));assert.equal(ids['#fusion-detail-pdf-frame'].src,'/api/papers/56/pdf#page=8&zoom=page-width');
 setImmediate(()=>{{assert.equal(ids['#fusion-detail-show-highlight'].disabled,false);assert.equal(ids['#fusion-detail-source-highlight'].hidden,false);assert.equal(ids['#fusion-detail-highlight-image'].src,'/api/visual-assets/1358/image');assert.equal(api.state.sourceHighlight.sourceTabId,b.tabId);timer();assert.equal(ids['#fusion-detail-source-highlight'].hidden,true);assert.equal(ids['#fusion-detail-show-highlight'].textContent,'重新显示高亮');api.toggleSourceHighlight();setImmediate(()=>{{assert.equal(ids['#fusion-detail-source-highlight'].hidden,false);assert.equal(ids['#fusion-detail-highlight-image'].src,'/api/visual-assets/1358/image');assert.equal(tabs.activeTab('secondary').tabId,a.tabId);}});}});
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
@@ -335,9 +335,9 @@ const literature=api.publicEvidence({{entity_type:'table',source_scope:'private'
 assert.equal(api.detailPDFURL(literature),'/api/desktop/federated-pdf?source_id=lab%20%2F%20%E7%94%B2&paper_uid=paper%20W%3F1');
 const personal=api.publicEvidence({{entity_type:'table',source_scope:'private',source_id:'personal',entity_uid:'table:2',paper_uid:'paper-x',collection_kind:'personal_experiments',pdf_available:true,display_title:'私人表'}});
 assert.equal(api.detailPDFURL(personal),'');
-assert.equal(api.detailPDFURL({{sourceScope:'official',sourceId:'official',paperUid:'paper-x',pdfAvailable:true,collectionKind:'literature_collection'}}),'');
+assert.equal(api.detailPDFURL({{sourceScope:'official',sourceId:'official',paperUid:'paper-x',pdfAvailable:true,collectionKind:'literature_collection'}}),'/api/desktop/federated-pdf?source_id=official&paper_uid=paper-x');
 assert.equal(api.detailPDFURL({{sourceScope:'private',sourceId:'literature',paperUid:'paper-x',pdfAvailable:false,collectionKind:'literature_collection'}}),'');
-assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/api/papers/7/pdf#page=3');
+assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/api/papers/7/pdf');
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -373,7 +373,7 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
         for marker in (
             "globalThis.AutoResearchAIConsent", ".accepted(scope,disclosureContext)", ".remember(scope,disclosureContext)", "disclosureSummary(scope,disclosureContext)", "ai_consent_gate_unavailable",
             "updateTrustedProviders", "prepared.provider_id!==context.provider_id",
-            "prepared.disclosure_version!==disclosureVersion", "librarian-ai-stage-v1",
+            "prepared.disclosure_version!==disclosureVersion",
             "literature-extraction-stage-summary-v1", "literature-extraction-commit-result-v2",
             "librarian:8", "selected_evidence_chat:2", "personal_suggestion:2", "calls>AI_CALL_LIMITS[scope]",
             "librarianBusy:false", "if(state.librarianBusy)return", "harness_budget_exhausted",
@@ -551,14 +551,15 @@ assert.equal(api.evidenceExportURL({{sourceScope:'private',type:'table',sourceId
             "fusion-evidence-ai-question", "fusion-evidence-ai",
             "fusion-evidence-ai-reason", "fusion-evidence-ai-output",
         ):
-            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 0)
         for marker in (
+            'data-evidence-chat', 'data-evidence-ai-question',
             'preparedAuthorization("selected_evidence_chat"',
             'executePrepared("selected_evidence_chat"',
             'source_scope:identity.sourceScope', 'source_id:identity.sourceId',
             'entity_type:identity.entityType', 'entity_uid:identity.entityUid',
             '!["official","workspace"].includes(row.sourceScope)',
-            '该来源暂不支持 Harness 解释',
+            '该证据来源暂不支持 Harness 解释',
         ):
             self.assertIn(marker, self.runtime)
         self.assertNotIn('entity_id:identity.entityId', self.runtime)
@@ -569,17 +570,18 @@ eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
 const api=globalThis.AutoResearchFusion,assert=require('assert');
 api.state.view='search';
 api.state.selectedEvidence={{type:'item',sourceScope:'official',sourceId:'official-main',entityUid:'item:17'}};
-assert.deepEqual(api.selectedEvidenceAIIdentity(),{{key:'official:official-main:item:item:17',sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:17'}});
+assert.equal(api.selectedEvidenceAIIdentity(),null,'list selection alone must not expose evidence AI');
+assert.deepEqual(api.selectedEvidenceAIIdentity(api.state.selectedEvidence),{{key:'official:official-main:item:item:17',sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:17'}});
 api.state.selectedEvidence={{type:'figure',sourceScope:'official',sourceId:'official-main',entityUid:'figure:23'}};
-assert.equal(api.selectedEvidenceAIIdentity().entityUid,'figure:23');
+assert.equal(api.selectedEvidenceAIIdentity(api.state.selectedEvidence).entityUid,'figure:23');
 api.state.selectedEvidence={{type:'item',sourceScope:'workspace',itemId:17}};
-assert.deepEqual(api.selectedEvidenceAIIdentity(),{{key:'workspace:workspace:item:17',sourceScope:'workspace',sourceId:'workspace',entityType:'item',entityUid:'17'}});
+assert.deepEqual(api.selectedEvidenceAIIdentity(api.state.selectedEvidence),{{key:'workspace:workspace:item:17',sourceScope:'workspace',sourceId:'workspace',entityType:'item',entityUid:'17'}});
 api.state.selectedEvidence={{type:'item',sourceScope:'private',itemId:17}};
-assert.equal(api.selectedEvidenceAIIdentity(),null);
+assert.equal(api.selectedEvidenceAIIdentity(api.state.selectedEvidence),null);
 api.state.selectedEvidence={{type:'item',sourceScope:'official',sourceId:'official-main',entityUid:''}};
-assert.equal(api.selectedEvidenceAIIdentity(),null);
+assert.equal(api.selectedEvidenceAIIdentity(api.state.selectedEvidence),null);
 api.state.selectedEvidence={{type:'figure',sourceScope:'official',sourceId:'',entityUid:'figure:23'}};
-assert.equal(api.selectedEvidenceAIIdentity(),null);
+assert.equal(api.selectedEvidenceAIIdentity(api.state.selectedEvidence),null);
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -671,7 +673,7 @@ globalThis.document={{readyState:'loading',documentElement:html,body,querySelect
 eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'pane_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
 const row=(uid,title)=>({{type:'item',title,value:'4.1',unit:'GPa',meaning:title,sourceScope:'official',sourceId:'official-main',entityUid:uid,page:7,articleTitle:'论文 '+title,excerpt:'原文 '+title,quantities:[],variables:{{}},materials:[],conditions:'',methods:'',linkedItemCount:0,tags:[]}}),A=row('item:a','证据 A'),B=row('item:b','证据 B');
 api.state.view='search';api.state.searchMode='librarian';api.state.librarianResults=[A,B];api.state.librarianArticles=[];api.state.librarianResultsOpen=false;api.documentTabs.open({{tabId:'evidence:background',kind:'evidence',ownerView:'search',title:'已有详情',identity:{{sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:background'}},payload:{{row:A,status:'ready'}}}},{{groupId:'secondary',pin:true}});api.paneController.expandEditor('secondary',{{persist:false}});api.paneController.expandSide('inspector',{{persist:false}});let geometry=api.coordinateTaskLayout('librarian-chat');assert.equal(geometry.inspectorDocked,false,'chat without selected evidence releases inspector');assert.equal(api.paneLayout.inspector.collapsed,false,'task suppression preserves inspector preference');api.renderLibrarianResultNavigator();assert.equal(api.setLibrarianResultsOpen(true),true);assert.equal(ids['#fusion-librarian-results'].hidden,false);assert(ids['#fusion-librarian-panel'].classList.contains('results-open'));geometry=api.applyPaneLayout();assert.equal(geometry.inspectorDocked,false,'result rail releases inspector space');assert.equal(geometry.contextDocked,false,'result rail releases unrelated context');assert.equal(geometry.secondaryCollapsed,true,'result rail releases unrelated secondary editor');assert.equal(api.paneLayout.editors.secondaryCollapsed,false,'result rail does not close the stored secondary group');
-(async()=>{{assert(await api.openLibrarianEvidence(0));let secondary=api.documentTabs.activeTab('secondary');assert(secondary);geometry=api.applyPaneLayout();assert.equal(geometry.secondaryCollapsed,false,'evidence detail restores secondary editor');assert.equal(geometry.contextDocked,true,'1280 keeps the source context when both editors remain readable');assert.equal(geometry.inspectorDocked,false,'1280 detail keeps the evidence AI pane available without crowding the editor');assert(api.togglePane('inspector'));geometry=api.applyPaneLayout();assert.equal(geometry.inspectorDocked,true,'the user can explicitly restore evidence AI');assert.equal(secondary.payload.row.title,'证据 A');assert.equal(api.state.selectedEvidence.title,'证据 A');assert.equal(ids['#fusion-evidence-ai'].disabled,false);assert.equal(api.selectedEvidenceAIIdentity().entityUid,'item:a');
+(async()=>{{assert(await api.openLibrarianEvidence(0));let secondary=api.documentTabs.activeTab('secondary');assert(secondary);geometry=api.applyPaneLayout();assert.equal(geometry.secondaryCollapsed,false,'evidence detail restores secondary editor');assert.equal(geometry.contextDocked,true,'1280 keeps the source context when both editors remain readable');assert.equal(geometry.inspectorDocked,false,'1280 detail keeps the evidence AI pane available without crowding the editor');assert(api.togglePane('inspector'));geometry=api.applyPaneLayout();assert.equal(geometry.inspectorDocked,true,'the user can explicitly restore evidence AI');assert.equal(secondary.payload.row.title,'证据 A');assert.equal(api.state.selectedEvidence.title,'证据 A');assert.equal(api.selectedEvidenceAIIdentity().entityUid,'item:a');
  api.state.evidenceChat.messages=[{{role:'user',content:'问题 A'}},{{role:'assistant',content:'回答 A'}}];assert(await api.openLibrarianEvidence(1));secondary=api.documentTabs.activeTab('secondary');assert.equal(secondary.payload.row.title,'证据 B');assert.equal(api.state.evidenceChat.messages.length,0);api.state.evidenceChat.messages=[{{role:'user',content:'问题 B'}},{{role:'assistant',content:'回答 B'}}];assert(await api.openLibrarianEvidence(0));assert.deepEqual(api.state.evidenceChat.messages.map(x=>x.content),['问题 A','回答 A']);assert.deepEqual(api.state.evidenceChat.threads.get('official:official-main:item:item:b').map(x=>x.content),['问题 B','回答 B']);
 }})().catch(error=>{{console.error(error);process.exitCode=1;}});
 """
@@ -685,15 +687,17 @@ const fs=require('fs'),assert=require('assert');
 class Classes{{constructor(){{this.s=new Set()}}toggle(k,v){{v?this.s.add(k):this.s.delete(k)}}add(k){{this.s.add(k)}}remove(k){{this.s.delete(k)}}contains(k){{return this.s.has(k)}}}}
 class El{{constructor(){{this.hidden=false;this.disabled=false;this.textContent='';this.innerHTML='';this.value='';this.dataset={{}};this.attrs={{}};this.classList=new Classes();this.listeners={{}};this.isConnected=true;}}setAttribute(k,v){{this.attrs[k]=String(v)}}removeAttribute(k){{delete this.attrs[k]}}addEventListener(k,fn){{(this.listeners[k]??=[]).push(fn)}}focus(){{globalThis.focused=this}}querySelector(){{return null}}querySelectorAll(){{return []}}closest(){{return null}}}}
 const ids={{}};for(const id of ['fusion-inspector-title','fusion-inspector-body','fusion-evidence-ai','fusion-evidence-ai-reason','fusion-evidence-ai-question','fusion-evidence-ai-context','fusion-evidence-ai-output','fusion-ai-provider','fusion-ai-models','fusion-ai-model-save','fusion-ai-key-save','fusion-ai-key-delete','fusion-ai-test','fusion-ai-test-plan','fusion-ai-custom-status','fusion-ai-custom-delete','fusion-ai-custom-name','fusion-ai-custom-endpoint','fusion-ai-credential-state','fusion-ai-settings-status','fusion-status-operation','fusion-status-ai','fusion-ai-connection-state','fusion-ai-connection-reason','fusion-ai-harness-state','fusion-ai-harness-reason','fusion-ai-business-readiness'])ids['#'+id]=new El();
-globalThis.document={{readyState:'loading',documentElement:{{dataset:{{}},style:{{setProperty(){{}}}}}},body:{{dataset:{{view:'search'}}}},querySelector:s=>ids[s]||null,querySelectorAll:()=>[],addEventListener(){{}}}};globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.innerWidth=1280;globalThis.confirm=()=>true;
+const primarySurface=new El(),secondarySurface=new El(),chatHost=new El(),chat={{'[data-evidence-ai-question]':ids['#fusion-evidence-ai-question'],'[data-evidence-ai-send]':ids['#fusion-evidence-ai'],'[data-evidence-ai-reason]':ids['#fusion-evidence-ai-reason'],'[data-evidence-ai-context]':ids['#fusion-evidence-ai-context'],'[data-evidence-ai-output]':ids['#fusion-evidence-ai-output'],'[data-evidence-ai-inline-progress]':new El()}};chatHost.querySelector=selector=>chat[selector]||null;secondarySurface.querySelectorAll=selector=>selector==='[data-evidence-chat]'?[chatHost]:[];ids['#fusion-primary-editor-surface']=primarySurface;ids['#fusion-secondary-editor-surface']=secondarySurface;
+globalThis.document={{readyState:'loading',documentElement:{{dataset:{{}},style:{{setProperty(){{}}}}}},body:{{dataset:{{view:'search'}}}},querySelector:s=>ids[s]||null,querySelectorAll:s=>s==='[data-evidence-chat]'?[chatHost]:[],addEventListener(){{}}}};globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.innerWidth=1280;globalThis.confirm=()=>true;
 globalThis.AutoResearchAIConsent={{disclosureVersions:{{selected_evidence_chat:'selected-evidence-v1'}},accepted:()=>true,remember:()=>true,disclosureSummary:()=>'',updateTrustedProviders:()=>true}};
 const ready={{state:'ready',reason_code:'ai_business_ready',next_action:'none',verified_until:null}},readiness={{schema_version:'ai-readiness-v1',provider_connection:ready,harness:ready,businesses:{{librarian:ready,literature_extraction:ready,personal_suggestion:ready,selected_evidence_chat:ready}}}};
 const catalog={{schema_version:'ai-desktop-catalog-v1',providers:[{{provider_id:'deepseek',display_name:'DeepSeek',model_options:{{extraction:['extract'],analysis:['analysis'],librarian_planning:['plan'],librarian_synthesis:['synth']}}}}],capability_test:{{provider_id:'deepseek',connection_maximum_model_calls:1,business_maximum_model_calls:{{selected_evidence_chat:2}}}}}},settings={{schema_version:'ai-runtime-public-state-v1',provider_id:'deepseek',revision:1,task_models:{{}},readiness}},custom={{schema_version:'custom-ai-provider-v1',provider_id:'custom',configured:false,revision:0}},credential={{configured:true}};
 let finishPaidJob=null,prepareCalls=0;const response=payload=>({{ok:true,headers:{{get:()=>null}},json:async()=>payload}});
 globalThis.fetch=(url,options={{}})=>{{url=String(url);if(url==='/api/desktop/ai/providers')return Promise.resolve(response(catalog));if(url==='/api/desktop/ai/settings')return Promise.resolve(response(settings));if(url==='/api/desktop/ai/custom-provider')return Promise.resolve(response(custom));if(url==='/api/desktop/ai/credentials/deepseek')return Promise.resolve(response(credential));if(url==='/api/desktop/ai/actions/selected_evidence_chat/prepare'){{prepareCalls+=1;return Promise.resolve(response({{schema_version:'server-prepared-ai-action-v1',scope:'selected_evidence_chat',provider_id:'deepseek',disclosure_version:'selected-evidence-v1',action_id:'action_A_abcdefghijklmnopqrstuvwx',maximum_calls:1,model:'reasoner',display:'解释证据 A'}}));}}if(url==='/api/desktop/ai/consents')return Promise.resolve(response({{schema_version:'ai-consent-v1',scope:'selected_evidence_chat',nonce:'nonce_A_abcdefghijklmnopqrstuvwx'}}));if(url==='/api/desktop/ai/actions/selected_evidence_chat/execute-jobs')return new Promise(resolve=>{{finishPaidJob=()=>resolve(response({{schema_version:'ai-execution-job-v1',scope:'selected_evidence_chat',job_id:'ai_job_abcdefghijklmnopqrstuvwx',status:'completed',events:[],result:{{answer:'后台回答 A'}}}}));}});throw new Error('unexpected fetch '+url);}};
-eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion,row=(uid,title)=>({{type:'item',title,value:'4.1',unit:'GPa',meaning:title,sourceScope:'official',sourceId:'official-main',entityUid:uid,page:7,articleTitle:'论文 '+title,excerpt:'原文 '+title,quantities:[],variables:{{}},materials:[],conditions:'',methods:'',linkedItemCount:0,tags:[]}}),A=row('item:a','证据 A'),B=row('item:b','证据 B'),keyA='official:official-main:item:item:a';
-api.state.view='search';api.state.searchResults=[A,B];api.selectEvidence(0,{{focus:false,view:'search'}});ids['#fusion-evidence-ai-question'].value='问题 A';const paid=api.submitSelectedEvidenceAI();while(!finishPaidJob)await new Promise(resolve=>setImmediate(resolve));assert.equal(api.state.evidenceChat.pending.has(keyA),true);assert.equal(api.state.evidenceChat.busy,true);
-api.selectEvidence(1,{{focus:false,view:'search'}});assert.equal(api.state.evidenceChat.identity,'official:official-main:item:item:b');assert.equal(api.state.evidenceChat.busy,false,'background A must not mark current B busy');assert(ids['#fusion-evidence-ai-reason'].textContent.includes('另一条证据正在回答'));assert.equal(api.state.evidenceChat.messages.length,0,'B must not display A messages');ids['#fusion-evidence-ai-question'].value='问题 B';const beforeSecond=prepareCalls;assert.equal(await api.submitSelectedEvidenceAI(),null,'parallel paid request must be rejected');assert.equal(prepareCalls,beforeSecond,'parallel rejection must happen before prepare');
+eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion,row=(uid,title)=>({{type:'item',title,value:'4.1',unit:'GPa',meaning:title,sourceScope:'official',sourceId:'official-main',entityUid:uid,page:7,articleTitle:'论文 '+title,excerpt:'原文 '+title,quantities:[],variables:{{}},materials:[],conditions:'',methods:'',linkedItemCount:0,tags:[]}}),A=row('item:a','证据 A'),B=row('item:b','证据 B'),keyA='official:official-main:item:item:a';
+api.state.view='search';api.state.searchResults=[A,B];api.selectEvidence(0,{{focus:false,view:'search'}});ids['#fusion-evidence-ai-question'].value='问题 A';const beforeList=prepareCalls;assert.equal(await api.submitSelectedEvidenceAI(),null,'list selection must not expose evidence AI');assert.equal(prepareCalls,beforeList,'list selection must make zero paid requests');
+const tabA=api.documentTabs.open({{tabId:'evidence:a',kind:'evidence',ownerView:'search',title:'证据 A',identity:{{sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:a'}},payload:{{row:A,evidenceIdentity:'official:official-main:item:a',status:'ready'}}}},{{groupId:'secondary',pin:true}});chatHost.dataset.evidenceTabId=tabA.tabId;api.renderEditorSurfaces();ids['#fusion-evidence-ai-question'].value='问题 A';const paid=api.submitSelectedEvidenceAI();for(let attempt=0;attempt<40&&!finishPaidJob;attempt+=1)await new Promise(resolve=>setImmediate(resolve));assert(finishPaidJob,'paid job must start from an active evidence detail within the bounded wait');assert.equal(api.state.evidenceChat.pending.has(keyA),true);assert.equal(api.state.evidenceChat.busy,true);
+const keyB='official:official-main:item:item:b',tabB=api.documentTabs.open({{tabId:'evidence:b',kind:'evidence',ownerView:'search',title:'证据 B',identity:{{sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:b'}},payload:{{row:B,evidenceIdentity:'official:official-main:item:b',status:'ready'}}}},{{groupId:'secondary',pin:true}});chatHost.dataset.evidenceTabId=tabB.tabId;api.renderEditorSurfaces();assert.equal(api.state.evidenceChat.identity,keyB);assert.equal(api.state.evidenceChat.busy,false,'background A must not mark current B busy');assert(ids['#fusion-evidence-ai-reason'].textContent.includes('另一条证据正在回答'));assert.equal(api.state.evidenceChat.messages.length,0,'B must not display A messages');ids['#fusion-evidence-ai-question'].value='问题 B';const beforeSecond=prepareCalls;assert.equal(await api.submitSelectedEvidenceAI(),null,'parallel paid request must be rejected');assert.equal(prepareCalls,beforeSecond,'parallel rejection must happen before prepare');
 finishPaidJob();await paid;assert.equal(api.state.evidenceChat.busy,false);assert.equal(api.state.evidenceChat.pending.size,0);assert.equal(api.state.evidenceChat.messages.length,0,'completed A must not appear in current B');assert.deepEqual(api.state.evidenceChat.threads.get(keyA).map(message=>message.content),['问题 A','后台回答 A']);
 }})().catch(error=>{{console.error(error);process.exitCode=1;}});
 """
@@ -730,19 +734,18 @@ finishPaidJob();await paid;assert.equal(api.state.evidenceChat.busy,false);asser
             self.assertIn(marker, self.css)
 
     def test_ai_activity_and_chat_use_aggregated_task_projection(self) -> None:
-        for element_id in (
-            "fusion-evidence-ai-output", "fusion-evidence-ai-form",
-            "fusion-evidence-ai-question", "fusion-evidence-ai",
-            "fusion-librarian-output", "fusion-librarian-form",
-        ):
+        for element_id in ("fusion-librarian-output", "fusion-librarian-form"):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        self.assertNotIn('id="fusion-evidence-ai-output"', self.index)
+        self.assertNotIn("fusion-evidence-chat", self.index.split('<aside class="fusion-inspector"', 1)[-1])
         for marker in (
             'AI_APPLICATION_PHASES = Object.freeze({understand:"理解问题",retrieve:"检索证据",verify:"核验引用",organize:"组织回答",complete:"完成"})',
             "function projectAIActivity(", "node.dataset.aiActivityPhase=phase",
             'projectAIActivity(scope,{...event,job_id:job.job_id})',
-            'classList.toggle("ai-chat-active",Boolean(identity))',
+            "function visibleEvidenceDetail()", "function activeEvidenceChatHost()",
+            'qa("[data-evidence-ai-form]")',
             '["paper","search"].includes(state.view)&&!state.selectedEvidence)paneTaskSuppression.inspector=true',
-            ".fusion-inspector.ai-chat-active", ".fusion-evidence-ai-output",
+            ".fusion-evidence-ai-output",
             ".fusion-evidence-chat .fusion-chat-composer", ".fusion-librarian-form",
         ):
             self.assertIn(marker, self.runtime + self.css)
@@ -857,8 +860,8 @@ let pendingResolvers=[];const calls=[];globalThis.fetch=async(url,options={{}})=
  if(url==='/api/desktop/personal-imports/personal_import_abcdefghijklmnop/reviewed-import')return{{ok:true,headers,json:async()=>({{schema_version:'personal-import-status-v1',import_id:'personal_import_abcdefghijklmnop',revision:1,indexable:true}})}};
  if(url.startsWith('/api/desktop/federated-search?'))return new Promise(resolve=>pendingResolvers.push(()=>resolve({{ok:true,headers,json:async()=>({{schema_version:'federated-search-page-v1',results:[{{document:{{entity_type:'table',source_scope:'private',source_id:'lab',entity_uid:'e1',display_title:'硬度表',source_excerpt:'真实私人实验'}}}}]}})}})));
  throw new Error('unexpected:'+url)}};
-eval(fs.readFileSync({str(WEB / 'ai_consent.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
-(async()=>{{assert.equal(api.previewCellValue({{Dose:3}},{{source_name:'Dose'}},0),3);assert.equal(api.previewCellValue([4],{{source_name:'Dose'}},0),4);await api.loadAISettingsUI();ids['#fusion-ai-key'].value='sk-private-never-render';await api.saveAIKey();assert.equal(ids['#fusion-ai-key'].value,'');assert(!Object.values(ids).some(node=>node.textContent.includes('sk-private-never-render')));api.state.paper={{id:7,title:'Real paper'}};assert(api.openCurrentPDF());assert.equal(ids['#fusion-pdf-frame'].src,'/api/papers/7/pdf');assert.equal(ids['#fusion-literature-content'].hidden,true);assert(api.closeCurrentPDF());assert.equal(ids['#fusion-literature-content'].hidden,false);
+eval(fs.readFileSync({str(WEB / 'ai_consent.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_pdf_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
+    (async()=>{{assert.equal(api.previewCellValue({{Dose:3}},{{source_name:'Dose'}},0),3);assert.equal(api.previewCellValue([4],{{source_name:'Dose'}},0),4);await api.loadAISettingsUI();ids['#fusion-ai-key'].value='sk-private-never-render';await api.saveAIKey();assert.equal(ids['#fusion-ai-key'].value,'');assert(!Object.values(ids).some(node=>node.textContent.includes('sk-private-never-render')));api.state.paper={{id:7,title:'Real paper'}};assert(api.openCurrentPDF());assert.equal(ids['#fusion-pdf-frame'].src,'/api/papers/7/pdf#page=1&zoom=page-width');assert.equal(ids['#fusion-literature-content'].hidden,true);assert(api.closeCurrentPDF());assert.equal(ids['#fusion-literature-content'].hidden,false);
  const auth=await api.preparedAuthorization('personal_suggestion',{{import_id:'personal_import_abcdefghijklmnop',sheet_index:0}});assert.equal(auth.actionId,'action-1');assert(calls.some(x=>x[0]==='/api/desktop/ai/consents'));
  api.switchView('search',{{focus:false}});api.setSearchSource('private');const late=api.runPreciseSearch();api.switchView('paper',{{focus:false}});pendingResolvers.shift()();await late;assert.equal(api.state.searchResults.length,0,'late result must not update inactive view');
  api.switchView('search',{{focus:false}});api.setSearchSource('private');const ready=api.runPreciseSearch();pendingResolvers.shift()();await ready;assert.equal(api.state.searchResults[0].title,'硬度表');assert(calls.some(x=>x[0].includes('source_scope=private')));
