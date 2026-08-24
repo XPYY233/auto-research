@@ -87,6 +87,12 @@ class DesktopBridgeSecurityTests(unittest.TestCase):
         )
         return opener.open(request, timeout=5)
 
+    def test_generated_session_token_always_matches_shared_ai_identity_contract(self) -> None:
+        with mock.patch("desktop_server.secrets.token_urlsafe", return_value="_leading-symbol"):
+            token = new_session_token()
+        self.assertEqual(token, "s-_leading-symbol")
+        self.assertRegex(token, r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+
     def test_health_is_secret_free_no_store_and_does_not_consume_bootstrap(self) -> None:
         with urllib.request.urlopen(f"{self.base_url}{HEALTH_PATH}", timeout=5) as response:
             self.assertEqual(response.status, 204)

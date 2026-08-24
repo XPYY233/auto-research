@@ -107,7 +107,11 @@ def is_fusion_review_allowed_get(path: str) -> bool:
 
 
 def new_session_token() -> str:
-    return secrets.token_urlsafe(32)
+    # ``token_urlsafe`` may legally begin with ``-`` or ``_``.  The shared AI
+    # consent boundary deliberately requires a stable alphanumeric first
+    # character, so prefix every desktop session/CSRF token at the authority
+    # instead of relying on random output shape.
+    return f"s-{secrets.token_urlsafe(32)}"
 
 
 def _cookie_token(raw_cookie: str) -> str:
