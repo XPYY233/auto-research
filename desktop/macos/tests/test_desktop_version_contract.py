@@ -30,9 +30,9 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertEqual(metadata["desktop_version"], contract["desktop"]["macos"]["desktop_version"])
         self.assertEqual(metadata["bundle_short_version"], contract["desktop"]["macos"]["bundle_short_version"])
         self.assertEqual(metadata["build_number"], contract["desktop"]["macos"]["build_number"])
-        self.assertEqual(launcher.DESKTOP_VERSION, "1.1.0")
-        self.assertEqual(metadata["bundle_short_version"], "1.1.0")
-        self.assertEqual(metadata["build_number"], "46")
+        self.assertEqual(launcher.DESKTOP_VERSION, "1.2.0")
+        self.assertEqual(metadata["bundle_short_version"], "1.2.0")
+        self.assertEqual(metadata["build_number"], "47")
         self.assertEqual(metadata["target"], "macOS arm64 Auto Research workbench")
         self.assertIn("workspace-schema-v12", metadata["data_mode"])
         self.assertIn("private-library", metadata["data_mode"])
@@ -126,7 +126,7 @@ class DesktopVersionContractTests(unittest.TestCase):
             (desktop_root / "version.json").write_text(
                 json.dumps(
                     {
-                        "desktop_version": "1.1.0",
+                        "desktop_version": "1.2.0",
                         "build_number": "42",
                         "target": "macOS arm64 Auto Research workbench",
                         "product_target": "macOS research workbench; Windows release paused",
@@ -138,11 +138,11 @@ class DesktopVersionContractTests(unittest.TestCase):
             )
             with (
                 mock.patch.object(desktop_build_manifest, "git", side_effect=["", "abc123", ""]),
-                mock.patch.object(desktop_build_manifest, "core_release", return_value="1.1.0"),
+                mock.patch.object(desktop_build_manifest, "core_release", return_value="1.2.0"),
             ):
                 manifest = desktop_build_manifest.build_manifest(project_root)
 
-        self.assertEqual(manifest["desktop_version"], "1.1.0")
+        self.assertEqual(manifest["desktop_version"], "1.2.0")
         self.assertEqual(manifest["build_number"], "42")
         self.assertEqual(manifest["release_channel"], "research-group-stable")
         self.assertEqual(manifest["supported_architecture"], "arm64")

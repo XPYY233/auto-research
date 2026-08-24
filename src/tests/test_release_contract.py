@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 class ReleaseContractTests(unittest.TestCase):
     def test_repository_contract_is_valid_and_assets_match(self) -> None:
         contract = load_release_contract(PROJECT_ROOT / "config" / "release-contract.json")
-        self.assertEqual(contract.macos_version, "1.1.0")
+        self.assertEqual(contract.macos_version, "1.2.0")
         self.assertEqual(contract.windows_version, "1.0.0-windows.rc.1")
         self.assertEqual(contract.official_package_version, "1.1.0")
         verify_web_asset_hashes(contract, PROJECT_ROOT)

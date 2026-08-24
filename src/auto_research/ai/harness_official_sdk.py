@@ -613,7 +613,7 @@ class _Bridge:
             result: object = {
                 "protocolVersion": "2025-03-26",
                 "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": "auto-research", "version": "1.1.0"},
+                "serverInfo": {"name": "auto-research", "version": "1.2.0"},
             }
         elif method == "ping":
             result = {}
