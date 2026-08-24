@@ -58,6 +58,7 @@ FROZEN_RUNTIME_SPAWN_HELPER_SHA256 = "9d41c4cbfd7407963a4ba244ebe2cba189a47dca18
 MAX_PROVIDER_BODY_BYTES = 4 * 1024 * 1024
 MAX_MCP_BODY_BYTES = 512 * 1024
 MAX_FINAL_RESPONSE_BYTES = 1024 * 1024
+LIBRARIAN_FINALIZATION_REMAINING_CALLS = 3
 _ENVIRONMENT_LOCK = threading.RLock()
 _SAFE_ENVIRONMENT_KEYS = frozenset(
     {
@@ -283,6 +284,8 @@ class _Bridge:
         self._thread: threading.Thread | None = None
         self._failure_code = ""
         self._failure_lock = threading.Lock()
+        self._provider_lock = threading.Lock()
+        self._finalization_started = False
         self._activity_observer = current_activity_observer()
 
     def _emit_activity(
@@ -419,6 +422,12 @@ class _Bridge:
         )
 
     def _provider(self, handler: BaseHTTPRequestHandler) -> None:
+        with self._provider_lock:
+            self._provider_serial(handler)
+
+    def _provider_serial(self, handler: BaseHTTPRequestHandler) -> None:
+        if self._finalization_started:
+            raise HarnessError("harness_output_invalid")
         body = self._body(handler, MAX_PROVIDER_BODY_BYTES)
         if set(body) - _PROVIDER_REQUEST_KEYS or body.get("model") != self.job.model:
             raise HarnessError("harness_invalid")
@@ -450,6 +459,32 @@ class _Bridge:
         )
         if remaining_calls < 1 or tokens > remaining_tokens:
             raise HarnessError("harness_budget_exhausted")
+        force_final = (
+            self.job.session.scope == "librarian"
+            and remaining_calls <= LIBRARIAN_FINALIZATION_REMAINING_CALLS
+        ) or (
+            self.job.session.scope == "selected_evidence_chat"
+            and remaining_calls == 1
+        )
+        if force_final:
+            # Keep one deterministic end to the paid action.  The Developer
+            # Preview runtime otherwise permits another tool turn on the final
+            # provider call and can return an empty/max-turn result after the
+            # whole budget has already been spent.  The application, not the
+            # model, owns this last-call policy.
+            self._finalization_started = True
+            messages = [
+                *messages,
+                {
+                    "role": "system",
+                    "content": _forced_final_instruction(
+                        self.job.session.scope,
+                        verified_refs=self.tools.verified_refs,
+                        recommended_papers=self.tools.recommended_papers,
+                    ),
+                },
+            ]
+            tools = []
         try:
             message = self.model.request_tool_message(
                 messages,
@@ -466,6 +501,8 @@ class _Bridge:
             call_limit=self.job.max_calls,
         )
         calls = message.get("tool_calls") or []
+        if force_final and calls:
+            raise HarnessError("harness_output_invalid")
         for call in calls if isinstance(calls, list) else []:
             function = call.get("function") if isinstance(call, Mapping) else None
             name = function.get("name") if isinstance(function, Mapping) else None
@@ -729,12 +766,55 @@ class OfficialDeepSeekHarnessRuntime:
         ):
             raise HarnessError("harness_output_invalid")
         try:
-            value = json.loads(final)
+            value = _parse_final_json(final)
         except json.JSONDecodeError as exc:
             raise HarnessError("harness_output_invalid") from exc
         if not isinstance(value, dict):
             raise HarnessError("harness_output_invalid")
         return value
+
+
+def _parse_final_json(final: str) -> object:
+    """Accept a JSON object or one otherwise-empty fenced JSON block.
+
+    Some reviewed providers wrap a requested JSON object in a single Markdown
+    fence despite an explicit no-Markdown instruction.  Removing only that
+    exact wrapper is deterministic and does not attempt to recover prose or a
+    partial answer.
+    """
+
+    value = final.strip()
+    if value.startswith("```") and value.endswith("```"):
+        lines = value.splitlines()
+        if (
+            len(lines) >= 3
+            and lines[0].strip().casefold() in {"```", "```json"}
+            and lines[-1].strip() == "```"
+        ):
+            value = "\n".join(lines[1:-1]).strip()
+    return json.loads(value)
+
+
+def _forced_final_instruction(
+    scope: str,
+    *,
+    verified_refs: frozenset[str],
+    recommended_papers: frozenset[str],
+) -> str:
+    if scope == "librarian":
+        refs = sorted(verified_refs)
+        papers = sorted(recommended_papers)
+        return (
+            "现在必须结束工具循环：本轮不得再调用任何工具，只输出一个严格 JSON 对象，"
+            "不要 Markdown 或解释。严格使用任务最初给出的 librarian-harness-result-v1 结构；"
+            f"citations 只能使用这些已核验引用：{json.dumps(refs, ensure_ascii=False)}；"
+            f"recommended_articles 的 paper_uid 只能使用这些已核验论文：{json.dumps(papers, ensure_ascii=False)}；"
+            "没有已核验推荐时返回空数组；comparison_bundle_uids 无法确认时返回空数组。"
+        )
+    return (
+        "现在必须结束工具循环：本轮不得再调用任何工具，只输出一个严格 JSON 对象，"
+        "不要 Markdown 或解释。严格使用任务最初给出的 selected-evidence-harness-model-v1 结构。"
+    )
 
 
 def _system_prompt(scope: str) -> str:

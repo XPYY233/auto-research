@@ -194,6 +194,7 @@ class HarnessToolGateway:
         "__job",
         "__calls",
         "__verified_refs",
+        "__verified_ref_bundles",
         "__recommended_papers",
         "__allow_source_view",
     )
@@ -209,6 +210,7 @@ class HarnessToolGateway:
         self.__job = job
         self.__calls = 0
         self.__verified_refs: set[str] = set()
+        self.__verified_ref_bundles: dict[str, str] = {}
         self.__recommended_papers: set[str] = set()
         self.__allow_source_view = allow_source_view
 
@@ -239,6 +241,10 @@ class HarnessToolGateway:
     @property
     def verified_refs(self) -> frozenset[str]:
         return frozenset(self.__verified_refs)
+
+    @property
+    def verified_ref_bundles(self) -> Mapping[str, str]:
+        return MappingProxyType(dict(self.__verified_ref_bundles))
 
     @property
     def recommended_papers(self) -> frozenset[str]:
@@ -391,7 +397,11 @@ class HarnessToolGateway:
                     _identity_key(item) for item in self.__job.evidence
                 }:
                     raise HarnessError("harness_tool_invalid")
+                previous_bundle = self.__verified_ref_bundles.get(ref)
+                if previous_bundle is not None and previous_bundle != identity.bundle_uid:
+                    raise HarnessError("harness_tool_invalid")
                 self.__verified_refs.add(ref)
+                self.__verified_ref_bundles[ref] = identity.bundle_uid
         elif name == "recommend_papers":
             if not isinstance(result, list):
                 raise HarnessError("harness_tool_invalid")

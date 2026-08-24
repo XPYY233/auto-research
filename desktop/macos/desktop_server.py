@@ -41,16 +41,22 @@ from personal_import_api import PersonalImportAPI
 from personal_table_api import PersonalTableAPI
 from review_queue_api import ReviewQueueAPI
 from desktop_ai_api import MacDesktopAIAPI
+from auto_research.desktop.research_memory import (
+    ResearchMemoryError,
+    ResearchMemoryService,
+)
 
 
 COOKIE_NAME = "auto_research_desktop_session"
 TOKEN_QUERY_NAME = "desktop_token"
 HISTORY_PATH = "/api/desktop/librarian-history"
+RESEARCH_MEMORY_PATH = "/api/desktop/research-memories"
 CREDENTIAL_PATH = "/api/desktop/credentials/deepseek"
 READINESS_PATH = "/api/desktop/readiness"
 HEALTH_PATH = "/api/desktop/healthz"
 CSRF_HEADER = "X-Auto-Research-CSRF"
 MAX_HISTORY_REQUEST_BYTES = 3_000_000
+MAX_RESEARCH_MEMORY_REQUEST_BYTES = 64_000
 MAX_CREDENTIAL_REQUEST_BYTES = 8_192
 HIGH_COST_PATHS = frozenset(
     {
@@ -161,6 +167,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
 
     security_state: DesktopSecurityState
     history_store: SecureHistoryStore | None = None
+    research_memory_service: ResearchMemoryService | None = None
     credential_store: DeepSeekCredentialStore | None = None
     desktop_settings_api: DesktopSettingsAPI | None = None
     evidence_export_api: EvidenceExportAPI | None = None
@@ -330,6 +337,16 @@ class DesktopEvidenceHandler(EvidenceHandler):
             raise SecureHistoryError("对话历史请求必须是对象")
         return value
 
+    def _read_research_memory_json(self) -> dict:
+        try:
+            length = self._content_length(MAX_RESEARCH_MEMORY_REQUEST_BYTES, require_body=True)
+            value = json.loads(self._read_exact_body(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ResearchMemoryError("research_memory_invalid", "研究记忆请求格式无效") from exc
+        if not isinstance(value, dict):
+            raise ResearchMemoryError("research_memory_invalid", "研究记忆请求必须是对象")
+        return value
+
     def _read_credential_json(self) -> dict:
         try:
             length = self._content_length(MAX_CREDENTIAL_REQUEST_BYTES, require_body=True)
@@ -463,12 +480,51 @@ class DesktopEvidenceHandler(EvidenceHandler):
                 self.history_store.clear(delete_key=True)
                 return self.json_response({"ok": True, "cleared": True})
             self.history_store.save(body.get("sessions"))
-        except SecureHistoryError as exc:
+        except SecureHistoryError:
             return self.json_response(
-                {"error": str(exc), "code": "desktop_secure_history_rejected"},
+                {
+                    "error": "本机加密历史请求无效或存储暂时不可用",
+                    "code": "desktop_secure_history_rejected",
+                },
                 HTTPStatus.BAD_REQUEST,
             )
         self.json_response({"ok": True, "storage": self.history_store.storage_label})
+
+    def _research_memory_error(self, error: ResearchMemoryError) -> None:
+        self.json_response(
+            {"code": error.code, "message": error.message, "retryable": error.http_status >= 500},
+            HTTPStatus(error.http_status),
+        )
+
+    def _get_research_memories(self) -> None:
+        if self.research_memory_service is None:
+            return self._research_memory_error(
+                ResearchMemoryError(
+                    "research_memory_store_unavailable",
+                    "本机研究记忆未配置",
+                    http_status=503,
+                )
+            )
+        try:
+            snapshot = self.research_memory_service.get()
+        except ResearchMemoryError as exc:
+            return self._research_memory_error(exc)
+        self.json_response(snapshot.public_dict())
+
+    def _mutate_research_memories(self) -> None:
+        if self.research_memory_service is None:
+            return self._research_memory_error(
+                ResearchMemoryError(
+                    "research_memory_store_unavailable",
+                    "本机研究记忆未配置",
+                    http_status=503,
+                )
+            )
+        try:
+            snapshot = self.research_memory_service.mutate(self._read_research_memory_json())
+        except ResearchMemoryError as exc:
+            return self._research_memory_error(exc)
+        self.json_response(snapshot.public_dict())
 
     def _legacy_paid_ai_unavailable(self) -> None:
         self.close_connection = True
@@ -601,6 +657,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
             self._issue_csrf_header = True
         if parsed.path == HISTORY_PATH:
             return self._get_desktop_history()
+        if parsed.path == RESEARCH_MEMORY_PATH:
+            return self._get_research_memories()
         if parsed.path == CREDENTIAL_PATH:
             return self._credential_status()
         if parsed.path == READINESS_PATH:
@@ -673,6 +731,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
                     self.rfile = original_rfile
             if path == HISTORY_PATH:
                 return self._save_desktop_history()
+            if path == RESEARCH_MEMORY_PATH:
+                return self._mutate_research_memories()
             if path == CREDENTIAL_PATH:
                 return self._save_credential()
             if self.desktop_ai_api is not None and self.desktop_ai_api.is_path(self.path):
@@ -806,6 +866,7 @@ def create_desktop_server(
     token: str,
     read_only: bool = False,
     history_store: SecureHistoryStore | None = None,
+    research_memory_service: ResearchMemoryService | None = None,
     credential_store: DeepSeekCredentialStore | None = None,
     desktop_settings_api: DesktopSettingsAPI | None = None,
     evidence_export_api: EvidenceExportAPI | None = None,
@@ -871,6 +932,7 @@ def create_desktop_server(
             "read_only": read_only,
             "security_state": security_state,
             "history_store": history_store,
+            "research_memory_service": research_memory_service,
             "credential_store": credential_store,
             "desktop_settings_api": desktop_settings_api,
             "evidence_export_api": evidence_export_api,

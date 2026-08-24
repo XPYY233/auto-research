@@ -11,6 +11,7 @@ PACKAGE_BYTES = 8_192
 CREDENTIAL_BYTES = 8_192
 SETTINGS_BYTES = 32_768
 HISTORY_BYTES = 3_000_000
+RESEARCH_MEMORY_BYTES = 64_000
 PERSONAL_BYTES = 512 * 1024
 LIBRARIAN_BYTES = 256_000
 AI_ACTION_BYTES = 256 * 1024
@@ -197,6 +198,17 @@ DEFAULT_DESKTOP_ROUTES: tuple[RouteSpec, ...] = (
         "/api/desktop/librarian-history",
         "history.save",
         HISTORY_BYTES,
+    ),
+    _get(
+        "research_memory.get",
+        "/api/desktop/research-memories",
+        "research_memory.get",
+    ),
+    _post(
+        "research_memory.mutate",
+        "/api/desktop/research-memories",
+        "research_memory.mutate",
+        RESEARCH_MEMORY_BYTES,
     ),
     # Official evidence package lifecycle.
     _get("package.status", "/api/desktop/evidence-packages", "package.status"),

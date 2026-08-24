@@ -32,7 +32,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertEqual(metadata["build_number"], contract["desktop"]["macos"]["build_number"])
         self.assertEqual(launcher.DESKTOP_VERSION, "1.1.0")
         self.assertEqual(metadata["bundle_short_version"], "1.1.0")
-        self.assertEqual(metadata["build_number"], "41")
+        self.assertEqual(metadata["build_number"], "42")
         self.assertEqual(metadata["target"], "macOS arm64 Auto Research workbench")
         self.assertIn("workspace-schema-v12", metadata["data_mode"])
         self.assertIn("private-library", metadata["data_mode"])
@@ -127,7 +127,7 @@ class DesktopVersionContractTests(unittest.TestCase):
                 json.dumps(
                     {
                         "desktop_version": "1.1.0",
-                        "build_number": "41",
+                        "build_number": "42",
                         "target": "macOS arm64 Auto Research workbench",
                         "product_target": "macOS research workbench; Windows release paused",
                         "data_mode": "workspace-schema-v12-plus-private-library",
@@ -143,14 +143,14 @@ class DesktopVersionContractTests(unittest.TestCase):
                 manifest = desktop_build_manifest.build_manifest(project_root)
 
         self.assertEqual(manifest["desktop_version"], "1.1.0")
-        self.assertEqual(manifest["build_number"], "41")
+        self.assertEqual(manifest["build_number"], "42")
         self.assertEqual(manifest["release_channel"], "research-group-stable")
         self.assertEqual(manifest["supported_architecture"], "arm64")
         self.assertEqual(manifest["code_signing"], "ad-hoc")
         self.assertFalse(manifest["apple_notarized"])
         self.assertFalse(manifest["windows_released"])
         self.assertFalse(manifest["public_distribution_ready"])
-        self.assertIn("build 41", manifest["publication_note"])
+        self.assertIn("build 42", manifest["publication_note"])
 
     def test_fusion_installer_uses_a_zsh_safe_transaction_exit_variable(self) -> None:
         command = (DESKTOP_ROOT / "install_fusion_review.command").read_text(
@@ -196,6 +196,8 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn("AutoResearchFusion", fusion_runtime)
         self.assertIn("/api/desktop/ai/actions/", fusion_runtime)
         self.assertIn("/api/desktop/personal-imports/preview", fusion_runtime)
+        self.assertIn("/api/desktop/research-memories", fusion_runtime)
+        self.assertIn("loadResearchMemories", fusion_runtime)
 
     def test_pyinstaller_bundles_only_the_fusion_product_assets(self) -> None:
         spec = (DESKTOP_ROOT / "AutoResearch.spec").read_text(encoding="utf-8")

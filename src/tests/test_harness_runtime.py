@@ -211,7 +211,7 @@ class HarnessRuntimeTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "harness_output_invalid")
         self.assertEqual(raw.calls, 1)
 
-    def test_cross_bundle_quantitative_report_rejected(self) -> None:
+    def test_model_bundle_echo_does_not_create_comparison_authority(self) -> None:
         class CrossBundle(Runtime):
             def execute(self, **kwargs):
                 value = super().execute(**kwargs)
@@ -220,14 +220,145 @@ class HarnessRuntimeTests(unittest.TestCase):
 
         prepared = action()
         _, model = self.budgeted(prepared)
-        with self.assertRaises(HarnessError) as raised:
-            self.adapter(CrossBundle()).execute_consumed(
+        result = self.adapter(CrossBundle()).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL,),
+        )
+        self.assertEqual(result["comparison_bundle_uids"], ["bundle-1"])
+
+    def test_librarian_discards_unverified_echoes_but_keeps_verified_authority(self) -> None:
+        class Noisy(Runtime):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["display_note"] = "not authoritative"
+                value["report"]["model_note"] = "not authoritative"
+                value["citations"].append({"ref": "R999", "title": "invented"})
+                value["recommended_articles"].append(
+                    {"paper_uid": "paper-invented", "reason": "invented"}
+                )
+                return value
+
+        prepared = action()
+        _, model = self.budgeted(prepared)
+        result = self.adapter(Noisy()).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL,),
+        )
+        self.assertEqual(result["citations"], [{"ref": "R1"}])
+        self.assertEqual([row["paper_uid"] for row in result["recommended_articles"]], ["paper-1"])
+        self.assertNotIn("display_note", result)
+        self.assertNotIn("model_note", result["report"])
+
+    def test_librarian_rejects_unverified_text_refs_and_actual_cross_bundle_refs(self) -> None:
+        class BadText(Runtime):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["answer"] = "R1 有证据，R999 没有核验。"
+                return value
+
+        prepared = action()
+        _, model = self.budgeted(prepared)
+        with self.assertRaises(HarnessError) as failed:
+            self.adapter(BadText()).execute_consumed(
                 action=prepared,
                 session_id="session-1",
                 model=model,
                 evidence=(OFFICIAL,),
             )
-        self.assertEqual(raised.exception.code, "harness_output_invalid")
+        self.assertEqual(failed.exception.code, "harness_output_invalid")
+
+        other = HarnessEvidenceIdentity(
+            "official", "official-v1", "finding", "finding-2", "bundle-2"
+        )
+
+        class CrossBundleBackend(Backend):
+            def citation_verify(self, refs):
+                identities = (OFFICIAL, other)
+                return [
+                    identities[index].public_dict() | {"ref": ref}
+                    for index, ref in enumerate(refs)
+                ]
+
+        class CrossBundle(Runtime):
+            def execute(self, *, tools, **kwargs):
+                kwargs["model"].request_json(
+                    MESSAGES,
+                    task=kwargs["job"].task,
+                    max_tokens=1000,
+                    thinking=None,
+                    temperature=0.1,
+                )
+                tools.call("citation_verify", {"refs": ["R1", "R2"]})
+                return {
+                    "schema_version": "librarian-harness-result-v1",
+                    "answer": "两条来源分别见 R1 与 R2。",
+                    "report": {
+                        "direct_conclusion": "来源分属两个不兼容包。",
+                        "evidence_matrix": [],
+                        "related_evidence": [],
+                        "database_gaps": "不能合并比较。",
+                        "suggested_followups": [],
+                    },
+                    "citations": [{"ref": "R1"}, {"ref": "R2"}],
+                    "recommended_articles": [],
+                    "comparison_bundle_uids": [],
+                }
+
+        _, model = self.budgeted(prepared)
+        result = DeepSeekHarnessAdapter(
+            runtime=CrossBundle(), backend=CrossBundleBackend()
+        ).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL, other),
+        )
+        self.assertEqual(result["comparison_bundle_uids"], [])
+        self.assertEqual(result["citations"], [{"ref": "R1"}, {"ref": "R2"}])
+
+        class QuantitativeCrossBundle(CrossBundle):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["answer"] = "R1 的硬度为 500 HV，高于 R2 的 420 HV。"
+                value["report"]["direct_conclusion"] = value["answer"]
+                return value
+
+        _, model = self.budgeted(prepared)
+        with self.assertRaises(HarnessError) as quantitative:
+            DeepSeekHarnessAdapter(
+                runtime=QuantitativeCrossBundle(), backend=CrossBundleBackend()
+            ).execute_consumed(
+                action=prepared,
+                session_id="session-1",
+                model=model,
+                evidence=(OFFICIAL, other),
+            )
+        self.assertEqual(quantitative.exception.code, "harness_output_invalid")
+
+    def test_missing_bundle_identity_never_grants_comparison_authority(self) -> None:
+        missing_bundle = HarnessEvidenceIdentity(
+            "official", "official-v1", "finding", "finding-no-bundle", ""
+        )
+
+        class MissingBundleBackend(Backend):
+            def citation_verify(self, refs):
+                return [missing_bundle.public_dict() | {"ref": ref} for ref in refs]
+
+        prepared = action()
+        _, model = self.budgeted(prepared)
+        result = DeepSeekHarnessAdapter(
+            runtime=Runtime(), backend=MissingBundleBackend()
+        ).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(missing_bundle,),
+        )
+        self.assertEqual(result["comparison_bundle_uids"], [])
 
     def test_librarian_accepts_published_workspace_evidence(self) -> None:
         prepared = action()

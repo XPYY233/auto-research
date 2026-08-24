@@ -131,6 +131,14 @@ class HarnessToolTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "harness_tool_invalid")
 
+    def test_verified_reference_bundle_authority_is_application_owned(self) -> None:
+        gateway = HarnessToolGateway(backend=Backend(), job=job())
+        gateway.call("citation_verify", {"refs": ["R1"]})
+        self.assertEqual(gateway.verified_refs, frozenset({"R1"}))
+        self.assertEqual(dict(gateway.verified_ref_bundles), {"R1": "bundle-1"})
+        with self.assertRaises(TypeError):
+            gateway.verified_ref_bundles["R1"] = "bundle-2"
+
 
 if __name__ == "__main__":
     unittest.main()

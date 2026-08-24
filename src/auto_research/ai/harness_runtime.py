@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -133,6 +135,42 @@ class HarnessJobStore:
 
 
 class HarnessOutputProjector:
+    _QUANTITY = re.compile(
+        r"[+-]?\d+(?:\.\d+)?\s*(?:%|°\s*C|K|Pa|kPa|MPa|GPa|HV|nm|µm|μm|mm|cm|m|"
+        r"eV|keV|MeV|J|mJ|dpa|at\.?\s*%|wt\.?\s*%|s|min|h)(?![A-Za-z])",
+        re.IGNORECASE,
+    )
+    _COMPARISON = re.compile(
+        r"(?:相比|比较|对比|分别|高于|低于|大于|小于|超过|不及|相差|差异为|"
+        r"增加|降低|提升|下降|变化(?:了|为)?|倍|[<>≥≤])"
+    )
+
+    @classmethod
+    def _has_quantitative_comparison(cls, value: object) -> bool:
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        text = re.sub(r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", "", text)
+        quantities = cls._QUANTITY.findall(text)
+        if re.search(r"[+-]?\d+(?:\.\d+)?\s*倍", text):
+            return True
+        if not quantities or not cls._COMPARISON.search(text):
+            return False
+        if len(quantities) >= 2:
+            return True
+        return bool(
+            re.search(
+                r"(?:相比|高于|低于|大于|小于|超过|不及|相差|增加|降低|提升|下降)"
+                r".{0,48}" + cls._QUANTITY.pattern,
+                text,
+                re.IGNORECASE,
+            )
+            or re.search(
+                cls._QUANTITY.pattern
+                + r".{0,48}(?:高于|低于|大于|小于|超过|不及|相差|增加|降低|提升|下降)",
+                text,
+                re.IGNORECASE,
+            )
+        )
+
     @staticmethod
     def librarian(
         raw: Mapping[str, Any],
@@ -143,14 +181,7 @@ class HarnessOutputProjector:
             value = canonical_public(raw)
         except HarnessError as exc:
             raise HarnessError("harness_output_invalid") from exc
-        if not isinstance(value, dict) or set(value) != {
-            "schema_version",
-            "answer",
-            "report",
-            "citations",
-            "recommended_articles",
-            "comparison_bundle_uids",
-        }:
+        if not isinstance(value, dict):
             raise HarnessError("harness_output_invalid")
         report = value.get("report")
         if (
@@ -158,13 +189,10 @@ class HarnessOutputProjector:
             or not isinstance(value.get("answer"), str)
             or not value["answer"].strip()
             or not isinstance(report, dict)
-            or set(report) != {
-                "direct_conclusion",
-                "evidence_matrix",
-                "related_evidence",
-                "database_gaps",
-                "suggested_followups",
-            }
+            or not {
+                "direct_conclusion", "evidence_matrix", "related_evidence",
+                "database_gaps", "suggested_followups",
+            } <= set(report)
             or not isinstance(report.get("direct_conclusion"), str)
             or not isinstance(report.get("evidence_matrix"), list)
             or not isinstance(report.get("related_evidence"), list)
@@ -177,24 +205,76 @@ class HarnessOutputProjector:
             or not isinstance(value.get("comparison_bundle_uids"), list)
         ):
             raise HarnessError("harness_output_invalid")
-        refs = set()
+        refs: set[str] = set()
         for citation in value["citations"]:
-            if not isinstance(citation, dict) or set(citation) != {"ref"}:
-                raise HarnessError("harness_output_invalid")
-            refs.add(citation["ref"])
-        if not refs or not refs.issubset(tools.verified_refs):
+            if not isinstance(citation, dict) or not isinstance(citation.get("ref"), str):
+                continue
+            ref = citation["ref"]
+            if ref in tools.verified_refs:
+                refs.add(ref)
+        if not refs:
             raise HarnessError("harness_output_invalid")
-        bundles = {str(item) for item in value["comparison_bundle_uids"] if str(item)}
-        if len(bundles) > 1:
+        ref_bundles = [str(tools.verified_ref_bundles.get(ref) or "") for ref in refs]
+        bundles = set(ref_bundles)
+        complete_bundle_identity = all(ref_bundles)
+        rendered_claims = json.dumps(
+            {"answer": value["answer"], "report": report},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        mentioned_refs = set(
+            re.findall(r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", rendered_claims)
+        )
+        if not mentioned_refs.issubset(refs):
             raise HarnessError("harness_output_invalid")
+        if (not complete_bundle_identity or len(bundles) != 1) and HarnessOutputProjector._has_quantitative_comparison(
+            {"answer": value["answer"], "report": report}
+        ):
+            raise HarnessError("harness_output_invalid")
+        recommendations = []
+        seen_papers: set[str] = set()
         for article in value["recommended_articles"]:
-            if not isinstance(article, dict) or set(article) - {
-                "paper_uid", "title", "doi", "reason"
-            }:
-                raise HarnessError("harness_output_invalid")
-            if article.get("paper_uid") not in tools.recommended_papers:
-                raise HarnessError("harness_output_invalid")
-        return value
+            if not isinstance(article, dict):
+                continue
+            paper_uid = article.get("paper_uid")
+            if (
+                not isinstance(paper_uid, str)
+                or paper_uid not in tools.recommended_papers
+                or paper_uid in seen_papers
+            ):
+                continue
+            seen_papers.add(paper_uid)
+            recommendations.append(
+                {
+                    "paper_uid": paper_uid,
+                    "title": str(article.get("title") or "")[:1_000],
+                    "doi": str(article.get("doi") or "")[:500],
+                    "reason": str(article.get("reason") or "")[:2_000],
+                }
+            )
+        # Model echoes are never identity authority.  Return only the fixed
+        # schema and the intersection with application-verified references and
+        # recommendations; untrusted extra keys are discarded.
+        return {
+            "schema_version": "librarian-harness-result-v1",
+            "answer": value["answer"],
+            "report": {
+                "direct_conclusion": report["direct_conclusion"],
+                "evidence_matrix": report["evidence_matrix"],
+                "related_evidence": report["related_evidence"],
+                "database_gaps": report["database_gaps"],
+                "suggested_followups": report["suggested_followups"],
+            },
+            "citations": [{"ref": ref} for ref in sorted(refs)],
+            "recommended_articles": recommendations,
+            # A Librarian answer may cite several papers and therefore several
+            # independently published bundles.  Those references remain useful
+            # as a traceable evidence set, but they are *not* authority for a
+            # quantitative cross-bundle comparison.  Expose a comparison bundle
+            # only when every verified reference belongs to the same bundle;
+            # never trust the model's echoed bundle list.
+            "comparison_bundle_uids": sorted(bundles) if complete_bundle_identity and len(bundles) == 1 else [],
+        }
 
     @staticmethod
     def selected_evidence(

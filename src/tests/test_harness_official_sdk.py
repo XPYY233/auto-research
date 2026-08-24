@@ -22,6 +22,7 @@ from auto_research.ai.harness_contract import (
 )
 from auto_research.ai.harness_official_sdk import (
     OfficialDeepSeekHarnessRuntime,
+    _parse_final_json,
     _verified_runtime_member,
 )
 from auto_research.ai.harness_tools import HarnessToolGateway
@@ -213,7 +214,111 @@ class BudgetExhaustingHarness(FakeHarness):
         raise AssertionError("budget gate did not stop the third provider request")
 
 
+class FinalizingHarness(FakeHarness):
+    def run(self, _prompt, *, session_id):
+        del session_id
+        token = self.kwargs["api_key"]
+        url = self.kwargs["base_url"] + "/chat/completions"
+        tool = {
+            "type": "function",
+            "function": {
+                "name": "mcp__auto_research__exact_search",
+                "description": "bounded",
+                "parameters": {"type": "object", "additionalProperties": False},
+            },
+        }
+        for index in range(2):
+            status, raw, _ = post(
+                url,
+                token,
+                {
+                    "model": self.kwargs["model"],
+                    "messages": [{"role": "user", "content": f"turn-{index}"}],
+                    "tools": [tool],
+                    "max_tokens": 500,
+                    "temperature": 0.1,
+                    "stream": False,
+                },
+            )
+            assert status == 200
+            json.loads(raw)
+        return SimpleNamespace(
+            final_response=json.dumps({"ok": True}),
+            finish_reason="completed",
+            session_root=None,
+        )
+
+
 class OfficialHarnessSDKTests(unittest.TestCase):
+    def test_single_json_fence_is_unwrapped_without_recovering_prose(self):
+        self.assertEqual(_parse_final_json("```json\n{\"ok\":true}\n```"), {"ok": True})
+        with self.assertRaises(json.JSONDecodeError):
+            _parse_final_json("说明\n```json\n{\"ok\":true}\n```")
+        with self.assertRaises(json.JSONDecodeError):
+            _parse_final_json("```json\n{\"ok\":true}\n尾注```")
+
+    def test_librarian_reserves_sixth_call_for_tool_free_finalization(self):
+        prepared = action()
+        prepared = PreparedOutbound(
+            **{
+                **prepared.__dict__,
+                "max_calls": 4,
+                "max_tokens": 4_000,
+            }
+        )
+        raw = RawClient()
+        runtime = OfficialDeepSeekHarnessRuntime(
+            cordis_path="config/auto-research-harness.runtime.cordis.yml",
+            harness_factory=FinalizingHarness,
+            dependency_resolver=dependencies,
+            runtime_path_resolver=lambda: "/verified/runtime",
+        )
+        runtime.execute(
+            job=job(),
+            model=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
+            tools=HarnessToolGateway(backend=Backend(), job=job(), allow_source_view=True),
+            prompt={"question": "bounded"},
+        )
+        self.assertEqual(len(raw.calls), 2)
+        self.assertTrue(raw.calls[0][1])
+        self.assertEqual(raw.calls[1][1], [])
+        self.assertIn("不得再调用任何工具", raw.calls[1][0][-1]["content"])
+
+    def test_finalization_rejects_tool_calls_and_all_later_provider_requests(self):
+        class ToolCallingClient(RawClient):
+            def request_tool_message(self, messages, tools, **kwargs):
+                self.calls.append((messages, tools, kwargs))
+                return {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {"name": "mcp__auto_research__exact_search", "arguments": "{}"},
+                    }],
+                }
+
+        prepared = action()
+        prepared = PreparedOutbound(
+            **{**prepared.__dict__, "max_calls": 3, "max_tokens": 3_000}
+        )
+        raw = ToolCallingClient()
+        runtime = OfficialDeepSeekHarnessRuntime(
+            cordis_path="config/auto-research-harness.runtime.cordis.yml",
+            harness_factory=FinalizingHarness,
+            dependency_resolver=dependencies,
+            runtime_path_resolver=lambda: "/verified/runtime",
+        )
+        with self.assertRaises(HarnessError) as failed:
+            runtime.execute(
+                job=job(),
+                model=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
+                tools=HarnessToolGateway(backend=Backend(), job=job(), allow_source_view=True),
+                prompt={"question": "bounded"},
+            )
+        self.assertEqual(failed.exception.code, "harness_output_invalid")
+        self.assertEqual(len(raw.calls), 1)
+        self.assertEqual(raw.calls[0][1], [])
     def test_frozen_bundle_accepts_only_verified_in_bundle_runtime_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
             contents = Path(directory) / "Auto Research.app" / "Contents"
@@ -365,7 +470,7 @@ class OfficialHarnessSDKTests(unittest.TestCase):
             for event in activities
         ))
 
-    def test_budget_exhaustion_preserves_stable_failure_code(self):
+    def test_low_budget_librarian_is_forced_to_finalize_once(self):
         prepared = action()
         raw = RawClient()
         model = HarnessBudgetedBusinessAIClient(client=raw, action=prepared)
@@ -383,8 +488,9 @@ class OfficialHarnessSDKTests(unittest.TestCase):
                 tools=gateway,
                 prompt={"question": "硬度如何变化？"},
             )
-        self.assertEqual(failed.exception.code, "harness_budget_exhausted")
-        self.assertEqual(len(raw.calls), 2)
+        self.assertEqual(failed.exception.code, "harness_output_invalid")
+        self.assertEqual(len(raw.calls), 1)
+        self.assertEqual(raw.calls[0][1], [])
 
     def test_checked_in_composition_has_only_four_runtime_rows(self):
         text = Path("config/auto-research-harness.runtime.cordis.yml").read_text()

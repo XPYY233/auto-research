@@ -121,10 +121,14 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and "/api/search-papers" in runtime_source
             and "/api/search-v2" in runtime_source
             and "/api/desktop/federated-search" in runtime_source
+            and "/api/desktop/research-memories" in runtime_source
             and "/api/uploads/pdf" in runtime_source
             and "/api/desktop/ai/actions/" in runtime_source
             and "/api/desktop/personal-imports/preview" in runtime_source
             and "/reviewed-import" in runtime_source
+            and 'id="fusion-librarian-remember"' in index_source
+            and 'id="fusion-research-memory-list"' in index_source
+            and "loadResearchMemories" in runtime_source
         ),
         "fusion_appearance_contract": bool(
             "system" in runtime_source
@@ -153,6 +157,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and callable(getattr(DesktopEvidenceHandler, "_has_session", None))
             and {
                 "history_store",
+                "research_memory_service",
                 "desktop_ai_api",
                 "desktop_settings_api",
                 "package_center_api",
@@ -198,6 +203,7 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
         "desktop_ai_providers": "/api/desktop/ai/providers",
         "desktop_ai_settings": "/api/desktop/ai/settings",
         "librarian_history": "/api/desktop/librarian-history",
+        "research_memories": "/api/desktop/research-memories",
         "personal_search_status": "/api/desktop/personal-imports/search-status",
         "federated_search": "/api/desktop/federated-search?q=%E6%B8%A9%E5%BA%A6&source_scope=official&page=1&page_size=2",
     }.items():
@@ -369,6 +375,8 @@ def _run_smoke_test(project_root: Path) -> int:
     from desktop_settings_api import DesktopSettingsAPI
     from desktop_settings_store import MacAtomicDesktopSettingsStore
     from secure_history import SecureHistoryStore, StaticHistoryKeyProvider
+    from secure_research_memory import SecureResearchMemoryStore
+    from auto_research.desktop.research_memory import ResearchMemoryService
 
     production_database = project_root / "db" / "experimental_evidence.sqlite"
     with tempfile.TemporaryDirectory(prefix="auto-research-desktop-smoke-") as directory:
@@ -388,6 +396,14 @@ def _run_smoke_test(project_root: Path) -> int:
             history_path,
             StaticHistoryKeyProvider(b"\x91" * 32),
             storage_label="test-static-aes-256-gcm",
+        )
+        research_memory_path = application_support / "History" / "research-memory-v1.enc"
+        research_memory_service = ResearchMemoryService(
+            SecureResearchMemoryStore(
+                research_memory_path,
+                StaticHistoryKeyProvider(b"\x92" * 32),
+                storage_label="test-static-aes-256-gcm",
+            )
         )
         product_services = create_desktop_product_services(
             data_root=application_support,
@@ -413,6 +429,7 @@ def _run_smoke_test(project_root: Path) -> int:
             token=token,
             read_only=False,
             history_store=history_store,
+            research_memory_service=research_memory_service,
             credential_store=ai_services.legacy_deepseek_store,
             desktop_ai_api=MacDesktopAIAPI(ai_services.controller),
             desktop_settings_api=DesktopSettingsAPI(
@@ -452,6 +469,7 @@ def _run_smoke_test(project_root: Path) -> int:
                 token,
             )
             report["secure_history_ciphertext"] = not history_path.exists()
+            report["secure_research_memory_ciphertext"] = not research_memory_path.exists()
         finally:
             server.shutdown()
             server.server_close()
@@ -470,6 +488,7 @@ def _run_smoke_test(project_root: Path) -> int:
         and report["web_assets"]
         and report["http_stack"]
         and report["secure_history_ciphertext"]
+        and report["secure_research_memory_ciphertext"]
         and all(report["http_checks"].values())
         and all(report["frozen_product_contracts"].values())
     )
@@ -491,6 +510,8 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     from native_desktop_bridge import NativeDesktopBridge
     from package_import_service import DEFAULT_PACKAGE_DATA_ROOT
     from secure_history import default_secure_history_store
+    from secure_research_memory import default_secure_research_memory_store
+    from auto_research.desktop.research_memory import ResearchMemoryService
 
     # The Fusion product restores the reviewed 0.8 service graph, but desktop
     # credentials still come only from the generation-bound secure store.
@@ -537,6 +558,9 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             token=token,
             read_only=False,
             history_store=default_secure_history_store(),
+            research_memory_service=ResearchMemoryService(
+                default_secure_research_memory_store()
+            ),
             credential_store=ai_services.legacy_deepseek_store,
             desktop_ai_api=MacDesktopAIAPI(ai_services.controller),
             desktop_settings_api=DesktopSettingsAPI(

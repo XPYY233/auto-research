@@ -139,7 +139,7 @@ class FusionReviewUIContractTests(unittest.TestCase):
             "function renderEditorSurfaces(", "function secondaryDocumentHTML(",
             'documentTabs?.reopenClosed()', 'documentTabs.move(active.tabId,"primary")',
             'data-document-group-id=', "const geometry=paneGeometry(snapshot)",
-            'primaryHidden=geometry.narrow?', 'secondaryHidden=!geometry.hasSecondary',
+            'if(hasSecondary&&!narrow&&primaryCollapsed&&secondaryCollapsed)', 'secondary.hidden=!geometry.hasSecondary',
             'openTab&&documentTabs&&Number(globalThis.innerWidth||1440)>=900',
             'openSecondaryEvidence(row,state.view,{preview,pin})',
             '/api/six-data/${row.itemId}/source-view',
@@ -182,6 +182,12 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertIn("--fusion-context-size", self.css)
         self.assertIn("--fusion-primary-fr", self.css)
         self.assertIn('html[data-pane-resizing="true"]', self.css)
+        self.assertIn("@container fusion-editor (max-width:1180px)", self.css)
+        self.assertNotIn(".fusion-toolbar .fusion-action-cluster { order:3;width:100%", self.css)
+        self.assertNotIn(".fusion-toolbar .fusion-action-cluster { order:3;max-width:100%", self.css)
+        self.assertNotIn(".fusion-toolbar .fusion-action-cluster,.fusion-detail-toolbar>div { width:100%", self.css)
+        self.assertIn(".fusion-search-primary-row { display:grid;grid-template-columns:minmax(0,1fr) auto", self.css)
+        self.assertNotIn(".fusion-search-primary-row { flex-wrap:wrap; }", self.css)
         self.assertNotIn("appendChild", self.runtime)
 
     def test_preview_tabs_pin_and_secondary_group_renders_complete_documents(self) -> None:
@@ -664,8 +670,8 @@ const all={{'[data-librarian-result]':[],'[data-librarian-article]':[],'[data-pa
 globalThis.document={{readyState:'loading',documentElement:html,body,querySelector:s=>ids[s]||singles[s]||null,querySelectorAll:s=>all[s]||[],addEventListener(){{}}}};globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.innerWidth=1280;
 eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'pane_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
 const row=(uid,title)=>({{type:'item',title,value:'4.1',unit:'GPa',meaning:title,sourceScope:'official',sourceId:'official-main',entityUid:uid,page:7,articleTitle:'论文 '+title,excerpt:'原文 '+title,quantities:[],variables:{{}},materials:[],conditions:'',methods:'',linkedItemCount:0,tags:[]}}),A=row('item:a','证据 A'),B=row('item:b','证据 B');
-api.state.view='search';api.state.searchMode='librarian';api.state.librarianResults=[A,B];api.state.librarianArticles=[];api.state.librarianResultsOpen=true;api.renderLibrarianResultNavigator();assert.equal(api.setLibrarianResultsOpen(true),true);assert.equal(ids['#fusion-librarian-results'].hidden,false);assert(ids['#fusion-librarian-panel'].classList.contains('results-open'));assert.equal(api.paneLayout.inspector.collapsed,true,'tight result layout must automatically release inspector space');
-(async()=>{{assert(await api.openLibrarianEvidence(0));let secondary=api.documentTabs.activeTab('secondary');assert(secondary);assert.equal(secondary.payload.row.title,'证据 A');assert.equal(api.state.selectedEvidence.title,'证据 A');assert.equal(ids['#fusion-evidence-ai'].disabled,false);assert.equal(api.selectedEvidenceAIIdentity().entityUid,'item:a');
+api.state.view='search';api.state.searchMode='librarian';api.state.librarianResults=[A,B];api.state.librarianArticles=[];api.state.librarianResultsOpen=false;api.documentTabs.open({{tabId:'evidence:background',kind:'evidence',ownerView:'search',title:'已有详情',identity:{{sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:background'}},payload:{{row:A,status:'ready'}}}},{{groupId:'secondary',pin:true}});api.paneController.expandEditor('secondary',{{persist:false}});api.paneController.expandSide('inspector',{{persist:false}});let geometry=api.coordinateTaskLayout('librarian-chat');assert.equal(geometry.inspectorDocked,false,'chat without selected evidence releases inspector');assert.equal(api.paneLayout.inspector.collapsed,false,'task suppression preserves inspector preference');api.renderLibrarianResultNavigator();assert.equal(api.setLibrarianResultsOpen(true),true);assert.equal(ids['#fusion-librarian-results'].hidden,false);assert(ids['#fusion-librarian-panel'].classList.contains('results-open'));geometry=api.applyPaneLayout();assert.equal(geometry.inspectorDocked,false,'result rail releases inspector space');assert.equal(geometry.contextDocked,false,'result rail releases unrelated context');assert.equal(geometry.secondaryCollapsed,true,'result rail releases unrelated secondary editor');assert.equal(api.paneLayout.editors.secondaryCollapsed,false,'result rail does not close the stored secondary group');
+(async()=>{{assert(await api.openLibrarianEvidence(0));let secondary=api.documentTabs.activeTab('secondary');assert(secondary);geometry=api.applyPaneLayout();assert.equal(geometry.secondaryCollapsed,false,'evidence detail restores secondary editor');assert.equal(geometry.contextDocked,true,'1280 keeps the source context when both editors remain readable');assert.equal(geometry.inspectorDocked,false,'1280 detail keeps the evidence AI pane available without crowding the editor');assert(api.togglePane('inspector'));geometry=api.applyPaneLayout();assert.equal(geometry.inspectorDocked,true,'the user can explicitly restore evidence AI');assert.equal(secondary.payload.row.title,'证据 A');assert.equal(api.state.selectedEvidence.title,'证据 A');assert.equal(ids['#fusion-evidence-ai'].disabled,false);assert.equal(api.selectedEvidenceAIIdentity().entityUid,'item:a');
  api.state.evidenceChat.messages=[{{role:'user',content:'问题 A'}},{{role:'assistant',content:'回答 A'}}];assert(await api.openLibrarianEvidence(1));secondary=api.documentTabs.activeTab('secondary');assert.equal(secondary.payload.row.title,'证据 B');assert.equal(api.state.evidenceChat.messages.length,0);api.state.evidenceChat.messages=[{{role:'user',content:'问题 B'}},{{role:'assistant',content:'回答 B'}}];assert(await api.openLibrarianEvidence(0));assert.deepEqual(api.state.evidenceChat.messages.map(x=>x.content),['问题 A','回答 A']);assert.deepEqual(api.state.evidenceChat.threads.get('official:official-main:item:item:b').map(x=>x.content),['问题 B','回答 B']);
 }})().catch(error=>{{console.error(error);process.exitCode=1;}});
 """
@@ -715,6 +721,33 @@ finishPaidJob();await paid;assert.equal(api.state.evidenceChat.busy,false);asser
         self.assertIn(':root[data-theme="dark"]', self.css)
         self.assertIn(':root[data-theme="system"]', self.css)
         self.assertIn("@media(prefers-color-scheme:dark)", self.css)
+        for marker in (
+            "--f-content-pad:clamp(20px,3vw,36px)",
+            "--f-content-gap:18px", "--f-body-leading:1.72",
+            "width:min(100%,840px)", 'data-density="comfortable"',
+            "--f-content-pad:12px", "--f-body-leading:1.5",
+        ):
+            self.assertIn(marker, self.css)
+
+    def test_ai_activity_and_chat_use_aggregated_task_projection(self) -> None:
+        for element_id in (
+            "fusion-evidence-ai-output", "fusion-evidence-ai-form",
+            "fusion-evidence-ai-question", "fusion-evidence-ai",
+            "fusion-librarian-output", "fusion-librarian-form",
+        ):
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        for marker in (
+            'AI_APPLICATION_PHASES = Object.freeze({understand:"理解问题",retrieve:"检索证据",verify:"核验引用",organize:"组织回答",complete:"完成"})',
+            "function projectAIActivity(", "node.dataset.aiActivityPhase=phase",
+            'projectAIActivity(scope,{...event,job_id:job.job_id})',
+            'classList.toggle("ai-chat-active",Boolean(identity))',
+            '["paper","search"].includes(state.view)&&!state.selectedEvidence)paneTaskSuppression.inspector=true',
+            ".fusion-inspector.ai-chat-active", ".fusion-evidence-ai-output",
+            ".fusion-evidence-chat .fusion-chat-composer", ".fusion-librarian-form",
+        ):
+            self.assertIn(marker, self.runtime + self.css)
+        self.assertNotIn("aiExperience?.activity(scope,{...event,job_id:job.job_id})", self.runtime)
+        self.assertIn('state==="error"?"请查看对话中的原因与处理建议":detail', self.runtime)
 
     def test_private_table_and_rescan_contracts_are_bounded(self) -> None:
         for marker in (
