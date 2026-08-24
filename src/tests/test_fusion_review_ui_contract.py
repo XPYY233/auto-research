@@ -29,6 +29,7 @@ class FusionReviewUIContractTests(unittest.TestCase):
         cls.base_css = (WEB / "app.css").read_text(encoding="utf-8")
         cls.css = (WEB / "workbench.css").read_text(encoding="utf-8")
         cls.runtime = (WEB / "fusion_review.js").read_text(encoding="utf-8")
+        cls.ai_experience = (WEB / "fusion_ai_experience.js").read_text(encoding="utf-8")
 
     def test_single_fusion_owner_and_script_order(self) -> None:
         parser = _IDs()
@@ -37,8 +38,10 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertEqual(self.index.count('/static/fusion_review.js'), 1)
         self.assertEqual(self.index.count('/static/ai_consent.js'), 1)
         self.assertEqual(self.index.count('/static/document_tab_store.js'), 1)
+        self.assertEqual(self.index.count('/static/fusion_ai_experience.js'), 1)
         self.assertLess(self.index.index('/static/ai_consent.js'), self.index.index('/static/fusion_review.js'))
         self.assertLess(self.index.index('/static/document_tab_store.js'), self.index.index('/static/fusion_review.js'))
+        self.assertLess(self.index.index('/static/fusion_ai_experience.js'), self.index.index('/static/fusion_review.js'))
         for legacy in ("/static/app.js", "/static/workbench.js", "/static/desktop_product.js", "/static/package_center.js"):
             self.assertNotIn(legacy, self.index)
         self.assertNotIn("appendChild", self.runtime)
@@ -58,6 +61,27 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertEqual(self.index.count('data-settings-panel="ai"'), 1)
         self.assertIn("AI 与 API 密钥", self.index)
         self.assertIn("fusion-ai-business-readiness", self.index)
+
+    def test_ai_workflows_have_real_stage_feedback_and_chat_composers(self) -> None:
+        for element_id in (
+            "fusion-literature-progress",
+            "fusion-personal-progress",
+            "fusion-librarian-progress",
+            "fusion-evidence-ai-progress",
+            "fusion-librarian-form",
+            "fusion-evidence-ai-form",
+            "fusion-librarian-new",
+        ):
+            self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        self.assertIn("fusion-ai-experience-v1", self.ai_experience)
+        self.assertIn("AIExperienceController", self.ai_experience)
+        self.assertIn("renderConversation", self.ai_experience)
+        self.assertIn('aiProgress("literature_extraction"', self.runtime)
+        self.assertIn('aiProgress("personal_suggestion"', self.runtime)
+        self.assertIn('aiProgress("librarian"', self.runtime)
+        self.assertIn('aiProgress("selected_evidence_chat"', self.runtime)
+        self.assertIn("Enter 发送 · Shift+Enter 换行", self.index)
+        self.assertNotIn("setInterval(updateLibrarianProgress", self.runtime)
 
     def test_real_workflows_are_top_level_and_pdf_stays_in_workspace(self) -> None:
         for element_id in (

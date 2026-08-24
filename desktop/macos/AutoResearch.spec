@@ -26,7 +26,9 @@ analysis = Analysis(
                 "ai_consent.js",
                 "document_tab_store.js",
                 "pane_layout_controller.js",
+                "fusion_ai_experience.js",
                 "fusion_review.js",
+                "codex-pet-working.webp",
             )
         ],
         (

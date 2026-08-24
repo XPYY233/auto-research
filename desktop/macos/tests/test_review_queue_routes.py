@@ -183,6 +183,58 @@ class ReviewQueueRouteTests(unittest.TestCase):
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertIn(b"AutoResearchDocumentTabs", allowed.wfile.getvalue())
 
+    def test_fusion_ai_experience_and_pet_assets_are_session_protected(self) -> None:
+        for path, mime_marker, body_marker in (
+            (
+                "/static/fusion_ai_experience.js",
+                "javascript",
+                b"AutoResearchAIExperience",
+            ),
+            (
+                "/static/codex-pet-working.webp",
+                "image/webp",
+                b"RIFF",
+            ),
+        ):
+            with self.subTest(path=path):
+                value = object.__new__(DesktopEvidenceHandler)
+                value.path = path
+                value.experience_mode = "fusion-review"
+                value.read_only = True
+                value.wfile = io.BytesIO()
+                value.headers_out = []
+                value.status = None
+                value._valid_bootstrap = lambda: False
+                value._has_session = lambda **_kwargs: True
+                value._desktop_forbidden = lambda: setattr(
+                    value, "status", HTTPStatus.FORBIDDEN
+                )
+                value.send_response = lambda status: setattr(
+                    value, "status", HTTPStatus(status)
+                )
+                value.send_header = lambda name, item: value.headers_out.append(
+                    (name, item)
+                )
+                value.end_headers = lambda: None
+                value.send_error = lambda status: setattr(
+                    value, "status", HTTPStatus(status)
+                )
+                value.desktop_ai_api = None
+                value.desktop_settings_api = None
+                value.package_api = None
+                value.package_center_api = None
+                value.federated_search_api = None
+                value.personal_import_api = None
+                value.personal_table_api = None
+                value.review_queue_api = None
+                value.evidence_export_api = None
+                value.do_GET()
+                self.assertEqual(value.status, HTTPStatus.OK)
+                headers = dict(value.headers_out)
+                self.assertIn(mime_marker, headers["Content-Type"])
+                self.assertEqual(headers["Cache-Control"], "no-store")
+                self.assertIn(body_marker, value.wfile.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
