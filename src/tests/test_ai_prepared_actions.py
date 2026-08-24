@@ -252,8 +252,8 @@ class PreparedActionServiceTests(unittest.TestCase):
             expected_revision=3,
             business_scope="librarian",
         )
-        self.assertEqual(business["estimated_calls"], 4)
-        self.assertEqual(business["maximum_calls"], 4)
+        self.assertEqual(business["estimated_calls"], 2)
+        self.assertEqual(business["maximum_calls"], 2)
         with self.assertRaises(PreparedActionError):
             self.service.prepare_capability_test(
                 session_id="session-bad", provider_id="deepseek",
