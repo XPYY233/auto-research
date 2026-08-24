@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import make_dataclass
 
 from auto_research.ai.consent import (
     AI_CONSENT_TTL_SECONDS,
@@ -159,6 +160,26 @@ class AIConsentServiceTests(unittest.TestCase):
         rendered = repr(unavailable.exception.public_dict()).casefold()
         self.assertNotIn("secret", rendered)
         self.assertNotIn("path", rendered)
+
+    def test_frozen_runtime_alias_with_identical_typed_claims_is_accepted(self):
+        alias_type = make_dataclass(
+            "PreparedConsentBinding",
+            [(field, object) for field in PreparedConsentBinding.__dataclass_fields__],
+            frozen=True,
+        )
+        source = _binding(action_id="frozen-alias-action")
+        aliased = alias_type(
+            **{
+                field: getattr(source, field)
+                for field in PreparedConsentBinding.__dataclass_fields__
+            }
+        )
+        issued = self.service.issue(binding=aliased)
+        self.service.consume(nonce=issued["nonce"], binding=aliased)
+
+        with self.assertRaises(AIConsentError) as mapping:
+            self.service.issue(binding=source.__dict__)
+        self.assertEqual(mapping.exception.code, "ai_consent_invalid")
 
 
 if __name__ == "__main__":

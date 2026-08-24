@@ -241,19 +241,50 @@ class AIConsentService:
 
     @staticmethod
     def _validate_binding(binding: object) -> None:
-        if not isinstance(binding, PreparedConsentBinding):
+        # The binding is process-internal and every field is validated below.
+        # Do not use exact class identity as a security boundary: frozen macOS
+        # applications may import an otherwise identical dataclass through a
+        # PyInstaller package alias, making ``isinstance`` fail even though the
+        # signed claims are unchanged.  Structural validation remains strict
+        # and mappings or other untyped external values still fail closed.
+        required = (
+            "action_id",
+            "session_id",
+            "provider_id",
+            "provider_revision",
+            "credential_generation",
+            "scope",
+            "disclosure_version",
+            "manifest_digest",
+            "prepared_expires_at",
+        )
+        if isinstance(binding, dict) or any(
+            not hasattr(binding, field) for field in required
+        ):
             raise AIConsentError("ai_consent_invalid")
         if (
-            not binding.action_id
+            not isinstance(binding.action_id, str)
+            or not binding.action_id
+            or not isinstance(binding.session_id, str)
             or not binding.session_id
+            or not isinstance(binding.provider_id, str)
             or not binding.provider_id
+            or not isinstance(binding.scope, str)
             or binding.scope not in DISCLOSURE_VERSIONS
+            or not isinstance(binding.disclosure_version, str)
             or binding.disclosure_version != DISCLOSURE_VERSIONS[binding.scope]
             or isinstance(binding.provider_revision, bool)
+            or not isinstance(binding.provider_revision, int)
             or binding.provider_revision < 0
             or isinstance(binding.credential_generation, bool)
+            or not isinstance(binding.credential_generation, int)
             or binding.credential_generation < 0
+            or not isinstance(binding.manifest_digest, str)
             or len(binding.manifest_digest) != 64
+            or any(character not in "0123456789abcdef" for character in binding.manifest_digest)
+            or isinstance(binding.prepared_expires_at, bool)
+            or not isinstance(binding.prepared_expires_at, int)
+            or binding.prepared_expires_at < 0
         ):
             raise AIConsentError("ai_consent_invalid")
 

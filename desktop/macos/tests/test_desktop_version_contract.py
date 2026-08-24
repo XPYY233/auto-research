@@ -32,7 +32,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertEqual(metadata["build_number"], contract["desktop"]["macos"]["build_number"])
         self.assertEqual(launcher.DESKTOP_VERSION, "1.1.0")
         self.assertEqual(metadata["bundle_short_version"], "1.1.0")
-        self.assertEqual(metadata["build_number"], "42")
+        self.assertEqual(metadata["build_number"], "43")
         self.assertEqual(metadata["target"], "macOS arm64 Auto Research workbench")
         self.assertIn("workspace-schema-v12", metadata["data_mode"])
         self.assertIn("private-library", metadata["data_mode"])
@@ -198,6 +198,8 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn("/api/desktop/personal-imports/preview", fusion_runtime)
         self.assertIn("/api/desktop/research-memories", fusion_runtime)
         self.assertIn("loadResearchMemories", fusion_runtime)
+        self.assertIn('report["ai_consent_roundtrip"]', launcher_source)
+        self.assertIn("prepare_capability_test", launcher_source)
 
     def test_pyinstaller_bundles_only_the_fusion_product_assets(self) -> None:
         spec = (DESKTOP_ROOT / "AutoResearch.spec").read_text(encoding="utf-8")

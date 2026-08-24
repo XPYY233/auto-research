@@ -422,6 +422,28 @@ def _run_smoke_test(project_root: Path) -> int:
             federated_search_session=product_services.federated_search_service.session,
             harness_cordis_path=project_root / "config" / "auto-research-harness.runtime.cordis.yml",
         )
+        # Exercise the exact frozen consent class graph without contacting a
+        # provider.  This catches PyInstaller package-alias regressions that
+        # ordinary source tests cannot reproduce.
+        ai_state = ai_services.desktop_service.get()
+        consent_probe = ai_services.prepared_actions.prepare_capability_test(
+            session_id=desktop_session_id,
+            provider_id=str(ai_state["provider_id"]),
+            expected_revision=int(ai_state["revision"]),
+        )
+        consent_receipt = ai_services.prepared_actions.issue_consent(
+            action_id=str(consent_probe["action_id"]),
+            session_id=desktop_session_id,
+        )
+        consumed_probe = ai_services.prepared_actions.consume(
+            action_id=str(consent_probe["action_id"]),
+            consent_nonce=str(consent_receipt["nonce"]),
+            session_id=desktop_session_id,
+        )
+        report["ai_consent_roundtrip"] = (
+            consumed_probe.scope == "capability_test"
+            and consumed_probe.action_id == consent_probe["action_id"]
+        )
         server, _ = create_desktop_server(
             database,
             host="127.0.0.1",
@@ -489,6 +511,7 @@ def _run_smoke_test(project_root: Path) -> int:
         and report["http_stack"]
         and report["secure_history_ciphertext"]
         and report["secure_research_memory_ciphertext"]
+        and report["ai_consent_roundtrip"]
         and all(report["http_checks"].values())
         and all(report["frozen_product_contracts"].values())
     )
