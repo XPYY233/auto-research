@@ -39,8 +39,8 @@ from .librarian_reasoning import build_query_analysis, soft_recall_queries
 HARNESS_SNAPSHOT_KIND = "harness_literature"
 LIBRARIAN_MAX_CALLS = 1
 LIBRARIAN_MAX_TOKENS = 2_400
-SELECTED_MAX_CALLS = 2
-SELECTED_MAX_TOKENS = 32_000
+SELECTED_MAX_CALLS = 1
+SELECTED_MAX_TOKENS = 2_400
 _LIBRARIAN_KEYS = frozenset(
     {"question", "conversation_id", "history", "research_state", "state_token"}
 )
@@ -82,7 +82,7 @@ def _safe_trace(stage: str, code: str) -> None:
 
 
 def _seed_evidence(documents: Sequence[Mapping[str, Any]], *, limit: int = 16) -> list[dict[str, Any]]:
-    """Bounded local recall projection for the two-turn Librarian path."""
+    """Bounded local recall projection for the single-turn Librarian path."""
 
     result: list[dict[str, Any]] = []
     for index, document in enumerate(documents[:limit], start=1):
@@ -465,6 +465,10 @@ class HarnessBusinessAssembler:
             "current_evidence": dict(current),
             "allowed_neighbors": [dict(row) for row in neighbors],
             "allowed_neighbor_count": len(neighbors),
+            # The provider receives the complete frozen read-only context in
+            # this payload.  It does not need a paid tool round merely to read
+            # back the same entity and locator from the local gateway.
+            "execution_mode": "single_turn_frozen_context",
         }
         return self._draft(
             documents=documents,

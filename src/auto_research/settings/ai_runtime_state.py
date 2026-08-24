@@ -40,7 +40,11 @@ AI_BUSINESS_SCOPES = frozenset(
     {"librarian", "selected_evidence_chat", "literature_extraction", "personal_suggestion"}
 )
 AI_BUSINESS_TASKS = MappingProxyType({
-    "librarian": ("librarian_planning", "librarian_synthesis"),
+    # Search V2 and citation validation are local authorities.  The active
+    # Librarian spends one bounded Flash call on the final cited answer; the
+    # historical Pro synthesis task remains a provider option only and is not
+    # part of the production business readiness gate.
+    "librarian": ("librarian_planning",),
     "selected_evidence_chat": ("extraction",),
     "literature_extraction": ("analysis", "extraction"),
     "personal_suggestion": ("analysis",),

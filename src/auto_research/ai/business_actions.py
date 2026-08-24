@@ -750,7 +750,7 @@ _POLICIES = MappingProxyType(
             # Pro synthesis model even when the assembled plan is one Flash
             # call.
             "librarian_planning",
-            ("librarian_planning", "librarian_synthesis"),
+            ("librarian_planning",),
             "librarian_business_executor",
             "v1",
             8,
@@ -762,8 +762,8 @@ _POLICIES = MappingProxyType(
             ("extraction",),
             "selected_evidence_chat_executor",
             "v1",
-            2,
-            32_000,
+            1,
+            2_400,
         ),
         "literature_extraction": _Policy(
             "literature_extraction",

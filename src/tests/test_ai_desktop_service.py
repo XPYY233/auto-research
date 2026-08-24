@@ -120,7 +120,7 @@ class AIDesktopServiceTests(unittest.TestCase):
         self.assertEqual(result["scope"], "librarian")
         self.assertTrue(result["verified"])
         self.assertIsNotNone(self.runtime.business_verification("librarian"))
-        self.assertEqual(len(self.verifier.calls), 3)
+        self.assertEqual(len(self.verifier.calls), 2)
 
     def test_wrong_session_provider_or_stale_revision_fail_closed(self):
         self.activate_openai(); action = self.prepared_test(session="s1")

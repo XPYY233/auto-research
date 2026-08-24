@@ -874,10 +874,8 @@ def _system_prompt(scope: str) -> str:
         )
     return common + (
         "只解释当前实体及明确允许的相邻证据，不得跨证据包拼接定量结论。"
-        "此任务只能调用 evidence_detail、evidence_metadata、source_locator、source_view；"
-        "不得调用 exact_search、federated_search、citation_verify 或 recommend_papers。"
-        "第一轮可并行读取当前实体的上述信息；工具返回后必须立即输出最终 JSON，"
-        "不得为了扩大范围继续检索或耗尽第二次模型调用。"
+        "任务输入已经包含本地冻结并核验的 current_evidence、allowed_neighbors 和来源定位；"
+        "本轮不得调用任何工具，不得扩大证据范围，直接输出最终 JSON。"
     )
 
 

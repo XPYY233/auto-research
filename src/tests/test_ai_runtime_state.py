@@ -157,7 +157,7 @@ class AIRuntimeStateTests(unittest.TestCase):
         self.assertGreater(expiry, self.clock.value)
         self.assertEqual(
             [call["model"] for call in self.verifier.calls[1:]],
-            ["gpt-5.6-sol", "gpt-5.6-terra"],
+            ["gpt-5.6-sol"],
         )
 
     def test_credential_generation_change_invalidates_attestation(self):
@@ -198,7 +198,7 @@ class AIRuntimeStateTests(unittest.TestCase):
         self.service.record_business_verification(
             "personal_suggestion", expected_provider_id="openai", expected_revision=2
         )
-        self.assertEqual(len(self.verifier.calls), calls_after_librarian)
+        self.assertEqual(len(self.verifier.calls), calls_after_librarian + 1)
         self.assertIsNotNone(self.service.business_verification("librarian"))
         self.assertIsNotNone(
             self.service.business_verification("selected_evidence_chat")

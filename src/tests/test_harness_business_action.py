@@ -392,6 +392,11 @@ class HarnessBusinessActionTests(unittest.TestCase):
         )
         self.assertEqual(draft.outbound["current_entity"]["source_scope"], "workspace")
         self.assertEqual(draft.outbound["current_entity"]["entity_uid"], "31")
+        self.assertEqual((draft.max_calls, draft.max_tokens), (1, 2_400))
+        self.assertEqual(
+            draft.outbound["prompt"]["execution_mode"],
+            "single_turn_frozen_context",
+        )
 
     def test_selected_uses_stable_official_identity_and_existing_top_level_fields(self):
         session = Session()

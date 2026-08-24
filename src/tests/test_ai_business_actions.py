@@ -24,7 +24,7 @@ MODELS = {
     "librarian_synthesis": "deepseek-v4-pro",
 }
 TASKS = {
-    "librarian": ("librarian_planning", ("librarian_planning", "librarian_synthesis")),
+    "librarian": ("librarian_planning", ("librarian_planning",)),
     "selected_evidence_chat": ("extraction", ("extraction",)),
     "literature_extraction": ("extraction", ("analysis", "extraction")),
     "personal_suggestion": ("analysis", ("analysis",)),
@@ -131,8 +131,9 @@ class _Executor:
 class _HarnessExecutor:
     requires_harness_budget = True
 
-    def __init__(self, *, bad_tool: bool = False):
+    def __init__(self, *, bad_tool: bool = False, calls: int = 1):
         self.bad_tool = bad_tool
+        self.calls = calls
 
     def execute(self, *, action, ai_client):
         name = "bash" if self.bad_tool else "mcp__auto_research__exact_search"
@@ -144,11 +145,11 @@ class _HarnessExecutor:
                 "parameters": {"type": "object", "additionalProperties": False},
             },
         }]
-        for index in range(2):
+        for index in range(self.calls):
             ai_client.request_tool_message(
                 [{"role": "user", "content": f"derived-step-{index}"}],
                 tools,
-                task="librarian_synthesis",
+                task="librarian_planning",
                 max_tokens=80,
                 temperature=0.1,
             )
@@ -272,11 +273,11 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
         self.assertEqual(self.factory.actions, [])
         self.assertEqual(self.factory.client.calls, [])
 
-    def test_librarian_normal_planning_then_synthesis_matches_complete_plan(self):
+    def test_librarian_single_planning_call_matches_complete_plan(self):
         _summary, action = self.prepare_action("librarian")
         self.registry.execute(action)
-        self.assertEqual([call[2]["task"] for call in self.factory.client.calls], ["librarian_planning", "librarian_synthesis"])
-        self.assertEqual(action.task_models, (("librarian_planning", "deepseek-v4-flash"), ("librarian_synthesis", "deepseek-v4-pro")))
+        self.assertEqual([call[2]["task"] for call in self.factory.client.calls], ["librarian_planning"])
+        self.assertEqual(action.task_models, (("librarian_planning", "deepseek-v4-flash"),))
 
     def test_transport_receives_fresh_authorized_copy_not_mutable_caller_input(self):
         original = [{"role": "user", "content": "bounded"}]
@@ -375,16 +376,17 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
         with self.assertRaises(BusinessActionError) as rejected: self.registry.execute(action)
         self.assertEqual(rejected.exception.code, "business_action_result_invalid")
 
-    def test_librarian_dynamic_derived_payload_adapter_remains_blocked(self):
+    def test_librarian_has_no_dynamic_second_call_surface(self):
         _summary, action = self.prepare_action("librarian")
-        self.executors["librarian"].mutate = lambda index, call: ({**call, "messages": list(call["messages"]) + [{"role": "assistant", "content": "first model output"}]} if index == 1 else call)
-        with self.assertRaises(BusinessActionError): self.registry.execute(action)
+        self.assertEqual(action.max_calls, 1)
+        self.assertEqual(action.task_models, (("librarian_planning", "deepseek-v4-flash"),))
+        self.registry.execute(action)
         self.assertEqual(len(self.factory.client.calls), 1)
 
     def test_harness_executor_uses_cumulative_budget_and_fixed_tool_namespace(self):
-        sentinel = _call("librarian_synthesis", tokens=80)
+        sentinel = _call("librarian_planning", tokens=80)
         self.assemblers["librarian"].override = BusinessActionDraft(
-            {"scope": "librarian"}, (), 1, 2, 160, (sentinel,)
+            {"scope": "librarian"}, (), 1, 1, 80, (sentinel,)
         )
         self.executors["librarian"] = _HarnessExecutor()
         registry = self.make_registry()
@@ -393,15 +395,15 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
         )
         result = registry.execute(self.consume(summary, "harness-budget"))
         self.assertEqual(result["answer"], "harness")
-        self.assertEqual(len(self.factory.client.calls), 2)
+        self.assertEqual(len(self.factory.client.calls), 1)
         self.assertEqual(
             [call[3]["task"] for call in self.factory.client.calls],
-            ["librarian_synthesis", "librarian_synthesis"],
+            ["librarian_planning"],
         )
 
         self.setUp()
         self.assemblers["librarian"].override = BusinessActionDraft(
-            {"scope": "librarian"}, (), 1, 2, 160, (sentinel,)
+            {"scope": "librarian"}, (), 1, 1, 80, (sentinel,)
         )
         self.executors["librarian"] = _HarnessExecutor(bad_tool=True)
         registry = self.make_registry()
@@ -412,6 +414,19 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
             registry.execute(self.consume(summary, "harness-bad-tool"))
         self.assertEqual(rejected.exception.code, "business_action_invalid")
         self.assertEqual(self.factory.client.calls, [])
+
+        self.setUp()
+        self.assemblers["librarian"].override = BusinessActionDraft(
+            {"scope": "librarian"}, (), 1, 1, 80, (sentinel,)
+        )
+        self.executors["librarian"] = _HarnessExecutor(calls=2)
+        registry = self.make_registry()
+        summary = registry.prepare(
+            scope="librarian", session_id="harness-excess-call", request=object()
+        )
+        with self.assertRaises(BusinessActionError):
+            registry.execute(self.consume(summary, "harness-excess-call"))
+        self.assertEqual(len(self.factory.client.calls), 1)
 
     def test_prepare_rejects_unapproved_task_before_action_exists(self):
         self.assemblers["personal_suggestion"].override = BusinessActionDraft(

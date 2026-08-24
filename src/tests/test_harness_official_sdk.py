@@ -251,8 +251,9 @@ class FinalizingHarness(FakeHarness):
 
 
 class OneTurnFinalHarness(FakeHarness):
-    def run(self, _prompt, *, session_id):
+    def run(self, prompt, *, session_id):
         del session_id
+        self.prompt = prompt
         token = self.kwargs["api_key"]
         status, raw, _ = post(
             self.kwargs["base_url"] + "/chat/completions",
@@ -344,6 +345,58 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertEqual(raw.calls[0][1], [])
         self.assertEqual(raw.calls[0][2]["max_tokens"], 2_400)
         self.assertIn("seed_evidence", raw.calls[0][0][-1]["content"])
+
+    def test_one_turn_selected_evidence_uses_frozen_context_without_tools(self):
+        base = action()
+        prepared = PreparedOutbound(
+            **{
+                **base.__dict__,
+                "scope": "selected_evidence_chat",
+                "task": "extraction",
+                "task_models": (("extraction", "deepseek-v4-pro"),),
+                "runtime_task_models": (("extraction", "deepseek-v4-pro"),),
+                "models": ("deepseek-v4-pro",),
+                "max_calls": 1,
+                "max_tokens": 2_400,
+            }
+        )
+        raw = RawClient()
+        runtime = OfficialDeepSeekHarnessRuntime(
+            cordis_path="config/auto-research-harness.runtime.cordis.yml",
+            harness_factory=OneTurnFinalHarness,
+            dependency_resolver=dependencies,
+            runtime_path_resolver=lambda: "/verified/runtime",
+        )
+        harness_job = replace(
+            job("selected_evidence_chat"),
+            max_calls=1,
+            max_tokens=2_400,
+        )
+        self.assertEqual(
+            runtime.execute(
+                job=harness_job,
+                model=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
+                tools=HarnessToolGateway(
+                    backend=Backend(), job=harness_job, allow_source_view=True
+                ),
+                prompt={
+                    "question": "解释当前证据",
+                    "current_evidence": {"entity_uid": "item-1"},
+                    "allowed_neighbors": [],
+                    "execution_mode": "single_turn_frozen_context",
+                },
+            ),
+            {"ok": True},
+        )
+        self.assertEqual(len(raw.calls), 1)
+        self.assertEqual(raw.calls[0][1], [])
+        self.assertIn("current_evidence", OneTurnFinalHarness.latest.prompt)
+        self.assertIn(
+            "本轮不得调用任何工具",
+            OneTurnFinalHarness.latest.kwargs["env"][
+                "AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"
+            ],
+        )
 
     def test_finalization_rejects_tool_calls_and_all_later_provider_requests(self):
         class ToolCallingClient(RawClient):
