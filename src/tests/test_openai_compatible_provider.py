@@ -134,6 +134,47 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         self.assertEqual(kwargs["json"]["max_tokens"], 16_000)
         self.assertNotIn("max_completion_tokens", kwargs["json"])
 
+    def test_deepseek_terminal_tool_message_spends_budget_on_final_content(self) -> None:
+        models = {
+            "extraction": "deepseek-v4-pro",
+            "analysis": "deepseek-v4-pro",
+            "librarian_planning": "deepseek-v4-flash",
+            "librarian_synthesis": "deepseek-v4-pro",
+        }
+        session = _Session(_Response({"content": '{"answer":"ok"}'}))
+        client = OpenAICompatibleClient(
+            self.settings("deepseek", models=models, activated=True), session=session
+        )
+        result = client.request_tool_message(
+            [{"role": "user", "content": "finish"}],
+            [],
+            task="librarian_planning",
+        )
+        self.assertEqual(result["content"], '{"answer":"ok"}')
+        payload = session.calls[0][1]["json"]
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
+        self.assertNotIn("tools", payload)
+
+    def test_deepseek_tool_planning_keeps_provider_default_thinking(self) -> None:
+        models = {
+            "extraction": "deepseek-v4-pro",
+            "analysis": "deepseek-v4-pro",
+            "librarian_planning": "deepseek-v4-flash",
+            "librarian_synthesis": "deepseek-v4-pro",
+        }
+        session = _Session(
+            _Response({"content": "", "tool_calls": [{"id": "call-1"}]})
+        )
+        client = OpenAICompatibleClient(
+            self.settings("deepseek", models=models, activated=True), session=session
+        )
+        client.request_tool_message(
+            [{"role": "user", "content": "plan"}],
+            [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+            task="librarian_planning",
+        )
+        self.assertNotIn("thinking", session.calls[0][1]["json"])
+
     def test_redirect_is_rejected_without_following_location(self) -> None:
         response = _Response({"content": "ignored"})
         response.ok = False

@@ -394,6 +394,17 @@ class OpenAICompatibleClient:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice
+        elif self.profile.provider_id == "deepseek":
+            # Harness terminal turns already receive a frozen, locally
+            # verified evidence packet and must spend their bounded output
+            # budget on the schema-constrained answer.  DeepSeek V4 may
+            # otherwise consume the entire completion allowance as hidden
+            # reasoning and return an empty ``content`` field.  That made a
+            # successful connection/capability probe look "available" while
+            # every real Librarian or selected-evidence action failed at the
+            # final provider-response gate.  Tool-planning turns keep the
+            # provider default; only a no-tool terminal turn is made explicit.
+            payload["thinking"] = {"type": "disabled"}
         if verification_request and self.profile.provider_id == "deepseek":
             # DeepSeek reasoning mode rejects a forced function tool_choice.
             # The fixed capability probe deliberately disables thinking so it
