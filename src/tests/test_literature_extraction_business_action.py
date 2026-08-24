@@ -188,7 +188,7 @@ def test_rescan_requires_explicit_confirmation_and_creates_a_new_job(evidence) -
     assert rejected.value.code == "business_action_prepare_failed"
     assert rejected.value.cause_code == "literature_rescan_confirmation_required"
     assert rejected.value.stage == "preflight"
-    assert "确认重新扫描" in rejected.value.next_action
+    assert rejected.value.next_action == "confirm_rescan"
     assert rejected.value.public_dict()["cause_code"] == "literature_rescan_confirmation_required"
     assert rejected.value.__cause__.code == "literature_rescan_confirmation_required"
     assert store._jobs == {}

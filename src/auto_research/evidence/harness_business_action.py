@@ -638,19 +638,31 @@ class HarnessBusinessProjector:
         ]
         recommended = []
         for article in raw.get("recommended_articles", [])[:10]:
+            jump_evidence = next(
+                (
+                    dict(row)
+                    for row in result["documents"]
+                    if row.get("paper_uid") == article.get("paper_uid")
+                ),
+                None,
+            )
+            if jump_evidence is None:
+                continue
             article_refs = [
-                ref for ref, row in cited if row.get("paper_uid") == article.get("paper_uid")
+                ref for ref, row in cited if row.get("paper_uid") == jump_evidence.get("paper_uid")
             ]
+            year = jump_evidence.get("year")
             recommended.append(
                 {
-                    "article_title": str(article.get("title") or "未命名论文"),
+                    "article_title": str(jump_evidence.get("article_title") or "未命名论文"),
                     "why_recommended": str(article.get("reason") or "包含相关公开证据。"),
-                    "first_author": "",
-                    "year": None,
-                    "doi": str(article.get("doi") or ""),
+                    "first_author": str(jump_evidence.get("first_author") or ""),
+                    "year": year if isinstance(year, int) and not isinstance(year, bool) else None,
+                    "doi": str(jump_evidence.get("doi") or ""),
                     "recommendation_level": "related",
                     "supporting_refs": article_refs,
                     "coverage_warning": "建议打开引用证据核对具体实验条件。",
+                    "jump_evidence": jump_evidence,
                 }
             )
         report = {

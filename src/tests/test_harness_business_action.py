@@ -270,7 +270,47 @@ class HarnessBusinessActionTests(unittest.TestCase):
         self.assertEqual(result["report"]["schema_version"], "research-report-v1")
         self.assertEqual({row["source_scope"] for row in result["results"]}, {"official"})
         self.assertTrue(result["recommended_articles"])
+        jump = result["recommended_articles"][0]["jump_evidence"]
+        self.assertEqual(jump["source_scope"], "official")
+        self.assertIn(jump["entity_type"], {"item", "finding", "table", "figure"})
+        self.assertTrue(jump["entity_uid"])
         self.assertNotIn("path", str(result).casefold())
+
+    def test_recommendations_are_bound_to_recalled_documents(self):
+        session = Session()
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        draft = ports.librarian.assembler.assemble(
+            {"question": "硬度", "conversation_id": "c", "history": []}
+        )
+        prepared = action(draft, "librarian")
+        internal = ports.librarian.executor.execute(
+            action=prepared,
+            ai_client=HarnessBudgetedBusinessAIClient(
+                client=RawClient(), action=prepared
+            ),
+        )
+        internal["raw"]["recommended_articles"] = [
+            {
+                "paper_uid": "paper-not-recalled",
+                "title": "Fabricated article",
+                "doi": "10.0000/fabricated",
+                "reason": "model-only",
+            },
+            {
+                "paper_uid": "paper-1",
+                "title": "Tampered article title",
+                "doi": "10.0000/tampered",
+                "reason": "matched source",
+            },
+        ]
+        result = ports.librarian.projector.project(internal)
+        self.assertEqual(len(result["recommended_articles"]), 1)
+        article = result["recommended_articles"][0]
+        self.assertEqual(article["article_title"], "Tungsten irradiation")
+        self.assertEqual(article["doi"], "10.1000/example")
+        self.assertEqual(article["jump_evidence"]["paper_uid"], "paper-1")
+        self.assertNotIn("fabricated", repr(result["recommended_articles"]).casefold())
+        self.assertNotIn("tampered", repr(result["recommended_articles"]).casefold())
 
     def test_librarian_combines_official_and_published_workspace_only(self):
         workspace = Workspace()

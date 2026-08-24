@@ -189,8 +189,10 @@ class DesktopAIRouteTests(unittest.TestCase):
             ("POST", "/api/desktop/ai/consents"),
             ("POST", "/api/desktop/ai/actions/personal_suggestion/prepare"),
             ("POST", "/api/desktop/ai/actions/personal_suggestion/execute"),
+            ("POST", "/api/desktop/ai/actions/personal_suggestion/execute-jobs"),
+            ("GET", "/api/desktop/ai/jobs/ai_job_abcdefghijklmnopqrstuvwxyz"),
         }
-        self.assertEqual(len(DESKTOP_AI_ROUTES), 14)
+        self.assertEqual(len(DESKTOP_AI_ROUTES), 16)
         for method, path in expected:
             with self.subTest(method=method, path=path):
                 self.assertTrue(MacDesktopAIAPI.is_path(path))
@@ -245,7 +247,7 @@ class DesktopAIRouteTests(unittest.TestCase):
         self.assertEqual(payload["code"], "business_action_prepare_failed")
         self.assertEqual(payload["cause_code"], "literature_pdf_missing")
         self.assertEqual(payload["stage"], "preflight")
-        self.assertIn("重新导入", payload["next_action"])
+        self.assertEqual(payload["next_action"], "reimport_pdf")
         self.assertNotIn(str(Path(self.temporary.name)), json.dumps(payload))
         raised.exception.close()
 

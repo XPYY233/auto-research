@@ -163,7 +163,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             self.assertIs(services.credential_manager, manager)
             self.assertIs(services.legacy_deepseek_store.manager, manager)
             self.assertIs(services.execution_lock, manager.execution_lock)
-            self.assertEqual(len(services.controller.route_contract()), 14)
+            self.assertEqual(len(services.controller.route_contract()), 16)
             self.assertIs(services.database, database)
             self.assertIs(
                 services.personal_import_service,

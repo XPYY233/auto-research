@@ -31,22 +31,22 @@ _CONTINUATION_REQUEST_KEYS = frozenset({"job_token"})
 _PAYLOAD_KEYS = frozenset({"job_handle", "stage_fingerprint", "stage", "call_count"})
 
 _LITERATURE_ERROR_GUIDANCE = {
-    "literature_pdf_missing": ("preflight", "重新导入可读取的 PDF 后再开始提取。"),
-    "literature_pdf_invalid": ("preflight", "请确认文件是真实 PDF，且未加密或损坏。"),
-    "literature_pdf_empty": ("preflight", "该 PDF 没有可读取文字层；请更换可检索版本。"),
-    "literature_source_stale": ("source_verification", "原始 PDF 已变化，请重新选择文件并新建任务。"),
-    "literature_rescan_confirmation_required": ("preflight", "该论文已有记录；确认重新扫描后再开始。"),
-    "literature_not_validated": ("quality_gate", "查看冲突与低置信候选，完成审核后再发布。"),
-    "literature_commit_unavailable": ("commit", "原子保存组件不可用；请重新验证本机工作区。"),
-    "literature_stage_busy": ("execution", "当前阶段仍在运行，请等待任务状态更新。"),
-    "literature_job_expired": ("execution", "任务已过期，请从当前论文重新开始。"),
-    "literature_job_store_full": ("execution", "任务队列繁忙，请稍后重试；已完成阶段不会重复收费。"),
+    "literature_pdf_missing": ("preflight", "reimport_pdf"),
+    "literature_pdf_invalid": ("preflight", "replace_valid_pdf"),
+    "literature_pdf_empty": ("preflight", "replace_searchable_pdf"),
+    "literature_source_stale": ("source_verification", "restart_from_current_pdf"),
+    "literature_rescan_confirmation_required": ("preflight", "confirm_rescan"),
+    "literature_not_validated": ("quality_gate", "review_extraction_candidates"),
+    "literature_commit_unavailable": ("commit", "repair_workspace"),
+    "literature_stage_busy": ("execution", "wait_for_task"),
+    "literature_job_expired": ("execution", "restart_extraction"),
+    "literature_job_store_full": ("execution", "retry_after_queue"),
 }
 
 
 def _project_literature_error(exc: LiteratureExtractionJobError, *, phase: str) -> BusinessActionError:
     stage, next_action = _LITERATURE_ERROR_GUIDANCE.get(
-        exc.code, (phase, "根据当前阶段提示重试；现有已发布数据不受影响。")
+        exc.code, (phase, "retry_current_stage")
     )
     return BusinessActionError(
         "business_action_prepare_failed" if phase == "preflight" else "business_action_execution_failed",

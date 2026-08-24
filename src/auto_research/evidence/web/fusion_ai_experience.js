@@ -60,6 +60,9 @@
     constructor(documentObject = global.document) {
       this.document = documentObject;
       this.snapshots = new Map();
+      this.activities = new Map();
+      this.startedAt = new Map();
+      this.timers = new Map();
     }
 
     definition(scope) {
@@ -116,11 +119,92 @@
         node.classList.toggle("active", node.dataset.aiStage === snapshot.stage);
         node.classList.toggle("done", reached && node.dataset.aiStage !== snapshot.stage);
       });
+      if (["success", "error", "cancelled"].includes(state)) this.stopTimer(scope);
+      return true;
+    }
+
+    begin(scope) {
+      const definition = this.definition(scope);
+      if (!definition) return false;
+      this.stopTimer(scope);
+      this.activities.set(scope, []);
+      this.startedAt.set(scope, Date.now());
+      const host = this.document?.querySelector?.(definition.host);
+      const list = host?.querySelector?.("[data-ai-activity]");
+      if (list) list.replaceChildren();
+      this.renderElapsed(scope);
+      if (host && typeof global.setInterval === "function") {
+        const timer = global.setInterval(() => this.renderElapsed(scope), 1000);
+        timer?.unref?.();
+        this.timers.set(scope, timer);
+      }
+      return true;
+    }
+
+    stopTimer(scope) {
+      const timer = this.timers.get(scope);
+      if (timer !== undefined) global.clearInterval?.(timer);
+      this.timers.delete(scope);
+      this.renderElapsed(scope);
+    }
+
+    renderElapsed(scope) {
+      const started = this.startedAt.get(scope);
+      const host = this.document?.querySelector?.(this.definition(scope)?.host || "");
+      const elapsed = host?.querySelector?.("[data-ai-elapsed]");
+      if (elapsed) elapsed.textContent = `${started ? Math.max(0, Math.floor((Date.now() - started) / 1000)) : 0} 秒`;
+    }
+
+    activity(scope, raw = {}) {
+      const definition = this.definition(scope);
+      if (!definition || raw?.schema_version !== "ai-activity-event-v1") return false;
+      const code = clean(raw.code, 96);
+      const stage = clean(raw.stage, 64);
+      const label = clean(raw.label, 240);
+      const detail = clean(raw.detail, 300);
+      const jobId = clean(raw.job_id, 180);
+      const sequence = Number(raw.sequence);
+      if (!code || !stage || !label || !jobId || !Number.isSafeInteger(sequence) || sequence < 1) return false;
+      const key = `${jobId}:${sequence}`;
+      const events = this.activities.get(scope) || [];
+      if (events.some((event) => event.key === key)) return true;
+      events.push(Object.freeze({ key, code, stage, label, detail }));
+      if (events.length > 20) events.splice(0, events.length - 20);
+      this.activities.set(scope, events);
+      const host = this.document?.querySelector?.(definition.host);
+      const list = host?.querySelector?.("[data-ai-activity]");
+      if (list) {
+        list.replaceChildren();
+        for (const event of events) {
+          const item = this.document.createElement("li");
+          item.dataset.aiActivityCode = event.code;
+          const mark = this.document.createElement("i");
+          mark.setAttribute("aria-hidden", "true");
+          const body = this.document.createElement("span");
+          const title = this.document.createElement("strong");
+          title.textContent = event.label;
+          body.append(title);
+          if (event.detail) {
+            const note = this.document.createElement("small");
+            note.textContent = event.detail;
+            body.append(note);
+          }
+          item.append(mark, body);
+          list.append(item);
+        }
+        list.scrollTop = list.scrollHeight;
+      }
+      const labelNode = host?.querySelector?.("[data-ai-progress-label]");
+      if (labelNode && !["execution_completed", "execution_failed"].includes(code)) labelNode.textContent = label;
+      this.renderElapsed(scope);
       return true;
     }
 
     reset(scope) {
+      this.stopTimer(scope);
       this.snapshots.delete(scope);
+      this.activities.delete(scope);
+      this.startedAt.delete(scope);
       const host = this.document?.querySelector?.(this.definition(scope)?.host || "");
       if (host) {
         host.hidden = true;

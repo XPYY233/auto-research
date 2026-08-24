@@ -16,6 +16,7 @@ from .prepared_actions import (
     PreparedOutbound,
     SCOPE_BYTE_CAPS,
 )
+from .activity import ActivityObserver, bind_activity_observer, emit_ai_activity
 
 
 BUSINESS_ACTION_ERROR_SCHEMA_VERSION = "ai-business-action-error-v1"
@@ -74,7 +75,12 @@ class BusinessActionError(RuntimeError):
         self.retryable = retryable
         self.cause_code = cause_code if re.fullmatch(r"[a-z][a-z0-9_]{2,95}", cause_code) else ""
         self.stage = stage if re.fullmatch(r"[a-z][a-z0-9_]{2,63}", stage) else ""
-        self.next_action = next_action.strip()[:300] if isinstance(next_action, str) else ""
+        self.next_action = (
+            next_action
+            if isinstance(next_action, str)
+            and re.fullmatch(r"[a-z][a-z0-9_]{2,95}", next_action)
+            else ""
+        )
 
     def public_dict(self) -> dict[str, object]:
         result: dict[str, object] = {
@@ -408,12 +414,15 @@ class BudgetedBusinessAIClient:
             method = client.request_json
         except AttributeError as exc:
             raise BusinessActionError("business_action_execution_failed") from exc
-        return method(
+        emit_ai_activity("provider_request_started")
+        result = method(
             authorized.messages,
             task=authorized.task,
             max_tokens=authorized.max_tokens,
             **authorized.options,
         )
+        emit_ai_activity("provider_response_received")
+        return result
 
     def request_tool_message(
         self,
@@ -439,13 +448,16 @@ class BudgetedBusinessAIClient:
             method = client.request_tool_message
         except AttributeError as exc:
             raise BusinessActionError("business_action_execution_failed") from exc
-        return method(
+        emit_ai_activity("provider_request_started")
+        result = method(
             authorized.messages,
             authorized.tools,
             task=authorized.task,
             max_tokens=authorized.max_tokens,
             **authorized.options,
         )
+        emit_ai_activity("provider_response_received")
+        return result
 
     def _authorize(
         self,
@@ -873,7 +885,11 @@ class BusinessPreparedActionRegistry:
         except PreparedActionError as exc:
             raise BusinessActionError("business_action_prepare_failed") from exc
 
-    def execute(self, action: PreparedOutbound) -> dict[str, object]:
+    def execute(
+        self,
+        action: PreparedOutbound,
+        activity_callback: ActivityObserver | None = None,
+    ) -> dict[str, object]:
         if not isinstance(action, PreparedOutbound):
             raise BusinessActionError("business_action_invalid")
         policy = self._policy(action.scope)
@@ -894,26 +910,29 @@ class BusinessPreparedActionRegistry:
             # attempt must not be replayed into a second billable request.
             self._executed[action.action_id] = action.expires_at
         try:
-            with self._client_factory.acquire_bound(
-                action, max_attempts=1
-            ) as raw_client:
-                executor = self._executors[action.scope]
-                if getattr(executor, "requires_harness_budget", False) is True:
-                    client = HarnessBudgetedBusinessAIClient(
-                        client=raw_client,
+            with bind_activity_observer(activity_callback):
+                with self._client_factory.acquire_bound(
+                    action, max_attempts=1
+                ) as raw_client:
+                    emit_ai_activity("provider_acquired")
+                    executor = self._executors[action.scope]
+                    if getattr(executor, "requires_harness_budget", False) is True:
+                        client = HarnessBudgetedBusinessAIClient(
+                            client=raw_client,
+                            action=action,
+                        )
+                    else:
+                        client = BudgetedBusinessAIClient(
+                            client=raw_client,
+                            action=action,
+                        )
+                    result = executor.execute(
                         action=action,
+                        ai_client=client,
                     )
-                else:
-                    client = BudgetedBusinessAIClient(
-                        client=raw_client,
-                        action=action,
-                    )
-                result = executor.execute(
-                    action=action,
-                    ai_client=client,
-                )
-                object.__getattribute__(client, "_assert_complete")()
-                result = self._projectors[action.scope].project(result)
+                    object.__getattribute__(client, "_assert_complete")()
+                    emit_ai_activity("result_validating")
+                    result = self._projectors[action.scope].project(result)
         except BusinessActionError:
             raise
         except Exception as exc:

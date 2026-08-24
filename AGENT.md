@@ -2,7 +2,7 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
-## Handoff entry point (updated 2026-08-21)
+## Handoff entry point (updated 2026-08-24)
 
 - A new account or agent must read `PROJECT_HANDOFF.md` before modifying this repository, then use this file as the durable policy authority.
 - The canonical portable project skill is `skills/auto-research-evidence-maintainer/`; its current-account installation is a symlink under `~/.codex/skills/auto-research-evidence-maintainer`.
@@ -12,10 +12,9 @@ This project is a local literature automation workflow for fusion materials, rad
 - Do not solve platform integration by copying product logic into `desktop/macos/**` or `desktop/windows/**`. Package verification, official repository audit, stable source identity and federated read-only search stay platform-neutral; desktop code supplies lifecycle, native file selection, credentials and protected routing only.
 - The canonical official package selector is `<app-data>/official-packages/active.json`. A package becomes active only after signature/checksum validation and `OfficialEvidenceRepository` audit; `distribution-sqlite-v1` must never pass through `EvidenceDB.init()` or any writable v12 search-index path.
 - Signing private keys are maintainer-only files outside Git and outside application data packages. Applications trust only reviewed public keys from `auto_research.product.trusted_publishers`; missing keys must never be silently regenerated under an existing `key_id`.
-- Current release line: Apple Silicon macOS `1.0.0` build 22, using the single Fusion workbench and the restored literature/search/experiment/package/export feature set. The installed 0.9.2/build21 remains the rollback source until the v1 installation transaction and final acceptance complete.
-- Current internal official package: `1.0.0`, SHA-256 `d1337a43aa4c0b83030a70e6a500bc60b85a994cb03d287396e895957ae4604d`, 60 paper metadata rows and 4,356 four-type entities. It is read-only, contains no PDFs or binary images, and must never replace or write the editable v12 workspace. Its historical signer id and rights label are immutable security contracts, not user-facing release-channel labels.
-- Windows 0.8 thin source parity passed 139 contract tests and shares the same Web/DTO/AI contracts. `installer_ready=false`; there is still no Setup or Windows 11 clean-machine evidence.
-- Windows work is explicitly paused. Do not edit, test or build `desktop/windows/**` until the user accepts the complete Mac v1 and explicitly asks to resume migration.
+- Current release line: Apple Silicon macOS `1.1.0`. Build 24 remains the verified stable rollback; build 40 is the installed AI-readiness checkpoint and build 41 is the current source candidate until its clean build, transactional installation and real paid four-scope acceptance finish. All use the single Fusion workbench.
+- Current internal official package: `1.1.0`, SHA-256 `909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`, 59 papers, 4,369 four-type entities, 59 verified PDFs and 291 visual assets. It is read-only and must never replace or write the editable v12 workspace. Its internal-use rights and signer identity remain immutable security contracts.
+- Windows work is explicitly paused. Do not edit, test or build `desktop/windows/**` until the user accepts the complete Mac 1.1 workflow and explicitly asks to resume migration. Historical Windows v1 Setup success remains a separate checkpoint and does not make the 1.1 source installer-ready.
 - Product stability, corpus completion and scientific validity remain separate claims. The fixed corpus is still 17/50 data-ready and 30/50 visual-ready; automatic adversarial agreement is not an independent human physics gold standard.
 
 ## Search V2, federated search and in-product agents (updated 2026-08-09)

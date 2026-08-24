@@ -212,6 +212,19 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
                 self.assertEqual(self.factory.actions[-1], (action, 1))
                 self.assertEqual(self.factory.events[-2:], ["enter", "exit"])
 
+    def test_error_next_action_is_a_safe_identifier_not_renderer_copy(self):
+        safe = BusinessActionError(
+            "business_action_execution_failed",
+            next_action="retry_same_request",
+        )
+        self.assertEqual(safe.public_dict()["next_action"], "retry_same_request")
+        unsafe = BusinessActionError(
+            "business_action_execution_failed",
+            next_action="打开 /Users/name/private.pdf 后重试",
+        )
+        self.assertNotIn("next_action", unsafe.public_dict())
+        self.assertNotIn("/users/", repr(unsafe.public_dict()).casefold())
+
     def test_production_readiness_gate_blocks_before_assembler_or_client(self):
         gate = _ReadinessGate()
         registry = self.make_registry(readiness_gate=gate)

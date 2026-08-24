@@ -11,6 +11,7 @@ from auto_research.settings.ai_desktop_service import (
 )
 from auto_research.settings.ai_runtime_state import AIRuntimeStateError
 from .custom_provider import CustomProviderError
+from .execution_jobs import AIExecutionJobError, AIExecutionJobService
 
 from .consent import AIConsentError
 from .business_actions import (
@@ -32,6 +33,7 @@ _PROVIDER_PATH = r"(?P<provider_id>deepseek|openai|custom)"
 _BUSINESS_SCOPE_PATH = (
     r"(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)"
 )
+_AI_JOB_PATH = r"(?P<job_id>ai_job_[A-Za-z0-9_-]{24,160})"
 _SESSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 
 
@@ -210,6 +212,19 @@ DESKTOP_AI_ROUTES = (
         rf"^/api/desktop/ai/actions/{_BUSINESS_SCOPE_PATH}/execute$",
         MAX_PROTECTED_ACTION_BODY_BYTES,
     ),
+    DesktopAIRoute(
+        "desktop_ai.business_execute_job",
+        "POST",
+        rf"^/api/desktop/ai/actions/{_BUSINESS_SCOPE_PATH}/execute-jobs$",
+        MAX_PROTECTED_ACTION_BODY_BYTES,
+        202,
+    ),
+    DesktopAIRoute(
+        "desktop_ai.business_job_get",
+        "GET",
+        rf"^/api/desktop/ai/jobs/{_AI_JOB_PATH}$",
+        0,
+    ),
 )
 
 
@@ -250,6 +265,8 @@ _ERROR_STATUS = {
     "custom_provider_conflict": 409,
     "custom_provider_unavailable": 503,
     "custom_provider_endpoint_unsafe": 400,
+    "ai_execution_job_invalid": 404,
+    "ai_execution_job_store_full": 429,
 }
 
 
@@ -262,10 +279,14 @@ class DesktopAIController:
         settings: DesktopAISettings,
         prepared_actions: PreparedActionService,
         business_actions: BusinessPreparedActionRegistry | None = None,
+        execution_jobs: AIExecutionJobService | None = None,
     ) -> None:
         self._settings = settings
         self._prepared = prepared_actions
         self._business = business_actions
+        self._execution_jobs = execution_jobs or (
+            AIExecutionJobService() if business_actions is not None else None
+        )
 
     def __call__(self, request: DesktopAIRequestContext) -> DesktopAIHTTPResponse:
         try:
@@ -284,6 +305,7 @@ class DesktopAIController:
             PreparedActionError,
             BusinessActionError,
             CustomProviderError,
+            AIExecutionJobError,
         ) as exc:
             return _known_error(exc)
         except Exception:
@@ -412,6 +434,43 @@ class DesktopAIController:
             if getattr(action, "scope", None) != scope:
                 raise BusinessActionError("business_action_invalid")
             result = self._business.execute(action)
+        elif route.route_id == "desktop_ai.business_execute_job":
+            if self._business is None or self._execution_jobs is None:
+                return _error_response(
+                    503,
+                    "desktop_ai_business_unavailable",
+                    "该 AI 功能尚未在当前桌面版本中启用。",
+                    True,
+                )
+            _exact_keys(payload, {"action_id", "consent_nonce"})
+            scope = str(parameters.get("scope") or "")
+            action = self._prepared.consume(
+                action_id=payload.get("action_id"),
+                consent_nonce=payload.get("consent_nonce"),
+                session_id=_session_id(request),
+            )
+            if getattr(action, "scope", None) != scope:
+                raise BusinessActionError("business_action_invalid")
+            registry = self._business
+            result = self._execution_jobs.start(
+                session_id=_session_id(request),
+                scope=scope,
+                execute=lambda observer: registry.execute(
+                    action, activity_callback=observer
+                ),
+            )
+        elif route.route_id == "desktop_ai.business_job_get":
+            if self._execution_jobs is None:
+                return _error_response(
+                    503,
+                    "desktop_ai_business_unavailable",
+                    "该 AI 功能尚未在当前桌面版本中启用。",
+                    True,
+                )
+            result = self._execution_jobs.get(
+                session_id=_session_id(request),
+                job_id=str(parameters.get("job_id") or ""),
+            )
         else:  # pragma: no cover - route table and dispatch are reviewed together
             raise RuntimeError("unhandled AI route")
         if not isinstance(result, Mapping):
@@ -526,7 +585,8 @@ def _known_error(
     | AIRuntimeStateError
     | AIConsentError
     | PreparedActionError
-    | BusinessActionError,
+    | BusinessActionError
+    | AIExecutionJobError,
 ) -> DesktopAIHTTPResponse:
     status = _ERROR_STATUS.get(error.code, 500)
     response = _error_response(

@@ -29,6 +29,12 @@ import time
 from typing import Any, Callable, Mapping
 
 from .business_actions import HarnessBudgetedBusinessAIClient
+from .activity import (
+    bind_activity_observer,
+    current_activity_observer,
+    emit_ai_activity,
+    safe_harness_tool,
+)
 from .harness_contract import (
     CORDIS_RUNTIME_PROTOCOL_PIN,
     HARNESS_SDK_PROTOCOL_PIN,
@@ -87,6 +93,15 @@ _SAFE_TRACE_ENABLED = os.environ.get("AUTO_RESEARCH_AI_SAFE_TRACE") == "1"
 
 def _safe_trace(event: str, **metadata: object) -> None:
     """Emit opt-in structural diagnostics without content, credentials, or paths."""
+
+    if event == "harness_stage":
+        stage_event = {
+            "dependencies_verified": "harness_dependencies_verified",
+            "composition_file_verified": "harness_composition_verified",
+            "runtime_bundle_verified": "harness_runtime_verified",
+        }.get(str(metadata.get("stage") or ""))
+        if stage_event:
+            emit_ai_activity(stage_event)
 
     if not _SAFE_TRACE_ENABLED:
         return
@@ -268,6 +283,23 @@ class _Bridge:
         self._thread: threading.Thread | None = None
         self._failure_code = ""
         self._failure_lock = threading.Lock()
+        self._activity_observer = current_activity_observer()
+
+    def _emit_activity(
+        self,
+        code: str,
+        *,
+        tool: str = "",
+        call_index: int | None = None,
+        call_limit: int | None = None,
+    ) -> None:
+        with bind_activity_observer(self._activity_observer):
+            emit_ai_activity(
+                code,
+                tool=tool,
+                call_index=call_index,
+                call_limit=call_limit,
+            )
 
     def __enter__(self) -> "_Bridge":
         bridge = self
@@ -405,6 +437,11 @@ class _Bridge:
             raise HarnessError("harness_invalid")
         remaining_calls = self.model.remaining_calls
         remaining_tokens = self.model.remaining_tokens
+        self._emit_activity(
+            "provider_request_started",
+            call_index=self.job.max_calls - remaining_calls + 1,
+            call_limit=self.job.max_calls,
+        )
         _safe_trace(
             "provider_budget",
             remaining_calls=remaining_calls,
@@ -423,6 +460,11 @@ class _Bridge:
             )
         except Exception as exc:
             raise HarnessError("harness_runtime_failed") from exc
+        self._emit_activity(
+            "provider_response_received",
+            call_index=self.job.max_calls - self.model.remaining_calls,
+            call_limit=self.job.max_calls,
+        )
         calls = message.get("tool_calls") or []
         for call in calls if isinstance(calls, list) else []:
             function = call.get("function") if isinstance(call, Mapping) else None
@@ -554,7 +596,10 @@ class _Bridge:
                     for key in sorted(arguments)
                 ],
             )
+            safe_tool = safe_harness_tool(name)
+            self._emit_activity("harness_tool_started", tool=safe_tool)
             value = self.tools.call(name, arguments)
+            self._emit_activity("harness_tool_completed", tool=safe_tool)
             result = {
                 "content": [
                     {

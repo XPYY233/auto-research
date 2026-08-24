@@ -5,12 +5,14 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import threading
 import urllib.error
 import urllib.request
 import unittest
 from unittest import mock
 
 from auto_research.ai.business_actions import HarnessBudgetedBusinessAIClient
+from auto_research.ai.activity import bind_activity_observer
 from auto_research.ai.harness_contract import (
     CORDIS_RUNTIME_PROTOCOL_PIN,
     HARNESS_SDK_PROTOCOL_PIN,
@@ -285,12 +287,20 @@ class OfficialHarnessSDKTests(unittest.TestCase):
             dependency_resolver=dependencies,
             runtime_path_resolver=lambda: "/verified/runtime",
         )
-        result = runtime.execute(
-            job=job(),
-            model=model,
-            tools=gateway,
-            prompt={"question": "硬度如何变化？", "instruction": "核对原文高亮"},
-        )
+        activities = []
+        activity_threads = []
+
+        def observe(event):
+            activities.append(dict(event))
+            activity_threads.append((event["code"], threading.current_thread().name))
+
+        with bind_activity_observer(observe):
+            result = runtime.execute(
+                job=job(),
+                model=model,
+                tools=gateway,
+                prompt={"question": "硬度如何变化？", "instruction": "核对原文高亮"},
+            )
         self.assertEqual(result["citations"], [{"ref": "R1"}])
         self.assertEqual(len(raw.calls), 1)
         self.assertEqual(model.remaining_calls, 1)
@@ -298,6 +308,62 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertIn("第六轮必须输出最终 JSON", FakeHarness.latest.kwargs["env"]["AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"])
         self.assertNotIn("real-key", repr(FakeHarness.latest.kwargs))
         self.assertIsNone(FakeHarness.latest.kwargs["session_root"])
+        codes = [event["code"] for event in activities]
+        self.assertIn("harness_dependencies_verified", codes)
+        self.assertIn("harness_composition_verified", codes)
+        self.assertIn("harness_runtime_verified", codes)
+        self.assertIn("provider_request_started", codes)
+        self.assertIn("provider_response_received", codes)
+        tool_events = [
+            (event["code"], event.get("tool"), event.get("detail"))
+            for event in activities
+            if event["code"] in {"harness_tool_started", "harness_tool_completed"}
+        ]
+        self.assertEqual(
+            tool_events,
+            [
+                ("harness_tool_started", "citation_verify", "核验引用"),
+                ("harness_tool_completed", "citation_verify", "核验引用"),
+                ("harness_tool_started", "recommend_papers", "查找相关文章"),
+                ("harness_tool_completed", "recommend_papers", "查找相关文章"),
+            ],
+        )
+        handler_event_threads = [
+            thread_name
+            for code, thread_name in activity_threads
+            if code in {
+                "provider_request_started",
+                "provider_response_received",
+                "harness_tool_started",
+                "harness_tool_completed",
+            }
+        ]
+        self.assertTrue(handler_event_threads)
+        self.assertTrue(all(name != threading.current_thread().name for name in handler_event_threads))
+        self.assertEqual(
+            [event.get("detail") for event in activities if event["code"] == "harness_tool_started"],
+            ["核验引用", "查找相关文章"],
+        )
+        rendered_activities = repr(activities).casefold()
+        for forbidden in (
+            "硬度",
+            "consent summary",
+            "derived",
+            "refs",
+            "bundle-1",
+            "/verified/runtime",
+            "api_key",
+            "real-key",
+            "final_response",
+        ):
+            self.assertNotIn(forbidden.casefold(), rendered_activities)
+        self.assertTrue(all(
+            set(event) <= {
+                "schema_version", "code", "stage", "progress", "label", "detail",
+                "tool", "call_index", "call_limit",
+            }
+            for event in activities
+        ))
 
     def test_budget_exhaustion_preserves_stable_failure_code(self):
         prepared = action()
