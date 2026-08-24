@@ -383,6 +383,18 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
         self.registry.execute(action)
         self.assertEqual(len(self.factory.client.calls), 1)
 
+    def test_librarian_policy_rejects_more_than_one_call_or_2400_tokens(self):
+        call = _call("librarian_planning", tokens=1_201)
+        self.assemblers["librarian"].override = BusinessActionDraft(
+            {"scope": "librarian"}, (), 2, 2, 2_402, (call, call)
+        )
+        with self.assertRaises(BusinessActionError) as rejected:
+            self.registry.prepare(
+                scope="librarian", session_id="librarian-too-broad", request=object()
+            )
+        self.assertEqual(rejected.exception.code, "business_action_invalid")
+        self.assertEqual(self.prepared._actions, {})
+
     def test_harness_executor_uses_cumulative_budget_and_fixed_tool_namespace(self):
         sentinel = _call("librarian_planning", tokens=80)
         self.assemblers["librarian"].override = BusinessActionDraft(

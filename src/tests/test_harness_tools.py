@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import unittest
+from dataclasses import replace
 
 from auto_research.ai.harness_contract import (
     HarnessError,
@@ -23,8 +24,8 @@ def job(scope: str = "librarian") -> HarnessJobV1:
     return HarnessJobV1(
         "job-1",
         session,
-        "librarian_synthesis" if scope == "librarian" else "extraction",
-        "deepseek-v4-pro",
+        "librarian_planning" if scope == "librarian" else "extraction",
+        "deepseek-v4-flash" if scope == "librarian" else "deepseek-v4-pro",
         1,
         1000,
         (OFFICIAL,),
@@ -55,6 +56,15 @@ class Backend:
 
 
 class HarnessToolTests(unittest.TestCase):
+    def test_librarian_synthesis_job_is_rejected_by_contract(self) -> None:
+        with self.assertRaises(HarnessError) as rejected:
+            replace(
+                job(),
+                task="librarian_synthesis",
+                model="deepseek-v4-pro",
+            )
+        self.assertEqual(rejected.exception.code, "harness_scope_unsupported")
+
     def test_only_fixed_domain_tools_are_visible(self) -> None:
         catalog = HarnessToolGateway(backend=Backend(), job=job()).public_catalog()
         names = {item["name"] for item in catalog["tools"]}

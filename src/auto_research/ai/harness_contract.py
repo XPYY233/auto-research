@@ -347,10 +347,10 @@ class HarnessJobV1:
         ):
             raise HarnessError("harness_private_forbidden")
         allowed_tasks = {
-            # Search V2 may prepare either a fast, locally seeded planning turn
-            # or the historical two-stage synthesis turn.  Both remain inside
-            # the pinned Librarian scope and provider registry.
-            "librarian": frozenset({"librarian_planning", "librarian_synthesis"}),
+            # Search V2 owns recall and hard conditions. Production Harness
+            # receives exactly one locally seeded planning turn; the retired
+            # two-stage synthesis task is not a valid Librarian job.
+            "librarian": frozenset({"librarian_planning"}),
             "selected_evidence_chat": frozenset({"extraction"}),
         }[self.session.scope]
         if self.task not in allowed_tasks:

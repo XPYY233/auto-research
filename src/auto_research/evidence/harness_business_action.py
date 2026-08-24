@@ -377,6 +377,10 @@ class HarnessBusinessAssembler:
                 stage="harness_prepare",
                 next_action="refine_librarian_question",
             )
+        # The single model turn and its local citation authority must describe
+        # the exact same bounded candidate set.  Do not freeze 64 documents
+        # while exposing only the first 16 as R references.
+        documents = documents[:16]
         prompt = {
             "question": question,
             "conversation_id": conversation_id,
@@ -449,6 +453,8 @@ class HarnessBusinessAssembler:
             row
             for row in neighbor_rows
             if row["entity_uid"] != current["entity_uid"]
+            and bool(current.get("bundle_uid"))
+            and row.get("bundle_uid") == current.get("bundle_uid")
             and (
                 not current.get("paper_uid")
                 or row.get("paper_uid") == current.get("paper_uid")

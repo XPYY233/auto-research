@@ -363,6 +363,24 @@ class HarnessBusinessActionTests(unittest.TestCase):
         self.assertEqual(len(draft.outbound["documents"]), 2)
         self.assertIn("irradiation", draft.outbound["prompt"]["recall_queries"])
 
+    def test_librarian_seed_and_frozen_documents_share_the_same_16_rows(self):
+        session = Session()
+        session.documents = [
+            document(f"item-{index}", value_text=str(index))
+            for index in range(1, 25)
+        ]
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        draft = ports.librarian.assembler.assemble(
+            {"question": "硬度", "conversation_id": "bounded", "history": []}
+        )
+        documents = draft.outbound["documents"]
+        seed = draft.outbound["prompt"]["seed_evidence"]
+        self.assertEqual((len(documents), len(seed)), (16, 16))
+        self.assertEqual(
+            [row["entity_uid"] for row in documents],
+            [row["entity_uid"] for row in seed],
+        )
+
     def test_librarian_empty_recall_exposes_safe_recovery_lineage(self):
         session = NaturalLanguageSession()
         session.documents = []
@@ -400,6 +418,18 @@ class HarnessBusinessActionTests(unittest.TestCase):
 
     def test_selected_uses_stable_official_identity_and_existing_top_level_fields(self):
         session = Session()
+        session.documents.extend(
+            (
+                document("table-compatible", "table"),
+                document("figure-incompatible", "figure", bundle_uid="bundle-2"),
+                document(
+                    "finding-other-paper",
+                    "finding",
+                    paper_uid="paper-2",
+                    finding_text="其他论文结论",
+                ),
+            )
+        )
         runtime = Runtime(selected=True)
         ports = harness_business_ports(session=session, runtime=runtime)
         draft = ports.selected_evidence_chat.assembler.assemble(
@@ -412,6 +442,12 @@ class HarnessBusinessActionTests(unittest.TestCase):
                 "history": [],
             }
         )
+        self.assertEqual(
+            {row["entity_uid"] for row in draft.outbound["allowed_neighbors"]},
+            {"finding-1", "table-compatible"},
+        )
+        self.assertNotIn("figure-incompatible", str(draft.outbound))
+        self.assertNotIn("finding-other-paper", str(draft.outbound))
         prepared = action(draft, "selected_evidence_chat")
         raw = RawClient()
         client = HarnessBudgetedBusinessAIClient(client=raw, action=prepared)

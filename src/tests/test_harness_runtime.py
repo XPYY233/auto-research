@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import time
 import unittest
+from dataclasses import replace
 
 from auto_research.ai.business_actions import BudgetedBusinessAIClient
 from auto_research.ai.harness_contract import (
@@ -32,8 +33,8 @@ def dependencies() -> HarnessDependencySet:
 
 
 def action(scope: str = "librarian") -> PreparedOutbound:
-    task = "librarian_synthesis" if scope == "librarian" else "extraction"
-    model = "deepseek-v4-pro"
+    task = "librarian_planning" if scope == "librarian" else "extraction"
+    model = "deepseek-v4-flash" if scope == "librarian" else "deepseek-v4-pro"
     call = {
         "method": "json",
         "task": task,
@@ -68,6 +69,19 @@ def action(scope: str = "librarian") -> PreparedOutbound:
         issued_at=now,
         expires_at=now + 300,
     )
+
+
+def librarian_prompt(
+    evidence: tuple[HarnessEvidenceIdentity, ...] = (OFFICIAL,),
+) -> dict[str, object]:
+    return {
+        "question": "硬度",
+        "seed_evidence": tuple(
+            identity.public_dict()
+            | {"ref": f"R{index}", "bundle_uid": identity.bundle_uid}
+            for index, identity in enumerate(evidence, start=1)
+        ),
+    }
 
 
 class RawClient:
@@ -142,6 +156,7 @@ class HarnessRuntimeTests(unittest.TestCase):
             session_id="session-1",
             model=model,
             evidence=(OFFICIAL,),
+            prompt=librarian_prompt(),
         )
         self.assertEqual(raw.calls, 1)
         self.assertEqual(
@@ -188,7 +203,7 @@ class HarnessRuntimeTests(unittest.TestCase):
             session_id="session-1",
             model=model,
             evidence=(OFFICIAL,),
-            prompt={"question": "bounded"},
+            prompt=librarian_prompt(),
         )
         self.assertEqual(raw.calls, 1)
         self.assertEqual(result["citations"], [{"ref": "R1"}])
@@ -196,6 +211,42 @@ class HarnessRuntimeTests(unittest.TestCase):
             [row["paper_uid"] for row in result["recommended_articles"]],
             ["paper-1"],
         )
+
+    def test_librarian_seed_identity_mismatch_fails_before_provider_call(self) -> None:
+        prepared = action()
+        raw, model = self.budgeted(prepared)
+        prompt = librarian_prompt()
+        prompt["seed_evidence"][0]["entity_uid"] = "entity-model-only"
+        with self.assertRaises(HarnessError) as rejected:
+            self.adapter(Runtime()).execute_consumed(
+                action=prepared,
+                session_id="session-1",
+                model=model,
+                evidence=(OFFICIAL,),
+                prompt=prompt,
+            )
+        self.assertEqual(rejected.exception.code, "harness_output_invalid")
+        self.assertEqual(raw.calls, 0)
+
+    def test_retired_librarian_synthesis_job_fails_before_provider_call(self) -> None:
+        prepared = replace(
+            action(),
+            task="librarian_synthesis",
+            task_models=(("librarian_synthesis", "deepseek-v4-pro"),),
+            runtime_task_models=(("librarian_synthesis", "deepseek-v4-pro"),),
+            models=("deepseek-v4-pro",),
+        )
+        raw, model = self.budgeted(prepared)
+        with self.assertRaises(HarnessError) as rejected:
+            self.adapter(Runtime()).execute_consumed(
+                action=prepared,
+                session_id="session-1",
+                model=model,
+                evidence=(OFFICIAL,),
+                prompt=librarian_prompt(),
+            )
+        self.assertEqual(rejected.exception.code, "harness_scope_unsupported")
+        self.assertEqual(raw.calls, 0)
 
     def test_selected_evidence_current_only_and_private_rejected(self) -> None:
         prepared = action("selected_evidence_chat")
@@ -250,6 +301,7 @@ class HarnessRuntimeTests(unittest.TestCase):
                 session_id="session-1",
                 model=model,
                 evidence=(OFFICIAL,),
+                prompt=librarian_prompt(),
             )
         self.assertEqual(raised.exception.code, "harness_output_invalid")
         self.assertEqual(raw.calls, 1)
@@ -268,6 +320,7 @@ class HarnessRuntimeTests(unittest.TestCase):
             session_id="session-1",
             model=model,
             evidence=(OFFICIAL,),
+            prompt=librarian_prompt(),
         )
         self.assertEqual(result["comparison_bundle_uids"], ["bundle-1"])
 
@@ -290,6 +343,7 @@ class HarnessRuntimeTests(unittest.TestCase):
             session_id="session-1",
             model=model,
             evidence=(OFFICIAL,),
+            prompt=librarian_prompt(),
         )
         self.assertEqual(result["citations"], [{"ref": "R1"}])
         self.assertEqual([row["paper_uid"] for row in result["recommended_articles"]], ["paper-1"])
@@ -311,6 +365,7 @@ class HarnessRuntimeTests(unittest.TestCase):
                 session_id="session-1",
                 model=model,
                 evidence=(OFFICIAL,),
+                prompt=librarian_prompt(),
             )
         self.assertEqual(failed.exception.code, "harness_output_invalid")
 
@@ -359,8 +414,10 @@ class HarnessRuntimeTests(unittest.TestCase):
             session_id="session-1",
             model=model,
             evidence=(OFFICIAL, other),
+            prompt=librarian_prompt((OFFICIAL, other)),
         )
         self.assertEqual(result["comparison_bundle_uids"], [])
+
         self.assertEqual(result["citations"], [{"ref": "R1"}, {"ref": "R2"}])
 
         class QuantitativeCrossBundle(CrossBundle):
@@ -379,6 +436,7 @@ class HarnessRuntimeTests(unittest.TestCase):
                 session_id="session-1",
                 model=model,
                 evidence=(OFFICIAL, other),
+                prompt=librarian_prompt((OFFICIAL, other)),
             )
         self.assertEqual(quantitative.exception.code, "harness_output_invalid")
 
@@ -400,14 +458,36 @@ class HarnessRuntimeTests(unittest.TestCase):
             session_id="session-1",
             model=model,
             evidence=(missing_bundle,),
+            prompt=librarian_prompt((missing_bundle,)),
         )
         self.assertEqual(result["comparison_bundle_uids"], [])
+
+        class QuantitativeMissingBundle(Runtime):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["answer"] = "R1 的硬度为 500。"
+                value["report"]["direct_conclusion"] = value["answer"]
+                return value
+
+        _, model = self.budgeted(prepared)
+        with self.assertRaises(HarnessError) as rejected:
+            DeepSeekHarnessAdapter(
+                runtime=QuantitativeMissingBundle(), backend=MissingBundleBackend()
+            ).execute_consumed(
+                action=prepared,
+                session_id="session-1",
+                model=model,
+                evidence=(missing_bundle,),
+                prompt=librarian_prompt((missing_bundle,)),
+            )
+        self.assertEqual(rejected.exception.code, "harness_output_invalid")
 
     def test_cross_bundle_quantitative_gate_rejects_bare_scientific_range_and_ratio(self) -> None:
         for claim in (
             "R1 为 500，R2 为 420。",
             "R1 为 1.2e3，R2 为 9.0e2。",
             "R1 的范围是 1–50，R2 的比例为 2:1。",
+            "R1 为 12%，R2 为 9%。",
             "R1 为 12 W/mK，versus R2 的 9 W/mK。",
         ):
             self.assertTrue(
@@ -433,6 +513,7 @@ class HarnessRuntimeTests(unittest.TestCase):
             session_id="session-1",
             model=model,
             evidence=(workspace,),
+            prompt=librarian_prompt((workspace,)),
         )
         self.assertEqual(result["answer"], "直接结论")
         self.assertEqual(raw.calls, 1)

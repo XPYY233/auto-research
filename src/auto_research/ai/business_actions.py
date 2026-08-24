@@ -753,8 +753,8 @@ _POLICIES = MappingProxyType(
             ("librarian_planning",),
             "librarian_business_executor",
             "v1",
-            8,
-            128_000,
+            1,
+            2_400,
         ),
         "selected_evidence_chat": _Policy(
             "selected_evidence_chat",

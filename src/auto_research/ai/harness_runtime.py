@@ -363,6 +363,12 @@ class DeepSeekHarnessAdapter:
             current_entity=current_entity,
             allowed_neighbors=allowed_neighbors,
         )
+        if job.session.scope == "librarian" and (
+            job.task != "librarian_planning" or job.max_calls != 1 or job.max_tokens > 2_400
+        ):
+            # Defense in depth: the contract and production execution both
+            # require one locally seeded Flash planning turn.
+            raise HarnessError("harness_scope_unsupported")
         self._store.register(job)
         running = self._store.claim(job.job_id)
         tools = HarnessToolGateway(
@@ -376,13 +382,34 @@ class DeepSeekHarnessAdapter:
                 # tools.  Freeze citation and recommendation authority locally
                 # before that single paid call, using the same bounded gateway
                 # and immutable Search V2 candidate set used by the projector.
+                seed = (prompt or {}).get("seed_evidence")
                 refs = [f"R{index}" for index in range(1, len(running.evidence) + 1)]
-                if not refs or len(refs) > 64:
+                if (
+                    not refs
+                    or len(refs) > 64
+                    or not isinstance(seed, Sequence)
+                    or isinstance(seed, (str, bytes, bytearray))
+                    or len(seed) != len(running.evidence)
+                ):
                     raise HarnessError("harness_output_invalid")
+                for ref, identity, row in zip(refs, running.evidence, seed, strict=True):
+                    if not isinstance(row, Mapping) or any(
+                        row.get(key) != expected
+                        for key, expected in (
+                            ("ref", ref),
+                            ("source_scope", identity.source_scope),
+                            ("source_id", identity.source_id),
+                            ("entity_type", identity.entity_type),
+                            ("entity_uid", identity.entity_uid),
+                            ("bundle_uid", identity.bundle_uid),
+                        )
+                    ):
+                        raise HarnessError("harness_output_invalid")
                 tools.call("citation_verify", {"refs": refs})
                 question = str((prompt or {}).get("question") or "").strip()
-                if question:
-                    tools.call("recommend_papers", {"question": question, "limit": 10})
+                if not question:
+                    raise HarnessError("harness_output_invalid")
+                tools.call("recommend_papers", {"question": question, "limit": 10})
             raw = self._runtime.execute(
                 job=running,
                 model=model,
