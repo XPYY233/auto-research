@@ -25,6 +25,7 @@ AI_RUNTIME_STATE_SCHEMA_VERSION = "ai-runtime-state-v1"
 AI_RUNTIME_PUBLIC_SCHEMA_VERSION = "ai-runtime-public-state-v1"
 AI_RUNTIME_ERROR_SCHEMA_VERSION = "ai-runtime-state-error-v1"
 AI_VERIFICATION_ATTESTATION_VERSION = "ai-verification-attestation-v1"
+AI_BUSINESS_ATTESTATION_VERSION = "ai-business-verification-attestation-v1"
 # Connection and model-capability checks are paid, deterministic attestations
 # bound to the selected provider, model map, credential generation and local
 # signing key.  A fifteen-minute lease made the UI report "verified" and then
@@ -46,9 +47,10 @@ AI_BUSINESS_TASKS = MappingProxyType({
 })
 
 _PATCH_KEYS = frozenset({"provider_id", "task_models"})
-_STORED_KEYS = frozenset(
+_LEGACY_STORED_KEYS = frozenset(
     {"schema_version", "revision", "provider_id", "task_models", "attestation"}
 )
+_STORED_KEYS = _LEGACY_STORED_KEYS | {"business_attestations"}
 _ATTESTATION_KEYS = frozenset(
     {
         "schema_version",
@@ -63,6 +65,33 @@ _ATTESTATION_KEYS = frozenset(
     }
 )
 _LEGACY_ATTESTATION_KEYS = _ATTESTATION_KEYS - {"issued_at", "expires_at"}
+_BUSINESS_ATTESTATION_KEYS = frozenset({"models", "scopes"})
+_MODEL_ATTESTATION_KEYS = frozenset(
+    {
+        "schema_version",
+        "registry_version",
+        "provider_id",
+        "credential_generation",
+        "model",
+        "required_capabilities",
+        "issued_at",
+        "expires_at",
+        "token",
+    }
+)
+_SCOPE_ATTESTATION_KEYS = frozenset(
+    {
+        "schema_version",
+        "registry_version",
+        "provider_id",
+        "credential_generation",
+        "scope",
+        "task_models",
+        "issued_at",
+        "expires_at",
+        "token",
+    }
+)
 _ERROR_CODES = frozenset(
     {
         "ai_runtime_state_invalid",
@@ -220,6 +249,7 @@ class AIRuntimeSelection:
     task_models: Mapping[str, str]
     revision: int
     attestation: Mapping[str, Any] | None = None
+    business_attestations: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.revision, bool) or not isinstance(self.revision, int) or self.revision < 0:
@@ -238,6 +268,31 @@ class AIRuntimeSelection:
             ):
                 raise _error("ai_runtime_store_unavailable")
             object.__setattr__(self, "attestation", MappingProxyType(dict(self.attestation)))
+        if self.business_attestations is not None:
+            value = self.business_attestations
+            if not isinstance(value, Mapping) or set(value) != _BUSINESS_ATTESTATION_KEYS:
+                raise _error("ai_runtime_store_unavailable")
+            models = value.get("models")
+            scopes = value.get("scopes")
+            if (
+                not isinstance(models, (list, tuple))
+                or not isinstance(scopes, (list, tuple))
+                or len(models) > MAX_BUSINESS_VERIFICATION_RECORDS
+                or len(scopes) > len(AI_BUSINESS_SCOPES)
+                or any(not isinstance(item, Mapping) or set(item) != _MODEL_ATTESTATION_KEYS for item in models)
+                or any(not isinstance(item, Mapping) or set(item) != _SCOPE_ATTESTATION_KEYS for item in scopes)
+            ):
+                raise _error("ai_runtime_store_unavailable")
+            object.__setattr__(
+                self,
+                "business_attestations",
+                MappingProxyType(
+                    {
+                        "models": tuple(MappingProxyType(dict(item)) for item in models),
+                        "scopes": tuple(MappingProxyType(dict(item)) for item in scopes),
+                    }
+                ),
+            )
 
     def stored_dict(self) -> dict[str, object]:
         return {
@@ -246,6 +301,12 @@ class AIRuntimeSelection:
             "provider_id": self.provider_id,
             "task_models": dict(self.task_models),
             "attestation": dict(self.attestation) if self.attestation else None,
+            "business_attestations": {
+                "models": [dict(item) for item in self.business_attestations.get("models", ())],
+                "scopes": [dict(item) for item in self.business_attestations.get("scopes", ())],
+            }
+            if self.business_attestations
+            else {"models": [], "scopes": []},
         }
 
 
@@ -318,6 +379,13 @@ def _claims(
     ).encode("utf-8")
 
 
+def _business_claims(value: Mapping[str, Any]) -> bytes:
+    claims = {key: item for key, item in value.items() if key != "token"}
+    return json.dumps(
+        claims, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+
+
 class AIRuntimeStateService:
     REQUIRED_CAPABILITIES = (CAPABILITY_STRUCTURED_JSON, CAPABILITY_TOOL_CALLING)
 
@@ -337,10 +405,10 @@ class AIRuntimeStateService:
         self._clock = clock or SystemClock()
         self._business_lock = threading.RLock()
         self._business_verified: dict[
-            tuple[str, int, int, str, tuple[tuple[str, str], ...]], int
+            tuple[str, int, str, tuple[tuple[str, str], ...]], int
         ] = {}
         self._models_verified: dict[
-            tuple[str, int, int, str, tuple[str, ...]], int
+            tuple[str, int, str, tuple[str, ...]], int
         ] = {}
 
     def _now(self) -> int:
@@ -362,7 +430,7 @@ class AIRuntimeStateService:
             return AIRuntimeSelection("deepseek", profile.default_task_models, 0)
         if (
             not isinstance(raw, Mapping)
-            or set(raw) != _STORED_KEYS
+            or set(raw) not in {_LEGACY_STORED_KEYS, _STORED_KEYS}
             or raw.get("schema_version") != AI_RUNTIME_STATE_SCHEMA_VERSION
         ):
             raise _error("ai_runtime_store_unavailable")
@@ -371,6 +439,7 @@ class AIRuntimeStateService:
             task_models=raw.get("task_models"),
             revision=raw.get("revision"),
             attestation=raw.get("attestation"),
+            business_attestations=raw.get("business_attestations"),
         )
 
     def _credential(self, provider_id: str) -> BackendCredentialState:
@@ -524,6 +593,7 @@ class AIRuntimeStateService:
                 selection.provider_id,
                 selection.task_models,
                 selection.revision + 1,
+                business_attestations=selection.business_attestations,
             )
             issued_at = self._now()
             expires_at = issued_at + AI_VERIFICATION_TTL_SECONDS
@@ -560,6 +630,7 @@ class AIRuntimeStateService:
             attested_selection.task_models,
             attested_selection.revision,
             attestation,
+            attested_selection.business_attestations,
         )
         try:
             swapped = self._store.compare_and_swap(
@@ -577,10 +648,9 @@ class AIRuntimeStateService:
         selection: AIRuntimeSelection,
         credential: BackendCredentialState,
         scope: str,
-    ) -> tuple[str, int, int, str, tuple[tuple[str, str], ...]]:
+    ) -> tuple[str, int, str, tuple[tuple[str, str], ...]]:
         return (
             selection.provider_id,
-            selection.revision,
             credential.generation,
             scope,
             tuple((task, selection.task_models[task]) for task in AI_BUSINESS_TASKS[scope]),
@@ -591,14 +661,100 @@ class AIRuntimeStateService:
         selection: AIRuntimeSelection,
         credential: BackendCredentialState,
         model: str,
-    ) -> tuple[str, int, int, str, tuple[str, ...]]:
+    ) -> tuple[str, int, str, tuple[str, ...]]:
         return (
             selection.provider_id,
-            selection.revision,
             credential.generation,
             model,
             self.REQUIRED_CAPABILITIES,
         )
+
+    def _business_record_valid(
+        self,
+        selection: AIRuntimeSelection,
+        credential: BackendCredentialState,
+        record: Mapping[str, Any],
+        *,
+        kind: str,
+    ) -> bool:
+        keys = _MODEL_ATTESTATION_KEYS if kind == "model" else _SCOPE_ATTESTATION_KEYS
+        if not isinstance(record, Mapping) or set(record) != keys:
+            return False
+        expected = {
+            "schema_version": AI_BUSINESS_ATTESTATION_VERSION,
+            "registry_version": PROVIDER_REGISTRY_VERSION,
+            "provider_id": selection.provider_id,
+            "credential_generation": credential.generation,
+        }
+        if any(record.get(key) != value for key, value in expected.items()):
+            return False
+        issued_at = record.get("issued_at")
+        expires_at = record.get("expires_at")
+        if (
+            isinstance(issued_at, bool)
+            or not isinstance(issued_at, int)
+            or isinstance(expires_at, bool)
+            or not isinstance(expires_at, int)
+            or issued_at < 0
+            or not 0 < expires_at - issued_at <= AI_BUSINESS_VERIFICATION_TTL_SECONDS
+        ):
+            return False
+        now = self._now()
+        if now < issued_at or now >= expires_at:
+            return False
+        if kind == "model":
+            model = record.get("model")
+            capabilities = record.get("required_capabilities")
+            if (
+                not isinstance(model, str)
+                or model not in selection.task_models.values()
+                or capabilities != list(self.REQUIRED_CAPABILITIES)
+            ):
+                return False
+        else:
+            scope = record.get("scope")
+            if scope not in AI_BUSINESS_SCOPES:
+                return False
+            expected_models = {
+                task: selection.task_models[task] for task in AI_BUSINESS_TASKS[scope]
+            }
+            if record.get("task_models") != expected_models:
+                return False
+        token = record.get("token")
+        if not isinstance(token, str) or not token:
+            return False
+        try:
+            return self._signer.verify(token, _business_claims(record)) is True
+        except Exception:
+            return False
+
+    def _hydrate_business_cache(
+        self,
+        selection: AIRuntimeSelection,
+        credential: BackendCredentialState,
+    ) -> None:
+        stored = selection.business_attestations or {}
+        for record in stored.get("models", ()):
+            if self._business_record_valid(selection, credential, record, kind="model"):
+                self._models_verified[
+                    self._model_key(selection, credential, str(record["model"]))
+                ] = int(record["expires_at"])
+        for record in stored.get("scopes", ()):
+            if self._business_record_valid(selection, credential, record, kind="scope"):
+                self._business_verified[
+                    self._business_key(selection, credential, str(record["scope"]))
+                ] = int(record["expires_at"])
+
+    def _signed_business_record(self, value: Mapping[str, Any]) -> dict[str, Any]:
+        record = dict(value)
+        try:
+            token = self._signer.issue(_business_claims(record))
+        except Exception as exc:
+            raise _error("ai_runtime_verification_failed") from exc
+        if not isinstance(token, str) or not token:
+            raise _error("ai_runtime_verification_failed")
+        record["token"] = token
+        return record
 
     def business_verification(self, scope: str) -> int | None:
         if scope not in AI_BUSINESS_SCOPES:
@@ -610,6 +766,7 @@ class AIRuntimeStateService:
         key = self._business_key(selection, credential, scope)
         now = self._now()
         with self._business_lock:
+            self._hydrate_business_cache(selection, credential)
             for cached, expiry in tuple(self._business_verified.items()):
                 if expiry <= now:
                     self._business_verified.pop(cached, None)
@@ -643,6 +800,7 @@ class AIRuntimeStateService:
         key = self._business_key(selection, credential, scope)
         now = self._now()
         with self._business_lock:
+            self._hydrate_business_cache(selection, credential)
             cached = self._business_verified.get(key)
             if cached is not None and now < cached:
                 return cached
@@ -709,7 +867,83 @@ class AIRuntimeStateService:
                 stage="business_capability_commit",
                 next_action="verify_connection",
             )
-        expiry = now + AI_BUSINESS_VERIFICATION_TTL_SECONDS
+        issued_at = self._now()
+        model_expiry = issued_at + AI_BUSINESS_VERIFICATION_TTL_SECONDS
+        existing = current_selection.business_attestations or {}
+        model_records = [
+            dict(record)
+            for record in existing.get("models", ())
+            if self._business_record_valid(
+                current_selection, current_credential, record, kind="model"
+            )
+            and record.get("model") not in pending_models
+        ]
+        for model in pending_models:
+            model_records.append(
+                self._signed_business_record(
+                    {
+                        "schema_version": AI_BUSINESS_ATTESTATION_VERSION,
+                        "registry_version": PROVIDER_REGISTRY_VERSION,
+                        "provider_id": current_selection.provider_id,
+                        "credential_generation": current_credential.generation,
+                        "model": model,
+                        "required_capabilities": list(self.REQUIRED_CAPABILITIES),
+                        "issued_at": issued_at,
+                        "expires_at": model_expiry,
+                    }
+                )
+            )
+        scope_records = [
+            dict(record)
+            for record in existing.get("scopes", ())
+            if self._business_record_valid(
+                current_selection, current_credential, record, kind="scope"
+            )
+            and record.get("scope") != scope
+        ]
+        required_models = {
+            current_selection.task_models[task] for task in AI_BUSINESS_TASKS[scope]
+        }
+        scope_expiry = min(
+            int(record["expires_at"])
+            for record in model_records
+            if record.get("model") in required_models
+        )
+        scope_records.append(
+            self._signed_business_record(
+                {
+                    "schema_version": AI_BUSINESS_ATTESTATION_VERSION,
+                    "registry_version": PROVIDER_REGISTRY_VERSION,
+                    "provider_id": current_selection.provider_id,
+                    "credential_generation": current_credential.generation,
+                    "scope": scope,
+                    "task_models": {
+                        task: current_selection.task_models[task]
+                        for task in AI_BUSINESS_TASKS[scope]
+                    },
+                    "issued_at": issued_at,
+                    "expires_at": scope_expiry,
+                }
+            )
+        )
+        model_records.sort(key=lambda item: str(item["model"]))
+        scope_records.sort(key=lambda item: str(item["scope"]))
+        updated = AIRuntimeSelection(
+            current_selection.provider_id,
+            current_selection.task_models,
+            current_selection.revision,
+            current_selection.attestation,
+            {"models": model_records, "scopes": scope_records},
+        )
+        try:
+            swapped = self._store.compare_and_swap(
+                expected_revision=current_selection.revision,
+                value=updated.stored_dict(),
+            )
+        except Exception as exc:
+            raise _error("ai_runtime_store_unavailable") from exc
+        if swapped is not True:
+            raise _error("ai_runtime_revision_conflict")
         with self._business_lock:
             for cached_key, cached_expiry in tuple(self._business_verified.items()):
                 if cached_expiry <= now:
@@ -727,9 +961,9 @@ class AIRuntimeStateService:
                 ):
                     oldest = min(self._models_verified, key=self._models_verified.get)
                     self._models_verified.pop(oldest, None)
-                self._models_verified[model_key] = expiry
-            self._business_verified[key] = expiry
-        return expiry
+                self._models_verified[model_key] = model_expiry
+            self._business_verified[key] = scope_expiry
+        return scope_expiry
 
     def require_business_verification(self, scope: str) -> None:
         if self.business_verification(scope) is None:

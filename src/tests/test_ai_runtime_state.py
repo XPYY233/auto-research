@@ -7,6 +7,7 @@ import unittest
 
 from auto_research.ai.openai_compatible import AIProviderResponseError
 from auto_research.settings.ai_runtime_state import (
+    AI_BUSINESS_VERIFICATION_TTL_SECONDS,
     AI_VERIFICATION_TTL_SECONDS,
     AIRuntimeStateError,
     AIRuntimeStateService,
@@ -203,6 +204,87 @@ class AIRuntimeStateTests(unittest.TestCase):
             self.service.business_verification("selected_evidence_chat")
         )
         self.assertIsNotNone(self.service.business_verification("personal_suggestion"))
+
+    def test_business_verification_survives_restart_without_repeating_paid_probe(self):
+        self.select_openai()
+        self.service.record_verification()
+        expiry = self.service.record_business_verification(
+            "personal_suggestion", expected_provider_id="openai", expected_revision=2
+        )
+        calls = len(self.verifier.calls)
+        restarted = AIRuntimeStateService(
+            store=self.store,
+            credential_states=self.credentials,
+            verifier=self.verifier,
+            signer=_Signer(),
+            clock=self.clock,
+        )
+        self.assertEqual(restarted.business_verification("personal_suggestion"), expiry)
+        self.assertEqual(len(self.verifier.calls), calls)
+        restarted.record_business_verification(
+            "selected_evidence_chat",
+            expected_provider_id="openai",
+            expected_revision=2,
+        )
+        self.assertEqual(
+            len(self.verifier.calls), calls, "same verified model must not be billed again"
+        )
+
+    def test_daily_connection_refresh_preserves_unchanged_business_attestations(self):
+        self.select_openai()
+        self.service.record_verification()
+        expiry = self.service.record_business_verification(
+            "personal_suggestion", expected_provider_id="openai", expected_revision=2
+        )
+        self.clock.value += AI_VERIFICATION_TTL_SECONDS
+        refreshed = self.service.record_verification(
+            expected_provider_id="openai", expected_revision=2
+        )
+        self.assertEqual(refreshed.revision, 3)
+        restarted = AIRuntimeStateService(
+            store=self.store,
+            credential_states=self.credentials,
+            verifier=self.verifier,
+            signer=_Signer(),
+            clock=self.clock,
+        )
+        self.assertEqual(restarted.business_verification("personal_suggestion"), expiry)
+        self.assertLess(self.clock.value, expiry)
+
+    def test_persisted_business_attestation_tampering_fails_closed(self):
+        self.select_openai()
+        self.service.record_verification()
+        self.service.record_business_verification(
+            "personal_suggestion", expected_provider_id="openai", expected_revision=2
+        )
+        self.store.value["business_attestations"]["scopes"][0]["token"] = "forged"
+        restarted = AIRuntimeStateService(
+            store=self.store,
+            credential_states=self.credentials,
+            verifier=self.verifier,
+            signer=_Signer(),
+            clock=self.clock,
+        )
+        self.assertIsNone(restarted.business_verification("personal_suggestion"))
+
+    def test_business_attestation_expires_at_signed_boundary(self):
+        self.select_openai()
+        self.service.record_verification()
+        expiry = self.service.record_business_verification(
+            "personal_suggestion", expected_provider_id="openai", expected_revision=2
+        )
+        self.assertEqual(
+            expiry, self.clock.value + AI_BUSINESS_VERIFICATION_TTL_SECONDS
+        )
+        self.clock.value = expiry
+        restarted = AIRuntimeStateService(
+            store=self.store,
+            credential_states=self.credentials,
+            verifier=self.verifier,
+            signer=_Signer(),
+            clock=self.clock,
+        )
+        self.assertIsNone(restarted.business_verification("personal_suggestion"))
 
     def test_business_verification_rechecks_credential_after_model_calls(self):
         self.select_openai()

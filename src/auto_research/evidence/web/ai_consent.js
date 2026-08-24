@@ -73,21 +73,41 @@
     return { providerId, label: trustedLabel, disclosure };
   }
 
-  function disclosureText(scope, context) {
+  function disclosureSummary(scope, context) {
     const valid = validatedContext(scope, context);
     if (!valid) return "";
-    return `${valid.disclosure.title}\n\n将使用你保存在本机安全凭据存储中的 ${valid.label} API 密钥，并可能产生少量 API 费用。\n\n本次会发送给 ${valid.label}：${valid.disclosure.outbound}。\n\n不会发送本机文件路径、API 密钥、完整私人数据库或其他未选择的文件。是否继续？`;
+    return `${valid.disclosure.title}\n\n将使用你保存在本机安全凭据存储中的 ${valid.label} API 密钥，并可能产生少量 API 费用。\n\n本次会发送给 ${valid.label}：${valid.disclosure.outbound}。\n\n不会发送本机文件路径、API 密钥、完整私人数据库或其他未选择的文件。`;
+  }
+
+  function disclosureText(scope, context) {
+    const summary = disclosureSummary(scope, context);
+    return summary ? `${summary}\n\n是否继续？` : "";
+  }
+
+  function accepted(scope, context) {
+    const valid = validatedContext(scope, context);
+    if (!valid) return false;
+    return readAcceptedDisclosures().has(consentKey(valid.providerId, scope, valid.disclosure.version));
+  }
+
+  function remember(scope, context) {
+    const valid = validatedContext(scope, context);
+    if (!valid) return false;
+    const disclosures = readAcceptedDisclosures();
+    disclosures.add(consentKey(valid.providerId, scope, valid.disclosure.version));
+    writeAcceptedDisclosures(disclosures);
+    return true;
   }
 
   function ensure(scope, context) {
     const valid = validatedContext(scope, context);
     if (!valid) return false;
-    const accepted = readAcceptedDisclosures();
+    const acceptedDisclosures = readAcceptedDisclosures();
     const key = consentKey(valid.providerId, scope, valid.disclosure.version);
-    if (accepted.has(key)) return true;
+    if (acceptedDisclosures.has(key)) return true;
     if (typeof global.confirm !== "function" || !global.confirm(disclosureText(scope, context))) return false;
-    accepted.add(key);
-    writeAcceptedDisclosures(accepted);
+    acceptedDisclosures.add(key);
+    writeAcceptedDisclosures(acceptedDisclosures);
     return true;
   }
 
@@ -96,6 +116,9 @@
     disclosureVersions: Object.freeze(Object.fromEntries(Object.entries(DISCLOSURES).map(([scope, value]) => [scope, value.version]))),
     updateTrustedProviders,
     ensure,
+    accepted,
+    remember,
+    disclosureSummary,
     disclosureText,
   });
 })(globalThis);

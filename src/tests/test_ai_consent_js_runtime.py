@@ -82,6 +82,24 @@ assert.strictEqual(context.AutoResearchAIConsent.ensure("librarian", other), fal
         )
         self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
 
+    def test_renderer_can_merge_disclosure_and_cost_confirmation(self) -> None:
+        completed = self._run(
+            """
+context.AutoResearchAIConsent.updateTrustedProviders([{provider_id: "openai", display_name: "OpenAI"}]);
+const scope = "personal_suggestion";
+const info = {provider_id: "openai", label: "OpenAI", disclosure_version: context.AutoResearchAIConsent.disclosureVersions[scope]};
+assert.strictEqual(context.AutoResearchAIConsent.accepted(scope, info), false);
+const summary = context.AutoResearchAIConsent.disclosureSummary(scope, info);
+assert(summary.includes("最多 5 行样例"));
+assert(!summary.includes("是否继续"));
+assert.strictEqual(context.AutoResearchAIConsent.remember(scope, info), true);
+assert.strictEqual(context.AutoResearchAIConsent.accepted(scope, info), true);
+assert.strictEqual(prompts.length, 0, "accepted/remember never open a second confirmation dialog");
+assert.strictEqual(context.AutoResearchAIConsent.remember("unknown", info), false);
+"""
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

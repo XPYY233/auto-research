@@ -48,6 +48,17 @@ class FusionReviewUIContractTests(unittest.TestCase):
             self.assertEqual(navigation.group(0).count(f'data-view="{name}"'), 1)
             self.assertEqual(self.index.count(f'data-view-panel="{name}"'), 1)
 
+    def test_settings_view_reprojects_visible_category_after_closing_old_detail(self) -> None:
+        switch_view = self.runtime[
+            self.runtime.index("function switchView(") : self.runtime.index("function closeDrawers(")
+        ]
+        self.assertLess(switch_view.index("closeEvidenceDetail({focus:false})"), switch_view.index("renderDocumentTabs()"))
+        self.assertIn('if(name==="settings")selectSettingsSection(state.settingsSection)', switch_view)
+        self.assertEqual(self.index.count('data-settings-section="ai"'), 1)
+        self.assertEqual(self.index.count('data-settings-panel="ai"'), 1)
+        self.assertIn("AI 与 API 密钥", self.index)
+        self.assertIn("fusion-ai-business-readiness", self.index)
+
     def test_real_workflows_are_top_level_and_pdf_stays_in_workspace(self) -> None:
         for element_id in (
             "fusion-import-pdf", "fusion-start-extraction", "fusion-open-pdf",
@@ -323,7 +334,7 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
 
     def test_prepared_actions_reuse_versioned_disclosure_gate(self) -> None:
         for marker in (
-            "globalThis.AutoResearchAIConsent.ensure", "ai_consent_gate_unavailable",
+            "globalThis.AutoResearchAIConsent", ".accepted(scope,disclosureContext)", ".remember(scope,disclosureContext)", "disclosureSummary(scope,disclosureContext)", "ai_consent_gate_unavailable",
             "updateTrustedProviders", "prepared.provider_id!==context.provider_id",
             "prepared.disclosure_version!==disclosureVersion", "librarian-ai-stage-v1",
             "literature-extraction-stage-summary-v1", "literature-extraction-commit-result-v2",
@@ -538,9 +549,9 @@ assert.equal(api.selectedEvidenceAIIdentity(),null);
         authorization_program = f"""
 globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
 globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
-let confirmed='',consentCalls=0,preparedCalls=2;
-globalThis.confirm=message=>{{confirmed=message;return true;}};
-globalThis.AutoResearchAIConsent={{disclosureVersions:{{selected_evidence_chat:'selected-v1'}},ensure:()=>true,updateTrustedProviders:()=>true}};
+let confirmed='',confirmCalls=0,consentCalls=0,preparedCalls=2,rememberCalls=0;
+globalThis.confirm=message=>{{confirmed=message;confirmCalls+=1;return true;}};
+globalThis.AutoResearchAIConsent={{disclosureVersions:{{selected_evidence_chat:'selected-v1'}},accepted:()=>false,remember:()=>{{rememberCalls+=1;return true;}},disclosureSummary:()=>"解读当前选中证据\\n\\n本次发送一条官方证据。",updateTrustedProviders:()=>true}};
 globalThis.fetch=async(url,options={{}})=>{{const headers={{get:()=>null}};
  if(url==='/api/desktop/ai/providers')return{{ok:true,headers,json:async()=>({{schema_version:'ai-desktop-catalog-v1',providers:[{{provider_id:'deepseek',display_name:'DeepSeek',model_options:{{}}}}],capability_test:{{provider_id:'deepseek',connection_maximum_model_calls:1,business_maximum_model_calls:{{selected_evidence_chat:2,librarian:8,literature_extraction:8,personal_suggestion:2}}}}}})}};
  if(url==='/api/desktop/ai/settings')return{{ok:true,headers,json:async()=>({{schema_version:'ai-runtime-public-state-v1',provider_id:'deepseek',revision:1,task_models:{{}},readiness:{{schema_version:'ai-readiness-v1',provider_connection:{{state:'ready',reason_code:'ai_connection_ready',next_action:'none'}},harness:{{state:'ready',reason_code:'harness_runtime_ready',next_action:'none'}},businesses:{{literature_extraction:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}},librarian:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}},selected_evidence_chat:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}},personal_suggestion:{{state:'ready',reason_code:'ai_business_ready',next_action:'none'}}}}}}}})}};
@@ -552,7 +563,7 @@ globalThis.fetch=async(url,options={{}})=>{{const headers={{get:()=>null}};
 }};
 eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
 const api=globalThis.AutoResearchFusion,assert=require('assert');
-(async()=>{{const body={{source_scope:'official',source_id:'official-main',entity_type:'item',entity_uid:'item:17',question:'解释',history:[]}};const authorization=await api.preparedAuthorization('selected_evidence_chat',body);assert.equal(authorization.actionId,'action-selected');assert(confirmed.includes('本阶段最多调用 2 次'));assert.equal(consentCalls,1);preparedCalls=3;await api.preparedAuthorization('selected_evidence_chat',body).then(()=>assert.fail('cap must reject'),error=>assert.equal(error.code,'ai_prepared_action_invalid'));assert.equal(consentCalls,1);}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+(async()=>{{const body={{source_scope:'official',source_id:'official-main',entity_type:'item',entity_uid:'item:17',question:'解释',history:[]}};const authorization=await api.preparedAuthorization('selected_evidence_chat',body);assert.equal(authorization.actionId,'action-selected');assert(confirmed.includes('本次发送一条官方证据'));assert(confirmed.includes('本阶段最多调用 2 次'));assert.equal(confirmCalls,1,'first disclosure and model cost must share one confirmation');assert.equal(rememberCalls,1);assert.equal(consentCalls,1);preparedCalls=3;await api.preparedAuthorization('selected_evidence_chat',body).then(()=>assert.fail('cap must reject'),error=>assert.equal(error.code,'ai_prepared_action_invalid'));assert.equal(consentCalls,1);assert.equal(confirmCalls,1);}})().catch(error=>{{console.error(error);process.exitCode=1;}});
 """
         result = subprocess.run(["node", "-e", authorization_program], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -713,7 +724,7 @@ eval(fs.readFileSync({str(WEB / 'ai_consent.js')!r},'utf8'));eval(fs.readFileSyn
  api.switchView('search',{{focus:false}});api.setSearchSource('private');const late=api.runPreciseSearch();api.switchView('paper',{{focus:false}});pendingResolvers.shift()();await late;assert.equal(api.state.searchResults.length,0,'late result must not update inactive view');
  api.switchView('search',{{focus:false}});api.setSearchSource('private');const ready=api.runPreciseSearch();pendingResolvers.shift()();await ready;assert.equal(api.state.searchResults[0].title,'硬度表');assert(calls.some(x=>x[0].includes('source_scope=private')));
  globalThis.pywebview={{api:{{select_personal_data_file:async()=>({{ok:true,cancelled:false,selection:{{selection_id:'opaque-selection'}}}})}}}};api.switchView('personal',{{focus:false}});await api.choosePersonalFile();assert.equal(api.state.personalStatus.import_id,'personal_import_abcdefghijklmnop');await api.requestPersonalSuggestion();assert.equal(ids['#fusion-project-name'].value,'W-Ta');const imported=api.confirmPersonalImport();while(!pendingResolvers.length)await new Promise(resolve=>setImmediate(resolve));pendingResolvers.shift()();await imported;assert.equal(api.state.view,'search');assert.equal(api.state.searchSource,'private');assert(calls.some(x=>x[0].endsWith('/reviewed-import')));
- const before=calls.length;api.state.aiContext=null;globalThis.AutoResearchAIConsent=undefined;await api.preparedAuthorization('personal_suggestion',{{import_id:'personal_import_abcdefghijklmnop',sheet_index:0}}).then(()=>assert.fail('gate missing'),()=>{{}});assert.equal(calls.slice(before).filter(x=>x[0]==='/api/desktop/ai/consents').length,0);
+ const before=calls.length;api.state.aiContext=null;globalThis.AutoResearchAIConsent=undefined;assert.equal(await api.preparedAuthorization('personal_suggestion',{{import_id:'personal_import_abcdefghijklmnop',sheet_index:0}}),null,'missing disclosure gate must fail closed');assert.equal(calls.slice(before).filter(x=>x[0]==='/api/desktop/ai/consents').length,0);
 }})().catch(error=>{{console.error(error);process.exitCode=1}});
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
