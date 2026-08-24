@@ -24,7 +24,7 @@ MODELS = {
     "librarian_synthesis": "deepseek-v4-pro",
 }
 TASKS = {
-    "librarian": ("librarian_synthesis", ("librarian_planning", "librarian_synthesis")),
+    "librarian": ("librarian_planning", ("librarian_planning", "librarian_synthesis")),
     "selected_evidence_chat": ("extraction", ("extraction",)),
     "literature_extraction": ("extraction", ("analysis", "extraction")),
     "personal_suggestion": ("analysis", ("analysis",)),

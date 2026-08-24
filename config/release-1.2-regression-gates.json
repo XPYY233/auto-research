@@ -1,0 +1,65 @@
+{
+  "schema": "auto-research-regression-gates-v1",
+  "target_version": "1.2.0",
+  "status": "blocked_until_all_required_gates_pass",
+  "baseline": {
+    "app_version": "0.5.1",
+    "build_number": 6,
+    "source_checkpoint": "63b34f2",
+    "installed_audit_date": "2026-08-25"
+  },
+  "current_source_checkpoint": "4017cdb",
+  "release_constraints": {
+    "macos_only": true,
+    "windows_frozen": true,
+    "production_database_forbidden": true,
+    "paper_056_recovery_forbidden": true,
+    "version_bump_before_acceptance": false,
+    "parallel_full_tests_or_builds": false
+  },
+  "required_gates": [
+    "paper_library_scroll_filter_reveal",
+    "pdf_import_preflight_dedup_receipt",
+    "literature_extraction_progress_resume_atomic_publish",
+    "server_side_four_type_search",
+    "real_evidence_detail_visual_and_structure",
+    "evidence_ai_only_inside_active_detail",
+    "two_real_editor_groups_and_lazy_restore",
+    "single_pane_geometry_owner_no_blank_layout",
+    "isolated_module_inspectors",
+    "pdf_fit_zoom_highlight_return",
+    "single_call_librarian_clickable_sources",
+    "encrypted_history_and_approved_research_memory",
+    "provider_harness_and_four_scope_readiness",
+    "personal_table_preview_confirm_search_detail",
+    "official_package_result_coverage_and_next_action",
+    "atomic_package_and_dataset_export",
+    "scientific_gold_set_thresholds",
+    "installed_mac_user_walkthrough"
+  ],
+  "forbidden_regressions": [
+    "second_navigation_owner",
+    "legacy_dom_restoration",
+    "direct_billable_ai_route",
+    "environment_variable_credential_authority",
+    "unconstrained_model_tool_loop",
+    "client_only_prefix_type_filter",
+    "global_evidence_chat_without_open_detail",
+    "static_fake_second_editor",
+    "success_before_atomic_publish_and_index",
+    "metadata_only_package_claimed_as_complete",
+    "fabricated_curve_values",
+    "path_or_secret_in_renderer_dto"
+  ],
+  "release_sequence": [
+    "targeted_contract_tests",
+    "isolated_main_chain_tests",
+    "scientific_gold_set",
+    "real_paid_ai_acceptance_max_25_calls",
+    "full_shared_tests",
+    "full_macos_tests",
+    "clean_app_build_and_codesign",
+    "installed_app_walkthrough",
+    "dmg_and_release_kit"
+  ]
+}

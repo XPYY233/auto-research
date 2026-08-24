@@ -13,7 +13,7 @@ from auto_research.ai.harness_contract import (
     HarnessError,
     HarnessEvidenceIdentity,
 )
-from auto_research.ai.harness_runtime import DeepSeekHarnessAdapter
+from auto_research.ai.harness_runtime import DeepSeekHarnessAdapter, HarnessOutputProjector
 from auto_research.ai.prepared_actions import PreparedOutbound
 
 from src.tests.test_harness_contract import safe_composition
@@ -153,6 +153,49 @@ class HarnessRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(result["harness"]["provider_id"], "deepseek")
         self.assertNotIn("endpoint", str(result).casefold())
+
+    def test_one_turn_librarian_preverifies_frozen_seed_without_provider_tools(self) -> None:
+        class OneTurnRuntime(Runtime):
+            def execute(self, *, model, **kwargs):
+                model.request_json(
+                    MESSAGES,
+                    task=kwargs["job"].task,
+                    max_tokens=1000,
+                    thinking=None,
+                    temperature=0.1,
+                )
+                return {
+                    "schema_version": "librarian-harness-result-v1",
+                    "answer": "直接结论",
+                    "report": {
+                        "direct_conclusion": "有证据支持。",
+                        "evidence_matrix": [{"ref": "R1"}],
+                        "related_evidence": [],
+                        "database_gaps": "尚缺人工金标准。",
+                        "suggested_followups": ["核对R1条件"],
+                    },
+                    "citations": [{"ref": "R1"}],
+                    "recommended_articles": [
+                        {"paper_uid": "paper-1", "title": "Paper", "doi": "", "reason": "相关"}
+                    ],
+                    "comparison_bundle_uids": ["bundle-1"],
+                }
+
+        prepared = action()
+        raw, model = self.budgeted(prepared)
+        result = self.adapter(OneTurnRuntime()).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL,),
+            prompt={"question": "bounded"},
+        )
+        self.assertEqual(raw.calls, 1)
+        self.assertEqual(result["citations"], [{"ref": "R1"}])
+        self.assertEqual(
+            [row["paper_uid"] for row in result["recommended_articles"]],
+            ["paper-1"],
+        )
 
     def test_selected_evidence_current_only_and_private_rejected(self) -> None:
         prepared = action("selected_evidence_chat")
@@ -359,6 +402,18 @@ class HarnessRuntimeTests(unittest.TestCase):
             evidence=(missing_bundle,),
         )
         self.assertEqual(result["comparison_bundle_uids"], [])
+
+    def test_cross_bundle_quantitative_gate_rejects_bare_scientific_range_and_ratio(self) -> None:
+        for claim in (
+            "R1 为 500，R2 为 420。",
+            "R1 为 1.2e3，R2 为 9.0e2。",
+            "R1 的范围是 1–50，R2 的比例为 2:1。",
+            "R1 为 12 W/mK，versus R2 的 9 W/mK。",
+        ):
+            self.assertTrue(
+                HarnessOutputProjector._has_quantitative_comparison(claim),
+                claim,
+            )
 
     def test_librarian_accepts_published_workspace_evidence(self) -> None:
         prepared = action()

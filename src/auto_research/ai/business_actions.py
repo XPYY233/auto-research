@@ -743,7 +743,13 @@ _POLICIES = MappingProxyType(
     {
         "librarian": _Policy(
             "librarian",
-            "librarian_synthesis",
+            # The current Librarian owns recall and citation validation
+            # locally, then spends one bounded Flash turn on the final report.
+            # Keep the prepared-action authority aligned with that real call;
+            # otherwise the provider factory silently selects the historical
+            # Pro synthesis model even when the assembled plan is one Flash
+            # call.
+            "librarian_planning",
             ("librarian_planning", "librarian_synthesis"),
             "librarian_business_executor",
             "v1",

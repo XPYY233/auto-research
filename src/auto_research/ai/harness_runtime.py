@@ -135,41 +135,42 @@ class HarnessJobStore:
 
 
 class HarnessOutputProjector:
+    _NUMBER = re.compile(
+        r"(?<![A-Za-z0-9_])[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![A-Za-z0-9_])"
+    )
     _QUANTITY = re.compile(
-        r"[+-]?\d+(?:\.\d+)?\s*(?:%|°\s*C|K|Pa|kPa|MPa|GPa|HV|nm|µm|μm|mm|cm|m|"
-        r"eV|keV|MeV|J|mJ|dpa|at\.?\s*%|wt\.?\s*%|s|min|h)(?![A-Za-z])",
+        r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*"
+        r"(?:%|°\s*[CF]|K|Pa|kPa|MPa|GPa|TPa|HV|HRC|nm|µm|μm|mm|cm|m|"
+        r"eV|keV|MeV|J|mJ|W(?:\s*/\s*m(?:\s*K)?)?|g\s*/\s*cm(?:\^?3|³)|"
+        r"kg\s*/\s*m(?:\^?3|³)|dpa|at\.?\s*%|wt\.?\s*%|s|min|h)(?![A-Za-z])",
         re.IGNORECASE,
     )
     _COMPARISON = re.compile(
         r"(?:相比|比较|对比|分别|高于|低于|大于|小于|超过|不及|相差|差异为|"
-        r"增加|降低|提升|下降|变化(?:了|为)?|倍|[<>≥≤])"
+        r"增加|降低|提升|下降|变化(?:了|为)?|倍|比值|比例|范围|区间|"
+        r"greater\s+than|less\s+than|higher\s+than|lower\s+than|versus|vs\.?|[<>≥≤])",
+        re.IGNORECASE,
+    )
+    _RANGE_OR_RATIO = re.compile(
+        r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*"
+        r"(?:[-–—~～至到:：/])\s*"
+        r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?",
+        re.IGNORECASE,
     )
 
     @classmethod
     def _has_quantitative_comparison(cls, value: object) -> bool:
         text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         text = re.sub(r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", "", text)
-        quantities = cls._QUANTITY.findall(text)
-        if re.search(r"[+-]?\d+(?:\.\d+)?\s*倍", text):
+        # A multi-bundle answer has no authority to synthesize *any* numeric
+        # claim.  Fail closed for bare/scientific numbers, ranges and ratios,
+        # not just for the small historical unit list.  R reference ordinals
+        # are removed above so citation labels do not trigger this gate.
+        if cls._RANGE_OR_RATIO.search(text) or cls._QUANTITY.search(text):
             return True
-        if not quantities or not cls._COMPARISON.search(text):
-            return False
-        if len(quantities) >= 2:
+        if cls._NUMBER.search(text):
             return True
-        return bool(
-            re.search(
-                r"(?:相比|高于|低于|大于|小于|超过|不及|相差|增加|降低|提升|下降)"
-                r".{0,48}" + cls._QUANTITY.pattern,
-                text,
-                re.IGNORECASE,
-            )
-            or re.search(
-                cls._QUANTITY.pattern
-                + r".{0,48}(?:高于|低于|大于|小于|超过|不及|相差|增加|降低|提升|下降)",
-                text,
-                re.IGNORECASE,
-            )
-        )
+        return bool(cls._COMPARISON.search(text) and re.search(r"\d", text))
 
     @staticmethod
     def librarian(
@@ -370,6 +371,18 @@ class DeepSeekHarnessAdapter:
             allow_source_view=allow_source_view,
         )
         try:
+            if running.session.scope == "librarian":
+                # The one-turn Librarian deliberately exposes no provider
+                # tools.  Freeze citation and recommendation authority locally
+                # before that single paid call, using the same bounded gateway
+                # and immutable Search V2 candidate set used by the projector.
+                refs = [f"R{index}" for index in range(1, len(running.evidence) + 1)]
+                if not refs or len(refs) > 64:
+                    raise HarnessError("harness_output_invalid")
+                tools.call("citation_verify", {"refs": refs})
+                question = str((prompt or {}).get("question") or "").strip()
+                if question:
+                    tools.call("recommend_papers", {"question": question, "limit": 10})
             raw = self._runtime.execute(
                 job=running,
                 model=model,
