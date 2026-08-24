@@ -258,13 +258,13 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         with self.assertRaises(json.JSONDecodeError):
             _parse_final_json("```json\n{\"ok\":true}\n尾注```")
 
-    def test_librarian_reserves_sixth_call_for_tool_free_finalization(self):
+    def test_librarian_reserves_second_call_for_tool_free_finalization(self):
         prepared = action()
         prepared = PreparedOutbound(
             **{
                 **prepared.__dict__,
-                "max_calls": 4,
-                "max_tokens": 20_000,
+                "max_calls": 2,
+                "max_tokens": 8_000,
             }
         )
         raw = RawClient()
@@ -274,7 +274,7 @@ class OfficialHarnessSDKTests(unittest.TestCase):
             dependency_resolver=dependencies,
             runtime_path_resolver=lambda: "/verified/runtime",
         )
-        harness_job = replace(job(), max_calls=4, max_tokens=20_000)
+        harness_job = replace(job(), max_calls=2, max_tokens=8_000)
         runtime.execute(
             job=harness_job,
             model=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
@@ -303,7 +303,7 @@ class OfficialHarnessSDKTests(unittest.TestCase):
 
         prepared = action()
         prepared = PreparedOutbound(
-            **{**prepared.__dict__, "max_calls": 3, "max_tokens": 3_000}
+            **{**prepared.__dict__, "max_calls": 2, "max_tokens": 2_000}
         )
         raw = ToolCallingClient()
         runtime = OfficialDeepSeekHarnessRuntime(
@@ -312,16 +312,18 @@ class OfficialHarnessSDKTests(unittest.TestCase):
             dependency_resolver=dependencies,
             runtime_path_resolver=lambda: "/verified/runtime",
         )
+        harness_job = replace(job(), max_calls=2, max_tokens=2_000)
         with self.assertRaises(HarnessError) as failed:
             runtime.execute(
-                job=job(),
+                job=harness_job,
                 model=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
-                tools=HarnessToolGateway(backend=Backend(), job=job(), allow_source_view=True),
+                tools=HarnessToolGateway(backend=Backend(), job=harness_job, allow_source_view=True),
                 prompt={"question": "bounded"},
             )
         self.assertEqual(failed.exception.code, "harness_output_invalid")
-        self.assertEqual(len(raw.calls), 1)
-        self.assertEqual(raw.calls[0][1], [])
+        self.assertEqual(len(raw.calls), 2)
+        self.assertTrue(raw.calls[0][1])
+        self.assertEqual(raw.calls[1][1], [])
     def test_frozen_bundle_accepts_only_verified_in_bundle_runtime_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
             contents = Path(directory) / "Auto Research.app" / "Contents"
@@ -413,7 +415,7 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertEqual(len(raw.calls), 1)
         self.assertEqual(model.remaining_calls, 1)
         self.assertEqual(FakeHarness.latest.kwargs["max_tokens"], 1_000)
-        self.assertIn("第六轮必须输出最终 JSON", FakeHarness.latest.kwargs["env"]["AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"])
+        self.assertIn("第二轮必须输出最终 JSON", FakeHarness.latest.kwargs["env"]["AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"])
         self.assertNotIn("real-key", repr(FakeHarness.latest.kwargs))
         self.assertIsNone(FakeHarness.latest.kwargs["session_root"])
         codes = [event["code"] for event in activities]
@@ -492,8 +494,9 @@ class OfficialHarnessSDKTests(unittest.TestCase):
                 prompt={"question": "硬度如何变化？"},
             )
         self.assertEqual(failed.exception.code, "harness_output_invalid")
-        self.assertEqual(len(raw.calls), 1)
-        self.assertEqual(raw.calls[0][1], [])
+        self.assertEqual(len(raw.calls), 2)
+        self.assertTrue(raw.calls[0][1])
+        self.assertEqual(raw.calls[1][1], [])
 
     def test_checked_in_composition_has_only_four_runtime_rows(self):
         text = Path("config/auto-research-harness.runtime.cordis.yml").read_text()

@@ -59,7 +59,7 @@ FROZEN_RUNTIME_SPAWN_HELPER_SHA256 = "9d41c4cbfd7407963a4ba244ebe2cba189a47dca18
 MAX_PROVIDER_BODY_BYTES = 4 * 1024 * 1024
 MAX_MCP_BODY_BYTES = 512 * 1024
 MAX_FINAL_RESPONSE_BYTES = 1024 * 1024
-LIBRARIAN_FINALIZATION_REMAINING_CALLS = 3
+LIBRARIAN_FINALIZATION_REMAINING_CALLS = 1
 LIBRARIAN_FINAL_MAX_TOKENS = 3_600
 _ENVIRONMENT_LOCK = threading.RLock()
 _SAFE_ENVIRONMENT_KEYS = frozenset(
@@ -668,9 +668,22 @@ class _Bridge:
         self._json(handler, {"jsonrpc": "2.0", "id": request_id, "result": result})
 
     def _record_handler_failure(self, path: str, exc: HarnessError) -> None:
-        with self._failure_lock:
-            if not self._failure_code:
-                self._failure_code = exc.code
+        # A rejected read-only MCP call has already failed closed and returned
+        # no data.  Treat it as a recoverable tool result so the model can use
+        # the frozen seed identities instead.  Provider/protocol/runtime
+        # failures remain terminal for the whole job.
+        recoverable_mcp_rejection = (
+            path == "/mcp"
+            and exc.code in {
+                "harness_tool_forbidden",
+                "harness_tool_invalid",
+                "harness_private_forbidden",
+            }
+        )
+        if not recoverable_mcp_rejection:
+            with self._failure_lock:
+                if not self._failure_code:
+                    self._failure_code = exc.code
         _safe_trace(
             "bridge_failure",
             route="provider" if path == "/v1/chat/completions" else "mcp",
@@ -839,8 +852,9 @@ def _system_prompt(scope: str) -> str:
     if scope == "librarian":
         return common + (
             "回答必须包含条件解释、检索过程、证据回答、引用卡片、相关文章建议和局限。"
-            "优先使用任务输入中的已召回证据，只为补足明确缺口调用工具；"
-            "不得用相同参数重复调用工具。最多进行五轮工具核验，第六轮必须输出最终 JSON；"
+            "任务输入已包含本机召回的 seed_evidence 和稳定 R 编号。第一轮只核验准备引用的 R 编号、"
+            "获取相关文章，或在确有缺口时进行一次补充检索；第二轮必须输出最终 JSON。"
+            "不得用相同参数重复调用工具；"
             "证据不足时在局限中如实说明，不得为了继续搜索而耗尽授权预算。"
         )
     return common + (

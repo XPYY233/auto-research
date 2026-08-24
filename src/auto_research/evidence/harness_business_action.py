@@ -37,8 +37,8 @@ from .librarian_reasoning import build_query_analysis, soft_recall_queries
 
 
 HARNESS_SNAPSHOT_KIND = "harness_literature"
-LIBRARIAN_MAX_CALLS = 8
-LIBRARIAN_MAX_TOKENS = 128_000
+LIBRARIAN_MAX_CALLS = 2
+LIBRARIAN_MAX_TOKENS = 8_000
 SELECTED_MAX_CALLS = 2
 SELECTED_MAX_TOKENS = 32_000
 _LIBRARIAN_KEYS = frozenset(
@@ -56,6 +56,13 @@ _RECALL_STOPWORDS = frozenset(
     }
 )
 _SAFE_TRACE_ENABLED = os.environ.get("AUTO_RESEARCH_AI_SAFE_TRACE") == "1"
+_SEED_KEYS = (
+    "source_scope", "source_id", "entity_type", "entity_uid", "paper_uid",
+    "bundle_uid", "display_title", "article_title", "doi", "source_page",
+    "value_text", "unit", "meaning", "meaning_text", "finding_text", "caption",
+    "material_focus", "conditions_text", "method", "physical_quantities",
+    "quality_gate_status",
+)
 
 
 def _safe_trace(stage: str, code: str) -> None:
@@ -72,6 +79,26 @@ def _safe_trace(stage: str, code: str) -> None:
         file=sys.stderr,
         flush=True,
     )
+
+
+def _seed_evidence(documents: Sequence[Mapping[str, Any]], *, limit: int = 16) -> list[dict[str, Any]]:
+    """Bounded local recall projection for the two-turn Librarian path."""
+
+    result: list[dict[str, Any]] = []
+    for index, document in enumerate(documents[:limit], start=1):
+        row: dict[str, Any] = {"ref": f"R{index}"}
+        for key in _SEED_KEYS:
+            if key not in document:
+                continue
+            value = document[key]
+            if isinstance(value, str):
+                row[key] = value[:1_200]
+            elif isinstance(value, (list, tuple)):
+                row[key] = [item[:500] if isinstance(item, str) else item for item in value[:12]]
+            elif value is None or isinstance(value, (bool, int, float)):
+                row[key] = value
+        result.append(row)
+    return result
 
 
 class _HarnessRuntimePort(DeepSeekHarnessRuntime, Protocol):
@@ -358,6 +385,7 @@ class HarnessBusinessAssembler:
             "source_scopes": sorted({str(row["source_scope"]) for row in documents}),
             "evidence_count": len(documents),
             "recall_queries": list(recall_queries),
+            "seed_evidence": _seed_evidence(documents),
         }
         return self._draft(
             documents=documents,

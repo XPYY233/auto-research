@@ -258,7 +258,10 @@ class HarnessBusinessActionTests(unittest.TestCase):
                 "history": [],
             }
         )
-        self.assertEqual((draft.max_calls, draft.max_tokens), (8, 128_000))
+        self.assertEqual((draft.max_calls, draft.max_tokens), (2, 8_000))
+        seed = draft.outbound["prompt"]["seed_evidence"]
+        self.assertTrue(seed)
+        self.assertEqual(seed[0]["ref"], "R1")
         self.assertEqual(draft.content_units[0].kind, "harness_literature")
         prepared = action(draft, "librarian")
         raw = RawClient()
