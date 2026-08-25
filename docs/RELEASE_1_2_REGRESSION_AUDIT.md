@@ -49,6 +49,10 @@ No version bump, App replacement, DMG or “stable” statement is allowed until
 5. Complete package/dataset workflows and truthful import/export receipts.
 6. Only then run full tests, real paid acceptance, installed-App walkthrough and release packaging serially.
 
+The frozen three-round layout findings and per-page action hierarchy are in
+`docs/WORKBENCH_LAYOUT_AUDIT_1_2.md`. UX acceptance must use that document rather
+than adding one-off CSS exceptions for individual screenshots.
+
 ## Scientific release gate
 
 - No fabricated numeric value or curve point.
