@@ -54,6 +54,7 @@
           <div class="fusion-tree-row static"><span>证据条目</span><b id="fusion-current-paper-count">—</b></div>
         </section>
         <section class="fusion-context-view" data-context-view="search" hidden>
+          <div data-search-context-mode="precise">
           <p class="fusion-section-label">来源</p>
           <button type="button" class="fusion-tree-row active" data-search-source="workspace"><span>本机文献工作区</span><b>V12</b></button>
           <button type="button" class="fusion-tree-row" data-search-source="official"><span>官方资料库</span><b>签名只读</b></button>
@@ -66,6 +67,14 @@
             <button type="button" class="fusion-tree-row active" data-evidence-type="table" aria-pressed="true"><span>完整表格</span><b id="fusion-count-table">—</b></button>
             <button type="button" class="fusion-tree-row active" data-evidence-type="figure" aria-pressed="true"><span>论文图片</span><b id="fusion-count-figure">—</b></button>
           </div>
+          </div>
+          <div data-search-context-mode="librarian" hidden>
+            <button type="button" class="fusion-primary-action fusion-context-primary" id="fusion-librarian-new">＋ 新对话</button>
+            <label class="fusion-librarian-history-search" for="fusion-librarian-history-query"><span aria-hidden="true">⌕</span><input id="fusion-librarian-history-query" type="search" placeholder="搜索历史对话" autocomplete="off"></label>
+            <div class="fusion-librarian-history" id="fusion-librarian-history" aria-live="polite"><div class="fusion-state-card"><strong>正在读取历史对话…</strong><span>仅从本机加密状态区读取。</span></div></div>
+            <small class="fusion-librarian-history-privacy" id="fusion-librarian-history-privacy">对话历史与科学数据库分开保存。</small>
+            <p class="fusion-context-note">图书管理员不会读取私人实验。每次收费调用前都会展示模型、发送范围与上限。</p>
+          </div>
         </section>
         <section class="fusion-context-view" data-context-view="personal" hidden>
           <p class="fusion-section-label">当前文件</p>
@@ -77,10 +86,14 @@
           <div class="fusion-tree-row static"><span>AI 预填</span><b id="fusion-ai-context-state">逐次授权</b></div>
         </section>
         <section class="fusion-context-view" data-context-view="package" hidden>
-          <p class="fusion-section-label">资料库</p>
-          <div class="fusion-tree-row active static"><span>官方资料库</span><b id="fusion-package-context-official">正在读取</b></div>
+          <p class="fusion-section-label">选择一个工作流</p>
+          <button type="button" class="fusion-tree-row active" data-package-workflow="official"><span>官方资料库</span><b id="fusion-package-context-official">正在读取</b></button>
+          <button type="button" class="fusion-tree-row" data-package-workflow="literature"><span>导出论文集合</span><b>.aresearch</b></button>
+          <button type="button" class="fusion-tree-row" data-package-workflow="personal"><span>导出私人实验</span><b>.aresearch</b></button>
+          <button type="button" class="fusion-tree-row" data-package-workflow="dataset"><span>导出训练数据</span><b>JSONL / Parquet</b></button>
+          <button type="button" class="fusion-tree-row" data-package-workflow="user-import"><span>导入用户资料包</span><b>SHA-256</b></button>
+          <button type="button" class="fusion-tree-row" data-package-workflow="jobs"><span>任务与收据</span><b id="fusion-package-context-jobs">0</b></button>
           <div class="fusion-tree-row static"><span>已安装版本</span><b id="fusion-package-context-installed">—</b></div>
-          <div class="fusion-tree-row static"><span>资料包任务</span><b id="fusion-package-context-jobs">0</b></div>
           <p class="fusion-section-label">安全边界</p>
           <div class="fusion-context-note">官方资料包经签名与审计后只读启用；用户资料包只做 SHA-256 完整性校验，不加密、不认证发送者身份。</div>
         </section>
@@ -139,13 +152,6 @@
           <header class="fusion-search-toolbar"><div class="fusion-search-primary-row"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">筛选</button><label class="fusion-query"><span aria-hidden="true">⌕</span><input id="fusion-search-query" placeholder="题目、DOI、材料、条件或物理量" aria-label="搜索词"></label><div class="fusion-action-cluster" role="tablist" aria-label="搜索模式"><button type="button" class="fusion-primary-action active" id="fusion-run-precise-search" role="tab" aria-selected="true">⌕ 精确检索</button><button type="button" class="fusion-librarian-action" id="fusion-open-librarian" role="tab" aria-selected="false">▣ 图书管理员 <small>联合文献</small></button></div><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button></div><div class="fusion-search-secondary-row"><div class="fusion-export-group fusion-search-export-group" aria-label="导出当前工作区精确检索结果"><strong>当前检索批量导出</strong><a id="fusion-search-item-csv" aria-disabled="true" tabindex="-1" download rel="noopener">测量 CSV</a><a id="fusion-search-item-xlsx" aria-disabled="true" tabindex="-1" download rel="noopener">测量 XLSX</a><a id="fusion-search-finding-csv" aria-disabled="true" tabindex="-1" download rel="noopener">结论 CSV</a><a id="fusion-search-finding-xlsx" aria-disabled="true" tabindex="-1" download rel="noopener">结论 XLSX</a><small id="fusion-search-export-note">仅批量导出本机文献中的测量与结论；表格、图片及其他资料源请用单条证据导出或资料包</small></div></div></header>
           <section class="fusion-search-mode" id="fusion-precise-panel" data-search-mode-panel="precise"><div class="fusion-scroll fusion-result-stream" id="fusion-search-results" role="listbox" aria-label="精确检索结果"><div class="fusion-state-card large" data-literature-state="loading"><strong>正在读取真实证据…</strong><span>精确检索只消费四类公开证据。</span></div></div></section>
           <section class="fusion-search-mode fusion-librarian-panel" id="fusion-librarian-panel" data-search-mode-panel="librarian" hidden>
-            <aside class="fusion-librarian-sidebar" aria-label="图书管理员对话">
-              <button type="button" class="fusion-primary-action" id="fusion-librarian-new">＋ 新对话</button>
-              <label class="fusion-librarian-history-search" for="fusion-librarian-history-query"><span aria-hidden="true">⌕</span><input id="fusion-librarian-history-query" type="search" placeholder="搜索历史对话" autocomplete="off"></label>
-              <div class="fusion-librarian-history" id="fusion-librarian-history" aria-live="polite"><div class="fusion-state-card"><strong>正在读取历史对话…</strong><span>仅从本机加密状态区读取。</span></div></div>
-              <small class="fusion-librarian-history-privacy" id="fusion-librarian-history-privacy">对话历史与科学数据库分开保存。</small>
-              <p>图书管理员不会读取私人实验。每次收费调用前都会展示模型、发送范围与上限。</p>
-            </aside>
             <section class="fusion-librarian-chat" aria-label="图书管理员聊天">
               <header><div><strong>图书管理员</strong><small>检索、核验引用并支持连续追问</small></div><button type="button" id="fusion-librarian-remember" disabled>记住本轮结论</button><button type="button" class="fusion-librarian-results-toggle" id="fusion-librarian-results-toggle" hidden aria-controls="fusion-librarian-results" aria-expanded="false">检索结果 <b id="fusion-librarian-results-count">0</b></button><span id="fusion-librarian-status" aria-live="polite">可以开始新的研究问题</span></header>
               <div class="fusion-scroll fusion-librarian-output fusion-chat-thread" id="fusion-librarian-output" aria-live="polite"><div class="fusion-chat-welcome"><strong>直接描述你的研究问题</strong><p>我会先理解条件，再检索四类证据，最后给出可追溯回答、引用论文和相关建议。</p></div></div>
@@ -251,6 +257,7 @@
   <script src="/static/ai_consent.js"></script>
   <script src="/static/document_tab_store.js"></script>
   <script src="/static/pane_layout_controller.js"></script>
+  <script src="/static/workspace_layout_controller.js"></script>
   <script src="/static/fusion_pdf_controller.js"></script>
   <script src="/static/fusion_ai_experience.js"></script>
   <script src="/static/fusion_review.js"></script>

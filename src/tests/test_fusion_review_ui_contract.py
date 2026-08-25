@@ -139,7 +139,8 @@ class FusionReviewUIContractTests(unittest.TestCase):
             "function renderEditorSurfaces(", "function secondaryDocumentHTML(",
             'documentTabs?.reopenClosed()', 'documentTabs.move(active.tabId,"primary")',
             'data-document-group-id=', "const geometry=paneGeometry(snapshot)",
-            'else if(primaryCollapsed&&secondaryCollapsed)', 'secondary.hidden=!geometry.hasSecondary',
+            'if(primaryCollapsed&&secondaryCollapsed)primaryCollapsed=false',
+            'secondary.hidden=!geometry.hasSecondary||(geometry.narrow?snapshot.activeGroupId!=="secondary":geometry.secondaryCollapsed)',
             'openTab&&documentTabs&&paneViewport()>=900',
             'openSecondaryEvidence(row,state.view,{preview,pin})',
             '/api/six-data/${row.itemId}/source-view',
@@ -183,6 +184,7 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertIn("--fusion-primary-fr", self.css)
         self.assertIn('html[data-pane-resizing="true"]', self.css)
         self.assertIn("@container fusion-editor (max-width:1180px)", self.css)
+        self.assertIn("@media(min-width:1200px) and (max-width:1599px)", self.css)
         self.assertNotIn(".fusion-toolbar .fusion-action-cluster { order:3;width:100%", self.css)
         self.assertNotIn(".fusion-toolbar .fusion-action-cluster { order:3;max-width:100%", self.css)
         self.assertNotIn(".fusion-toolbar .fusion-action-cluster,.fusion-detail-toolbar>div { width:100%", self.css)
@@ -671,10 +673,10 @@ const groupPrimary=new El(),groupSecondary=new El(),html={{dataset:{{}},style:{{
 const singles={{'[data-document-group="primary"]':groupPrimary,'[data-document-group="secondary"]':groupSecondary}};
 const all={{'[data-librarian-result]':[],'[data-librarian-article]':[],'[data-pane-toggle="context"]':[],'[data-pane-toggle="inspector"]':[],'[data-pane-toggle="primary"]':[],'[data-pane-toggle="secondary"]':[],'[data-secondary-return-tab]':[],'[data-secondary-pdf-highlight-toggle]':[],'[data-secondary-open-pdf]':[],'[data-secondary-open-paper-pdf]':[],'[data-secondary-paper-evidence]':[],'[data-secondary-table-page]':[],'[data-document-tab-id]':[],'[data-close-document-tab]':[]}};
 globalThis.document={{readyState:'loading',documentElement:html,body,querySelector:s=>ids[s]||singles[s]||null,querySelectorAll:s=>all[s]||[],addEventListener(){{}}}};globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.innerWidth=1280;
-eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'pane_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
+eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'pane_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'workspace_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
 const row=(uid,title)=>({{type:'item',title,value:'4.1',unit:'GPa',meaning:title,sourceScope:'official',sourceId:'official-main',entityUid:uid,page:7,articleTitle:'论文 '+title,excerpt:'原文 '+title,quantities:[],variables:{{}},materials:[],conditions:'',methods:'',linkedItemCount:0,tags:[]}}),A=row('item:a','证据 A'),B=row('item:b','证据 B');
 api.state.view='search';api.state.searchMode='librarian';api.state.librarianResults=[A,B];api.state.librarianArticles=[];api.state.librarianResultsOpen=false;api.documentTabs.open({{tabId:'evidence:background',kind:'evidence',ownerView:'search',title:'已有详情',identity:{{sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:background'}},payload:{{row:A,status:'ready'}}}},{{groupId:'secondary',pin:true}});api.paneController.expandEditor('secondary',{{persist:false}});api.paneController.expandSide('inspector',{{persist:false}});let geometry=api.coordinateTaskLayout('librarian-chat');assert.equal(geometry.inspectorDocked,false,'chat without selected evidence releases inspector');assert.equal(api.paneLayout.inspector.collapsed,false,'task suppression preserves inspector preference');api.renderLibrarianResultNavigator();assert.equal(api.setLibrarianResultsOpen(true),true);assert.equal(ids['#fusion-librarian-results'].hidden,false);assert(ids['#fusion-librarian-panel'].classList.contains('results-open'));geometry=api.applyPaneLayout();assert.equal(geometry.inspectorDocked,false,'result rail releases inspector space');assert.equal(geometry.contextDocked,false,'result rail releases unrelated context');assert.equal(geometry.secondaryCollapsed,true,'result rail releases unrelated secondary editor');assert.equal(api.paneLayout.editors.secondaryCollapsed,false,'result rail does not close the stored secondary group');
-(async()=>{{assert(await api.openLibrarianEvidence(0));let secondary=api.documentTabs.activeTab('secondary');assert(secondary);geometry=api.applyPaneLayout();assert.equal(geometry.secondaryCollapsed,false,'evidence detail restores secondary editor');assert.equal(geometry.contextDocked,true,'1280 keeps the source context when both editors remain readable');assert.equal(geometry.inspectorDocked,false,'1280 detail keeps the evidence AI pane available without crowding the editor');assert(api.togglePane('inspector'));geometry=api.applyPaneLayout();assert.equal(geometry.inspectorDocked,true,'the user can explicitly restore evidence AI');assert.equal(secondary.payload.row.title,'证据 A');assert.equal(api.state.selectedEvidence.title,'证据 A');assert.equal(api.selectedEvidenceAIIdentity().entityUid,'item:a');
+(async()=>{{assert(await api.openLibrarianEvidence(0));let secondary=api.documentTabs.activeTab('secondary');assert(secondary);geometry=api.applyPaneLayout();assert.equal(geometry.secondaryCollapsed,false,'evidence detail restores secondary editor');assert.equal(geometry.contextDocked,false,'1280 gives the librarian evidence detail the available secondary column');assert.equal(geometry.inspectorDocked,false,'librarian never restores a global inspector');assert.equal(api.togglePane('inspector'),false,'librarian rejects the global inspector');geometry=api.applyPaneLayout();assert.equal(geometry.inspectorDocked,false);assert.equal(secondary.payload.row.title,'证据 A');assert.equal(api.state.selectedEvidence.title,'证据 A');assert.equal(api.selectedEvidenceAIIdentity().entityUid,'item:a');
  api.state.evidenceChat.messages=[{{role:'user',content:'问题 A'}},{{role:'assistant',content:'回答 A'}}];assert(await api.openLibrarianEvidence(1));secondary=api.documentTabs.activeTab('secondary');assert.equal(secondary.payload.row.title,'证据 B');assert.equal(api.state.evidenceChat.messages.length,0);api.state.evidenceChat.messages=[{{role:'user',content:'问题 B'}},{{role:'assistant',content:'回答 B'}}];assert(await api.openLibrarianEvidence(0));assert.deepEqual(api.state.evidenceChat.messages.map(x=>x.content),['问题 A','回答 A']);assert.deepEqual(api.state.evidenceChat.threads.get('official:official-main:item:item:b').map(x=>x.content),['问题 B','回答 B']);
 }})().catch(error=>{{console.error(error);process.exitCode=1;}});
 """
@@ -745,7 +747,7 @@ finishPaidJob();await paid;assert.equal(api.state.evidenceChat.busy,false);asser
             'projectAIActivity(scope,{...event,job_id:job.job_id})',
             "function visibleEvidenceDetail()", "function activeEvidenceChatHost()",
             'qa("[data-evidence-ai-form]")',
-            '["paper","search"].includes(state.view)&&!state.selectedEvidence)paneTaskSuppression.inspector=true',
+            'hasInspectorSelection=Boolean(state.selectedEvidence)', 'workspaceLayout?.project',
             ".fusion-evidence-ai-output",
             ".fusion-evidence-chat .fusion-chat-composer", ".fusion-librarian-form",
         ):
@@ -825,8 +827,8 @@ assert.equal(api.publicReviewQueue({{...dto,total:2}}),null);assert.equal(api.pu
         for marker in (
             "--fusion-titlebar:34px", "--fusion-activity:48px", "--fusion-context:244px",
             "--fusion-tabs:36px", "--fusion-inspector:340px", "--fusion-statusbar:22px",
-            "@media(min-width:1280px)", "@media(min-width:900px) and (max-width:1279px)",
-            "@media(min-width:640px) and (max-width:899px)", "@media(max-width:639px)",
+            "@media(min-width:1600px)", "@media(min-width:1200px) and (max-width:1599px)",
+            "@media(min-width:640px) and (max-width:1199px)", "@media(max-width:639px)",
             "@media(prefers-reduced-motion:reduce)", "position:sticky", "font-variant-numeric:tabular-nums",
             'event.key==="Escape"', "focusReturn", "aria-selected", "aria-current",
         ):

@@ -197,6 +197,15 @@ class FusionReviewModeTests(unittest.TestCase):
                     self.assertEqual(response.headers.get("Cache-Control"), "no-store")
                     self.assertIn(b"AutoResearchPaneLayout", response.read())
                 with opener.open(
+                    f"{base}/static/workspace_layout_controller.js", timeout=5
+                ) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(
+                        response.headers.get_content_type(), "text/javascript"
+                    )
+                    self.assertEqual(response.headers.get("Cache-Control"), "no-store")
+                    self.assertIn(b"AutoResearchWorkspaceLayout", response.read())
+                with opener.open(
                     f"{base}/static/fusion_pdf_controller.js", timeout=5
                 ) as response:
                     self.assertEqual(response.status, 200)

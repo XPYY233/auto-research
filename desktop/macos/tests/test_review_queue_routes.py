@@ -143,10 +143,10 @@ class ReviewQueueRouteTests(unittest.TestCase):
                     [] if read_only else [handler.path],
                 )
 
-    def test_fusion_review_document_tab_store_is_session_protected_javascript_no_store(self) -> None:
-        def handler(authorized: bool):
+    def test_fusion_review_shared_layout_runtimes_are_session_protected_javascript_no_store(self) -> None:
+        def handler(authorized: bool, path: str):
             value = object.__new__(DesktopEvidenceHandler)
-            value.path = "/static/document_tab_store.js"
+            value.path = path
             value.experience_mode = "fusion-review"
             value.read_only = True
             value.wfile = io.BytesIO()
@@ -170,18 +170,23 @@ class ReviewQueueRouteTests(unittest.TestCase):
             value.evidence_export_api = None
             return value
 
-        denied = handler(False)
-        denied.do_GET()
-        self.assertEqual(denied.status, HTTPStatus.FORBIDDEN)
-        self.assertEqual(denied.wfile.getvalue(), b"")
+        for path, marker in (
+            ("/static/document_tab_store.js", b"AutoResearchDocumentTabs"),
+            ("/static/workspace_layout_controller.js", b"AutoResearchWorkspaceLayout"),
+        ):
+            with self.subTest(path=path):
+                denied = handler(False, path)
+                denied.do_GET()
+                self.assertEqual(denied.status, HTTPStatus.FORBIDDEN)
+                self.assertEqual(denied.wfile.getvalue(), b"")
 
-        allowed = handler(True)
-        allowed.do_GET()
-        self.assertEqual(allowed.status, HTTPStatus.OK)
-        headers = dict(allowed.headers_out)
-        self.assertIn("javascript", headers["Content-Type"])
-        self.assertEqual(headers["Cache-Control"], "no-store")
-        self.assertIn(b"AutoResearchDocumentTabs", allowed.wfile.getvalue())
+                allowed = handler(True, path)
+                allowed.do_GET()
+                self.assertEqual(allowed.status, HTTPStatus.OK)
+                headers = dict(allowed.headers_out)
+                self.assertIn("javascript", headers["Content-Type"])
+                self.assertEqual(headers["Cache-Control"], "no-store")
+                self.assertIn(marker, allowed.wfile.getvalue())
 
     def test_fusion_ai_experience_and_pet_assets_are_session_protected(self) -> None:
         for path, mime_marker, body_marker in (
