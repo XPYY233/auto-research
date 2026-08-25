@@ -1,0 +1,86 @@
+{
+  "schema": "auto-research-workbench-recovery-v1",
+  "approved_at": "2026-08-25",
+  "product_intent": "0.5 workflow calm and completeness with VS Code hierarchy and on-demand split editors",
+  "reference_artifact": "/Users/USER/Zotero/Auto-Research-1.2-Audit-Proposal/expected-workbench.html",
+  "global_rules": {
+    "default_layers": 3,
+    "maximum_simultaneous_columns": 4,
+    "forbid_five_column_wall": true,
+    "primary_actions_above_fold": true,
+    "single_navigation_owner": true,
+    "single_geometry_owner": true,
+    "secondary_editor_is_on_demand": true,
+    "inspector_requires_concrete_selection": true,
+    "no_cross_view_dom_reparenting": true,
+    "no_hidden_legacy_page": true
+  },
+  "views": {
+    "literature": {
+      "activity": true,
+      "context": "paper_catalog",
+      "primary": "paper_document",
+      "secondary": "on_demand_comparison",
+      "inspector": "selection_only",
+      "primary_actions": ["import_pdf", "start_extraction", "open_pdf", "open_review_queue"]
+    },
+    "search": {
+      "activity": true,
+      "context": "source_and_type_filters",
+      "primary": "search_results",
+      "secondary": "automatic_preview_then_pinned_detail",
+      "inspector": "disabled_when_secondary_visible",
+      "primary_actions": ["precise_search", "open_librarian", "export_results"]
+    },
+    "librarian": {
+      "activity": true,
+      "context": "conversation_history",
+      "primary": "full_chat_document",
+      "secondary": "clickable_result_navigator_when_results_exist",
+      "inspector": "disabled",
+      "primary_actions": ["new_conversation", "send", "stop", "open_citation", "open_recommended_article"]
+    },
+    "experiment": {
+      "activity": true,
+      "context": "files_and_sheets",
+      "primary": "tabular_grid",
+      "secondary": "disabled",
+      "inspector": "selected_column",
+      "primary_actions": ["choose_file", "request_ai_suggestion", "confirm_import_once"]
+    },
+    "package": {
+      "activity": true,
+      "context": "single_workflow_selector",
+      "primary": "selected_workflow",
+      "secondary": "disabled",
+      "inspector": "disabled",
+      "primary_actions": ["plan", "choose_destination_and_export", "import", "open_receipt"]
+    },
+    "settings": {
+      "activity": true,
+      "context": "settings_categories",
+      "primary": "settings_page",
+      "secondary": "disabled",
+      "inspector": "disabled",
+      "primary_actions": ["save", "verify", "delete", "clear_history"]
+    }
+  },
+  "responsive": {
+    "wide_min_px": 1600,
+    "desktop_min_px": 1200,
+    "compact_desktop_min_px": 900,
+    "wide": "context plus one editor plus inspector OR context plus two editors, never both",
+    "desktop": "context plus one editor; inspector is a drawer; a split temporarily releases context",
+    "compact_desktop": "one editor; context and inspector are drawers",
+    "narrow": "one editor group with explicit return actions and preserved tabs"
+  },
+  "acceptance": {
+    "must_use_real_webview": true,
+    "must_test_light_and_dark": true,
+    "must_test_comfortable_and_compact": true,
+    "must_test_widths_px": [1680, 1440, 1280, 1024, 900, 720],
+    "must_preserve_focus_scroll_and_tabs": true,
+    "must_never_hide_all_editors": true,
+    "must_not_claim_feature_success_from_selector_presence": true
+  }
+}

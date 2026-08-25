@@ -1,5 +1,18 @@
 # Auto Research 阶段性交班总览
 
+## 1.2 工作台恢复线（2026-08-25，当前唯一开发权威）
+
+- 用户已批准 `Auto-Research-1.2-Audit-Proposal/expected-workbench.html` 作为最终生产界面的验收预期：保留0.5的从容、主操作可见和完整工作流，采用VS Code的活动栏、上下文栏、标签与按需分栏。
+- 全面审计与串行实施计划由提交`c8b2c66`冻结，权威文件为`docs/AUTO_RESEARCH_1_2_FULL_AUDIT_AND_PLAN_ZH.md`、`docs/WORKBENCH_LAYOUT_AUDIT_1_2.md`和`config/workbench-recovery-contract.json`。
+- 当前安装App是`1.2.0`/build47，来自提交`033b12b`。它已被用户实机证明存在布局、AI和连续工作流回归，不得继续称为稳定交付，也不得以HEAD源码修复替代安装App验收。
+- 当前主线从`aa64c21`继续；上一轮被中断的Fusion标签hydration实验已隔离到Git stash `quarantine-interrupted-fusion-experiment-20260825`，不得未经重新审查直接恢复或发布。
+- 当前只执行Phase 0/1：冻结单一布局/文档契约并重建工作台壳和六个关键页。不得同时修AI、提取、资料包或平台路由；不得为适配旧测试恢复第五列、第二导航或旧DOM。
+- 页面默认三层、按需四层，永不同时显示上下文栏、两个编辑器组和检查器。文献、搜索、图书管理员、实验、资料包、设置的允许栏位和首屏主操作由`workbench-recovery-contract.json`唯一规定。
+- root仍是唯一Git写入、集成与发布者；其他同项目Codex任务只编辑明确文件范围，不stage/commit。电脑发热时最多一个前端开发任务与root低负载审查并行；全测、构建和模型调用继续冻结。
+- 生产`db/experimental_evidence.sqlite`和`data/evidence/visual_assets/paper_056_4e85e57cc6/`保持用户现场，不得暂存、还原、测试、构建或清理。Windows继续冻结。
+
+以下历史章节只用于追溯，不再覆盖本节的当前权威。
+
 ## v1.1.0 build 43 Mac 候选（2026-08-25，当前开发权威）
 
 - 当前安装版为 build 42；build 24 仍是已验证稳定回退点，build 41已有不可启动回退副本。build 43 保持 `1.1.0` 语义版本，只有干净提交构建、事务式安装、真实 WebView 和四项付费 AI 验收全部通过后，才能替换稳定结论。

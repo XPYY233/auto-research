@@ -1,12 +1,32 @@
 {
   "schema": "auto-research-architecture-debt-v1",
-  "generated_at": "2026-08-22",
+  "generated_at": "2026-08-25",
   "policy": {
     "allowed_statuses": ["stable", "experimental", "compatibility", "retired"],
     "owner_required": true,
     "removal_requires_contract_tests": true
   },
   "items": [
+    {
+      "id": "ARCH-P0-006",
+      "priority": "P0",
+      "area": "workbench-usability",
+      "owner": "shared-frontend",
+      "status": "experimental",
+      "problem": "Fusion把上下文栏、双编辑器、检查器、AI和任务状态同时投影，已在真实App产生五列墙、空白页、主操作隐藏和连续流程回归",
+      "target": "严格消费workbench-recovery-contract-v1，默认三层、按需四层、永不五列，并以真实WebView而非字符串存在性作为验收",
+      "removal_gate": "六个关键页在1680/1440/1280/1024/900/720px、日夜与两种密度下通过用户视觉和键盘/拖拽验收"
+    },
+    {
+      "id": "ARCH-P0-007",
+      "priority": "P0",
+      "area": "release-evidence-drift",
+      "owner": "release-lead",
+      "status": "experimental",
+      "problem": "源码、自动测试、构建制品和安装App被混用为完成证据，当前安装build47与HEAD不一致且用户流程不合格",
+      "target": "每项发布能力分别记录领域代码、自动测试、安装App和科学质量证据，缺一项不得宣称稳定",
+      "removal_gate": "干净提交、构建manifest、安装App和用户验收单绑定同一提交与版本"
+    },
     {
       "id": "ARCH-P0-001",
       "priority": "P0",
@@ -63,9 +83,9 @@
       "area": "frontend",
       "owner": "shared-frontend",
       "status": "experimental",
-      "problem": "Fusion已抽出DocumentTabStore，但app.js仍约4379行、desktop_product.js约968行，历史状态与视图职责仍集中",
-      "target": "无构建器ES模块：api-store、literature、search-librarian、personal、package-center、evidence、history",
-      "removal_gate": "原DOM ID和endpoint黄金契约、macOS/Windows共享资源哈希一致"
+      "problem": "当前生产HTML已不加载app.js和desktop_product.js，但约748行fusion_review.js仍导出超过100个入口并同时承担文献、搜索、实验、资料包、设置、AI、标签和布局协调；旧大文件及消费者仍留在仓库",
+      "target": "先冻结bootstrap、workspace、document和各业务controller依赖方向，再迁移消费者并物理删除不再加载的旧控制器",
+      "removal_gate": "唯一生产bootstrap与导航所有者、无死导出/重复监听、旧文件无生产或测试消费者、真实WebView主链通过"
     },
     {
       "id": "ARCH-P1-002",
@@ -103,9 +123,19 @@
       "area": "fusion-ai-settings",
       "owner": "shared-frontend",
       "status": "experimental",
-      "problem": "build25已将分栏几何拆为独立PaneLayoutController，但AI设置的渲染和状态适配仍位于fusion_review.js",
-      "target": "保持Fusion唯一导航、唯一请求包装器与唯一监听，仅把AI设置纯渲染和状态适配拆成无副作用模块",
-      "removal_gate": "生产DOM、prepared-action、readiness和四业务黄金契约通过，且没有第二AI controller或重复监听"
+      "problem": "PaneLayoutController、DocumentTabStore和Fusion分别持有部分可见性、恢复与任务投影语义，AI设置和多业务状态仍集中在fusion_review.js",
+      "target": "WorkspaceLayoutController唯一拥有栏位投影，DocumentTabStore只拥有文档身份，PaneLayoutController只拥有几何，业务controller不得直接改全局栏位",
+      "removal_gate": "拖拽、抽屉、任务切换、标签恢复和迟到请求契约通过，且任何路径都不能隐藏全部编辑器"
+    },
+    {
+      "id": "ARCH-P1-007",
+      "priority": "P1",
+      "area": "python-import-cycles",
+      "owner": "shared-core",
+      "status": "experimental",
+      "problem": "静态导入图存在5组循环依赖，其中9模块、6模块和3模块强连通分量穿过webapp、提取、质量、视觉和原子发布主链",
+      "target": "抽出纯契约/DTO和单向orchestration端口，禁止finalizer/job/visual stage及quality/extraction相互导入",
+      "removal_gate": "静态依赖门报告核心生产模块零循环，公开DTO和两条端到端主链保持兼容"
     },
     {
       "id": "ARCH-P1-006",

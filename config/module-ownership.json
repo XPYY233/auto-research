@@ -1,6 +1,6 @@
 {
   "schema": "auto-research-module-ownership-v1",
-  "updated_at": "2026-08-22",
+  "updated_at": "2026-08-25",
   "allowed_statuses": ["stable", "experimental", "compatibility", "retired"],
   "modules": [
     {
@@ -91,8 +91,8 @@
       "id": "shared-desktop-ui",
       "paths": ["src/auto_research/evidence/web", "src/auto_research/evidence/web/pane_layout_controller.js"],
       "owner": "shared-frontend",
-      "status": "stable",
-      "authority": "single Fusion workbench UI, DocumentTabStore, PaneLayoutController, evidence filters and inspector projections; platforms must not fork HTML, layout geometry or business state"
+      "status": "experimental",
+      "authority": "single Fusion workbench recovery path; workbench-recovery-contract-v1 governs hierarchy, DocumentTabStore governs document identity, and the UI cannot become stable before installed-App visual and workflow acceptance"
     },
     {
       "id": "macos-shell",

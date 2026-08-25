@@ -1,5 +1,9 @@
 # Auto Research Evidence 阶段发布状态
 
+> **当前稳定声明已暂停。** 机器上安装的`1.2.0`/build47来自`033b12b`，用户实机发现布局、AI与连续工作流回归；它不能作为下一版本的稳定基线。当前开发必须遵循`docs/AUTO_RESEARCH_1_2_FULL_AUDIT_AND_PLAN_ZH.md`和`config/workbench-recovery-contract.json`，完成真实安装App验收后才重新建立稳定声明。
+
+> `0.5.1`/build6继续作为已验证工作流和交互从容度的比较基线；当前安全、原子发布、官方包v2和数据集能力必须保留，不能直接回退旧收费路由或旧DOM。以下旧“稳定交付”段落仅是历史证据，不代表当前1.2可发布。
+
 > 当前稳定交付为 Auto Research `1.1.0` / build `24`。它只面向 Apple Silicon macOS，采用 ad-hoc 签名、未公证，不是 App Store/Developer ID 公开发行。Windows 1.1迁移冻结。
 
 > build `27` 目前只是源码候选：build 25 的 DeepSeek 推理探针失败；build 26 修复连接与工具能力后，真实 App 又发现实验预填能力验证的前后端上限不一致。build 27 修复独立验证预算后，仍须重新通过四项付费AI、完整测试和安装验收；失败时继续使用build 24。
