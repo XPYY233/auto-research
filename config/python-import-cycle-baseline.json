@@ -1,0 +1,39 @@
+{
+  "schema": "auto-research-python-import-cycle-baseline-v1",
+  "generated_at": "2026-08-25",
+  "policy": "No new production import cycle may be introduced. Existing strongly connected components may only shrink until they are removed.",
+  "components": [
+    [
+      "auto_research.cli",
+      "auto_research.evidence.evidence_export",
+      "auto_research.evidence.goal_audit",
+      "auto_research.evidence.quality_test_set",
+      "auto_research.evidence.reextract_test_set",
+      "auto_research.evidence.review_handoff",
+      "auto_research.evidence.self_check",
+      "auto_research.evidence.test_set",
+      "auto_research.evidence.webapp"
+    ],
+    [
+      "auto_research.evidence.deepseek_extraction",
+      "auto_research.evidence.extraction_benchmark",
+      "auto_research.evidence.learning",
+      "auto_research.evidence.quality_pipeline",
+      "auto_research.evidence.six_column",
+      "auto_research.evidence.visual_evidence"
+    ],
+    [
+      "auto_research.evidence.literature_extraction_finalizer",
+      "auto_research.evidence.literature_extraction_job",
+      "auto_research.evidence.literature_visual_stage"
+    ],
+    [
+      "auto_research.ai.openai_compatible",
+      "auto_research.settings.ai_runtime_state"
+    ],
+    [
+      "auto_research.product.package_transfer_payloads",
+      "auto_research.product.transfer_package"
+    ]
+  ]
+}
