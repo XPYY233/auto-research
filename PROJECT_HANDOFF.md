@@ -3,12 +3,14 @@
 ## 1.2 工作台恢复线（2026-08-25，当前唯一开发权威）
 
 - build51源码候选已收口到运行时代码检查点`5c2055f`：任务感知栏位投影会隐藏无意义的检查器/第二编辑器控制，图书管理员宽屏保持“历史 + 完整对话 + 可点击结果”三层，AI失败保留具体阶段与恢复入口；布局投影保持纯计算，拖拽或命令面板不得通过副作用隐藏全部编辑器。该检查点串行通过共享`1116`项（另80项明确外部样本跳过）、macOS`307`项、Python编译、10份生产JavaScript语法和发布资源哈希检查。验证前后用户生产SQLite哈希均为`0389a5aa0faf4967696e3c3a5a574eaaf0bec08a34f48c69b98f50c705aa80b0`；未暂存数据库或`paper_056`现场。
-- build51仍只是源码候选，尚未构建、安装或完成真实WebView/四项AI验收。不得把上述自动测试写成稳定声明；只有干净构建、事务式安装和同一制品的用户流程通过后，才可替换下方build50候选身份。
-- 当前候选已从干净提交`45720ce`构建并事务式安装为`/Applications/Auto Research.app`（`1.2.0` / build50）。旧build49保存在仓库外不可启动`.app.rollback`；系统版本与签名、DMG和构建清单一致。
+- build51已从干净提交`4040a73`完成冻结冒烟、ad-hoc签名、DMG生成和事务式安装，当前唯一可启动App为`/Applications/Auto Research.app`（`1.2.0` / build51）。旧build50保存在仓库外不可启动回退副本。DMG SHA-256为`8e5d2696037a6679cf533bb52018b380c55ee73a25ef50a08165459492977799`，App可执行文件SHA-256为`347e3fb19787f80f174e19676a5389cda7a5d371ba169e3ee76583574d7f46f5`。
+- build51候选用户套件位于`/Users/USER/Zotero/auto-research-releases/v1.2.0-build51-mac-candidate/Auto-Research-1.2.0-build51-Mac-Candidate.zip`，SHA-256为`b67fc7e578e270d13e275598c7308d9f693d3f36ed93a02884f3a7abcc266289`。套件包含DMG、独立`1.1.0`官方资料包、8页中文教程和校验清单；三项制品与ZIP均已复核。官方包再次在隔离新数据根完成真实安装和只读仓库审计：59篇、4,369条（item 3,142 / finding 936 / table 49 / figure 242）、59份PDF、291项视觉资产，内容指纹`bc226740124c83c97d1c98e28686cc0fae648656e3c4f57578e60200afc3f301`。
+- build51仍未完成同一安装制品的真实WebView与四项AI点击验收，稳定声明继续暂停。Mac当前锁屏，Computer Use不能读取或操作App；解锁后必须完成四入口、布局/分栏、搜索、真实证据/PDF、设置/历史，以及图书管理员、证据问答、实验建议和一页隔离PDF提取各一次。不得把上述构建、资料包审计或此前源码级真实模型调用写成build51稳定验收。
+- 上一候选build50来自干净提交`45720ce`，曾完成构建与安装，现已由build51事务式替换并保存在仓库外不可启动`.app.rollback`；以下build50记录只作历史追溯。
 - build50已串行通过共享`1109`项（另有80项明确外部样本跳过）、macOS`305`项、Python编译、10份生产JavaScript语法、14份发布资源哈希、冻结App冒烟、严格深层签名、DMG校验和隔离60篇快照流程；生产SQLite与`paper_056`现场未进入测试或构建。
 - build50修复收费调用硬超时、拒绝响应释放、结果未知错误血缘，并把文献提取压缩为每个“分支×完整页分段”一次合并提取；1/7/15页初始调用上限由`6/12/24`降为`2/4/8`，仍保留双分支、按需覆盖核验、第三审核、表图与曲线安全门。
 - 用户套件已原子生成：`/Users/USER/Zotero/auto-research-releases/v1.2.0-build50-mac/Auto-Research-1.2.0-build50-Mac-UserKit.zip`，SHA-256为`69c2373a2e85cc9acce76d2bd780b2e64cbfab3d0f9b27652a5350213dbb5820`。内含DMG、独立版本`1.1.0`官方包和8页中文教程；ZIP与套件内三项文件均已复核。
-- 稳定声明仍差最后一项：Mac锁屏阻断安装后真实WebView点击验收。解锁后必须只读完成四入口、布局/分栏、搜索、真实证据/PDF、设置和历史检查；若任一步失败，build50立即撤回。此前真实DeepSeek已分别跑通图书管理员、证据问答、实验建议和一页文献提取，但优化后的整篇调用规划尚未再次付费压力测试，不得把自动测试写成新的科学准确率证据。
+- build50当时也因Mac锁屏未完成安装后真实WebView点击验收，现不再是当前候选。此前真实DeepSeek已分别跑通图书管理员、证据问答、实验建议和一页文献提取，但这些历史调用不能代替build51安装制品验收；优化后的整篇调用规划也尚未再次付费压力测试，不得把自动测试写成新的科学准确率证据。
 - 用户已批准 `Auto-Research-1.2-Audit-Proposal/expected-workbench.html` 作为最终生产界面的验收预期：保留0.5的从容、主操作可见和完整工作流，采用VS Code的活动栏、上下文栏、标签与按需分栏。
 - 全面审计与串行实施计划由提交`c8b2c66`冻结，权威文件为`docs/AUTO_RESEARCH_1_2_FULL_AUDIT_AND_PLAN_ZH.md`、`docs/WORKBENCH_LAYOUT_AUDIT_1_2.md`和`config/workbench-recovery-contract.json`。
 - build47来自提交`033b12b`，已被用户实机证明存在布局、AI和连续工作流回归，只保留为失败历史，不得作为稳定基线。
