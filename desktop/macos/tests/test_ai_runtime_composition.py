@@ -375,6 +375,14 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             production.count("default_secure_research_memory_store()"),
             1,
         )
+        self.assertEqual(
+            production.count("default_secure_evidence_chat_history_store()"),
+            1,
+        )
+        self.assertIn(
+            "evidence_chat_history_service=evidence_chat_history_service",
+            production,
+        )
         self.assertIn("auto-research-harness.runtime.cordis.yml", production)
         self.assertNotIn("librarian_business_ports(", production)
         self.assertNotIn("selected_evidence_chat_business_ports(", production)

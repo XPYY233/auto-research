@@ -131,6 +131,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and "/api/search-v2" in runtime_source
             and "/api/desktop/federated-search" in runtime_source
             and "/api/desktop/research-memories" in runtime_source
+            and "/api/desktop/evidence-chat-history" in runtime_source
             and "/api/uploads/pdf" in runtime_source
             and "/api/desktop/ai/actions/" in runtime_source
             and "/api/desktop/personal-imports/preview" in runtime_source
@@ -167,6 +168,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and {
                 "history_store",
                 "research_memory_service",
+                "evidence_chat_history_service",
                 "desktop_ai_api",
                 "desktop_settings_api",
                 "package_center_api",
@@ -213,6 +215,7 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
         "desktop_ai_settings": "/api/desktop/ai/settings",
         "librarian_history": "/api/desktop/librarian-history",
         "research_memories": "/api/desktop/research-memories",
+        "evidence_chat_history": "/api/desktop/evidence-chat-history",
         "personal_search_status": "/api/desktop/personal-imports/search-status",
         "federated_search": "/api/desktop/federated-search?q=%E6%B8%A9%E5%BA%A6&source_scope=official&page=1&page_size=2",
     }.items():
@@ -397,7 +400,9 @@ def _run_smoke_test(project_root: Path) -> int:
     from desktop_settings_store import MacAtomicDesktopSettingsStore
     from secure_history import SecureHistoryStore, StaticHistoryKeyProvider
     from secure_research_memory import SecureResearchMemoryStore
+    from secure_evidence_chat_history import SecureEvidenceChatHistoryStore
     from auto_research.desktop.research_memory import ResearchMemoryService
+    from auto_research.desktop.evidence_chat_history import EvidenceChatHistoryService
 
     production_database = project_root / "db" / "experimental_evidence.sqlite"
     with tempfile.TemporaryDirectory(prefix="auto-research-desktop-smoke-") as directory:
@@ -423,6 +428,16 @@ def _run_smoke_test(project_root: Path) -> int:
             SecureResearchMemoryStore(
                 research_memory_path,
                 StaticHistoryKeyProvider(b"\x92" * 32),
+                storage_label="test-static-aes-256-gcm",
+            )
+        )
+        evidence_chat_history_path = (
+            application_support / "History" / "evidence-chat-history-v1.enc"
+        )
+        evidence_chat_history_service = EvidenceChatHistoryService(
+            SecureEvidenceChatHistoryStore(
+                evidence_chat_history_path,
+                StaticHistoryKeyProvider(b"\x93" * 32),
                 storage_label="test-static-aes-256-gcm",
             )
         )
@@ -474,6 +489,7 @@ def _run_smoke_test(project_root: Path) -> int:
             read_only=False,
             history_store=history_store,
             research_memory_service=research_memory_service,
+            evidence_chat_history_service=evidence_chat_history_service,
             credential_store=ai_services.legacy_deepseek_store,
             desktop_ai_api=MacDesktopAIAPI(ai_services.controller),
             desktop_settings_api=DesktopSettingsAPI(
@@ -514,6 +530,9 @@ def _run_smoke_test(project_root: Path) -> int:
             )
             report["secure_history_ciphertext"] = not history_path.exists()
             report["secure_research_memory_ciphertext"] = not research_memory_path.exists()
+            report["secure_evidence_chat_history_ciphertext"] = (
+                not evidence_chat_history_path.exists()
+            )
         finally:
             server.shutdown()
             server.server_close()
@@ -533,6 +552,7 @@ def _run_smoke_test(project_root: Path) -> int:
         and report["http_stack"]
         and report["secure_history_ciphertext"]
         and report["secure_research_memory_ciphertext"]
+        and report["secure_evidence_chat_history_ciphertext"]
         and report["ai_consent_roundtrip"]
         and all(report["http_checks"].values())
         and all(report["frozen_product_contracts"].values())
@@ -556,7 +576,9 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     from package_import_service import DEFAULT_PACKAGE_DATA_ROOT
     from secure_history import default_secure_history_store
     from secure_research_memory import default_secure_research_memory_store
+    from secure_evidence_chat_history import default_secure_evidence_chat_history_store
     from auto_research.desktop.research_memory import ResearchMemoryService
+    from auto_research.desktop.evidence_chat_history import EvidenceChatHistoryService
 
     # The Fusion product restores the reviewed 0.8 service graph, but desktop
     # credentials still come only from the generation-bound secure store.
@@ -587,6 +609,9 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
         research_memory_service = ResearchMemoryService(
             default_secure_research_memory_store()
         )
+        evidence_chat_history_service = EvidenceChatHistoryService(
+            default_secure_evidence_chat_history_store()
+        )
         ai_services = mac_ai_runtime_services(
             database=database,
             personal_import_service=product_services.personal_import_service,
@@ -608,6 +633,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             read_only=False,
             history_store=default_secure_history_store(),
             research_memory_service=research_memory_service,
+            evidence_chat_history_service=evidence_chat_history_service,
             credential_store=ai_services.legacy_deepseek_store,
             desktop_ai_api=MacDesktopAIAPI(ai_services.controller),
             desktop_settings_api=DesktopSettingsAPI(

@@ -197,6 +197,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn("/api/desktop/ai/actions/", fusion_runtime)
         self.assertIn("/api/desktop/personal-imports/preview", fusion_runtime)
         self.assertIn("/api/desktop/research-memories", fusion_runtime)
+        self.assertIn("/api/desktop/evidence-chat-history", fusion_runtime)
         self.assertIn("loadResearchMemories", fusion_runtime)
         self.assertIn('report["ai_consent_roundtrip"]', launcher_source)
         self.assertIn("prepare_capability_test", launcher_source)
