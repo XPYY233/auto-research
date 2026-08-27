@@ -83,7 +83,7 @@
       "area": "frontend",
       "owner": "shared-frontend",
       "status": "experimental",
-      "problem": "生产HTML现加载Fusion九个经典脚本；资料包与个人导入业务已分别抽离到无自主生命周期的fusion_package_center.js和fusion_personal_import.js，但主脚本仍同时承担文献、搜索、设置、AI、标签和布局协调；app.js仍有共享CSRF/prepared-action/历史测试消费者，desktop_product.js、旧package_center.js和workbench.js已无Mac/共享正向测试消费者但仍在Windows冻结白名单中；safe update已改为只检查发布契约中的真实Fusion脚本",
+      "problem": "生产HTML现加载Fusion九个经典脚本；资料包与个人导入业务已分别抽离到无自主生命周期的fusion_package_center.js和fusion_personal_import.js，但主脚本仍同时承担文献、搜索、设置、AI、标签和布局协调；四个旧Web控制器已无共享或Mac正向消费者，但仍在Windows冻结白名单中；safe update已改为只检查发布契约中的真实Fusion脚本",
       "target": "保持单一bootstrap、workspace、document和请求端口；先迁移旧资源的最后消费者并物理删除不再加载的控制器，再按已验证端到端边界抽离文献或搜索垂直切片",
       "removal_gate": "唯一生产bootstrap与导航所有者、无死导出/重复监听、新静态资源进入macOS发布哈希与冻结冒烟、旧文件无生产/安全/迁移消费者、真实WebView主链通过"
     },
@@ -163,7 +163,7 @@
       "area": "legacy-web-compatibility",
       "owner": "maintenance",
       "status": "compatibility",
-      "problem": "不再由生产index.html或macOS App加载的旧Web控制器中，desktop_product.js、旧package_center.js和workbench.js的Mac/共享正向消费者已迁出，只剩Windows冻结静态白名单；safe_update和旧提取/浏览器历史消费者已迁出app.js，当前只剩共享CSRF、prepared-action和Fusion历史投影迁移门，以及历史简报与维护者工具的产品归类；直接删除会丢失安全回归，继续含糊保留又会制造第二套产品仍受支持的错觉",
+      "problem": "四个旧Web控制器已无共享或macOS生产、更新、安全、授权、历史或兼容正向消费者；历史简报和维护者工具已分类为独立领域/维护能力而非旧页面删除门。文件当前仅因Windows冻结静态白名单与所有权清单暂留，继续含糊保留会制造第二套产品仍受支持的错觉",
       "target": "按docs/LEGACY_WEB_CONSUMER_AUDIT_1_2.md的Batch B-E迁移：先把资料包权限、异步隔离、PDF、CSRF、prepared action和加密历史断言改写到Fusion或平台中立服务；维护者能力单独决定；最后移除平台清单并逐文件删除",
       "removal_gate": "app.js、desktop_product.js、package_center.js、workbench.js均无生产、更新、安全或兼容消费者；发布契约只登记实际安装App加载的资源"
     },
