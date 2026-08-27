@@ -501,12 +501,56 @@ eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=global
             "reviewed:true", "collectPersonalDraft", "受限文件检查", "一次确认", "indexable!==true",
             "personal-tabular-page-v1", "PERSONAL_IMPORT_ROWS_PATH", "loadPersonalPreviewPage",
             "本次确认只导入当前所选工作表", '中央顶部“导入 PDF”',
+            'id="fusion-personal-series-add"', 'id="fusion-personal-series-list"',
+            'id="fusion-run-conditions"', 'id="fusion-run-note"',
+            "addPersonalSeries", "removePersonalSeries", "refreshPersonalSeriesColumns",
+            "parsePersonalConditions", "readPersonalSeriesEditor({strict:true})",
+            "AI 不是必需项", "user_note",
         ):
             self.assertIn(marker, self.index + self.runtime)
         self.assertNotIn("sample_rows", self.runtime)
+        collect = self.runtime[
+            self.runtime.index("function collectPersonalDraft()") :
+            self.runtime.index("const PERSONAL_NEXT_ACTION_KEYS")
+        ]
+        self.assertNotIn("personalSuggestion?.series", collect)
+        self.assertNotIn("path", collect.casefold())
+        self.assertNotIn("api_key", collect.casefold())
+        self.assertNotIn("sha256", collect.casefold())
+        self.assertIn("draft.run.user_note=userNote", collect)
+        self.assertIn("conditions=parsePersonalConditions", collect)
+        self.assertIn("if(changed)resetPersonalSheetEditors()", self.runtime)
+        self.assertIn("列角色已改为忽略，相关序列引用已清空", self.runtime)
         self.assertNotIn('id="fusion-mark-reviewed"', self.index)
         self.assertNotIn('id="fusion-demo-suggestion"', self.index)
         self.assertNotIn("showDemoSuggestion", self.runtime)
+
+    def test_manual_personal_series_and_conditions_runtime_contract(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert');
+class El{{constructor(value=''){{this.value=value;this.textContent='';this.hidden=false;this.disabled=false;this.innerHTML='';this.dataset={{}};}}addEventListener(){{}}focus(){{}}querySelectorAll(){{return []}}}}
+const ids={{}};for(const id of ['fusion-project-name','fusion-sample-name','fusion-sample-material','fusion-run-name','fusion-run-method','fusion-run-conditions','fusion-run-note','fusion-personal-series-list','fusion-personal-series-warning','fusion-personal-confirm','fusion-personal-status','fusion-status-operation'])ids['#'+id]=new El();
+Object.assign(ids['#fusion-project-name'],{{value:'Project'}});Object.assign(ids['#fusion-sample-name'],{{value:'Sample'}});Object.assign(ids['#fusion-run-name'],{{value:'Run'}});Object.assign(ids['#fusion-run-method'],{{value:'nanoindentation'}});ids['#fusion-run-conditions'].value='温度=300 K\\n载荷=10 mN';ids['#fusion-run-note'].value='人工核验备注';
+const control=(value='')=>({{value,addEventListener(){{}}}}),columns=[
+ {{dataset:{{sourceName:'Dose'}},querySelector:s=>s.includes('role')?control('independent'):s.includes('meaning')?control('辐照剂量'):control('dpa')}},
+ {{dataset:{{sourceName:'Hardness'}},querySelector:s=>s.includes('role')?control('dependent'):s.includes('meaning')?control('硬度'):control('GPa')}},
+ {{dataset:{{sourceName:'Error'}},querySelector:s=>s.includes('role')?control('uncertainty'):s.includes('meaning')?control('误差'):control('GPa')}}
+];
+const values={{'[data-series-name]':control('硬度曲线'),'[data-series-x]':control('Dose'),'[data-series-y]':control('Hardness'),'[data-series-uncertainty]':control('Error'),'[data-series-description]':control('手工建立')}};
+const seriesRow={{dataset:{{seriesId:'series-2'}},querySelector:s=>values[s]}};
+const all={{'[data-personal-column]':columns,'[data-personal-series-row]':[seriesRow]}};
+globalThis.document={{readyState:'loading',querySelector:s=>ids[s]||null,querySelectorAll:s=>all[s]||[],addEventListener(){{}},documentElement:{{dataset:{{}},style:{{setProperty(){{}}}}}},body:{{dataset:{{}}}}}};globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.addEventListener=()=>{{}};
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;api.state.personalPreview={{sheets:[{{sheet_name:'Sheet1',columns:[{{source_name:'Dose'}},{{source_name:'Hardness'}},{{source_name:'Error'}}]}}]}};api.state.personalStatus={{revision:3}};
+const draft=api.collectPersonalDraft();assert.deepEqual(draft.run.conditions,{{'温度':'300 K','载荷':'10 mN'}});assert.equal(draft.run.user_note,'人工核验备注');assert.equal(draft.series.length,1);assert.equal(draft.series[0].x_column,'Dose');assert.equal(draft.series[0].uncertainty_column,'Error');assert(!JSON.stringify(draft).match(/path|api_key|sha256/i));
+api.state.personalSeriesCounter=1;assert.equal(api.addPersonalSeries(),true);assert(ids['#fusion-personal-series-list'].innerHTML.includes('data-series-id="series-3"'));assert.equal((ids['#fusion-personal-series-list'].innerHTML.match(/data-series-id="series-2"/g)||[]).length,1);
+all['[data-personal-series-row]']=[seriesRow,{{dataset:{{seriesId:'series-2'}},querySelector:s=>values[s]}}];assert.throws(()=>api.collectPersonalDraft(),/标识重复/);all['[data-personal-series-row]']=[{{dataset:{{seriesId:''}},querySelector:s=>values[s]}}];assert.throws(()=>api.collectPersonalDraft(),/标识无效/);all['[data-personal-series-row]']=[seriesRow];
+assert.throws(()=>api.parsePersonalConditions('温度=300 K\\n温度=500 K'),/重复/);assert.throws(()=>api.parsePersonalConditions('=300 K'),/不能为空/);
+columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('meaning')?control('误差'):control('GPa');assert.equal(api.refreshPersonalSeriesColumns(),1);assert(ids['#fusion-personal-series-warning'].textContent.includes('引用已清空'));
+"""
+        result = subprocess.run(
+            ["node", "-e", program], capture_output=True, text=True, timeout=8, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_personal_import_next_action_opens_exact_table_without_broad_search(self) -> None:
         for marker in (
@@ -1077,7 +1121,7 @@ class Classes{{constructor(){{this.s=new Set()}}toggle(k,v){{v?this.s.add(k):thi
 class El{{constructor(dataset={{}}){{this.dataset=dataset;this.hidden=false;this.disabled=false;this.classList=new Classes();this.attrs={{}};this.listeners={{}};this.textContent='';this.innerHTML='';this.value='';this.src='';this.tabIndex=0;this.isConnected=true;}} addEventListener(k,f){{(this.listeners[k]??=[]).push(f)}} setAttribute(k,v){{this.attrs[k]=String(v)}} removeAttribute(k){{delete this.attrs[k]}} focus(){{globalThis.focused=this}} querySelector(){{return new El()}} querySelectorAll(){{return []}} matches(){{return false}}}}
 const panels=['paper','search','personal','package','settings'].map(viewPanel=>new El({{viewPanel}})),navs=['paper','search','personal','package','settings'].map(view=>new El({{view}})),contexts=['paper','search','personal','package','settings'].map(contextView=>new El({{contextView}}));
 const modes=['precise','librarian'].map(searchModePanel=>new El({{searchModePanel}})),sources=['workspace','official','private','all'].map(searchSource=>new El({{searchSource}}));
-const ids={{}};for(const id of ['fusion-editor','fusion-context-title','fusion-breadcrumb','fusion-primary-tab-label','fusion-detail-tab-label','fusion-status-context','fusion-status-operation','fusion-inspector-title','fusion-inspector-body','fusion-context','fusion-inspector','fusion-search-results','fusion-search-query','fusion-run-precise-search','fusion-open-librarian','fusion-librarian-stage','fusion-librarian-status','fusion-literature-content','fusion-pdf-viewer','fusion-pdf-frame','fusion-pdf-title','fusion-close-pdf','fusion-open-pdf','fusion-start-extraction','fusion-literature-action-status','fusion-personal-status','fusion-personal-filename','fusion-personal-review','fusion-personal-sheet','fusion-personal-columns','fusion-project-name','fusion-sample-name','fusion-sample-material','fusion-run-name','fusion-run-method','fusion-personal-ai','fusion-personal-confirm','fusion-reviewed-state','fusion-review-context-state','fusion-ai-demo-context-state','fusion-sheet-summary','fusion-data-grid','fusion-personal-grid-wrap','fusion-personal-page-controls','fusion-personal-page-status','fusion-personal-page-prev','fusion-personal-page-next','fusion-ai-settings-status','fusion-ai-provider','fusion-ai-models','fusion-ai-model-save','fusion-ai-key-save','fusion-ai-key-delete','fusion-ai-test','fusion-ai-credential-state','fusion-ai-test-plan','fusion-ai-key','fusion-evidence-detail','fusion-evidence-detail-body','fusion-detail-heading','fusion-detail-identity','fusion-detail-pdf'])ids['#'+id]=new El();
+const ids={{}};for(const id of ['fusion-editor','fusion-context-title','fusion-breadcrumb','fusion-primary-tab-label','fusion-detail-tab-label','fusion-status-context','fusion-status-operation','fusion-inspector-title','fusion-inspector-body','fusion-context','fusion-inspector','fusion-search-results','fusion-search-query','fusion-run-precise-search','fusion-open-librarian','fusion-librarian-stage','fusion-librarian-status','fusion-literature-content','fusion-pdf-viewer','fusion-pdf-frame','fusion-pdf-title','fusion-close-pdf','fusion-open-pdf','fusion-start-extraction','fusion-literature-action-status','fusion-personal-status','fusion-personal-filename','fusion-personal-review','fusion-personal-sheet','fusion-personal-columns','fusion-project-name','fusion-sample-name','fusion-sample-material','fusion-run-name','fusion-run-method','fusion-run-conditions','fusion-run-note','fusion-personal-series-list','fusion-personal-series-warning','fusion-personal-series-add','fusion-personal-ai','fusion-personal-confirm','fusion-reviewed-state','fusion-review-context-state','fusion-ai-demo-context-state','fusion-sheet-summary','fusion-data-grid','fusion-personal-grid-wrap','fusion-personal-page-controls','fusion-personal-page-status','fusion-personal-page-prev','fusion-personal-page-next','fusion-ai-settings-status','fusion-ai-provider','fusion-ai-models','fusion-ai-model-save','fusion-ai-key-save','fusion-ai-key-delete','fusion-ai-test','fusion-ai-credential-state','fusion-ai-test-plan','fusion-ai-key','fusion-evidence-detail','fusion-evidence-detail-body','fusion-detail-heading','fusion-detail-identity','fusion-detail-pdf'])ids['#'+id]=new El();
 ids['[data-close-all-drawers]']=new El();
 ids['.fusion-sheet-tabs']=new El();ids['[data-context-view="personal"] .fusion-tree-row.active span']=new El();
 const all={{'[data-view-panel]':panels,'.fusion-nav[data-view]':navs,'[data-context-view]':contexts,'[data-search-mode-panel]':modes,'[data-search-source]':sources,'[data-evidence-index],[data-search-evidence-index]':[],'[data-search-evidence-index]':[],'[data-open-drawer]':[],'[data-personal-column]':[],'[data-context-view="personal"] [data-sheet]':[],'[data-fusion-ai-task]':[]}};
