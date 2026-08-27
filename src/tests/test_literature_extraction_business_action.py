@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
+import time
 from pathlib import Path
 
 import fitz
 import pytest
 
-from auto_research.ai.business_actions import BusinessActionError
+from auto_research.ai.business_actions import (
+    BusinessActionError,
+    LiteratureDerivedBudgetBusinessAIClient,
+)
 from auto_research.ai.activity import bind_activity_observer
+from auto_research.ai.prepared_actions import PreparedOutbound
 from auto_research.evidence.db import EvidenceDB
+from auto_research.evidence.literature_checkpoint_runtime import (
+    LiteratureCheckpointCall,
+    LiteratureCheckpointRuntime,
+)
 from auto_research.evidence.literature_extraction_business_action import (
     EvidenceDBLiteratureJobStarter,
     LiteratureExtractionBusinessAssembler,
@@ -22,9 +33,22 @@ from auto_research.evidence.literature_extraction_finalizer import (
 from auto_research.evidence.literature_extraction_job import (
     LiteratureExtractionJobError,
     LiteratureExtractionJobStore,
+    LiteraturePDFSnapshotAuthority,
 )
 from auto_research.evidence.literature_extraction_stages import (
     ExistingLiteratureStagePlanner,
+)
+from auto_research.evidence.literature_job_persistence import decode_job_private_state
+from auto_research.evidence.literature_snapshot_blob import SealedImmutablePDFBlobStore
+from auto_research.evidence.literature_task_checkpoint import (
+    LiteratureTaskCheckpointError,
+    LiteratureTaskManifest,
+)
+from auto_research.evidence.literature_task_checkpoint_service import (
+    LiteratureTaskCheckpointService,
+)
+from auto_research.evidence.literature_task_checkpoint_store import (
+    SealedSQLiteLiteratureCheckpointStore,
 )
 
 
@@ -95,34 +119,181 @@ def _verification_payload(messages):
     }
 
 
-class _StageClient:
+class _Sealer:
+    def __init__(self, key: bytes = b"literature-business-test-key") -> None:
+        self.key = key
+
+    def seal(self, plaintext: bytes, *, associated_data: bytes) -> bytes:
+        tag = hmac.new(self.key, associated_data + plaintext, hashlib.sha256).digest()
+        return tag + plaintext[::-1]
+
+    def open(self, ciphertext: bytes, *, associated_data: bytes) -> bytes:
+        tag, body = ciphertext[:32], ciphertext[32:]
+        plaintext = body[::-1]
+        expected = hmac.new(
+            self.key, associated_data + plaintext, hashlib.sha256
+        ).digest()
+        if not hmac.compare_digest(tag, expected):
+            raise ValueError
+        return plaintext
+
+
+def _persistent_job_store(root: Path, *, session_key: bytes = b"x" * 32):
+    snapshots = LiteraturePDFSnapshotAuthority(
+        blob_store=SealedImmutablePDFBlobStore(
+            data_root=root / "pdf-blobs",
+            sealer=_Sealer(),
+        )
+    )
+    return LiteratureExtractionJobStore(
+        session_key=session_key,
+        snapshots=snapshots,
+    )
+
+
+def _checkpoint_runtime(root: Path) -> LiteratureCheckpointRuntime:
+    store = SealedSQLiteLiteratureCheckpointStore(
+        data_root=root / "checkpoints",
+        sealer=_Sealer(b"checkpoint-business-test-key"),
+    )
+    return LiteratureCheckpointRuntime(
+        LiteratureTaskCheckpointService(store=store)
+    )
+
+
+class _RawProvider:
     def __init__(self, *, fail_at: int | None = None) -> None:
         self.calls = 0
         self.fail_at = fail_at
-        self.bound_stages = []
-        self.finished = False
+        self.received: list[tuple[dict[str, object], ...]] = []
 
     def request_json(self, messages, **kwargs):
         self.calls += 1
+        self.received.append(tuple(dict(message) for message in messages))
         if self.fail_at == self.calls:
             raise RuntimeError("provider failed")
         if "Verify these candidates:" in messages[1]["content"]:
             return _verification_payload(messages)
         return _extraction_payload()
 
-    def bind_derived_plan(self, calls, *, stage_fingerprint):
-        self.bound_stages.append((stage_fingerprint, tuple(calls)))
 
-    def finish_task(self, completion):
-        assert completion["schema_version"] == "literature-extraction-commit-result-v2"
-        self.finished = True
+def _prepared_action(draft, *, session_digest: str = "1" * 64) -> PreparedOutbound:
+    now = int(time.time())
+    job_handle = draft.outbound["job_handle"]
+    return PreparedOutbound(
+        action_id="action_" + hashlib.sha256(job_handle.encode()).hexdigest(),
+        session_digest=session_digest,
+        scope="literature_extraction",
+        provider_id="deepseek",
+        runtime_revision=3,
+        credential_generation=2,
+        runtime_activation="connection_verified",
+        runtime_task_models=(
+            ("analysis", "deepseek-v4-flash"),
+            ("extraction", "deepseek-v4-pro"),
+        ),
+        task="extraction",
+        task_models=(
+            ("analysis", "deepseek-v4-flash"),
+            ("extraction", "deepseek-v4-pro"),
+        ),
+        models=("deepseek-v4-flash", "deepseek-v4-pro"),
+        executor_id="literature_extraction_executor",
+        executor_version="v1",
+        estimated_calls=draft.estimated_calls,
+        max_calls=draft.max_calls,
+        max_tokens=draft.max_tokens,
+        outbound={
+            "payload": draft.outbound,
+            "call_plan": [call.canonical_dict() for call in draft.call_plan],
+        },
+        outbound_digest="2" * 64,
+        manifest_digest="3" * 64,
+        units=draft.content_units,
+        byte_count=1,
+        issued_at=now - 1,
+        expires_at=now + 300,
+    )
 
 
-class _Action:
-    def __init__(self, outbound) -> None:
-        self.outbound = {"payload": outbound}
-        self.max_calls = outbound["task_max_calls"]
-        self.max_tokens = outbound["task_max_tokens"]
+def _budget_client(action: PreparedOutbound, raw: _RawProvider):
+    return LiteratureDerivedBudgetBusinessAIClient(client=raw, action=action)
+
+
+def _checkpoint_task_id(job_token: str) -> str:
+    return "literature_" + hashlib.sha256(job_token.encode()).hexdigest()
+
+
+def _checkpoint_owner_id(job_token: str) -> str:
+    return "literature-worker:" + hashlib.sha256(
+        ("literature-owner-v1:" + job_token).encode()
+    ).hexdigest()
+
+
+def _start_checkpoint(
+    runtime: LiteratureCheckpointRuntime,
+    store: LiteratureExtractionJobStore,
+    action: PreparedOutbound,
+    *,
+    session_id: str,
+):
+    payload = action.outbound["payload"]
+    token = payload["job_handle"]
+    job_state = store.export_private_state(token, session_id=session_id)
+    decoded = decode_job_private_state(job_state)
+    manifest = LiteratureTaskManifest(
+        task_id=_checkpoint_task_id(token),
+        session_digest=action.session_digest,
+        provider_id=action.provider_id,
+        runtime_revision=action.runtime_revision,
+        credential_generation=action.credential_generation,
+        task_models=action.task_models,
+        executor_id=action.executor_id,
+        executor_version=action.executor_version,
+        pdf_snapshot_fingerprint=decoded.snapshot["content_fingerprint"],
+        max_calls=action.max_calls,
+        max_tokens=action.max_tokens,
+        issued_at=action.issued_at,
+        expires_at=int(decoded.expires_at),
+    )
+    return runtime.start(
+        manifest=manifest,
+        job_state=job_state,
+        stage=payload["stage"],
+        stage_fingerprint=payload["stage_fingerprint"],
+    )
+
+
+class _RecordingRuntime:
+    def __init__(self, runtime: LiteratureCheckpointRuntime, events: list[str]) -> None:
+        self.runtime = runtime
+        self.events = events
+        self.fail_complete_once = False
+
+    def __getattr__(self, name):
+        return getattr(self.runtime, name)
+
+    def complete(self, checkpoint, **kwargs):
+        if self.fail_complete_once:
+            self.fail_complete_once = False
+            self.events.append("checkpoint_complete_failed")
+            raise LiteratureTaskCheckpointError(
+                "literature_checkpoint_store_unavailable"
+            )
+        result = self.runtime.complete(checkpoint, **kwargs)
+        self.events.append("checkpoint_complete")
+        return result
+
+
+class _RecordingFinalizer(AtomicEvidenceDBFinalizer):
+    def __init__(self, db: EvidenceDB, events: list[str]) -> None:
+        super().__init__(db)
+        self.events = events
+
+    def finalize(self, package):
+        result = super().finalize(package)
+        self.events.append("published")
+        return result
 
 
 def test_initial_request_is_server_started_with_fixed_bounds_and_no_write(evidence) -> None:
@@ -266,20 +437,115 @@ def test_continuation_remains_bound_to_starting_session(evidence) -> None:
     assert rejected.value.code == "business_action_prepare_failed"
 
 
-def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence) -> None:
+def test_restart_preflight_restores_authenticated_job_without_lease_or_model(
+    evidence,
+) -> None:
     db, paper_id = evidence
-    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+    root = db.path.parent
+    blob_root = root / "shared-job-state"
+    runtime = _checkpoint_runtime(root / "checkpoint-state")
+    original = _persistent_job_store(blob_root, session_key=b"a" * 32)
+    draft = LiteratureExtractionBusinessAssembler(
+        original,
+        session_id="old-session",
+        starter=EvidenceDBLiteratureJobStarter(db, original),
+        checkpoint_runtime=runtime,
+    ).assemble({"paper_id": paper_id, "force_rescan": False})
+    action = _prepared_action(draft)
+    checkpoint = _start_checkpoint(
+        runtime, original, action, session_id="old-session"
+    )
+    assert checkpoint.lease_owner_digest is None
+
+    restarted = _persistent_job_store(blob_root, session_key=b"b" * 32)
+    assembler = LiteratureExtractionBusinessAssembler(
+        restarted,
+        session_id="new-session",
+        checkpoint_runtime=runtime,
+    )
+    request = {"job_token": draft.outbound["job_handle"]}
+    assembler.preflight(request)
+    # Repeated free preflight is idempotent: it only peeks the restored job.
+    assembler.preflight(request)
+    resumed = assembler.assemble(request)
+    assert resumed.outbound["stage"] == draft.outbound["stage"]
+    recovered, _job_state = runtime.recover_job_state(
+        _checkpoint_task_id(draft.outbound["job_handle"])
+    )
+    assert recovered.lease_owner_digest is None
+    assert recovered.state == "authorized"
+
+
+def test_succeeded_receipt_prefix_resumes_budget_without_duplicate_provider_call(
+    evidence,
+) -> None:
+    db, paper_id = evidence
+    root = db.path.parent
+    store = _persistent_job_store(root / "job-state")
+    runtime = _checkpoint_runtime(root / "checkpoint-state")
     ports = literature_extraction_business_ports(
         store,
         session_id="owner",
         db=db,
         finalizer=AtomicEvidenceDBFinalizer(db),
+        checkpoint_runtime=runtime,
     )
     draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
-    client = _StageClient()
+    action = _prepared_action(draft)
+    token = draft.outbound["job_handle"]
+    _start_checkpoint(runtime, store, action, session_id="owner")
+    checkpoint = runtime.recover(
+        _checkpoint_task_id(token), owner_id=_checkpoint_owner_id(token)
+    )
+    stage = store.peek_stage(token, session_id="owner")
+    first = stage.calls[0]
+    checkpoint, results = runtime.execute_stage(
+        checkpoint,
+        owner_id=_checkpoint_owner_id(token),
+        stage_fingerprint=stage.stage_fingerprint,
+        calls=(LiteratureCheckpointCall(
+            stage.name,
+            "extraction",
+            first.call_digest,
+            first.max_tokens,
+        ),),
+        invoke=lambda _index: _extraction_payload(),
+    )
+    assert results == (_extraction_payload(),)
+
+    raw = _RawProvider()
+    result = ports.executor.execute(
+        action=action,
+        ai_client=_budget_client(action, raw),
+    )
+    public = ports.projector.project(result)
+    completed, _ = runtime.recover_job_state(_checkpoint_task_id(token))
+    assert public["status"] == "completed"
+    assert completed.state == "completed"
+    assert completed.spent_calls == raw.calls + 1
+    first_messages = tuple(dict(message) for message in first.messages)
+    assert first_messages not in raw.received
+
+
+def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence) -> None:
+    db, paper_id = evidence
+    root = db.path.parent
+    store = _persistent_job_store(root / "job-state")
+    runtime = _checkpoint_runtime(root / "checkpoint-state")
+    ports = literature_extraction_business_ports(
+        store,
+        session_id="owner",
+        db=db,
+        finalizer=AtomicEvidenceDBFinalizer(db),
+        checkpoint_runtime=runtime,
+    )
+    draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    action = _prepared_action(draft)
+    raw = _RawProvider()
+    client = _budget_client(action, raw)
     activity: list[dict[str, object]] = []
     with bind_activity_observer(lambda event: activity.append(dict(event))):
-        result = ports.executor.execute(action=_Action(draft.outbound), ai_client=client)
+        result = ports.executor.execute(action=action, ai_client=client)
     public = ports.projector.project(result)
     assert public["schema_version"] == "literature-extraction-commit-result-v2"
     assert public["status"] == "completed"
@@ -288,9 +554,7 @@ def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence)
     assert public["published_item_count"] == 1
     assert public["visual_evidence_ready"] is True
     assert public["search_index"]["status"] == "refreshed"
-    assert client.calls > draft.estimated_calls
-    assert client.bound_stages
-    assert client.finished is True
+    assert raw.calls > draft.estimated_calls
     assert _counts(db)["quality_pipeline_runs"] == 1
     assert str(db.path) not in repr(public)
     assert "job_token" not in public
@@ -306,40 +570,140 @@ def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence)
         ports.assembler.assemble({"job_token": draft.outbound["job_handle"]})
 
 
+def test_publish_checkpoint_complete_and_acknowledge_are_strictly_ordered(
+    evidence,
+) -> None:
+    db, paper_id = evidence
+    root = db.path.parent
+    events: list[str] = []
+    store = _persistent_job_store(root / "job-state")
+    original_ack = store.acknowledge_finalized
+
+    def recording_ack(job_token: str, *, session_id: str) -> None:
+        events.append("acknowledge")
+        original_ack(job_token, session_id=session_id)
+
+    store.acknowledge_finalized = recording_ack
+    runtime = _RecordingRuntime(
+        _checkpoint_runtime(root / "checkpoint-state"), events
+    )
+    ports = literature_extraction_business_ports(
+        store,
+        session_id="owner",
+        db=db,
+        finalizer=_RecordingFinalizer(db, events),
+        checkpoint_runtime=runtime,
+    )
+    draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    action = _prepared_action(draft)
+    raw = _RawProvider()
+    result = ports.executor.execute(
+        action=action,
+        ai_client=_budget_client(action, raw),
+    )
+    assert result["summary"]["status"] == "completed"
+    assert events[-3:] == ["published", "checkpoint_complete", "acknowledge"]
+
+
+def test_checkpoint_complete_failure_retains_job_and_idempotent_retry(
+    evidence,
+) -> None:
+    db, paper_id = evidence
+    root = db.path.parent
+    events: list[str] = []
+    store = _persistent_job_store(root / "job-state")
+    original_ack = store.acknowledge_finalized
+
+    def recording_ack(job_token: str, *, session_id: str) -> None:
+        events.append("acknowledge")
+        original_ack(job_token, session_id=session_id)
+
+    store.acknowledge_finalized = recording_ack
+    runtime = _RecordingRuntime(
+        _checkpoint_runtime(root / "checkpoint-state"), events
+    )
+    runtime.fail_complete_once = True
+    ports = literature_extraction_business_ports(
+        store,
+        session_id="owner",
+        db=db,
+        finalizer=_RecordingFinalizer(db, events),
+        checkpoint_runtime=runtime,
+    )
+    draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    action = _prepared_action(draft)
+    raw = _RawProvider()
+    client = _budget_client(action, raw)
+    token = draft.outbound["job_handle"]
+    with pytest.raises(BusinessActionError) as failed:
+        ports.executor.execute(action=action, ai_client=client)
+    assert failed.value.cause_code == "literature_checkpoint_store_unavailable"
+    assert failed.value.stage == "checkpoint"
+    assert failed.value.next_action == "retry_current_stage"
+    assert store.summary(token, session_id="owner")["stage"] == "validated"
+    calls_after_failure = raw.calls
+    assert _counts(db)["quality_pipeline_runs"] == 1
+    assert "acknowledge" not in events
+
+    retried = ports.executor.execute(action=action, ai_client=client)
+    assert retried["summary"]["idempotent"] is True
+    assert raw.calls == calls_after_failure
+    assert events[-3:] == ["published", "checkpoint_complete", "acknowledge"]
+    with pytest.raises(LiteratureExtractionJobError):
+        store.summary(token, session_id="owner")
+
+
 def test_final_stage_without_trusted_finalizer_never_claims_saved(evidence) -> None:
     db, paper_id = evidence
-    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+    root = db.path.parent
+    store = _persistent_job_store(root / "job-state")
+    runtime = _checkpoint_runtime(root / "checkpoint-state")
     assembler = LiteratureExtractionBusinessAssembler(
         store,
         session_id="owner",
         starter=EvidenceDBLiteratureJobStarter(db, store),
     )
     executor = LiteratureExtractionBusinessExecutor(
-        store, ExistingLiteratureStagePlanner(), session_id="owner"
+        store,
+        ExistingLiteratureStagePlanner(),
+        session_id="owner",
+        checkpoint_runtime=runtime,
     )
     before = _counts(db)
     draft = assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    action = _prepared_action(draft)
     with pytest.raises(BusinessActionError) as failed:
-        executor.execute(action=_Action(draft.outbound), ai_client=_StageClient())
+        executor.execute(
+            action=action,
+            ai_client=_budget_client(action, _RawProvider()),
+        )
     assert failed.value.__cause__.code == "literature_commit_unavailable"
     assert _counts(db) == before
 
 
 def test_stage_failure_does_not_retry_and_keeps_current_stage_prepared(evidence) -> None:
     db, paper_id = evidence
-    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+    root = db.path.parent
+    store = _persistent_job_store(root / "job-state")
+    runtime = _checkpoint_runtime(root / "checkpoint-state")
     ports = literature_extraction_business_ports(
         store,
         session_id="owner",
         db=db,
         finalizer=AtomicEvidenceDBFinalizer(db),
+        checkpoint_runtime=runtime,
     )
     draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
-    client = _StageClient(fail_at=len(draft.call_plan) + 1)
+    action = _prepared_action(draft)
+    raw = _RawProvider(fail_at=len(draft.call_plan) + 1)
+    client = _budget_client(action, raw)
     before = _counts(db)
-    with pytest.raises(RuntimeError):
-        ports.executor.execute(action=_Action(draft.outbound), ai_client=client)
-    assert client.calls == len(draft.call_plan) + 1
+    with pytest.raises(BusinessActionError) as failed:
+        ports.executor.execute(action=action, ai_client=client)
+    assert failed.value.cause_code == "literature_call_outcome_unknown"
+    assert failed.value.stage == "provider_call"
+    assert failed.value.next_action == "review_call_outcome"
+    assert raw.calls == len(draft.call_plan) + 1
     summary = store.summary(draft.outbound["job_handle"], session_id="owner")
     assert summary["stage"] == "coverage_gap"
     assert _counts(db) == before
