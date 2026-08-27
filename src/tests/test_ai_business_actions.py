@@ -156,6 +156,50 @@ class _HarnessExecutor:
         return {"answer": "harness", "state_token": "signed-state"}
 
 
+class _LiteratureDerivedExecutor:
+    requires_literature_derived_budget = True
+
+    def __init__(self, *, bad_task=False, over_budget=False, bad_schema=False):
+        self.bad_task = bad_task
+        self.over_budget = over_budget
+        self.bad_schema = bad_schema
+
+    def execute(self, *, action, ai_client):
+        initial = _plain(action.outbound["call_plan"][0])
+        ai_client.request_json(
+            initial["messages"],
+            task=initial["task"],
+            max_tokens=initial["max_tokens"],
+            **initial["options"],
+        )
+        task = "librarian_planning" if self.bad_task else "analysis"
+        derived = (
+            PreparedBusinessCall(
+                method="json",
+                task=task,
+                messages=({"role": "user", "content": "x", "extra": "bad"},),
+                max_tokens=80,
+                options={"thinking": None, "temperature": None},
+            )
+            if self.bad_schema
+            else _call(task, message="derived-and-validated", tokens=80)
+        )
+        calls = (derived, derived) if self.over_budget else (derived,)
+        ai_client.bind_derived_plan(calls, stage_fingerprint="b" * 64)
+        for call in calls:
+            ai_client.request_json(
+                [dict(message) for message in call.messages],
+                task=call.task,
+                max_tokens=call.max_tokens,
+                **dict(call.options),
+            )
+        ai_client.finish_task({
+            "schema_version": "literature-extraction-commit-result-v2",
+            "status": "completed",
+        })
+        return {"answer": "derived"}
+
+
 def _plain(value):
     if isinstance(value, dict) or hasattr(value, "items"):
         return {key: _plain(child) for key, child in value.items()}
@@ -438,6 +482,111 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
         )
         with self.assertRaises(BusinessActionError):
             registry.execute(self.consume(summary, "harness-excess-call"))
+        self.assertEqual(len(self.factory.client.calls), 1)
+
+    def _install_literature_derived_action(self, *, max_calls=3, max_tokens=300):
+        initial = _call("extraction", message="captured-pdf-initial", tokens=100)
+        unit = ContentUnit(
+            "literature_extraction_stage",
+            "literature-stage:job",
+            "a" * 64,
+            64,
+            "a" * 64,
+        )
+        self.assemblers["literature_extraction"].override = BusinessActionDraft(
+            outbound={
+                "job_handle": "server-job",
+                "stage": "initial_focus",
+                "stage_fingerprint": "a" * 64,
+                "call_count": 1,
+                "task_max_calls": max_calls,
+                "task_max_tokens": max_tokens,
+                "planner_id": "existing_literature_stage_planner",
+                "planner_version": "v1",
+                "initial_content_fingerprint": "c" * 64,
+            },
+            content_units=(unit,),
+            estimated_calls=1,
+            max_calls=max_calls,
+            max_tokens=max_tokens,
+            call_plan=(initial,),
+        )
+
+    def test_literature_derived_budget_uses_one_consent_and_need_not_exhaust_maximum(self):
+        self._install_literature_derived_action(max_calls=3, max_tokens=300)
+        self.executors["literature_extraction"] = _LiteratureDerivedExecutor()
+        registry = self.make_registry()
+        summary = registry.prepare(
+            scope="literature_extraction", session_id="literature-task", request=object()
+        )
+        self.assertEqual(summary["estimated_calls"], 1)
+        self.assertEqual(summary["maximum_calls"], 3)
+        self.assertEqual(summary["maximum_tokens"], 300)
+        self.assertEqual(self.factory.client.calls, [])
+        action = self.consume(summary, "literature-task")
+        self.assertEqual(action.provider_id, "deepseek")
+        self.assertEqual(action.runtime_revision, 4)
+        self.assertEqual(action.credential_generation, 2)
+        self.assertEqual(
+            action.task_models,
+            (("analysis", "deepseek-v4-pro"), ("extraction", "deepseek-v4-pro")),
+        )
+        result = registry.execute(action)
+        self.assertEqual(result["answer"], "derived")
+        self.assertEqual(len(self.factory.client.calls), 2)
+        with self.assertRaises(BusinessActionError) as replayed:
+            registry.execute(action)
+        self.assertEqual(replayed.exception.code, "business_action_replayed")
+        self.assertEqual(len(self.factory.client.calls), 2)
+
+    def test_literature_derived_budget_rejects_total_or_task_overreach_before_transport(self):
+        self._install_literature_derived_action(max_calls=2, max_tokens=300)
+        self.executors["literature_extraction"] = _LiteratureDerivedExecutor(
+            over_budget=True
+        )
+        registry = self.make_registry()
+        summary = registry.prepare(
+            scope="literature_extraction", session_id="literature-over", request=object()
+        )
+        with self.assertRaises(BusinessActionError):
+            registry.execute(self.consume(summary, "literature-over"))
+        self.assertEqual(len(self.factory.client.calls), 1)
+
+        self.setUp()
+        self._install_literature_derived_action(max_calls=3, max_tokens=300)
+        self.executors["literature_extraction"] = _LiteratureDerivedExecutor(
+            bad_task=True
+        )
+        registry = self.make_registry()
+        summary = registry.prepare(
+            scope="literature_extraction", session_id="literature-task-bad", request=object()
+        )
+        with self.assertRaises(BusinessActionError):
+            registry.execute(self.consume(summary, "literature-task-bad"))
+        self.assertEqual(len(self.factory.client.calls), 1)
+
+        self.setUp()
+        self._install_literature_derived_action(max_calls=3, max_tokens=150)
+        self.executors["literature_extraction"] = _LiteratureDerivedExecutor()
+        registry = self.make_registry()
+        summary = registry.prepare(
+            scope="literature_extraction", session_id="literature-token-over", request=object()
+        )
+        with self.assertRaises(BusinessActionError):
+            registry.execute(self.consume(summary, "literature-token-over"))
+        self.assertEqual(len(self.factory.client.calls), 1)
+
+        self.setUp()
+        self._install_literature_derived_action(max_calls=3, max_tokens=300)
+        self.executors["literature_extraction"] = _LiteratureDerivedExecutor(
+            bad_schema=True
+        )
+        registry = self.make_registry()
+        summary = registry.prepare(
+            scope="literature_extraction", session_id="literature-schema-bad", request=object()
+        )
+        with self.assertRaises(BusinessActionError):
+            registry.execute(self.consume(summary, "literature-schema-bad"))
         self.assertEqual(len(self.factory.client.calls), 1)
 
     def test_prepare_rejects_unapproved_task_before_action_exists(self):

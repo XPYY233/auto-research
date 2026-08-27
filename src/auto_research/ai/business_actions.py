@@ -30,6 +30,7 @@ BUSINESS_ACTION_SCOPES = frozenset(
 )
 MAX_PUBLIC_RESULT_BYTES = 1024 * 1024
 MAX_EXECUTION_RECEIPTS = 256
+MAX_DERIVED_LITERATURE_STAGE_BYTES = 32_000_000
 _SAFE_EXECUTOR_RE = re.compile(r"^[a-z][a-z0-9_.-]{2,95}$")
 _HARNESS_TOOL_NAME_RE = re.compile(
     r"^mcp__auto_research__(?:exact_search|federated_search|evidence_detail|"
@@ -533,6 +534,371 @@ class BudgetedBusinessAIClient:
             raise BusinessActionError("business_action_invalid")
 
 
+class LiteratureDerivedBudgetBusinessAIClient:
+    """One-authorization cumulative budget for the reviewed literature runner.
+
+    Only the initial stage is byte-for-byte available when consent is issued.
+    Later stages are derived by the fixed literature planner from the captured
+    PDF and already validated model results.  The reviewed executor must bind
+    each newly frozen stage plan before any request.  This client exposes no
+    tool surface and never relaxes the consumed action's provider/model/runtime
+    binding or aggregate call/token ceiling.
+    """
+
+    __slots__ = (
+        "__client",
+        "__allowed",
+        "__minimum_calls",
+        "__remaining_calls",
+        "__remaining_tokens",
+        "__settings",
+        "__plan",
+        "__position",
+        "__used_calls",
+        "__stage_fingerprints",
+        "__task_completed",
+    )
+    _PUBLIC_ATTRIBUTES = frozenset(
+        {
+            "request_json",
+            "bind_derived_plan",
+            "finish_task",
+            "remaining_calls",
+            "remaining_tokens",
+            "settings",
+        }
+    )
+
+    def __init__(self, *, client: object, action: PreparedOutbound) -> None:
+        if (
+            action.scope != "literature_extraction"
+            or action.executor_id != "literature_extraction_executor"
+            or action.executor_version != "v1"
+            or tuple(task for task, _model in action.task_models)
+            != ("analysis", "extraction")
+        ):
+            raise BusinessActionError("business_action_invalid")
+        try:
+            payload = action.outbound["payload"]
+            initial_plan = tuple(action.outbound["call_plan"])
+            initial_fingerprint = payload["stage_fingerprint"]
+            unit = action.units[0]
+        except (IndexError, KeyError, TypeError) as exc:
+            raise BusinessActionError("business_action_invalid") from exc
+        if (
+            not isinstance(payload, Mapping)
+            or not isinstance(payload.get("stage"), str)
+            or re.fullmatch(r"[a-z][a-z0-9_]{2,63}", payload.get("stage")) is None
+            or not isinstance(initial_fingerprint, str)
+            or re.fullmatch(r"[0-9a-f]{64}", initial_fingerprint) is None
+            or len(action.units) != 1
+            or unit.kind != "literature_extraction_stage"
+            or unit.snapshot_fingerprint != initial_fingerprint
+            or unit.sha256 != initial_fingerprint
+            or not unit.stable_source_identity.startswith("literature-stage:")
+            or payload.get("call_count") != len(initial_plan)
+            or payload.get("task_max_calls") != action.max_calls
+            or payload.get("task_max_tokens") != action.max_tokens
+        ):
+            raise BusinessActionError("business_action_invalid")
+        allowed = MappingProxyType(dict(action.task_models))
+        normalized_plan = LiteratureDerivedBudgetBusinessAIClient._validated_plan(
+            initial_plan,
+            allowed=allowed,
+            remaining_calls=action.max_calls,
+            remaining_tokens=action.max_tokens,
+        )
+        if len(normalized_plan) != action.estimated_calls:
+            raise BusinessActionError("business_action_invalid")
+        object.__setattr__(self, "_LiteratureDerivedBudgetBusinessAIClient__client", client)
+        object.__setattr__(self, "_LiteratureDerivedBudgetBusinessAIClient__allowed", allowed)
+        object.__setattr__(
+            self,
+            "_LiteratureDerivedBudgetBusinessAIClient__minimum_calls",
+            action.estimated_calls,
+        )
+        object.__setattr__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__remaining_calls", action.max_calls
+        )
+        object.__setattr__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__remaining_tokens", action.max_tokens
+        )
+        object.__setattr__(
+            self,
+            "_LiteratureDerivedBudgetBusinessAIClient__settings",
+            SafeBusinessModelSettings(dict(action.task_models)),
+        )
+        object.__setattr__(self, "_LiteratureDerivedBudgetBusinessAIClient__plan", normalized_plan)
+        object.__setattr__(self, "_LiteratureDerivedBudgetBusinessAIClient__position", 0)
+        object.__setattr__(self, "_LiteratureDerivedBudgetBusinessAIClient__used_calls", 0)
+        object.__setattr__(
+            self,
+            "_LiteratureDerivedBudgetBusinessAIClient__stage_fingerprints",
+            {initial_fingerprint},
+        )
+        object.__setattr__(self, "_LiteratureDerivedBudgetBusinessAIClient__task_completed", False)
+
+    def __getattribute__(self, name: str) -> object:
+        if name not in object.__getattribute__(self, "_PUBLIC_ATTRIBUTES"):
+            raise BusinessActionError("business_action_invalid")
+        return object.__getattribute__(self, name)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise BusinessActionError("business_action_invalid")
+
+    @property
+    def remaining_calls(self) -> int:
+        return object.__getattribute__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__remaining_calls"
+        )
+
+    @property
+    def remaining_tokens(self) -> int:
+        return object.__getattribute__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__remaining_tokens"
+        )
+
+    @property
+    def settings(self) -> SafeBusinessModelSettings:
+        return object.__getattribute__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__settings"
+        )
+
+    @staticmethod
+    def _validated_plan(
+        plan: Sequence[object],
+        *,
+        allowed: Mapping[str, str],
+        remaining_calls: int,
+        remaining_tokens: int,
+    ) -> tuple[dict[str, object], ...]:
+        if (
+            isinstance(plan, (str, bytes, bytearray))
+            or not isinstance(plan, Sequence)
+            or not plan
+            or len(plan) > remaining_calls
+        ):
+            raise BusinessActionError("business_action_invalid")
+        normalized: list[dict[str, object]] = []
+        token_total = 0
+        byte_total = 0
+        for value in plan:
+            raw = (
+                value.canonical_dict()
+                if isinstance(value, PreparedBusinessCall)
+                else _canonical_call_value(value)
+            )
+            if not isinstance(raw, Mapping) or set(raw) != {
+                "method", "task", "messages", "tools", "options", "max_tokens"
+            }:
+                raise BusinessActionError("business_action_invalid")
+            try:
+                call = PreparedBusinessCall(
+                    method=raw["method"],
+                    task=raw["task"],
+                    messages=tuple(raw["messages"]),
+                    tools=tuple(raw["tools"]),
+                    options=raw["options"],
+                    max_tokens=raw["max_tokens"],
+                )
+            except (KeyError, TypeError) as exc:
+                raise BusinessActionError("business_action_invalid") from exc
+            canonical = call.canonical_dict()
+            messages = canonical["messages"]
+            if (
+                call.method != "json"
+                or call.tools
+                or call.task not in allowed
+                or call.max_tokens > 32_000
+                or not isinstance(messages, list)
+                or not messages
+                or any(
+                    not isinstance(message, Mapping)
+                    or set(message) != {"role", "content"}
+                    or message.get("role") not in {"system", "user", "assistant"}
+                    or not isinstance(message.get("content"), str)
+                    or not message.get("content")
+                    for message in messages
+                )
+                or canonical != raw
+            ):
+                raise BusinessActionError("business_action_invalid")
+            token_total += call.max_tokens
+            byte_total += len(
+                json.dumps(
+                    canonical,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("utf-8")
+            )
+            normalized.append(canonical)
+        if (
+            token_total > remaining_tokens
+            or byte_total > MAX_DERIVED_LITERATURE_STAGE_BYTES
+        ):
+            raise BusinessActionError("business_action_invalid")
+        return tuple(normalized)
+
+    def bind_derived_plan(
+        self,
+        calls: Sequence[PreparedBusinessCall],
+        *,
+        stage_fingerprint: str,
+    ) -> None:
+        position = object.__getattribute__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__position"
+        )
+        current_plan = object.__getattribute__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__plan"
+        )
+        fingerprints = object.__getattribute__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__stage_fingerprints"
+        )
+        if (
+            position != len(current_plan)
+            or not isinstance(stage_fingerprint, str)
+            or re.fullmatch(r"[0-9a-f]{64}", stage_fingerprint) is None
+            or stage_fingerprint in fingerprints
+            or object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__task_completed"
+            )
+        ):
+            raise BusinessActionError("business_action_invalid")
+        normalized = object.__getattribute__(self, "_validated_plan")(
+            calls,
+            allowed=object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__allowed"
+            ),
+            remaining_calls=object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__remaining_calls"
+            ),
+            remaining_tokens=object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__remaining_tokens"
+            ),
+        )
+        fingerprints.add(stage_fingerprint)
+        object.__setattr__(self, "_LiteratureDerivedBudgetBusinessAIClient__plan", normalized)
+        object.__setattr__(self, "_LiteratureDerivedBudgetBusinessAIClient__position", 0)
+
+    def request_json(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        task: str,
+        max_tokens: int,
+        thinking: bool | None = None,
+        temperature: float | None = None,
+    ) -> dict[str, Any]:
+        position = object.__getattribute__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__position"
+        )
+        plan = object.__getattribute__(self, "_LiteratureDerivedBudgetBusinessAIClient__plan")
+        candidate = {
+            "method": "json",
+            "task": task,
+            "messages": _canonical_call_value(messages),
+            "tools": [],
+            "options": _canonical_call_value(
+                {"thinking": thinking, "temperature": temperature}
+            ),
+            "max_tokens": max_tokens,
+        }
+        if (
+            position >= len(plan)
+            or plan[position] != candidate
+            or object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__remaining_calls"
+            ) < 1
+            or isinstance(max_tokens, bool)
+            or not isinstance(max_tokens, int)
+            or max_tokens < 1
+            or max_tokens
+            > object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__remaining_tokens"
+            )
+        ):
+            raise BusinessActionError("business_action_invalid")
+        planned = _canonical_call_value(plan[position])
+        object.__setattr__(
+            self,
+            "_LiteratureDerivedBudgetBusinessAIClient__remaining_calls",
+            object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__remaining_calls"
+            ) - 1,
+        )
+        object.__setattr__(
+            self,
+            "_LiteratureDerivedBudgetBusinessAIClient__remaining_tokens",
+            object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__remaining_tokens"
+            ) - max_tokens,
+        )
+        object.__setattr__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__position", position + 1
+        )
+        object.__setattr__(
+            self,
+            "_LiteratureDerivedBudgetBusinessAIClient__used_calls",
+            object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__used_calls"
+            ) + 1,
+        )
+        try:
+            client = object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__client"
+            )
+            method = client.request_json
+        except AttributeError as exc:
+            raise BusinessActionError("business_action_execution_failed") from exc
+        emit_ai_activity("provider_request_started")
+        result = method(
+            planned["messages"],
+            task=planned["task"],
+            max_tokens=planned["max_tokens"],
+            **planned["options"],
+        )
+        emit_ai_activity("provider_response_received")
+        if not isinstance(result, Mapping):
+            raise BusinessActionError("business_action_execution_failed")
+        return dict(result)
+
+    def finish_task(self, completion: Mapping[str, Any]) -> None:
+        if (
+            object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__position"
+            )
+            != len(object.__getattribute__(self, "_LiteratureDerivedBudgetBusinessAIClient__plan"))
+            or not isinstance(completion, Mapping)
+            or completion.get("schema_version")
+            != "literature-extraction-commit-result-v2"
+            or completion.get("status") not in {"completed", "saved_index_pending"}
+        ):
+            raise BusinessActionError("business_action_invalid")
+        object.__setattr__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__task_completed", True
+        )
+
+    def _assert_complete(self) -> None:
+        if (
+            not object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__task_completed"
+            )
+            or object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__used_calls"
+            )
+            < object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__minimum_calls"
+            )
+            or object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__position"
+            )
+            != len(object.__getattribute__(self, "_LiteratureDerivedBudgetBusinessAIClient__plan"))
+        ):
+            raise BusinessActionError("business_action_invalid")
+
+
 class HarnessBudgetedBusinessAIClient:
     """Cumulative budget used only by the audited Harness executor.
 
@@ -922,7 +1288,14 @@ class BusinessPreparedActionRegistry:
                 ) as raw_client:
                     emit_ai_activity("provider_acquired")
                     executor = self._executors[action.scope]
-                    if getattr(executor, "requires_harness_budget", False) is True:
+                    if getattr(executor, "requires_literature_derived_budget", False) is True:
+                        if action.scope != "literature_extraction":
+                            raise BusinessActionError("business_action_invalid")
+                        client = LiteratureDerivedBudgetBusinessAIClient(
+                            client=raw_client,
+                            action=action,
+                        )
+                    elif getattr(executor, "requires_harness_budget", False) is True:
                         client = HarnessBudgetedBusinessAIClient(
                             client=raw_client,
                             action=action,
@@ -1076,6 +1449,7 @@ __all__ = [
     "BusinessResultProjector",
     "BudgetedBusinessAIClient",
     "HarnessBudgetedBusinessAIClient",
+    "LiteratureDerivedBudgetBusinessAIClient",
     "SafeBusinessModelSettings",
     "PreparedBusinessCall",
     "SystemBusinessActionClock",

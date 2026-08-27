@@ -94,19 +94,33 @@ def _verification_payload(messages):
 
 
 class _StageClient:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_at: int | None = None) -> None:
         self.calls = 0
+        self.fail_at = fail_at
+        self.bound_stages = []
+        self.finished = False
 
     def request_json(self, messages, **kwargs):
         self.calls += 1
+        if self.fail_at == self.calls:
+            raise RuntimeError("provider failed")
         if "Verify these candidates:" in messages[1]["content"]:
             return _verification_payload(messages)
         return _extraction_payload()
+
+    def bind_derived_plan(self, calls, *, stage_fingerprint):
+        self.bound_stages.append((stage_fingerprint, tuple(calls)))
+
+    def finish_task(self, completion):
+        assert completion["schema_version"] == "literature-extraction-commit-result-v2"
+        self.finished = True
 
 
 class _Action:
     def __init__(self, outbound) -> None:
         self.outbound = {"payload": outbound}
+        self.max_calls = outbound["task_max_calls"]
+        self.max_tokens = outbound["task_max_tokens"]
 
 
 def test_initial_request_is_server_started_with_fixed_bounds_and_no_write(evidence) -> None:
@@ -119,6 +133,10 @@ def test_initial_request_is_server_started_with_fixed_bounds_and_no_write(eviden
     before = _counts(db)
     draft = assembler.assemble({"paper_id": paper_id, "force_rescan": False})
     assert draft.outbound["stage"] == "initial_focus"
+    assert draft.estimated_calls == len(draft.call_plan)
+    assert draft.max_calls == 512
+    assert draft.max_tokens == 8_200_000
+    assert draft.outbound["initial_content_fingerprint"]
     assert store.summary(draft.outbound["job_handle"], session_id="owner")[
         "sending_scope"
     ]["pdf_page_count"] == 1
@@ -217,7 +235,7 @@ def test_continuation_remains_bound_to_starting_session(evidence) -> None:
     assert rejected.value.code == "business_action_prepare_failed"
 
 
-def test_continuations_finish_with_atomic_commit_and_strict_public_dto(evidence) -> None:
+def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence) -> None:
     db, paper_id = evidence
     store = LiteratureExtractionJobStore(session_key=b"x" * 32)
     ports = literature_extraction_business_ports(
@@ -226,29 +244,20 @@ def test_continuations_finish_with_atomic_commit_and_strict_public_dto(evidence)
         db=db,
         finalizer=AtomicEvidenceDBFinalizer(db),
     )
-    request = {"paper_id": paper_id, "force_rescan": False}
-    public = None
-    total_calls = 0
-    for expected_stage in ("coverage_gap", "coverage_verification", "completed"):
-        draft = ports.assembler.assemble(request)
-        client = _StageClient()
-        result = ports.executor.execute(
-            action=_Action(draft.outbound), ai_client=client
-        )
-        total_calls += client.calls
-        public = ports.projector.project(result)
-        if expected_stage != "completed":
-            assert public["stage"] == expected_stage
-            request = {"job_token": public["job_token"]}
-        else:
-            assert public["schema_version"] == "literature-extraction-commit-result-v2"
-            assert public["status"] == "completed"
-            assert public["paper"] == {"title": "Safe experiment", "doi": "10.1/safe"}
-            assert public["candidate_count"] == 1
-            assert public["published_item_count"] == 1
-            assert public["visual_evidence_ready"] is True
-            assert public["search_index"]["status"] == "refreshed"
-    assert total_calls > 0
+    draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    client = _StageClient()
+    result = ports.executor.execute(action=_Action(draft.outbound), ai_client=client)
+    public = ports.projector.project(result)
+    assert public["schema_version"] == "literature-extraction-commit-result-v2"
+    assert public["status"] == "completed"
+    assert public["paper"] == {"title": "Safe experiment", "doi": "10.1/safe"}
+    assert public["candidate_count"] == 1
+    assert public["published_item_count"] == 1
+    assert public["visual_evidence_ready"] is True
+    assert public["search_index"]["status"] == "refreshed"
+    assert client.calls > draft.estimated_calls
+    assert client.bound_stages
+    assert client.finished is True
     assert _counts(db)["quality_pipeline_runs"] == 1
     assert str(db.path) not in repr(public)
     assert "job_token" not in public
@@ -256,7 +265,7 @@ def test_continuations_finish_with_atomic_commit_and_strict_public_dto(evidence)
 
     # The completed in-memory job is consumed; it cannot charge again.
     with pytest.raises(BusinessActionError):
-        ports.assembler.assemble(request)
+        ports.assembler.assemble({"job_token": draft.outbound["job_handle"]})
 
 
 def test_final_stage_without_trusted_finalizer_never_claims_saved(evidence) -> None:
@@ -270,18 +279,31 @@ def test_final_stage_without_trusted_finalizer_never_claims_saved(evidence) -> N
     executor = LiteratureExtractionBusinessExecutor(
         store, ExistingLiteratureStagePlanner(), session_id="owner"
     )
-    request = {"paper_id": paper_id, "force_rescan": False}
     before = _counts(db)
-    for _ in range(2):
-        draft = assembler.assemble(request)
-        result = executor.execute(
-            action=_Action(draft.outbound), ai_client=_StageClient()
-        )
-        request = {"job_token": result["summary"]["job_token"]}
-    draft = assembler.assemble(request)
+    draft = assembler.assemble({"paper_id": paper_id, "force_rescan": False})
     with pytest.raises(BusinessActionError) as failed:
         executor.execute(action=_Action(draft.outbound), ai_client=_StageClient())
     assert failed.value.__cause__.code == "literature_commit_unavailable"
+    assert _counts(db) == before
+
+
+def test_stage_failure_does_not_retry_and_keeps_current_stage_prepared(evidence) -> None:
+    db, paper_id = evidence
+    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+    ports = literature_extraction_business_ports(
+        store,
+        session_id="owner",
+        db=db,
+        finalizer=AtomicEvidenceDBFinalizer(db),
+    )
+    draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    client = _StageClient(fail_at=len(draft.call_plan) + 1)
+    before = _counts(db)
+    with pytest.raises(RuntimeError):
+        ports.executor.execute(action=_Action(draft.outbound), ai_client=client)
+    assert client.calls == len(draft.call_plan) + 1
+    summary = store.summary(draft.outbound["job_handle"], session_id="owner")
+    assert summary["stage"] == "coverage_gap"
     assert _counts(db) == before
 
 

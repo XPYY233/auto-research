@@ -28,7 +28,13 @@ LITERATURE_POLICY_MAX_TOKENS = 8_200_000
 LITERATURE_POLICY_TASKS = frozenset({"analysis", "extraction"})
 _INITIAL_REQUEST_KEYS = frozenset({"paper_id", "force_rescan"})
 _CONTINUATION_REQUEST_KEYS = frozenset({"job_token"})
-_PAYLOAD_KEYS = frozenset({"job_handle", "stage_fingerprint", "stage", "call_count"})
+_PAYLOAD_KEYS = frozenset({
+    "job_handle", "stage_fingerprint", "stage", "call_count",
+    "task_max_calls", "task_max_tokens", "planner_id", "planner_version",
+    "initial_content_fingerprint",
+})
+_PLANNER_ID = "existing_literature_stage_planner"
+_PLANNER_VERSION = "v1"
 
 _LITERATURE_ERROR_GUIDANCE = {
     "literature_pdf_missing": ("preflight", "reimport_pdf"),
@@ -64,6 +70,22 @@ def _runtime_task(stage_task: str) -> str:
     if stage_task == "localization":
         return "analysis"
     raise BusinessActionError("business_action_invalid")
+
+
+def _prepared_calls(stage: FrozenExtractionStage) -> tuple[PreparedBusinessCall, ...]:
+    return tuple(
+        PreparedBusinessCall(
+            method="json",
+            task=_runtime_task(call.task),
+            messages=call.messages,
+            max_tokens=call.max_tokens,
+            options={
+                "thinking": call.options.get("thinking"),
+                "temperature": call.options.get("temperature"),
+            },
+        )
+        for call in stage.calls
+    )
 
 
 @dataclass(frozen=True)
@@ -182,7 +204,7 @@ class LiteratureExtractionStageSnapshotAuthority:
 
 
 class LiteratureExtractionBusinessAssembler:
-    """Prepare exactly one already-frozen stage, never a renderer-defined plan."""
+    """Prepare one task envelope from the current server-frozen stage."""
 
     def __init__(
         self,
@@ -224,24 +246,17 @@ class LiteratureExtractionBusinessAssembler:
         except LiteratureExtractionJobError as exc:
             raise _project_literature_error(exc, phase="preflight") from exc
         self._assert_shared_policy(stage)
-        calls = tuple(
-            PreparedBusinessCall(
-                method="json",
-                task=_runtime_task(call.task),
-                messages=call.messages,
-                max_tokens=call.max_tokens,
-                options={
-                    "thinking": call.options.get("thinking"),
-                    "temperature": call.options.get("temperature"),
-                },
-            )
-            for call in stage.calls
-        )
+        calls = _prepared_calls(stage)
         payload = {
             "job_handle": token,
             "stage_fingerprint": stage.stage_fingerprint,
             "stage": stage.name,
             "call_count": len(stage.calls),
+            "task_max_calls": LITERATURE_POLICY_MAX_CALLS,
+            "task_max_tokens": LITERATURE_POLICY_MAX_TOKENS,
+            "planner_id": _PLANNER_ID,
+            "planner_version": _PLANNER_VERSION,
+            "initial_content_fingerprint": stage.input_fingerprint,
         }
         unit = ContentUnit(
             kind=LiteratureExtractionStageSnapshotAuthority._KIND,
@@ -254,8 +269,8 @@ class LiteratureExtractionBusinessAssembler:
             outbound=payload,
             content_units=(unit,),
             estimated_calls=len(calls),
-            max_calls=len(calls),
-            max_tokens=sum(call.max_tokens for call in stage.calls),
+            max_calls=LITERATURE_POLICY_MAX_CALLS,
+            max_tokens=LITERATURE_POLICY_MAX_TOKENS,
             call_plan=calls,
         )
 
@@ -296,6 +311,8 @@ class LiteratureExtractionBusinessAssembler:
 
 
 class LiteratureExtractionBusinessExecutor:
+    requires_literature_derived_budget = True
+
     def __init__(
         self,
         store: LiteratureExtractionJobStore,
@@ -314,6 +331,13 @@ class LiteratureExtractionBusinessExecutor:
             payload = action.outbound["payload"]
             if not isinstance(payload, Mapping) or set(payload) != _PAYLOAD_KEYS:
                 raise BusinessActionError("business_action_invalid")
+            if (
+                payload["task_max_calls"] != action.max_calls
+                or payload["task_max_tokens"] != action.max_tokens
+                or payload["planner_id"] != _PLANNER_ID
+                or payload["planner_version"] != _PLANNER_VERSION
+            ):
+                raise BusinessActionError("business_action_invalid")
             stage = self._store.claim_stage(
                 payload["job_handle"], session_id=self._session_id
             )
@@ -321,50 +345,82 @@ class LiteratureExtractionBusinessExecutor:
                 stage.stage_fingerprint != payload["stage_fingerprint"]
                 or stage.name != payload["stage"]
                 or len(stage.calls) != payload["call_count"]
+                or stage.input_fingerprint != payload["initial_content_fingerprint"]
             ):
                 self._store.fail_stage(payload["job_handle"], session_id=self._session_id)
                 raise BusinessActionError("business_action_invalid")
-            results = []
-            try:
-                for call in stage.calls:
-                    results.append(ai_client.request_json(
-                        [dict(message) for message in call.messages],
-                        task=_runtime_task(call.task),
-                        max_tokens=call.max_tokens,
-                        thinking=call.options.get("thinking"),
-                        temperature=call.options.get("temperature"),
-                    ))
-            except Exception:
-                self._store.fail_stage(payload["job_handle"], session_id=self._session_id)
-                raise
-            summary = self._store.complete_stage(
-                payload["job_handle"],
-                session_id=self._session_id,
-                completed_stage_fingerprint=stage.stage_fingerprint,
-                raw_results=results,
-                planner=self._planner,
-            )
-            while summary["stage"] in {"coverage_verification", "adversarial_branches", "third_review"} and summary["call_count"] == 0:
-                summary = self._store.advance_local_stage(
-                    payload["job_handle"], session_id=self._session_id, planner=self._planner
-                )
-            if summary["stage"] == "validated":
-                if self._finalizer is None:
-                    raise LiteratureExtractionJobError(
-                        "literature_commit_unavailable", "当前未安装受信原子保存组件"
+            while True:
+                results = []
+                try:
+                    for call in stage.calls:
+                        results.append(ai_client.request_json(
+                            [dict(message) for message in call.messages],
+                            task=_runtime_task(call.task),
+                            max_tokens=call.max_tokens,
+                            thinking=call.options.get("thinking"),
+                            temperature=call.options.get("temperature"),
+                        ))
+                except Exception:
+                    self._store.fail_stage(
+                        payload["job_handle"], session_id=self._session_id
                     )
-                summary = self._store.finalize(
+                    raise
+                summary = self._store.complete_stage(
                     payload["job_handle"],
                     session_id=self._session_id,
-                    finalizer=self._finalizer,
+                    completed_stage_fingerprint=stage.stage_fingerprint,
+                    raw_results=results,
+                    planner=self._planner,
                 )
-            return {"summary": summary}
+                while (
+                    summary["stage"]
+                    in {"coverage_verification", "adversarial_branches", "third_review"}
+                    and summary["call_count"] == 0
+                ):
+                    summary = self._store.advance_local_stage(
+                        payload["job_handle"],
+                        session_id=self._session_id,
+                        planner=self._planner,
+                    )
+                if summary["stage"] == "validated":
+                    if self._finalizer is None:
+                        raise LiteratureExtractionJobError(
+                            "literature_commit_unavailable", "当前未安装受信原子保存组件"
+                        )
+                    summary = self._store.finalize(
+                        payload["job_handle"],
+                        session_id=self._session_id,
+                        finalizer=self._finalizer,
+                    )
+                    ai_client.finish_task(summary)
+                    return {"summary": summary}
+                stage = self._store.peek_stage(
+                    payload["job_handle"], session_id=self._session_id
+                )
+                self._assert_shared_policy(stage)
+                ai_client.bind_derived_plan(
+                    _prepared_calls(stage),
+                    stage_fingerprint=stage.stage_fingerprint,
+                )
+                claimed = self._store.claim_stage(
+                    payload["job_handle"], session_id=self._session_id
+                )
+                if claimed.stage_fingerprint != stage.stage_fingerprint:
+                    self._store.fail_stage(
+                        payload["job_handle"], session_id=self._session_id
+                    )
+                    raise BusinessActionError("business_action_invalid")
+                stage = claimed
         except BusinessActionError:
             raise
         except LiteratureExtractionJobError as exc:
             raise _project_literature_error(exc, phase="execution") from exc
         except (KeyError, TypeError, ValueError) as exc:
             raise BusinessActionError("business_action_invalid") from exc
+
+    @staticmethod
+    def _assert_shared_policy(stage: FrozenExtractionStage) -> None:
+        LiteratureExtractionBusinessAssembler._assert_shared_policy(stage)
 
 
 class LiteratureExtractionBusinessProjector:
