@@ -47,18 +47,24 @@ from auto_research.desktop.research_memory import (
     ResearchMemoryError,
     ResearchMemoryService,
 )
+from auto_research.desktop.evidence_chat_history import (
+    EvidenceChatHistoryError,
+    EvidenceChatHistoryService,
+)
 
 
 COOKIE_NAME = "auto_research_desktop_session"
 TOKEN_QUERY_NAME = "desktop_token"
 HISTORY_PATH = "/api/desktop/librarian-history"
 RESEARCH_MEMORY_PATH = "/api/desktop/research-memories"
+EVIDENCE_CHAT_HISTORY_PATH = "/api/desktop/evidence-chat-history"
 CREDENTIAL_PATH = "/api/desktop/credentials/deepseek"
 READINESS_PATH = "/api/desktop/readiness"
 HEALTH_PATH = "/api/desktop/healthz"
 CSRF_HEADER = "X-Auto-Research-CSRF"
 MAX_HISTORY_REQUEST_BYTES = 3_000_000
 MAX_RESEARCH_MEMORY_REQUEST_BYTES = 64_000
+MAX_EVIDENCE_CHAT_HISTORY_REQUEST_BYTES = 512 * 1024
 MAX_CREDENTIAL_REQUEST_BYTES = 8_192
 HIGH_COST_PATHS = frozenset(
     {
@@ -176,6 +182,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     security_state: DesktopSecurityState
     history_store: SecureHistoryStore | None = None
     research_memory_service: ResearchMemoryService | None = None
+    evidence_chat_history_service: EvidenceChatHistoryService | None = None
     credential_store: DeepSeekCredentialStore | None = None
     desktop_settings_api: DesktopSettingsAPI | None = None
     evidence_export_api: EvidenceExportAPI | None = None
@@ -357,6 +364,25 @@ class DesktopEvidenceHandler(EvidenceHandler):
             raise ResearchMemoryError("research_memory_invalid", "研究记忆请求必须是对象")
         return value
 
+    def _read_evidence_chat_history_json(self) -> dict:
+        try:
+            length = self._content_length(
+                MAX_EVIDENCE_CHAT_HISTORY_REQUEST_BYTES,
+                require_body=True,
+            )
+            value = json.loads(self._read_exact_body(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise EvidenceChatHistoryError(
+                "evidence_chat_history_invalid",
+                "证据对话历史请求格式无效",
+            ) from exc
+        if not isinstance(value, dict):
+            raise EvidenceChatHistoryError(
+                "evidence_chat_history_invalid",
+                "证据对话历史请求必须是对象",
+            )
+        return value
+
     def _read_credential_json(self) -> dict:
         try:
             length = self._content_length(MAX_CREDENTIAL_REQUEST_BYTES, require_body=True)
@@ -536,6 +562,41 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._research_memory_error(exc)
         self.json_response(snapshot.public_dict())
 
+    def _evidence_chat_history_error(self, error: EvidenceChatHistoryError) -> None:
+        self.json_response(error.public_dict(), HTTPStatus(error.http_status))
+
+    def _get_evidence_chat_history(self) -> None:
+        if self.evidence_chat_history_service is None:
+            return self._evidence_chat_history_error(
+                EvidenceChatHistoryError(
+                    "evidence_chat_history_store_unavailable",
+                    "本机证据对话历史未配置",
+                    http_status=503,
+                )
+            )
+        try:
+            snapshot = self.evidence_chat_history_service.get()
+        except EvidenceChatHistoryError as exc:
+            return self._evidence_chat_history_error(exc)
+        self.json_response(snapshot)
+
+    def _mutate_evidence_chat_history(self) -> None:
+        if self.evidence_chat_history_service is None:
+            return self._evidence_chat_history_error(
+                EvidenceChatHistoryError(
+                    "evidence_chat_history_store_unavailable",
+                    "本机证据对话历史未配置",
+                    http_status=503,
+                )
+            )
+        try:
+            snapshot = self.evidence_chat_history_service.mutate(
+                self._read_evidence_chat_history_json()
+            )
+        except EvidenceChatHistoryError as exc:
+            return self._evidence_chat_history_error(exc)
+        self.json_response(snapshot)
+
     def _legacy_paid_ai_unavailable(self) -> None:
         self.close_connection = True
         self.json_response(
@@ -669,6 +730,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._get_desktop_history()
         if parsed.path == RESEARCH_MEMORY_PATH:
             return self._get_research_memories()
+        if parsed.path == EVIDENCE_CHAT_HISTORY_PATH:
+            return self._get_evidence_chat_history()
         if parsed.path == CREDENTIAL_PATH:
             return self._credential_status()
         if parsed.path == READINESS_PATH:
@@ -748,6 +811,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
                 return self._save_desktop_history()
             if path == RESEARCH_MEMORY_PATH:
                 return self._mutate_research_memories()
+            if path == EVIDENCE_CHAT_HISTORY_PATH:
+                return self._mutate_evidence_chat_history()
             if path == CREDENTIAL_PATH:
                 return self._save_credential()
             if self.desktop_ai_api is not None and self.desktop_ai_api.is_path(self.path):
@@ -908,6 +973,7 @@ def create_desktop_server(
     read_only: bool = False,
     history_store: SecureHistoryStore | None = None,
     research_memory_service: ResearchMemoryService | None = None,
+    evidence_chat_history_service: EvidenceChatHistoryService | None = None,
     credential_store: DeepSeekCredentialStore | None = None,
     desktop_settings_api: DesktopSettingsAPI | None = None,
     evidence_export_api: EvidenceExportAPI | None = None,
@@ -985,6 +1051,7 @@ def create_desktop_server(
             "security_state": security_state,
             "history_store": history_store,
             "research_memory_service": research_memory_service,
+            "evidence_chat_history_service": evidence_chat_history_service,
             "credential_store": credential_store,
             "desktop_settings_api": desktop_settings_api,
             "evidence_export_api": evidence_export_api,

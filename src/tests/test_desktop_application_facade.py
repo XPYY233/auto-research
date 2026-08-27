@@ -177,6 +177,15 @@ class RouteRegistryTests(unittest.TestCase):
         self.assertEqual(by_id["table_structure.review"]["body_cap_bytes"], 64 * 1024)
         self.assertTrue(by_id["table_structure.review"]["mutation"])
         self.assertTrue(by_id["table_structure.review"]["csrf_required"])
+        self.assertEqual(
+            by_id["evidence_chat_history.get"]["path"],
+            "/api/desktop/evidence-chat-history",
+        )
+        self.assertEqual(
+            by_id["evidence_chat_history.mutate"]["body_cap_bytes"],
+            512 * 1024,
+        )
+        self.assertTrue(by_id["evidence_chat_history.mutate"]["csrf_required"])
         self.assertFalse(by_id["librarian.chat"]["mutation"])
         self.assertTrue(by_id["workspace.upload_pdf"]["csrf_required"])
 

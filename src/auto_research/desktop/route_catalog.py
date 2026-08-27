@@ -12,6 +12,7 @@ CREDENTIAL_BYTES = 8_192
 SETTINGS_BYTES = 32_768
 HISTORY_BYTES = 3_000_000
 RESEARCH_MEMORY_BYTES = 64_000
+EVIDENCE_CHAT_HISTORY_BYTES = 512 * 1024
 TABLE_STRUCTURE_BYTES = 64 * 1024
 PERSONAL_BYTES = 512 * 1024
 LIBRARIAN_BYTES = 256_000
@@ -210,6 +211,17 @@ DEFAULT_DESKTOP_ROUTES: tuple[RouteSpec, ...] = (
         "/api/desktop/research-memories",
         "research_memory.mutate",
         RESEARCH_MEMORY_BYTES,
+    ),
+    _get(
+        "evidence_chat_history.get",
+        "/api/desktop/evidence-chat-history",
+        "evidence_chat_history.get",
+    ),
+    _post(
+        "evidence_chat_history.mutate",
+        "/api/desktop/evidence-chat-history",
+        "evidence_chat_history.mutate",
+        EVIDENCE_CHAT_HISTORY_BYTES,
     ),
     _post(
         "table_structure.review",
