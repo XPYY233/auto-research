@@ -5,7 +5,7 @@
     "macos": {
       "desktop_version": "1.2.0",
       "bundle_short_version": "1.2.0",
-      "build_number": "48",
+      "build_number": "49",
       "target": "macOS arm64 Auto Research workbench"
     },
     "windows": {
@@ -58,7 +58,7 @@
     "src/auto_research/evidence/web/fusion_operation_history.js": "0272560dec019433df0fcdfe765e5e30d9d1e196521a1fa329ad5b9232377dc0",
     "src/auto_research/evidence/web/fusion_package_center.js": "6cb7bac3d0716d37df5a96019694a4aaefaa5e084e9afce1c38b707a01ab3397",
     "src/auto_research/evidence/web/fusion_personal_import.js": "f31a8861931cc1395a6d22f28b70aebe3f8066307b6a2fbc14aa0bc42044b672",
-    "src/auto_research/evidence/web/fusion_review.js": "ad3d42df3f52f22430e0963c59ae3d95d6c944f69c405c91dd9353d6d5428b72",
+    "src/auto_research/evidence/web/fusion_review.js": "c905b15b9343ac5be166d41fa7401825458dec87b73137bf1981ca4fc267a629",
     "src/auto_research/evidence/web/codex-pet-working.webp": "eeb657c8dd3dc9431cea8d88b8ec08e4c44471dd258ac3d8008483f2b40f0ef9"
   }
 }

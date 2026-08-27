@@ -127,6 +127,23 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertIn("AI 与 API 密钥", self.index)
         self.assertIn("fusion-ai-business-readiness", self.index)
 
+    def test_appearance_cache_survives_fusion_startup_call(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert'),memory=new Map();
+class Classes{{toggle(){{}}}}
+const html={{dataset:{{theme:'system',density:'comfortable'}},style:{{setProperty(){{}}}}}};
+globalThis.document={{readyState:'loading',documentElement:html,body:{{dataset:{{view:'paper'}}}},querySelector:()=>null,querySelectorAll:()=>[],addEventListener(){{}}}};
+globalThis.localStorage={{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value)}};
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
+const api=globalThis.AutoResearchFusion;
+assert.equal(api.applyAppearance('dark','compact'),true);
+const stored=JSON.parse(memory.get('auto-research-fusion-appearance-v1'));
+assert.deepEqual(stored,{{version:1,theme:'dark',density:'compact'}});
+assert.equal(html.dataset.theme,'dark');assert.equal(html.dataset.density,'compact');
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_ai_workflows_have_real_stage_feedback_and_chat_composers(self) -> None:
         for element_id in (
             "fusion-literature-progress",

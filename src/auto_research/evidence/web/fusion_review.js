@@ -730,6 +730,9 @@
   }
   function packageMethod(name,fallback=null){return(...args)=>{const controller=packageCenter();return controller?controller[name](...args):fallback;};}
   const selectPackageWorkflow=packageMethod("selectPackageWorkflow",false),publicOfficialPackageResult=packageMethod("publicOfficialPackageResult",null),publicActiveOfficialPackageSummary=packageMethod("publicActiveOfficialPackageSummary",null),renderOfficialPackageResult=packageMethod("renderOfficialPackageResult",false),rememberOfficialPackageResult=packageMethod("rememberOfficialPackageResult",false),publicDatasetPlan=packageMethod("publicDatasetPlan",null),publicDatasetReceipt=packageMethod("publicDatasetReceipt",null),updateDatasetExportButton=packageMethod("updateDatasetExportButton",false),planDataset=packageMethod("planDataset"),exportDataset=packageMethod("exportDataset"),loadPackageCenter=packageMethod("loadPackageCenter",null),importOfficialPackage=packageMethod("importOfficialPackage"),planLiteraturePackage=packageMethod("planLiteraturePackage"),planPersonalPackage=packageMethod("planPersonalPackage"),exportPlannedPackage=packageMethod("exportPlannedPackage"),inspectUserPackage=packageMethod("inspectUserPackage"),importUserPackage=packageMethod("importUserPackage");
+  function safeStoreAppearance() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({version:1,theme:state.theme,density:state.density})); } catch (_error) {}
+  }
   function showSettingsStatus(message,kind="info") {const node=q("#fusion-settings-status");if(!node)return;node.hidden=false;node.dataset.kind=kind;node.textContent=message;}
   function applyAppearance(theme = state.theme, density = state.density,{cache=true}={}) {
     if (!["system","light","dark"].includes(theme) || !["comfortable","compact"].includes(density)) return false;
