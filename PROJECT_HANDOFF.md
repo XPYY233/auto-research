@@ -2,15 +2,20 @@
 
 ## 1.2 工作台恢复线（2026-08-25，当前唯一开发权威）
 
+- 当前候选已从干净提交`45720ce`构建并事务式安装为`/Applications/Auto Research.app`（`1.2.0` / build50）。旧build49保存在仓库外不可启动`.app.rollback`；系统版本与签名、DMG和构建清单一致。
+- build50已串行通过共享`1109`项（另有80项明确外部样本跳过）、macOS`305`项、Python编译、10份生产JavaScript语法、14份发布资源哈希、冻结App冒烟、严格深层签名、DMG校验和隔离60篇快照流程；生产SQLite与`paper_056`现场未进入测试或构建。
+- build50修复收费调用硬超时、拒绝响应释放、结果未知错误血缘，并把文献提取压缩为每个“分支×完整页分段”一次合并提取；1/7/15页初始调用上限由`6/12/24`降为`2/4/8`，仍保留双分支、按需覆盖核验、第三审核、表图与曲线安全门。
+- 用户套件已原子生成：`/Users/USER/Zotero/auto-research-releases/v1.2.0-build50-mac/Auto-Research-1.2.0-build50-Mac-UserKit.zip`，SHA-256为`69c2373a2e85cc9acce76d2bd780b2e64cbfab3d0f9b27652a5350213dbb5820`。内含DMG、独立版本`1.1.0`官方包和8页中文教程；ZIP与套件内三项文件均已复核。
+- 稳定声明仍差最后一项：Mac锁屏阻断安装后真实WebView点击验收。解锁后必须只读完成四入口、布局/分栏、搜索、真实证据/PDF、设置和历史检查；若任一步失败，build50立即撤回。此前真实DeepSeek已分别跑通图书管理员、证据问答、实验建议和一页文献提取，但优化后的整篇调用规划尚未再次付费压力测试，不得把自动测试写成新的科学准确率证据。
 - 用户已批准 `Auto-Research-1.2-Audit-Proposal/expected-workbench.html` 作为最终生产界面的验收预期：保留0.5的从容、主操作可见和完整工作流，采用VS Code的活动栏、上下文栏、标签与按需分栏。
 - 全面审计与串行实施计划由提交`c8b2c66`冻结，权威文件为`docs/AUTO_RESEARCH_1_2_FULL_AUDIT_AND_PLAN_ZH.md`、`docs/WORKBENCH_LAYOUT_AUDIT_1_2.md`和`config/workbench-recovery-contract.json`。
-- 当前安装App是`1.2.0`/build47，来自提交`033b12b`。它已被用户实机证明存在布局、AI和连续工作流回归，不得继续称为稳定交付，也不得以HEAD源码修复替代安装App验收。
+- build47来自提交`033b12b`，已被用户实机证明存在布局、AI和连续工作流回归，只保留为失败历史，不得作为稳定基线。
 - 当前源码检查点为`30c7080`。Phase 6已在源码层接入独立`operation-history-v1`：资料包导入、资料包导出和训练数据集导出的状态保留近30天、最多100条，macOS使用独立AES-GCM存储，Fusion在“资料包 → 任务与收据”显示queued/running/completed/failed/interrupted。重启后的未完成任务只标记“已中断并返回相应流程”，不会伪装续跑；已落盘但完成回执为pending的导出可跨App重启只恢复可信回执，不重新选择位置、不重跑导出或dataset构建。历史不保存路径、selection/destination/plan token、敏感正文、密钥或原始job id。`8525763 → 8929883 → d9148dc → 78d15bd → a28b9e2 → 30c7080`分别完成平台核心、通用安全存储、任务生命周期观察、Mac API恢复、生产组合和Fusion投影。
 - 资料包/dataset与personal-import已从Fusion主脚本物理拆分；Fusion已把取消零请求、三项用户包风险确认和逐篇PDF权限迁到当前控制器测试；私人实验保存后若搜索刷新失败，实验首屏显示幂等“恢复私人搜索索引”，不会重复确认、导入或调用AI。共享/Mac正向路径已停止读取四个旧Web控制器；旧JavaScript只因Windows冻结静态清单保留。
-- Phase 0—5的源码恢复与Phase 6的主要源码接线已完成。仍未完成的是：跨重启长任务continuation/checkpoint、cancelled终态、旧四套加密JSON存储迁移、完整串行测试、候选App构建、安装后真实用户流程和收费模型验收。当前安装App仍是旧build47，因此`30c7080`只能称为源码候选，不能称为稳定交付。上一轮旧Fusion hydration实验仍隔离在Git stash `quarantine-interrupted-fusion-experiment-20260825`，不得恢复到当前主线。
+- Phase 0—6的主要源码接线、完整串行测试、候选构建和事务式安装已完成。仍未完成的是安装后真实WebView点击验收、跨重启长任务continuation/checkpoint、cancelled终态与旧四套加密JSON存储迁移；这些未完成项继续保留在架构债务中，不因build50生成而改写为完成。上一轮旧Fusion hydration实验仍隔离在Git stash `quarantine-interrupted-fusion-experiment-20260825`，不得恢复到当前主线。
 - Phase 2只恢复公开标签身份、按需第二编辑器、每标签内存滚动/焦点和异步请求绑定。重启后只懒加载当前可见标签，正文、聊天、路径和滚动位置不写入布局缓存；标签在请求期间移栏时旧结果失败关闭并可重试，不会串栏或抢焦点。
 - 页面默认三层、按需四层，永不同时显示上下文栏、两个编辑器组和检查器。文献、搜索、图书管理员、实验、资料包、设置的允许栏位和首屏主操作由`workbench-recovery-contract.json`唯一规定。
-- 当前表格恢复链提交为`32cb790`：只有从不可变PDF快照提取、经人工确认的二维字符串结构才能导出，候选、拒绝或缺失结构均不会伪装成数据；Fusion主/次编辑组按标签隔离结构状态。相关139项目标测试、23项发布契约检查、JavaScript/Python语法和发布资源哈希通过。尚未运行全套、构建、付费模型或安装App，build47仍是不合格旧安装版。
+- 表格恢复链提交为`32cb790`：只有从不可变PDF快照提取、经人工确认的二维字符串结构才能导出，候选、拒绝或缺失结构均不会伪装成数据；Fusion主/次编辑组按标签隔离结构状态。build50的完整串行门已经覆盖该链，仍需安装后真实表格与原图并列点击验收。
 - root仍是唯一Git写入、集成与发布者；其他同项目Codex任务只编辑明确文件范围，不stage/commit。电脑发热时最多一个前端开发任务与root低负载审查并行；全测、构建和模型调用继续冻结。
 - 生产`db/experimental_evidence.sqlite`和`data/evidence/visual_assets/paper_056_4e85e57cc6/`保持用户现场，不得暂存、还原、测试、构建或清理。Windows继续冻结。
 

@@ -1,10 +1,12 @@
 # Auto Research Evidence 阶段发布状态
 
-> **当前稳定声明已暂停。** 机器上安装的`1.2.0`/build47来自`033b12b`，用户实机发现布局、AI与连续工作流回归；它不能作为下一版本的稳定基线。当前开发必须遵循`docs/AUTO_RESEARCH_1_2_FULL_AUDIT_AND_PLAN_ZH.md`和`config/workbench-recovery-contract.json`，完成真实安装App验收后才重新建立稳定声明。
+> **1.2稳定声明仍暂停，但候选已收口到build50。** 机器上安装的`1.2.0`/build50来自干净提交`45720ce`；共享1109项（另80项明确跳过）、macOS305项、冻结冒烟、签名、DMG和事务式安装均通过。Mac锁屏阻断最后一轮真实WebView点击验收，因此当前只能称“已安装发布候选”，不能提前称稳定版。
+
+> build50 DMG SHA-256为`284915825c4834f4a2ea224af3cb60e178ee36010f2828d00d2f7b7523b5bde2`；Mac UserKit ZIP SHA-256为`69c2373a2e85cc9acce76d2bd780b2e64cbfab3d0f9b27652a5350213dbb5820`。官方资料包继续使用独立版本`1.1.0`，SHA-256为`909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`。
 
 > `0.5.1`/build6继续作为已验证工作流和交互从容度的比较基线；当前安全、原子发布、官方包v2和数据集能力必须保留，不能直接回退旧收费路由或旧DOM。以下旧“稳定交付”段落仅是历史证据，不代表当前1.2可发布。
 
-> 当前稳定交付为 Auto Research `1.1.0` / build `24`。它只面向 Apple Silicon macOS，采用 ad-hoc 签名、未公证，不是 App Store/Developer ID 公开发行。Windows 1.1迁移冻结。
+> 当前可验证回退基线仍为 Auto Research `1.1.0` / build `24`。build50完成用户实机点击验收前不覆盖该结论。Windows 1.2迁移冻结。
 
 > build `27` 目前只是源码候选：build 25 的 DeepSeek 推理探针失败；build 26 修复连接与工具能力后，真实 App 又发现实验预填能力验证的前后端上限不一致。build 27 修复独立验证预算后，仍须重新通过四项付费AI、完整测试和安装验收；失败时继续使用build 24。
 

@@ -2,7 +2,7 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
-## Handoff entry point (updated 2026-08-24)
+## Handoff entry point (updated 2026-08-28)
 
 - A new account or agent must read `PROJECT_HANDOFF.md` before modifying this repository, then use this file as the durable policy authority.
 - The canonical portable project skill is `skills/auto-research-evidence-maintainer/`; its current-account installation is a symlink under `~/.codex/skills/auto-research-evidence-maintainer`.
@@ -12,9 +12,9 @@ This project is a local literature automation workflow for fusion materials, rad
 - Do not solve platform integration by copying product logic into `desktop/macos/**` or `desktop/windows/**`. Package verification, official repository audit, stable source identity and federated read-only search stay platform-neutral; desktop code supplies lifecycle, native file selection, credentials and protected routing only.
 - The canonical official package selector is `<app-data>/official-packages/active.json`. A package becomes active only after signature/checksum validation and `OfficialEvidenceRepository` audit; `distribution-sqlite-v1` must never pass through `EvidenceDB.init()` or any writable v12 search-index path.
 - Signing private keys are maintainer-only files outside Git and outside application data packages. Applications trust only reviewed public keys from `auto_research.product.trusted_publishers`; missing keys must never be silently regenerated under an existing `key_id`.
-- Current release line: Apple Silicon macOS `1.1.0`. Build 24 remains the verified stable rollback; build 40 is the installed AI-readiness checkpoint and build 41 is the current source candidate until its clean build, transactional installation and real paid four-scope acceptance finish. All use the single Fusion workbench.
+- Current release line: Apple Silicon macOS `1.2.0`. Build 50 from clean commit `45720ce` is installed and has passed the full shared/macOS suites, frozen smoke, signing and DMG gates, but remains a candidate until the locked Mac is unlocked and the installed WebView user flow passes. Build 24 remains the verified stable rollback. All use the single Fusion workbench.
 - Current internal official package: `1.1.0`, SHA-256 `909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`, 59 papers, 4,369 four-type entities, 59 verified PDFs and 291 visual assets. It is read-only and must never replace or write the editable v12 workspace. Its internal-use rights and signer identity remain immutable security contracts.
-- Windows work is explicitly paused. Do not edit, test or build `desktop/windows/**` until the user accepts the complete Mac 1.1 workflow and explicitly asks to resume migration. Historical Windows v1 Setup success remains a separate checkpoint and does not make the 1.1 source installer-ready.
+- Windows work is explicitly paused. Do not edit, test or build `desktop/windows/**` until the user accepts the complete Mac 1.2 workflow and explicitly asks to resume migration. Historical Windows v1 Setup success remains a separate checkpoint and does not make the 1.2 source installer-ready.
 - Product stability, corpus completion and scientific validity remain separate claims. The fixed corpus is still 17/50 data-ready and 30/50 visual-ready; automatic adversarial agreement is not an independent human physics gold standard.
 
 ## Search V2, federated search and in-product agents (updated 2026-08-09)
