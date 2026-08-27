@@ -83,8 +83,8 @@
       "area": "frontend",
       "owner": "shared-frontend",
       "status": "experimental",
-      "problem": "生产HTML现加载Fusion八个经典脚本；资料包业务已从fusion_review.js抽离到无自主生命周期的fusion_package_center.js，但926行主脚本仍同时承担文献、搜索、实验、设置、AI、标签和布局协调；app.js(4379行)、desktop_product.js(968行)、旧package_center.js(419行)和workbench.js(392行)虽不在生产HTML中，仍被平台白名单、安全检查、safe update或兼容测试消费",
-      "target": "保持单一bootstrap、workspace、document和请求端口；下一批只抽离已冻结的personal垂直切片，再迁移旧资源的最后消费者，最后物理删除不再加载的控制器",
+      "problem": "生产HTML现加载Fusion九个经典脚本；资料包与个人导入业务已分别抽离到无自主生命周期的fusion_package_center.js和fusion_personal_import.js，但874行主脚本仍同时承担文献、搜索、设置、AI、标签和布局协调；app.js(4379行)、desktop_product.js(968行)、旧package_center.js(419行)和workbench.js(392行)虽不在生产HTML中，仍被平台白名单、安全检查、safe update或兼容测试消费",
+      "target": "保持单一bootstrap、workspace、document和请求端口；先迁移旧资源的最后消费者并物理删除不再加载的控制器，再按已验证端到端边界抽离文献或搜索垂直切片",
       "removal_gate": "唯一生产bootstrap与导航所有者、无死导出/重复监听、新静态资源进入macOS发布哈希与冻结冒烟、旧文件无生产/安全/迁移消费者、真实WebView主链通过"
     },
     {
