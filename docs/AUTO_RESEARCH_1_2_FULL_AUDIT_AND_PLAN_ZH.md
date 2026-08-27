@@ -2,12 +2,12 @@
 
 > 审计日期：2026-08-25
 > 原始审计基线：`aa64c21390fc5d6873822f2798d76c18871c0f20`
-> 当前实施检查点：`ba78030`
+> 当前实施检查点：`9d63f35`
 > 0.5 对照基线：`63b34f2`（0.5.1 build 6）
 > 当前已安装 App：1.2.0 build 47，来自 `033b12b3a38b6852c11569bd502637632f8c82f8`
 > 审计边界：本轮停止生产代码修复，不构建、不调用模型、不读写生产 SQLite。
 
-> 2026-08-28 实施检查点：审计后已按契约恢复上传论文原子发布、视觉资产人工隔离、表格人工审核与verified-only导出、图书管理员/证据对话的有界历史与引用复核、私人表格分页核验与人工序列编辑、确认导入后的精确打开，以及官方包活动版本和审计数量的冷启动恢复。结构治理已修复循环审计器、消除finalizer/job/visual三模块环，并把资料包/dataset与个人导入控制器从Fusion主脚本物理抽离。以上均只是源码与定向测试状态，尚未替换已安装 App，也不构成 1.2 稳定声明。生产 SQLite 与 `paper_056` 隔离现场继续排除在测试、构建与提交之外。
+> 2026-08-28 实施检查点：审计后已按契约恢复上传论文原子发布、视觉资产人工隔离、表格人工审核与verified-only导出、图书管理员/证据对话的有界历史与引用复核、私人表格分页核验与人工序列编辑、确认导入后的精确打开，以及官方包活动版本和审计数量的冷启动恢复。结构治理已修复循环审计器、消除finalizer/job/visual三模块环，并把资料包/dataset与个人导入控制器从Fusion主脚本物理抽离。用户资料包和训练数据集的成功导出现在会生成独立AES-GCM、path-free的30天完成回执，并在资料包中心跨重启显示；回执失败不会改判或重跑已经落盘的导出。以上均只是源码与定向测试状态，尚未替换已安装 App，也不构成 1.2 稳定声明。生产 SQLite 与 `paper_056` 隔离现场继续排除在测试、构建与提交之外。
 
 ## 1. 执行结论
 
@@ -160,7 +160,7 @@ AI设计必须遵循：
 
 ### 7.3 前端主要债务
 
-- `fusion_review.js`当前874行；资料包/数据集逻辑已迁入677行的 `fusion_package_center.js`，个人导入核验逻辑已迁入569行的 `fusion_personal_import.js`。主脚本仍掌管文献、搜索、设置、AI、标签和布局协调。
+- `fusion_review.js`当前874行；资料包/数据集和持久导出回执逻辑已迁入865行的 `fusion_package_center.js`，个人导入核验逻辑已迁入569行的 `fusion_personal_import.js`。主脚本仍掌管文献、搜索、设置、AI、标签和布局协调。
 - 当前生产HTML只加载 `ai_consent.js`、`document_tab_store.js`、`pane_layout_controller.js`、`workspace_layout_controller.js`、`fusion_pdf_controller.js`、`fusion_ai_experience.js`、`fusion_package_center.js`、`fusion_personal_import.js` 与 `fusion_review.js`。旧 `app.js`、`desktop_product.js`、旧 `package_center.js`、`workbench.js` 不属于生产启动链。
 - 这些旧资源仍被桌面静态白名单、safe-update检查、权限/路由兼容测试或历史研究测试消费，必须先迁移消费者，不能用一次粗暴删除冒充清债。
 - DocumentTabStore、PaneLayoutController和Fusion各自拥有部分可见性/恢复语义，导致“所有栏被收起”及标签内容错位。

@@ -54,10 +54,10 @@
     },
     {
       "id": "package-center",
-      "paths": ["src/auto_research/product/package_center.py", "src/auto_research/product/package_center_models.py"],
+      "paths": ["src/auto_research/product/package_center.py", "src/auto_research/product/package_center_models.py", "src/auto_research/product/activity_receipts.py"],
       "owner": "shared-product-runtime",
       "status": "experimental",
-      "authority": "path-free package plans, jobs, export and import orchestration"
+      "authority": "path-free package plans, jobs, export and import orchestration, plus durable non-sensitive completion receipts"
     },
     {
       "id": "dataset-bundle-runtime",
