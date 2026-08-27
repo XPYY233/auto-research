@@ -46,6 +46,9 @@ from auto_research.evidence.literature_extraction_recovery import (
 from auto_research.evidence.literature_extraction_recovery_sweep import (
     LiteratureExtractionRecoverySweep,
 )
+from auto_research.evidence.literature_extraction_task_directory import (
+    LiteratureExtractionTaskDirectory,
+)
 from auto_research.personal.ai_business_action import (
     PersonalSuggestionBusinessPorts,
     personal_suggestion_business_ports,
@@ -160,6 +163,7 @@ class MacAIRuntimeServices:
     literature_checkpoints: MacLiteratureCheckpointServices | None = None
     literature_recovery: LiteratureExtractionFinalizerRecovery | None = None
     literature_recovery_report: Mapping[str, object] | None = None
+    literature_task_directory: LiteratureExtractionTaskDirectory | None = None
 
 
 _SERVICES: MacAIRuntimeServices | None = None
@@ -272,6 +276,7 @@ def create_mac_ai_runtime_services(
     literature_checkpoints = None
     literature_recovery = None
     literature_recovery_report = None
+    literature_task_directory = None
     snapshots = None
     business_actions = None
     harness_ports = None
@@ -316,6 +321,10 @@ def create_mac_ai_runtime_services(
             checkpoints=literature_checkpoints.checkpoint_store,
             recovery=literature_recovery,
         ).run(limit=16)
+        literature_task_directory = LiteratureExtractionTaskDirectory(
+            checkpoints=literature_checkpoints.checkpoint_store,
+            startup_recovery=literature_recovery_report,
+        )
         snapshots = CompositeContentSnapshotAuthority(
             {
                 "personal_table": personal_ports.snapshots,
@@ -355,6 +364,7 @@ def create_mac_ai_runtime_services(
         settings=desktop_service,
         prepared_actions=prepared_actions,
         business_actions=business_actions,
+        literature_task_directory=literature_task_directory,
     )
     return MacAIRuntimeServices(
         execution_lock=execution_lock,
@@ -386,6 +396,7 @@ def create_mac_ai_runtime_services(
         literature_checkpoints=literature_checkpoints,
         literature_recovery=literature_recovery,
         literature_recovery_report=literature_recovery_report,
+        literature_task_directory=literature_task_directory,
     )
 
 

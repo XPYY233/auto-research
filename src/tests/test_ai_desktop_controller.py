@@ -105,7 +105,7 @@ class DesktopAIControllerTests(unittest.TestCase):
 
     def test_route_contract_has_server_prepare_consent_and_execute(self):
         contract = DesktopAIController.route_contract()
-        self.assertEqual(len(contract), 17)
+        self.assertEqual(len(contract), 18)
         patterns = {(row["method"], row["pattern"]) for row in contract}
         self.assertIn(("POST", r"^/api/desktop/ai/providers/(?P<provider_id>deepseek|openai|custom)/test-actions$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/consents$"), patterns)
@@ -113,8 +113,38 @@ class DesktopAIControllerTests(unittest.TestCase):
         self.assertIn(("POST", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/execute$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/execute-jobs$"), patterns)
         self.assertIn(("GET", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/jobs$"), patterns)
+        self.assertIn(("GET", r"^/api/desktop/ai/actions/literature_extraction/task-directory$"), patterns)
         self.assertIn(("GET", r"^/api/desktop/ai/jobs/(?P<job_id>ai_job_[A-Za-z0-9_-]{24,160})$"), patterns)
-        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 17)
+        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 18)
+
+    def test_literature_task_directory_is_shared_and_path_free(self):
+        class _Directory:
+            def status(self, *, limit=16):
+                self.limit = limit
+                return {
+                    "schema_version": "literature-extraction-task-directory-v1",
+                    "tasks": [],
+                    "startup_recovery": {
+                        "recovered": 1,
+                        "already_completed": 0,
+                        "skipped_or_blocked": 0,
+                    },
+                    "issues": [],
+                }
+
+        directory = _Directory()
+        controller = DesktopAIController(
+            settings=self.settings,
+            prepared_actions=self.prepared,
+            literature_task_directory=directory,
+        )
+        response = controller(self.request(
+            "GET",
+            "/api/desktop/ai/actions/literature_extraction/task-directory",
+        ))
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.body["startup_recovery"]["recovered"], 1)
+        self.assertEqual(directory.limit, 16)
 
     def test_async_business_job_is_session_bound_and_reports_activity(self):
         business = _Business()

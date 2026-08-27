@@ -163,7 +163,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             self.assertIs(services.credential_manager, manager)
             self.assertIs(services.legacy_deepseek_store.manager, manager)
             self.assertIs(services.execution_lock, manager.execution_lock)
-            self.assertEqual(len(services.controller.route_contract()), 17)
+            self.assertEqual(len(services.controller.route_contract()), 18)
             self.assertIs(services.database, database)
             self.assertIs(
                 services.personal_import_service,
@@ -225,6 +225,10 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                     "skipped_or_blocked": 0,
                     "issues": [],
                 },
+            )
+            self.assertIs(
+                services.controller._literature_task_directory,
+                services.literature_task_directory,
             )
             self.assertTrue((root / "literature-tasks-v1").is_dir())
             self.assertFalse(hasattr(services, "literature_finalizer"))

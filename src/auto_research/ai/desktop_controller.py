@@ -61,6 +61,10 @@ class DesktopAISettings(Protocol):
     def custom_provider_delete(self, expected_revision: object) -> dict[str, object]: ...
 
 
+class DesktopAILiteratureTaskDirectory(Protocol):
+    def status(self, *, limit: int = 16) -> Mapping[str, object]: ...
+
+
 class DesktopAIRequestContext(Protocol):
     """Authenticated platform context; session_id is not renderer input."""
 
@@ -226,6 +230,12 @@ DESKTOP_AI_ROUTES = (
         0,
     ),
     DesktopAIRoute(
+        "desktop_ai.literature_task_directory",
+        "GET",
+        r"^/api/desktop/ai/actions/literature_extraction/task-directory$",
+        0,
+    ),
+    DesktopAIRoute(
         "desktop_ai.business_job_get",
         "GET",
         rf"^/api/desktop/ai/jobs/{_AI_JOB_PATH}$",
@@ -286,6 +296,7 @@ class DesktopAIController:
         prepared_actions: PreparedActionService,
         business_actions: BusinessPreparedActionRegistry | None = None,
         execution_jobs: AIExecutionJobService | None = None,
+        literature_task_directory: DesktopAILiteratureTaskDirectory | None = None,
     ) -> None:
         self._settings = settings
         self._prepared = prepared_actions
@@ -293,6 +304,7 @@ class DesktopAIController:
         self._execution_jobs = execution_jobs or (
             AIExecutionJobService() if business_actions is not None else None
         )
+        self._literature_task_directory = literature_task_directory
 
     def __call__(self, request: DesktopAIRequestContext) -> DesktopAIHTTPResponse:
         try:
@@ -492,6 +504,15 @@ class DesktopAIController:
                 session_id=_session_id(request),
                 scope=scope,
             )
+        elif route.route_id == "desktop_ai.literature_task_directory":
+            if self._literature_task_directory is None:
+                return _error_response(
+                    503,
+                    "desktop_ai_business_unavailable",
+                    "文献提取任务目录尚未在当前桌面版本中启用。",
+                    True,
+                )
+            result = self._literature_task_directory.status(limit=16)
         else:  # pragma: no cover - route table and dispatch are reviewed together
             raise RuntimeError("unhandled AI route")
         if not isinstance(result, Mapping):
