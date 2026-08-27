@@ -78,6 +78,30 @@ class _Service:
         self.calls.append(("status", import_id))
         return _Result("draft_saved")
 
+    def tabular_page(
+        self,
+        import_id: str,
+        *,
+        sheet_index: int,
+        page: int,
+        page_size: int,
+    ):
+        self.calls.append(("tabular_page", import_id, sheet_index, page, page_size))
+        return SimpleNamespace(
+            public_dict=lambda: {
+                "schema_version": "personal-tabular-page-v1",
+                "import_id": import_id,
+                "sheet_index": sheet_index,
+                "sheet_name": "Sheet1",
+                "page": page,
+                "page_size": page_size,
+                "total_rows": 2,
+                "has_next": False,
+                "columns": ["温度", "硬度"],
+                "rows": [["300", "4.2"], ["400", "4.5"]],
+            }
+        )
+
     def save_draft(self, import_id: str, payload: dict[str, object]):
         self.calls.append(("draft", import_id, payload))
         return _Result("draft_saved")
@@ -191,6 +215,70 @@ class PersonalImportAPITests(unittest.TestCase):
                 self.assertNotIn(forbidden, serialized)
             self.assertIn(IMPORT_ID, serialized)
             self.assertIn("revision", serialized)
+
+    def test_tabular_rows_route_uses_strict_bounded_query(self) -> None:
+        handler = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/sheets/0/rows"
+            "?page=2&page_size=25"
+        )
+        self.assertTrue(self.api.handle_get(handler))
+        self.assertEqual(
+            self.service.calls,
+            [("tabular_page", IMPORT_ID, 0, 2, 25)],
+        )
+        payload, status = handler.responses[0]
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertEqual(payload["schema_version"], "personal-tabular-page-v1")
+        self.assertEqual(payload["columns"], ["温度", "硬度"])
+        serialized = json.dumps(payload, ensure_ascii=False).casefold()
+        for forbidden in ("path", "sha256", "file_id", "source_file_id", "draft_id"):
+            self.assertNotIn(forbidden, serialized)
+
+        defaults = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/sheets/0/rows"
+        )
+        self.assertTrue(self.api.handle_get(defaults))
+        self.assertEqual(
+            self.service.calls[-1],
+            ("tabular_page", IMPORT_ID, 0, 1, 50),
+        )
+
+    def test_tabular_rows_route_rejects_unknown_duplicate_and_invalid_query(self) -> None:
+        paths = (
+            f"/api/desktop/personal-imports/{IMPORT_ID}/sheets/0/rows?unsafe=1",
+            f"/api/desktop/personal-imports/{IMPORT_ID}/sheets/0/rows?page=1&page=2",
+            f"/api/desktop/personal-imports/{IMPORT_ID}/sheets/0/rows?page=0",
+            f"/api/desktop/personal-imports/{IMPORT_ID}/sheets/0/rows?page_size=101",
+            f"/api/desktop/personal-imports/{IMPORT_ID}/sheets/0/rows?page=",
+        )
+        for path in paths:
+            handler = _Handler(path)
+            self.assertTrue(self.api.handle_get(handler), path)
+            payload, status = handler.responses[0]
+            self.assertEqual(status, HTTPStatus.BAD_REQUEST, path)
+            self.assertEqual(payload["code"], "personal_request_invalid", path)
+        self.assertEqual(self.service.calls, [])
+
+    def test_tabular_snapshot_unavailable_is_gone_and_nonretryable(self) -> None:
+        class _UnavailableService(_Service):
+            def tabular_page(self, import_id: str, **_kwargs):
+                del import_id
+                raise PersonalImportServiceError(
+                    "personal_tabular_snapshot_unavailable",
+                    "本次导入的临时表格已不可用，请重新选择文件。",
+                    retryable=False,
+                )
+
+        handler = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/sheets/0/rows"
+        )
+        self.assertTrue(
+            PersonalImportAPI(_UnavailableService()).handle_get(handler)  # type: ignore[arg-type]
+        )
+        payload, status = handler.responses[0]
+        self.assertEqual(status, HTTPStatus.GONE)
+        self.assertFalse(payload["retryable"])
+        self.assertNotIn("path", json.dumps(payload).casefold())
 
     def test_ai_suggestion_requires_explicit_consent_and_stays_unconfirmed(self) -> None:
         denied = _Handler(

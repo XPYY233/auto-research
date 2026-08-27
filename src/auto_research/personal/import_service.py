@@ -44,9 +44,11 @@ from auto_research.personal.search_source import (
 )
 from auto_research.personal.tabular_preview import (
     PreviewLimits,
+    TabularFileRows,
     TabularFilePreview,
     UnsafeTabularFileError,
     preview_tabular_file,
+    read_tabular_snapshot,
 )
 
 
@@ -140,6 +142,34 @@ class PersonalImportPreview:
             "schema_version": "personal-import-preview-v1",
             "status": self.status.public_dict(),
             "preview": self.preview.as_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class PersonalTabularPage:
+    """One bounded, path-free page from the private staged import snapshot."""
+
+    import_id: str
+    sheet_index: int
+    sheet_name: str
+    page: int
+    page_size: int
+    total_rows: int
+    columns: tuple[str, ...]
+    rows: tuple[tuple[str, ...], ...]
+
+    def public_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "personal-tabular-page-v1",
+            "import_id": self.import_id,
+            "sheet_index": self.sheet_index,
+            "sheet_name": self.sheet_name,
+            "page": self.page,
+            "page_size": self.page_size,
+            "total_rows": self.total_rows,
+            "has_next": self.page * self.page_size < self.total_rows,
+            "columns": list(self.columns),
+            "rows": [list(row) for row in self.rows],
         }
 
 
@@ -442,6 +472,82 @@ class PersonalImportService:
     def status(self, import_id: str) -> PersonalImportStatus:
         with self._lock:
             return self._status(self._require_session(import_id))
+
+    def tabular_page(
+        self,
+        import_id: str,
+        *,
+        sheet_index: int,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> PersonalTabularPage:
+        """Read one page from the still-private staged snapshot.
+
+        The shared tabular security authority necessarily decodes the bounded
+        snapshot once per request.  We deliberately do not cache decoded rows:
+        a cache could retain a large workbook and would accidentally keep table
+        content available after the staging snapshot has moved into the private
+        repository.
+        """
+
+        if isinstance(sheet_index, bool) or not isinstance(sheet_index, int):
+            raise _service_error(
+                "personal_request_invalid",
+                "工作表选择无效。",
+                details={"field": "sheet_index"},
+            )
+        if isinstance(page, bool) or not isinstance(page, int) or page < 1:
+            raise _service_error(
+                "personal_request_invalid",
+                "页码无效。",
+                details={"field": "page"},
+            )
+        if (
+            isinstance(page_size, bool)
+            or not isinstance(page_size, int)
+            or not 1 <= page_size <= 100
+        ):
+            raise _service_error(
+                "personal_request_invalid",
+                "每页行数必须在 1 到 100 之间。",
+                details={"field": "page_size"},
+            )
+
+        with self._lock:
+            session = self._require_session(import_id)
+            if not 0 <= sheet_index < len(session.preview.sheets):
+                raise _service_error(
+                    "personal_request_invalid",
+                    "工作表选择无效。",
+                    details={"field": "sheet_index"},
+                )
+            raw = self._read_staged_snapshot(session)
+            try:
+                decoded = read_tabular_snapshot(
+                    raw,
+                    original_name=session.preview.source_file.original_name,
+                    limits=self._preview_limits,
+                )
+            except UnsafeTabularFileError as exc:
+                raise _service_error(
+                    "personal_tabular_invalid",
+                    "导入表格已无法通过安全读取校验，请重新选择文件。",
+                    retryable=False,
+                ) from exc
+            self._validate_tabular_snapshot(session, decoded)
+            sheet = decoded.sheets[sheet_index]
+            start = (page - 1) * page_size
+            rows = sheet.rows[start : start + page_size]
+            return PersonalTabularPage(
+                import_id=session.import_id,
+                sheet_index=sheet_index,
+                sheet_name=sheet.sheet_name,
+                page=page,
+                page_size=page_size,
+                total_rows=len(sheet.rows),
+                columns=sheet.column_names,
+                rows=rows,
+            )
 
     def suggest(
         self,
@@ -1033,6 +1139,131 @@ class PersonalImportService:
                 os.close(source_fd)
             if cleanup_needed:
                 self._remove_staged_path(destination)
+
+    def _read_staged_snapshot(self, session: _ImportSession) -> bytes:
+        """Authenticate and read the one service-owned staging file."""
+
+        staged_path = session.staged_path
+        if staged_path is None:
+            raise _service_error(
+                "personal_tabular_snapshot_unavailable",
+                "本次导入的临时表格已移入私人仓库，不能继续读取预览行。",
+                retryable=False,
+            )
+        expected_root = self.data_root / ".import-staging"
+        try:
+            if staged_path.parent != expected_root or _STAGED_FILENAME_RE.fullmatch(
+                staged_path.name
+            ) is None:
+                raise OSError("staging identity mismatch")
+            root_status = expected_root.lstat()
+            file_status = staged_path.lstat()
+            if (
+                stat.S_ISLNK(root_status.st_mode)
+                or not stat.S_ISDIR(root_status.st_mode)
+                or stat.S_ISLNK(file_status.st_mode)
+                or not stat.S_ISREG(file_status.st_mode)
+            ):
+                raise OSError("unsafe staged snapshot")
+            fd = os.open(
+                staged_path,
+                os.O_RDONLY
+                | getattr(os, "O_BINARY", 0)
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+        except FileNotFoundError as exc:
+            raise _service_error(
+                "personal_tabular_snapshot_unavailable",
+                "本次导入的临时表格已不可用，请重新选择文件。",
+                retryable=False,
+            ) from exc
+        except OSError as exc:
+            raise _service_error(
+                "personal_tabular_unavailable",
+                "暂时无法读取个人实验表格，请稍后重试。",
+                retryable=True,
+            ) from exc
+
+        try:
+            before = os.fstat(fd)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_size < 0
+                or before.st_size > self._preview_limits.max_file_bytes
+            ):
+                raise OSError("staged snapshot exceeds bounds")
+            chunks: list[bytes] = []
+            total = 0
+            while chunk := os.read(fd, min(1024 * 1024, self._preview_limits.max_file_bytes + 1)):
+                total += len(chunk)
+                if total > self._preview_limits.max_file_bytes:
+                    raise OSError("staged snapshot exceeds bounds")
+                chunks.append(chunk)
+            after = os.fstat(fd)
+        except OSError as exc:
+            raise _service_error(
+                "personal_tabular_unavailable",
+                "暂时无法读取个人实验表格，请稍后重试。",
+                retryable=True,
+            ) from exc
+        finally:
+            os.close(fd)
+
+        identity_before = (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
+        identity_after = (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        raw = b"".join(chunks)
+        if (
+            identity_before != identity_after
+            or len(raw) != session.preview.source_file.size_bytes
+            or hashlib.sha256(raw).hexdigest() != session.preview.source_file.sha256
+        ):
+            raise _service_error(
+                "personal_tabular_changed",
+                "导入表格快照与原预览不一致，请重新选择文件。",
+                retryable=False,
+            )
+        return raw
+
+    @staticmethod
+    def _validate_tabular_snapshot(
+        session: _ImportSession,
+        decoded: TabularFileRows,
+    ) -> None:
+        preview = session.preview
+        if (
+            decoded.detected_format != preview.detected_format
+            or len(decoded.sheets) != len(preview.sheets)
+        ):
+            raise _service_error(
+                "personal_tabular_changed",
+                "导入表格结构与原预览不一致，请重新选择文件。",
+                retryable=False,
+            )
+        for expected, current in zip(preview.sheets, decoded.sheets, strict=True):
+            expected_columns = tuple(column.source_name for column in expected.columns)
+            if (
+                current.sheet_name != expected.sheet_name
+                or current.column_names != expected_columns
+                or len(current.rows) != expected.row_count
+            ):
+                raise _service_error(
+                    "personal_tabular_changed",
+                    "导入表格结构与原预览不一致，请重新选择文件。",
+                    retryable=False,
+                )
 
     @staticmethod
     def _remove_staged_path(path: Path) -> None:

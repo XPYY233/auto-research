@@ -5,7 +5,7 @@ import re
 import threading
 from http import HTTPStatus
 from typing import Any, Protocol
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from auto_research.personal.import_service import (
     PersonalImportService,
@@ -35,6 +35,11 @@ _PERSONAL_SUGGEST_RE = re.compile(
 _PERSONAL_REVIEWED_IMPORT_RE = re.compile(
     r"^/api/desktop/personal-imports/(personal_import_[A-Za-z0-9_-]{16,96})/reviewed-import$"
 )
+_PERSONAL_ROWS_RE = re.compile(
+    r"^/api/desktop/personal-imports/"
+    r"(personal_import_[A-Za-z0-9_-]{16,96})/sheets/(0|[1-9][0-9]{0,2})/rows$"
+)
+_POSITIVE_INT_RE = re.compile(r"^[1-9][0-9]*$")
 MAX_PERSONAL_API_REQUEST_BYTES = 512 * 1024
 _SEARCH_REFRESH_MESSAGE = "数据已保存，搜索刷新待重试。"
 
@@ -117,6 +122,29 @@ class PersonalImportAPI:
 
     def handle_get(self, handler: PersonalImportHTTPHandler) -> bool:
         parsed = urlparse(handler.path)
+        rows_match = _PERSONAL_ROWS_RE.fullmatch(parsed.path)
+        if rows_match is not None:
+            try:
+                page, page_size = self._rows_query(parsed.query)
+                result = self.service.tabular_page(
+                    rows_match.group(1),
+                    sheet_index=int(rows_match.group(2)),
+                    page=page,
+                    page_size=page_size,
+                )
+                payload = project_personal_renderer_payload(result.public_dict())
+            except PersonalImportServiceError as exc:
+                handler.json_response(exc.public_dict(), self._error_status(exc))
+            except (TypeError, ValueError):
+                error = PersonalImportServiceError(
+                    "personal_request_invalid",
+                    "个人实验请求格式无效。",
+                    retryable=False,
+                )
+                handler.json_response(error.public_dict(), HTTPStatus.BAD_REQUEST)
+            else:
+                handler.json_response(payload)
+            return True
         if parsed.query:
             return False
         if parsed.path == PERSONAL_SEARCH_STATUS_PATH:
@@ -302,6 +330,34 @@ class PersonalImportAPI:
         return value
 
     @staticmethod
+    def _rows_query(query: str) -> tuple[int, int]:
+        pairs = parse_qsl(
+            query,
+            keep_blank_values=True,
+            strict_parsing=True,
+            max_num_fields=4,
+        )
+        if any(key not in {"page", "page_size"} for key, _value in pairs):
+            PersonalImportAPI._invalid_request()
+        values: dict[str, str] = {}
+        for key, value in pairs:
+            if key in values:
+                PersonalImportAPI._invalid_request()
+            values[key] = value
+        page_raw = values.get("page", "1")
+        page_size_raw = values.get("page_size", "50")
+        if (
+            _POSITIVE_INT_RE.fullmatch(page_raw) is None
+            or _POSITIVE_INT_RE.fullmatch(page_size_raw) is None
+        ):
+            PersonalImportAPI._invalid_request()
+        page = int(page_raw)
+        page_size = int(page_size_raw)
+        if page_size > 100:
+            PersonalImportAPI._invalid_request()
+        return page, page_size
+
+    @staticmethod
     def _invalid_request() -> None:
         raise PersonalImportServiceError(
             "personal_request_invalid",
@@ -311,7 +367,10 @@ class PersonalImportAPI:
 
     @staticmethod
     def _error_status(error: PersonalImportServiceError) -> HTTPStatus:
-        if error.code == "personal_import_session_expired":
+        if error.code in {
+            "personal_import_session_expired",
+            "personal_tabular_snapshot_unavailable",
+        }:
             return HTTPStatus.GONE
         if error.code in {
             "personal_import_already_confirmed",
@@ -324,6 +383,7 @@ class PersonalImportAPI:
             "personal_ai_busy",
             "personal_ai_consent_required",
             "personal_review_required",
+            "personal_tabular_changed",
         }:
             return (
                 HTTPStatus.PRECONDITION_REQUIRED
@@ -342,6 +402,7 @@ class PersonalImportAPI:
             "personal_ai_unavailable",
             "personal_snapshot_failed",
             "personal_snapshot_unavailable",
+            "personal_tabular_unavailable",
         }:
             return HTTPStatus.SERVICE_UNAVAILABLE
         return HTTPStatus.BAD_REQUEST

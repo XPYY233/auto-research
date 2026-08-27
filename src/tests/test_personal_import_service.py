@@ -513,6 +513,111 @@ class PersonalImportServiceTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "personal_import_session_expired")
         self.assertEqual(list(staging.glob("*")), [])
 
+    def _real_tabular_service(self, content: str) -> PersonalImportService:
+        source = self.root / "real-experiment.csv"
+        source.write_text(content, encoding="utf-8")
+        return PersonalImportService(
+            data_root=self.root / f"real-private-{len(content)}",
+            selection_provider=_FileSelectionProvider(source),
+            repository=_MemoryRepository(),  # type: ignore[arg-type]
+            import_id_factory=lambda: IMPORT_ID,
+        )
+
+    def test_tabular_page_reads_real_staged_snapshot_with_bounded_pagination(self) -> None:
+        service = self._real_tabular_service(
+            "Dose (dpa),Hardness [GPa]\n0,3.2\n1,4.0\n2,4.4\n"
+        )
+        service.preview(SELECTION_ID)
+
+        first = service.tabular_page(
+            IMPORT_ID,
+            sheet_index=0,
+            page=1,
+            page_size=2,
+        ).public_dict()
+        second = service.tabular_page(
+            IMPORT_ID,
+            sheet_index=0,
+            page=2,
+            page_size=2,
+        ).public_dict()
+
+        self.assertEqual(first["schema_version"], "personal-tabular-page-v1")
+        self.assertEqual(first["columns"], ["Dose (dpa)", "Hardness [GPa]"])
+        self.assertEqual(first["rows"], [["0", "3.2"], ["1", "4.0"]])
+        self.assertEqual(first["total_rows"], 3)
+        self.assertTrue(first["has_next"])
+        self.assertEqual(second["rows"], [["2", "4.4"]])
+        self.assertFalse(second["has_next"])
+        serialized = json.dumps(first, ensure_ascii=False).casefold()
+        for forbidden in ("path", "sha256", "file_id", "source_file_id", "draft_id"):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_tabular_page_rejects_invalid_bounds_and_expired_session(self) -> None:
+        clock = [100.0]
+        source = self.root / "bounds.csv"
+        source.write_text("x,y\n1,2\n", encoding="utf-8")
+        service = PersonalImportService(
+            data_root=self.root / "bounds-private",
+            selection_provider=_FileSelectionProvider(source),
+            repository=_MemoryRepository(),  # type: ignore[arg-type]
+            import_id_factory=lambda: IMPORT_ID,
+            clock=lambda: clock[0],
+            session_ttl_seconds=300,
+        )
+        service.preview(SELECTION_ID)
+        for kwargs in (
+            {"sheet_index": -1, "page": 1, "page_size": 50},
+            {"sheet_index": 0, "page": 0, "page_size": 50},
+            {"sheet_index": 0, "page": 1, "page_size": 101},
+        ):
+            with self.assertRaises(PersonalImportServiceError) as raised:
+                service.tabular_page(IMPORT_ID, **kwargs)
+            self.assertEqual(raised.exception.code, "personal_request_invalid")
+        clock[0] += 301
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            service.tabular_page(IMPORT_ID, sheet_index=0)
+        self.assertEqual(raised.exception.code, "personal_import_session_expired")
+
+    def test_tabular_page_detects_staged_snapshot_change(self) -> None:
+        service = self._real_tabular_service("x,y\n1,2\n")
+        service.preview(SELECTION_ID)
+        staged = next((service.data_root / ".import-staging").iterdir())
+        staged.write_bytes(b"x,y\n9,8\n")
+
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            service.tabular_page(IMPORT_ID, sheet_index=0)
+        self.assertEqual(raised.exception.code, "personal_tabular_changed")
+        self.assertFalse(raised.exception.retryable)
+        self.assertNotIn(str(staged), json.dumps(raised.exception.public_dict()))
+
+    def test_tabular_page_rejects_preview_metadata_mismatch(self) -> None:
+        self.service.preview(SELECTION_ID)
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            self.service.tabular_page(IMPORT_ID, sheet_index=0)
+        self.assertEqual(raised.exception.code, "personal_tabular_changed")
+        self.assertFalse(raised.exception.retryable)
+
+    def test_indexable_import_does_not_bypass_moved_staging_snapshot(self) -> None:
+        service = self._real_tabular_service(
+            "Dose (dpa),Hardness [GPa]\n0,3.2\n1,4.0\n"
+        )
+        service.preview(SELECTION_ID)
+        confirmed = service.import_reviewed(
+            IMPORT_ID,
+            self._payload(confirmed=False),
+            reviewed=True,
+        )
+        self.assertTrue(confirmed.indexable)
+
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            service.tabular_page(IMPORT_ID, sheet_index=0)
+        self.assertEqual(
+            raised.exception.code,
+            "personal_tabular_snapshot_unavailable",
+        )
+        self.assertFalse(raised.exception.retryable)
+
 
 if __name__ == "__main__":
     unittest.main()
