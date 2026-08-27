@@ -39,6 +39,9 @@ from auto_research.evidence.literature_extraction_job import (
 from auto_research.evidence.literature_extraction_finalizer import (
     AtomicEvidenceDBFinalizer,
 )
+from auto_research.evidence.literature_extraction_recovery import (
+    LiteratureExtractionFinalizerRecovery,
+)
 from auto_research.personal.ai_business_action import (
     PersonalSuggestionBusinessPorts,
     personal_suggestion_business_ports,
@@ -151,6 +154,7 @@ class MacAIRuntimeServices:
     literature_extraction_ports: LiteratureExtractionBusinessPorts | None = None
     literature_jobs: LiteratureExtractionJobStore | None = None
     literature_checkpoints: MacLiteratureCheckpointServices | None = None
+    literature_recovery: LiteratureExtractionFinalizerRecovery | None = None
 
 
 _SERVICES: MacAIRuntimeServices | None = None
@@ -261,6 +265,7 @@ def create_mac_ai_runtime_services(
     literature_ports = None
     literature_jobs = None
     literature_checkpoints = None
+    literature_recovery = None
     snapshots = None
     business_actions = None
     harness_ports = None
@@ -286,12 +291,20 @@ def create_mac_ai_runtime_services(
                 blob_store=literature_checkpoints.snapshot_blobs,
             )
         )
+        literature_finalizer = AtomicEvidenceDBFinalizer(database)
         literature_ports = literature_extraction_business_ports(
             literature_jobs,
             session_id=str(desktop_session_id),
             db=database,
-            finalizer=AtomicEvidenceDBFinalizer(database),
+            finalizer=literature_finalizer,
             checkpoint_runtime=literature_checkpoints.checkpoint_runtime,
+        )
+        literature_recovery = LiteratureExtractionFinalizerRecovery(
+            runtime=literature_checkpoints.checkpoint_runtime,
+            jobs=literature_jobs,
+            finalizer=literature_finalizer,
+            projector=literature_ports.projector,
+            session_id=str(desktop_session_id),
         )
         snapshots = CompositeContentSnapshotAuthority(
             {
@@ -361,6 +374,7 @@ def create_mac_ai_runtime_services(
         literature_extraction_ports=literature_ports,
         literature_jobs=literature_jobs,
         literature_checkpoints=literature_checkpoints,
+        literature_recovery=literature_recovery,
     )
 
 

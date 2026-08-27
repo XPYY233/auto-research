@@ -203,6 +203,18 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 services.literature_extraction_ports.executor._checkpoint_runtime,
                 services.literature_checkpoints.checkpoint_runtime,
             )
+            self.assertIs(
+                services.literature_recovery._runtime,
+                services.literature_checkpoints.checkpoint_runtime,
+            )
+            self.assertIs(
+                services.literature_recovery._jobs,
+                services.literature_jobs,
+            )
+            self.assertIs(
+                services.literature_recovery._projector,
+                services.literature_extraction_ports.projector,
+            )
             self.assertTrue((root / "literature-tasks-v1").is_dir())
             self.assertFalse(hasattr(services, "literature_finalizer"))
             self.assertFalse(hasattr(services.literature_extraction_ports, "finalizer"))
