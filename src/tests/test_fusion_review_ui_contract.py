@@ -54,6 +54,7 @@ class FusionReviewUIContractTests(unittest.TestCase):
         cls.base_css = (WEB / "app.css").read_text(encoding="utf-8")
         cls.css = (WEB / "workbench.css").read_text(encoding="utf-8")
         cls.runtime = (WEB / "fusion_review.js").read_text(encoding="utf-8")
+        cls.package_runtime = (WEB / "fusion_package_center.js").read_text(encoding="utf-8")
         cls.ai_experience = (WEB / "fusion_ai_experience.js").read_text(encoding="utf-8")
 
     def test_single_fusion_owner_and_script_order(self) -> None:
@@ -64,9 +65,14 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertEqual(self.index.count('/static/ai_consent.js'), 1)
         self.assertEqual(self.index.count('/static/document_tab_store.js'), 1)
         self.assertEqual(self.index.count('/static/fusion_ai_experience.js'), 1)
+        self.assertEqual(self.index.count('/static/fusion_package_center.js'), 1)
         self.assertLess(self.index.index('/static/ai_consent.js'), self.index.index('/static/fusion_review.js'))
         self.assertLess(self.index.index('/static/document_tab_store.js'), self.index.index('/static/fusion_review.js'))
         self.assertLess(self.index.index('/static/fusion_ai_experience.js'), self.index.index('/static/fusion_review.js'))
+        self.assertLess(self.index.index('/static/fusion_package_center.js'), self.index.index('/static/fusion_review.js'))
+        self.assertNotIn("fetch(", self.package_runtime)
+        self.assertNotIn("DOMContentLoaded", self.package_runtime)
+        self.assertNotIn("localStorage", self.package_runtime)
         for legacy in ("/static/app.js", "/static/workbench.js", "/static/desktop_product.js", "/static/package_center.js"):
             self.assertNotIn(legacy, self.index)
         self.assertNotIn("appendChild", self.runtime)
@@ -563,7 +569,7 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
             self.assertIn(marker, self.runtime)
         confirm = self.runtime[
             self.runtime.index("async function confirmPersonalImport()") :
-            self.runtime.index("const PACKAGE_STAGE_LABELS")
+            self.runtime.index("let packageController=null")
         ]
         self.assertNotIn("runPreciseSearch", confirm)
         self.assertNotIn('switchView("search")', confirm)
@@ -602,6 +608,7 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
             "fusion-package-jobs",
         ):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
+        package_sources = self.runtime + self.package_runtime
         for marker in (
             'select_evidence_package', 'select_package_export_destination',
             '"/api/desktop/evidence-packages/import"',
@@ -613,22 +620,22 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
             '"/api/desktop/package-center/dataset-plan"',
             '"/api/desktop/package-center/dataset-export"',
             'select_dataset_export_destination', 'Auto-Research-dataset.zip',
-            'include_private:includePrivate', 'rights_acknowledged:',
+            'include_private: includePrivate', 'rights_acknowledged:',
             'unreviewed_acknowledged:', 'dataset-export-plan-v1',
-            'dataset-bundle-v1', 'binary_assets_included!==false',
-            'expected_sha:', 'checksum_ack:true', 'keep_conflicts:',
-            'unencrypted_ack:true', 'unauthenticated_source_ack:true',
-            'internal_use_only_ack:true', 'paper_rights:paperRights',
-            'plan.exceeds_size_limit===true', 'await waitPackageJob',
-            'schema==="package-summary-v1"', 'raw.next_action',
-            'next.search_source!=="official"', 'rememberOfficialPackageResult(completed)',
+            'dataset-bundle-v1', 'binary_assets_included !== false',
+            'expected_sha:', 'checksum_ack: true', 'keep_conflicts:',
+            'unencrypted_ack: true', 'unauthenticated_source_ack: true',
+            'internal_use_only_ack: true', 'paper_rights: paperRights',
+            'plan.exceeds_size_limit === true', 'await waitPackageJob',
+            'schema === "package-summary-v1"', 'raw.next_action',
+            'next.search_source !== "official"', 'rememberOfficialPackageResult(completed)',
             'setSearchSource("official")',
         ):
-            self.assertIn(marker, self.runtime)
+            self.assertIn(marker, package_sources)
         self.assertIn("前往搜索官方资料", self.index)
         export_body = re.search(
-            r"async function exportPlannedPackage\(kind\)\{(?P<body>.*?)\n  function updateUserPackageImportButton",
-            self.runtime,
+            r"async function exportPlannedPackage\(kind\) \{(?P<body>.*?)\n    function updateUserPackageImportButton",
+            self.package_runtime,
             re.DOTALL,
         )
         self.assertIsNotNone(export_body)
@@ -636,10 +643,10 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
         self.assertLess(body.index("plan_token"), body.index("choosePackageDestination"))
         self.assertLess(body.index("choosePackageDestination"), body.index("package-center/export"))
         self.assertIn("选择保存位置并导出", self.index)
-        self.assertIn("2 GB", self.runtime)
-        self.assertIn("另一条可信渠道", self.index + self.runtime)
-        self.assertIn("未加密", self.index + self.runtime)
-        self.assertIn("不认证发送者身份", self.index + self.runtime)
+        self.assertIn("2 GB", self.package_runtime)
+        self.assertIn("另一条可信渠道", self.index + self.package_runtime)
+        self.assertIn("未加密", self.index + self.package_runtime)
+        self.assertIn("不认证发送者身份", self.index + self.package_runtime)
         self.assertIn("JSONL、Parquet 和数据卡", self.index)
         self.assertIn("PDF 和图片二进制不会复制进训练载荷", self.index)
         self.assertRegex(self.index, r'id="fusion-dataset-include-private"(?![^>]*checked)')
@@ -647,6 +654,7 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
 const nodes={{}};for(const id of ['fusion-package-official-result','fusion-package-open-official-search','fusion-package-result-title','fusion-package-result-outcome','fusion-package-result-counts'])nodes['#'+id]={{hidden:false,textContent:'',innerHTML:''}};
 globalThis.document={{readyState:'loading',querySelector:selector=>nodes[selector]||null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
 let storageWrites=0;globalThis.localStorage={{getItem:()=>null,setItem:()=>{{storageWrites+=1}}}};
+eval(require('fs').readFileSync({str(WEB / 'fusion_package_center.js')!r},'utf8'));
 eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
 const api=globalThis.AutoResearchFusion,assert=require('assert');
 const summary={{schema:'package-summary-v1',package_kind:'official_evidence',package_id:'official-main',package_version:'1.1',outcome:'activated',trusted_official:true,content_counts:{{paper_count:60,item_count:3142,finding_count:936,table_count:46,figure_count:232}},asset_counts:{{pdf_count:42,visual_asset_count:278}},next_action:{{view:'search',search_source:'official'}}}};

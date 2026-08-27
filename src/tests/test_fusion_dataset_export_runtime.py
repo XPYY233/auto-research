@@ -14,6 +14,7 @@ class FusionDatasetExportRuntimeTests(unittest.TestCase):
         program = f"""
 globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
 globalThis.localStorage={{getItem:()=>null,setItem:()=>{{throw new Error('must not persist dataset')}}}};
+eval(require('fs').readFileSync({str(WEB / 'fusion_package_center.js')!r},'utf8'));
 eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
 const api=globalThis.AutoResearchFusion,assert=require('assert');
 const plan={{schema_version:'dataset-export-plan-v1',plan_token:'dataset_plan_0123456789',include_private:false,binary_assets_included:false,entity_counts:{{item:4,finding:3,table:2,figure:1}},split_counts:{{train:8,validation:1,test:1}},missing_fields:{{'item.meaning':2}},unreviewed_count:0,rights_risks:[],record_count:10,rights_ack_required:false,unreviewed_ack_required:false}};
@@ -46,6 +47,7 @@ globalThis.fetch=async(url,options={{}})=>{{const body=options.body?JSON.parse(o
  throw new Error('unexpected:'+url);
 }};
 globalThis.pywebview={{api:{{select_dataset_export_destination:async name=>{{assert.equal(name,'Auto-Research-dataset.zip');return{{ok:true,cancelled:false,destination:{{destination_token:'dataset_destination_1234'}}}};}}}}}};
+eval(fs.readFileSync({str(WEB / 'fusion_package_center.js')!r},'utf8'));
 eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
 const api=globalThis.AutoResearchFusion;api.state.view='package';api.state.package.center={{capabilities:{{dataset_export:true}}}};
 (async()=>{{await api.planDataset({{preventDefault(){{}}}});assert.deepEqual(calls[0],["/api/desktop/package-center/dataset-plan","POST",{{include_private:false}}]);assert(ids['#fusion-dataset-metrics'].innerHTML.includes('未审核'));assert.equal(ids['#fusion-dataset-export'].disabled,false);await api.exportDataset();assert.deepEqual(calls[1][2],{{plan_token:'dataset_plan_public_12345',destination_token:'dataset_destination_1234',rights_acknowledged:false,unreviewed_acknowledged:false}});assert.equal(ids['#fusion-dataset-receipt'].hidden,false);assert(ids['#fusion-dataset-receipt-metrics'].innerHTML.includes('aaaaaaaaaaaa'));

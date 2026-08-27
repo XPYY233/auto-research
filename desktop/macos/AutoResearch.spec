@@ -29,6 +29,7 @@ analysis = Analysis(
                 "workspace_layout_controller.js",
                 "fusion_pdf_controller.js",
                 "fusion_ai_experience.js",
+                "fusion_package_center.js",
                 "fusion_review.js",
                 "codex-pet-working.webp",
             )
