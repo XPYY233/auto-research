@@ -18,6 +18,8 @@ from personal_import_service import PersonalImportServiceError  # noqa: E402
 
 
 IMPORT_ID = "personal_import_0123456789abcdef"
+PRIVATE_SOURCE_ID = "private-lab"
+PRIVATE_TABLE_UID = "private:table:" + "a" * 32
 
 
 class _Handler:
@@ -132,9 +134,30 @@ class _Service:
     def private_search_snapshot(self):
         self.calls.append(("private_search_snapshot",))
         return SimpleNamespace(
-            source_id="private-lab",
+            source_id=PRIVATE_SOURCE_ID,
             content_fingerprint="f" * 64,
             document_count=2,
+            documents=(
+                SimpleNamespace(
+                    source_scope="private",
+                    source_id=PRIVATE_SOURCE_ID,
+                    entity_type="table",
+                    entity_uid=PRIVATE_TABLE_UID,
+                ),
+            ),
+        )
+
+    def confirmed_table_next_action(self, import_id: str):
+        self.calls.append(("confirmed_table_next_action", import_id))
+        return SimpleNamespace(
+            public_dict=lambda: {
+                "kind": "open_personal_table",
+                "source_scope": "private",
+                "source_id": PRIVATE_SOURCE_ID,
+                "entity_type": "table",
+                "entity_uid": PRIVATE_TABLE_UID,
+                "label": "打开刚导入的表格",
+            }
         )
 
 
@@ -321,9 +344,24 @@ class PersonalImportAPITests(unittest.TestCase):
             [
                 ("reviewed", IMPORT_ID, draft, True),
                 ("private_search_snapshot",),
+                ("confirmed_table_next_action", IMPORT_ID),
             ],
         )
         self.assertEqual(len(search_service.calls), 1)
+        self.assertEqual(
+            payload["next_action"],
+            {
+                "kind": "open_personal_table",
+                "source_scope": "private",
+                "source_id": PRIVATE_SOURCE_ID,
+                "entity_type": "table",
+                "entity_uid": PRIVATE_TABLE_UID,
+                "label": "打开刚导入的表格",
+            },
+        )
+        serialized = json.dumps(payload, ensure_ascii=False).casefold()
+        for forbidden in ("draft_id", "file_id", "run_id", "sha256", "path"):
+            self.assertNotIn(forbidden, serialized)
 
     def test_confirm_refreshes_immutable_private_search_snapshot(self) -> None:
         search_service = _SearchService()
@@ -340,7 +378,7 @@ class PersonalImportAPITests(unittest.TestCase):
 
         self.assertEqual(
             [call[0] for call in self.service.calls],
-            ["confirm", "private_search_snapshot"],
+            ["confirm", "private_search_snapshot", "confirmed_table_next_action"],
         )
         self.assertEqual(len(search_service.calls), 1)
         _, snapshot, source_id, fingerprint = search_service.calls[0]
@@ -348,6 +386,10 @@ class PersonalImportAPITests(unittest.TestCase):
         self.assertEqual(fingerprint, snapshot.content_fingerprint)
         self.assertEqual(confirm.responses[0][1], HTTPStatus.OK)
         self.assertTrue(confirm.responses[0][0]["indexable"])
+        self.assertEqual(
+            confirm.responses[0][0]["next_action"]["entity_uid"],
+            PRIVATE_TABLE_UID,
+        )
         self.assertEqual(
             api.search_status(),
             {
@@ -376,6 +418,7 @@ class PersonalImportAPITests(unittest.TestCase):
             ["confirm", "private_search_snapshot"],
         )
         payload, status = confirm.responses[0]
+        self.assertNotIn("next_action", payload)
         self.assertEqual(status, HTTPStatus.SERVICE_UNAVAILABLE)
         self.assertEqual(payload["code"], "personal_search_refresh_failed")
         self.assertEqual(payload["message"], "数据已保存，搜索刷新待重试。")
@@ -474,6 +517,66 @@ class PersonalImportAPITests(unittest.TestCase):
             ),
             2,
         )
+
+    def test_reviewed_import_repeats_the_same_exact_action(self) -> None:
+        api = PersonalImportAPI(  # type: ignore[arg-type]
+            self.service,
+            search_service=_SearchService(),
+        )
+        body = {"reviewed": True, "draft": {"sheet_index": 0, "columns": [], "series": []}}
+        first = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/reviewed-import",
+            body,
+        )
+        second = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/reviewed-import",
+            body,
+        )
+        self.assertTrue(api.handle_post(first))
+        self.assertTrue(api.handle_post(second))
+        self.assertEqual(
+            first.responses[0][0]["next_action"],
+            second.responses[0][0]["next_action"],
+        )
+
+    def test_confirm_repeats_the_same_exact_action(self) -> None:
+        api = PersonalImportAPI(  # type: ignore[arg-type]
+            self.service,
+            search_service=_SearchService(),
+        )
+        first = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/confirm",
+            {"expected_revision": 2},
+        )
+        second = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/confirm",
+            {"expected_revision": 2},
+        )
+        self.assertTrue(api.handle_post(first))
+        self.assertTrue(api.handle_post(second))
+        self.assertEqual(
+            first.responses[0][0]["next_action"],
+            second.responses[0][0]["next_action"],
+        )
+
+    def test_refresh_snapshot_must_contain_the_returned_table_identity(self) -> None:
+        class _MismatchedSnapshotService(_Service):
+            def private_search_snapshot(self):
+                value = super().private_search_snapshot()
+                value.documents = ()
+                return value
+
+        service = _MismatchedSnapshotService()
+        api = PersonalImportAPI(service, search_service=_SearchService())  # type: ignore[arg-type]
+        handler = _Handler(
+            f"/api/desktop/personal-imports/{IMPORT_ID}/reviewed-import",
+            {"reviewed": True, "draft": {"sheet_index": 0, "columns": [], "series": []}},
+        )
+        self.assertTrue(api.handle_post(handler))
+        payload, status = handler.responses[0]
+        self.assertEqual(status, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(payload["code"], "personal_next_action_unavailable")
+        self.assertNotIn("next_action", payload)
 
         invalid = _Handler(
             "/api/desktop/personal-imports/search-refresh",

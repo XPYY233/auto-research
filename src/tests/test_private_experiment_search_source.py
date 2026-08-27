@@ -26,7 +26,9 @@ from auto_research.personal.search_source import (
     EvidenceSearchSource,
     PrivateRepositorySearchSource,
     PrivateSearchSnapshot,
+    PrivateTablePublicIdentity,
 )
+from auto_research.personal.table_detail import PersonalTableDetailService
 
 
 class PrivateExperimentSearchSourceTests(unittest.TestCase):
@@ -197,6 +199,49 @@ class PrivateExperimentSearchSourceTests(unittest.TestCase):
         self.assertEqual(table.source_label, "Sheet1")
         self.assertEqual(figure.source_label, "趋势图")
         self.assertEqual(finding.source_excerpt, "三次重复测量结果一致")
+
+    def test_confirmed_table_identity_matches_search_and_table_detail(self):
+        draft, paths = self._draft()
+        self._register_and_save(draft, paths)
+        self._confirm(draft)
+        source = PrivateRepositorySearchSource(self.repo)
+
+        identity = source.confirmed_table_identity(
+            run_id=draft.draft_id,
+            sheet_name=draft.preview.sheet_name,
+        )
+        table = next(
+            document
+            for document in source.list_documents()
+            if document.entity_type == "table"
+        )
+        self.assertIsInstance(identity, PrivateTablePublicIdentity)
+        self.assertEqual(identity.source_id, table.source_id)
+        self.assertEqual(identity.entity_uid, table.entity_uid)
+        page = PersonalTableDetailService(self.repo).get_page(
+            source_id=identity.source_id,
+            entity_uid=identity.entity_uid,
+        )
+        self.assertEqual(page.sheet_name, "Sheet1")
+        encoded = json.dumps(identity.__dict__, ensure_ascii=False)
+        for forbidden in (
+            draft.draft_id,
+            draft.preview.source_file.file_id,
+            draft.preview.source_file.sha256,
+            str(self.root),
+        ):
+            self.assertNotIn(forbidden, encoded)
+
+    def test_table_identity_rejects_draft_or_wrong_sheet(self):
+        draft, paths = self._draft()
+        self._register_and_save(draft, paths)
+        source = PrivateRepositorySearchSource(self.repo)
+        for sheet_name in ("Sheet1", "forged-sheet"):
+            with self.assertRaises(ValueError):
+                source.confirmed_table_identity(
+                    run_id=draft.draft_id,
+                    sheet_name=sheet_name,
+                )
 
     def test_adapter_excludes_drafts_and_database_non_indexable_confirmed_rows(self):
         draft, paths = self._draft()

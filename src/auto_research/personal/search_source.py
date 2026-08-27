@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Iterator, Literal, Mapping, Protocol, runtime_checkable
 
@@ -18,6 +19,7 @@ EvidenceSourceScope = Literal["private", "official"]
 ENTITY_TYPES = frozenset({"item", "finding", "table", "figure"})
 SOURCE_SCOPES = frozenset({"private", "official"})
 PRIVATE_SEARCH_SNAPSHOT_SCHEMA_VERSION = "private-search-snapshot-v1"
+_PRIVATE_TABLE_UID_RE = re.compile(r"^private:table:[0-9a-f]{32}$")
 
 
 def _required_text(value: Any, field_name: str, *, limit: int = 4_000) -> str:
@@ -250,6 +252,21 @@ class PrivateSearchSnapshot:
         }
 
 
+@dataclass(frozen=True)
+class PrivateTablePublicIdentity:
+    """The minimum public identity needed to reopen one confirmed table."""
+
+    source_id: str
+    entity_uid: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "source_id", validate_public_source_id(self.source_id))
+        entity_uid = _required_text(self.entity_uid, "entity_uid", limit=320)
+        if _PRIVATE_TABLE_UID_RE.fullmatch(entity_uid) is None:
+            raise ValueError("private table public identity is invalid")
+        object.__setattr__(self, "entity_uid", entity_uid)
+
+
 class PrivateRepositorySearchSource:
     """Adapt confirmed/indexable private runs without exposing repository IDs."""
 
@@ -287,6 +304,41 @@ class PrivateRepositorySearchSource:
         for document in self.list_documents():
             if document.entity_type in selected:
                 yield document
+
+    def confirmed_table_identity(
+        self,
+        *,
+        run_id: str,
+        sheet_name: str,
+    ) -> PrivateTablePublicIdentity:
+        """Resolve one confirmed import to its existing opaque table identity.
+
+        ``run_id`` is a backend-only repository key.  It is used only to select
+        the exact confirmed run and is never returned.  The resulting identity
+        comes from the same adapter path as federated search and table detail.
+        """
+
+        expected_run_identity = f"personal:experiment_run:{_required_text(run_id, 'run_id')}"
+        selected_sheet = _required_text(sheet_name, "sheet_name", limit=500)
+        matches: list[EvidenceSearchDocument] = []
+        for run in self._repository.list_personal_search_documents():
+            if (
+                run.get("entity_uid") != expected_run_identity
+                or run.get("sheet_name") != selected_sheet
+            ):
+                continue
+            matches.extend(
+                document
+                for document in self._adapt_run(run)
+                if document.entity_type == "table"
+            )
+        if len(matches) != 1:
+            raise ValueError("confirmed private table identity is unavailable")
+        document = matches[0]
+        return PrivateTablePublicIdentity(
+            source_id=document.source_id,
+            entity_uid=document.entity_uid,
+        )
 
     def _adapt_run(self, run: Mapping[str, Any]) -> list[EvidenceSearchDocument]:
         source_id = _required_text(run.get("source_id"), "source_id")

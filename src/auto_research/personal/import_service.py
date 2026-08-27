@@ -39,6 +39,7 @@ from auto_research.personal.private_repository import (
     PrivateSample,
 )
 from auto_research.personal.search_source import (
+    PrivateTablePublicIdentity,
     PrivateRepositorySearchSource,
     PrivateSearchSnapshot,
 )
@@ -174,6 +175,23 @@ class PersonalTabularPage:
 
 
 @dataclass(frozen=True)
+class PersonalImportNextAction:
+    """Strict renderer action for the table created by this import only."""
+
+    identity: PrivateTablePublicIdentity
+
+    def public_dict(self) -> dict[str, Any]:
+        return {
+            "kind": "open_personal_table",
+            "source_scope": "private",
+            "source_id": self.identity.source_id,
+            "entity_type": "table",
+            "entity_uid": self.identity.entity_uid,
+            "label": "打开刚导入的表格",
+        }
+
+
+@dataclass(frozen=True)
 class PersonalSuggestionContext:
     """Backend-only immutable input to one reviewed AI suggestion call."""
 
@@ -215,6 +233,8 @@ class _ImportSession:
     staged_path: Path | None = None
     suggestions: dict[int, PersonalImportSuggestion] | None = None
     reviewed_payload_fingerprint: str | None = None
+    next_action: PersonalImportNextAction | None = None
+    confirmed_from_revision: int | None = None
 
 
 Clock = Callable[[], float]
@@ -956,6 +976,12 @@ class PersonalImportService:
         with self._lock:
             session = self._require_session(import_id)
             if session.stage is PersonalImportStage.INDEXABLE:
+                if (
+                    not isinstance(expected_revision, bool)
+                    and isinstance(expected_revision, int)
+                    and expected_revision == session.confirmed_from_revision
+                ):
+                    return self._status(session)
                 raise _service_error(
                     "personal_import_already_confirmed",
                     "该实验数据已经确认，不能重复确认。",
@@ -1019,6 +1045,7 @@ class PersonalImportService:
             session.pending_draft = confirmed
             session.stage = PersonalImportStage.INDEXABLE
             session.revision = result.revision
+            session.confirmed_from_revision = expected_revision
             return self._status(session)
 
     def private_search_source(self) -> PrivateRepositorySearchSource:
@@ -1030,6 +1057,38 @@ class PersonalImportService:
         """Return one immutable source view for atomic federated-search refresh."""
 
         return self.private_search_source().snapshot()
+
+    def confirmed_table_next_action(self, import_id: str) -> PersonalImportNextAction:
+        """Resolve and cache the exact public table created by this session."""
+
+        with self._lock:
+            session = self._require_session(import_id)
+            if (
+                session.stage is not PersonalImportStage.INDEXABLE
+                or session.draft is None
+            ):
+                raise _service_error(
+                    "personal_next_action_unavailable",
+                    "刚导入的表格尚未完成确认。",
+                    retryable=False,
+                    details={"required_state": PersonalImportStage.INDEXABLE.value},
+                )
+            if session.next_action is not None:
+                return session.next_action
+            try:
+                identity = self.private_search_source().confirmed_table_identity(
+                    run_id=session.draft.draft_id,
+                    sheet_name=session.draft.preview.sheet_name,
+                )
+            except (PrivateRepositoryError, ValueError) as exc:
+                raise _service_error(
+                    "personal_next_action_unavailable",
+                    "数据已保存，但暂时无法定位刚导入的表格。",
+                    retryable=True,
+                ) from exc
+            action = PersonalImportNextAction(identity)
+            session.next_action = action
+            return action
 
     def _validated_new_import_id(self) -> str:
         import_id = self._import_id_factory()

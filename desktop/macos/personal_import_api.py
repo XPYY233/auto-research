@@ -232,9 +232,16 @@ class PersonalImportAPI:
                     body["draft"],
                     reviewed=True,
                 )
+                snapshot = None
                 if self.search_service is not None:
-                    self._refresh_private_search(skip_empty=False)
+                    snapshot = self._refresh_private_search(skip_empty=False)
                 payload = project_personal_renderer_payload(result.public_dict())
+                if snapshot is not None:
+                    self._inject_confirmed_table_action(
+                        payload,
+                        import_id=reviewed_match.group(1),
+                        snapshot=snapshot,
+                    )
                 response_status = HTTPStatus.OK
             else:
                 assert confirm_match is not None
@@ -244,9 +251,16 @@ class PersonalImportAPI:
                     confirm_match.group(1),
                     expected_revision=body["expected_revision"],
                 )
+                snapshot = None
                 if self.search_service is not None:
-                    self._refresh_private_search(skip_empty=False)
+                    snapshot = self._refresh_private_search(skip_empty=False)
                 payload = project_personal_renderer_payload(result.public_dict())
+                if snapshot is not None:
+                    self._inject_confirmed_table_action(
+                        payload,
+                        import_id=confirm_match.group(1),
+                        snapshot=snapshot,
+                    )
                 response_status = HTTPStatus.OK
         except PersonalImportServiceError as exc:
             handler.json_response(exc.public_dict(), self._error_status(exc))
@@ -272,7 +286,7 @@ class PersonalImportAPI:
             or _PERSONAL_REVIEWED_IMPORT_RE.fullmatch(path)
         )
 
-    def _refresh_private_search(self, *, skip_empty: bool) -> None:
+    def _refresh_private_search(self, *, skip_empty: bool) -> PrivateSearchSnapshot:
         assert self.search_service is not None
         try:
             snapshot = refresh_private_search_snapshot(
@@ -317,6 +331,32 @@ class PersonalImportAPI:
                 self._search_status["active_fingerprint"] = (
                     snapshot.content_fingerprint
                 )
+        return snapshot
+
+    def _inject_confirmed_table_action(
+        self,
+        payload: dict[str, Any],
+        *,
+        import_id: str,
+        snapshot: PrivateSearchSnapshot,
+    ) -> None:
+        """Inject only after the refreshed source contains the exact table."""
+
+        action = self.service.confirmed_table_next_action(import_id)
+        public_action = action.public_dict()
+        if not any(
+            document.source_scope == "private"
+            and document.source_id == public_action["source_id"]
+            and document.entity_type == "table"
+            and document.entity_uid == public_action["entity_uid"]
+            for document in snapshot.documents
+        ):
+            raise PersonalImportServiceError(
+                "personal_next_action_unavailable",
+                "数据已保存，但暂时无法定位刚导入的表格。",
+                retryable=True,
+            )
+        payload["next_action"] = public_action
 
     @staticmethod
     def _read_json(handler: PersonalImportHTTPHandler) -> dict[str, Any]:
@@ -403,6 +443,7 @@ class PersonalImportAPI:
             "personal_snapshot_failed",
             "personal_snapshot_unavailable",
             "personal_tabular_unavailable",
+            "personal_next_action_unavailable",
         }:
             return HTTPStatus.SERVICE_UNAVAILABLE
         return HTTPStatus.BAD_REQUEST

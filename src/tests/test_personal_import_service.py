@@ -363,7 +363,7 @@ class PersonalImportServiceTests(unittest.TestCase):
         self.assertTrue(unrelated.exists())
         self.assertTrue(fresh.exists())
 
-    def test_concurrent_confirm_only_succeeds_once(self) -> None:
+    def test_concurrent_duplicate_confirm_is_idempotent(self) -> None:
         self.service.preview(SELECTION_ID)
         draft = self.service.save_draft(IMPORT_ID, self._payload(confirmed=True))
 
@@ -376,7 +376,8 @@ class PersonalImportServiceTests(unittest.TestCase):
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             outcomes = sorted(executor.map(lambda _item: confirm_once(), range(2)))
-        self.assertEqual(outcomes, ["personal_import_already_confirmed", "success"])
+        self.assertEqual(outcomes, ["success", "success"])
+        self.assertEqual(self.repository.revision, 2)
 
     def test_repository_failure_keeps_session_non_indexable(self) -> None:
         self.service.preview(SELECTION_ID)
@@ -413,12 +414,54 @@ class PersonalImportServiceTests(unittest.TestCase):
         self.assertEqual(preview.preview.detected_format, "csv")
         draft = service.save_draft(IMPORT_ID, self._payload(confirmed=True))
         confirmed = service.confirm(IMPORT_ID, expected_revision=draft.revision or 0)
+        repeated_confirm = service.confirm(
+            IMPORT_ID,
+            expected_revision=draft.revision or 0,
+        )
         self.assertTrue(confirmed.indexable)
+        self.assertEqual(confirmed, repeated_confirm)
+        with self.assertRaises(PersonalImportServiceError) as non_replay:
+            service.confirm(
+                IMPORT_ID,
+                expected_revision=confirmed.revision or 0,
+            )
+        self.assertEqual(
+            non_replay.exception.code,
+            "personal_import_already_confirmed",
+        )
         self.assertGreater(len(service.private_search_source().list_documents()), 0)
         snapshot = service.private_search_snapshot()
         self.assertGreater(snapshot.document_count, 0)
         self.assertEqual(snapshot.source_scope, "private")
         self.assertEqual(len(snapshot.content_fingerprint), 64)
+        action = service.confirmed_table_next_action(IMPORT_ID)
+        repeated_action = service.confirmed_table_next_action(IMPORT_ID)
+        table = next(
+            document
+            for document in snapshot.documents
+            if document.entity_type == "table"
+        )
+        self.assertEqual(action, repeated_action)
+        self.assertEqual(
+            action.public_dict(),
+            {
+                "kind": "open_personal_table",
+                "source_scope": "private",
+                "source_id": table.source_id,
+                "entity_type": "table",
+                "entity_uid": table.entity_uid,
+                "label": "打开刚导入的表格",
+            },
+        )
+        action_json = json.dumps(action.public_dict(), ensure_ascii=False)
+        for forbidden in (
+            "draft_id",
+            "file_id",
+            "run_id",
+            "sha256",
+            str(self.root),
+        ):
+            self.assertNotIn(forbidden, action_json)
         self.assertEqual(provider.revoked, [SELECTION_ID])
         self.assertNotIn(
             str(self.root),
@@ -444,12 +487,29 @@ class PersonalImportServiceTests(unittest.TestCase):
             self._payload(confirmed=False),
             reviewed=True,
         )
+        repeated = service.import_reviewed(
+            IMPORT_ID,
+            self._payload(confirmed=False),
+            reviewed=True,
+        )
         self.assertTrue(confirmed.indexable)
+        self.assertEqual(confirmed, repeated)
+        self.assertEqual(
+            service.confirmed_table_next_action(IMPORT_ID),
+            service.confirmed_table_next_action(IMPORT_ID),
+        )
         self.assertEqual(provider.revoked, [SELECTION_ID])
         self.assertEqual(
             list((service.data_root / ".import-staging").glob("*")),
             [],
         )
+
+    def test_next_action_requires_confirmed_indexable_session(self) -> None:
+        self.service.preview(SELECTION_ID)
+        with self.assertRaises(PersonalImportServiceError) as raised:
+            self.service.confirmed_table_next_action(IMPORT_ID)
+        self.assertEqual(raised.exception.code, "personal_next_action_unavailable")
+        self.assertFalse(raised.exception.retryable)
 
     def test_one_review_action_marks_visible_fields_and_is_idempotent(self) -> None:
         self.service.preview(SELECTION_ID)
