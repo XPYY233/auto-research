@@ -26,9 +26,21 @@ class _Response:
 
     def __init__(self, message):
         self.message = message
+        self.closed = False
 
     def json(self):
         return {"choices": [{"message": self.message}]}
+
+    def close(self):
+        self.closed = True
+
+
+class _ErrorResponse(_Response):
+    ok = False
+
+    def __init__(self, status_code):
+        super().__init__({})
+        self.status_code = status_code
 
 
 class _Session:
@@ -141,6 +153,18 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         )
 
         self.assertEqual(client.request_json([]), {"ok": True})
+        self.assertTrue(response.closed)
+
+    def test_rejected_http_response_is_closed_before_returning_error(self) -> None:
+        response = _ErrorResponse(400)
+        client = OpenAICompatibleClient(
+            self.settings(activated=True),
+            session=_Session(response),
+        )
+
+        with self.assertRaises(AIProviderResponseError):
+            client.request_json([])
+
         self.assertTrue(response.closed)
 
     def test_openai_tool_request_uses_selected_planning_model(self) -> None:

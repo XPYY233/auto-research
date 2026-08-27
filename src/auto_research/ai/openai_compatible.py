@@ -306,9 +306,15 @@ class OpenAICompatibleClient:
                     continue
                 raise AIProviderUnavailableError("AI 提供商网络请求未能完成。") from exc
             if 300 <= response.status_code < 400:
+                close = getattr(response, "close", None)
+                if callable(close):
+                    close()
                 raise AIProviderResponseError("AI 提供商返回了不允许的重定向。")
             if not response.ok:
                 transient = response.status_code == 429 or response.status_code >= 500
+                close = getattr(response, "close", None)
+                if callable(close):
+                    close()
                 if transient and attempt + 1 < self.settings.max_attempts:
                     last_error = AIProviderResponseError("transient provider response")
                     self._wait(attempt)
