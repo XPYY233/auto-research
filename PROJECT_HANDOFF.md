@@ -5,9 +5,10 @@
 - 用户已批准 `Auto-Research-1.2-Audit-Proposal/expected-workbench.html` 作为最终生产界面的验收预期：保留0.5的从容、主操作可见和完整工作流，采用VS Code的活动栏、上下文栏、标签与按需分栏。
 - 全面审计与串行实施计划由提交`c8b2c66`冻结，权威文件为`docs/AUTO_RESEARCH_1_2_FULL_AUDIT_AND_PLAN_ZH.md`、`docs/WORKBENCH_LAYOUT_AUDIT_1_2.md`和`config/workbench-recovery-contract.json`。
 - 当前安装App是`1.2.0`/build47，来自提交`033b12b`。它已被用户实机证明存在布局、AI和连续工作流回归，不得继续称为稳定交付，也不得以HEAD源码修复替代安装App验收。
-- 当前主线从`aa64c21`继续；上一轮被中断的Fusion标签hydration实验已隔离到Git stash `quarantine-interrupted-fusion-experiment-20260825`，不得未经重新审查直接恢复或发布。
-- 当前只执行Phase 0/1：冻结单一布局/文档契约并重建工作台壳和六个关键页。不得同时修AI、提取、资料包或平台路由；不得为适配旧测试恢复第五列、第二导航或旧DOM。
+- Phase 0/1/2已依次由`c8b2c66`、`21f030b`和`2371ace`完成；当前下一阶段是Phase 3文献导入—提取—审核—原子发布—增量索引—收据主链。上一轮旧Fusion hydration实验仍隔离在Git stash `quarantine-interrupted-fusion-experiment-20260825`，不得恢复到当前主线。
+- Phase 2只恢复公开标签身份、按需第二编辑器、每标签内存滚动/焦点和异步请求绑定。重启后只懒加载当前可见标签，正文、聊天、路径和滚动位置不写入布局缓存；标签在请求期间移栏时旧结果失败关闭并可重试，不会串栏或抢焦点。
 - 页面默认三层、按需四层，永不同时显示上下文栏、两个编辑器组和检查器。文献、搜索、图书管理员、实验、资料包、设置的允许栏位和首屏主操作由`workbench-recovery-contract.json`唯一规定。
+- Phase 2目标门通过：49项Fusion、19项工作台/发布、14项macOS静态服务与3项架构守卫；JavaScript语法、发布资源哈希和差异检查通过。尚未运行全套、构建、付费模型或安装App，build47仍是不合格旧安装版。
 - root仍是唯一Git写入、集成与发布者；其他同项目Codex任务只编辑明确文件范围，不stage/commit。电脑发热时最多一个前端开发任务与root低负载审查并行；全测、构建和模型调用继续冻结。
 - 生产`db/experimental_evidence.sqlite`和`data/evidence/visual_assets/paper_056_4e85e57cc6/`保持用户现场，不得暂存、还原、测试、构建或清理。Windows继续冻结。
 
