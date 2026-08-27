@@ -34,6 +34,21 @@ class WorkbenchRecoveryContractTest(unittest.TestCase):
         self.assertLess(html.index('/static/fusion_package_center.js'), html.index('/static/fusion_personal_import.js'))
         self.assertLess(html.index('/static/fusion_personal_import.js'), html.index('/static/fusion_review.js'))
         self.assertLess(html.index('/static/workspace_layout_controller.js'), html.index('/static/fusion_review.js'))
+        for legacy in ("/static/app.js", "/static/desktop_product.js", "/static/package_center.js", "/static/workbench.js"):
+            self.assertNotIn(legacy, html)
+        ordered = [
+            "/static/ai_consent.js",
+            "/static/document_tab_store.js",
+            "/static/pane_layout_controller.js",
+            "/static/workspace_layout_controller.js",
+            "/static/fusion_pdf_controller.js",
+            "/static/fusion_ai_experience.js",
+            "/static/fusion_package_center.js",
+            "/static/fusion_personal_import.js",
+            "/static/fusion_review.js",
+        ]
+        self.assertEqual([html.count(asset) for asset in ordered], [1] * len(ordered))
+        self.assertEqual(sorted(html.index(asset) for asset in ordered), [html.index(asset) for asset in ordered])
 
     def test_primary_actions_remain_at_each_page_entry(self):
         html = (WEB / "index.html").read_text()

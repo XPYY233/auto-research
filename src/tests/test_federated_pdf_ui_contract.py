@@ -11,7 +11,6 @@ WEB_ROOT = PROJECT_ROOT / "src" / "auto_research" / "evidence" / "web"
 class FederatedPdfUIContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.product = (WEB_ROOT / "desktop_product.js").read_text(encoding="utf-8")
         cls.fusion = (WEB_ROOT / "fusion_review.js").read_text(encoding="utf-8")
         cls.index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
         cls.styles = "\n".join(
@@ -20,32 +19,29 @@ class FederatedPdfUIContractTests(unittest.TestCase):
         )
 
     def test_transfer_literature_pdf_uses_only_path_free_identity(self) -> None:
-        self.assertIn('document.collection_kind === "literature_collection"', self.product)
-        self.assertIn("document.pdf_available === true", self.product)
-        self.assertIn("document.source_id", self.product)
-        self.assertIn("document.paper_uid", self.product)
+        self.assertIn('collectionKind:sourceScope==="private"?cleanText(raw?.collection_kind,80):""', self.fusion)
+        self.assertIn('pdfAvailable:sourceScope==="private"&&raw?.pdf_available===true', self.fusion)
+        self.assertIn('row.collectionKind==="literature_collection"', self.fusion)
+        self.assertIn("row.sourceId", self.fusion)
+        self.assertIn("row.paperUid", self.fusion)
         self.assertIn(
-            'new URLSearchParams({ source_id: sourceId, paper_uid: paperUid })',
-            self.product,
+            'federated-pdf?source_id=${encodeURIComponent(row.sourceId)}&paper_uid=${encodeURIComponent(row.paperUid)}',
+            self.fusion,
         )
-        self.assertIn("/api/desktop/federated-pdf?", self.product)
-        self.assertNotIn("document.pdf_path", self.product)
-        self.assertNotIn("document.source_path", self.product)
+        self.assertNotIn("raw?.pdf_path", self.fusion)
+        self.assertNotIn("raw?.source_path", self.fusion)
 
     def test_pdf_action_is_available_only_for_valid_literature_dto(self) -> None:
-        self.assertIn('^paper_[0-9a-f]{32}$', self.product)
-        self.assertIn('return `<button type="button" disabled>', self.product)
-        self.assertIn("原文 PDF 未随论文集合提供", self.product)
-        self.assertIn("导入论文集合 · 本机只读", self.product)
-        self.assertIn('class="federated-pdf-link"', self.product)
-        self.assertIn('target="_blank" rel="noopener">打开 PDF</a>', self.product)
-        # The legacy compatibility script remains path-free for Windows 0.8,
-        # but the macOS Fusion product does not load it.  The active product
-        # keeps PDF viewing inside the central workspace with an explicit
-        # return action instead of styling or opening the legacy new-window link.
+        self.assertIn('row?.sourceScope==="workspace"', self.fusion)
+        self.assertIn('["official","private"].includes(row?.sourceScope)', self.fusion)
+        self.assertIn('row.pdfAvailable===true', self.fusion)
+        self.assertIn('return ""', self.fusion[self.fusion.index("function detailPDFURL"):self.fusion.index("function openDetailPDF")])
         self.assertIn('id="fusion-pdf-viewer"', self.index)
         self.assertIn('id="fusion-close-pdf"', self.index)
+        self.assertIn('id="fusion-detail-close-pdf"', self.index)
         self.assertIn("closeCurrentPDF", self.fusion)
+        self.assertIn("closeDetailPDF", self.fusion)
+        self.assertIn("returnTabId", self.fusion)
         self.assertNotIn("globalThis.open", self.fusion)
         self.assertNotIn("_blank", self.fusion)
         self.assertIn(".fusion-pdf-viewer", self.styles)
