@@ -357,6 +357,7 @@ def test_completed_checkpoint_only_acknowledges_and_is_repeatable(tmp_path: Path
         checkpoint,
         owner_id=_checkpoint_owner_id(token),
         job_state=job_state,
+        completion_result=_commit_result(idempotent=False),
     )
     events.clear()
     jobs = _job_store(tmp_path, session_key=b"b" * 32, events=events)
@@ -381,7 +382,9 @@ def test_completed_checkpoint_only_acknowledges_and_is_repeatable(tmp_path: Path
 
     assert first["already_completed"] is True
     assert second["already_completed"] is True
-    assert first["completion"] is None
+    assert first["completion"]["schema_version"] == "literature-extraction-commit-result-v2"
+    assert first["completion"]["idempotent"] is False
+    assert second["completion"] == first["completion"]
     assert finalizer.calls == 0
     assert events == ["restore", "ack"]
 
