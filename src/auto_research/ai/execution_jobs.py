@@ -111,6 +111,28 @@ class AIExecutionJobService:
                 raise AIExecutionJobError("ai_execution_job_invalid")
             return self._public(job)
 
+    def list(self, *, session_id: str, scope: str) -> dict[str, object]:
+        if not session_id or not scope:
+            raise AIExecutionJobError("ai_execution_job_invalid")
+        now = self._now()
+        with self._lock:
+            self._purge(now)
+            jobs = sorted(
+                (
+                    job
+                    for job in self._jobs.values()
+                    if secrets.compare_digest(job.owner_session_id, session_id)
+                    and secrets.compare_digest(job.scope, scope)
+                ),
+                key=lambda job: (job.updated_at, job.created_at, job.job_id),
+                reverse=True,
+            )[:16]
+            return {
+                "schema_version": "ai-execution-job-list-v1",
+                "scope": scope,
+                "jobs": [self._public(job) for job in jobs],
+            }
+
     def _run(
         self,
         job_id: str,

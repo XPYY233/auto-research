@@ -105,15 +105,16 @@ class DesktopAIControllerTests(unittest.TestCase):
 
     def test_route_contract_has_server_prepare_consent_and_execute(self):
         contract = DesktopAIController.route_contract()
-        self.assertEqual(len(contract), 16)
+        self.assertEqual(len(contract), 17)
         patterns = {(row["method"], row["pattern"]) for row in contract}
         self.assertIn(("POST", r"^/api/desktop/ai/providers/(?P<provider_id>deepseek|openai|custom)/test-actions$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/consents$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/prepare$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/execute$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/execute-jobs$"), patterns)
+        self.assertIn(("GET", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/jobs$"), patterns)
         self.assertIn(("GET", r"^/api/desktop/ai/jobs/(?P<job_id>ai_job_[A-Za-z0-9_-]{24,160})$"), patterns)
-        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 16)
+        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 17)
 
     def test_async_business_job_is_session_bound_and_reports_activity(self):
         business = _Business()
@@ -142,6 +143,14 @@ class DesktopAIControllerTests(unittest.TestCase):
         self.assertEqual(final.body["status"], "completed")
         self.assertTrue(final.body["result"]["ok"])
         self.assertIn("result_validating", repr(final.body["events"]))
+        listed = controller(self.request(
+            "GET",
+            "/api/desktop/ai/actions/librarian/jobs",
+            session_id="job-owner",
+        ))
+        self.assertEqual(listed.status, 200)
+        self.assertEqual(listed.body["schema_version"], "ai-execution-job-list-v1")
+        self.assertEqual(listed.body["jobs"][0]["job_id"], job_id)
         rejected = controller(self.request(
             "GET", f"/api/desktop/ai/jobs/{job_id}", session_id="other-session"
         ))

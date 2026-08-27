@@ -220,6 +220,12 @@ DESKTOP_AI_ROUTES = (
         202,
     ),
     DesktopAIRoute(
+        "desktop_ai.business_job_list",
+        "GET",
+        rf"^/api/desktop/ai/actions/{_BUSINESS_SCOPE_PATH}/jobs$",
+        0,
+    ),
+    DesktopAIRoute(
         "desktop_ai.business_job_get",
         "GET",
         rf"^/api/desktop/ai/jobs/{_AI_JOB_PATH}$",
@@ -470,6 +476,21 @@ class DesktopAIController:
             result = self._execution_jobs.get(
                 session_id=_session_id(request),
                 job_id=str(parameters.get("job_id") or ""),
+            )
+        elif route.route_id == "desktop_ai.business_job_list":
+            if self._execution_jobs is None:
+                return _error_response(
+                    503,
+                    "desktop_ai_business_unavailable",
+                    "该 AI 功能尚未在当前桌面版本中启用。",
+                    True,
+                )
+            scope = str(parameters.get("scope") or "")
+            if scope not in BUSINESS_ACTION_SCOPES:
+                raise BusinessActionError("business_action_scope_unsupported")
+            result = self._execution_jobs.list(
+                session_id=_session_id(request),
+                scope=scope,
             )
         else:  # pragma: no cover - route table and dispatch are reviewed together
             raise RuntimeError("unhandled AI route")

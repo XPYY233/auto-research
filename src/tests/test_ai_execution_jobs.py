@@ -62,6 +62,19 @@ class AIExecutionJobServiceTests(unittest.TestCase):
         self.assertEqual(elapsed, sorted(elapsed))
         self.assertTrue(all(value >= 0 for value in elapsed))
 
+        listed = service.list(session_id="session-a", scope="librarian")
+        self.assertEqual(listed["schema_version"], "ai-execution-job-list-v1")
+        self.assertEqual(listed["scope"], "librarian")
+        self.assertEqual([job["job_id"] for job in listed["jobs"]], [started["job_id"]])
+        self.assertEqual(
+            service.list(session_id="other", scope="librarian")["jobs"],
+            [],
+        )
+        self.assertEqual(
+            service.list(session_id="session-a", scope="personal_suggestion")["jobs"],
+            [],
+        )
+
     def test_activity_projection_rejects_untrusted_content_fields(self):
         service = AIExecutionJobService()
 
