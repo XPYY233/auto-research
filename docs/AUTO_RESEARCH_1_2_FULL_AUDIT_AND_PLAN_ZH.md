@@ -149,15 +149,14 @@ AI设计必须遵循：
 
 ### 7.2 已确认的循环依赖
 
-静态导入图确认存在5组强连通分量：
+原始审计确认5组强连通分量；截至 `5c2d72e`，3模块finalizer/job/visual环已经通过独立名义受信端口消除，当前剩余4组：
 
 1. 9模块：CLI、webapp、goal/self-check、export及多组测试集工具互相依赖。
 2. 6模块：deepseek extraction、benchmark、learning、quality pipeline、six-column、visual evidence互相依赖。
-3. 3模块：literature finalizer、job、visual stage互相依赖。
-4. 2模块：OpenAI-compatible client与AI runtime state互相依赖。
-5. 2模块：package transfer payloads与transfer package互相依赖。
+3. 2模块：OpenAI-compatible client与AI runtime state互相依赖。
+4. 2模块：package transfer payloads与transfer package互相依赖。
 
-前三组直接穿过核心提取与发布链。审计器此前会把 `from . import module` 错判为导入整个包，从而虚构20模块大环；该解析错误已增加回归测试并修复。现有 `python-import-cycle-baseline.json` 未被放宽，真实循环仍只能缩小。
+前两组直接穿过核心提取链。审计器此前会把 `from . import module` 错判为导入整个包，从而虚构20模块大环；该解析错误已增加回归测试并修复。现有 `python-import-cycle-baseline.json` 未被放宽，真实循环仍只能缩小。
 
 ### 7.3 前端主要债务
 
