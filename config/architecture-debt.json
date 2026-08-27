@@ -1,6 +1,6 @@
 {
   "schema": "auto-research-architecture-debt-v1",
-  "generated_at": "2026-08-27",
+  "generated_at": "2026-08-28",
   "policy": {
     "allowed_statuses": ["stable", "experimental", "compatibility", "retired"],
     "owner_required": true,
@@ -83,8 +83,8 @@
       "area": "frontend",
       "owner": "shared-frontend",
       "status": "experimental",
-      "problem": "生产HTML仅加载Fusion七个经典脚本，但fusion_review.js已增长到957行并同时承担文献、搜索、实验、资料包、设置、AI、标签和布局协调；app.js(4379行)、desktop_product.js(968行)、package_center.js(419行)和workbench.js(392行)虽不在生产HTML中，仍被平台白名单、安全检查、safe update或兼容测试消费",
-      "target": "先冻结单一bootstrap、workspace、document和业务模块端口；优先抽离已冻结的personal/package垂直切片，再迁移旧资源的最后消费者，最后物理删除不再加载的控制器",
+      "problem": "生产HTML现加载Fusion八个经典脚本；资料包业务已从fusion_review.js抽离到无自主生命周期的fusion_package_center.js，但926行主脚本仍同时承担文献、搜索、实验、设置、AI、标签和布局协调；app.js(4379行)、desktop_product.js(968行)、旧package_center.js(419行)和workbench.js(392行)虽不在生产HTML中，仍被平台白名单、安全检查、safe update或兼容测试消费",
+      "target": "保持单一bootstrap、workspace、document和请求端口；下一批只抽离已冻结的personal垂直切片，再迁移旧资源的最后消费者，最后物理删除不再加载的控制器",
       "removal_gate": "唯一生产bootstrap与导航所有者、无死导出/重复监听、新静态资源进入macOS发布哈希与冻结冒烟、旧文件无生产/安全/迁移消费者、真实WebView主链通过"
     },
     {

@@ -2,12 +2,12 @@
 
 > 审计日期：2026-08-25
 > 原始审计基线：`aa64c21390fc5d6873822f2798d76c18871c0f20`
-> 当前实施检查点：`2d9a7de554c6bee7c3e7fa0a6e2f4889f6ac19cd`
+> 当前实施检查点：`1f8ee47e4ad626fbcaaff67f9f11c41c9b06dd53`
 > 0.5 对照基线：`63b34f2`（0.5.1 build 6）
 > 当前已安装 App：1.2.0 build 47，来自 `033b12b3a38b6852c11569bd502637632f8c82f8`
 > 审计边界：本轮停止生产代码修复，不构建、不调用模型、不读写生产 SQLite。
 
-> 2026-08-27 实施检查点：审计后已开始按契约恢复主链。除上传论文原子发布、视觉资产人工隔离、表格人工审核与verified-only导出外，当前源码还已恢复图书管理员/证据对话的有界历史与引用复核、私人表格分页核验与人工序列编辑、确认导入后的精确打开，以及官方包活动版本和审计数量的冷启动恢复。以上均只是源码与定向测试状态，尚未替换已安装 App，也不构成 1.2 稳定声明。生产 SQLite 与 `paper_056` 隔离现场继续排除在测试、构建与提交之外。
+> 2026-08-28 实施检查点：审计后已按契约恢复上传论文原子发布、视觉资产人工隔离、表格人工审核与verified-only导出、图书管理员/证据对话的有界历史与引用复核、私人表格分页核验与人工序列编辑、确认导入后的精确打开，以及官方包活动版本和审计数量的冷启动恢复。结构治理已修复循环审计器、消除finalizer/job/visual三模块环，并把资料包/dataset控制器从Fusion主脚本物理抽离。以上均只是源码与定向测试状态，尚未替换已安装 App，也不构成 1.2 稳定声明。生产 SQLite 与 `paper_056` 隔离现场继续排除在测试、构建与提交之外。
 
 ## 1. 执行结论
 
@@ -141,7 +141,7 @@ AI设计必须遵循：
 ### 7.1 规模与变化
 
 - `src/auto_research` Python当前约68,141行。
-- 共享Web资源当前约8,667行；最大文件仍是兼容资源 `app.js` 4,379行。
+- 共享Web资源当前约9,314行；增长主要来自把压缩在主脚本中的资料包逻辑改为可审查的独立格式化模块；最大文件仍是兼容资源 `app.js` 4,379行。
 - 从0.5基线到当前核心范围约新增39,416行、删除2,923行。
 - 19个Python模块超过1,000行，涉及repository、transfer、提取、质量、AI和webapp关键边界。
 
@@ -160,8 +160,8 @@ AI设计必须遵循：
 
 ### 7.3 前端主要债务
 
-- `fusion_review.js`已增长到957行，同时掌管文献、搜索、实验、资料包、设置、AI、标签和布局协调；继续追加业务会再次形成单文件编排中心。
-- 当前生产HTML只加载 `ai_consent.js`、`document_tab_store.js`、`pane_layout_controller.js`、`workspace_layout_controller.js`、`fusion_pdf_controller.js`、`fusion_ai_experience.js` 与 `fusion_review.js`。旧 `app.js`、`desktop_product.js`、`package_center.js`、`workbench.js` 不属于生产启动链。
+- `fusion_review.js`当前926行，资料包/数据集逻辑已迁入677行的 `fusion_package_center.js`；主脚本仍掌管文献、搜索、实验、设置、AI、标签和布局协调，下一批只允许抽离personal切片。
+- 当前生产HTML只加载 `ai_consent.js`、`document_tab_store.js`、`pane_layout_controller.js`、`workspace_layout_controller.js`、`fusion_pdf_controller.js`、`fusion_ai_experience.js`、`fusion_package_center.js` 与 `fusion_review.js`。旧 `app.js`、`desktop_product.js`、旧 `package_center.js`、`workbench.js` 不属于生产启动链。
 - 这些旧资源仍被桌面静态白名单、safe-update检查、权限/路由兼容测试或历史研究测试消费，必须先迁移消费者，不能用一次粗暴删除冒充清债。
 - DocumentTabStore、PaneLayoutController和Fusion各自拥有部分可见性/恢复语义，导致“所有栏被收起”及标签内容错位。
 - 当前UI回归测试大量以字符串、DOM ID和fake DOM为主，无法证明真实WebView的排版、焦点、滚动和拖拽。
@@ -171,7 +171,7 @@ AI设计必须遵循：
 1. `fusion_review.js`继续作为唯一bootstrap、导航和共享请求端口；
 2. `DocumentTabStore`只拥有文档身份与组别，不直接投影栏位；
 3. `WorkspaceLayoutController`只拥有可见栏位组合，`PaneLayoutController`只拥有几何；
-4. 第一批只抽离已经完成端到端契约的personal与package切片；
+4. package切片已完成；下一批只抽离已经完成端到端契约的personal切片；
 5. 新模块只能消费bootstrap注入的端口，不得创建第二请求包装器、第二导航监听器或第二全局状态机；
 6. 每新增一个生产静态资源，必须同步macOS资源白名单、冻结冒烟、发布哈希和MIME/no-store契约。Windows继续冻结，不借共享拆分偷偷启动Windows迁移。
 
