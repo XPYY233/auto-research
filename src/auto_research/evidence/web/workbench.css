@@ -75,6 +75,8 @@ html[data-pane-resizing="true"],html[data-pane-resizing="true"] * { cursor:col-r
 .fusion-librarian-memory-toggle span { display:grid;gap:3px;min-width:0; }
 .fusion-librarian-memory-toggle strong { color:var(--f-text);font-size:10px; }
 .fusion-librarian-memory-toggle small,[data-evidence-history-status] { color:var(--f-muted);font-size:8px;line-height:1.45; }
+.fusion-librarian-fallback { display:grid;gap:4px;margin:0 0 12px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--f-warning) 42%,var(--f-border));border-left:3px solid var(--f-warning);border-radius:var(--f-radius);background:color-mix(in srgb,var(--f-warning) 8%,var(--f-surface));color:var(--f-text); }
+.fusion-librarian-fallback span { color:var(--f-muted);font-size:10px;line-height:1.55; }
 .fusion-librarian-meta { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 14px; }
 .fusion-librarian-meta>div { display:grid;gap:4px;padding:10px 12px;border:1px solid var(--f-border);border-radius:var(--f-radius);background:var(--f-surface); }
 .fusion-librarian-meta span { color:var(--f-muted);font-size:10px; }

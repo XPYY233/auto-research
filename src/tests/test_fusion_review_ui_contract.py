@@ -38,6 +38,13 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertIn("loadEvidenceChatHistory()", source)
         self.assertNotIn("memory_uid", source[source.index("function librarianRequest"):source.index("function librarianRefs")])
 
+    def test_rejected_harness_output_is_presented_as_local_evidence_not_ai_success(self) -> None:
+        source = (WEB / "fusion_review.js").read_text(encoding="utf-8")
+        self.assertIn('result.summary_mode==="local_deterministic_after_harness_rejection"', source)
+        self.assertIn("模型回答未采用", source)
+        self.assertIn("没有采用模型正文，也没有再次调用模型", source)
+        self.assertIn('localFallback?"warning":"success"', source)
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.index = (WEB / "index.html").read_text(encoding="utf-8")
