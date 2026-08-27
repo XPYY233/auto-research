@@ -317,10 +317,17 @@ class LiteratureExtractionBusinessProjector:
         "published_item_count", "existing_item_count", "manual_review_count",
         "visual_evidence_ready", "visual_stage_status",
         "table_candidate_count", "figure_candidate_count",
+        "table_structure_candidate_count", "table_structure_manual_review_count",
+        "table_structure_unavailable_count",
         "idempotent", "extraction_receipt", "publication_receipt",
         "dataset_receipt", "search_index",
     })
-    _LEGACY_COMMIT_KEYS = _COMMIT_KEYS - {"visual_stage_status"}
+    _TABLE_STRUCTURE_COUNT_KEYS = frozenset({
+        "table_structure_candidate_count", "table_structure_manual_review_count",
+        "table_structure_unavailable_count",
+    })
+    _PRE_TABLE_STRUCTURE_COMMIT_KEYS = _COMMIT_KEYS - _TABLE_STRUCTURE_COUNT_KEYS
+    _LEGACY_COMMIT_KEYS = _PRE_TABLE_STRUCTURE_COMMIT_KEYS - {"visual_stage_status"}
     _PAPER_KEYS = frozenset({"title", "doi"})
     _SENDING_SCOPE_KEYS = frozenset({
         "pdf_page_count", "page_block_count", "branch_count", "focus_count",
@@ -361,7 +368,17 @@ class LiteratureExtractionBusinessProjector:
                 raise BusinessActionError("business_action_result_invalid")
         elif summary.get("schema_version") == "literature-extraction-commit-result-v2":
             normalized = dict(summary)
-            if set(normalized) == self._LEGACY_COMMIT_KEYS:
+            keys = frozenset(normalized)
+            if keys in {
+                self._LEGACY_COMMIT_KEYS,
+                self._PRE_TABLE_STRUCTURE_COMMIT_KEYS,
+            }:
+                for key in self._TABLE_STRUCTURE_COUNT_KEYS:
+                    normalized[key] = 0
+            if keys in {
+                self._LEGACY_COMMIT_KEYS,
+                self._COMMIT_KEYS - {"visual_stage_status"},
+            }:
                 normalized["visual_stage_status"] = (
                     "ready" if normalized.get("visual_evidence_ready") is True
                     else "not_found"
@@ -387,6 +404,9 @@ class LiteratureExtractionBusinessProjector:
                         "candidate_count", "published_item_count",
                         "existing_item_count", "manual_review_count",
                         "table_candidate_count", "figure_candidate_count",
+                        "table_structure_candidate_count",
+                        "table_structure_manual_review_count",
+                        "table_structure_unavailable_count",
                     )
                 )
             ):

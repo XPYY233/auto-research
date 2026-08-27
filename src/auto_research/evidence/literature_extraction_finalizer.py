@@ -9,6 +9,7 @@ from typing import Any, Callable, Mapping
 
 from .db import EvidenceDB, now
 from .fact_model import classify_nonreportable_row
+from .literature_finalizer_port import TrustedAtomicLiteratureFinalizer
 from .literature_extraction_job import (
     ImmutablePDFSnapshot,
     LiteratureExtractionJobError,
@@ -39,7 +40,7 @@ _SUPPORTED_GATES = frozenset({"dual_pass", "third_pass", "manual_review"})
 _PUBLISHABLE = frozenset({"dual_pass", "third_pass"})
 
 
-class AtomicEvidenceDBFinalizer:
+class AtomicEvidenceDBFinalizer(TrustedAtomicLiteratureFinalizer):
     """Commit one validated text-evidence package in one SQLite transaction."""
 
     def __init__(

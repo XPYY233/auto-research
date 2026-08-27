@@ -858,6 +858,9 @@ def test_projector_rejects_extra_or_false_commit_fields() -> None:
         "visual_stage_status": "ready",
         "table_candidate_count": 0,
         "figure_candidate_count": 0,
+        "table_structure_candidate_count": 0,
+        "table_structure_manual_review_count": 0,
+        "table_structure_unavailable_count": 0,
         "idempotent": False,
         "extraction_receipt": {"schema_version": "literature-extraction-receipt-v1"},
         "publication_receipt": {"schema_version": "literature-publication-receipt-v1"},
@@ -865,10 +868,35 @@ def test_projector_rejects_extra_or_false_commit_fields() -> None:
         "search_index": {"status": "refreshed"},
     }
     assert projector.project({"summary": valid}) == valid
+    pre_table = {
+        key: value
+        for key, value in valid.items()
+        if not key.startswith("table_structure_")
+    }
+    projected_pre_table = projector.project({"summary": pre_table})
+    assert projected_pre_table["table_structure_candidate_count"] == 0
+    assert projected_pre_table["table_structure_manual_review_count"] == 0
+    assert projected_pre_table["table_structure_unavailable_count"] == 0
+    legacy = {
+        key: value
+        for key, value in pre_table.items()
+        if key != "visual_stage_status"
+    }
+    projected_legacy = projector.project({"summary": legacy})
+    assert projected_legacy["visual_stage_status"] == "ready"
+    assert projected_legacy["table_structure_candidate_count"] == 0
     with pytest.raises(BusinessActionError):
         projector.project({"summary": {**valid, "pdf_path": "/private/a.pdf"}})
     with pytest.raises(BusinessActionError):
         projector.project({"summary": {**valid, "visual_evidence_ready": False}})
+    with pytest.raises(BusinessActionError):
+        projector.project({
+            "summary": {**valid, "table_structure_candidate_count": True}
+        })
+    with pytest.raises(BusinessActionError):
+        projector.project({
+            "summary": {**valid, "table_structure_unavailable_count": -1}
+        })
     with pytest.raises(BusinessActionError):
         projector.project({
             "summary": {**valid, "paper": {**valid["paper"], "pdf_path": "/tmp/a.pdf"}}

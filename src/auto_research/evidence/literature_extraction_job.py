@@ -32,6 +32,7 @@ from .literature_job_persistence import (
     decode_job_private_state,
     encode_job_private_state,
 )
+from .literature_finalizer_port import TrustedAtomicLiteratureFinalizer
 
 
 SCHEMA_VERSION = "literature-extraction-job-v1"
@@ -111,10 +112,7 @@ class PaperSource(Protocol):
     def get_paper(self, paper_id: int) -> Mapping[str, Any] | None: ...
 
 
-class AtomicLiteratureFinalizer(Protocol):
-    """Reserved second-batch port for one audited scientific transaction."""
-
-    def finalize(self, package: "ValidatedLiteraturePackage") -> Mapping[str, Any]: ...
+AtomicLiteratureFinalizer = TrustedAtomicLiteratureFinalizer
 
 
 class LiteratureStagePlanner(Protocol):
@@ -1024,8 +1022,6 @@ class LiteratureExtractionJobStore:
         session_id: str,
         finalizer: AtomicLiteratureFinalizer,
     ) -> Mapping[str, Any]:
-        from .literature_extraction_finalizer import AtomicEvidenceDBFinalizer
-
         with self._lock:
             job = self._get(job_token, session_id)
             quality_result = (
@@ -1035,7 +1031,7 @@ class LiteratureExtractionJobStore:
             )
             if job.claimed or job.status != "validated" or quality_result is None:
                 raise LiteratureExtractionJobError("literature_not_validated", "抽取结果尚未通过全部质量门")
-            if not isinstance(finalizer, AtomicEvidenceDBFinalizer):
+            if not isinstance(finalizer, TrustedAtomicLiteratureFinalizer):
                 raise LiteratureExtractionJobError(
                     "literature_commit_unavailable", "当前未安装受信原子保存组件"
                 )
