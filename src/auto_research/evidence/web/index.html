@@ -25,7 +25,7 @@
       <span id="fusion-breadcrumb">文献 / 当前论文</span>
       <div class="fusion-layout-actions" role="group" aria-label="工作台栏位">
         <button type="button" data-pane-toggle="context" aria-controls="fusion-context" aria-expanded="true" title="显示或收起上下文栏">左栏</button>
-        <button type="button" data-pane-toggle="inspector" aria-controls="fusion-inspector" aria-expanded="true" title="显示或收起检查器">检查器</button>
+        <button type="button" data-pane-toggle="inspector" aria-controls="fusion-inspector" aria-expanded="false" title="显示或收起检查器">检查器</button>
       </div>
       <button type="button" class="fusion-command" id="fusion-command" aria-keyshortcuts="Meta+K Control+K" aria-haspopup="dialog" aria-expanded="false" aria-controls="fusion-command-palette">命令与快速跳转 <kbd>⌘K</kbd></button>
       <span class="fusion-release-badge" id="fusion-release-badge">本机数据 · AI 逐次授权</span>
@@ -187,7 +187,7 @@
         </section>
 
         <section class="fusion-view" id="view-package" data-view-panel="package" hidden aria-label="资料包工作区">
-          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">版本</button><div><strong>资料包中心</strong><small>官方资料库与用户传输包相互隔离</small></div><button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">安全边界</button></header>
+          <header class="fusion-toolbar"><button type="button" class="fusion-mobile-toggle" data-open-drawer="context">版本</button><div><strong>资料包中心</strong><small>官方资料库与用户传输包相互隔离</small></div></header>
           <div class="fusion-toolbar-note" id="fusion-package-status" aria-live="polite">正在读取资料包状态…</div>
           <div class="fusion-scroll fusion-package-list">
             <section class="fusion-package-result" id="fusion-package-official-result" hidden aria-live="polite"><header><span>READY</span><strong id="fusion-package-result-title">官方资料库已就绪</strong><em id="fusion-package-result-outcome">—</em></header><div class="fusion-package-metrics" id="fusion-package-result-counts"></div><button type="button" class="fusion-primary-action" id="fusion-package-open-official-search" hidden>前往搜索官方资料</button></section>
@@ -237,9 +237,9 @@
         </div>
       </section>
 
-      <div class="fusion-pane-separator fusion-inspector-separator" id="fusion-inspector-separator" data-pane-separator="inspector" role="separator" aria-label="调整右侧检查器宽度" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="560" aria-valuenow="340" tabindex="0"></div>
+      <div class="fusion-pane-separator fusion-inspector-separator" id="fusion-inspector-separator" data-pane-separator="inspector" role="separator" aria-label="调整右侧检查器宽度" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="560" aria-valuenow="340" tabindex="0" hidden></div>
 
-      <aside class="fusion-inspector" id="fusion-inspector" aria-label="详情与检查器">
+      <aside class="fusion-inspector" id="fusion-inspector" aria-label="详情与检查器" hidden>
         <header><strong id="fusion-inspector-title">论文检查器</strong><button type="button" class="fusion-drawer-close" data-close-drawer="inspector" aria-label="关闭检查器">×</button></header>
         <div class="fusion-inspector-body" id="fusion-inspector-body" aria-live="polite"></div>
       </aside>

@@ -64,6 +64,18 @@ class WorkbenchRecoveryContractTest(unittest.TestCase):
             self.assertEqual(html.count(f'id="{control}"'), 1, control)
         self.assertIn('data-search-context-mode="librarian"', html)
         self.assertIn('data-package-workflow="dataset"', html)
+        package_header = re.search(r'<section class="fusion-view" id="view-package".*?<header class="fusion-toolbar">(.*?)</header>', html, re.S)
+        self.assertIsNotNone(package_header)
+        self.assertNotIn('data-open-drawer="inspector"', package_header.group(1))
+
+    def test_selection_only_inspector_starts_hidden(self):
+        html = (WEB / "index.html").read_text()
+        inspector = re.search(r'<aside class="fusion-inspector"[^>]+>', html)
+        separator = re.search(r'<div class="fusion-pane-separator fusion-inspector-separator"[^>]+>', html)
+        self.assertIsNotNone(inspector)
+        self.assertIsNotNone(separator)
+        self.assertIn(" hidden", inspector.group(0))
+        self.assertIn(" hidden", separator.group(0))
 
     def test_task_projection_replaces_five_column_visibility_branches(self):
         source = (WEB / "fusion_review.js").read_text()
@@ -84,6 +96,15 @@ class WorkbenchRecoveryContractTest(unittest.TestCase):
         for value in (1600, 1200, 900):
             self.assertIn(str(value), source)
         self.assertIn("workspace_layout_column_budget_exceeded", source)
+
+    def test_production_css_custom_properties_are_defined(self):
+        css = "\n".join(
+            (WEB / name).read_text(encoding="utf-8")
+            for name in ("app.css", "workbench.css")
+        )
+        definitions = set(re.findall(r"(--[a-zA-Z0-9_-]+)\s*:", css))
+        references = set(re.findall(r"var\(\s*(--[a-zA-Z0-9_-]+)", css))
+        self.assertEqual(references - definitions, set())
 
 
 if __name__ == "__main__":

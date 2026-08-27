@@ -31,6 +31,13 @@ def core_release(project_root: Path) -> str:
 def build_manifest(project_root: Path) -> dict[str, object]:
     desktop_root = project_root / "desktop" / "macos"
     desktop_version = json.loads((desktop_root / "version.json").read_text(encoding="utf-8"))
+    release_status = desktop_version.get("release_status")
+    if release_status not in {"candidate", "stable"}:
+        raise ValueError("desktop release_status must be candidate or stable")
+    release_channel = (
+        "research-group-stable" if release_status == "stable" else "research-group-candidate"
+    )
+    release_label = "stable release" if release_status == "stable" else "release candidate"
     dirty = git(project_root, "status", "--porcelain", "--untracked-files=all")
     return {
         "manifest_version": 1,
@@ -49,14 +56,15 @@ def build_manifest(project_root: Path) -> dict[str, object]:
         "worktree_clean": not bool(dirty),
         "scientific_data_bundled": False,
         "public_distribution_ready": False,
-        "release_channel": "research-group-stable",
+        "release_status": release_status,
+        "release_channel": release_channel,
         "supported_architecture": "arm64",
         "code_signing": "ad-hoc",
         "apple_notarized": False,
         "windows_released": False,
         "publication_note": (
             f"macOS v{desktop_version['desktop_version']} build "
-            f"{desktop_version['build_number']} research-group stable release for "
+            f"{desktop_version['build_number']} research-group {release_label} for "
             "Apple Silicon; ad-hoc signed and not Apple-notarized; Windows release "
             "is paused and unpublished; production evidence remains external."
         ),

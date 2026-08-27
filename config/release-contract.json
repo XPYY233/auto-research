@@ -5,7 +5,8 @@
     "macos": {
       "desktop_version": "1.2.0",
       "bundle_short_version": "1.2.0",
-      "build_number": "50",
+      "build_number": "51",
+      "release_status": "candidate",
       "target": "macOS arm64 Auto Research workbench"
     },
     "windows": {
@@ -46,9 +47,9 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "f96d612877a92c747e3294ea9d25cefb7acd2511e0c18dd153dbb8352c1428c0",
+    "src/auto_research/evidence/web/index.html": "6873ef3816d8e8124d27c9847d71b3121980f462c5d9b5008878625a540d779f",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
-    "src/auto_research/evidence/web/workbench.css": "2a3f2d03ccaa8a81c95f9ed560ed33a0f148d9e9b985bcb409a9b3ebc3c97218",
+    "src/auto_research/evidence/web/workbench.css": "26d1b2aa384f61343378bafa630793755afee1e351e37a2679df8fa6cd7b3d99",
     "src/auto_research/evidence/web/ai_consent.js": "606cded819b129a32e74d4532f1a5e6fddbf399d0a205f5abddb03af8c67141b",
     "src/auto_research/evidence/web/document_tab_store.js": "b0b8a930b0f6c54796cc6a926a6435162c6b51bb3fd95c16bd595ecdc234f2cf",
     "src/auto_research/evidence/web/pane_layout_controller.js": "bb2ebea79ba9d571065e7dc9ac5b9635fc19ecb77ac761fbf1cb8248bf98e154",
@@ -58,7 +59,7 @@
     "src/auto_research/evidence/web/fusion_operation_history.js": "0272560dec019433df0fcdfe765e5e30d9d1e196521a1fa329ad5b9232377dc0",
     "src/auto_research/evidence/web/fusion_package_center.js": "6cb7bac3d0716d37df5a96019694a4aaefaa5e084e9afce1c38b707a01ab3397",
     "src/auto_research/evidence/web/fusion_personal_import.js": "f31a8861931cc1395a6d22f28b70aebe3f8066307b6a2fbc14aa0bc42044b672",
-    "src/auto_research/evidence/web/fusion_review.js": "4fcbd1f1c89c96618e93527b3babacfcecc68317912953854b7df3663d59f27b",
+    "src/auto_research/evidence/web/fusion_review.js": "555875748ccb8aef61f384bffd9cb0fea902445ebf75e1498934b8ffbd5ac5ba",
     "src/auto_research/evidence/web/codex-pet-working.webp": "eeb657c8dd3dc9431cea8d88b8ec08e4c44471dd258ac3d8008483f2b40f0ef9"
   }
 }

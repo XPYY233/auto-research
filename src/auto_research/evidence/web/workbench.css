@@ -2,6 +2,7 @@
   --f-bg:#f3f4f6;--f-surface:#ffffff;--f-side:#eceef1;--f-rail:#e3e6e9;--f-raised:#f7f8fa;
   --f-text:#202428;--f-muted:#5c6670;--f-border:#d8dce1;--f-border-strong:#b8c0c8;
   --f-select:#e2e7ec;--f-accent:#0969da;--f-accent-soft:#dcebf9;--f-on-accent:#ffffff;
+  --f-focus:var(--f-accent);--f-panel:var(--f-raised);
   --f-accent-line:color-mix(in srgb,var(--f-accent) 28%,var(--f-border));
   --f-success:#2e7d4f;--f-warning:#8b5a00;--f-danger:#b42318;
   --f-row:32px;--f-pad:12px;--f-radius:4px;--f-content-pad:clamp(20px,3vw,36px);--f-content-gap:18px;--f-body-leading:1.72;
@@ -110,10 +111,10 @@ html[data-pane-resizing="true"],html[data-pane-resizing="true"] * { cursor:col-r
 [data-density="comfortable"] .fusion-paper-filter { margin:0 4px 12px;padding:8px 10px; }
 [data-density="comfortable"] .fusion-paper-catalog { gap:8px; }
 [data-density="comfortable"] .fusion-paper-catalog .fusion-tree-row { min-height:60px;padding:10px 11px; }
-[data-density="comfortable"] .fusion-toolbar { min-height:64px;gap:12px;padding:10px 14px; }
+[data-density="comfortable"] .fusion-toolbar { min-height:56px;gap:12px;padding:8px 12px; }
 [data-density="comfortable"] .fusion-toolbar-note { min-height:34px;padding:8px 16px; }
 [data-density="comfortable"] .fusion-toolbar .fusion-action-cluster { gap:8px; }
-[data-density="comfortable"] .fusion-toolbar .fusion-action-cluster button { min-height:38px; }
+[data-density="comfortable"] .fusion-toolbar .fusion-action-cluster button { min-height:36px; }
 [data-density="comfortable"] .fusion-export-group { gap:7px;padding:6px 8px; }
 [data-density="comfortable"] .fusion-search-primary-row { min-height:64px;gap:10px;padding:10px 14px; }
 [data-density="comfortable"] .fusion-search-secondary-row { min-height:46px;padding:0 14px 10px; }
