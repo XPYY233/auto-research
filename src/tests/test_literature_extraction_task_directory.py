@@ -144,9 +144,10 @@ def test_completed_task_projects_only_concise_persistent_receipt(monkeypatch) ->
         "existing_item_count": 1,
         "manual_review_count": 2,
         "table_candidate_count": 3,
-        "figure_candidate_count": 4,
-        "visual_evidence_ready": True,
-        "search_index": {"status": "refreshed", "document_count": 6},
+            "figure_candidate_count": 4,
+            "visual_evidence_ready": True,
+            "visual_stage_status": "ready",
+            "search_index": {"status": "refreshed", "document_count": 6},
         "dataset_partition": "validation",
     }
     assert "must-not-project" not in repr(result)

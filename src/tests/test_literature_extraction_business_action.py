@@ -611,7 +611,8 @@ def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence)
     assert public["paper"] == {"title": "Safe experiment", "doi": "10.1/safe"}
     assert public["candidate_count"] == 1
     assert public["published_item_count"] == 1
-    assert public["visual_evidence_ready"] is True
+    assert public["visual_evidence_ready"] is False
+    assert public["visual_stage_status"] == "not_found"
     assert public["search_index"]["status"] == "refreshed"
     assert raw.calls > draft.estimated_calls
     assert _counts(db)["quality_pipeline_runs"] == 1
@@ -669,6 +670,7 @@ def test_uploaded_pdf_closes_scientific_chain_through_visual_search_and_source(
     assert result["table_candidate_count"] == 1
     assert result["figure_candidate_count"] == 1
     assert result["visual_evidence_ready"] is True
+    assert result["visual_stage_status"] == "ready"
     assert result["search_index"]["status"] == "refreshed"
 
     assets = list_visual_assets(db, paper_id=paper_id)
@@ -844,6 +846,7 @@ def test_projector_rejects_extra_or_false_commit_fields() -> None:
         "existing_item_count": 0,
         "manual_review_count": 0,
         "visual_evidence_ready": True,
+        "visual_stage_status": "ready",
         "table_candidate_count": 0,
         "figure_candidate_count": 0,
         "idempotent": False,

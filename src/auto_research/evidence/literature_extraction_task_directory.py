@@ -149,10 +149,18 @@ def _public_receipt(value: object) -> Mapping[str, object] | None:
     search_index = value.get("search_index")
     dataset_receipt = value.get("dataset_receipt")
     status = value.get("status")
+    visual_ready = value.get("visual_evidence_ready")
+    visual_status = value.get("visual_stage_status")
+    if visual_status is None and visual_ready is True:
+        # Completed checkpoints written before explicit visual-stage status are
+        # safe to resume as legacy ready receipts.
+        visual_status = "ready"
     if (
         value.get("schema_version") != "literature-extraction-commit-result-v2"
         or status not in {"completed", "saved_index_pending"}
-        or value.get("visual_evidence_ready") is not True
+        or not isinstance(visual_ready, bool)
+        or visual_status not in {"ready", "not_found"}
+        or visual_ready != (visual_status == "ready")
         or any(
             isinstance(value.get(key), bool)
             or not isinstance(value.get(key), int)
@@ -182,7 +190,8 @@ def _public_receipt(value: object) -> Mapping[str, object] | None:
         "schema_version": "literature-extraction-receipt-summary-v1",
         "status": status,
         **{key: value[key] for key in integer_keys},
-        "visual_evidence_ready": True,
+        "visual_evidence_ready": visual_ready,
+        "visual_stage_status": visual_status,
         "search_index": {
             "status": search_index["status"],
             "document_count": document_count,

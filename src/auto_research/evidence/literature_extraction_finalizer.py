@@ -122,7 +122,7 @@ class AtomicEvidenceDBFinalizer:
                     "literature_commit_failed", "目标文献身份已变化，未保存任何科学记录"
                 )
             existing = self._find_existing(connection, package.paper_id, commit_fingerprint)
-            if existing is not None and existing["summary"].get("visual_evidence_ready") is True:
+            if existing is not None and self._visual_stage_completed(existing["summary"]):
                 connection.commit()
                 return self._public_result(
                     package, existing["summary"], idempotent=True
@@ -133,6 +133,8 @@ class AtomicEvidenceDBFinalizer:
                 **payload["summary"],
                 "commit_schema_version": FINALIZER_SCHEMA_VERSION,
                 "commit_fingerprint": commit_fingerprint,
+                "visual_stage_completed": False,
+                "visual_stage_status": "pending",
                 "visual_evidence_ready": False,
                 "atomic_commit_ready": True,
             }
@@ -219,7 +221,11 @@ class AtomicEvidenceDBFinalizer:
                 "manual_review_count": manual_review + int(visual_summary["manual_review_count"]),
                 "text_manual_review_count": manual_review,
                 "visual_manual_review_count": int(visual_summary["manual_review_count"]),
-                "visual_evidence_ready": True,
+                "visual_stage_completed": True,
+                "visual_stage_status": (
+                    "ready" if int(visual_summary["asset_count"]) > 0 else "not_found"
+                ),
+                "visual_evidence_ready": int(visual_summary["asset_count"]) > 0,
                 "table_candidate_count": int(visual_summary["table_count"]),
                 "figure_candidate_count": int(visual_summary["figure_count"]),
                 "visual_asset_hashes": list(visual_summary["asset_hashes"]),
@@ -266,6 +272,22 @@ class AtomicEvidenceDBFinalizer:
             if summary.get("commit_fingerprint") == commit_fingerprint:
                 return {"summary": summary}
         return None
+
+    @staticmethod
+    def _visual_stage_completed(summary: Mapping[str, Any]) -> bool:
+        """Recognize new completion state and legacy committed summaries.
+
+        Before the explicit stage marker existed, a committed run always wrote
+        ``visual_evidence_ready``.  Its boolean described neither discovery nor
+        publication accurately, but the presence of the field in a committed
+        run is sufficient for idempotency.  New writes never use readiness as
+        the transaction-completion marker.
+        """
+
+        return summary.get("visual_stage_completed") is True or (
+            "visual_stage_completed" not in summary
+            and isinstance(summary.get("visual_evidence_ready"), bool)
+        )
 
     @staticmethod
     def _publish_item(
@@ -445,6 +467,9 @@ class AtomicEvidenceDBFinalizer:
             "existing_item_count": int(summary.get("existing_item_count", 0)),
             "manual_review_count": int(summary.get("manual_review_count", 0)),
             "visual_evidence_ready": bool(summary.get("visual_evidence_ready")),
+            "visual_stage_status": str(summary.get("visual_stage_status") or (
+                "ready" if summary.get("visual_evidence_ready") else "not_found"
+            )),
             "table_candidate_count": int(summary.get("table_candidate_count", 0)),
             "figure_candidate_count": int(summary.get("figure_candidate_count", 0)),
             "idempotent": idempotent,

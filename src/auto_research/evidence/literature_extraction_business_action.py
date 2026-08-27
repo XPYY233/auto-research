@@ -315,10 +315,12 @@ class LiteratureExtractionBusinessProjector:
     _COMMIT_KEYS = frozenset({
         "schema_version", "status", "paper", "candidate_count",
         "published_item_count", "existing_item_count", "manual_review_count",
-        "visual_evidence_ready", "table_candidate_count", "figure_candidate_count",
+        "visual_evidence_ready", "visual_stage_status",
+        "table_candidate_count", "figure_candidate_count",
         "idempotent", "extraction_receipt", "publication_receipt",
         "dataset_receipt", "search_index",
     })
+    _LEGACY_COMMIT_KEYS = _COMMIT_KEYS - {"visual_stage_status"}
     _PAPER_KEYS = frozenset({"title", "doi"})
     _SENDING_SCOPE_KEYS = frozenset({
         "pdf_page_count", "page_block_count", "branch_count", "focus_count",
@@ -358,11 +360,21 @@ class LiteratureExtractionBusinessProjector:
             ):
                 raise BusinessActionError("business_action_result_invalid")
         elif summary.get("schema_version") == "literature-extraction-commit-result-v2":
+            normalized = dict(summary)
+            if set(normalized) == self._LEGACY_COMMIT_KEYS:
+                normalized["visual_stage_status"] = (
+                    "ready" if normalized.get("visual_evidence_ready") is True
+                    else "not_found"
+                )
+            summary = normalized
             if (
                 set(summary) != self._COMMIT_KEYS
                 or summary.get("status") not in {"completed", "saved_index_pending"}
                 or not self._valid_paper(summary.get("paper"))
-                or summary.get("visual_evidence_ready") is not True
+                or not isinstance(summary.get("visual_evidence_ready"), bool)
+                or summary.get("visual_stage_status") not in {"ready", "not_found"}
+                or summary.get("visual_evidence_ready")
+                != (summary.get("visual_stage_status") == "ready")
                 or not isinstance(summary.get("idempotent"), bool)
                 or not isinstance(summary.get("extraction_receipt"), Mapping)
                 or not isinstance(summary.get("publication_receipt"), Mapping)

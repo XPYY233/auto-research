@@ -142,7 +142,8 @@ def test_atomic_success_publishes_only_quality_passed_text_records(evidence) -> 
     assert result["status"] == "completed"
     assert result["candidate_count"] == 3
     assert result["published_item_count"] == 2
-    assert result["visual_evidence_ready"] is True
+    assert result["visual_evidence_ready"] is False
+    assert result["visual_stage_status"] == "not_found"
     assert result["extraction_receipt"]["schema_version"] == "literature-extraction-receipt-v1"
     assert result["publication_receipt"]["schema_version"] == "literature-publication-receipt-v1"
     assert result["dataset_receipt"]["schema_version"] == "dataset-membership-receipt-v1"
@@ -161,7 +162,9 @@ def test_atomic_success_publishes_only_quality_passed_text_records(evidence) -> 
             "SELECT summary_json FROM quality_pipeline_runs"
         ).fetchone()["summary_json"])
     assert len(summary["commit_fingerprint"]) == 64
-    assert summary["visual_evidence_ready"] is True
+    assert summary["visual_stage_completed"] is True
+    assert summary["visual_evidence_ready"] is False
+    assert summary["visual_stage_status"] == "not_found"
 
 
 def test_repeat_is_idempotent_inside_transaction_lock(evidence) -> None:
@@ -171,6 +174,8 @@ def test_repeat_is_idempotent_inside_transaction_lock(evidence) -> None:
     first = finalizer.finalize(payload)
     before = counts(db)
     second = finalizer.finalize(payload)
+    assert first["visual_stage_status"] == "not_found"
+    assert second["visual_stage_status"] == "not_found"
     assert first["idempotent"] is False
     assert second["idempotent"] is True
     assert counts(db) == before
@@ -368,7 +373,8 @@ def test_job_store_trusted_finalize_waits_for_durable_ack_before_cleanup(evidenc
         summary["job_token"], session_id="owner", finalizer=AtomicEvidenceDBFinalizer(db)
     )
     assert result["status"] == "completed"
-    assert result["visual_evidence_ready"] is True
+    assert result["visual_evidence_ready"] is False
+    assert result["visual_stage_status"] == "not_found"
     assert summary["job_token"] in store._jobs
     assert snapshot_handle in store._snapshots._records
     store.acknowledge_finalized(summary["job_token"], session_id="owner")
