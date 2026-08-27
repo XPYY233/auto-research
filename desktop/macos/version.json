@@ -1,7 +1,7 @@
 {
   "desktop_version": "1.2.0",
   "bundle_short_version": "1.2.0",
-  "build_number": "51",
+  "build_number": "52",
   "release_status": "candidate",
   "target": "macOS arm64 Auto Research workbench",
   "product_target": "macOS research workbench; Windows release paused",
