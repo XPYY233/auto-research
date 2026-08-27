@@ -137,7 +137,7 @@ platform-neutral utilities
 4. 将 `desktop_server` 收缩为受保护的路由组合层；session/CSRF、history、credential、readiness、package jobs 分离为可单测服务。
 5. 对超过约800–1000行或承担三种以上职责的 package/repository 模块分步拆分；每一步保持公开API、包字节和攻击回归兼容，禁止一次性大重写。
 
-前端拆分已开始：`package_center.js` 是从 `desktop_product.js` 提取的第一个业务模块，独立拥有资料包状态、事件和渲染，通过窄 ports 读取选择/筛选快照与调用平台能力。下一模块继续采用同样模式，不得复制全局 store、API 安全封装或业务规则。
+当前生产前端拆分为`fusion_package_center.js`、`fusion_operation_history.js`与`fusion_personal_import.js`；三者只消费Fusion bootstrap注入的请求、DOM和导航端口，不拥有第二个导航、第二个请求安全封装或第二套任务生命周期。旧`package_center.js`仅因Windows冻结兼容资源暂留，不是当前产品实现。后续模块继续采用同样的单向端口模式，不得复制全局store、API安全封装或业务规则。
 
 ## 9. 架构决定记录
 

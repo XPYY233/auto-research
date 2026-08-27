@@ -2,12 +2,12 @@
 
 > 审计日期：2026-08-25
 > 原始审计基线：`aa64c21390fc5d6873822f2798d76c18871c0f20`
-> 当前实施检查点：`c0fb9a1`
+> 当前实施检查点：`30c7080`
 > 0.5 对照基线：`63b34f2`（0.5.1 build 6）
 > 当前已安装 App：1.2.0 build 47，来自 `033b12b3a38b6852c11569bd502637632f8c82f8`
 > 审计边界：本轮停止生产代码修复，不构建、不调用模型、不读写生产 SQLite。
 
-> 2026-08-28 实施检查点：审计后已按契约恢复上传论文原子发布、视觉资产人工隔离、表格人工审核与verified-only导出、图书管理员/证据对话的有界历史与引用复核、私人表格分页核验与人工序列编辑、确认导入后的精确打开，以及官方包活动版本和审计数量的冷启动恢复。结构治理已修复循环审计器、消除finalizer/job/visual三模块环，并把资料包/dataset与个人导入控制器从Fusion主脚本物理抽离。用户资料包和训练数据集的成功导出现在会生成独立AES-GCM、path-free的30天完成回执，并在资料包中心跨重启显示；回执失败不会改判或重跑已经落盘的导出，当前进程内还可用显式按钮只重试可信回执写入。共享/Mac也已迁出四个旧Web控制器的正向消费者，旧文件只因Windows冻结静态清单保留。以上均只是源码与定向测试状态，尚未替换已安装 App，也不构成 1.2 稳定声明。生产 SQLite 与 `paper_056` 隔离现场继续排除在测试、构建与提交之外。
+> 2026-08-28 实施检查点：审计后已按契约恢复上传论文原子发布、视觉资产人工隔离、表格人工审核与verified-only导出、图书管理员/证据对话的有界历史与引用复核、私人表格分页核验与人工序列编辑、确认导入后的精确打开，以及官方包活动版本和审计数量的冷启动恢复。结构治理已修复循环审计器、消除finalizer/job/visual三模块环，并把资料包/dataset、任务历史与个人导入控制器从Fusion主脚本物理抽离。资料包导入、资料包导出和训练数据集导出现在写入独立AES-GCM、path-free的`operation-history-v1`，保留近30天最多100条；已落盘但回执pending的导出可以跨重启只恢复可信回执，不会重跑导出。queued/running重启后只会变成interrupted并要求用户重新开始，不是长任务续跑。共享/Mac也已迁出四个旧Web控制器的正向消费者，旧文件只因Windows冻结静态清单保留。以上均只是源码与定向测试状态，尚未替换已安装 App，也不构成 1.2 稳定声明。生产 SQLite 与 `paper_056` 隔离现场继续排除在测试、构建与提交之外。
 
 ## 1. 执行结论
 
@@ -160,8 +160,8 @@ AI设计必须遵循：
 
 ### 7.3 前端主要债务
 
-- `fusion_review.js`当前874行；资料包/数据集和持久导出回执逻辑已迁入865行的 `fusion_package_center.js`，个人导入核验及私人搜索索引恢复已迁入661行的 `fusion_personal_import.js`。主脚本仍掌管文献、搜索、设置、AI、标签和布局协调。
-- 当前生产HTML只加载 `ai_consent.js`、`document_tab_store.js`、`pane_layout_controller.js`、`workspace_layout_controller.js`、`fusion_pdf_controller.js`、`fusion_ai_experience.js`、`fusion_package_center.js`、`fusion_personal_import.js` 与 `fusion_review.js`。旧 `app.js`、`desktop_product.js`、旧 `package_center.js`、`workbench.js` 不属于生产启动链。
+- `fusion_review.js`当前874行；资料包/数据集逻辑在924行的`fusion_package_center.js`，持久任务历史在114行的`fusion_operation_history.js`，个人导入核验及私人搜索索引恢复在661行的`fusion_personal_import.js`。主脚本仍掌管文献、搜索、设置、AI、标签和布局协调。
+- 当前生产HTML只加载 `ai_consent.js`、`document_tab_store.js`、`pane_layout_controller.js`、`workspace_layout_controller.js`、`fusion_pdf_controller.js`、`fusion_ai_experience.js`、`fusion_operation_history.js`、`fusion_package_center.js`、`fusion_personal_import.js` 与 `fusion_review.js`。旧 `app.js`、`desktop_product.js`、旧 `package_center.js`、`workbench.js` 不属于生产启动链。
 - 这些旧资源仍被桌面静态白名单、safe-update检查、权限/路由兼容测试或历史研究测试消费，必须先迁移消费者，不能用一次粗暴删除冒充清债。
 - 四个旧控制器的逐文件消费者、不得迁移行为和Batch B—E删除门已经冻结在`docs/LEGACY_WEB_CONSUMER_AUDIT_1_2.md`；Windows冻结期间只迁移Mac/Fusion消费者，不通过共享改动偷跑Windows删除。
 - DocumentTabStore、PaneLayoutController和Fusion各自拥有部分可见性/恢复语义，导致“所有栏被收起”及标签内容错位。
@@ -307,6 +307,8 @@ AI设计必须遵循：
 - 资料包导入结果和下一步持续可见。
 
 退出门：文件确实落盘并可重新导入/读取；失败不影响旧库。
+
+实施状态（`30c7080`）：私人表格分页核验、三类导出分流、导入结果、活动版本、加密完成回执及独立操作历史已完成源码接线。已落盘但回执pending的导出可跨重启恢复回执；未完成任务只标记interrupted并返回流程，不保存敏感执行上下文，也不自动续跑。完整共享/macOS测试、同一提交候选构建、安装后导入/导出往返和真实用户验收尚未执行，因此退出门仍未通过。
 
 ### Phase 7：物理清债
 

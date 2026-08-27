@@ -83,7 +83,7 @@
       "area": "frontend",
       "owner": "shared-frontend",
       "status": "experimental",
-      "problem": "生产HTML现加载Fusion九个经典脚本；资料包与个人导入业务已分别抽离到无自主生命周期的fusion_package_center.js和fusion_personal_import.js，但主脚本仍同时承担文献、搜索、设置、AI、标签和布局协调；四个旧Web控制器已无共享或Mac正向消费者，但仍在Windows冻结白名单中；safe update已改为只检查发布契约中的真实Fusion脚本",
+      "problem": "生产HTML现加载Fusion十个经典脚本；资料包、任务历史与个人导入业务已分别抽离到无自主生命周期的fusion_package_center.js、fusion_operation_history.js和fusion_personal_import.js，但主脚本仍同时承担文献、搜索、设置、AI、标签和布局协调；四个旧Web控制器已无共享或Mac正向消费者，但仍在Windows冻结白名单中；safe update已改为只检查发布契约中的真实Fusion脚本",
       "target": "保持单一bootstrap、workspace、document和请求端口；先迁移旧资源的最后消费者并物理删除不再加载的控制器，再按已验证端到端边界抽离文献或搜索垂直切片",
       "removal_gate": "唯一生产bootstrap与导航所有者、无死导出/重复监听、新静态资源进入macOS发布哈希与冻结冒烟、旧文件无生产/安全/迁移消费者、真实WebView主链通过"
     },
@@ -150,12 +150,12 @@
     {
       "id": "ARCH-P1-008",
       "priority": "P1",
-      "area": "durable-user-activity-receipts",
+      "area": "durable-package-operations",
       "owner": "product-runtime",
       "status": "experimental",
-      "problem": "用户资料包与数据集的成功导出已接入独立加密、path-free的30天完成回执，并可在资料包中心跨重启读取；当前进程内的pending回执已有显式、幂等且不重跑导出的安全恢复入口，但导入、失败、取消、长任务和pending任务跨App重启仍缺少独立持久操作历史",
-      "target": "沿用独立公共活动收据存储补齐导入和长任务终态；只保存任务身份、类型、范围摘要、结果、校验码、时间和稳定next_action，不进入appearance设置，不保存路径、密钥或敏感正文",
-      "removal_gate": "导入/导出完成、失败、取消及重启恢复均可从App内核对；文件落盘收据与真实文件哈希一致，失败不留下半成品"
+      "problem": "资料包导入、资料包导出和数据集导出已接入独立AES-GCM、path-free的operation-history-v1，保留近30天最多100条状态；completed+pending的导出回执可跨App重启幂等恢复且不重跑导出。剩余缺口是queued/running重启后只能标记interrupted并重新开始，没有cancelled终态、长任务continuation/checkpoint或导入完成回执恢复",
+      "target": "保持历史与业务执行上下文分离；若增加取消或续跑，必须设计独立授权和可信检查点契约，不持久化selection/destination/plan token、路径、密钥、正文或原始job id",
+      "removal_gate": "取消终态、长任务检查点和恢复授权通过重启/幂等/零重复收费验收；文件落盘回执与真实文件哈希一致，失败不留下半成品"
     },
     {
       "id": "ARCH-P1-009",
@@ -164,8 +164,28 @@
       "owner": "maintenance",
       "status": "compatibility",
       "problem": "四个旧Web控制器已无共享或macOS生产、更新、安全、授权、历史或兼容正向消费者；历史简报和维护者工具已分类为独立领域/维护能力而非旧页面删除门。文件当前仅因Windows冻结静态白名单与所有权清单暂留，继续含糊保留会制造第二套产品仍受支持的错觉",
-      "target": "按docs/LEGACY_WEB_CONSUMER_AUDIT_1_2.md的Batch B-E迁移：先把资料包权限、异步隔离、PDF、CSRF、prepared action和加密历史断言改写到Fusion或平台中立服务；维护者能力单独决定；最后移除平台清单并逐文件删除",
+      "target": "Batch B-D的共享与macOS消费者迁移已完成；仅在Windows解除冻结并消费当前Fusion资源后，执行Batch E：移除平台静态清单中的旧资源并逐文件物理删除",
       "removal_gate": "app.js、desktop_product.js、package_center.js、workbench.js均无生产、更新、安全或兼容消费者；发布契约只登记实际安装App加载的资源"
+    },
+    {
+      "id": "ARCH-P1-010",
+      "priority": "P1",
+      "area": "secure-json-stores",
+      "owner": "macos-security",
+      "status": "experimental",
+      "problem": "通用secure_atomic_json_store.py目前只由operation history消费；activity receipts、evidence chat、Librarian history和research memory仍各自复制JSON校验、AES-GCM、inode/symlink与原子写入实现",
+      "target": "逐存储迁移到通用安全内核，保持各自AAD、key位置、密文格式、旧数据读取和公开错误完全兼容；禁止一次性重写四套存储",
+      "removal_gate": "旧密文兼容、错误key/AAD、篡改、symlink、hardlink、inode、权限和原子故障测试全部通过，现有用户数据无需重写且不丢失"
+    },
+    {
+      "id": "ARCH-P1-011",
+      "priority": "P1",
+      "area": "package-center-coordination",
+      "owner": "product-runtime",
+      "status": "experimental",
+      "problem": "package_center.py、Mac runtime/API和fusion_package_center.js持续接近模块治理阈值；虽已抽出package_job_history与operation history，但中心facade仍承担较多任务等待、回执和恢复协调",
+      "target": "保持公开DTO和路由不变，把任务注册/等待、完成回执与历史协调继续拆为单向依赖；Mac API只做HTTP安全映射，不建立第二任务状态机",
+      "removal_gate": "核心facade不再承载observer/recovery细节，API、runtime和history职责可独立测试，无循环依赖或平台算法副本"
     },
     {
       "id": "ARCH-P2-001",

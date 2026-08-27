@@ -57,7 +57,7 @@ Facade 根据目录解析路由，依次复核 session、mode、body cap、CSRF�
 
 `DEFAULT_DESKTOP_ROUTES` 已覆盖以下现有路由家族：
 
-- `package_center.*`：官方版本目录、用户包检查、导出计划、导出、导入与任务查询；
+- `package_center.*`：官方版本目录、用户包检查、导出计划、导出、导入、任务查询、近30天持久操作历史与完成回执恢复；
 - readiness 与 `ui-mode`；
 - DeepSeek credential 与 Librarian history；
 - 官方资料包状态、导入、回退与 job；
@@ -67,6 +67,8 @@ Facade 根据目录解析路由，依次复核 session、mode、body cap、CSRF�
 - 文献工作区的论文、六列、图表、上传、处理状态和主要核验动作。
 
 这份清单是迁移目录，不代表新建第二套 API，也不代表所有 controller 已经接入。现有 URL、请求和响应 DTO 的业务所有权保持不变。
+
+资料包操作历史只保存path-free的公开状态。`GET/POST /api/desktop/package-center/history`用于读取、删除和清空记录；`POST /api/desktop/package-center/history/{operation_uid}/receipt-retry`只为已完成且文件已落盘的导出重写可信完成回执。该接口不保存或恢复原始selection、destination、plan token或job输入，不自动重跑导入/导出；重启时未完成任务明确投影为`interrupted`。
 
 ## 平台接入规则
 
