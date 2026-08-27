@@ -1389,12 +1389,43 @@ class BusinessPreparedActionRegistry:
         except BusinessActionError:
             raise
         except Exception as exc:
-            if getattr(exc, "code", "") == "ai_provider_outcome_unknown":
+            cause_code = getattr(exc, "code", "")
+            if cause_code == "ai_provider_outcome_unknown":
                 raise BusinessActionError(
                     "business_action_execution_failed",
                     cause_code="ai_provider_outcome_unknown",
                     stage="provider_call",
                     next_action="review_call_outcome",
+                ) from exc
+            runtime_failure = {
+                "ai_runtime_binding_stale": (
+                    "runtime_binding",
+                    "verify_connection",
+                ),
+                "ai_provider_not_configured": (
+                    "provider_setup",
+                    "save_credential",
+                ),
+                "ai_provider_unavailable": (
+                    "provider_call",
+                    "retry_same_request",
+                ),
+                "ai_provider_response_invalid": (
+                    "provider_call",
+                    "check_provider_configuration",
+                ),
+                "ai_provider_capability_missing": (
+                    "provider_call",
+                    "select_supported_model",
+                ),
+            }.get(cause_code)
+            if runtime_failure is not None:
+                stage, next_action = runtime_failure
+                raise BusinessActionError(
+                    "business_action_execution_failed",
+                    cause_code=cause_code,
+                    stage=stage,
+                    next_action=next_action,
                 ) from exc
             raise BusinessActionError("business_action_execution_failed") from exc
         return _public_result(result)

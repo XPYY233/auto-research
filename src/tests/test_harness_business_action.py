@@ -1040,6 +1040,62 @@ class HarnessBusinessActionTests(unittest.TestCase):
             "single_turn_frozen_context",
         )
 
+    def test_selected_evidence_source_change_has_recoverable_lineage(self):
+        ports = harness_business_ports(session=Session(), runtime=Runtime(selected=True))
+        with self.assertRaises(BusinessActionError) as raised:
+            ports.selected_evidence_chat.assembler.assemble(
+                {
+                    "source_scope": "official",
+                    "source_id": "official-old",
+                    "entity_type": "item",
+                    "entity_uid": "item-1",
+                    "question": "这条数据代表什么？",
+                    "history": [],
+                }
+            )
+        self.assertEqual(
+            raised.exception.cause_code, "selected_evidence_source_changed"
+        )
+        self.assertEqual(raised.exception.stage, "selected_evidence_preflight")
+        self.assertEqual(raised.exception.next_action, "refresh_evidence_detail")
+
+    def test_selected_evidence_missing_entity_has_recoverable_lineage(self):
+        ports = harness_business_ports(session=Session(), runtime=Runtime(selected=True))
+        with self.assertRaises(BusinessActionError) as raised:
+            ports.selected_evidence_chat.assembler.assemble(
+                {
+                    "source_scope": "official",
+                    "source_id": "official-v1",
+                    "entity_type": "item",
+                    "entity_uid": "missing-item",
+                    "question": "这条数据代表什么？",
+                    "history": [],
+                }
+            )
+        self.assertEqual(raised.exception.cause_code, "selected_evidence_unavailable")
+        self.assertEqual(raised.exception.stage, "selected_evidence_preflight")
+        self.assertEqual(raised.exception.next_action, "return_to_search_results")
+
+    def test_selected_workspace_unavailable_has_recoverable_lineage(self):
+        ports = harness_business_ports(session=Session(), runtime=Runtime(selected=True))
+        with self.assertRaises(BusinessActionError) as raised:
+            ports.selected_evidence_chat.assembler.assemble(
+                {
+                    "source_scope": "workspace",
+                    "source_id": "workspace",
+                    "entity_type": "item",
+                    "entity_uid": "31",
+                    "question": "这条数据代表什么？",
+                    "history": [],
+                }
+            )
+        self.assertEqual(
+            raised.exception.cause_code,
+            "selected_evidence_workspace_unavailable",
+        )
+        self.assertEqual(raised.exception.stage, "selected_evidence_preflight")
+        self.assertEqual(raised.exception.next_action, "repair_workspace")
+
     def test_selected_uses_stable_official_identity_and_existing_top_level_fields(self):
         session = Session()
         session.documents.extend(

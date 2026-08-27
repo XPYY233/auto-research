@@ -137,6 +137,17 @@ class _OutcomeUnknownExecutor:
         raise error
 
 
+class _CodedFailureExecutor:
+    def __init__(self, code):
+        self.code = code
+
+    def execute(self, *, action, ai_client):
+        del action, ai_client
+        error = RuntimeError("private provider detail")
+        error.code = self.code
+        raise error
+
+
 class _HarnessExecutor:
     requires_harness_budget = True
 
@@ -339,6 +350,39 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
         self.assertEqual(raised.exception.stage, "provider_call")
         self.assertEqual(raised.exception.next_action, "review_call_outcome")
         self.assertEqual(len(self.factory.actions), 1)
+
+    def test_known_runtime_failures_keep_safe_recovery_lineage(self):
+        expected = {
+            "ai_runtime_binding_stale": ("runtime_binding", "verify_connection"),
+            "ai_provider_not_configured": ("provider_setup", "save_credential"),
+            "ai_provider_unavailable": ("provider_call", "retry_same_request"),
+            "ai_provider_response_invalid": (
+                "provider_call",
+                "check_provider_configuration",
+            ),
+            "ai_provider_capability_missing": (
+                "provider_call",
+                "select_supported_model",
+            ),
+        }
+        for cause_code, (stage, next_action) in expected.items():
+            with self.subTest(cause_code=cause_code):
+                executors = dict(self.executors)
+                executors["selected_evidence_chat"] = _CodedFailureExecutor(
+                    cause_code
+                )
+                registry = self.make_registry(executors=executors)
+                summary, action = self.prepare_action(
+                    "selected_evidence_chat", f"session-{cause_code}"
+                )
+                with self.assertRaises(BusinessActionError) as raised:
+                    registry.execute(action)
+                self.assertEqual(
+                    raised.exception.code, "business_action_execution_failed"
+                )
+                self.assertEqual(raised.exception.cause_code, cause_code)
+                self.assertEqual(raised.exception.stage, stage)
+                self.assertEqual(raised.exception.next_action, next_action)
 
     def test_production_readiness_gate_blocks_before_assembler_or_client(self):
         gate = _ReadinessGate()

@@ -802,13 +802,23 @@ class HarnessBusinessAssembler:
         if source_scope == "official":
             active_source, _fingerprint = official_source_binding(self._session)
             if source_id != active_source:
-                raise BusinessActionError("business_action_prepare_failed")
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="selected_evidence_source_changed",
+                    stage="selected_evidence_preflight",
+                    next_action="refresh_evidence_detail",
+                )
             try:
                 current_raw = self._session.get(
                     source_scope="official", source_id=source_id, entity_uid=entity_uid
                 )
             except Exception as exc:
-                raise BusinessActionError("business_action_prepare_failed") from exc
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="selected_evidence_unavailable",
+                    stage="selected_evidence_preflight",
+                    next_action="return_to_search_results",
+                ) from exc
             current = sanitize_official_documents(
                 (current_raw,), expected_source_id=source_id
             )[0]
@@ -819,15 +829,42 @@ class HarnessBusinessAssembler:
             )
         else:
             if self._workspace is None:
-                raise BusinessActionError("business_action_prepare_failed")
-            active_source, _fingerprint = self._workspace.binding()
-            if source_id != active_source:
-                raise BusinessActionError("business_action_prepare_failed")
-            current = dict(
-                self._workspace.get(
-                    entity_type=str(request.get("entity_type")), entity_uid=entity_uid
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="selected_evidence_workspace_unavailable",
+                    stage="selected_evidence_preflight",
+                    next_action="repair_workspace",
                 )
-            )
+            try:
+                active_source, _fingerprint = self._workspace.binding()
+            except Exception as exc:
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="selected_evidence_workspace_unavailable",
+                    stage="selected_evidence_preflight",
+                    next_action="repair_workspace",
+                ) from exc
+            if source_id != active_source:
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="selected_evidence_source_changed",
+                    stage="selected_evidence_preflight",
+                    next_action="refresh_evidence_detail",
+                )
+            try:
+                current = dict(
+                    self._workspace.get(
+                        entity_type=str(request.get("entity_type")),
+                        entity_uid=entity_uid,
+                    )
+                )
+            except Exception as exc:
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="selected_evidence_unavailable",
+                    stage="selected_evidence_preflight",
+                    next_action="return_to_search_results",
+                ) from exc
             neighbor_rows = self._workspace.candidates(
                 query=str(current.get("doi") or current.get("article_title") or question),
                 limit=32,

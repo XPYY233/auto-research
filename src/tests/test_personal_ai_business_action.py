@@ -389,6 +389,9 @@ class PersonalSuggestionBusinessActionTests(unittest.TestCase):
         with self.assertRaises(BusinessActionError) as raised:
             registry.execute(action)
         self.assertEqual(raised.exception.code, "business_action_execution_failed")
+        self.assertEqual(raised.exception.cause_code, "personal_ai_context_changed")
+        self.assertEqual(raised.exception.stage, "personal_suggestion_context")
+        self.assertEqual(raised.exception.next_action, "refresh_personal_preview")
         self.assertFalse(self.service.has_cached_suggestion(IMPORT_ID, sheet_index=0))
 
     def test_provider_outcome_unknown_is_not_flattened_or_cached(self) -> None:
@@ -456,6 +459,9 @@ class PersonalSuggestionBusinessActionTests(unittest.TestCase):
                 request={"import_id": IMPORT_ID, "sheet_index": 0},
             )
         self.assertEqual(cached.exception.code, "business_action_prepare_failed")
+        self.assertEqual(cached.exception.cause_code, "personal_ai_already_suggested")
+        self.assertEqual(cached.exception.stage, "personal_suggestion_context")
+        self.assertEqual(cached.exception.next_action, "open_existing_suggestion")
         self.assertEqual(len(client.calls), 1)
 
     def test_personal_assembler_cannot_be_used_under_another_scope(self) -> None:
@@ -478,6 +484,9 @@ class PersonalSuggestionBusinessActionTests(unittest.TestCase):
                 ai_client=_BudgetClient(invalid),
             )
         self.assertEqual(raised.exception.code, "business_action_result_invalid")
+        self.assertEqual(raised.exception.cause_code, "personal_ai_invalid_response")
+        self.assertEqual(raised.exception.stage, "personal_suggestion_validation")
+        self.assertEqual(raised.exception.next_action, "retry_same_request")
         status = self.service.status(IMPORT_ID)
         self.assertEqual(status.stage.value, "previewed")
         self.assertFalse(status.indexable)

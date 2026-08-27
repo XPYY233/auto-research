@@ -41,6 +41,81 @@ _PAYLOAD_KEYS = frozenset(
     }
 )
 
+_PERSONAL_SERVICE_FAILURES = {
+    "personal_ai_not_configured": ("provider_setup", "save_credential"),
+    "personal_ai_context_changed": (
+        "personal_suggestion_context",
+        "refresh_personal_preview",
+    ),
+    "personal_ai_already_suggested": (
+        "personal_suggestion_context",
+        "open_existing_suggestion",
+    ),
+    "personal_ai_busy": ("personal_suggestion_execution", "wait_for_task"),
+    "personal_ai_unavailable": ("provider_call", "retry_same_request"),
+    "personal_ai_invalid_response": (
+        "personal_suggestion_validation",
+        "retry_same_request",
+    ),
+    "personal_ai_outcome_unknown": ("provider_call", "review_call_outcome"),
+    "personal_import_session_expired": (
+        "personal_suggestion_context",
+        "choose_personal_file",
+    ),
+    "personal_import_session_invalid": (
+        "personal_suggestion_context",
+        "choose_personal_file",
+    ),
+    "personal_request_invalid": (
+        "personal_suggestion_context",
+        "refresh_personal_preview",
+    ),
+    "personal_tabular_changed": (
+        "personal_suggestion_context",
+        "choose_personal_file",
+    ),
+    "personal_tabular_invalid": (
+        "personal_suggestion_context",
+        "choose_personal_file",
+    ),
+    "personal_tabular_snapshot_unavailable": (
+        "personal_suggestion_context",
+        "choose_personal_file",
+    ),
+    "personal_tabular_unavailable": (
+        "personal_suggestion_context",
+        "choose_personal_file",
+    ),
+}
+
+
+def _personal_service_failure(
+    exc: PersonalImportServiceError,
+    *,
+    default_code: str,
+) -> BusinessActionError:
+    """Keep a path-free domain cause instead of collapsing every failure."""
+
+    stage, next_action = _PERSONAL_SERVICE_FAILURES.get(
+        exc.code,
+        ("personal_suggestion", "retry_same_request"),
+    )
+    code = (
+        "business_action_result_invalid"
+        if exc.code == "personal_ai_invalid_response"
+        else default_code
+    )
+    return BusinessActionError(
+        code,
+        cause_code=(
+            exc.code
+            if exc.code in _PERSONAL_SERVICE_FAILURES
+            else "personal_suggestion_unavailable"
+        ),
+        stage=stage,
+        next_action=next_action,
+    )
+
 
 @dataclass(frozen=True)
 class PersonalSuggestionBusinessPorts:
@@ -108,13 +183,21 @@ class PersonalSuggestionBusinessAssembler:
             ):
                 # A prepared action must consume its exact one-call plan.  Cache
                 # reads belong to the ordinary personal-import result API.
-                raise BusinessActionError("business_action_prepare_failed")
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="personal_ai_already_suggested",
+                    stage="personal_suggestion_context",
+                    next_action="open_existing_suggestion",
+                )
             context = self._service.prepare_suggestion_context(
                 import_id,
                 sheet_index=sheet_index,
             )
         except PersonalImportServiceError as exc:
-            raise BusinessActionError("business_action_prepare_failed") from exc
+            raise _personal_service_failure(
+                exc,
+                default_code="business_action_prepare_failed",
+            ) from exc
         call = PreparedBusinessCall(
             method="json",
             task=PERSONAL_SUGGESTION_TASK,
@@ -197,19 +280,18 @@ class PersonalSuggestionBusinessExecutor:
         except BusinessActionError:
             raise
         except PersonalImportServiceError as exc:
-            code = (
-                "business_action_result_invalid"
-                if exc.code == "personal_ai_invalid_response"
-                else "business_action_execution_failed"
+            failure = _personal_service_failure(
+                exc,
+                default_code="business_action_execution_failed",
             )
             if exc.code == "personal_ai_outcome_unknown":
-                raise BusinessActionError(
-                    code,
+                failure = BusinessActionError(
+                    failure.code,
                     cause_code="ai_provider_outcome_unknown",
-                    stage="provider_call",
-                    next_action="review_call_outcome",
-                ) from exc
-            raise BusinessActionError(code) from exc
+                    stage=failure.stage,
+                    next_action=failure.next_action,
+                )
+            raise failure from exc
         except (KeyError, TypeError, ValueError) as exc:
             raise BusinessActionError("business_action_invalid") from exc
         return {"suggestion": suggestion.public_dict()}
