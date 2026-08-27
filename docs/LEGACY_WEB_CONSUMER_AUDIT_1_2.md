@@ -83,7 +83,7 @@ macOS 静态路由白名单中，因此它们不是当前产品界面。
 - 核实私人导入“已保存但索引待恢复”在Fusion中有显眼、幂等的恢复动作；
 - 将macOS静态资源冒烟改为当前Fusion脚本。
 
-状态：第一小步已由`0eb625b`完成。Fusion现在读取`personal-search-readiness-v1`，只在后端明确`stale / retry_required`或保存返回`personal_search_refresh_failed`时显示恢复入口；恢复只调用幂等`search-refresh`，不会重复人工确认、导入或AI。迟到状态不会覆盖新状态。仍待迁移旧PDF测试和macOS旧静态资源GET测试，并移除旧加载顺序测试。
+状态：已由`0eb625b`、`fb2f3e1`和`9e63195`完成Mac/Fusion消费者迁移。Fusion现在读取`personal-search-readiness-v1`，只在后端明确`stale / retry_required`或保存返回`personal_search_refresh_failed`时显示恢复入口；恢复只调用幂等`search-refresh`，不会重复人工确认、导入或AI。迟到状态不会覆盖新状态或抢走资料包页。旧PDF测试已改为中央PDF和path-free身份，macOS静态冒烟已改为真实Fusion脚本，旧加载顺序装配测试已删除。`desktop_product.js`与旧`package_center.js`已无Mac或共享正向测试消费者，暂只因Windows冻结静态映射保留。
 
 ### Batch D：`app.js` 消费者
 
