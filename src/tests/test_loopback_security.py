@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import subprocess
 import unittest
 from email.message import Message
 from pathlib import Path
@@ -59,20 +60,39 @@ class LoopbackRequestSecurityTests(unittest.TestCase):
         self.assertEqual(valid.read_json(), {"ok": True})
 
     def test_shared_frontend_attaches_desktop_csrf_to_mutations(self) -> None:
-        app_js = (
+        fusion_js = (
             Path(__file__).resolve().parents[1]
             / "auto_research"
             / "evidence"
             / "web"
-            / "app.js"
-        ).read_text(encoding="utf-8")
-        self.assertIn('const desktopCsrfHeader = "X-Auto-Research-CSRF";', app_js)
-        self.assertIn("headers.set(desktopCsrfHeader, desktopCsrfToken);", app_js)
-        self.assertIn("captureDesktopCsrf(response);", app_js)
-        self.assertIn(
-            "fetch(librarianDesktopHistoryEndpoint, desktopRequestOptions({",
-            app_js,
+            / "fusion_review.js"
         )
+        program = r'''
+const fs=require("fs"),assert=require("assert"),source=fs.readFileSync(process.argv[1],"utf8");
+const start=source.indexOf("  function isAllowedRoute"),end=source.indexOf("  async function readOnlyJSON",start);assert(start>0&&end>start);
+const ROUTES=new Proxy({settings:"/api/desktop/settings",preferences:"/api/desktop/settings/preferences",personalSearchRefresh:"/api/desktop/personal-imports/search-refresh"},{get:(target,key)=>target[key]||`/unused/${String(key)}`});
+const PERSONAL_IMPORT_ROWS_PATH=/a^/,CSRF_HEADER="X-Auto-Research-CSRF",state={csrfToken:""},cleanText=value=>String(value??"");
+class TestHeaders{constructor(values={}){this.values={};for(const [key,value] of Object.entries(values))this.set(key,value);}set(key,value){this.values[String(key).toLowerCase()]=String(value);}get(key){return this.values[String(key).toLowerCase()]||null;}}
+globalThis.Headers=TestHeaders;const calls=[];let rotation=0;
+globalThis.fetch=async(url,options={})=>{calls.push({url:String(url),options});rotation+=1;return{ok:true,headers:{get:name=>name===CSRF_HEADER?`csrf-${rotation}`:null},json:async()=>({ok:true})};};
+eval(source.slice(start,end));
+(async()=>{
+ await request(ROUTES.settings);assert.equal(state.csrfToken,"csrf-1");assert.equal(calls[0].options.headers.get(CSRF_HEADER),null);
+ await request(ROUTES.personalSearchRefresh,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});assert.equal(calls[1].options.headers.get(CSRF_HEADER),"csrf-1");
+ await request(ROUTES.preferences,{method:"PATCH",headers:{"Content-Type":"application/json"},body:"{}"});assert.equal(calls[2].options.headers.get(CSRF_HEADER),"csrf-2");
+ await request("/api/desktop/ai/credentials/deepseek",{method:"DELETE"});assert.equal(calls[3].options.headers.get(CSRF_HEADER),"csrf-3");
+ const before=calls.length;await assert.rejects(()=>request("/api/desktop/not-authorized"),error=>error.code==="fusion_route_blocked");assert.equal(calls.length,before);
+ assert.deepEqual(calls.map(call=>call.options.method),["GET","POST","PATCH","DELETE"]);
+})().catch(error=>{console.error(error);process.exit(1);});
+'''
+        result = subprocess.run(
+            ["node", "-e", program, str(fusion_js)],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=8,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
 
 if __name__ == "__main__":
