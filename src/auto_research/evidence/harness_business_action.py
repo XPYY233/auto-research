@@ -91,6 +91,14 @@ _LIBRARIAN_PUBLIC_KEYS = frozenset(
 )
 
 
+def _is_non_text_sequence(value: object) -> bool:
+    """Accept JSON arrays before and after the prepared-action freeze."""
+
+    return isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, bytearray)
+    )
+
+
 def _safe_trace(stage: str, code: str) -> None:
     if not _SAFE_TRACE_ENABLED:
         return
@@ -934,12 +942,13 @@ class HarnessBusinessExecutor:
             documents = tuple(payload.get("documents") or ())
             prompt = payload.get("prompt")
             if self._scope == "librarian":
-                if not isinstance(prompt, Mapping) or not isinstance(
-                    prompt.get("seed_evidence"), list
-                ):
+                seed_evidence = (
+                    prompt.get("seed_evidence") if isinstance(prompt, Mapping) else None
+                )
+                if not _is_non_text_sequence(seed_evidence):
                     raise HarnessError("harness_invalid")
                 backend = _DisplayRefHarnessBackend(
-                    documents, prompt["seed_evidence"]
+                    documents, seed_evidence
                 )
             else:
                 backend = HarnessFederatedBackend(documents)
@@ -1010,7 +1019,7 @@ class HarnessBusinessExecutor:
         if not isinstance(prompt, Mapping):
             raise HarnessError("harness_output_invalid")
         seed = prompt.get("seed_evidence")
-        if not isinstance(seed, list) or not seed:
+        if not _is_non_text_sequence(seed) or not seed:
             raise HarnessError("harness_output_invalid")
         direct = [row for row in seed if isinstance(row, Mapping) and row.get("match_class") == "direct"]
         adjacent = [row for row in seed if isinstance(row, Mapping) and row.get("match_class") == "adjacent"]
@@ -1103,7 +1112,7 @@ class HarnessBusinessProjector:
             for row in documents
         }
         seed = result.get("prompt", {}).get("seed_evidence")
-        if not isinstance(seed, list):
+        if not _is_non_text_sequence(seed):
             raise BusinessActionError("business_action_result_invalid")
         identity_by_ref: dict[str, tuple[str, str, str, str]] = {}
         for row in seed:
@@ -1145,10 +1154,10 @@ class HarnessBusinessProjector:
         bundles = prompt.get("evidence_bundles")
         local_recommendations = prompt.get("local_recommendations")
         if (
-            not isinstance(seed, list)
+            not _is_non_text_sequence(seed)
             or len(seed) != len(result["documents"])
-            or not isinstance(bundles, list)
-            or not isinstance(local_recommendations, list)
+            or not _is_non_text_sequence(bundles)
+            or not _is_non_text_sequence(local_recommendations)
         ):
             raise BusinessActionError("business_action_result_invalid")
         seed_by_ref = {

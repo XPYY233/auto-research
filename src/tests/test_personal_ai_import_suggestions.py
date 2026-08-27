@@ -178,6 +178,21 @@ class PersonalImportSuggestionTests(unittest.TestCase):
         self.assertEqual(suggestion.run["conditions"], {})
         self.assertEqual(suggestion.series, ())
 
+    def test_real_model_unknown_method_and_empty_condition_list_are_reviewable(self) -> None:
+        payload = _valid_response()
+        payload["run"]["method"] = ""
+        payload["run"]["conditions"] = []
+        service = self._service(_Model(payload))
+        service.preview(SELECTION_ID)
+
+        suggestion = service.suggest(IMPORT_ID, sheet_index=0)
+
+        self.assertEqual(suggestion.run["method"], "待确认")
+        self.assertEqual(suggestion.run["conditions"], {})
+        self.assertIn("ai_method_not_identified", suggestion.warnings)
+        self.assertIn("ai_empty_conditions_normalized", suggestion.warnings)
+        self.assertTrue(suggestion.public_dict()["requires_human_review"])
+
     def test_missing_model_does_not_block_local_preview(self) -> None:
         service = self._service()
         preview = service.preview(SELECTION_ID)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 import time
 import unittest
@@ -315,6 +316,36 @@ class HarnessBusinessActionTests(unittest.TestCase):
         self.assertIn(jump["entity_type"], {"item", "finding", "table", "figure"})
         self.assertTrue(jump["entity_uid"])
         self.assertNotIn("path", str(result).casefold())
+
+    def test_librarian_accepts_immutable_seed_after_prepared_action_freeze(self):
+        """Prepared actions freeze JSON arrays to tuples before execution."""
+
+        ports = harness_business_ports(session=Session(), runtime=Runtime())
+        draft = ports.librarian.assembler.assemble(
+            {
+                "question": "辐照后硬度如何变化？",
+                "conversation_id": "frozen-seed",
+                "history": [],
+            }
+        )
+        prepared = action(draft, "librarian")
+        outbound = dict(prepared.outbound)
+        payload = dict(outbound["payload"])
+        prompt = dict(payload["prompt"])
+        prompt["seed_evidence"] = tuple(prompt["seed_evidence"])
+        payload["prompt"] = prompt
+        outbound["payload"] = payload
+        prepared = replace(prepared, outbound=outbound)
+        raw = RawClient()
+        internal = ports.librarian.executor.execute(
+            action=prepared,
+            ai_client=HarnessBudgetedBusinessAIClient(
+                client=raw, action=prepared
+            ),
+        )
+        result = ports.librarian.projector.project(internal)
+        self.assertEqual(raw.calls, 1)
+        self.assertTrue(result["results"])
 
     def test_recommendations_are_bound_to_recalled_documents(self):
         session = Session()

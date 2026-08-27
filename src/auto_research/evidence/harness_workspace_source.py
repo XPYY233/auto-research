@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from typing import Any, Mapping
 
 from auto_research.ai.harness_contract import HarnessError
@@ -31,6 +32,9 @@ class HarnessWorkspaceSource:
         if not isinstance(db, EvidenceDB):
             raise TypeError("db must be an EvidenceDB")
         self._index = EvidenceSearchIndex(db)
+        self._identity_lock = threading.RLock()
+        self._identity_fingerprint = ""
+        self._identity_cache: dict[tuple[str, str], int] = {}
 
     def binding(self) -> tuple[str, str]:
         try:
@@ -71,15 +75,68 @@ class HarnessWorkspaceSource:
             raise HarnessError("harness_runtime_unavailable") from exc
 
     def get(self, *, entity_type: str, entity_uid: str) -> Mapping[str, Any]:
-        if entity_type not in ENTITY_TYPES or not str(entity_uid).isdigit():
+        if entity_type not in ENTITY_TYPES or not isinstance(entity_uid, str) or not entity_uid:
             raise HarnessError("harness_tool_invalid")
         try:
-            row = self._index.get(entity_type, int(entity_uid))
-            return sanitize_workspace_documents((row,))[0]
+            source_id, fingerprint = self.binding()
+            cache_key = (entity_type, entity_uid)
+            with self._identity_lock:
+                if fingerprint != self._identity_fingerprint:
+                    self._identity_cache.clear()
+                    self._identity_fingerprint = fingerprint
+                entity_id = self._identity_cache.get(cache_key)
+                if entity_id is None:
+                    entity_id = self._resolve_public_identity(
+                        entity_type=entity_type,
+                        entity_uid=entity_uid,
+                        expected_source_id=source_id,
+                    )
+                    self._identity_cache[cache_key] = entity_id
+            row = self._index.get(entity_type, entity_id)
+            public = sanitize_workspace_documents(
+                (row,), expected_source_id=source_id
+            )[0]
+            if public["entity_uid"] != entity_uid:
+                raise HarnessError("harness_tool_forbidden")
+            return public
         except HarnessError:
             raise
         except Exception as exc:
             raise HarnessError("harness_tool_forbidden") from exc
+
+    def _resolve_public_identity(
+        self, *, entity_type: str, entity_uid: str, expected_source_id: str
+    ) -> int:
+        offset = 0
+        while True:
+            page = self._index.search(
+                "",
+                entity_types=(entity_type,),
+                quality_filter="published",
+                limit=500,
+                offset=offset,
+                refresh=False,
+            )
+            for row in page.rows:
+                public = sanitize_workspace_documents(
+                    (row,), expected_source_id=expected_source_id
+                )[0]
+                internal_id = row.get("entity_id")
+                if (
+                    not isinstance(internal_id, bool)
+                    and isinstance(internal_id, int)
+                    and internal_id > 0
+                ):
+                    self._identity_cache[
+                        (str(public["entity_type"]), str(public["entity_uid"]))
+                    ] = internal_id
+            resolved = self._identity_cache.get((entity_type, entity_uid))
+            if resolved is not None:
+                return resolved
+            rows = len(page.rows)
+            offset += rows
+            if rows == 0 or offset >= int(page.total):
+                raise HarnessError("harness_tool_forbidden")
 
 
 __all__ = ["HarnessWorkspaceSource", "WORKSPACE_SOURCE_ID"]
