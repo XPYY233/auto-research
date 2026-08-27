@@ -95,10 +95,38 @@ class _Import:
 
 
 class _Jobs:
+    def __init__(self) -> None:
+        self.retry_calls: list[str] = []
+
     def get(self, job_id):
         if job_id == "job_missing_0123456789abcdef":
             raise PackageCenterError("package_job_not_found", "任务不存在。")
         return {"schema": "package-job-v1", "job_id": job_id, "stage": "completed"}
+
+    def retry_receipt(self, job_id):
+        self.retry_calls.append(job_id)
+        if job_id == "job_missing_0123456789abcdef":
+            raise PackageCenterError("package_job_not_found", "任务不存在。")
+        if job_id == "job_busy_0123456789abcdef":
+            raise PackageCenterError(
+                "package_receipt_recovery_busy",
+                "该完成回执正在恢复，请稍后查看。",
+                retryable=True,
+            )
+        if job_id == "job_store_0123456789abcdef":
+            raise PackageCenterError(
+                "package_receipt_store_unavailable",
+                "完成回执暂时无法恢复，请稍后重试。",
+                retryable=True,
+            )
+        return {
+            "schema": "package-job-v1",
+            "job_id": job_id,
+            "operation": "transfer_export",
+            "stage": "completed",
+            "terminal": True,
+            "receipt_status": "stored",
+        }
 
 
 class _Dataset:
@@ -149,12 +177,13 @@ class PackageCenterAPITests(unittest.TestCase):
         self.importer = _Import()
         self.dataset = _Dataset()
         self.receipts = _Receipts()
+        self.jobs = _Jobs()
         self.api = PackageCenterAPI(
             summary_provider=_Summary(),
             center=self.center,
             export_service=self.export,
             import_service=self.importer,
-            jobs=_Jobs(),
+            jobs=self.jobs,
             dataset_export_service=self.dataset,
             activity_receipts=self.receipts,
         )
@@ -200,6 +229,52 @@ class PackageCenterAPITests(unittest.TestCase):
         )
         self.assertTrue(self.api.handle_get(missing))
         self.assertEqual(missing.responses[0][1], HTTPStatus.NOT_FOUND)
+
+    def test_receipt_retry_requires_exact_empty_json_and_maps_safe_errors(self) -> None:
+        job_id = "job_retry_0123456789abcdef"
+        recovered = _Handler(
+            f"/api/desktop/package-center/jobs/{job_id}/receipt-retry", {}
+        )
+        self.assertTrue(self.api.handle_post(recovered))
+        payload, status = recovered.responses[0]
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertEqual(payload["receipt_status"], "stored")
+        self.assertEqual(self.jobs.retry_calls, [job_id])
+
+        extra = _Handler(
+            f"/api/desktop/package-center/jobs/{job_id}/receipt-retry",
+            {"retry": True},
+        )
+        self.assertTrue(self.api.handle_post(extra))
+        self.assertEqual(extra.responses[0][1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(self.jobs.retry_calls, [job_id])
+
+        query = _Handler(
+            f"/api/desktop/package-center/jobs/{job_id}/receipt-retry?again=1", {}
+        )
+        self.assertTrue(self.api.handle_post(query))
+        self.assertEqual(query.responses[0][1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(self.jobs.retry_calls, [job_id])
+
+        busy = _Handler(
+            "/api/desktop/package-center/jobs/job_busy_0123456789abcdef/receipt-retry",
+            {},
+        )
+        self.assertTrue(self.api.handle_post(busy))
+        self.assertEqual(busy.responses[0][1], HTTPStatus.CONFLICT)
+        self.assertEqual(
+            busy.responses[0][0]["code"], "package_receipt_recovery_busy"
+        )
+
+        unavailable = _Handler(
+            "/api/desktop/package-center/jobs/job_store_0123456789abcdef/receipt-retry",
+            {},
+        )
+        self.assertTrue(self.api.handle_post(unavailable))
+        response, status = unavailable.responses[0]
+        self.assertEqual(status, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(response["code"], "package_receipt_store_unavailable")
+        self.assertNotIn("path", json.dumps(response).casefold())
 
     def test_all_post_routes_use_frozen_shared_payloads(self) -> None:
         selection = "selection_0123456789abcdef"

@@ -31,6 +31,9 @@ PACKAGE_CENTER_RECEIPTS_PATH = f"{PACKAGE_CENTER_PATH}/receipts"
 PACKAGE_CENTER_JOB_PATH_RE = re.compile(
     r"^/api/desktop/package-center/jobs/([A-Za-z0-9_-]{16,128})$"
 )
+PACKAGE_CENTER_RECEIPT_RETRY_PATH_RE = re.compile(
+    r"^/api/desktop/package-center/jobs/([A-Za-z0-9_-]{16,128})/receipt-retry$"
+)
 MAX_PACKAGE_CENTER_REQUEST_BYTES = 512 * 1024
 
 
@@ -72,7 +75,8 @@ class PackageCenterAPI:
 
     @staticmethod
     def is_post_route(path: str) -> bool:
-        return urlparse(path).path in {
+        parsed_path = urlparse(path).path
+        return parsed_path in {
             PACKAGE_CENTER_INSPECT_PATH,
             PACKAGE_CENTER_EXPORT_PLAN_PATH,
             PACKAGE_CENTER_EXPORT_PATH,
@@ -80,7 +84,7 @@ class PackageCenterAPI:
             PACKAGE_CENTER_DATASET_PLAN_PATH,
             PACKAGE_CENTER_DATASET_EXPORT_PATH,
             PACKAGE_CENTER_RECEIPTS_PATH,
-        }
+        } or bool(PACKAGE_CENTER_RECEIPT_RETRY_PATH_RE.fullmatch(parsed_path))
 
     def handle_get(self, handler: PackageCenterHTTPHandler) -> bool:
         parsed = urlparse(handler.path)
@@ -137,7 +141,12 @@ class PackageCenterAPI:
             return True
         try:
             body = self._read_json(handler)
-            if parsed.path == PACKAGE_CENTER_RECEIPTS_PATH:
+            retry_match = PACKAGE_CENTER_RECEIPT_RETRY_PATH_RE.fullmatch(parsed.path)
+            if retry_match:
+                self._require_fields(body, set())
+                result = self._jobs.retry_receipt(retry_match.group(1))
+                status = HTTPStatus.OK
+            elif parsed.path == PACKAGE_CENTER_RECEIPTS_PATH:
                 if self._activity_receipts is None:
                     raise ActivityReceiptError(
                         "activity_receipt_store_unavailable",
@@ -258,8 +267,12 @@ class PackageCenterAPI:
             "package_busy",
             "package_plan_stale",
             "package_destination_exists",
+            "package_receipt_not_recoverable",
+            "package_receipt_recovery_busy",
         }:
             status = HTTPStatus.CONFLICT
+        elif error.code == "package_receipt_store_unavailable":
+            status = HTTPStatus.SERVICE_UNAVAILABLE
         elif error.code in {"package_size", "package_result_too_large"}:
             status = HTTPStatus.REQUEST_ENTITY_TOO_LARGE
         elif error.code in {
@@ -290,5 +303,6 @@ __all__ = [
     "PACKAGE_CENTER_INSPECT_PATH",
     "PACKAGE_CENTER_PATH",
     "PACKAGE_CENTER_RECEIPTS_PATH",
+    "PACKAGE_CENTER_RECEIPT_RETRY_PATH_RE",
     "PackageCenterAPI",
 ]

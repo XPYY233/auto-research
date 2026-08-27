@@ -109,6 +109,7 @@ class PackageJobService:
         self._jobs: dict[str, _StoredJob] = {}
         self._order: list[str] = []
         self._receipt_recorder = receipt_recorder
+        self._receipt_recording: set[str] = set()
 
     def get(self, job_id: str) -> dict[str, Any]:
         normalized = normalize_token(job_id, label="package_job")
@@ -125,6 +126,12 @@ class PackageJobService:
                     "package_busy", "已有资料包任务正在进行，请稍后再试。", retryable=True
                 )
             self._trim_locked()
+            if len(self._order) >= self._max_jobs:
+                raise PackageCenterError(
+                    "package_busy",
+                    "完成回执正在保存，请稍后再开始新任务。",
+                    retryable=True,
+                )
             job_id = secrets.token_urlsafe(24)
             self._jobs[job_id] = _StoredJob(job_id, begin_package_job(operation))
             self._order.append(job_id)
@@ -151,10 +158,12 @@ class PackageJobService:
             ):
                 job.receipt_status = "pending"
                 receipt_operation = job.progress.operation
+                self._receipt_recording.add(job_id)
             if self._active_job_id == job_id:
                 self._active_job_id = None
         if receipt_operation is None:
             return
+        stored = False
         try:
             self._receipt_recorder.record_completed(
                 operation=receipt_operation,
@@ -165,11 +174,101 @@ class PackageJobService:
             # The artifact is already published.  Receipt persistence is a
             # separate convenience boundary and must never change the export
             # outcome or trigger another exporter call.
-            return
+            pass
+        else:
+            stored = True
+        finally:
+            with self._lock:
+                self._receipt_recording.discard(job_id)
+                job = self._jobs.get(job_id)
+                if (
+                    stored
+                    and job is not None
+                    and job.progress.stage is PackageJobStage.COMPLETED
+                    and job.receipt_status == "pending"
+                ):
+                    job.receipt_status = "stored"
+
+    def retry_receipt(self, job_id: str) -> dict[str, Any]:
+        """Retry only the durable receipt for one already-completed export."""
+
+        normalized = normalize_token(job_id, label="package_job")
         with self._lock:
-            job = self._jobs.get(job_id)
-            if job is not None and job.progress.stage is PackageJobStage.COMPLETED:
-                job.receipt_status = "stored"
+            job = self._jobs.get(normalized)
+            if job is None:
+                raise PackageCenterError(
+                    "package_job_not_found", "资料包任务不存在或已过期。"
+                )
+            if (
+                job.progress.stage is not PackageJobStage.COMPLETED
+                or job.progress.operation
+                not in {
+                    PackageOperation.TRANSFER_EXPORT,
+                    PackageOperation.DATASET_EXPORT,
+                }
+                or job.receipt_status not in {"pending", "stored"}
+            ):
+                raise PackageCenterError(
+                    "package_receipt_not_recoverable",
+                    "该任务没有可恢复的完成回执。",
+                )
+            if job.receipt_status == "stored":
+                return job.public_dict()
+            if normalized in self._receipt_recording:
+                raise PackageCenterError(
+                    "package_receipt_recovery_busy",
+                    "该完成回执正在恢复，请稍后查看。",
+                    retryable=True,
+                )
+            if (
+                self._receipt_recorder is None
+                or job.result is None
+                or not isinstance(job.progress.outcome, str)
+                or not job.progress.outcome
+            ):
+                raise PackageCenterError(
+                    "package_receipt_not_recoverable",
+                    "该任务没有可恢复的完成回执。",
+                )
+            operation = job.progress.operation
+            outcome = job.progress.outcome
+            result = dict(job.result)
+            self._receipt_recording.add(normalized)
+
+        try:
+            self._receipt_recorder.record_completed(
+                operation=operation,
+                outcome=outcome,
+                result=result,
+            )
+        except Exception as exc:
+            with self._lock:
+                self._receipt_recording.discard(normalized)
+            raise PackageCenterError(
+                "package_receipt_store_unavailable",
+                "完成回执暂时无法恢复，请稍后重试。",
+                retryable=True,
+            ) from exc
+
+        with self._lock:
+            job = self._jobs.get(normalized)
+            if job is None:
+                self._receipt_recording.discard(normalized)
+                raise PackageCenterError(
+                    "package_job_not_found", "资料包任务不存在或已过期。"
+                )
+            if (
+                job.progress.stage is not PackageJobStage.COMPLETED
+                or job.receipt_status != "pending"
+            ):
+                self._receipt_recording.discard(normalized)
+                raise PackageCenterError(
+                    "package_receipt_not_recoverable",
+                    "该任务没有可恢复的完成回执。",
+                )
+            job.receipt_status = "stored"
+            self._receipt_recording.discard(normalized)
+            return job.public_dict()
 
     def _fail(self, job_id: str, error: PackageCenterError) -> None:
         with self._lock:
@@ -186,11 +285,19 @@ class PackageJobService:
 
     def _trim_locked(self) -> None:
         while len(self._order) >= self._max_jobs:
-            oldest = self._order[0]
-            if oldest == self._active_job_id:
+            removable = next(
+                (
+                    candidate
+                    for candidate in self._order
+                    if candidate != self._active_job_id
+                    and candidate not in self._receipt_recording
+                ),
+                None,
+            )
+            if removable is None:
                 break
-            self._order.pop(0)
-            self._jobs.pop(oldest, None)
+            self._order.remove(removable)
+            self._jobs.pop(removable, None)
 
 
 class PackageCenter:

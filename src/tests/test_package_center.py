@@ -15,6 +15,7 @@ from auto_research.product.package_center import (
     PayloadPlanCandidate,
     RightsRequirement,
 )
+from auto_research.product.package_job_contract import PackageOperation
 
 
 SELECTION_TOKEN = "selection_token_1234567890"
@@ -125,6 +126,21 @@ class _ReceiptRecorder:
         return {"schema_version": "activity-receipt-v1"}
 
 
+class _BlockingReceiptRecorder(_ReceiptRecorder):
+    def __init__(self) -> None:
+        super().__init__(fail=True)
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def record_completed(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.fail:
+            raise RuntimeError("initial receipt failure at /private/receipt")
+        self.entered.set()
+        self.release.wait(timeout=2)
+        return {"schema_version": "activity-receipt-v1"}
+
+
 def _risk_ack(*, paper_rights=None):
     return {
         "unencrypted_ack": True,
@@ -170,6 +186,109 @@ class PackageCenterTests(unittest.TestCase):
         self.assertEqual(len(exports), 1)
         self.assertEqual(len(recorder.calls), 1)
         self.assertEqual(jobs.get(completed["job_id"])["receipt_status"], "pending")
+
+    def test_pending_receipt_retry_records_only_receipt_and_is_idempotent(self):
+        recorder = _ReceiptRecorder(fail=True)
+        exports = []
+        resolver = _Resolver()
+        jobs = PackageJobService(receipt_recorder=recorder)
+        service = PackageExportService(
+            payload_planner=_Planner(),
+            destination_resolver=resolver,
+            exporter=lambda *args, **kwargs: (
+                exports.append(args) or _Summary(outcome="exported")
+            ),
+            jobs=jobs,
+        )
+        plan = service.plan("personal_experiments", "all", None)
+        completed = service.start(plan["plan_token"], _risk_ack(), DESTINATION_TOKEN)
+        recorder.fail = False
+
+        recovered = jobs.retry_receipt(completed["job_id"])
+        repeated = jobs.retry_receipt(completed["job_id"])
+
+        self.assertEqual(recovered["receipt_status"], "stored")
+        self.assertEqual(repeated, recovered)
+        self.assertEqual(len(recorder.calls), 2)
+        self.assertEqual(len(exports), 1)
+        self.assertEqual(resolver.calls, [DESTINATION_TOKEN])
+
+    def test_pending_receipt_retry_failure_remains_pending_and_is_path_free(self):
+        recorder = _ReceiptRecorder(fail=True)
+        jobs = PackageJobService(receipt_recorder=recorder)
+        service = PackageExportService(
+            payload_planner=_Planner(),
+            destination_resolver=_Resolver(),
+            exporter=lambda *args, **kwargs: _Summary(outcome="exported"),
+            jobs=jobs,
+        )
+        plan = service.plan("personal_experiments", "all", None)
+        completed = service.start(plan["plan_token"], _risk_ack(), DESTINATION_TOKEN)
+
+        with self.assertRaises(PackageCenterError) as raised:
+            jobs.retry_receipt(completed["job_id"])
+
+        self.assertEqual(raised.exception.code, "package_receipt_store_unavailable")
+        self.assertTrue(raised.exception.retryable)
+        self.assertNotIn("private", json.dumps(raised.exception.public_dict()).casefold())
+        self.assertEqual(jobs.get(completed["job_id"])["receipt_status"], "pending")
+
+    def test_receipt_retry_rejects_non_export_and_incomplete_jobs(self):
+        recorder = _ReceiptRecorder()
+        import_jobs = PackageJobService(receipt_recorder=recorder)
+        import_service = PackageTransferImportService(
+            selection_resolver=_Resolver(),
+            inspector=lambda source: _Summary(),
+            importer=lambda *args, **kwargs: _Summary(outcome="imported"),
+            activator=_Activator(),
+            jobs=import_jobs,
+        )
+        imported = import_service.start(
+            SELECTION_TOKEN, checksum_ack=True, expected_sha=CHECKSUM
+        )
+        with self.assertRaises(PackageCenterError) as imported_error:
+            import_jobs.retry_receipt(imported["job_id"])
+        self.assertEqual(
+            imported_error.exception.code, "package_receipt_not_recoverable"
+        )
+
+        jobs = PackageJobService(receipt_recorder=recorder)
+        incomplete = jobs._begin(PackageOperation.TRANSFER_EXPORT)
+        with self.assertRaises(PackageCenterError) as incomplete_error:
+            jobs.retry_receipt(incomplete)
+        self.assertEqual(
+            incomplete_error.exception.code, "package_receipt_not_recoverable"
+        )
+
+    def test_same_job_receipt_retry_is_single_flight(self):
+        recorder = _BlockingReceiptRecorder()
+        jobs = PackageJobService(receipt_recorder=recorder)
+        service = PackageExportService(
+            payload_planner=_Planner(),
+            destination_resolver=_Resolver(),
+            exporter=lambda *args, **kwargs: _Summary(outcome="exported"),
+            jobs=jobs,
+        )
+        plan = service.plan("personal_experiments", "all", None)
+        completed = service.start(plan["plan_token"], _risk_ack(), DESTINATION_TOKEN)
+        recorder.fail = False
+        results = []
+
+        worker = threading.Thread(
+            target=lambda: results.append(jobs.retry_receipt(completed["job_id"]))
+        )
+        worker.start()
+        self.assertTrue(recorder.entered.wait(timeout=2))
+        with self.assertRaises(PackageCenterError) as raised:
+            jobs.retry_receipt(completed["job_id"])
+        self.assertEqual(raised.exception.code, "package_receipt_recovery_busy")
+        self.assertTrue(raised.exception.retryable)
+        recorder.release.set()
+        worker.join(timeout=2)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(results[0]["receipt_status"], "stored")
+        self.assertEqual(len(recorder.calls), 2)
 
     def test_non_export_completion_does_not_create_activity_receipt(self):
         recorder = _ReceiptRecorder()
