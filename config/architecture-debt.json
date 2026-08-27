@@ -23,7 +23,7 @@
       "area": "release-evidence-drift",
       "owner": "release-lead",
       "status": "experimental",
-      "problem": "源码、自动测试、构建制品和安装App曾被混用为完成证据；build50已绑定干净提交、构建与安装，build51仅完成源码全门，二者均尚未通过同一制品的真实WebView用户验收",
+      "problem": "源码、自动测试、构建制品和安装App曾被混用为完成证据；build51现已绑定干净提交4040a73、完整测试、构建清单、DMG与事务式安装，但仍未通过同一安装制品的真实WebView和四项AI用户验收",
       "target": "每项发布能力分别记录领域代码、自动测试、安装App和科学质量证据，缺一项不得宣称稳定",
       "removal_gate": "干净提交、构建manifest、安装App和用户验收单绑定同一提交与版本"
     },

@@ -8,7 +8,7 @@
     "source_checkpoint": "63b34f2",
     "installed_audit_date": "2026-08-25"
   },
-  "current_source_checkpoint": "5c2055f",
+  "current_source_checkpoint": "4040a73",
   "release_constraints": {
     "macos_only": true,
     "windows_frozen": true,
