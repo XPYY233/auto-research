@@ -169,6 +169,26 @@ class HarnessRuntimeTests(unittest.TestCase):
         self.assertEqual(result["harness"]["provider_id"], "deepseek")
         self.assertNotIn("endpoint", str(result).casefold())
 
+    def test_librarian_accepts_minimal_model_report_and_rebuilds_local_sections(self) -> None:
+        class MinimalReportRuntime(Runtime):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["report"].pop("evidence_matrix")
+                value["report"].pop("related_evidence")
+                return value
+
+        prepared = action()
+        _raw, model = self.budgeted(prepared)
+        result = self.adapter(MinimalReportRuntime()).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL,),
+            prompt=librarian_prompt(),
+        )
+        self.assertEqual(result["report"]["evidence_matrix"], [])
+        self.assertEqual(result["report"]["related_evidence"], [])
+
     def test_one_turn_librarian_preverifies_frozen_seed_without_provider_tools(self) -> None:
         class OneTurnRuntime(Runtime):
             def execute(self, *, model, **kwargs):
@@ -419,6 +439,33 @@ class HarnessRuntimeTests(unittest.TestCase):
         self.assertEqual(result["comparison_bundle_uids"], [])
 
         self.assertEqual(result["citations"], [{"ref": "R1"}, {"ref": "R2"}])
+
+        class SupportedConditionCrossBundle(CrossBundle):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["answer"] = (
+                    "在 300 °C 离子辐照条件下，两类材料呈现不同的定性演化，"
+                    "分别见 R1 与 R2；现有证据不能用于计算跨论文差值。"
+                )
+                value["report"]["direct_conclusion"] = value["answer"]
+                return value
+
+        prompt = librarian_prompt((OFFICIAL, other))
+        prompt["question"] = "在300 °C离子辐照条件下，两类材料有哪些可核验差异？"
+        for row in prompt["seed_evidence"]:
+            row["conditions_text"] = "300 °C，离子辐照"
+        _, model = self.budgeted(prepared)
+        contextual = DeepSeekHarnessAdapter(
+            runtime=SupportedConditionCrossBundle(), backend=CrossBundleBackend()
+        ).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL, other),
+            prompt=prompt,
+        )
+        self.assertIn("300 °C", contextual["answer"])
+        self.assertEqual(contextual["comparison_bundle_uids"], [])
 
         class QuantitativeCrossBundle(CrossBundle):
             def execute(self, **kwargs):

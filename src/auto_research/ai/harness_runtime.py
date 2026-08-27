@@ -158,10 +158,76 @@ class HarnessOutputProjector:
         re.IGNORECASE,
     )
 
+    @staticmethod
+    def _quantity_key(value: str) -> str:
+        return re.sub(r"\s+", "", value).replace("μ", "µ").casefold()
+
     @classmethod
-    def _has_quantitative_comparison(cls, value: object) -> bool:
+    def _supported_context_quantities(
+        cls,
+        prompt: Mapping[str, Any] | None,
+        refs: set[str],
+    ) -> frozenset[str]:
+        """Return exact hard-condition quantities backed by cited seed rows.
+
+        A multi-paper answer may repeat a condition such as ``300 °C`` without
+        gaining authority to invent hardness values, ranges, ratios or derived
+        differences. Only a quantity that occurs both in the user's question
+        and in at least one locally verified cited seed row is exempted from the
+        cross-bundle new-number gate. Bare numbers are never exempted.
+        """
+
+        if not isinstance(prompt, Mapping):
+            return frozenset()
+        question = prompt.get("question")
+        seed = prompt.get("seed_evidence")
+        if (
+            not isinstance(question, str)
+            or not isinstance(seed, Sequence)
+            or isinstance(seed, (str, bytes, bytearray))
+        ):
+            return frozenset()
+        question_values = {
+            cls._quantity_key(match.group(0))
+            for match in cls._QUANTITY.finditer(question)
+        }
+        if not question_values:
+            return frozenset()
+        cited_seed = [
+            row
+            for row in seed
+            if isinstance(row, Mapping) and str(row.get("ref") or "") in refs
+        ]
+        cited_text = json.dumps(
+            cited_seed,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        cited_values = {
+            cls._quantity_key(match.group(0))
+            for match in cls._QUANTITY.finditer(cited_text)
+        }
+        return frozenset(question_values & cited_values)
+
+    @classmethod
+    def _has_quantitative_comparison(
+        cls,
+        value: object,
+        *,
+        supported_context_quantities: frozenset[str] = frozenset(),
+    ) -> bool:
         text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         text = re.sub(r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", "", text)
+        if supported_context_quantities:
+            text = cls._QUANTITY.sub(
+                lambda match: (
+                    ""
+                    if cls._quantity_key(match.group(0))
+                    in supported_context_quantities
+                    else match.group(0)
+                ),
+                text,
+            )
         # A multi-bundle answer has no authority to synthesize *any* numeric
         # claim.  Fail closed for bare/scientific numbers, ranges and ratios,
         # not just for the small historical unit list.  R reference ordinals
@@ -177,6 +243,7 @@ class HarnessOutputProjector:
         raw: Mapping[str, Any],
         *,
         tools: HarnessToolGateway,
+        prompt: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         try:
             value = canonical_public(raw)
@@ -191,12 +258,9 @@ class HarnessOutputProjector:
             or not value["answer"].strip()
             or not isinstance(report, dict)
             or not {
-                "direct_conclusion", "evidence_matrix", "related_evidence",
-                "database_gaps", "suggested_followups",
+                "direct_conclusion", "database_gaps", "suggested_followups",
             } <= set(report)
             or not isinstance(report.get("direct_conclusion"), str)
-            or not isinstance(report.get("evidence_matrix"), list)
-            or not isinstance(report.get("related_evidence"), list)
             or not isinstance(report.get("database_gaps"), str)
             or not isinstance(report.get("suggested_followups"), list)
             or not isinstance(value.get("citations"), list)
@@ -228,8 +292,13 @@ class HarnessOutputProjector:
         )
         if not mentioned_refs.issubset(refs):
             raise HarnessError("harness_output_invalid")
+        supported_context = HarnessOutputProjector._supported_context_quantities(
+            prompt,
+            refs,
+        )
         if (not complete_bundle_identity or len(bundles) != 1) and HarnessOutputProjector._has_quantitative_comparison(
-            {"answer": value["answer"], "report": report}
+            {"answer": value["answer"], "report": report},
+            supported_context_quantities=supported_context,
         ):
             raise HarnessError("harness_output_invalid")
         recommendations = []
@@ -261,8 +330,11 @@ class HarnessOutputProjector:
             "answer": value["answer"],
             "report": {
                 "direct_conclusion": report["direct_conclusion"],
-                "evidence_matrix": report["evidence_matrix"],
-                "related_evidence": report["related_evidence"],
+                # These sections are reconstructed from locally verified seed
+                # rows by the business projector. Model placeholder arrays are
+                # not part of the scientific acceptance surface.
+                "evidence_matrix": [],
+                "related_evidence": [],
                 "database_gaps": report["database_gaps"],
                 "suggested_followups": report["suggested_followups"],
             },
@@ -419,7 +491,11 @@ class DeepSeekHarnessAdapter:
             if not isinstance(raw, Mapping):
                 raise HarnessError("harness_output_invalid")
             if running.session.scope == "librarian":
-                public = HarnessOutputProjector.librarian(raw, tools=tools)
+                public = HarnessOutputProjector.librarian(
+                    raw,
+                    tools=tools,
+                    prompt=prompt,
+                )
             elif running.session.scope == "selected_evidence_chat":
                 public = HarnessOutputProjector.selected_evidence(raw, job=running)
             else:

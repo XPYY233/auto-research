@@ -987,6 +987,7 @@ class HarnessBudgetedBusinessAIClient:
         "__client",
         "__allowed",
         "__minimum_calls",
+        "__supports_thinking_control",
         "__remaining_calls",
         "__remaining_tokens",
         "__settings",
@@ -995,6 +996,7 @@ class HarnessBudgetedBusinessAIClient:
     _PUBLIC_ATTRIBUTES = frozenset(
         {
             "__class__",
+            "request_json",
             "request_tool_message",
             "remaining_calls",
             "remaining_tokens",
@@ -1015,6 +1017,11 @@ class HarnessBudgetedBusinessAIClient:
             self,
             "_HarnessBudgetedBusinessAIClient__minimum_calls",
             action.estimated_calls,
+        )
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__supports_thinking_control",
+            action.provider_id == "deepseek",
         )
         object.__setattr__(
             self,
@@ -1057,6 +1064,95 @@ class HarnessBudgetedBusinessAIClient:
     def settings(self) -> SafeBusinessModelSettings:
         return object.__getattribute__(
             self, "_HarnessBudgetedBusinessAIClient__settings"
+        )
+
+    def request_json(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        task: str,
+        max_tokens: int,
+        thinking: bool | None = None,
+        temperature: float | None = None,
+    ) -> dict[str, Any]:
+        """Spend one Harness turn on a provider-enforced JSON object.
+
+        The final no-tool turn is still derived by the pinned Harness runtime,
+        but prompt text alone is not a reliable structured-output boundary.
+        This method keeps the same consumed-action budget and model binding as
+        tool turns while allowing the provider adapter to request JSON mode.
+        """
+
+        allowed = object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__allowed"
+        )
+        remaining_calls = object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__remaining_calls"
+        )
+        remaining_tokens = object.__getattribute__(
+            self, "_HarnessBudgetedBusinessAIClient__remaining_tokens"
+        )
+        normalized_messages = _canonical_call_value(messages)
+        if (
+            not isinstance(task, str)
+            or task not in allowed
+            or isinstance(max_tokens, bool)
+            or not isinstance(max_tokens, int)
+            or max_tokens < 1
+            or remaining_calls < 1
+            or max_tokens > remaining_tokens
+            or not isinstance(normalized_messages, list)
+            or not normalized_messages
+            or thinking not in {None, True, False}
+            or isinstance(temperature, bool)
+            or (
+                temperature is not None
+                and (
+                    not isinstance(temperature, (int, float))
+                    or not math.isfinite(float(temperature))
+                    or not 0 <= float(temperature) <= 1.5
+                )
+            )
+        ):
+            raise BusinessActionError("business_action_invalid")
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__remaining_calls",
+            remaining_calls - 1,
+        )
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__remaining_tokens",
+            remaining_tokens - max_tokens,
+        )
+        object.__setattr__(
+            self,
+            "_HarnessBudgetedBusinessAIClient__used_calls",
+            object.__getattribute__(
+                self, "_HarnessBudgetedBusinessAIClient__used_calls"
+            )
+            + 1,
+        )
+        try:
+            client = object.__getattribute__(
+                self, "_HarnessBudgetedBusinessAIClient__client"
+            )
+            method = client.request_json
+        except AttributeError as exc:
+            raise BusinessActionError("business_action_execution_failed") from exc
+        return method(
+            normalized_messages,
+            task=task,
+            max_tokens=max_tokens,
+            thinking=(
+                thinking
+                if object.__getattribute__(
+                    self,
+                    "_HarnessBudgetedBusinessAIClient__supports_thinking_control",
+                )
+                else None
+            ),
+            temperature=temperature,
         )
 
     def request_tool_message(

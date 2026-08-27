@@ -85,6 +85,10 @@ class RawClient:
         self.calls.append((messages, tools, kwargs))
         return {"role": "assistant", "content": "bounded", "tool_calls": []}
 
+    def request_json(self, messages, **kwargs):
+        self.calls.append((messages, [], kwargs))
+        return {"ok": True}
+
 
 def post(url, token, value):
     request = urllib.request.Request(
@@ -344,12 +348,29 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertEqual(len(raw.calls), 1)
         self.assertEqual(raw.calls[0][1], [])
         self.assertEqual(raw.calls[0][2]["max_tokens"], 2_400)
+        self.assertIs(raw.calls[0][2]["thinking"], False)
         self.assertIn("seed_evidence", raw.calls[0][0][-1]["content"])
         system_prompt = OneTurnFinalHarness.latest.kwargs["env"][
             "AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"
         ]
         self.assertIn("citations 必须是至少一个", system_prompt)
         self.assertIn("comparison_bundle_uids 固定返回空数组", system_prompt)
+
+    def test_structured_final_disables_thinking_only_for_supported_provider(self):
+        raw = RawClient()
+        prepared = replace(action(), provider_id="openai")
+        model = HarnessBudgetedBusinessAIClient(client=raw, action=prepared)
+        self.assertEqual(
+            model.request_json(
+                [{"role": "user", "content": "bounded"}],
+                task="librarian_planning",
+                max_tokens=100,
+                thinking=False,
+                temperature=0.1,
+            ),
+            {"ok": True},
+        )
+        self.assertIsNone(raw.calls[0][2]["thinking"])
 
     def test_one_turn_selected_evidence_uses_frozen_context_without_tools(self):
         base = action()
@@ -403,7 +424,7 @@ class OfficialHarnessSDKTests(unittest.TestCase):
             ],
         )
 
-    def test_finalization_rejects_tool_calls_and_all_later_provider_requests(self):
+    def test_finalization_switches_from_tool_turn_to_structured_json(self):
         class ToolCallingClient(RawClient):
             def request_tool_message(self, messages, tools, **kwargs):
                 self.calls.append((messages, tools, kwargs))
@@ -429,17 +450,19 @@ class OfficialHarnessSDKTests(unittest.TestCase):
             runtime_path_resolver=lambda: "/verified/runtime",
         )
         harness_job = replace(job(), max_calls=2, max_tokens=2_000)
-        with self.assertRaises(HarnessError) as failed:
+        self.assertEqual(
             runtime.execute(
                 job=harness_job,
                 model=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
                 tools=HarnessToolGateway(backend=Backend(), job=harness_job, allow_source_view=True),
                 prompt={"question": "bounded"},
-            )
-        self.assertEqual(failed.exception.code, "harness_output_invalid")
+            ),
+            {"ok": True},
+        )
         self.assertEqual(len(raw.calls), 2)
         self.assertTrue(raw.calls[0][1])
         self.assertEqual(raw.calls[1][1], [])
+        self.assertIs(raw.calls[1][2]["thinking"], False)
     def test_frozen_bundle_accepts_only_verified_in_bundle_runtime_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
             contents = Path(directory) / "Auto Research.app" / "Contents"

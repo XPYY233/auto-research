@@ -495,13 +495,37 @@ class _Bridge:
             # Keep the established Librarian synthesis budget here.
             tokens = min(tokens, LIBRARIAN_FINAL_MAX_TOKENS)
         try:
-            message = self.model.request_tool_message(
-                messages,
-                tools,
-                task=self.job.task,
-                max_tokens=tokens,
-                temperature=float(temperature),
-            )
+            if force_final:
+                # Prompt-only JSON instructions were not sufficient for real
+                # DeepSeek V4 answers: a valid scientific response could be
+                # wrapped in prose or drift into the richer UI report shape and
+                # then fail the strict parser after the paid call.  The final
+                # turn has no tools, so use the provider's structured JSON mode
+                # through the same consumed Harness budget and model binding.
+                value = self.model.request_json(
+                    messages,
+                    task=self.job.task,
+                    max_tokens=tokens,
+                    thinking=False,
+                    temperature=float(temperature),
+                )
+                message = {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        value,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                    "tool_calls": [],
+                }
+            else:
+                message = self.model.request_tool_message(
+                    messages,
+                    tools,
+                    task=self.job.task,
+                    max_tokens=tokens,
+                    temperature=float(temperature),
+                )
         except AIProviderUnavailableError as exc:
             raise HarnessError("harness_provider_unavailable") from exc
         except AIProviderResponseError as exc:
@@ -871,8 +895,12 @@ def _system_prompt(scope: str) -> str:
             "任务输入已包含本机 Search V2 召回的 seed_evidence 和稳定 R 编号。"
             "本次只有一个模型回合，不得调用工具；直接依据 seed_evidence 输出最终 JSON。"
             "citations 必须是至少一个仅含 ref 的对象，ref 只能来自 seed_evidence；"
-            "report.suggested_followups 必须是字符串数组，其他 report 数组也必须保持 JSON 数组。"
+            "report 只填写 direct_conclusion、database_gaps 和 suggested_followups；"
+            "suggested_followups 必须是字符串数组。证据矩阵与相关证据由应用根据引用生成。"
             "recommended_articles 只能使用 local_recommendations 中的 paper_uid；没有匹配时返回空数组。"
+            "如果引用跨越多个 evidence bundle，只能做带局限的定性归纳；不得计算或新增数值、"
+            "差值、比例或范围。可以原样复述问题及引用证据共同包含的实验条件，例如温度。"
+            "不要输出候选数、证据数、页码或年份等无关数字。"
             "research_memory 仅是用户确认且已重新核验来源的辅助上下文，不能替代 seed_evidence、"
             "不能创建引用或作为定量陈述的唯一依据；"
             "comparison_bundle_uids 固定返回空数组，应用会依据本地证据束重新计算。"
@@ -892,14 +920,12 @@ def _user_prompt(scope: str, payload: Mapping[str, Any]) -> str:
             "answer": "",
             "report": {
                 "direct_conclusion": "",
-                "evidence_matrix": [],
-                "related_evidence": [],
                 "database_gaps": "",
                 "suggested_followups": [],
             },
             "citations": [{"ref": "R1"}],
             "recommended_articles": [
-                {"paper_uid": "", "title": "", "doi": "", "reason": ""}
+                {"paper_uid": "", "reason": ""}
             ],
             "comparison_bundle_uids": [],
         }
