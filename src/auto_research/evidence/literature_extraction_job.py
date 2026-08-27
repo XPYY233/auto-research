@@ -1067,11 +1067,35 @@ class LiteratureExtractionJobStore:
             raise LiteratureExtractionJobError(
                 "literature_commit_failed", "抽取结果未能原子保存，未发布任何新科学记录"
             ) from exc
+        # Publication is idempotent, but the durable checkpoint still has to
+        # record completion after this method returns.  Keep the validated job
+        # and sealed PDF alive until that acknowledgement succeeds; deleting
+        # them here would make a crash between the DB commit and checkpoint CAS
+        # impossible to recover without repeating or losing task state.
         with self._lock:
+            current = self._jobs.get(job_token)
+            if current is job:
+                current.claimed = False
+                current.claim_expires_at = None
+        return MappingProxyType(dict(_plain(result)))
+
+    def acknowledge_finalized(self, job_token: str, *, session_id: str) -> None:
+        """Release a published task only after its durable completion receipt."""
+
+        with self._lock:
+            job = self._get(job_token, session_id)
+            quality_result = (
+                job.validated_package.quality_result
+                if job.validated_package is not None
+                else job.validated_quality_result
+            )
+            if job.claimed or job.status != "validated" or quality_result is None:
+                raise LiteratureExtractionJobError(
+                    "literature_not_validated", "抽取结果尚未通过全部质量门"
+                )
             removed = self._jobs.pop(job_token, None)
         if removed is not None:
             self._snapshots.release(removed.snapshot_handle)
-        return MappingProxyType(dict(_plain(result)))
 
     def _validated_package(self, job: _Job, quality_result: Any) -> ValidatedLiteraturePackage:
         return ValidatedLiteraturePackage(

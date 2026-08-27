@@ -325,6 +325,30 @@ def test_validated_recovery_keeps_quality_and_finalization_snapshot(tmp_path: Pa
     assert snapshot.verified_bytes(job.snapshot.pdf_sha256) == pdf_bytes
 
 
+def test_final_acknowledgement_is_the_only_release_point_for_validated_snapshot(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "paper.pdf"
+    make_pdf(source)
+    clock = FakeClock()
+    store = make_store(tmp_path / "sealed-blobs", clock)
+    summary = store.create(Papers(source), paper_id=1, session_id="owner")
+    token = summary["job_token"]
+    job = store._jobs[token]
+    handle = job.snapshot_handle
+    job.stage = FrozenExtractionStage.create(
+        "third_review", (), job.snapshot.content_fingerprint, clock.now()
+    )
+    job.status = "validated"
+    job.validated_quality_result = {"quality_status": "passed"}
+
+    # The checkpoint completion CAS occurs between publication and this ack.
+    assert handle in store._snapshots._records
+    store.acknowledge_finalized(token, session_id="owner")
+    assert token not in store._jobs
+    assert handle not in store._snapshots._records
+
+
 def test_private_state_size_limit_and_memory_mode_fail_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
