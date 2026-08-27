@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import unittest
 from contextlib import contextmanager
 
@@ -198,6 +199,46 @@ class _LiteratureDerivedExecutor:
             "status": "completed",
         })
         return {"answer": "derived"}
+
+
+class _LiteratureCheckpointResumeExecutor:
+    requires_literature_derived_budget = True
+
+    def __init__(self, *, corrupt_digest: bool = False):
+        self.corrupt_digest = corrupt_digest
+
+    def execute(self, *, action, ai_client):
+        initial = _plain(action.outbound["call_plan"][0])
+        recovered = {"items": [{"value": 3.2, "unit": "GPa"}]}
+        digest = hashlib.sha256(
+            json.dumps(
+                recovered,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        ai_client.resume_json_result(
+            initial["messages"],
+            task=initial["task"],
+            max_tokens=initial["max_tokens"],
+            **initial["options"],
+            result=recovered,
+            result_digest="0" * 64 if self.corrupt_digest else digest,
+        )
+        derived = _call("analysis", message="resume-derived", tokens=80)
+        ai_client.bind_derived_plan((derived,), stage_fingerprint="b" * 64)
+        ai_client.request_json(
+            [dict(message) for message in derived.messages],
+            task=derived.task,
+            max_tokens=derived.max_tokens,
+            **dict(derived.options),
+        )
+        ai_client.finish_task({
+            "schema_version": "literature-extraction-commit-result-v2",
+            "status": "completed",
+        })
+        return {"answer": "resumed"}
 
 
 def _plain(value):
@@ -538,6 +579,39 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
             registry.execute(action)
         self.assertEqual(replayed.exception.code, "business_action_replayed")
         self.assertEqual(len(self.factory.client.calls), 2)
+
+    def test_literature_checkpoint_result_advances_plan_without_repeating_paid_call(self):
+        self._install_literature_derived_action(max_calls=3, max_tokens=300)
+        self.executors["literature_extraction"] = _LiteratureCheckpointResumeExecutor()
+        registry = self.make_registry()
+        summary = registry.prepare(
+            scope="literature_extraction",
+            session_id="literature-resume",
+            request=object(),
+        )
+        result = registry.execute(self.consume(summary, "literature-resume"))
+        self.assertEqual(result["answer"], "resumed")
+        self.assertEqual(len(self.factory.client.calls), 1)
+        self.assertEqual(
+            self.factory.client.calls[0][1],
+            [{"role": "user", "content": "resume-derived"}],
+        )
+
+    def test_literature_checkpoint_result_requires_authenticated_digest(self):
+        self._install_literature_derived_action(max_calls=3, max_tokens=300)
+        self.executors["literature_extraction"] = _LiteratureCheckpointResumeExecutor(
+            corrupt_digest=True
+        )
+        registry = self.make_registry()
+        summary = registry.prepare(
+            scope="literature_extraction",
+            session_id="literature-resume-bad",
+            request=object(),
+        )
+        with self.assertRaises(BusinessActionError) as rejected:
+            registry.execute(self.consume(summary, "literature-resume-bad"))
+        self.assertEqual(rejected.exception.code, "business_action_invalid")
+        self.assertEqual(self.factory.client.calls, [])
 
     def test_literature_derived_budget_rejects_total_or_task_overreach_before_transport(self):
         self._install_literature_derived_action(max_calls=2, max_tokens=300)

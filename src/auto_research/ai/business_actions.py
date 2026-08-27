@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -561,6 +562,7 @@ class LiteratureDerivedBudgetBusinessAIClient:
     _PUBLIC_ATTRIBUTES = frozenset(
         {
             "request_json",
+            "resume_json_result",
             "bind_derived_plan",
             "finish_task",
             "remaining_calls",
@@ -791,10 +793,99 @@ class LiteratureDerivedBudgetBusinessAIClient:
         thinking: bool | None = None,
         temperature: float | None = None,
     ) -> dict[str, Any]:
+        planned, position, call_limit = object.__getattribute__(
+            self, "_consume_json_plan"
+        )(
+            messages,
+            task=task,
+            max_tokens=max_tokens,
+            thinking=thinking,
+            temperature=temperature,
+        )
+        try:
+            client = object.__getattribute__(
+                self, "_LiteratureDerivedBudgetBusinessAIClient__client"
+            )
+            method = client.request_json
+        except AttributeError as exc:
+            raise BusinessActionError("business_action_execution_failed") from exc
+        call_index = position + 1
+        emit_ai_activity(
+            "provider_request_started", call_index=call_index, call_limit=call_limit
+        )
+        result = method(
+            planned["messages"],
+            task=planned["task"],
+            max_tokens=planned["max_tokens"],
+            **planned["options"],
+        )
+        emit_ai_activity(
+            "provider_response_received", call_index=call_index, call_limit=call_limit
+        )
+        if not isinstance(result, Mapping):
+            raise BusinessActionError("business_action_execution_failed")
+        return dict(result)
+
+    def resume_json_result(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        task: str,
+        max_tokens: int,
+        thinking: bool | None,
+        temperature: float | None,
+        result: Mapping[str, Any],
+        result_digest: str,
+    ) -> dict[str, Any]:
+        """Consume one sealed successful receipt without repeating a paid call.
+
+        The trusted literature executor may use this only after the checkpoint
+        authority has authenticated both the result and its receipt.  The call
+        must still match the next prepared plan item exactly and consumes the
+        same local call/token budget as a live provider request.
+        """
+
+        normalized = _canonical_call_value(dict(result))
+        if (
+            not isinstance(normalized, dict)
+            or not isinstance(result_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", result_digest) is None
+            or hashlib.sha256(
+                json.dumps(
+                    normalized,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("utf-8")
+            ).hexdigest()
+            != result_digest
+        ):
+            raise BusinessActionError("business_action_invalid")
+        object.__getattribute__(self, "_consume_json_plan")(
+            messages,
+            task=task,
+            max_tokens=max_tokens,
+            thinking=thinking,
+            temperature=temperature,
+        )
+        return normalized
+
+    def _consume_json_plan(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        task: str,
+        max_tokens: int,
+        thinking: bool | None,
+        temperature: float | None,
+    ) -> tuple[dict[str, object], int, int]:
         position = object.__getattribute__(
             self, "_LiteratureDerivedBudgetBusinessAIClient__position"
         )
-        plan = object.__getattribute__(self, "_LiteratureDerivedBudgetBusinessAIClient__plan")
+        plan = object.__getattribute__(
+            self, "_LiteratureDerivedBudgetBusinessAIClient__plan"
+        )
         candidate = {
             "method": "json",
             "task": task,
@@ -845,29 +936,7 @@ class LiteratureDerivedBudgetBusinessAIClient:
                 self, "_LiteratureDerivedBudgetBusinessAIClient__used_calls"
             ) + 1,
         )
-        try:
-            client = object.__getattribute__(
-                self, "_LiteratureDerivedBudgetBusinessAIClient__client"
-            )
-            method = client.request_json
-        except AttributeError as exc:
-            raise BusinessActionError("business_action_execution_failed") from exc
-        call_index, call_limit = position + 1, len(plan)
-        emit_ai_activity(
-            "provider_request_started", call_index=call_index, call_limit=call_limit
-        )
-        result = method(
-            planned["messages"],
-            task=planned["task"],
-            max_tokens=planned["max_tokens"],
-            **planned["options"],
-        )
-        emit_ai_activity(
-            "provider_response_received", call_index=call_index, call_limit=call_limit
-        )
-        if not isinstance(result, Mapping):
-            raise BusinessActionError("business_action_execution_failed")
-        return dict(result)
+        return planned, position, len(plan)
 
     def finish_task(self, completion: Mapping[str, Any]) -> None:
         if (
