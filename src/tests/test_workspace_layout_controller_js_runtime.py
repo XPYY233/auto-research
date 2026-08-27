@@ -30,7 +30,9 @@ class WorkspaceLayoutControllerRuntimeTest(unittest.TestCase):
             value=layout.project({{width:1024,view:'search',hasSecondary:true,hasInspectorSelection:true}});
             assert.equal(value.context,'drawer');assert.equal(value.secondary,'single');assert.equal(value.inspector,'drawer');
             value=layout.project({{width:1680,view:'search',searchMode:'librarian',librarianResultsOpen:true,hasSecondary:true,hasInspectorSelection:true}});
-            assert.equal(value.context,'hidden');assert.equal(value.secondary,'hidden');assert.equal(value.inspector,'hidden');assert.equal(value.librarianResults,'docked');
+            assert.equal(value.context,'docked');assert.equal(value.secondary,'hidden');assert.equal(value.inspector,'hidden');assert.equal(value.librarianResults,'docked');assert.equal(value.dockedColumns,3);
+            value=layout.project({{width:1680,view:'search',searchMode:'librarian',librarianResultsOpen:false,hasSecondary:true,hasInspectorSelection:true}});
+            assert.equal(value.context,'docked');assert.equal(value.secondary,'docked');assert.equal(value.inspector,'hidden');assert.equal(value.librarianResults,'hidden');assert.equal(value.dockedColumns,3);
             value=layout.project({{width:1280,view:'search',searchMode:'librarian',librarianResultsOpen:false,hasSecondary:true,hasInspectorSelection:true}});
             assert.equal(value.context,'hidden');assert.equal(value.secondary,'docked');assert.equal(value.inspector,'hidden');assert.equal(value.librarianResults,'hidden');
             for(const view of ['package','settings']){{

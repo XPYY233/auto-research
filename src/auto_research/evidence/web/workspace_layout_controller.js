@@ -51,13 +51,16 @@
     if (librarian) {
       inspector = "hidden";
       if (resultNavigator) {
-        context = "hidden";
+        if (mode === "wide") context = contextPreferred ? "docked" : "hidden";
+        else if (mode === "desktop") context = "hidden";
         secondary = "hidden";
       } else if (hasSecondary) {
-        context = "hidden";
+        if (mode === "wide") context = contextPreferred ? "docked" : "hidden";
+        else if (mode === "desktop") context = "hidden";
         secondary = mode === "wide" || mode === "desktop" ? "docked" : "single";
       } else {
         secondary = "hidden";
+        if (mode === "wide" || mode === "desktop") context = contextPreferred ? "docked" : "hidden";
       }
     }
 

@@ -308,9 +308,35 @@ const tableHTML=api.secondaryDocumentHTML({{tabId:'personal-table:x',kind:'perso
             'payload.cause_code||payload.code', 'error.stage=cleanText(detail?.stage',
             'error.nextAction=cleanText(detail?.next_action',
             'aiErrorCopy(error,"处理未完成；本机已有数据不受影响，可稍后重试。")',
+            'personal_ai_context_changed:"实验表格上下文已变化，旧建议没有应用。"',
+            'selected_evidence_source_changed:"当前证据来源已变化，本次问题没有发送。"',
+            'ai_runtime_binding_stale:"AI 运行配置已变化，本次请求已安全停止。"',
+            'refresh_personal_preview:"请在实验页重新选择当前工作表并刷新预览。"',
+            'choose_personal_file:"请在实验页点击“选择 CSV / TSV / XLSX”重新选择文件。"',
+            'refresh_evidence_detail:"请从当前结果重新打开证据详情后再提问。"',
+            'return_to_search_results:"请返回搜索结果并选择仍可用的证据。"',
         ):
             self.assertIn(marker, self.runtime)
         self.assertNotIn('button.addEventListener("dblclick",()=>selectPaper', self.runtime)
+
+    def test_ai_failure_lineage_has_specific_chinese_recovery_guidance(self) -> None:
+        for code in (
+            "personal_ai_context_changed", "personal_ai_already_suggested", "personal_ai_busy",
+            "personal_ai_not_configured", "personal_ai_unavailable", "personal_ai_invalid_response",
+            "personal_import_session_expired", "personal_import_session_invalid", "personal_tabular_changed",
+            "personal_tabular_invalid", "personal_tabular_snapshot_unavailable", "personal_tabular_unavailable",
+            "selected_evidence_source_changed", "selected_evidence_unavailable",
+            "selected_evidence_workspace_unavailable", "ai_runtime_binding_stale",
+        ):
+            self.assertIn(f'{code}:"', self.runtime)
+        for action in (
+            "refresh_personal_preview", "open_existing_suggestion", "wait_for_task", "save_credential",
+            "retry_same_request", "choose_personal_file", "refresh_evidence_detail",
+            "return_to_search_results", "repair_workspace", "verify_connection",
+        ):
+            self.assertIn(f'{action}:"', self.runtime)
+        self.assertIn("AI_RECOVERY_CODE_COPY[code]||AI_ERROR_CODE_COPY[code]||fallback", self.runtime)
+        self.assertIn("AI_RECOVERY_ACTION_COPY[nextAction]||AI_ERROR_ACTION_COPY[nextAction]", self.runtime)
 
     def test_editor_groups_render_their_own_payload_and_visual_pdf_highlight(self) -> None:
         program = f"""
