@@ -193,6 +193,17 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 services.literature_extraction_ports.assembler._store,
                 services.literature_jobs,
             )
+            self.assertIsNotNone(services.literature_checkpoints)
+            self.assertTrue(services.literature_jobs._snapshots.persistent)
+            self.assertIs(
+                services.literature_extraction_ports.assembler._checkpoint_runtime,
+                services.literature_checkpoints.checkpoint_runtime,
+            )
+            self.assertIs(
+                services.literature_extraction_ports.executor._checkpoint_runtime,
+                services.literature_checkpoints.checkpoint_runtime,
+            )
+            self.assertTrue((root / "literature-tasks-v1").is_dir())
             self.assertFalse(hasattr(services, "literature_finalizer"))
             self.assertFalse(hasattr(services.literature_extraction_ports, "finalizer"))
             self.assertEqual(

@@ -34,6 +34,7 @@ from auto_research.evidence.literature_extraction_business_action import (
 )
 from auto_research.evidence.literature_extraction_job import (
     LiteratureExtractionJobStore,
+    LiteraturePDFSnapshotAuthority,
 )
 from auto_research.evidence.literature_extraction_finalizer import (
     AtomicEvidenceDBFinalizer,
@@ -60,6 +61,11 @@ from secure_credentials import (
     default_provider_credential_manager,
 )
 from desktop_settings_store import MacAtomicDesktopSettingsStore
+from literature_checkpoint_composition import (
+    DEFAULT_LITERATURE_PRIVATE_ROOT,
+    MacLiteratureCheckpointServices,
+    create_mac_literature_checkpoint_services,
+)
 
 
 DEFAULT_CUSTOM_PROVIDER_STATE_PATH = (
@@ -144,6 +150,7 @@ class MacAIRuntimeServices:
     librarian_ports: HarnessScopeBusinessPorts | None = None
     literature_extraction_ports: LiteratureExtractionBusinessPorts | None = None
     literature_jobs: LiteratureExtractionJobStore | None = None
+    literature_checkpoints: MacLiteratureCheckpointServices | None = None
 
 
 _SERVICES: MacAIRuntimeServices | None = None
@@ -171,6 +178,7 @@ def create_mac_ai_runtime_services(
     federated_search_session: FederatedSearchSessionProtocol | None = None,
     harness_runtime: DeepSeekHarnessRuntime | None = None,
     harness_cordis_path: Path | str | None = None,
+    literature_private_root: Path | str | None = None,
 ) -> MacAIRuntimeServices:
     business_inputs = (
         database,
@@ -252,6 +260,7 @@ def create_mac_ai_runtime_services(
     librarian_ports = None
     literature_ports = None
     literature_jobs = None
+    literature_checkpoints = None
     snapshots = None
     business_actions = None
     harness_ports = None
@@ -264,12 +273,25 @@ def create_mac_ai_runtime_services(
         )
         selected_ports = harness_ports.selected_evidence_chat
         librarian_ports = harness_ports.librarian
-        literature_jobs = LiteratureExtractionJobStore()
+        checkpoint_root = (
+            Path(literature_private_root)
+            if literature_private_root is not None
+            else _default_literature_private_root_for_state(Path(state_path))
+        )
+        literature_checkpoints = create_mac_literature_checkpoint_services(
+            private_root=checkpoint_root,
+        )
+        literature_jobs = LiteratureExtractionJobStore(
+            snapshots=LiteraturePDFSnapshotAuthority(
+                blob_store=literature_checkpoints.snapshot_blobs,
+            )
+        )
         literature_ports = literature_extraction_business_ports(
             literature_jobs,
             session_id=str(desktop_session_id),
             db=database,
             finalizer=AtomicEvidenceDBFinalizer(database),
+            checkpoint_runtime=literature_checkpoints.checkpoint_runtime,
         )
         snapshots = CompositeContentSnapshotAuthority(
             {
@@ -338,7 +360,17 @@ def create_mac_ai_runtime_services(
         librarian_ports=librarian_ports,
         literature_extraction_ports=literature_ports,
         literature_jobs=literature_jobs,
+        literature_checkpoints=literature_checkpoints,
     )
+
+
+def _default_literature_private_root_for_state(state_path: Path) -> Path:
+    if state_path == Path(DEFAULT_AI_RUNTIME_STATE_PATH):
+        return DEFAULT_LITERATURE_PRIVATE_ROOT
+    state_parent = state_path.parent
+    if state_parent.name == "State":
+        return state_parent.parent / "Private Data" / "Literature Tasks"
+    return state_parent / "literature-tasks-v1"
 
 
 def mac_ai_runtime_services(
