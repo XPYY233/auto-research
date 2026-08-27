@@ -46,6 +46,82 @@ assert(controller.publicPersonalImportNextAction(valid));assert.equal(controller
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_search_recovery_is_visible_idempotent_and_package_independent(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert');
+class El{{constructor(){{this.value='';this.textContent='';this.dataset={{}};this.disabled=false;this.hidden=false;this.listeners={{}};}}addEventListener(name,fn){{(this.listeners[name]??=[]).push(fn)}}querySelector(){{return null}}querySelectorAll(){{return[]}}}}
+const nodes=new Map(),q=selector=>{{if(!nodes.has(selector))nodes.set(selector,new El());return nodes.get(selector)}};
+const status=(state,ready,count)=>({{schema_version:'personal-search-readiness-v1',state,ready,document_count:count}});
+let calls=[],refreshAttempts=0,confirmCalls=0,aiCalls=0;
+globalThis.AutoResearchFusionPackage={{createPackageCenterController(){{throw new Error('package center unavailable')}}}};
+try{{globalThis.AutoResearchFusionPackage.createPackageCenterController()}}catch(_error){{}}
+eval(fs.readFileSync({str(RUNTIME)!r},'utf8'));
+const state={{personalAction:0,personalPageRequest:0,personalSearchRequest:0,personalSearchStatus:null,personalSearchRefreshing:false,personalPreview:null,personalPreviewPage:null,personalSeriesCounter:0,personalSheetIndex:0,personalStatus:null,personalSuggestion:null}};
+const safeError=(code,message)=>Object.assign(new Error(message),{{code}});
+const request=async(url,options={{}})=>{{
+ calls.push([url,options.method||'GET',options.body]);
+ if(url==='/api/desktop/personal-imports/search-status')return status('retry_required',false,0);
+ if(url==='/api/desktop/personal-imports/search-refresh'){{refreshAttempts+=1;if(refreshAttempts===1)throw safeError('personal_search_refresh_failed','retry');return status('ready',true,3)}}
+ throw new Error('unexpected '+url);
+}};
+const controller=globalThis.AutoResearchFusionPersonalImport.createPersonalImportController({{
+ state,q,qa:()=>[],esc:String,cleanText:v=>String(v??''),safeError,request,native:{{selectPersonalFile:async()=>null}},
+ authorizeAI:async()=>{{aiCalls+=1}},executeAI:async()=>{{aiCalls+=1}},aiProgress:()=>{{}},aiErrorCopy:()=>'',resetAI:()=>{{}},isPersonalActive:()=>true,setOperation:()=>{{}},selectCell:()=>true,projectInspector:()=>{{}},openImportedTable:async()=>false,confirmAction:()=>{{confirmCalls+=1;return true}},
+}});
+assert.equal(controller.bind(),true);
+(async()=>{{
+ state.personalSearchStatus=controller.publicPersonalSearchStatus({{schema_version:'personal-search-readiness-v1',state:'not_checked',ready:false,document_count:0}});assert(state.personalSearchStatus);controller.renderPersonalSearchStatus();assert.equal(q('#fusion-personal-search-recovery').hidden,true,'not_checked is valid but must not invent a recovery failure');
+ assert.equal(controller.publicPersonalSearchStatus({{schema_version:'personal-search-readiness-v1',state:'ready',ready:true,document_count:3,path:'/private/index.sqlite'}}),null);
+ assert.equal(controller.publicPersonalSearchStatus({{schema_version:'personal-search-readiness-v1',state:'empty',ready:false,document_count:false}}),null);
+ assert.equal(await controller.loadPersonalSearchStatus(),true);
+ assert.equal(state.personalSearchStatus.state,'retry_required');
+ assert.equal(q('#fusion-personal-search-recovery').hidden,false);
+ assert.equal(q('#fusion-personal-search-refresh').disabled,false);
+ assert.equal(await controller.refreshPersonalSearch(),false);
+ assert.equal(state.personalSearchStatus.state,'retry_required');
+ assert.equal(q('#fusion-personal-search-recovery').hidden,false,'failed refresh keeps the recovery action visible');
+ assert.equal(await controller.refreshPersonalSearch(),true);
+ assert.equal(state.personalSearchStatus.state,'ready');
+ assert.equal(q('#fusion-personal-search-recovery').hidden,true);
+ assert.deepStrictEqual(calls.map(call=>call.slice(0,2)),[
+  ['/api/desktop/personal-imports/search-status','GET'],
+  ['/api/desktop/personal-imports/search-refresh','POST'],
+  ['/api/desktop/personal-imports/search-refresh','POST'],
+ ]);
+ assert.equal(calls[1][2],'{{}}');assert.equal(calls[2][2],'{{}}');
+ assert(!calls.some(call=>call[0].includes('reviewed-import')));
+ assert.equal(confirmCalls,0);assert.equal(aiCalls,0);
+}})().catch(error=>{{console.error(error);process.exitCode=1}});
+"""
+        result = subprocess.run(
+            ["node", "-e", program], capture_output=True, text=True, timeout=8, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_late_search_status_response_cannot_overwrite_newer_status(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert');
+class El{{constructor(){{this.textContent='';this.dataset={{}};this.disabled=false;this.hidden=false;this.listeners={{}};}}addEventListener(name,fn){{(this.listeners[name]??=[]).push(fn)}}querySelector(){{return null}}querySelectorAll(){{return[]}}}}
+const nodes=new Map(),q=selector=>{{if(!nodes.has(selector))nodes.set(selector,new El());return nodes.get(selector)}};
+const pending=[];eval(fs.readFileSync({str(RUNTIME)!r},'utf8'));
+const state={{personalAction:0,personalPageRequest:0,personalSearchRequest:0,personalSearchStatus:null,personalSearchRefreshing:false,personalPreview:null,personalPreviewPage:null,personalSeriesCounter:0,personalSheetIndex:0,personalStatus:null,personalSuggestion:null}};
+const controller=globalThis.AutoResearchFusionPersonalImport.createPersonalImportController({{
+ state,q,qa:()=>[],esc:String,cleanText:v=>String(v??''),safeError:(code,message)=>Object.assign(new Error(message),{{code}}),request:()=>new Promise(resolve=>pending.push(resolve)),native:{{selectPersonalFile:async()=>null}},
+ authorizeAI:async()=>null,executeAI:async()=>null,aiProgress:()=>{{}},aiErrorCopy:()=>'',resetAI:()=>{{}},isPersonalActive:()=>false,setOperation:()=>{{}},selectCell:()=>true,projectInspector:()=>{{}},openImportedTable:async()=>false,confirmAction:()=>false,
+}});
+(async()=>{{
+ const older=controller.loadPersonalSearchStatus(),newer=controller.loadPersonalSearchStatus();
+ pending[1]({{schema_version:'personal-search-readiness-v1',state:'ready',ready:true,document_count:7}});assert.equal(await newer,true);
+ pending[0]({{schema_version:'personal-search-readiness-v1',state:'stale',ready:true,document_count:3}});assert.equal(await older,false);
+ assert.equal(state.personalSearchStatus.state,'ready');assert.equal(state.personalSearchStatus.documentCount,7);
+ assert.equal(q('#fusion-personal-search-recovery').hidden,true);
+}})().catch(error=>{{console.error(error);process.exitCode=1}});
+"""
+        result = subprocess.run(
+            ["node", "-e", program], capture_output=True, text=True, timeout=8, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

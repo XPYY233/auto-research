@@ -46,9 +46,9 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "d623fcb7a5c740af12ea6f7cd39c8ce153a5ee7caec231fe75cf295ca20d36d2",
+    "src/auto_research/evidence/web/index.html": "d0107d8a82ce10eaa23b0e6fbe75f90965c8ca6753f43bb6971136d936a096cf",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
-    "src/auto_research/evidence/web/workbench.css": "9aeb089af911b37612364606fe3c4674e863e53208d5a35d7b9cd8baacfff399",
+    "src/auto_research/evidence/web/workbench.css": "71f2aea577b66b8be56e3b51e9bc76a3ebf9884815353ae07beba4d105631a1d",
     "src/auto_research/evidence/web/ai_consent.js": "606cded819b129a32e74d4532f1a5e6fddbf399d0a205f5abddb03af8c67141b",
     "src/auto_research/evidence/web/document_tab_store.js": "b0b8a930b0f6c54796cc6a926a6435162c6b51bb3fd95c16bd595ecdc234f2cf",
     "src/auto_research/evidence/web/pane_layout_controller.js": "bb2ebea79ba9d571065e7dc9ac5b9635fc19ecb77ac761fbf1cb8248bf98e154",
@@ -56,8 +56,8 @@
     "src/auto_research/evidence/web/fusion_pdf_controller.js": "9922b08f8ae42ea24c6188120615ccbf775bba7f8f3b67770ae793dbad19c4d6",
     "src/auto_research/evidence/web/fusion_ai_experience.js": "3ee6c56620d53412a9baae314cfc3b8add41bb3867828010c0e1d1aeaf439b57",
     "src/auto_research/evidence/web/fusion_package_center.js": "303baee47a927ab627e99228c6deba115f31e696fcdfee3621b34c765d41eef7",
-    "src/auto_research/evidence/web/fusion_personal_import.js": "81f8868b409ef2a1c4b23b38c876a195a585dd23206bf9059ba3d1fde8539e6b",
-    "src/auto_research/evidence/web/fusion_review.js": "8b5f5a1127975b685266eef57a6e8d7e7be1b8ed0970a2f2c6c56d59be0122f1",
+    "src/auto_research/evidence/web/fusion_personal_import.js": "f31a8861931cc1395a6d22f28b70aebe3f8066307b6a2fbc14aa0bc42044b672",
+    "src/auto_research/evidence/web/fusion_review.js": "ccd7b2d5783f30af1515c3ca9dc3fc5198659876de061ce32a6e143d7652be29",
     "src/auto_research/evidence/web/codex-pet-working.webp": "eeb657c8dd3dc9431cea8d88b8ec08e4c44471dd258ac3d8008483f2b40f0ef9"
   }
 }

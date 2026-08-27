@@ -6,6 +6,9 @@
     "entity_type", "entity_uid", "kind", "label", "source_id", "source_scope",
   ]);
   const PUBLIC_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,499}$/;
+  const PERSONAL_SEARCH_STATES = new Set(["empty", "not_checked", "ready", "retry_required", "stale"]);
+  const PERSONAL_SEARCH_KEYS = new Set(["active_fingerprint", "document_count", "error", "ready", "schema_version", "state"]);
+  const PERSONAL_SEARCH_ERROR_KEYS = new Set(["code", "message", "retryable"]);
 
   function createPersonalImportController(ports) {
     if (!ports || typeof ports !== "object") throw new TypeError("personal_import_ports_required");
@@ -36,6 +39,89 @@
     }
     if (!native || typeof native.selectPersonalFile !== "function") throw new TypeError("personal_import_native_port_invalid");
     let bound = false;
+
+    function publicPersonalSearchStatus(raw) {
+      const status = String(raw?.state || "");
+      const count = raw?.document_count;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).some(key => !PERSONAL_SEARCH_KEYS.has(key)) || raw?.schema_version !== "personal-search-readiness-v1" || !PERSONAL_SEARCH_STATES.has(status) || typeof raw.ready !== "boolean" || !Number.isSafeInteger(count) || count < 0) return null;
+      if (raw.error !== undefined && (!raw.error || typeof raw.error !== "object" || Array.isArray(raw.error) || Object.keys(raw.error).some(key => !PERSONAL_SEARCH_ERROR_KEYS.has(key)))) return null;
+      if ((status === "ready" || status === "stale") !== raw.ready || (!raw.ready && count !== 0)) return null;
+      const errorCode = typeof raw.error?.code === "string" && /^personal_[a-z0-9_]{1,79}$/.test(raw.error.code) ? raw.error.code : "";
+      return Object.freeze({state: status, ready: raw.ready, documentCount: count, errorCode});
+    }
+
+    function renderPersonalSearchStatus(status = state.personalSearchStatus) {
+      const host = q("#fusion-personal-search-recovery");
+      const title = q("#fusion-personal-search-recovery-title");
+      const note = q("#fusion-personal-search-recovery-note");
+      const button = q("#fusion-personal-search-refresh");
+      if (!host || !title || !note || !button) return false;
+      const recoverable = status?.state === "retry_required" || status?.state === "stale";
+      host.hidden = !recoverable;
+      button.hidden = !recoverable;
+      button.disabled = state.personalSearchRefreshing === true;
+      host.dataset.state = state.personalSearchRefreshing === true ? "loading" : recoverable ? status.state : "ready";
+      if (!recoverable) return true;
+      title.textContent = status.state === "stale" ? "最新实验尚未进入私人搜索" : "私人搜索索引需要恢复";
+      note.textContent = state.personalSearchRefreshing === true
+        ? "正在恢复私人搜索索引；不会重复确认或重新导入实验数据。"
+        : status.state === "stale"
+          ? `旧记录仍可搜索（${status.documentCount} 条）；恢复后会加入最新确认的数据。`
+          : "实验数据已保存；恢复索引即可重新用于“我的实验”搜索。";
+      button.textContent = state.personalSearchRefreshing === true ? "正在恢复…" : "恢复私人搜索索引";
+      return true;
+    }
+
+    function markPersonalSearchRecoveryNeeded() {
+      const previous = state.personalSearchStatus;
+      state.personalSearchStatus = previous?.ready === true
+        ? Object.freeze({state: "stale", ready: true, documentCount: previous.documentCount, errorCode: "personal_search_refresh_failed"})
+        : Object.freeze({state: "retry_required", ready: false, documentCount: 0, errorCode: "personal_search_refresh_failed"});
+      renderPersonalSearchStatus();
+      return state.personalSearchStatus;
+    }
+
+    async function loadPersonalSearchStatus() {
+      const generation = ++state.personalSearchRequest;
+      try {
+        const status = publicPersonalSearchStatus(await request("/api/desktop/personal-imports/search-status"));
+        if (generation !== state.personalSearchRequest) return false;
+        if (!status) throw safeError("personal_search_status_invalid", "私人搜索状态无效。");
+        state.personalSearchStatus = status;
+        renderPersonalSearchStatus();
+        return true;
+      } catch (_error) {
+        if (generation !== state.personalSearchRequest) return false;
+        state.personalSearchStatus = Object.freeze({state: "not_checked", ready: false, documentCount: 0, errorCode: ""});
+        renderPersonalSearchStatus();
+        return false;
+      }
+    }
+
+    async function refreshPersonalSearch() {
+      if (state.personalSearchRefreshing === true) return false;
+      const generation = ++state.personalSearchRequest;
+      state.personalSearchRefreshing = true;
+      renderPersonalSearchStatus();
+      try {
+        const status = publicPersonalSearchStatus(await request("/api/desktop/personal-imports/search-refresh", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({})}));
+        if (generation !== state.personalSearchRequest) return false;
+        if (!status) throw safeError("personal_search_status_invalid", "私人搜索恢复结果无效。");
+        state.personalSearchStatus = status;
+        personalStatus(status.ready ? `私人搜索索引已恢复，${status.documentCount} 条记录可搜索。` : "私人搜索索引已恢复；当前尚无已确认记录。", "success");
+        return true;
+      } catch (_error) {
+        if (generation !== state.personalSearchRequest) return false;
+        markPersonalSearchRecoveryNeeded();
+        personalStatus("私人搜索索引尚未恢复；实验数据仍已保存，可以再次重试。", "warning");
+        return false;
+      } finally {
+        if (generation === state.personalSearchRequest) {
+          state.personalSearchRefreshing = false;
+          renderPersonalSearchStatus();
+        }
+      }
+    }
 
     function personalStatus(message, kind = "info") {
       const node = q("#fusion-personal-status");
@@ -511,7 +597,8 @@
         if (generation === state.personalAction) {
           const savedCode = cleanText(error?.code, 80);
           if (saved || ["personal_next_action_unavailable", "personal_search_refresh_failed"].includes(savedCode)) {
-            const message = savedCode === "personal_search_refresh_failed" ? "数据已保存，但搜索索引待恢复；可以稍后从“我的实验”搜索中查看。" : "数据已保存，但表格暂时无法打开；可以从“我的实验”搜索中查找。";
+            if (savedCode === "personal_search_refresh_failed") markPersonalSearchRecoveryNeeded();
+            const message = savedCode === "personal_search_refresh_failed" ? "数据已保存，但搜索索引待恢复；请使用上方按钮恢复，不要重复确认导入。" : "数据已保存，但表格暂时无法打开；可以从“我的实验”搜索中查找。";
             markPersonalImportSavedPending(message);
           } else {
             personalStatus("导入未完成；不会显示假成功，请核对后重试。", "error");
@@ -543,6 +630,7 @@
         const page = state.personalPreviewPage;
         if (page?.hasNext) void loadPersonalPreviewPage(page.sheetIndex, page.page + 1, {focusSelector: "#fusion-personal-page-next"});
       });
+      q("#fusion-personal-search-refresh")?.addEventListener("click", () => void refreshPersonalSearch());
       return true;
     }
 
@@ -561,6 +649,10 @@
       parsePersonalConditions,
       collectPersonalDraft,
       publicPersonalImportNextAction,
+      publicPersonalSearchStatus,
+      renderPersonalSearchStatus,
+      loadPersonalSearchStatus,
+      refreshPersonalSearch,
       confirmPersonalImport,
     });
   }
