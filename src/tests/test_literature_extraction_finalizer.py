@@ -345,7 +345,7 @@ def test_job_store_requires_trusted_finalizer_and_rechecks_source(evidence) -> N
     assert counts(db)["quality_pipeline_runs"] == 0
 
 
-def test_job_store_trusted_finalize_consumes_job_and_snapshot(evidence) -> None:
+def test_job_store_trusted_finalize_waits_for_durable_ack_before_cleanup(evidence) -> None:
     db, pdf, paper_id = evidence
 
     class Papers:
@@ -369,5 +369,8 @@ def test_job_store_trusted_finalize_consumes_job_and_snapshot(evidence) -> None:
     )
     assert result["status"] == "completed"
     assert result["visual_evidence_ready"] is True
+    assert summary["job_token"] in store._jobs
+    assert snapshot_handle in store._snapshots._records
+    store.acknowledge_finalized(summary["job_token"], session_id="owner")
     assert summary["job_token"] not in store._jobs
     assert snapshot_handle not in store._snapshots._records

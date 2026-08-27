@@ -40,7 +40,9 @@ def test_directory_projects_only_safe_reconnectable_state(monkeypatch) -> None:
     checkpoint = _checkpoint()
     monkeypatch.setattr(
         "auto_research.evidence.literature_extraction_task_directory.decode_execution_state",
-        lambda _payload: SimpleNamespace(job_state=b"job-state"),
+        lambda _payload: SimpleNamespace(
+            job_state=b"job-state", completion_result=None
+        ),
     )
     monkeypatch.setattr(
         "auto_research.evidence.literature_extraction_task_directory._decode_checkpoint_job_state",
@@ -73,6 +75,7 @@ def test_directory_projects_only_safe_reconnectable_state(monkeypatch) -> None:
         "updated_at": 1234,
         "expires_at": 5678,
         "next_action": "resume_extraction",
+        "receipt": None,
     }]
     rendered = repr(result).casefold()
     assert "task-secret" not in rendered
@@ -90,3 +93,61 @@ def test_directory_reports_store_failure_without_backend_details() -> None:
     assert result["issues"] == [
         {"code": "literature_checkpoint_store_unavailable", "count": 1}
     ]
+
+
+def test_completed_task_projects_only_concise_persistent_receipt(monkeypatch) -> None:
+    checkpoint = _checkpoint(state="completed", stage="completed")
+    completion = {
+        "schema_version": "literature-extraction-commit-result-v2",
+        "status": "completed",
+        "paper": {"title": "A paper", "doi": "10.1/safe"},
+        "candidate_count": 9,
+        "published_item_count": 6,
+        "existing_item_count": 1,
+        "manual_review_count": 2,
+        "visual_evidence_ready": True,
+        "table_candidate_count": 3,
+        "figure_candidate_count": 4,
+        "idempotent": False,
+        "extraction_receipt": {"private": "must-not-project"},
+        "publication_receipt": {"entity_uids": ["internal"]},
+        "dataset_receipt": {
+            "schema_version": "dataset-membership-receipt-v1",
+            "paper_partition": "validation",
+        },
+        "search_index": {"status": "refreshed", "document_count": 6},
+    }
+    monkeypatch.setattr(
+        "auto_research.evidence.literature_extraction_task_directory.decode_execution_state",
+        lambda _payload: SimpleNamespace(
+            job_state=b"job-state", completion_result=completion
+        ),
+    )
+    monkeypatch.setattr(
+        "auto_research.evidence.literature_extraction_task_directory._decode_checkpoint_job_state",
+        lambda _payload: SimpleNamespace(
+            token="opaque_resume_token_abcdefghijklmnopqrstuvwxyz",
+            paper={"title": "A paper", "doi": "10.1/safe"},
+        ),
+    )
+    result = LiteratureExtractionTaskDirectory(
+        checkpoints=_Store((("task-secret", checkpoint),))
+    ).status()
+    task = result["tasks"][0]
+    assert task["resume_token"] is None
+    assert task["next_action"] == "open_search"
+    assert task["receipt"] == {
+        "schema_version": "literature-extraction-receipt-summary-v1",
+        "status": "completed",
+        "candidate_count": 9,
+        "published_item_count": 6,
+        "existing_item_count": 1,
+        "manual_review_count": 2,
+        "table_candidate_count": 3,
+        "figure_candidate_count": 4,
+        "visual_evidence_ready": True,
+        "search_index": {"status": "refreshed", "document_count": 6},
+        "dataset_partition": "validation",
+    }
+    assert "must-not-project" not in repr(result)
+    assert "internal" not in repr(result)

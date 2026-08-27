@@ -19,6 +19,7 @@ from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.literature_checkpoint_runtime import (
     LiteratureCheckpointCall,
     LiteratureCheckpointRuntime,
+    decode_execution_state,
 )
 from auto_research.evidence.literature_extraction_business_action import (
     EvidenceDBLiteratureJobStarter,
@@ -520,9 +521,11 @@ def test_succeeded_receipt_prefix_resumes_budget_without_duplicate_provider_call
     )
     public = ports.projector.project(result)
     completed, _ = runtime.recover_job_state(_checkpoint_task_id(token))
+    persisted = decode_execution_state(completed.private_payload)
     assert public["status"] == "completed"
     assert completed.state == "completed"
     assert completed.spent_calls == raw.calls + 1
+    assert persisted.completion_result == public
     first_messages = tuple(dict(message) for message in first.messages)
     assert first_messages not in raw.received
 

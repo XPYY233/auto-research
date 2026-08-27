@@ -518,6 +518,7 @@ class LiteratureExtractionBusinessExecutor:
                 checkpoint,
                 owner_id=owner_id,
                 job_state=job_state,
+                completion_result=summary,
             )
         self._store.acknowledge_finalized(
             job_token, session_id=self._session_id

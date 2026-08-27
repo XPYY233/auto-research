@@ -17,7 +17,8 @@ from .literature_task_checkpoint import (
 from .literature_task_checkpoint_service import LiteratureTaskCheckpointService
 
 
-EXECUTION_STATE_SCHEMA_VERSION = "literature-execution-state-v1"
+EXECUTION_STATE_SCHEMA_VERSION = "literature-execution-state-v2"
+_LEGACY_EXECUTION_STATE_SCHEMA_VERSION = "literature-execution-state-v1"
 _HEADER = struct.Struct(">Q")
 _MAX_METADATA_BYTES = 24 * 1024 * 1024
 
@@ -36,6 +37,7 @@ class LiteratureExecutionState:
     stage_fingerprint: str
     receipt_offset: int
     completed_results: tuple[Mapping[str, object], ...]
+    completion_result: Mapping[str, object] | None = None
 
 
 class LiteratureCheckpointRuntime:
@@ -63,6 +65,7 @@ class LiteratureCheckpointRuntime:
                 stage_fingerprint=stage_fingerprint,
                 receipt_offset=0,
                 completed_results=(),
+                completion_result=None,
             )
         )
         return self._service.create(
@@ -177,6 +180,7 @@ class LiteratureCheckpointRuntime:
                     stage_fingerprint=state.stage_fingerprint,
                     receipt_offset=state.receipt_offset,
                     completed_results=tuple(results),
+                    completion_result=None,
                 )
             )
             current = self._service.complete_call(
@@ -204,6 +208,7 @@ class LiteratureCheckpointRuntime:
                 stage_fingerprint=stage_fingerprint,
                 receipt_offset=len(checkpoint.receipts),
                 completed_results=(),
+                completion_result=None,
             )
         )
         return self._service.advance_stage(
@@ -220,6 +225,7 @@ class LiteratureCheckpointRuntime:
         *,
         owner_id: str,
         job_state: bytes,
+        completion_result: Mapping[str, object] | None = None,
     ) -> LiteratureTaskCheckpoint:
         state = decode_execution_state(checkpoint.private_payload)
         payload = encode_execution_state(
@@ -228,6 +234,11 @@ class LiteratureCheckpointRuntime:
                 stage_fingerprint=state.stage_fingerprint,
                 receipt_offset=len(checkpoint.receipts),
                 completed_results=(),
+                completion_result=(
+                    _normalized_result(completion_result)
+                    if completion_result is not None
+                    else None
+                ),
             )
         )
         return self._service.complete_task(
@@ -254,6 +265,11 @@ def encode_execution_state(state: LiteratureExecutionState) -> bytes:
         "stage_fingerprint": state.stage_fingerprint,
         "receipt_offset": state.receipt_offset,
         "completed_results": results,
+        "completion_result": (
+            _normalized_result(state.completion_result)
+            if state.completion_result is not None
+            else None
+        ),
     }
     encoded = _canonical_json(metadata)
     payload = _HEADER.pack(len(encoded)) + encoded + state.job_state
@@ -273,14 +289,20 @@ def decode_execution_state(payload: bytes) -> LiteratureExecutionState:
         if boundary >= len(payload) or len(payload) > MAX_PRIVATE_PAYLOAD_BYTES:
             raise ValueError
         metadata = json.loads(payload[_HEADER.size : boundary].decode("utf-8"))
-        if not isinstance(metadata, dict) or set(metadata) != {
+        if not isinstance(metadata, dict):
+            raise ValueError
+        schema_version = metadata.get("schema_version")
+        expected_keys = {
             "schema_version",
             "stage_fingerprint",
             "receipt_offset",
             "completed_results",
-        }:
+        }
+        if schema_version == EXECUTION_STATE_SCHEMA_VERSION:
+            expected_keys.add("completion_result")
+        elif schema_version != _LEGACY_EXECUTION_STATE_SCHEMA_VERSION:
             raise ValueError
-        if metadata["schema_version"] != EXECUTION_STATE_SCHEMA_VERSION:
+        if set(metadata) != expected_keys:
             raise ValueError
         require_sha256(metadata["stage_fingerprint"])
         offset = metadata["receipt_offset"]
@@ -290,6 +312,10 @@ def decode_execution_state(payload: bytes) -> LiteratureExecutionState:
         if not isinstance(raw_results, list):
             raise ValueError
         results = tuple(_normalized_result(result) for result in raw_results)
+        raw_completion = metadata.get("completion_result")
+        completion = (
+            _normalized_result(raw_completion) if raw_completion is not None else None
+        )
         job_state = payload[boundary:]
         if not job_state:
             raise ValueError
@@ -298,6 +324,7 @@ def decode_execution_state(payload: bytes) -> LiteratureExecutionState:
             stage_fingerprint=metadata["stage_fingerprint"],
             receipt_offset=offset,
             completed_results=results,
+            completion_result=completion,
         )
     except Exception:
         raise LiteratureTaskCheckpointError("literature_checkpoint_corrupt") from None

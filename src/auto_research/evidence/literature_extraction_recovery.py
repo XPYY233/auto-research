@@ -140,6 +140,9 @@ class LiteratureExtractionFinalizerRecovery:
             )
 
             if checkpoint.state == "completed":
+                completed_execution = decode_execution_state(
+                    checkpoint.private_payload
+                )
                 try:
                     self._bind_job(job_token=job_token, job_state=job_state)
                     self._jobs.acknowledge_finalized(
@@ -151,7 +154,10 @@ class LiteratureExtractionFinalizerRecovery:
                         "literature_source_stale",
                     }:
                         raise
-                return self._public_result(completion=None, already_completed=True)
+                return self._public_result(
+                    completion=completed_execution.completion_result,
+                    already_completed=True,
+                )
 
             self._bind_job(job_token=job_token, job_state=job_state)
             owner_id = _checkpoint_owner_id(job_token)
@@ -187,6 +193,7 @@ class LiteratureExtractionFinalizerRecovery:
                 checkpoint,
                 owner_id=owner_id,
                 job_state=completed_state,
+                completion_result=completion,
             )
             self._jobs.acknowledge_finalized(
                 job_token, session_id=self._session_id

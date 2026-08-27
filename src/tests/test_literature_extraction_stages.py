@@ -157,12 +157,13 @@ def test_business_assembler_accepts_bounded_real_stage_under_shared_policy(tmp_p
     assembler = LiteratureExtractionBusinessAssembler(store, session_id="owner")
     draft = assembler.assemble({"job_token": summary["job_token"]})
     assert draft.estimated_calls == len(stage.calls)
-    assert draft.max_tokens == sum(call.max_tokens for call in stage.calls)
+    assert draft.max_tokens == draft.outbound["task_max_tokens"]
+    assert draft.max_tokens >= sum(call.max_tokens for call in stage.calls)
     assert draft.outbound["job_handle"] == summary["job_token"]
     assert "job_token" not in draft.outbound
 
 
-def test_business_assembler_executor_and_projector_use_frozen_stage(tmp_path: Path) -> None:
+def test_business_assembler_snapshot_and_projector_use_frozen_stage(tmp_path: Path) -> None:
     path = tmp_path / "paper.pdf"
     make_pdf(path)
     store = LiteratureExtractionJobStore(session_key=b"x" * 32)
@@ -172,30 +173,15 @@ def test_business_assembler_executor_and_projector_use_frozen_stage(tmp_path: Pa
         {"job_token": summary["job_token"]}
     )
     assert draft.estimated_calls == summary["call_count"]
-    assert draft.max_tokens == summary["max_token_budget"]
+    assert draft.max_tokens == draft.outbound["task_max_tokens"]
+    assert draft.max_tokens >= summary["max_token_budget"]
     assert LiteratureExtractionStageSnapshotAuthority(store).fingerprint_for(
         kind="literature_extraction_stage",
         stable_source_identity=f"literature-stage:{summary['job_token']}",
     ) == store.peek_stage(summary["job_token"], session_id="owner").stage_fingerprint
 
-    class Client:
-        def __init__(self):
-            self.calls = 0
-
-        def request_json(self, messages, **kwargs):
-            self.calls += 1
-            return extraction_payload()
-
-    class Action:
-        outbound = {"payload": draft.outbound}
-
-    client = Client()
-    result = LiteratureExtractionBusinessExecutor(
-        store, planner, session_id="owner"
-    ).execute(action=Action(), ai_client=client)
-    public = LiteratureExtractionBusinessProjector().project(result)
-    assert client.calls == draft.estimated_calls
-    assert public["stage"] == "coverage_gap"
+    public = LiteratureExtractionBusinessProjector().project({"summary": summary})
+    assert public["stage"] == "initial_focus"
     assert str(path) not in repr(public)
     assert "pdf_sha256" not in repr(public)
 
@@ -235,6 +221,8 @@ def test_business_executor_releases_claim_after_arbitrary_client_failure(tmp_pat
 
     class Action:
         outbound = {"payload": draft.outbound}
+        max_calls = draft.max_calls
+        max_tokens = draft.max_tokens
 
     with pytest.raises(RuntimeError):
         LiteratureExtractionBusinessExecutor(

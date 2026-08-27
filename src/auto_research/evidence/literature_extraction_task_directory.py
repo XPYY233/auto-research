@@ -50,7 +50,13 @@ class LiteratureExtractionTaskDirectory:
                 checkpoint = self._checkpoints.load(task_id)
                 execution = decode_execution_state(checkpoint.private_payload)
                 job = _decode_checkpoint_job_state(execution.job_state)
-                tasks.append(self._project(checkpoint, job))
+                tasks.append(
+                    self._project(
+                        checkpoint,
+                        job,
+                        completion=execution.completion_result,
+                    )
+                )
             except LiteratureTaskCheckpointError as exc:
                 issues[exc.code] += 1
             except Exception:
@@ -80,7 +86,12 @@ class LiteratureExtractionTaskDirectory:
         }
 
     @staticmethod
-    def _project(checkpoint: LiteratureTaskCheckpoint, job: object) -> Mapping[str, object]:
+    def _project(
+        checkpoint: LiteratureTaskCheckpoint,
+        job: object,
+        *,
+        completion: Mapping[str, object] | None,
+    ) -> Mapping[str, object]:
         paper = getattr(job, "paper", None)
         token = getattr(job, "token", None)
         if (
@@ -116,11 +127,68 @@ class LiteratureExtractionTaskDirectory:
             "updated_at": checkpoint.updated_at,
             "expires_at": checkpoint.manifest.expires_at,
             "next_action": next_action,
+            "receipt": _public_receipt(completion),
         }
 
 
 def _safe_count(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def _public_receipt(value: object) -> Mapping[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    integer_keys = (
+        "candidate_count",
+        "published_item_count",
+        "existing_item_count",
+        "manual_review_count",
+        "table_candidate_count",
+        "figure_candidate_count",
+    )
+    search_index = value.get("search_index")
+    dataset_receipt = value.get("dataset_receipt")
+    status = value.get("status")
+    if (
+        value.get("schema_version") != "literature-extraction-commit-result-v2"
+        or status not in {"completed", "saved_index_pending"}
+        or value.get("visual_evidence_ready") is not True
+        or any(
+            isinstance(value.get(key), bool)
+            or not isinstance(value.get(key), int)
+            or value.get(key) < 0
+            for key in integer_keys
+        )
+        or not isinstance(search_index, Mapping)
+        or search_index.get("status") not in {"refreshed", "pending"}
+        or not isinstance(dataset_receipt, Mapping)
+        or dataset_receipt.get("schema_version")
+        != "dataset-membership-receipt-v1"
+        or dataset_receipt.get("paper_partition") not in {
+            "train",
+            "validation",
+            "test",
+        }
+    ):
+        raise LiteratureTaskCheckpointError("literature_checkpoint_corrupt")
+    document_count = search_index.get("document_count")
+    if document_count is not None and (
+        isinstance(document_count, bool)
+        or not isinstance(document_count, int)
+        or document_count < 0
+    ):
+        raise LiteratureTaskCheckpointError("literature_checkpoint_corrupt")
+    return {
+        "schema_version": "literature-extraction-receipt-summary-v1",
+        "status": status,
+        **{key: value[key] for key in integer_keys},
+        "visual_evidence_ready": True,
+        "search_index": {
+            "status": search_index["status"],
+            "document_count": document_count,
+        },
+        "dataset_partition": dataset_receipt["paper_partition"],
+    }
 
 
 __all__ = [

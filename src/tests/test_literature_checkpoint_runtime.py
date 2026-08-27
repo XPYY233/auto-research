@@ -78,6 +78,7 @@ class LiteratureCheckpointRuntimeTests(unittest.TestCase):
             stage_fingerprint="5" * 64,
             receipt_offset=2,
             completed_results=({"b": 2, "a": 1},),
+            completion_result={"status": "completed", "count": 2},
         )
         first = encode_execution_state(state)
         second = encode_execution_state(state)
@@ -87,6 +88,30 @@ class LiteratureCheckpointRuntimeTests(unittest.TestCase):
         self.assertEqual(decoded.stage_fingerprint, state.stage_fingerprint)
         self.assertEqual(decoded.receipt_offset, 2)
         self.assertEqual(decoded.completed_results, ({"a": 1, "b": 2},))
+        self.assertEqual(
+            decoded.completion_result, {"count": 2, "status": "completed"}
+        )
+
+    def test_legacy_execution_state_decodes_without_completion_receipt(self) -> None:
+        state = LiteratureExecutionState(
+            job_state=b"private-job-state",
+            stage_fingerprint="5" * 64,
+            receipt_offset=0,
+            completed_results=(),
+        )
+        payload = encode_execution_state(state)
+        metadata_length = int.from_bytes(payload[:8], "big")
+        import json
+
+        metadata = json.loads(payload[8 : 8 + metadata_length])
+        metadata["schema_version"] = "literature-execution-state-v1"
+        metadata.pop("completion_result")
+        encoded = json.dumps(
+            metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        legacy = len(encoded).to_bytes(8, "big") + encoded + payload[8 + metadata_length :]
+        decoded = decode_execution_state(legacy)
+        self.assertIsNone(decoded.completion_result)
 
     def test_stage_calls_are_persisted_and_not_replayed_after_reopen(self) -> None:
         checkpoint = self.runtime.start(
