@@ -17,6 +17,10 @@ from auto_research.evidence.literature_extraction_job import (
     LiteratureExtractionJobStore,
     ValidatedLiteraturePackage,
 )
+from auto_research.evidence.table_structure_store import (
+    TableStructureStore,
+    TableStructureStoreError,
+)
 
 
 def make_pdf(path: Path, text: str = "The measured hardness was 3.2 GPa at 300 K.") -> None:
@@ -25,6 +29,42 @@ def make_pdf(path: Path, text: str = "The measured hardness was 3.2 GPa at 300 K
     page.insert_text((72, 72), text)
     document.save(path)
     document.close()
+
+
+def make_table_pdf(path: Path) -> None:
+    document = fitz.open()
+    page = document.new_page(width=600, height=800)
+    for x in (72, 220, 368):
+        page.draw_line((x, 100), (x, 180), color=(0, 0, 0), width=1)
+    for y in (100, 140, 180):
+        page.draw_line((72, y), (368, y), color=(0, 0, 0), width=1)
+    page.insert_text((84, 125), "Temperature")
+    page.insert_text((235, 125), "Hardness")
+    page.insert_text((84, 165), "300 K")
+    page.insert_text((235, 165), "3.2 GPa")
+    document.save(path)
+    document.close()
+
+
+def table_spec() -> list[dict[str, object]]:
+    return [
+        {
+            "asset_type": "table",
+            "number": 1,
+            "page": 1,
+            "bbox": [70.0, 98.0, 370.0, 182.0],
+            "caption": "Table 1. Measured hardness.",
+            "display_name": "Measured hardness",
+            "physical_quantities": [],
+            "variables": {},
+            "materials": [],
+            "conditions": "300 K",
+            "methods": "indentation",
+            "context": "",
+            "tags": [],
+            "source_context": "",
+        }
+    ]
 
 
 def data_candidate() -> dict:
@@ -179,6 +219,69 @@ def test_repeat_is_idempotent_inside_transaction_lock(evidence) -> None:
     assert first["idempotent"] is False
     assert second["idempotent"] is True
     assert counts(db) == before
+
+
+def test_table_structure_is_atomic_idempotent_and_receipted(
+    evidence, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db, pdf, paper_id = evidence
+    make_table_pdf(pdf)
+    payload = package(paper_id, "Safe experiment", "10.1/safe", pdf)
+
+    from auto_research.evidence import literature_visual_stage as visual_stage
+
+    monkeypatch.setattr(visual_stage, "_target_specs", lambda _paper: table_spec())
+    finalizer = AtomicEvidenceDBFinalizer(db)
+    first = finalizer.finalize(payload)
+    second = finalizer.finalize(payload)
+    assert first["table_structure_candidate_count"] == 1
+    assert first["table_structure_manual_review_count"] == 0
+    assert first["table_structure_unavailable_count"] == 0
+    assert first["publication_receipt"]["table_structure_candidate_count"] == 1
+    assert second["idempotent"] is True
+    with db.connect() as connection:
+        asset_id = int(connection.execute("SELECT id FROM visual_assets").fetchone()[0])
+        assert connection.execute(
+            "SELECT COUNT(*) FROM table_structure_versions"
+        ).fetchone()[0] == 1
+        summary = json.loads(connection.execute(
+            "SELECT summary_json FROM quality_pipeline_runs"
+        ).fetchone()[0])
+    assert summary["table_structure_candidate_count"] == 1
+    with pytest.raises(TableStructureStoreError) as pending:
+        TableStructureStore(db).latest(visual_asset_id=asset_id)
+    assert pending.value.code == "table_structure_store_pending"
+
+
+def test_table_structure_store_failure_rolls_back_entire_finalization(
+    evidence, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db, pdf, paper_id = evidence
+    make_table_pdf(pdf)
+    payload = package(paper_id, "Safe experiment", "10.1/safe", pdf)
+
+    from auto_research.evidence import literature_visual_stage as visual_stage
+
+    monkeypatch.setattr(visual_stage, "_target_specs", lambda _paper: table_spec())
+
+    def fail_save(self, **_kwargs):
+        raise TableStructureStoreError("table_structure_store_unavailable")
+
+    monkeypatch.setattr(TableStructureStore, "save_candidate_in_transaction", fail_save)
+    with pytest.raises(LiteratureExtractionJobError) as failure:
+        AtomicEvidenceDBFinalizer(db).finalize(payload)
+    assert failure.value.code == "literature_table_structure_store_failed"
+    with db.connect() as connection:
+        for table in (
+            "quality_pipeline_runs",
+            "quality_candidates",
+            "data_items",
+            "data_versions",
+            "visual_assets",
+            "table_structure_versions",
+        ):
+            assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+    assert not [path for path in (db.path.parent / "visual_assets").rglob("*.png")]
 
 
 def test_same_process_concurrent_commit_is_single_flight_and_idempotent(evidence) -> None:

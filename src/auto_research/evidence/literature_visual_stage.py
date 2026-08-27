@@ -20,6 +20,14 @@ from .literature_extraction_job import (
     ImmutablePDFSnapshot,
     LiteratureExtractionJobError,
 )
+from .table_structure import (
+    PublicTableIdentity,
+    TableStructureCandidate,
+    TableStructureError,
+    extract_table_structure_candidate,
+    rebind_table_structure_candidate,
+)
+from .table_structure_store import TableStructureStore, TableStructureStoreError
 from .visual_evidence import (
     _generic_specs,
     _render_crop,
@@ -35,6 +43,8 @@ class StagedVisualAsset:
     staged_path: Path
     final_path: Path
     sha256: str
+    table_structure: TableStructureCandidate | None = None
+    table_structure_failure_code: str | None = None
 
 
 @dataclass
@@ -105,7 +115,7 @@ class _StableSnapshotFile:
 @contextmanager
 def _materialized_snapshot(
     root: Path,
-    snapshot: ImmutablePDFSnapshot,
+    content: bytes,
     *,
     expected_pdf_sha256: str,
 ) -> Iterator[_StableSnapshotFile]:
@@ -116,7 +126,6 @@ def _materialized_snapshot(
     so a path replacement can only abort staging, never publish mixed bytes.
     """
 
-    content = snapshot.verified_bytes(expected_pdf_sha256)
     fd, raw_path = tempfile.mkstemp(prefix="source-", suffix=".pdf", dir=root)
     path = Path(raw_path)
     try:
@@ -158,6 +167,7 @@ def prepare_visual_evidence(
         raise LiteratureExtractionJobError(
             "literature_paper_missing", "目标文献不存在，未生成视觉证据"
         )
+    content = pdf_snapshot.verified_bytes(expected_pdf_sha256)
     staging_parent = db.path.parent / ".visual-staging"
     staging_parent.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix=f"paper-{paper_id}-", dir=staging_parent))
@@ -172,7 +182,7 @@ def prepare_visual_evidence(
     staged: list[StagedVisualAsset] = []
     try:
         with _materialized_snapshot(
-            root, pdf_snapshot, expected_pdf_sha256=expected_pdf_sha256
+            root, content, expected_pdf_sha256=expected_pdf_sha256
         ) as source:
             specs = _target_specs(paper)
             if not specs:
@@ -220,7 +230,33 @@ def prepare_visual_evidence(
                     / f"paper_{paper_id:03d}_{identity}"
                     / f"{asset_type}_{number:02d}_{image_sha[:12]}.png"
                 )
-                staged.append(StagedVisualAsset(spec, temporary, final, image_sha))
+                table_candidate = None
+                table_failure = None
+                if asset_type == "table":
+                    provisional_identity = PublicTableIdentity(
+                        source_scope="workspace",
+                        source_id="workspace",
+                        entity_uid=f"staged:{paper_id}:{number}:{index}",
+                    )
+                    try:
+                        table_candidate = extract_table_structure_candidate(
+                            content,
+                            page=page,
+                            table_bbox=bbox,
+                            identity=provisional_identity,
+                        )
+                    except TableStructureError as exc:
+                        table_failure = exc.code
+                staged.append(
+                    StagedVisualAsset(
+                        spec,
+                        temporary,
+                        final,
+                        image_sha,
+                        table_candidate,
+                        table_failure,
+                    )
+                )
         return StagedVisualEvidence(root, tuple(staged), [])
     except Exception:
         shutil.rmtree(root, ignore_errors=True)
@@ -235,6 +271,10 @@ def publish_staged_visual_evidence(
     staged: StagedVisualEvidence,
 ) -> dict[str, Any]:
     published: list[dict[str, Any]] = []
+    structure_candidates = 0
+    structure_manual_review = 0
+    structure_unavailable = 0
+    structure_store = TableStructureStore(db)
     for asset in staged.assets:
         if not asset.staged_path.is_file() or _sha256(asset.staged_path) != asset.sha256:
             raise LiteratureExtractionJobError(
@@ -250,25 +290,56 @@ def publish_staged_visual_evidence(
         else:
             os.replace(asset.staged_path, asset.final_path)
             staged.created_paths.append(asset.final_path)
-        published.append(
-            _upsert_asset(
-                db,
-                dict(paper),
-                {
-                    **dict(asset.spec),
-                    "_image_path": str(asset.final_path),
-                    "_image_sha256": asset.sha256,
-                    "review_status": str(asset.spec.get("review_status") or "draft"),
-                },
-                connection=connection,
-            )
+        published_asset = _upsert_asset(
+            db,
+            dict(paper),
+            {
+                **dict(asset.spec),
+                "_image_path": str(asset.final_path),
+                "_image_sha256": asset.sha256,
+                "review_status": str(asset.spec.get("review_status") or "draft"),
+            },
+            connection=connection,
         )
+        published.append(published_asset)
+        if str(published_asset["asset_type"]) == "table":
+            if asset.table_structure is None:
+                structure_unavailable += 1
+            else:
+                rebound = rebind_table_structure_candidate(
+                    asset.table_structure,
+                    PublicTableIdentity("workspace", "workspace", str(published_asset["id"])),
+                )
+                current = connection.execute(
+                    "SELECT COALESCE(MAX(version_no),0) FROM table_structure_versions "
+                    "WHERE visual_asset_id=?",
+                    (int(published_asset["id"]),),
+                ).fetchone()[0]
+                try:
+                    structure_store.save_candidate_in_transaction(
+                        connection=connection,
+                        visual_asset_id=int(published_asset["id"]),
+                        candidate=rebound,
+                        expected_version=int(current),
+                    )
+                except TableStructureStoreError as exc:
+                    raise LiteratureExtractionJobError(
+                        "literature_table_structure_store_failed",
+                        "表格结构无法原子保存，未发布任何新记录",
+                    ) from exc
+                if rebound.status == "manual_review":
+                    structure_manual_review += 1
+                else:
+                    structure_candidates += 1
     links = link_data_items_to_visuals(db, int(paper["id"]), connection=connection)
     return {
         "asset_count": len(published),
         "table_count": sum(row["asset_type"] == "table" for row in published),
         "figure_count": sum(row["asset_type"] == "figure" for row in published),
         "manual_review_count": sum(row.get("review_status") != "verified" for row in published),
+        "table_structure_candidate_count": structure_candidates,
+        "table_structure_manual_review_count": structure_manual_review,
+        "table_structure_unavailable_count": structure_unavailable,
         "asset_hashes": [str(row["image_sha256"]) for row in published],
         "review_candidates": [
             {

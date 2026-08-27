@@ -235,6 +235,15 @@ class AtomicEvidenceDBFinalizer:
                 "visual_evidence_ready": int(visual_summary["asset_count"]) > 0,
                 "table_candidate_count": int(visual_summary["table_count"]),
                 "figure_candidate_count": int(visual_summary["figure_count"]),
+                "table_structure_candidate_count": int(
+                    visual_summary["table_structure_candidate_count"]
+                ),
+                "table_structure_manual_review_count": int(
+                    visual_summary["table_structure_manual_review_count"]
+                ),
+                "table_structure_unavailable_count": int(
+                    visual_summary["table_structure_unavailable_count"]
+                ),
                 "visual_asset_hashes": list(visual_summary["asset_hashes"]),
                 "entity_uids": entity_uids,
             }
@@ -559,6 +568,15 @@ class AtomicEvidenceDBFinalizer:
             )),
             "table_candidate_count": int(summary.get("table_candidate_count", 0)),
             "figure_candidate_count": int(summary.get("figure_candidate_count", 0)),
+            "table_structure_candidate_count": int(
+                summary.get("table_structure_candidate_count", 0)
+            ),
+            "table_structure_manual_review_count": int(
+                summary.get("table_structure_manual_review_count", 0)
+            ),
+            "table_structure_unavailable_count": int(
+                summary.get("table_structure_unavailable_count", 0)
+            ),
             "idempotent": idempotent,
             "extraction_receipt": {
                 "schema_version": "literature-extraction-receipt-v1",
@@ -571,6 +589,15 @@ class AtomicEvidenceDBFinalizer:
                 "entity_uids": list(summary.get("entity_uids") or ()),
                 "visual_asset_hashes": list(summary.get("visual_asset_hashes") or ()),
                 "content_fingerprint": str(summary.get("commit_fingerprint") or ""),
+                "table_structure_candidate_count": int(
+                    summary.get("table_structure_candidate_count", 0)
+                ),
+                "table_structure_manual_review_count": int(
+                    summary.get("table_structure_manual_review_count", 0)
+                ),
+                "table_structure_unavailable_count": int(
+                    summary.get("table_structure_unavailable_count", 0)
+                ),
             },
             "dataset_receipt": {
                 "schema_version": "dataset-membership-receipt-v1",

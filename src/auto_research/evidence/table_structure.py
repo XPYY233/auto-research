@@ -213,6 +213,60 @@ def extract_table_structure_candidate(
         document.close()
 
 
+def rebind_table_structure_candidate(
+    candidate: TableStructureCandidate,
+    identity: PublicTableIdentity,
+) -> TableStructureCandidate:
+    """Replace only the public identity and deterministically re-sign content.
+
+    Staging cannot know the database-assigned visual asset identity.  This
+    helper verifies the original candidate before replacing that identity; all
+    scientific strings, geometry, review state, and reason codes remain exact.
+    """
+
+    if type(candidate) is not TableStructureCandidate or type(identity) is not PublicTableIdentity:
+        raise TableStructureError("table_structure_invalid")
+    original = _content_fingerprint(
+        identity=candidate.identity,
+        page=candidate.page,
+        bbox=candidate.bbox,
+        status=candidate.status,
+        reason_codes=candidate.reason_codes,
+        rows=candidate.rows,
+        cells=candidate.cells,
+    )
+    if candidate.content_fingerprint != original:
+        raise TableStructureError("table_structure_invalid")
+    rebound = TableStructureCandidate(
+        identity=identity,
+        page=candidate.page,
+        bbox=candidate.bbox,
+        status=candidate.status,
+        reason_codes=candidate.reason_codes,
+        rows=candidate.rows,
+        cells=candidate.cells,
+        content_fingerprint="",
+    )
+    return TableStructureCandidate(
+        identity=identity,
+        page=rebound.page,
+        bbox=rebound.bbox,
+        status=rebound.status,
+        reason_codes=rebound.reason_codes,
+        rows=rebound.rows,
+        cells=rebound.cells,
+        content_fingerprint=_content_fingerprint(
+            identity=identity,
+            page=rebound.page,
+            bbox=rebound.bbox,
+            status=rebound.status,
+            reason_codes=rebound.reason_codes,
+            rows=rebound.rows,
+            cells=rebound.cells,
+        ),
+    )
+
+
 def _find_tables(page: fitz.Page) -> tuple[Any, ...]:
     try:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -421,4 +475,5 @@ __all__ = [
     "TableStructureError",
     "TableStructureLimits",
     "extract_table_structure_candidate",
+    "rebind_table_structure_candidate",
 ]

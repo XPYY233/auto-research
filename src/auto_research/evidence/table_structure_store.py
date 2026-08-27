@@ -85,38 +85,73 @@ class TableStructureStore:
             self._database.init()
             with self._database.connect() as connection:
                 connection.execute("BEGIN IMMEDIATE")
-                asset = _require_table(connection, asset_id)
-                _asset_binding(asset, candidate)
-                duplicate = connection.execute(
-                    "SELECT * FROM table_structure_versions WHERE visual_asset_id=? "
-                    "AND content_fingerprint=? ORDER BY version_no DESC LIMIT 1",
-                    (asset_id, candidate.content_fingerprint),
-                ).fetchone()
-                if duplicate is not None:
-                    return _project(duplicate, self._limits)
-                latest = _latest(connection, asset_id)
-                current = int(latest["version_no"]) if latest else 0
-                if current != expected:
-                    raise TableStructureStoreError("table_structure_store_version_conflict")
-                if latest is not None:
-                    _same_identity(latest, candidate.identity)
-                connection.execute(
-                    """INSERT INTO table_structure_versions(
-                       visual_asset_id,version_no,source_scope,source_id,entity_uid,status,
-                       review_action,candidate_json,content_fingerprint,created_at
-                       ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                    (
-                        asset_id, current + 1, candidate.identity.source_scope,
-                        candidate.identity.source_id, candidate.identity.entity_uid,
-                        candidate.status, "ingest", encoded,
-                        candidate.content_fingerprint, self._stamp(),
-                    ),
+                return self._save_candidate_on_connection(
+                    connection, asset_id, candidate, expected, encoded
                 )
-                return _project(_version(connection, asset_id, current + 1), self._limits)
         except TableStructureStoreError:
             raise
         except sqlite3.Error as exc:
             raise TableStructureStoreError("table_structure_store_unavailable") from exc
+
+    def save_candidate_in_transaction(
+        self,
+        *,
+        connection: sqlite3.Connection,
+        visual_asset_id: int,
+        candidate: contract.TableStructureCandidate,
+        expected_version: int,
+    ) -> dict[str, object]:
+        """Append through a caller-owned transaction without lifecycle actions."""
+
+        if not isinstance(connection, sqlite3.Connection) or not connection.in_transaction:
+            raise TableStructureStoreError("table_structure_store_invalid")
+        asset_id, expected = _positive(visual_asset_id), _nonnegative(expected_version)
+        encoded = _candidate_json(candidate, self._limits)
+        try:
+            return self._save_candidate_on_connection(
+                connection, asset_id, candidate, expected, encoded
+            )
+        except TableStructureStoreError:
+            raise
+        except sqlite3.Error as exc:
+            raise TableStructureStoreError("table_structure_store_unavailable") from exc
+
+    def _save_candidate_on_connection(
+        self,
+        connection: sqlite3.Connection,
+        asset_id: int,
+        candidate: contract.TableStructureCandidate,
+        expected: int,
+        encoded: str,
+    ) -> dict[str, object]:
+        asset = _require_table(connection, asset_id)
+        _asset_binding(asset, candidate)
+        duplicate = connection.execute(
+            "SELECT * FROM table_structure_versions WHERE visual_asset_id=? "
+            "AND content_fingerprint=? ORDER BY version_no DESC LIMIT 1",
+            (asset_id, candidate.content_fingerprint),
+        ).fetchone()
+        if duplicate is not None:
+            return _project(duplicate, self._limits)
+        latest = _latest(connection, asset_id)
+        current = int(latest["version_no"]) if latest else 0
+        if current != expected:
+            raise TableStructureStoreError("table_structure_store_version_conflict")
+        if latest is not None:
+            _same_identity(latest, candidate.identity)
+        connection.execute(
+            """INSERT INTO table_structure_versions(
+               visual_asset_id,version_no,source_scope,source_id,entity_uid,status,
+               review_action,candidate_json,content_fingerprint,created_at
+               ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (
+                asset_id, current + 1, candidate.identity.source_scope,
+                candidate.identity.source_id, candidate.identity.entity_uid,
+                candidate.status, "ingest", encoded,
+                candidate.content_fingerprint, self._stamp(),
+            ),
+        )
+        return _project(_version(connection, asset_id, current + 1), self._limits)
 
     def approve(
         self, *, visual_asset_id: int, expected_version: int, reviewer: str, note: str = ""
