@@ -15,6 +15,35 @@ Baseline evidence:
 
 No version bump, App replacement, DMG or “stable” statement is allowed until every P0 gate below passes in the installed Mac App.
 
+## Implementation checkpoint — 2026-08-27
+
+This checkpoint records source progress only; it does not change the installed
+App or satisfy the release gate.
+
+- The uploaded-literature chain now has a synthetic end-to-end proof from an
+  immutable PDF snapshot through atomic evidence publication, incremental
+  search refresh and source highlighting (`c4a413a`).
+- A visual stage with zero discovered assets is reported as `not_found`, never
+  as ready (`9daf9a2`, `4b74656`). Newly generated screenshots remain in
+  `manual_review` and are excluded from published-only search (`760d4a0`).
+- Table structure is now a separate scientific projection, not an overload of
+  `visual_assets.variables_json`: conservative PyMuPDF parsing (`8e450e6`),
+  append-only reviewed versions (`0343e91`), verified-only literal grid export
+  (`87ab033`), atomic staging with the screenshot (`f641ebe`) and a
+  platform-neutral review/export service (`7292a14`).
+- A table candidate or parsing failure never fabricates numeric evidence. A
+  screenshot may remain useful while structure is explicitly unavailable;
+  only a human-approved version can enter CSV/XLSX or later dataset projection.
+- Targeted checks through this checkpoint passed: 19 parser tests, 14 store
+  tests, 11 grid-export tests, 53 visual/finalizer adjacency tests and 48
+  service/store/export tests. These overlap and must not be summed as a unique
+  full-suite count.
+
+Still open before release: Mac HTTP/Fusion integration of the table review
+surface, dataset/package projection of approved grids, Librarian and selected
+evidence real-model acceptance, personal experiment and package flows, code
+retirement, full serial tests, installed-App walkthrough and release packaging.
+
 ## User-flow lineage and release gates
 
 | ID | User workflow | 0.5 proof | Current regression / risk | 1.2 authority and minimum adaptation | Installed-App acceptance |
