@@ -129,6 +129,21 @@ class LiteratureCheckpointRuntimeTests(unittest.TestCase):
         self.assertEqual(results, ({"index": 0}, {"index": 1}))
         self.assertEqual(reopened.spent_calls, 2)
 
+    def test_prepare_recovery_restores_job_state_without_execution_lease(self) -> None:
+        checkpoint = self.runtime.start(
+            manifest=self.manifest,
+            job_state=b"job-v1",
+            stage="initial_focus",
+            stage_fingerprint="5" * 64,
+        )
+        recovered, job_state = self.runtime.recover_job_state(
+            checkpoint.manifest.task_id
+        )
+        self.assertEqual(job_state, b"job-v1")
+        self.assertEqual(recovered.state, "authorized")
+        self.assertIsNone(recovered.lease_owner_digest)
+        self.assertIsNone(recovered.lease_expires_at)
+
     def test_provider_interruption_becomes_terminal_outcome_unknown(self) -> None:
         checkpoint = self.runtime.start(
             manifest=self.manifest,

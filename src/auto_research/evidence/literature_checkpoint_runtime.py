@@ -87,6 +87,21 @@ class LiteratureCheckpointRuntime:
             lease_seconds=MAX_LEASE_SECONDS,
         )
 
+    def recover_job_state(
+        self,
+        task_id: str,
+    ) -> tuple[LiteratureTaskCheckpoint, bytes]:
+        """Recover sealed job state before consent without taking a lease.
+
+        The checkpoint service may normalize an expired lease or mark an
+        interrupted in-flight provider call as outcome-unknown.  This method
+        never grants execution ownership and never invokes a provider.
+        """
+
+        checkpoint = self._service.recover(task_id)
+        state = decode_execution_state(checkpoint.private_payload)
+        return checkpoint, state.job_state
+
     def execute_stage(
         self,
         checkpoint: LiteratureTaskCheckpoint,
