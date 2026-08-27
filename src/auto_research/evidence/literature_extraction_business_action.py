@@ -8,6 +8,7 @@ from auto_research.ai.business_actions import (
     BusinessActionError,
     PreparedBusinessCall,
 )
+from auto_research.ai.activity import emit_ai_activity
 from auto_research.ai.prepared_actions import ContentUnit, PreparedOutbound
 
 from .db import EvidenceDB
@@ -35,6 +36,13 @@ _PAYLOAD_KEYS = frozenset({
 })
 _PLANNER_ID = "existing_literature_stage_planner"
 _PLANNER_VERSION = "v1"
+_STAGE_ACTIVITY_CODES = {
+    "initial_focus": "literature_initial_focus",
+    "coverage_gap": "literature_coverage_gap",
+    "coverage_verification": "literature_coverage_verification",
+    "adversarial_branches": "literature_adversarial_branches",
+    "third_review": "literature_third_review",
+}
 
 _LITERATURE_ERROR_GUIDANCE = {
     "literature_pdf_missing": ("preflight", "reimport_pdf"),
@@ -350,6 +358,10 @@ class LiteratureExtractionBusinessExecutor:
                 self._store.fail_stage(payload["job_handle"], session_id=self._session_id)
                 raise BusinessActionError("business_action_invalid")
             while True:
+                activity_code = _STAGE_ACTIVITY_CODES.get(stage.name)
+                if activity_code is None:
+                    raise BusinessActionError("business_action_invalid")
+                emit_ai_activity(activity_code)
                 results = []
                 try:
                     for call in stage.calls:
@@ -387,6 +399,7 @@ class LiteratureExtractionBusinessExecutor:
                         raise LiteratureExtractionJobError(
                             "literature_commit_unavailable", "当前未安装受信原子保存组件"
                         )
+                    emit_ai_activity("literature_publishing")
                     summary = self._store.finalize(
                         payload["job_handle"],
                         session_id=self._session_id,

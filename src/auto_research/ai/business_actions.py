@@ -852,14 +852,19 @@ class LiteratureDerivedBudgetBusinessAIClient:
             method = client.request_json
         except AttributeError as exc:
             raise BusinessActionError("business_action_execution_failed") from exc
-        emit_ai_activity("provider_request_started")
+        call_index, call_limit = position + 1, len(plan)
+        emit_ai_activity(
+            "provider_request_started", call_index=call_index, call_limit=call_limit
+        )
         result = method(
             planned["messages"],
             task=planned["task"],
             max_tokens=planned["max_tokens"],
             **planned["options"],
         )
-        emit_ai_activity("provider_response_received")
+        emit_ai_activity(
+            "provider_response_received", call_index=call_index, call_limit=call_limit
+        )
         if not isinstance(result, Mapping):
             raise BusinessActionError("business_action_execution_failed")
         return dict(result)

@@ -7,6 +7,7 @@ import fitz
 import pytest
 
 from auto_research.ai.business_actions import BusinessActionError
+from auto_research.ai.activity import bind_activity_observer
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.literature_extraction_business_action import (
     EvidenceDBLiteratureJobStarter,
@@ -265,7 +266,9 @@ def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence)
     )
     draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
     client = _StageClient()
-    result = ports.executor.execute(action=_Action(draft.outbound), ai_client=client)
+    activity: list[dict[str, object]] = []
+    with bind_activity_observer(lambda event: activity.append(dict(event))):
+        result = ports.executor.execute(action=_Action(draft.outbound), ai_client=client)
     public = ports.projector.project(result)
     assert public["schema_version"] == "literature-extraction-commit-result-v2"
     assert public["status"] == "completed"
@@ -281,6 +284,11 @@ def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence)
     assert str(db.path) not in repr(public)
     assert "job_token" not in public
     assert "pdf_sha256" not in repr(public)
+    codes = [event["code"] for event in activity]
+    assert codes[0] == "literature_initial_focus"
+    assert "literature_coverage_gap" in codes
+    assert codes[-1] == "literature_publishing"
+    assert all("path" not in repr(event).casefold() for event in activity)
 
     # The completed in-memory job is consumed; it cannot charge again.
     with pytest.raises(BusinessActionError):

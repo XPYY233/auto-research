@@ -168,6 +168,11 @@
       const key = `${jobId}:${sequence}`;
       const events = this.activities.get(scope) || [];
       if (events.some((event) => event.key === key)) return true;
+      const recognizedStage = this.stage(scope, stage);
+      if (recognizedStage) {
+        const state = code === "execution_completed" ? "success" : code === "execution_failed" ? "error" : "running";
+        this.update(scope, { stage, state, label, detail });
+      }
       events.push(Object.freeze({ key, code, stage, label, detail }));
       if (events.length > 20) events.splice(0, events.length - 20);
       this.activities.set(scope, events);
