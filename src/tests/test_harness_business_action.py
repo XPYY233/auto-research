@@ -38,6 +38,17 @@ def document(uid="item-1", kind="item", **updates):
     return value
 
 
+def conversation_entry(row, ref="R1", bundle_ref="B1"):
+    return {
+        "ref": ref,
+        "source_scope": row["source_scope"],
+        "source_id": row["source_id"],
+        "entity_type": row["entity_type"],
+        "entity_uid": row["entity_uid"],
+        "bundle_ref": bundle_ref,
+    }
+
+
 class Session:
     def __init__(self):
         self.documents = [
@@ -736,6 +747,244 @@ class HarnessBusinessActionTests(unittest.TestCase):
         self.assertEqual(raised.exception.cause_code, "harness_recall_empty")
         self.assertEqual(raised.exception.stage, "harness_prepare")
         self.assertEqual(raised.exception.next_action, "refine_librarian_question")
+
+    def test_librarian_r1_followup_revalidates_current_bundle_and_projects_v3(self):
+        session = Session()
+        evidence = [
+            conversation_entry(session.documents[0], "R1", "B1"),
+            conversation_entry(session.documents[1], "R2", "B1"),
+        ]
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        draft = ports.librarian.assembler.assemble(
+            {
+                "question": "请详细解释 R1",
+                "conversation_id": "followup-r1",
+                "history": [],
+                "conversation_evidence": evidence,
+            }
+        )
+        prompt = draft.outbound["prompt"]
+        self.assertEqual(prompt["intent"]["kind"], "followup_ref")
+        self.assertEqual([row["ref"] for row in prompt["seed_evidence"]], ["R1", "R2"])
+        self.assertEqual([row["id"] for row in prompt["evidence_bundles"]], ["B1"])
+        self.assertEqual(prompt["recall_queries"], [])
+        prepared = action(draft, "librarian")
+        raw = RawClient()
+        result = ports.librarian.projector.project(
+            ports.librarian.executor.execute(
+                action=prepared,
+                ai_client=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
+            )
+        )
+        self.assertEqual(raw.calls, 1)
+        self.assertIsNone(result["research_state"])
+        self.assertEqual(result["state_token"], "")
+        self.assertEqual({row["ref"] for row in result["results"]}, {"R1", "R2"})
+
+    def test_librarian_b1_followup_and_restart_equivalent_request_are_stable(self):
+        first_session = Session()
+        evidence = [
+            conversation_entry(first_session.documents[0], "R7", "B1"),
+            conversation_entry(first_session.documents[1], "R9", "B1"),
+        ]
+        request = {
+            "question": "请总结 B1 的共同结论",
+            "conversation_id": "restart-equivalent",
+            "history": [],
+            "conversation_evidence": evidence,
+        }
+        first = harness_business_ports(
+            session=first_session, runtime=Runtime()
+        ).librarian.assembler.assemble(request)
+        second = harness_business_ports(
+            session=Session(), runtime=Runtime()
+        ).librarian.assembler.assemble(request)
+        self.assertEqual(first.outbound["prompt"], second.outbound["prompt"])
+        self.assertEqual(first.outbound["documents"], second.outbound["documents"])
+        self.assertEqual(
+            [row["ref"] for row in first.outbound["prompt"]["seed_evidence"]],
+            ["R7", "R9"],
+        )
+        self.assertEqual(
+            first.outbound["prompt"]["intent"]["kind"], "followup_bundle"
+        )
+        ports = harness_business_ports(session=first_session, runtime=Runtime())
+        prepared = action(first, "librarian")
+        result = ports.librarian.projector.project(
+            ports.librarian.executor.execute(
+                action=prepared,
+                ai_client=HarnessBudgetedBusinessAIClient(
+                    client=RawClient(), action=prepared
+                ),
+            )
+        )
+        self.assertEqual({row["ref"] for row in result["results"]}, {"R7", "R9"})
+
+    def test_conversation_evidence_is_ignored_for_ordinary_recall(self):
+        session = Session()
+        stale_but_syntactically_valid = conversation_entry(
+            session.documents[1], "R9", "B7"
+        )
+        stale_but_syntactically_valid["source_id"] = "official-old"
+        evidence = [stale_but_syntactically_valid]
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        baseline = ports.librarian.assembler.assemble(
+            {"question": "硬度", "conversation_id": "ordinary", "history": []}
+        )
+        carried = ports.librarian.assembler.assemble(
+            {
+                "question": "硬度",
+                "conversation_id": "ordinary",
+                "history": [],
+                "conversation_evidence": evidence,
+            }
+        )
+        self.assertEqual(
+            baseline.outbound["prompt"]["seed_evidence"],
+            carried.outbound["prompt"]["seed_evidence"],
+        )
+        self.assertEqual(baseline.outbound["documents"], carried.outbound["documents"])
+
+    def test_followup_rejects_stale_forged_private_duplicate_and_unknown_before_model(self):
+        class CountingRuntime(Runtime):
+            def __init__(self):
+                super().__init__()
+                self.execute_calls = 0
+
+            def execute(self, **kwargs):
+                self.execute_calls += 1
+                return super().execute(**kwargs)
+
+        cases = []
+        stale_session = Session()
+        stale = conversation_entry(stale_session.documents[0])
+        stale["source_id"] = "official-old"
+        cases.append((stale_session, [stale], "请解释 R1", "librarian_conversation_evidence_stale"))
+        forged_session = Session()
+        forged = conversation_entry(forged_session.documents[0])
+        forged["entity_uid"] = "forged-entity"
+        cases.append((forged_session, [forged], "请解释 R1", "librarian_conversation_evidence_stale"))
+        duplicate_session = Session()
+        duplicate = conversation_entry(duplicate_session.documents[0])
+        duplicate_other = conversation_entry(duplicate_session.documents[1])
+        cases.append((duplicate_session, [duplicate, duplicate_other], "请解释 R1", "librarian_conversation_evidence_duplicate"))
+        unknown_session = Session()
+        cases.append((unknown_session, [conversation_entry(unknown_session.documents[0])], "请解释 R2", "librarian_conversation_evidence_unknown_ref"))
+        for session, evidence, question, code in cases:
+            runtime = CountingRuntime()
+            ports = harness_business_ports(session=session, runtime=runtime)
+            with self.subTest(code=code), self.assertRaises(BusinessActionError) as raised:
+                ports.librarian.assembler.assemble(
+                    {
+                        "question": question,
+                        "conversation_id": "rejected-followup",
+                        "history": [],
+                        "conversation_evidence": evidence,
+                    }
+                )
+            self.assertEqual(raised.exception.cause_code, code)
+            self.assertEqual(runtime.execute_calls, 0)
+
+        private = conversation_entry(Session().documents[0])
+        private["source_scope"] = "private"
+        with self.assertRaises(BusinessActionError) as rejected:
+            harness_business_ports(
+                session=Session(), runtime=CountingRuntime()
+            ).librarian.assembler.assemble(
+                {
+                    "question": "请解释 R1",
+                    "conversation_id": "private-followup",
+                    "history": [],
+                    "conversation_evidence": [private],
+                }
+            )
+        self.assertEqual(
+            rejected.exception.cause_code,
+            "librarian_conversation_evidence_private",
+        )
+
+    def test_workspace_followup_revalidates_the_active_published_source(self):
+        workspace = Workspace()
+        current = workspace.documents[0]
+        ports = harness_business_ports(
+            session=Session(), runtime=Runtime(), workspace=workspace
+        )
+        draft = ports.librarian.assembler.assemble(
+            {
+                "question": "请解释 R1",
+                "conversation_id": "workspace-followup",
+                "history": [],
+                "conversation_evidence": [conversation_entry(current)],
+            }
+        )
+        self.assertEqual(
+            draft.outbound["documents"][0]["source_scope"], "workspace"
+        )
+        self.assertEqual(
+            draft.outbound["prompt"]["seed_evidence"][0]["ref"], "R1"
+        )
+
+    def test_followup_cross_bundle_quantitative_comparison_is_zero_model(self):
+        session = Session()
+        session.documents = [
+            document(
+                "paper-a", paper_uid="paper-a", article_title="Paper A",
+                conditions_text="W, 300 K", value_text="4.2 GPa",
+            ),
+            document(
+                "paper-b", paper_uid="paper-b", article_title="Paper B",
+                conditions_text="Ta, 900 K", value_text="8.1 GPa",
+            ),
+        ]
+        evidence = [
+            conversation_entry(session.documents[0], "R1", "B1"),
+            conversation_entry(session.documents[1], "R2", "B2"),
+        ]
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        with self.assertRaises(BusinessActionError) as raised:
+            ports.librarian.assembler.assemble(
+                {
+                    "question": "比较 R1 和 R2 的硬度数值差异",
+                    "conversation_id": "cross-bundle-followup",
+                    "history": [],
+                    "conversation_evidence": evidence,
+                }
+            )
+        self.assertEqual(raised.exception.cause_code, "unsupported_comparison")
+        self.assertEqual(raised.exception.stage, "librarian_local_preflight")
+
+    def test_conversation_evidence_rejects_extra_fields_paths_and_empty_bundle(self):
+        session = Session()
+        valid = conversation_entry(session.documents[0])
+        attacks = [
+            [{**valid, "source_excerpt": "untrusted body"}],
+            [{**valid, "source_id": "/Users/name/library"}],
+            [{**valid, "ref": "R0"}],
+            [{**valid, "bundle_ref": "B10000"}],
+            [valid] * 41,
+        ]
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        for evidence in attacks:
+            with self.subTest(evidence=evidence), self.assertRaises(BusinessActionError) as raised:
+                ports.librarian.assembler.assemble(
+                    {
+                        "question": "请解释 R1",
+                        "conversation_id": "invalid-contract",
+                        "history": [],
+                        "conversation_evidence": evidence,
+                    }
+                )
+            self.assertEqual(raised.exception.code, "business_action_invalid")
+        with self.assertRaises(BusinessActionError) as empty:
+            ports.librarian.assembler.assemble(
+                {
+                    "question": "请总结 B2",
+                    "conversation_id": "empty-bundle",
+                    "history": [],
+                    "conversation_evidence": [valid],
+                }
+            )
+        self.assertEqual(empty.exception.cause_code, "librarian_conversation_bundle_empty")
 
     def test_selected_workspace_evidence_uses_same_paper_neighbors(self):
         workspace = Workspace()

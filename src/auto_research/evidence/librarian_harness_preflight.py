@@ -261,18 +261,162 @@ def _reject_incompatible_quantitative_comparison(
         raise LibrarianHarnessPreflightError("unsupported_comparison")
 
 
+def _conversation_binding(raw: Mapping[str, Any]) -> dict[str, str]:
+    if set(raw) != {
+        "ref", "source_scope", "source_id", "entity_type", "entity_uid",
+        "bundle_ref",
+    }:
+        raise LibrarianHarnessPreflightError("librarian_conversation_evidence_invalid")
+    result = {key: str(raw.get(key) or "") for key in raw}
+    if (
+        re.fullmatch(r"R[1-9][0-9]{0,3}", result["ref"]) is None
+        or re.fullmatch(r"B[1-9][0-9]{0,3}", result["bundle_ref"]) is None
+        or result["source_scope"] not in _LITERATURE_SCOPES
+        or result["entity_type"] not in _ENTITY_TYPES
+        or not result["source_id"]
+        or not result["entity_uid"]
+    ):
+        raise LibrarianHarnessPreflightError("librarian_conversation_evidence_invalid")
+    return result
+
+
+def _followup_candidates(
+    *,
+    decision: IntentDecision,
+    analysis: QueryAnalysis,
+    documents: Sequence[Mapping[str, Any]],
+    conversation_evidence: Sequence[Mapping[str, Any]],
+    paper_ids: Mapping[tuple[str, str, str], int],
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    bindings = [_conversation_binding(row) for row in conversation_evidence]
+    refs = [row["ref"] for row in bindings]
+    identities = [
+        (row["source_scope"], row["source_id"], row["entity_type"], row["entity_uid"])
+        for row in bindings
+    ]
+    if len(refs) != len(set(refs)) or len(identities) != len(set(identities)):
+        raise LibrarianHarnessPreflightError("librarian_conversation_evidence_duplicate")
+    if len(bindings) != len(documents):
+        raise LibrarianHarnessPreflightError("librarian_conversation_evidence_stale")
+    binding_by_identity = {identity: row for identity, row in zip(identities, bindings)}
+    document_identities = [_required_identity(row) for row in documents]
+    if set(document_identities) != set(binding_by_identity):
+        raise LibrarianHarnessPreflightError("librarian_conversation_evidence_stale")
+
+    binding_by_ref = {row["ref"]: row for row in bindings}
+    if decision.kind == "followup_ref":
+        missing = [ref for ref in decision.anchor_refs if ref not in binding_by_ref]
+        if missing:
+            raise LibrarianHarnessPreflightError("librarian_conversation_evidence_unknown_ref")
+        selected_bundles = {
+            binding_by_ref[ref]["bundle_ref"] for ref in decision.anchor_refs
+        }
+    else:
+        known_bundles = {row["bundle_ref"] for row in bindings}
+        missing = [ref for ref in decision.bundle_refs if ref not in known_bundles]
+        if missing:
+            raise LibrarianHarnessPreflightError("librarian_conversation_bundle_empty")
+        selected_bundles = set(decision.bundle_refs)
+    selected_bindings = [
+        row for row in bindings if row["bundle_ref"] in selected_bundles
+    ]
+    if not selected_bindings:
+        raise LibrarianHarnessPreflightError("librarian_conversation_bundle_empty")
+    if len(selected_bindings) > MAX_MODEL_CANDIDATES:
+        raise LibrarianHarnessPreflightError("librarian_conversation_evidence_too_large")
+
+    document_by_identity = {
+        _required_identity(row): dict(row) for row in documents
+    }
+    selected_bindings.sort(key=lambda row: int(row["ref"][1:]))
+    candidates = [
+        _reasoning_candidate(
+            document_by_identity[
+                (row["source_scope"], row["source_id"], row["entity_type"], row["entity_uid"])
+            ],
+            paper_id=paper_ids[
+                _paper_key(
+                    document_by_identity[
+                        (row["source_scope"], row["source_id"], row["entity_type"], row["entity_uid"])
+                    ]
+                )
+            ],
+            ref=row["ref"],
+        )
+        for row in selected_bindings
+    ]
+    return reason_candidates(candidates, analysis), selected_bindings
+
+
+def _restore_followup_bundle_refs(
+    bundles: list[dict[str, Any]],
+    candidates: Sequence[Mapping[str, Any]],
+    bindings: Sequence[Mapping[str, str]],
+) -> list[dict[str, Any]]:
+    display_by_ref = {row["ref"]: row["bundle_ref"] for row in bindings}
+    scientific_by_ref = {
+        str(row["ref"]): str(row.get("bundle_uid") or "") for row in candidates
+    }
+    display_to_scientific: dict[str, set[str]] = {}
+    scientific_to_display: dict[str, set[str]] = {}
+    for ref, display in display_by_ref.items():
+        scientific = scientific_by_ref.get(ref, "")
+        if not scientific:
+            raise LibrarianHarnessPreflightError("librarian_conversation_evidence_stale")
+        display_to_scientific.setdefault(display, set()).add(scientific)
+        scientific_to_display.setdefault(scientific, set()).add(display)
+    if any(len(values) != 1 for values in display_to_scientific.values()) or any(
+        len(values) != 1 for values in scientific_to_display.values()
+    ):
+        raise LibrarianHarnessPreflightError("librarian_conversation_evidence_stale")
+    display_for_scientific = {
+        scientific: next(iter(displays))
+        for scientific, displays in scientific_to_display.items()
+    }
+    merged: dict[str, dict[str, Any]] = {}
+    for bundle in bundles:
+        scientific = str(bundle.get("bundle_uid") or "")
+        display = display_for_scientific.get(scientific)
+        if display is None:
+            raise LibrarianHarnessPreflightError("librarian_conversation_evidence_stale")
+        current = merged.get(display)
+        if current is None:
+            merged[display] = {**bundle, "id": display}
+            continue
+        for key in (
+            "bundle_uid", "article_title", "doi", "material", "conditions",
+        ):
+            if current.get(key) != bundle.get(key):
+                raise LibrarianHarnessPreflightError(
+                    "librarian_conversation_evidence_stale"
+                )
+        classification_order = {"direct": 0, "adjacent": 1, "expansion": 2}
+        if classification_order.get(str(bundle.get("classification")), 3) > (
+            classification_order.get(str(current.get("classification")), 3)
+        ):
+            current["classification"] = bundle.get("classification")
+        for key in ("properties", "refs", "entity_types", "relaxed_constraints"):
+            values = list(current.get(key) or ())
+            for value in bundle.get(key) or ():
+                if value not in values:
+                    values.append(value)
+            current[key] = values
+    output = list(merged.values())
+    output.sort(key=lambda row: int(str(row["id"])[1:]))
+    return output
+
+
 def plan_librarian_harness(
     *,
     question: str,
     history: Sequence[Mapping[str, str]],
     documents: Sequence[Mapping[str, Any]],
     recall_queries: Sequence[str],
+    conversation_evidence: Sequence[Mapping[str, Any]] = (),
 ) -> LibrarianHarnessPreflight:
     decision = route_librarian_intent(question)
     if decision.kind in {"system_capability", "conversation"}:
         raise LibrarianHarnessPreflightError("librarian_local_intent_required")
-    if decision.kind in {"followup_ref", "followup_bundle"}:
-        raise LibrarianHarnessPreflightError("librarian_anchor_state_required")
     analysis = build_query_analysis(question, history=list(history))
     public_documents = [dict(row) for row in documents]
     identities = [_required_identity(row) for row in public_documents]
@@ -281,16 +425,28 @@ def plan_librarian_harness(
     ordered_papers = sorted({_paper_key(row) for row in public_documents})
     paper_ids = {key: index for index, key in enumerate(ordered_papers, start=1)}
     paper_keys = {index: key for key, index in paper_ids.items()}
-    candidates = [
-        _reasoning_candidate(row, paper_id=paper_ids[_paper_key(row)], ref=f"R{index}")
-        for index, row in enumerate(public_documents, start=1)
-    ]
-    eligible = [
-        row for row in reason_candidates(candidates, analysis)
-        if row.get("match_class") in {"direct", "adjacent"}
-    ]
-    if not eligible:
-        raise LibrarianHarnessPreflightError("harness_recall_empty")
+    followup = decision.kind in {"followup_ref", "followup_bundle"}
+    selected_bindings: list[dict[str, str]] = []
+    if followup:
+        selected, selected_bindings = _followup_candidates(
+            decision=decision,
+            analysis=analysis,
+            documents=public_documents,
+            conversation_evidence=conversation_evidence,
+            paper_ids=paper_ids,
+        )
+    else:
+        candidates = [
+            _reasoning_candidate(row, paper_id=paper_ids[_paper_key(row)], ref=f"R{index}")
+            for index, row in enumerate(public_documents, start=1)
+        ]
+        eligible = [
+            row for row in reason_candidates(candidates, analysis)
+            if row.get("match_class") in {"direct", "adjacent"}
+        ]
+        if not eligible:
+            raise LibrarianHarnessPreflightError("harness_recall_empty")
+        selected = eligible[:MAX_MODEL_CANDIDATES]
 
     if decision.kind == "research_review":
         for index, row in enumerate(eligible, start=1):
@@ -305,15 +461,17 @@ def plan_librarian_harness(
             if (row["source_scope"], row["source_id"], row["entity_type"], row["entity_uid"])
             in selected_identities
         ][:MAX_MODEL_CANDIDATES]
-    else:
-        selected = eligible[:MAX_MODEL_CANDIDATES]
-
     document_by_identity = {
         _required_identity(row): dict(row) for row in public_documents
     }
-    for index, candidate in enumerate(selected, start=1):
-        candidate["ref"] = f"R{index}"
+    if not followup:
+        for index, candidate in enumerate(selected, start=1):
+            candidate["ref"] = f"R{index}"
     bundles = _safe_bundles(selected, analysis)
+    if followup:
+        bundles = _restore_followup_bundle_refs(
+            bundles, selected, selected_bindings
+        )
     _reject_incompatible_quantitative_comparison(question, bundles)
     review_map, _representatives = (
         build_review_map(selected) if decision.kind == "research_review" else ([], [])

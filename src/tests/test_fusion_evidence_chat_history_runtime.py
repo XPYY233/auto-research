@@ -36,6 +36,7 @@ assert(api.queueEvidenceChatSave(identity,{{title:'硬度结论'}},[{{role:'user
 await api.state.evidenceChat.historySave;
 assert.equal(getCount,2,'one initial GET and one conflict refresh');assert.equal(postBodies.length,2);assert.deepEqual(postBodies[1].thread.source_scope,'official');assert.deepEqual(postBodies[1].thread.entity_uid,'finding:1');assert.equal(postBodies[1].thread.messages[1].annotations.notes[0].length,1000);assert(!JSON.stringify(postBodies[1]).includes('path'));
 let request=api.librarianRequest('问题');assert.equal(request.use_research_memory,false);assert(!('research_memories' in request));toggle.checked=true;request=api.librarianRequest('问题');assert.equal(request.use_research_memory,true);assert(!JSON.stringify(request).includes('已保存记忆正文'));
+api.state.librarianResults=[{{ref:'R1',bundleRef:'B1',sourceScope:'official',sourceId:'official-v2',type:'finding',entityUid:'finding:1'}},{{ref:'R2',bundleRef:'B1',sourceScope:'private',sourceId:'private-x',type:'item',entityUid:'private:1'}}];request=api.librarianRequest('继续解释 R1');assert.deepEqual(request.conversation_evidence,[{{ref:'R1',source_scope:'official',source_id:'official-v2',entity_type:'finding',entity_uid:'finding:1',bundle_ref:'B1'}}]);assert(!JSON.stringify(request).includes('private-x'));
 assert(!api.renderLibrarianPresentation({{research_memory_count:0}},[]).includes('本次使用'));
 assert(api.renderLibrarianPresentation({{research_memory_count:2}},[]).includes('本次使用 2 条已核验记忆'));
 }})().catch(error=>{{console.error(error);process.exitCode=1;}});

@@ -32,6 +32,7 @@ from .harness_federated_backend import (
     evidence_identities,
     official_candidates,
     official_source_binding,
+    sanitize_literature_documents,
     sanitize_official_documents,
 )
 from .librarian_harness_preflight import (
@@ -55,13 +56,18 @@ SELECTED_MAX_TOKENS = 2_400
 _LIBRARIAN_KEYS = frozenset(
     {
         "question", "conversation_id", "history", "research_state", "state_token",
-        "use_research_memory",
+        "use_research_memory", "conversation_evidence",
     }
 )
 _SELECTED_KEYS = frozenset(
     {"source_scope", "source_id", "entity_type", "entity_uid", "question", "history"}
 )
 _ENTITY_TYPES = frozenset({"item", "finding", "table", "figure"})
+_CONVERSATION_EVIDENCE_KEYS = frozenset(
+    {"ref", "source_scope", "source_id", "entity_type", "entity_uid", "bundle_ref"}
+)
+_CONVERSATION_REF_RE = re.compile(r"R[1-9][0-9]{0,3}")
+_CONVERSATION_BUNDLE_RE = re.compile(r"B[1-9][0-9]{0,3}")
 _RECALL_STOPWORDS = frozenset(
     {
         "and", "are", "citations", "describe", "describes", "evidence", "for",
@@ -203,6 +209,93 @@ def _history(value: object) -> list[dict[str, str]]:
             raise BusinessActionError("business_action_invalid")
         result.append({"role": str(role), "content": _safe_text(row.get("content"), maximum=6_000)})
     return result
+
+
+def _conversation_evidence(value: object) -> tuple[dict[str, str], ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or len(value) > 40:
+        raise BusinessActionError("business_action_invalid")
+    result: list[dict[str, str]] = []
+    seen_refs: set[str] = set()
+    seen_identities: set[tuple[str, str, str, str]] = set()
+    for raw in value:
+        if not isinstance(raw, Mapping) or set(raw) != _CONVERSATION_EVIDENCE_KEYS:
+            raise BusinessActionError("business_action_invalid")
+        if any(not isinstance(raw.get(key), str) for key in _CONVERSATION_EVIDENCE_KEYS):
+            raise BusinessActionError("business_action_invalid")
+        row = {key: str(raw[key]) for key in _CONVERSATION_EVIDENCE_KEYS}
+        if row["source_scope"] == "private":
+            raise BusinessActionError(
+                "business_action_prepare_failed",
+                cause_code="librarian_conversation_evidence_private",
+                stage="librarian_conversation_evidence",
+                next_action="refresh_librarian_evidence",
+            )
+        if (
+            _CONVERSATION_REF_RE.fullmatch(row["ref"]) is None
+            or _CONVERSATION_BUNDLE_RE.fullmatch(row["bundle_ref"]) is None
+            or row["source_scope"] not in {"official", "workspace"}
+            or row["entity_type"] not in _ENTITY_TYPES
+        ):
+            raise BusinessActionError("business_action_invalid")
+        try:
+            HarnessEvidenceIdentity(
+                row["source_scope"], row["source_id"], row["entity_type"],
+                row["entity_uid"],
+            )
+        except HarnessError as exc:
+            raise BusinessActionError("business_action_invalid") from exc
+        identity = (
+            row["source_scope"], row["source_id"], row["entity_type"], row["entity_uid"],
+        )
+        if row["ref"] in seen_refs or identity in seen_identities:
+            raise BusinessActionError(
+                "business_action_prepare_failed",
+                cause_code="librarian_conversation_evidence_duplicate",
+                stage="librarian_conversation_evidence",
+                next_action="refresh_librarian_evidence",
+            )
+        seen_refs.add(row["ref"])
+        seen_identities.add(identity)
+        result.append(row)
+    return tuple(result)
+
+
+class _DisplayRefHarnessBackend(HarnessFederatedBackend):
+    """Bind Harness tool refs to the server-verified seed display mapping."""
+
+    def __init__(
+        self,
+        documents: Sequence[Mapping[str, Any]],
+        seed_evidence: Sequence[Mapping[str, Any]],
+    ) -> None:
+        super().__init__(documents)
+        document_by_identity = {
+            (
+                str(row["source_scope"]), str(row["source_id"]),
+                str(row["entity_type"]), str(row["entity_uid"]),
+            ): row
+            for row in self._documents
+        }
+        refs: dict[str, Mapping[str, Any]] = {}
+        for seed in seed_evidence:
+            ref = str(seed.get("ref") or "")
+            identity = tuple(
+                str(seed.get(key) or "")
+                for key in ("source_scope", "source_id", "entity_type", "entity_uid")
+            )
+            document = document_by_identity.get(identity)
+            if (
+                _CONVERSATION_REF_RE.fullmatch(ref) is None
+                or document is None
+                or ref in refs
+            ):
+                raise HarnessError("harness_invalid")
+            refs[ref] = document
+        if len(refs) != len(document_by_identity):
+            raise HarnessError("harness_invalid")
+        self._refs = refs
 
 
 def _librarian_recall_queries(
@@ -396,6 +489,7 @@ class HarnessBusinessAssembler:
         question = _safe_text(request.get("question"), maximum=2_000)
         _safe_text(request.get("conversation_id"), maximum=256)
         _history(request.get("history", []))
+        _conversation_evidence(request.get("conversation_evidence"))
         if not isinstance(request.get("use_research_memory", False), bool):
             raise BusinessActionError("business_action_invalid")
         decision = route_librarian_intent(question)
@@ -433,32 +527,43 @@ class HarnessBusinessAssembler:
         question = _safe_text(request.get("question"), maximum=2_000)
         conversation_id = _safe_text(request.get("conversation_id"), maximum=256)
         history = _history(request.get("history", []))
+        conversation_evidence = _conversation_evidence(
+            request.get("conversation_evidence")
+        )
         use_research_memory = request.get("use_research_memory", False)
         if not isinstance(use_research_memory, bool):
             raise BusinessActionError("business_action_invalid")
-        documents: list[dict[str, Any]] = []
-        seen: set[tuple[str, str, str, str]] = set()
-        recall_queries = _librarian_recall_queries(question, history)
-        for recall_query in recall_queries:
-            try:
-                _append_unique_documents(
-                    documents,
-                    official_candidates(self._session, query=recall_query, limit=8),
-                    seen,
-                )
-            except HarnessError:
-                pass
-            if self._workspace is not None and len(documents) < MAX_HARNESS_CANDIDATES:
+        decision = route_librarian_intent(question)
+        followup = decision.kind in {"followup_ref", "followup_bundle"}
+        if followup:
+            documents = list(
+                self._resolve_conversation_evidence(conversation_evidence)
+            )
+            recall_queries: tuple[str, ...] = ()
+        else:
+            documents = []
+            seen: set[tuple[str, str, str, str]] = set()
+            recall_queries = _librarian_recall_queries(question, history)
+            for recall_query in recall_queries:
                 try:
                     _append_unique_documents(
                         documents,
-                        self._workspace.candidates(query=recall_query, limit=8),
+                        official_candidates(self._session, query=recall_query, limit=8),
                         seen,
                     )
                 except HarnessError:
                     pass
-            if len(documents) >= MAX_HARNESS_CANDIDATES:
-                break
+                if self._workspace is not None and len(documents) < MAX_HARNESS_CANDIDATES:
+                    try:
+                        _append_unique_documents(
+                            documents,
+                            self._workspace.candidates(query=recall_query, limit=8),
+                            seen,
+                        )
+                    except HarnessError:
+                        pass
+                if len(documents) >= MAX_HARNESS_CANDIDATES:
+                    break
         if not documents:
             raise BusinessActionError(
                 "business_action_prepare_failed",
@@ -472,19 +577,21 @@ class HarnessBusinessAssembler:
                 history=history,
                 documents=documents,
                 recall_queries=recall_queries,
+                conversation_evidence=(conversation_evidence if followup else ()),
             )
         except LibrarianHarnessPreflightError as exc:
-            next_action = (
-                "refine_librarian_question"
-                if exc.code in {
+            if exc.code.startswith("librarian_conversation_"):
+                next_action = "refresh_librarian_evidence"
+            elif exc.code in {
                     "harness_recall_empty",
                     "librarian_clarification_required",
                     "librarian_anchor_state_required",
                     "librarian_local_intent_required",
                     "unsupported_comparison",
-                }
-                else "retry_harness_action"
-            )
+                }:
+                next_action = "refine_librarian_question"
+            else:
+                next_action = "retry_harness_action"
             raise BusinessActionError(
                 "business_action_prepare_failed",
                 cause_code=exc.code,
@@ -540,6 +647,70 @@ class HarnessBusinessAssembler:
             current=None,
             neighbors=(),
         )
+
+    def _resolve_conversation_evidence(
+        self, bindings: Sequence[Mapping[str, str]]
+    ) -> tuple[dict[str, Any], ...]:
+        if not bindings:
+            raise BusinessActionError(
+                "business_action_prepare_failed",
+                cause_code="librarian_conversation_evidence_unknown_ref",
+                stage="librarian_conversation_evidence",
+                next_action="refresh_librarian_evidence",
+            )
+        resolved: list[dict[str, Any]] = []
+        for binding in bindings:
+            scope = binding["source_scope"]
+            source_id = binding["source_id"]
+            entity_type = binding["entity_type"]
+            entity_uid = binding["entity_uid"]
+            try:
+                if scope == "official":
+                    active_source, _fingerprint = official_source_binding(self._session)
+                    if source_id != active_source:
+                        raise LookupError("source changed")
+                    current = sanitize_official_documents(
+                        (
+                            self._session.get(
+                                source_scope="official",
+                                source_id=source_id,
+                                entity_uid=entity_uid,
+                            ),
+                        ),
+                        expected_source_id=source_id,
+                    )[0]
+                else:
+                    if self._workspace is None:
+                        raise LookupError("workspace unavailable")
+                    active_source, _fingerprint = self._workspace.binding()
+                    if source_id != active_source:
+                        raise LookupError("source changed")
+                    current = sanitize_literature_documents(
+                        (
+                            self._workspace.get(
+                                entity_type=entity_type, entity_uid=entity_uid
+                            ),
+                        )
+                    )[0]
+            except Exception as exc:
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="librarian_conversation_evidence_stale",
+                    stage="librarian_conversation_evidence",
+                    next_action="refresh_librarian_evidence",
+                ) from exc
+            if any(
+                current.get(key) != binding[key]
+                for key in ("source_scope", "source_id", "entity_type", "entity_uid")
+            ):
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="librarian_conversation_evidence_stale",
+                    stage="librarian_conversation_evidence",
+                    next_action="refresh_librarian_evidence",
+                )
+            resolved.append(dict(current))
+        return tuple(resolved)
 
     def _validate_memory_ref(
         self, raw: Mapping[str, Any]
@@ -761,7 +932,17 @@ class HarnessBusinessExecutor:
             } or payload.get("scope") != self._scope:
                 raise HarnessError("harness_invalid")
             documents = tuple(payload.get("documents") or ())
-            backend = HarnessFederatedBackend(documents)
+            prompt = payload.get("prompt")
+            if self._scope == "librarian":
+                if not isinstance(prompt, Mapping) or not isinstance(
+                    prompt.get("seed_evidence"), list
+                ):
+                    raise HarnessError("harness_invalid")
+                backend = _DisplayRefHarnessBackend(
+                    documents, prompt["seed_evidence"]
+                )
+            else:
+                backend = HarnessFederatedBackend(documents)
             identities = evidence_identities(backend.documents)
             current = self._identity(payload.get("current_entity"))
             neighbors = tuple(
@@ -777,7 +958,7 @@ class HarnessBusinessExecutor:
                     current_entity=current,
                     allowed_neighbors=neighbors,
                     allow_source_view=True,
-                    prompt=payload.get("prompt"),
+                    prompt=prompt,
                 )
             except HarnessError as exc:
                 if self._scope != "librarian" or exc.code not in {
@@ -915,22 +1096,40 @@ class HarnessBusinessProjector:
         raw = result["raw"]
         documents = list(result["documents"])
         by_identity = {
-            (row["source_id"], row["entity_type"], row["entity_uid"]): dict(row)
+            (
+                row["source_scope"], row["source_id"], row["entity_type"],
+                row["entity_uid"],
+            ): dict(row)
             for row in documents
         }
+        seed = result.get("prompt", {}).get("seed_evidence")
+        if not isinstance(seed, list):
+            raise BusinessActionError("business_action_result_invalid")
+        identity_by_ref: dict[str, tuple[str, str, str, str]] = {}
+        for row in seed:
+            if not isinstance(row, Mapping):
+                raise BusinessActionError("business_action_result_invalid")
+            ref = str(row.get("ref") or "")
+            identity = tuple(
+                str(row.get(key) or "")
+                for key in ("source_scope", "source_id", "entity_type", "entity_uid")
+            )
+            if (
+                _CONVERSATION_REF_RE.fullmatch(ref) is None
+                or ref in identity_by_ref
+                or identity not in by_identity
+            ):
+                raise BusinessActionError("business_action_result_invalid")
+            identity_by_ref[ref] = identity
+        if len(identity_by_ref) != len(documents):
+            raise BusinessActionError("business_action_result_invalid")
         output = []
         for citation in raw["citations"]:
             ref = str(citation["ref"])
-            if not ref.startswith("R") or not ref[1:].isdigit():
+            identity = identity_by_ref.get(ref)
+            if identity is None:
                 raise BusinessActionError("business_action_result_invalid")
-            index = int(ref[1:]) - 1
-            if not 0 <= index < len(documents):
-                raise BusinessActionError("business_action_result_invalid")
-            row = dict(documents[index])
-            identity = (row["source_id"], row["entity_type"], row["entity_uid"])
-            if identity not in by_identity:
-                raise BusinessActionError("business_action_result_invalid")
-            output.append((ref, row))
+            output.append((ref, dict(by_identity[identity])))
         return output
 
     def _librarian(self, result: Mapping[str, Any]) -> Mapping[str, Any]:
