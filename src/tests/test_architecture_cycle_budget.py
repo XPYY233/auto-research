@@ -34,7 +34,14 @@ def _resolve_imports(
             if node.level:
                 keep = max(0, len(package) - node.level + 1)
                 base = package[:keep]
-                candidates.append(".".join(base + ([node.module] if node.module else [])))
+                if node.module:
+                    candidates.append(".".join(base + [node.module]))
+                else:
+                    candidates.extend(
+                        ".".join(base + [alias.name])
+                        for alias in node.names
+                        if alias.name != "*"
+                    )
             elif node.module:
                 candidates.append(node.module)
         for candidate in candidates:
@@ -97,6 +104,22 @@ def _production_cycles() -> list[frozenset[str]]:
 
 
 class ArchitectureCycleBudgetTests(unittest.TestCase):
+    def test_relative_package_import_resolves_only_named_module(self) -> None:
+        modules = {
+            "auto_research.evidence.table_structure",
+            "auto_research.evidence.table_structure_store",
+            "auto_research.evidence.webapp",
+        }
+        tree = ast.parse("from . import table_structure as contract")
+        self.assertEqual(
+            {"auto_research.evidence.table_structure"},
+            _resolve_imports(
+                "auto_research.evidence.table_structure_store",
+                tree,
+                modules,
+            ),
+        )
+
     def test_existing_import_cycles_can_only_shrink(self) -> None:
         baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
         self.assertEqual(

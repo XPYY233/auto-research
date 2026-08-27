@@ -133,8 +133,8 @@
       "area": "python-import-cycles",
       "owner": "shared-core",
       "status": "experimental",
-      "problem": "静态导入图当前存在4组循环依赖；原先9模块的webapp/CLI环与3模块的finalizer/job/visual环已经意外合并并扩张为20模块强连通分量，循环预算门因此失败；另有6模块质量/提取环及两组2模块环",
-      "target": "不放宽或重写既有循环预算基线；先抽出提取任务纯契约/DTO、task directory端口和单向orchestration接口，把20模块环重新拆开，再处理quality/extraction及两组2模块环",
+      "problem": "修复相对包导入解析器后，静态导入图确认存在5组真实循环依赖：9模块webapp/CLI环、6模块质量/提取环、3模块finalizer/job/visual环及两组2模块环",
+      "target": "不放宽或重写既有循环预算基线；先抽出提取任务纯契约/DTO和单向orchestration端口，禁止finalizer/job/visual stage及quality/extraction相互导入，再依次缩小其余环",
       "removal_gate": "静态依赖门报告核心生产模块零循环，公开DTO和两条端到端主链保持兼容"
     },
     {
