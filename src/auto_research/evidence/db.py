@@ -391,6 +391,34 @@ CREATE TABLE IF NOT EXISTS visual_asset_reviews (
 CREATE INDEX IF NOT EXISTS idx_visual_asset_reviews_current
   ON visual_asset_reviews(asset_id,version_no DESC);
 
+-- Structured table cells are an append-only, separately reviewed projection
+-- of one existing table visual asset.  They intentionally do not reuse
+-- visual_assets.variables_json and do not change the EvidenceDB v12 identity.
+CREATE TABLE IF NOT EXISTS table_structure_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  visual_asset_id INTEGER NOT NULL REFERENCES visual_assets(id) ON DELETE CASCADE,
+  version_no INTEGER NOT NULL CHECK(version_no >= 1),
+  source_scope TEXT NOT NULL CHECK(source_scope IN ('workspace','official')),
+  source_id TEXT NOT NULL,
+  entity_uid TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('candidate','manual_review','verified','rejected')),
+  review_action TEXT NOT NULL CHECK(review_action IN ('ingest','approve','correct','reject')),
+  candidate_json TEXT NOT NULL,
+  content_fingerprint TEXT NOT NULL,
+  reviewed_at TEXT,
+  reviewer TEXT,
+  review_note TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(visual_asset_id,version_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_table_structure_versions_latest
+  ON table_structure_versions(visual_asset_id,version_no DESC);
+CREATE INDEX IF NOT EXISTS idx_table_structure_versions_fingerprint
+  ON table_structure_versions(visual_asset_id,content_fingerprint,version_no DESC);
+CREATE INDEX IF NOT EXISTS idx_table_structure_versions_status
+  ON table_structure_versions(status,visual_asset_id,version_no DESC);
+
 CREATE TABLE IF NOT EXISTS quality_pipeline_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
