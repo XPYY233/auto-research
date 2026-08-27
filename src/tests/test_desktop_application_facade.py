@@ -170,6 +170,13 @@ class RouteRegistryTests(unittest.TestCase):
             256 * 1024,
         )
         self.assertTrue(by_id["ai.business.execute"]["csrf_required"])
+        self.assertEqual(
+            by_id["table_structure.review"]["path"],
+            "/api/desktop/table-structures/reviews",
+        )
+        self.assertEqual(by_id["table_structure.review"]["body_cap_bytes"], 64 * 1024)
+        self.assertTrue(by_id["table_structure.review"]["mutation"])
+        self.assertTrue(by_id["table_structure.review"]["csrf_required"])
         self.assertFalse(by_id["librarian.chat"]["mutation"])
         self.assertTrue(by_id["workspace.upload_pdf"]["csrf_required"])
 

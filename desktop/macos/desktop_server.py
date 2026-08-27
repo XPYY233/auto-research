@@ -41,6 +41,7 @@ from personal_import_api import PersonalImportAPI
 from personal_table_api import PersonalTableAPI
 from review_queue_api import ReviewQueueAPI
 from search_index_recovery_api import SearchIndexRecoveryAPI
+from table_structure_api import TableStructureAPI
 from desktop_ai_api import MacDesktopAIAPI
 from auto_research.desktop.research_memory import (
     ResearchMemoryError,
@@ -186,6 +187,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     personal_import_api: PersonalImportAPI | None = None
     personal_table_api: PersonalTableAPI | None = None
     review_queue_api: ReviewQueueAPI | None = None
+    table_structure_api: TableStructureAPI | None = None
     search_index_recovery_api: SearchIndexRecoveryAPI | None = None
     desktop_ai_api: MacDesktopAIAPI | None = None
     release_info: Mapping[str, object] = RELEASE_INFO
@@ -700,6 +702,11 @@ class DesktopEvidenceHandler(EvidenceHandler):
         if self.review_queue_api is not None and self.review_queue_api.handle_get(self):
             return
         if (
+            self.table_structure_api is not None
+            and self.table_structure_api.handle_get(self)
+        ):
+            return
+        if (
             self.evidence_export_api is not None
             and self.evidence_export_api.handle_get(self)
         ):
@@ -802,6 +809,19 @@ class DesktopEvidenceHandler(EvidenceHandler):
                     )
                 return self.review_queue_api.handle_post(self)
             if (
+                self.table_structure_api is not None
+                and self.table_structure_api.is_post_route(self.path)
+            ):
+                if self.read_only:
+                    return self.json_response(
+                        {
+                            "error": "当前为只读模式，不允许审核表格结构。",
+                            "code": "read_only",
+                        },
+                        HTTPStatus.FORBIDDEN,
+                    )
+                return self.table_structure_api.handle_post(self)
+            if (
                 self.search_index_recovery_api is not None
                 and self.search_index_recovery_api.is_post_route(self.path)
             ):
@@ -899,6 +919,7 @@ def create_desktop_server(
     personal_import_api: PersonalImportAPI | None = None,
     personal_table_api: PersonalTableAPI | None = None,
     review_queue_api: ReviewQueueAPI | None = None,
+    table_structure_api: TableStructureAPI | None = None,
     search_index_recovery_api: SearchIndexRecoveryAPI | None = None,
     desktop_ai_api: MacDesktopAIAPI | None = None,
     release_info: Mapping[str, object] | None = None,
@@ -925,6 +946,12 @@ def create_desktop_server(
         review_queue_api = ReviewQueueAPI(
             ReviewQueueService(database, search_index=search_index_service)
         )
+    if table_structure_api is None:
+        from auto_research.evidence.table_structure_service import (
+            WorkspaceTableStructureService,
+        )
+
+        table_structure_api = TableStructureAPI(WorkspaceTableStructureService(database))
     if search_index_recovery_api is None:
         search_index_recovery_api = SearchIndexRecoveryAPI(search_index_service)
     if evidence_export_api is None:
@@ -969,6 +996,7 @@ def create_desktop_server(
             "personal_import_api": personal_import_api,
             "personal_table_api": personal_table_api,
             "review_queue_api": review_queue_api,
+            "table_structure_api": table_structure_api,
             "search_index_recovery_api": search_index_recovery_api,
             "desktop_ai_api": desktop_ai_api,
             "release_info": dict(release_info or RELEASE_INFO),

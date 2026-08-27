@@ -851,6 +851,70 @@ finishPaidJob();await paid;assert.equal(api.state.evidenceChat.busy,false);asser
         for forbidden in ("体验版", "合成示例", "测试连接", "能力测试", "后续版本", "功能恢复"):
             self.assertNotIn(forbidden, self.index + self.runtime)
 
+    def test_workspace_table_structure_review_is_scoped_and_path_free(self) -> None:
+        for marker in (
+            'tableStructures:"/api/desktop/table-structures"',
+            'tableStructureReviews:"/api/desktop/table-structures/reviews"',
+            "include_unverified=1",
+            'schema_version!=="table-structure-version-v1"',
+            'data-table-structure-action="approve"',
+            'data-table-structure-action="correct"',
+            'data-table-structure-action="reject"',
+            "在主栏审核",
+            "结构 CSV",
+            "结构 XLSX",
+            "tableStructureRequests.get(tabId)!==generation",
+            'body={entity_uid:String(row.assetId),expected_version:structure.version,operation,note:""}',
+        ):
+            self.assertIn(marker, self.runtime)
+        for marker in (
+            ".fusion-table-structure",
+            ".fusion-table-structure-scroll",
+            ".fusion-table-structure-grid input",
+            "var(--f-accent)",
+        ):
+            self.assertIn(marker, self.css)
+        review_body = self.runtime.split(
+            'const body={entity_uid:String(row.assetId),expected_version:structure.version,operation,note:""}',
+            1,
+        )[1].split("const raw=await request", 1)[0]
+        for forbidden in ("status", "cells", "fingerprint", "reviewer", "path"):
+            self.assertNotIn(forbidden, review_body)
+
+    def test_workspace_table_structure_runtime_keeps_tabs_and_late_results_isolated(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert');
+globalThis.document={{readyState:'loading',documentElement:{{style:{{setProperty:()=>{{}}}},dataset:{{}}}},body:{{dataset:{{}}}},querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};globalThis.innerWidth=1400;globalThis.addEventListener=()=>{{}};
+eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));
+let source=fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8');
+source=source.replace('globalThis.AutoResearchFusion=Object.freeze({{initialize','globalThis.AutoResearchFusion=Object.freeze({{publicTableStructure,tableStructureHTML,tableStructureExportURL,loadTableStructure,initialize');
+const pending=[];globalThis.fetch=(url,options={{}})=>new Promise(resolve=>pending.push({{url:String(url),options,resolve}}));
+eval(source);const api=globalThis.AutoResearchFusion,store=api.documentTabs;
+const table=(id,title)=>({{type:'table',title,sourceScope:'workspace',sourceId:'',entityUid:'',assetId:id,itemId:null,paperId:56,imageUrl:`/api/visual-assets/${{id}}/image`,caption:'真实截图',materials:[],quantities:[],variables:{{}},tags:[],linkedItemCount:0}});
+const raw=(id,version,status,cell)=>({{schema_version:'table-structure-version-v1',source_scope:'workspace',source_id:'workspace',entity_uid:String(id),entity_type:'table',version,status,reason_codes:status==='manual_review'?['ambiguous_header']:[],rows:[['列'],[cell]],cells:[{{secret_path:'/private/a'}}],content_fingerprint:'a'.repeat(64),reviewed_at:status==='verified'?'2026-08-27T12:00:00Z':null}});
+const a=table(1358,'Table A'),b=table(1359,'Table B');
+store.open({{tabId:'evidence:a',kind:'evidence',ownerView:'paper',title:'A',identity:{{sourceScope:'workspace',entityType:'table',entityUid:'1358'}},payload:{{row:a,status:'ready'}}}},{{groupId:'primary',pin:true}});
+store.open({{tabId:'evidence:b',kind:'evidence',ownerView:'paper',title:'B',identity:{{sourceScope:'workspace',entityType:'table',entityUid:'1359'}},payload:{{row:b,status:'ready'}}}},{{groupId:'secondary',pin:true}});
+(async()=>{{
+ const a1=api.loadTableStructure('evidence:a',a),b1=api.loadTableStructure('evidence:b',b);
+ assert.equal(pending[0].url,'/api/desktop/table-structures?entity_uid=1358&include_unverified=1');assert.equal(pending[1].url,'/api/desktop/table-structures?entity_uid=1359&include_unverified=1');
+ const response=value=>({{ok:true,headers:{{get:()=>null}},json:async()=>value}});pending[1].resolve(response(raw(1359,1,'manual_review','B')));await b1;pending[0].resolve(response(raw(1358,1,'verified','A')));await a1;
+ let tabs=store.snapshot().tabs;assert.equal(tabs.find(tab=>tab.tabId==='evidence:a').payload.tableStructure.rows[1][0],'A');assert.equal(tabs.find(tab=>tab.tabId==='evidence:b').payload.tableStructure.rows[1][0],'B');
+ const old=api.loadTableStructure('evidence:a',a),newer=api.loadTableStructure('evidence:a',a),oldCall=pending[2],newCall=pending[3];newCall.resolve(response(raw(1358,3,'verified','new')));await newer;oldCall.resolve(response(raw(1358,2,'manual_review','old')));await old;
+ tabs=store.snapshot().tabs;assert.equal(tabs.find(tab=>tab.tabId==='evidence:a').payload.tableStructure.version,3,'late response must not overwrite tab');assert.equal(tabs.find(tab=>tab.tabId==='evidence:b').payload.tableStructure.rows[1][0],'B');
+ const projected=api.publicTableStructure(raw(1358,4,'verified','=1+1'),'1358');assert(projected);assert.equal(projected.cells,undefined);assert.equal(projected.content_fingerprint,undefined);const html=api.tableStructureHTML('evidence:a',a,{{tableStructure:projected,tableStructureState:'ready'}},true);assert(html.includes('结构 CSV'));assert(html.includes('=1+1'));assert(!html.includes('/private/'));assert.equal(api.tableStructureHTML('x',{{...a,sourceScope:'official'}},{{}},true),'');
+}})().catch(error=>{{console.error(error);process.exitCode=1}});
+"""
+        result = subprocess.run(
+            ["node", "-e", program],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_review_queue_uses_one_central_tab_and_no_token_dom(self) -> None:
         for element_id in ("fusion-open-review-queue", "fusion-review-queue-count"):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)

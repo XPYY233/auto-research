@@ -12,6 +12,7 @@ CREDENTIAL_BYTES = 8_192
 SETTINGS_BYTES = 32_768
 HISTORY_BYTES = 3_000_000
 RESEARCH_MEMORY_BYTES = 64_000
+TABLE_STRUCTURE_BYTES = 64 * 1024
 PERSONAL_BYTES = 512 * 1024
 LIBRARIAN_BYTES = 256_000
 AI_ACTION_BYTES = 256 * 1024
@@ -209,6 +210,12 @@ DEFAULT_DESKTOP_ROUTES: tuple[RouteSpec, ...] = (
         "/api/desktop/research-memories",
         "research_memory.mutate",
         RESEARCH_MEMORY_BYTES,
+    ),
+    _post(
+        "table_structure.review",
+        "/api/desktop/table-structures/reviews",
+        "table_structure.review",
+        TABLE_STRUCTURE_BYTES,
     ),
     # Official evidence package lifecycle.
     _get("package.status", "/api/desktop/evidence-packages", "package.status"),
