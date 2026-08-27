@@ -206,6 +206,11 @@ class ReviewQueueRouteTests(unittest.TestCase):
                 b"AutoResearchFusionPackage",
             ),
             (
+                "/static/fusion_personal_import.js",
+                "javascript",
+                b"AutoResearchFusionPersonalImport",
+            ),
+            (
                 "/static/codex-pet-working.webp",
                 "image/webp",
                 b"RIFF",

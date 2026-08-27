@@ -101,6 +101,7 @@ FUSION_REVIEW_STATIC_ASSETS = frozenset(
         "fusion_pdf_controller.js",
         "fusion_ai_experience.js",
         "fusion_package_center.js",
+        "fusion_personal_import.js",
         "codex-pet-working.webp",
     }
 )

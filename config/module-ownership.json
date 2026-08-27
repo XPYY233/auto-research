@@ -100,6 +100,7 @@
         "src/auto_research/evidence/web/fusion_pdf_controller.js",
         "src/auto_research/evidence/web/fusion_ai_experience.js",
         "src/auto_research/evidence/web/fusion_package_center.js",
+        "src/auto_research/evidence/web/fusion_personal_import.js",
         "src/auto_research/evidence/web/fusion_review.js"
       ],
       "owner": "shared-frontend",

@@ -76,6 +76,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
     pdf_controller_source = (WEB_DIR / "fusion_pdf_controller.js").read_text(encoding="utf-8")
     ai_experience_source = (WEB_DIR / "fusion_ai_experience.js").read_text(encoding="utf-8")
     package_center_source = (WEB_DIR / "fusion_package_center.js").read_text(encoding="utf-8")
+    personal_import_source = (WEB_DIR / "fusion_personal_import.js").read_text(encoding="utf-8")
     ai_consent_source = (WEB_DIR / "ai_consent.js").read_text(encoding="utf-8")
     workbench_styles = (WEB_DIR / "workbench.css").read_text(encoding="utf-8")
     server_parameters = signature(create_desktop_server).parameters
@@ -108,6 +109,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and '<script src="/static/fusion_pdf_controller.js"></script>' in index_source
             and '<script src="/static/fusion_ai_experience.js"></script>' in index_source
             and '<script src="/static/fusion_package_center.js"></script>' in index_source
+            and '<script src="/static/fusion_personal_import.js"></script>' in index_source
             and '<script src="/static/fusion_review.js"></script>' in index_source
             and index_source.index('<script src="/static/ai_consent.js"></script>')
             < index_source.index('<script src="/static/document_tab_store.js"></script>')
@@ -116,6 +118,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             < index_source.index('<script src="/static/fusion_pdf_controller.js"></script>')
             < index_source.index('<script src="/static/fusion_ai_experience.js"></script>')
             < index_source.index('<script src="/static/fusion_package_center.js"></script>')
+            < index_source.index('<script src="/static/fusion_personal_import.js"></script>')
             < index_source.index('<script src="/static/fusion_review.js"></script>')
             and '<script src="/static/app.js"></script>' not in index_source
             and '<script src="/static/desktop_product.js"></script>' not in index_source
@@ -132,6 +135,8 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and "fusion-ai-experience-v1" in ai_experience_source
             and "AutoResearchFusionPackage" in package_center_source
             and "createPackageCenterController" in package_center_source
+            and "AutoResearchFusionPersonalImport" in personal_import_source
+            and "createPersonalImportController" in personal_import_source
             and "/api/search-papers" in runtime_source
             and "/api/search-v2" in runtime_source
             and "/api/desktop/federated-search" in runtime_source
@@ -286,6 +291,7 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
                 "/static/fusion_pdf_controller.js",
                 "/static/fusion_ai_experience.js",
                 "/static/fusion_package_center.js",
+                "/static/fusion_personal_import.js",
                 "/static/fusion_review.js",
             ),
         ),
@@ -318,6 +324,11 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
             "fusion_package_center_runtime",
             "/static/fusion_package_center.js",
             ("AutoResearchFusionPackage", "createPackageCenterController"),
+        ),
+        (
+            "fusion_personal_import_runtime",
+            "/static/fusion_personal_import.js",
+            ("AutoResearchFusionPersonalImport", "createPersonalImportController"),
         ),
         (
             "fusion_runtime",

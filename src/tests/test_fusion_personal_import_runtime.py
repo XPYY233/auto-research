@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WEB = ROOT / "src" / "auto_research" / "evidence" / "web"
 RUNTIME = WEB / "fusion_review.js"
+PERSONAL_RUNTIME = WEB / "fusion_personal_import.js"
 
 
 class FusionPersonalImportRuntimeTests(unittest.TestCase):
@@ -24,9 +25,9 @@ globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};
 const headers={{get:()=>null}},pending=[];let late=false;
 const page=(sheetIndex,pageNumber)=>{{let sheetName='Empty',totalRows=0,columns=['Time'],rows=[];if(sheetIndex===0){{sheetName='Sheet A';totalRows=51;columns=['Dose','Hardness'];rows=pageNumber===1?Array.from({{length:50}},(_,index)=>[String(index),String(index+100)]):[['50','150']];}}else if(sheetIndex===1){{sheetName='Sheet B';totalRows=1;rows=[['9']];}}return{{schema_version:'personal-tabular-page-v1',import_id:'personal_import_abcdefghijklmnop',sheet_index:sheetIndex,sheet_name:sheetName,page:pageNumber,page_size:50,total_rows:totalRows,has_next:sheetIndex===0&&pageNumber===1,columns,rows}};}};
 globalThis.fetch=async url=>{{url=String(url);if(!late){{const match=url.match(/sheets\\/(\\d+)\\/rows\\?page=(\\d+)&page_size=50$/);return{{ok:true,headers,json:async()=>page(Number(match[1]),Number(match[2]))}};}}return new Promise(resolve=>pending.push({{url,resolve}}));}};
-eval(fs.readFileSync({str(RUNTIME)!r},'utf8'));const api=globalThis.AutoResearchFusion;
+eval(fs.readFileSync({str(PERSONAL_RUNTIME)!r},'utf8'));eval(fs.readFileSync({str(RUNTIME)!r},'utf8'));const api=globalThis.AutoResearchFusion;
 api.state.view='personal';api.state.personalStatus={{import_id:'personal_import_abcdefghijklmnop'}};api.state.personalPreview={{sheets:[{{sheet_name:'Sheet A',row_count:51,columns:[{{source_name:'Dose',data_type:'number',meaning:'剂量',unit:'dpa'}},{{source_name:'Hardness',data_type:'number',meaning:'硬度',unit:'GPa'}}]}},{{sheet_name:'Sheet B',row_count:1,columns:[{{source_name:'Time',data_type:'number',meaning:'时间',unit:'s'}}]}},{{sheet_name:'Empty',row_count:0,columns:[{{source_name:'Time',data_type:'number',meaning:'时间',unit:'s'}}]}}]}};api.state.personalSheetIndex=0;
-assert(await api.loadPersonalPreviewPage(0,1));assert.equal(api.state.personalPreviewPage.rows.length,50);assert.equal(ids['#fusion-personal-page-status'].textContent,'第 1–50 行 / 共 51 行');assert.equal(ids['#fusion-personal-page-next'].disabled,false);assert(table.body.innerHTML.includes('<th scope="row">1</th>'));assert(!fs.readFileSync({str(RUNTIME)!r},'utf8').includes('sample_rows'));
+assert(await api.loadPersonalPreviewPage(0,1));assert.equal(api.state.personalPreviewPage.rows.length,50);assert.equal(ids['#fusion-personal-page-status'].textContent,'第 1–50 行 / 共 51 行');assert.equal(ids['#fusion-personal-page-next'].disabled,false);assert(table.body.innerHTML.includes('<th scope="row">1</th>'));assert(!fs.readFileSync({str(PERSONAL_RUNTIME)!r},'utf8').includes('sample_rows'));
 assert(await api.loadPersonalPreviewPage(0,2));assert.equal(api.state.personalPreviewPage.rows[0][1],'150');assert(table.body.innerHTML.includes('<th scope="row">51</th>'));assert(api.selectCell(0,1,{{focus:false}}));assert(ids['#fusion-inspector-body'].innerHTML.includes('第 51 行'));assert(ids['#fusion-inspector-body'].innerHTML.includes('150'));
 const sheet=api.state.personalPreview.sheets[0],valid=page(0,1);assert(api.publicPersonalImportPage(valid,{{importId:'personal_import_abcdefghijklmnop',sheetIndex:0,sheet,page:1}}));assert.equal(api.publicPersonalImportPage({{...valid,total_rows:52}},{{importId:'personal_import_abcdefghijklmnop',sheetIndex:0,sheet,page:1}}),null);assert.equal(api.publicPersonalImportPage({{...valid,columns:['Hardness','Dose']}},{{importId:'personal_import_abcdefghijklmnop',sheetIndex:0,sheet,page:1}}),null);
 api.state.personalSheetIndex=2;assert(await api.loadPersonalPreviewPage(2,1));assert.equal(api.state.personalPreviewPage.totalRows,0);assert.equal(ids['#fusion-personal-page-status'].dataset.state,'empty');assert.equal(ids['#fusion-personal-confirm'].disabled,true);assert(table.body.innerHTML.includes('当前工作表没有数据行'));
@@ -44,6 +45,7 @@ late=true;api.state.personalSheetIndex=0;const first=api.loadPersonalPreviewPage
 
     def test_personal_page_dom_and_safe_route_contract(self) -> None:
         source = RUNTIME.read_text(encoding="utf-8")
+        personal_source = PERSONAL_RUNTIME.read_text(encoding="utf-8")
         index = (WEB / "index.html").read_text(encoding="utf-8")
         for element_id in (
             "fusion-personal-page-controls",
@@ -54,10 +56,10 @@ late=true;api.state.personalSheetIndex=0;const first=api.loadPersonalPreviewPage
             self.assertEqual(index.count(f'id="{element_id}"'), 1)
         self.assertIn("本次确认只导入当前所选工作表", index)
         self.assertIn("PERSONAL_IMPORT_ROWS_PATH.test(path)", source)
-        self.assertIn("page_size=50", source)
-        self.assertIn("publicPersonalImportPage", source)
-        self.assertIn("loadPersonalPreviewPage", source)
-        self.assertNotIn("sample_rows", source)
+        self.assertIn("page_size=50", personal_source)
+        self.assertIn("publicPersonalImportPage", personal_source)
+        self.assertIn("loadPersonalPreviewPage", personal_source)
+        self.assertNotIn("sample_rows", personal_source)
 
 
 if __name__ == "__main__":

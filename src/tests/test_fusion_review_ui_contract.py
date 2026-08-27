@@ -55,6 +55,7 @@ class FusionReviewUIContractTests(unittest.TestCase):
         cls.css = (WEB / "workbench.css").read_text(encoding="utf-8")
         cls.runtime = (WEB / "fusion_review.js").read_text(encoding="utf-8")
         cls.package_runtime = (WEB / "fusion_package_center.js").read_text(encoding="utf-8")
+        cls.personal_runtime = (WEB / "fusion_personal_import.js").read_text(encoding="utf-8")
         cls.ai_experience = (WEB / "fusion_ai_experience.js").read_text(encoding="utf-8")
 
     def test_single_fusion_owner_and_script_order(self) -> None:
@@ -66,13 +67,18 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertEqual(self.index.count('/static/document_tab_store.js'), 1)
         self.assertEqual(self.index.count('/static/fusion_ai_experience.js'), 1)
         self.assertEqual(self.index.count('/static/fusion_package_center.js'), 1)
+        self.assertEqual(self.index.count('/static/fusion_personal_import.js'), 1)
         self.assertLess(self.index.index('/static/ai_consent.js'), self.index.index('/static/fusion_review.js'))
         self.assertLess(self.index.index('/static/document_tab_store.js'), self.index.index('/static/fusion_review.js'))
         self.assertLess(self.index.index('/static/fusion_ai_experience.js'), self.index.index('/static/fusion_review.js'))
         self.assertLess(self.index.index('/static/fusion_package_center.js'), self.index.index('/static/fusion_review.js'))
+        self.assertLess(self.index.index('/static/fusion_package_center.js'), self.index.index('/static/fusion_personal_import.js'))
+        self.assertLess(self.index.index('/static/fusion_personal_import.js'), self.index.index('/static/fusion_review.js'))
         self.assertNotIn("fetch(", self.package_runtime)
         self.assertNotIn("DOMContentLoaded", self.package_runtime)
         self.assertNotIn("localStorage", self.package_runtime)
+        for forbidden in ("fetch(", "DOMContentLoaded", "localStorage", "DocumentTabStore", "switchView("):
+            self.assertNotIn(forbidden, self.personal_runtime)
         for legacy in ("/static/app.js", "/static/workbench.js", "/static/desktop_product.js", "/static/package_center.js"):
             self.assertNotIn(legacy, self.index)
         self.assertNotIn("appendChild", self.runtime)
@@ -116,7 +122,7 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertIn("/api/desktop/ai/actions/literature_extraction/jobs", self.runtime)
         self.assertIn("literature-extraction-task-directory-v1", self.runtime)
         self.assertIn('aiProgress("literature_extraction"', self.runtime)
-        self.assertIn('aiProgress("personal_suggestion"', self.runtime)
+        self.assertIn('aiProgress("personal_suggestion"', self.personal_runtime)
         self.assertIn('aiProgress("librarian"', self.runtime)
         self.assertIn('aiProgress("selected_evidence_chat"', self.runtime)
         self.assertIn("Enter 发送 · Shift+Enter 换行", self.index)
@@ -504,32 +510,32 @@ eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=global
         for marker in (
             "select_personal_data_file", 'personalPreview:"/api/desktop/personal-imports/preview"',
             "personal-import-preview-v1", "personal-import-suggestion-v1", "/reviewed-import",
-            "reviewed:true", "collectPersonalDraft", "受限文件检查", "一次确认", "indexable!==true",
+            "reviewed: true", "collectPersonalDraft", "受限文件检查", "一次确认", "result.indexable !== true",
             "personal-tabular-page-v1", "PERSONAL_IMPORT_ROWS_PATH", "loadPersonalPreviewPage",
             "本次确认只导入当前所选工作表", '中央顶部“导入 PDF”',
             'id="fusion-personal-series-add"', 'id="fusion-personal-series-list"',
             'id="fusion-run-conditions"', 'id="fusion-run-note"',
             "addPersonalSeries", "removePersonalSeries", "refreshPersonalSeriesColumns",
-            "parsePersonalConditions", "readPersonalSeriesEditor({strict:true})",
+            "parsePersonalConditions", "readPersonalSeriesEditor({strict: true})",
             "AI 不是必需项", "user_note",
         ):
-            self.assertIn(marker, self.index + self.runtime)
-        self.assertNotIn("sample_rows", self.runtime)
-        collect = self.runtime[
-            self.runtime.index("function collectPersonalDraft()") :
-            self.runtime.index("const PERSONAL_NEXT_ACTION_KEYS")
+            self.assertIn(marker, self.index + self.runtime + self.personal_runtime)
+        self.assertNotIn("sample_rows", self.personal_runtime)
+        collect = self.personal_runtime[
+            self.personal_runtime.index("function collectPersonalDraft()") :
+            self.personal_runtime.index("function publicPersonalImportNextAction(")
         ]
         self.assertNotIn("personalSuggestion?.series", collect)
         self.assertNotIn("path", collect.casefold())
         self.assertNotIn("api_key", collect.casefold())
         self.assertNotIn("sha256", collect.casefold())
-        self.assertIn("draft.run.user_note=userNote", collect)
-        self.assertIn("conditions=parsePersonalConditions", collect)
-        self.assertIn("if(changed)resetPersonalSheetEditors()", self.runtime)
-        self.assertIn("列角色已改为忽略，相关序列引用已清空", self.runtime)
+        self.assertIn("draft.run.user_note = userNote", collect)
+        self.assertIn("conditions = parsePersonalConditions", collect)
+        self.assertIn("if (changed) resetPersonalSheetEditors()", self.personal_runtime)
+        self.assertIn("列角色已改为忽略，相关序列引用已清空", self.personal_runtime)
         self.assertNotIn('id="fusion-mark-reviewed"', self.index)
         self.assertNotIn('id="fusion-demo-suggestion"', self.index)
-        self.assertNotIn("showDemoSuggestion", self.runtime)
+        self.assertNotIn("showDemoSuggestion", self.personal_runtime)
 
     def test_manual_personal_series_and_conditions_runtime_contract(self) -> None:
         program = f"""
@@ -546,7 +552,7 @@ const values={{'[data-series-name]':control('硬度曲线'),'[data-series-x]':co
 const seriesRow={{dataset:{{seriesId:'series-2'}},querySelector:s=>values[s]}};
 const all={{'[data-personal-column]':columns,'[data-personal-series-row]':[seriesRow]}};
 globalThis.document={{readyState:'loading',querySelector:s=>ids[s]||null,querySelectorAll:s=>all[s]||[],addEventListener(){{}},documentElement:{{dataset:{{}},style:{{setProperty(){{}}}}}},body:{{dataset:{{}}}}}};globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.addEventListener=()=>{{}};
-eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;api.state.personalPreview={{sheets:[{{sheet_name:'Sheet1',columns:[{{source_name:'Dose'}},{{source_name:'Hardness'}},{{source_name:'Error'}}]}}]}};api.state.personalStatus={{revision:3}};
+eval(fs.readFileSync({str(WEB / 'fusion_personal_import.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;api.state.personalPreview={{sheets:[{{sheet_name:'Sheet1',columns:[{{source_name:'Dose'}},{{source_name:'Hardness'}},{{source_name:'Error'}}]}}]}};api.state.personalStatus={{revision:3}};
 const draft=api.collectPersonalDraft();assert.deepEqual(draft.run.conditions,{{'温度':'300 K','载荷':'10 mN'}});assert.equal(draft.run.user_note,'人工核验备注');assert.equal(draft.series.length,1);assert.equal(draft.series[0].x_column,'Dose');assert.equal(draft.series[0].uncertainty_column,'Error');assert(!JSON.stringify(draft).match(/path|api_key|sha256/i));
 api.state.personalSeriesCounter=1;assert.equal(api.addPersonalSeries(),true);assert(ids['#fusion-personal-series-list'].innerHTML.includes('data-series-id="series-3"'));assert.equal((ids['#fusion-personal-series-list'].innerHTML.match(/data-series-id="series-2"/g)||[]).length,1);
 all['[data-personal-series-row]']=[seriesRow,{{dataset:{{seriesId:'series-2'}},querySelector:s=>values[s]}}];assert.throws(()=>api.collectPersonalDraft(),/标识重复/);all['[data-personal-series-row]']=[{{dataset:{{seriesId:''}},querySelector:s=>values[s]}}];assert.throws(()=>api.collectPersonalDraft(),/标识无效/);all['[data-personal-series-row]']=[seriesRow];
@@ -561,15 +567,15 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
     def test_personal_import_next_action_opens_exact_table_without_broad_search(self) -> None:
         for marker in (
             "publicPersonalImportNextAction", "openImportedPersonalTable",
-            'kind!=="open_personal_table"', 'source_scope!=="private"',
-            'entity_type!=="table"', "loadSecondaryPersonalTablePage",
+            'raw.kind !== "open_personal_table"', 'raw.source_scope !== "private"',
+            'raw.entity_type !== "table"', "loadSecondaryPersonalTablePage",
             "loadPrivateTablePage", "personal_next_action_unavailable",
             "personal_search_refresh_failed", "data-secondary-return-personal",
         ):
-            self.assertIn(marker, self.runtime)
-        confirm = self.runtime[
-            self.runtime.index("async function confirmPersonalImport()") :
-            self.runtime.index("let packageController=null")
+            self.assertIn(marker, self.runtime + self.personal_runtime)
+        confirm = self.personal_runtime[
+            self.personal_runtime.index("async function confirmPersonalImport()") :
+            self.personal_runtime.index("function bind()")
         ]
         self.assertNotIn("runPreciseSearch", confirm)
         self.assertNotIn('switchView("search")', confirm)
@@ -1161,7 +1167,7 @@ let pendingResolvers=[],reviewCount=0,failTable=false;const calls=[];globalThis.
  if(url.startsWith('/api/desktop/personal-experiments/table?')){{if(failTable)return{{ok:false,headers,json:async()=>({{code:'personal_table_unavailable',message:'unavailable'}})}};const params=new URL('http://local'+url).searchParams,uid=params.get('entity_uid');return{{ok:true,headers,json:async()=>({{schema_version:'personal-table-page-v1',source_id:'personal-lab',entity_uid:uid,title:'刚导入的真实表格',sheet_name:'Sheet1',columns:[{{name:'Dose',role:'independent',data_type:'number',meaning:'剂量',unit:'dpa'}}],conditions:{{}},series:[],page:1,page_size:50,total:2,has_next:false,rows:[{{Dose:'1'}},{{Dose:'2'}}]}})}};}}
  if(url.startsWith('/api/desktop/federated-search?'))return new Promise(resolve=>pendingResolvers.push(()=>resolve({{ok:true,headers,json:async()=>({{schema_version:'federated-search-page-v1',results:[{{document:{{entity_type:'table',source_scope:'private',source_id:'lab',entity_uid:'e1',display_title:'硬度表',source_excerpt:'真实私人实验'}}}}]}})}})));
  throw new Error('unexpected:'+url)}};
-eval(fs.readFileSync({str(WEB / 'ai_consent.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'pane_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'workspace_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_pdf_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
+eval(fs.readFileSync({str(WEB / 'ai_consent.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'pane_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'workspace_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_pdf_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_personal_import.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
     (async()=>{{await api.loadAISettingsUI();ids['#fusion-ai-key'].value='sk-private-never-render';await api.saveAIKey();assert.equal(ids['#fusion-ai-key'].value,'');assert(!Object.values(ids).some(node=>node.textContent.includes('sk-private-never-render')));api.state.paper={{id:7,title:'Real paper'}};assert(api.openCurrentPDF());assert.equal(ids['#fusion-pdf-frame'].src,'/api/papers/7/pdf#page=1&zoom=page-width');assert.equal(ids['#fusion-literature-content'].hidden,true);assert(api.closeCurrentPDF());assert.equal(ids['#fusion-literature-content'].hidden,false);
  const auth=await api.preparedAuthorization('personal_suggestion',{{import_id:'personal_import_abcdefghijklmnop',sheet_index:0}});assert.equal(auth.actionId,'action-1');assert(calls.some(x=>x[0]==='/api/desktop/ai/consents'));
  api.switchView('search',{{focus:false}});api.setSearchSource('private');const late=api.runPreciseSearch();api.switchView('paper',{{focus:false}});pendingResolvers.shift()();await late;assert.equal(api.state.searchResults.length,0,'late result must not update inactive view');

@@ -193,9 +193,17 @@ class DesktopVersionContractTests(unittest.TestCase):
             / "web"
             / "fusion_review.js"
         ).read_text(encoding="utf-8")
+        personal_runtime = (
+            DESKTOP_ROOT.parents[1]
+            / "src"
+            / "auto_research"
+            / "evidence"
+            / "web"
+            / "fusion_personal_import.js"
+        ).read_text(encoding="utf-8")
         self.assertIn("AutoResearchFusion", fusion_runtime)
         self.assertIn("/api/desktop/ai/actions/", fusion_runtime)
-        self.assertIn("/api/desktop/personal-imports/preview", fusion_runtime)
+        self.assertIn("/api/desktop/personal-imports/preview", personal_runtime)
         self.assertIn("/api/desktop/research-memories", fusion_runtime)
         self.assertIn("/api/desktop/evidence-chat-history", fusion_runtime)
         self.assertIn("loadResearchMemories", fusion_runtime)
@@ -215,6 +223,7 @@ class DesktopVersionContractTests(unittest.TestCase):
             '"fusion_pdf_controller.js"',
             '"fusion_ai_experience.js"',
             '"fusion_package_center.js"',
+            '"fusion_personal_import.js"',
             '"fusion_review.js"',
             '"codex-pet-working.webp"',
         ):
