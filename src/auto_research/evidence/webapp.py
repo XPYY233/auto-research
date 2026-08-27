@@ -53,6 +53,7 @@ from .research_brief import (
     sign_research_brief_snapshot,
     verify_research_brief_snapshot,
 )
+from .spreadsheet_safety import spreadsheet_safe_cell, spreadsheet_safe_row
 from .review_handoff import review_batch_payload
 from .six_column import (
     SIX_FIELDS,
@@ -226,21 +227,6 @@ def require_loopback_host(host: str) -> str:
     if normalized not in LOOPBACK_HOSTS:
         raise ValueError("Evidence service is local-only and must bind to loopback")
     return normalized
-
-
-def spreadsheet_safe_cell(value: object) -> object:
-    """Neutralize spreadsheet formulas while preserving exported text."""
-
-    if not isinstance(value, str) or not value:
-        return value
-    stripped = value.lstrip(" \t\r\n")
-    if not stripped or stripped[0] not in {"=", "+", "-", "@"}:
-        return value
-    return "'" + value
-
-
-def spreadsheet_safe_row(row: dict) -> dict:
-    return {key: spreadsheet_safe_cell(value) for key, value in row.items()}
 
 
 def is_read_only_mutation(method: str, path: str) -> bool:

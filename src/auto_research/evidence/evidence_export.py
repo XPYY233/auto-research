@@ -14,7 +14,8 @@ from .federated_search import (
     validate_public_source_id,
 )
 from .public_dto import public_evidence_dto
-from .webapp import make_xlsx, spreadsheet_safe_cell
+from .spreadsheet_safety import spreadsheet_safe_cell
+from .webapp import make_xlsx
 
 
 EVIDENCE_TYPES = frozenset({"item", "finding", "table", "figure"})
