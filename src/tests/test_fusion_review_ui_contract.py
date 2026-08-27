@@ -23,6 +23,21 @@ class _IDs(HTMLParser):
 
 
 class FusionReviewUIContractTests(unittest.TestCase):
+    def test_research_memory_opt_in_and_evidence_chat_history_are_single_safe_ports(self) -> None:
+        source = (WEB / "fusion_review.js").read_text(encoding="utf-8")
+        index = (WEB / "index.html").read_text(encoding="utf-8")
+        self.assertEqual(index.count('id="fusion-librarian-use-memory"'), 1)
+        self.assertIn("使用已确认研究记忆", index)
+        self.assertNotIn('id="fusion-librarian-use-memory" type="checkbox" checked', index)
+        self.assertEqual(source.count('evidenceChatHistory:"/api/desktop/evidence-chat-history"'), 1)
+        self.assertIn("use_research_memory:q(\"#fusion-librarian-use-memory\")?.checked===true", source)
+        self.assertIn("本次使用 ${memoryCount} 条已核验记忆", source)
+        self.assertIn('operation:"upsert",expected_revision,thread:{source_scope:', source)
+        self.assertIn('operation:"delete",expected_revision,identity:{source_scope:', source)
+        self.assertIn("evidence_chat_history_revision_conflict", source)
+        self.assertIn("loadEvidenceChatHistory()", source)
+        self.assertNotIn("memory_uid", source[source.index("function librarianRequest"):source.index("function librarianRefs")])
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.index = (WEB / "index.html").read_text(encoding="utf-8")
@@ -782,7 +797,7 @@ eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.rea
 api.state.view='search';api.state.searchResults=[A,B];api.selectEvidence(0,{{focus:false,view:'search'}});ids['#fusion-evidence-ai-question'].value='问题 A';const beforeList=prepareCalls;assert.equal(await api.submitSelectedEvidenceAI(),null,'list selection must not expose evidence AI');assert.equal(prepareCalls,beforeList,'list selection must make zero paid requests');
 const tabA=api.documentTabs.open({{tabId:'evidence:a',kind:'evidence',ownerView:'search',title:'证据 A',identity:{{sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:a'}},payload:{{row:A,evidenceIdentity:'official:official-main:item:a',status:'ready'}}}},{{groupId:'secondary',pin:true}});chatHost.dataset.evidenceTabId=tabA.tabId;api.renderEditorSurfaces();ids['#fusion-evidence-ai-question'].value='问题 A';const paid=api.submitSelectedEvidenceAI();for(let attempt=0;attempt<40&&!finishPaidJob;attempt+=1)await new Promise(resolve=>setImmediate(resolve));assert(finishPaidJob,'paid job must start from an active evidence detail within the bounded wait');assert.equal(api.state.evidenceChat.pending.has(keyA),true);assert.equal(api.state.evidenceChat.busy,true);
 const keyB='official:official-main:item:item:b',tabB=api.documentTabs.open({{tabId:'evidence:b',kind:'evidence',ownerView:'search',title:'证据 B',identity:{{sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:b'}},payload:{{row:B,evidenceIdentity:'official:official-main:item:b',status:'ready'}}}},{{groupId:'secondary',pin:true}});chatHost.dataset.evidenceTabId=tabB.tabId;api.renderEditorSurfaces();assert.equal(api.state.evidenceChat.identity,keyB);assert.equal(api.state.evidenceChat.busy,false,'background A must not mark current B busy');assert(ids['#fusion-evidence-ai-reason'].textContent.includes('另一条证据正在回答'));assert.equal(api.state.evidenceChat.messages.length,0,'B must not display A messages');ids['#fusion-evidence-ai-question'].value='问题 B';const beforeSecond=prepareCalls;assert.equal(await api.submitSelectedEvidenceAI(),null,'parallel paid request must be rejected');assert.equal(prepareCalls,beforeSecond,'parallel rejection must happen before prepare');
-finishPaidJob();await paid;assert.equal(api.state.evidenceChat.busy,false);assert.equal(api.state.evidenceChat.pending.size,0);assert.equal(api.state.evidenceChat.messages.length,0,'completed A must not appear in current B');const threadA=api.state.evidenceChat.threads.get(keyA);assert.deepEqual(threadA.map(message=>message.content),['问题 A','后台回答 A']);assert.deepEqual(threadA[1].annotations.pages,[7]);assert.deepEqual(threadA[1].annotations.notes,['第 7 页给出该数值。']);assert.deepEqual(threadA[1].annotations.limitations,['只解释当前证据。']);api.state.evidenceChat.messages=[{{role:'user',content:'仅清除 B'}}];api.state.evidenceChat.threads.set(keyB,[{{role:'user',content:'仅清除 B'}}]);assert.equal(api.clearSelectedEvidenceThread(),true);assert.equal(api.state.evidenceChat.messages.length,0);assert.equal(api.state.evidenceChat.threads.has(keyB),false);assert.equal(api.state.evidenceChat.threads.has(keyA),true,'clearing B must preserve A thread');
+finishPaidJob();await paid;assert.equal(api.state.evidenceChat.busy,false);assert.equal(api.state.evidenceChat.pending.size,0);assert.equal(api.state.evidenceChat.messages.length,0,'completed A must not appear in current B');const threadA=api.state.evidenceChat.threads.get(keyA);assert.deepEqual(threadA.map(message=>message.content),['问题 A','后台回答 A']);assert.deepEqual(threadA[1].annotations.pages,[7]);assert.deepEqual(threadA[1].annotations.notes,['第 7 页给出该数值。']);assert.deepEqual(threadA[1].annotations.limitations,['只解释当前证据。']);await api.state.evidenceChat.historySave;api.state.evidenceChat.messages=[{{role:'user',content:'仅清除 B'}}];api.state.evidenceChat.threads.set(keyB,[{{role:'user',content:'仅清除 B'}}]);api.state.evidenceChat.historyBackend='desktop-secure';api.state.evidenceChat.historyThreads.set(keyB,{{messages:[]}});globalThis.fetch=async(url,options={{}})=>{{assert.equal(String(url),'/api/desktop/evidence-chat-history');assert.equal(JSON.parse(options.body).operation,'delete');return response({{schema_version:'evidence-chat-history-v1',revision:1,storage:'macos-preview-local-key-aes-256-gcm',threads:[]}});}};assert.equal(await api.clearSelectedEvidenceThread(),true);assert.equal(api.state.evidenceChat.messages.length,0);assert.equal(api.state.evidenceChat.threads.has(keyB),false);assert.equal(api.state.evidenceChat.threads.has(keyA),true,'clearing B must preserve A thread');
 }})().catch(error=>{{console.error(error);process.exitCode=1;}});
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
