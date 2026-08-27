@@ -181,6 +181,17 @@ def test_starter_rejects_oversized_article_instead_of_silently_truncating(tmp_pa
     assert "未创建截断任务" in error.value.safe_message
     assert store._jobs == {}
 
+    assembler = LiteratureExtractionBusinessAssembler(
+        store,
+        session_id="owner",
+        starter=EvidenceDBLiteratureJobStarter(db, store),
+    )
+    with pytest.raises(BusinessActionError) as projected:
+        assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    assert projected.value.cause_code == "literature_pdf_page_limit_exceeded"
+    assert projected.value.stage == "preflight"
+    assert projected.value.next_action == "select_supported_pdf"
+
 
 @pytest.mark.parametrize(
     "domain_request",
