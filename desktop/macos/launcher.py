@@ -442,6 +442,7 @@ def _run_smoke_test(project_root: Path) -> int:
             desktop_session_id=desktop_session_id,
             federated_search_session=product_services.federated_search_service.session,
             harness_cordis_path=project_root / "config" / "auto-research-harness.runtime.cordis.yml",
+            research_memory_service=research_memory_service,
         )
         # Exercise the exact frozen consent class graph without contacting a
         # provider.  This catches PyInstaller package-alias regressions that
@@ -583,12 +584,16 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             workspace_root=project_root,
         )
         desktop_session_id = new_session_token()
+        research_memory_service = ResearchMemoryService(
+            default_secure_research_memory_store()
+        )
         ai_services = mac_ai_runtime_services(
             database=database,
             personal_import_service=product_services.personal_import_service,
             desktop_session_id=desktop_session_id,
             federated_search_session=product_services.federated_search_service.session,
             harness_cordis_path=project_root / "config" / "auto-research-harness.runtime.cordis.yml",
+            research_memory_service=research_memory_service,
         )
         native_desktop_bridge = NativeDesktopBridge(
             product_services.package_service.broker,
@@ -602,9 +607,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             token=token,
             read_only=False,
             history_store=default_secure_history_store(),
-            research_memory_service=ResearchMemoryService(
-                default_secure_research_memory_store()
-            ),
+            research_memory_service=research_memory_service,
             credential_store=ai_services.legacy_deepseek_store,
             desktop_ai_api=MacDesktopAIAPI(ai_services.controller),
             desktop_settings_api=DesktopSettingsAPI(

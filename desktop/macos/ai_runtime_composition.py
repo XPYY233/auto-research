@@ -49,6 +49,7 @@ from auto_research.evidence.literature_extraction_recovery_sweep import (
 from auto_research.evidence.literature_extraction_task_directory import (
     LiteratureExtractionTaskDirectory,
 )
+from auto_research.desktop.research_memory import ResearchMemoryService
 from auto_research.personal.ai_business_action import (
     PersonalSuggestionBusinessPorts,
     personal_suggestion_business_ports,
@@ -132,6 +133,16 @@ class _HarnessReadiness:
         return {"state": "ready", "reason_code": "harness_runtime_ready", "next_action": "none"}
 
 
+class _ResearchMemoryContext:
+    """Expose only already-normalized user-approved items to the assembler."""
+
+    def __init__(self, service: ResearchMemoryService) -> None:
+        self._service = service
+
+    def approved_items(self):
+        return self._service.get().items
+
+
 @dataclass(frozen=True)
 class MacAIRuntimeServices:
     execution_lock: threading.RLock
@@ -147,6 +158,7 @@ class MacAIRuntimeServices:
     execution_lease: MacAIExecutionLeaseAuthority
     custom_provider: CustomProviderService
     readiness: AIReadinessService
+    research_memory_service: ResearchMemoryService | None = None
     database: EvidenceDB | None = None
     personal_import_service: PersonalImportService | None = None
     desktop_session_id: str | None = None
@@ -192,6 +204,7 @@ def create_mac_ai_runtime_services(
     harness_runtime: DeepSeekHarnessRuntime | None = None,
     harness_cordis_path: Path | str | None = None,
     literature_private_root: Path | str | None = None,
+    research_memory_service: ResearchMemoryService | None = None,
 ) -> MacAIRuntimeServices:
     business_inputs = (
         database,
@@ -286,6 +299,11 @@ def create_mac_ai_runtime_services(
             session=federated_search_session,
             runtime=effective_harness_runtime,
             workspace=HarnessWorkspaceSource(database),
+            research_memory=(
+                _ResearchMemoryContext(research_memory_service)
+                if research_memory_service is not None
+                else None
+            ),
         )
         selected_ports = harness_ports.selected_evidence_chat
         librarian_ports = harness_ports.librarian
@@ -380,6 +398,7 @@ def create_mac_ai_runtime_services(
         execution_lease=execution_lease,
         custom_provider=custom_provider,
         readiness=readiness,
+        research_memory_service=research_memory_service,
         database=database,
         personal_import_service=personal_import_service,
         desktop_session_id=desktop_session_id,
@@ -416,6 +435,7 @@ def mac_ai_runtime_services(
     desktop_session_id: str | None = None,
     federated_search_session: FederatedSearchSessionProtocol | None = None,
     harness_cordis_path: Path | str | None = None,
+    research_memory_service: ResearchMemoryService | None = None,
 ) -> MacAIRuntimeServices:
     global _SERVICES
     with _SERVICES_LOCK:
@@ -434,6 +454,7 @@ def mac_ai_runtime_services(
                 desktop_session_id=desktop_session_id,
                 federated_search_session=federated_search_session,
                 harness_cordis_path=harness_cordis_path,
+                research_memory_service=research_memory_service,
             )
         elif any(
             value is not None
@@ -442,6 +463,7 @@ def mac_ai_runtime_services(
                 personal_import_service,
                 desktop_session_id,
                 federated_search_session,
+                research_memory_service,
             )
         ):
             if (
@@ -449,6 +471,7 @@ def mac_ai_runtime_services(
                 or personal_import_service is not _SERVICES.personal_import_service
                 or desktop_session_id != _SERVICES.desktop_session_id
                 or federated_search_session is not _SERVICES.federated_search_session
+                or research_memory_service is not _SERVICES.research_memory_service
             ):
                 raise RuntimeError("mac AI runtime is already bound to another desktop graph")
         return _SERVICES

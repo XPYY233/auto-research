@@ -148,6 +148,8 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 current_app_version="0.8.0-preview",
             )
             session_id = "desktop-session-" + "s" * 32
+            research_memory = mock.Mock()
+            research_memory.get.return_value.items = ()
             services = create_mac_ai_runtime_services(
                 state_path=root / "state.json",
                 attestation_key_path=root / "attestation.key",
@@ -159,6 +161,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 desktop_session_id=session_id,
                 federated_search_session=product.federated_search_service.session,
                 harness_runtime=FakeHarnessRuntime(),
+                research_memory_service=research_memory,
             )
             self.assertIs(services.credential_manager, manager)
             self.assertIs(services.legacy_deepseek_store.manager, manager)
@@ -170,6 +173,14 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 product.personal_import_service,
             )
             self.assertEqual(services.desktop_session_id, session_id)
+            self.assertIs(services.research_memory_service, research_memory)
+            self.assertIs(
+                services.librarian_ports.assembler._research_memory._service,
+                research_memory,
+            )
+            self.assertIsNone(
+                services.selected_evidence_chat_ports.assembler._research_memory
+            )
             self.assertIsNotNone(services.business_actions)
             self.assertIs(services.controller._business, services.business_actions)
             self.assertIs(services.controller._prepared, services.prepared_actions)
@@ -263,6 +274,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
         database = object()
         personal = object()
         federated = object()
+        research_memory = object()
         session_id = "desktop-session-" + "x" * 32
         sentinel = type(
             "Sentinel",
@@ -272,6 +284,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 "personal_import_service": personal,
                 "desktop_session_id": session_id,
                 "federated_search_session": federated,
+                "research_memory_service": research_memory,
             },
         )()
         previous = ai_runtime_composition._SERVICES
@@ -288,6 +301,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                     "desktop_session_id": session_id,
                     "federated_search_session": federated,
                     "harness_cordis_path": Path("/tmp/harness.cordis.yml"),
+                    "research_memory_service": research_memory,
                 }
                 self.assertIs(ai_runtime_composition.mac_ai_runtime_services(**kwargs), sentinel)
                 self.assertIs(ai_runtime_composition.mac_ai_runtime_services(**kwargs), sentinel)
@@ -352,6 +366,14 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
         self.assertIn(
             "federated_search_session=product_services.federated_search_service.session",
             production,
+        )
+        self.assertIn(
+            "research_memory_service=research_memory_service",
+            production,
+        )
+        self.assertEqual(
+            production.count("default_secure_research_memory_store()"),
+            1,
         )
         self.assertIn("auto-research-harness.runtime.cordis.yml", production)
         self.assertNotIn("librarian_business_ports(", production)

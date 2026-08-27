@@ -873,6 +873,8 @@ def _system_prompt(scope: str) -> str:
             "citations 必须是至少一个仅含 ref 的对象，ref 只能来自 seed_evidence；"
             "report.suggested_followups 必须是字符串数组，其他 report 数组也必须保持 JSON 数组。"
             "recommended_articles 只能使用 local_recommendations 中的 paper_uid；没有匹配时返回空数组。"
+            "research_memory 仅是用户确认且已重新核验来源的辅助上下文，不能替代 seed_evidence、"
+            "不能创建引用或作为定量陈述的唯一依据；"
             "comparison_bundle_uids 固定返回空数组，应用会依据本地证据束重新计算。"
             "应用会再次核验每个 R 编号和 paper_uid，证据不足时必须在局限中如实说明。"
         )

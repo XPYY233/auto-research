@@ -107,6 +107,16 @@ class Workspace:
         )
 
 
+class ResearchMemory:
+    def __init__(self, items):
+        self.items = items
+        self.calls = 0
+
+    def approved_items(self):
+        self.calls += 1
+        return tuple(self.items)
+
+
 class RawClient:
     def __init__(self):
         self.calls = 0
@@ -347,6 +357,126 @@ class HarnessBusinessActionTests(unittest.TestCase):
             {"official", "workspace"},
         )
         self.assertEqual(raw.calls, 1)
+
+    def test_librarian_uses_only_enabled_relevant_revalidated_research_memory(self):
+        source = ResearchMemory(
+            [
+                {
+                    "schema_version": "research-memory-item-v1",
+                    "memory_uid": "mem-secret-store-id",
+                    "title": "辐照硬度结论",
+                    "content": "已确认辐照后硬度上升。",
+                    "source_refs": [
+                        {
+                            "source_scope": "official",
+                            "source_id": "official-v1",
+                            "entity_type": "item",
+                            "entity_uid": "item-1",
+                            "page": 5,
+                            "title": "辐照硬度",
+                        }
+                    ],
+                    "approval": "user_approved",
+                    "origin": "assistant_suggested",
+                    "created_at": "2026-08-01T00:00:00+00:00",
+                    "updated_at": "2026-08-02T00:00:00+00:00",
+                }
+            ]
+        )
+        ports = harness_business_ports(
+            session=Session(), runtime=Runtime(), research_memory=source
+        )
+        disabled = ports.librarian.assembler.assemble(
+            {"question": "辐照硬度", "conversation_id": "disabled", "history": []}
+        )
+        self.assertEqual(source.calls, 0)
+        self.assertEqual(disabled.outbound["prompt"]["research_memory"], [])
+        enabled = ports.librarian.assembler.assemble(
+            {
+                "question": "辐照硬度",
+                "conversation_id": "enabled",
+                "history": [],
+                "use_research_memory": True,
+            }
+        )
+        self.assertEqual(source.calls, 1)
+        context = enabled.outbound["prompt"]["research_memory"]
+        self.assertEqual(len(context), 1)
+        self.assertEqual(context[0]["source_refs"][0]["entity_uid"], "item-1")
+        self.assertNotIn("mem-secret-store-id", repr(enabled.outbound))
+        prepared = action(enabled, "librarian")
+        result = ports.librarian.projector.project(
+            ports.librarian.executor.execute(
+                action=prepared,
+                ai_client=HarnessBudgetedBusinessAIClient(
+                    client=RawClient(), action=prepared
+                ),
+            )
+        )
+        self.assertEqual(result["research_memory_count"], 1)
+
+    def test_librarian_drops_memory_when_source_page_no_longer_matches(self):
+        source = ResearchMemory(
+            [
+                {
+                    "schema_version": "research-memory-item-v1",
+                    "memory_uid": "mem-stale",
+                    "title": "辐照硬度",
+                    "content": "过期来源页。",
+                    "source_refs": [
+                        {
+                            "source_scope": "official",
+                            "source_id": "official-v1",
+                            "entity_type": "item",
+                            "entity_uid": "item-1",
+                            "page": 99,
+                            "title": "过期证据",
+                        }
+                    ],
+                    "approval": "user_approved",
+                    "origin": "user_created",
+                    "created_at": "2026-08-01T00:00:00+00:00",
+                    "updated_at": "2026-08-02T00:00:00+00:00",
+                }
+            ]
+        )
+        ports = harness_business_ports(
+            session=Session(), runtime=Runtime(), research_memory=source
+        )
+        draft = ports.librarian.assembler.assemble(
+            {
+                "question": "辐照硬度",
+                "conversation_id": "stale",
+                "history": [],
+                "use_research_memory": True,
+            }
+        )
+        self.assertEqual(draft.outbound["prompt"]["research_memory"], [])
+
+    def test_librarian_memory_is_explicit_opt_in_and_fails_closed_without_store(self):
+        ports = harness_business_ports(session=Session(), runtime=Runtime())
+        for invalid in (None, 1, "true", []):
+            body = {
+                "question": "辐照硬度",
+                "conversation_id": "invalid-memory-toggle",
+                "history": [],
+                "use_research_memory": invalid,
+            }
+            with self.subTest(value=invalid), self.assertRaises(BusinessActionError) as raised:
+                ports.librarian.assembler.assemble(body)
+            self.assertEqual(raised.exception.code, "business_action_invalid")
+        with self.assertRaises(BusinessActionError) as unavailable:
+            ports.librarian.assembler.assemble(
+                {
+                    "question": "辐照硬度",
+                    "conversation_id": "memory-store-unavailable",
+                    "history": [],
+                    "use_research_memory": True,
+                }
+            )
+        self.assertEqual(unavailable.exception.cause_code, "research_memory_store_unavailable")
+        self.assertEqual(unavailable.exception.stage, "librarian_memory_context")
+        self.assertEqual(unavailable.exception.next_action, "manage_research_memory")
 
     def test_librarian_filters_expansion_before_model_and_freezes_local_reasoning(self):
         session = Session()

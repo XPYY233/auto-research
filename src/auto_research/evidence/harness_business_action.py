@@ -40,6 +40,10 @@ from .librarian_harness_preflight import (
     validate_projected_followups,
 )
 from .librarian_intent import IntentDecision, route_librarian_intent
+from .librarian_memory_context import (
+    ResearchMemoryContextPort,
+    select_revalidated_memories,
+)
 from .librarian_reasoning import build_query_analysis, soft_recall_queries
 
 
@@ -49,7 +53,10 @@ LIBRARIAN_MAX_TOKENS = 2_400
 SELECTED_MAX_CALLS = 1
 SELECTED_MAX_TOKENS = 2_400
 _LIBRARIAN_KEYS = frozenset(
-    {"question", "conversation_id", "history", "research_state", "state_token"}
+    {
+        "question", "conversation_id", "history", "research_state", "state_token",
+        "use_research_memory",
+    }
 )
 _SELECTED_KEYS = frozenset(
     {"source_scope", "source_id", "entity_type", "entity_uid", "question", "history"}
@@ -73,7 +80,7 @@ _LIBRARIAN_PUBLIC_KEYS = frozenset(
         "recall_queries", "plan_mode", "summary_mode", "clarification_required",
         "scope", "model", "planning_model", "cache_hit", "intent",
         "retrieval_policy", "research_state", "state_token", "suggested_actions",
-        "review_map",
+        "review_map", "research_memory_count",
     }
 )
 
@@ -149,6 +156,7 @@ def _local_librarian_result(decision: IntentDecision) -> dict[str, Any]:
         "state_token": "",
         "suggested_actions": [],
         "review_map": [],
+        "research_memory_count": 0,
     }
 
 
@@ -359,6 +367,7 @@ class HarnessBusinessAssembler:
         session: FederatedSearchSessionProtocol,
         runtime: _HarnessRuntimePort,
         workspace: HarnessWorkspaceSourcePort | None = None,
+        research_memory: ResearchMemoryContextPort | None = None,
     ) -> None:
         if scope not in {"librarian", "selected_evidence_chat"}:
             raise ValueError("unsupported Harness business scope")
@@ -366,6 +375,7 @@ class HarnessBusinessAssembler:
         self._session = session
         self._runtime = runtime
         self._workspace = workspace
+        self._research_memory = research_memory
         self._snapshots = HarnessFederatedSnapshotAuthority(session, workspace)
 
     def local_result(self, request: object) -> dict[str, Any] | None:
@@ -386,6 +396,8 @@ class HarnessBusinessAssembler:
         question = _safe_text(request.get("question"), maximum=2_000)
         _safe_text(request.get("conversation_id"), maximum=256)
         _history(request.get("history", []))
+        if not isinstance(request.get("use_research_memory", False), bool):
+            raise BusinessActionError("business_action_invalid")
         decision = route_librarian_intent(question)
         if decision.retrieval_policy != "none":
             return None
@@ -421,6 +433,9 @@ class HarnessBusinessAssembler:
         question = _safe_text(request.get("question"), maximum=2_000)
         conversation_id = _safe_text(request.get("conversation_id"), maximum=256)
         history = _history(request.get("history", []))
+        use_research_memory = request.get("use_research_memory", False)
+        if not isinstance(use_research_memory, bool):
+            raise BusinessActionError("business_action_invalid")
         documents: list[dict[str, Any]] = []
         seen: set[tuple[str, str, str, str]] = set()
         recall_queries = _librarian_recall_queries(question, history)
@@ -477,6 +492,31 @@ class HarnessBusinessAssembler:
                 next_action=next_action,
             ) from exc
         documents = list(preflight.documents)
+        research_memory: tuple[dict[str, Any], ...] = ()
+        if use_research_memory:
+            if self._research_memory is None:
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="research_memory_store_unavailable",
+                    stage="librarian_memory_context",
+                    next_action="manage_research_memory",
+                )
+            try:
+                research_memory = select_revalidated_memories(
+                    question=question,
+                    history=history,
+                    items=self._research_memory.approved_items(),
+                    validate_ref=self._validate_memory_ref,
+                )
+            except BusinessActionError:
+                raise
+            except Exception as exc:
+                raise BusinessActionError(
+                    "business_action_prepare_failed",
+                    cause_code="research_memory_store_unavailable",
+                    stage="librarian_memory_context",
+                    next_action="manage_research_memory",
+                ) from exc
         prompt = {
             "question": question,
             "conversation_id": conversation_id,
@@ -484,6 +524,8 @@ class HarnessBusinessAssembler:
             "source_scope": "literature",
             "source_scopes": sorted({str(row["source_scope"]) for row in documents}),
             "evidence_count": len(documents),
+            "research_memory": [dict(item) for item in research_memory],
+            "research_memory_count": len(research_memory),
             **preflight.prompt_fields(),
         }
         return self._draft(
@@ -498,6 +540,75 @@ class HarnessBusinessAssembler:
             current=None,
             neighbors=(),
         )
+
+    def _validate_memory_ref(
+        self, raw: Mapping[str, Any]
+    ) -> Mapping[str, Any] | None:
+        allowed = {
+            "source_scope", "source_id", "entity_type", "entity_uid", "paper_uid",
+            "doi", "page", "title",
+        }
+        if set(raw) - allowed:
+            return None
+        scope = raw.get("source_scope")
+        entity_type = raw.get("entity_type")
+        source_id = raw.get("source_id")
+        entity_uid = raw.get("entity_uid")
+        page = raw.get("page")
+        if (
+            scope not in {"official", "workspace"}
+            or entity_type not in _ENTITY_TYPES
+            or not isinstance(source_id, str)
+            or not isinstance(entity_uid, str)
+            or isinstance(page, bool)
+            or not isinstance(page, int)
+            or page < 1
+        ):
+            return None
+        try:
+            if scope == "official":
+                active_source, _fingerprint = official_source_binding(self._session)
+                if source_id != active_source:
+                    return None
+                current = sanitize_official_documents(
+                    (
+                        self._session.get(
+                            source_scope="official",
+                            source_id=source_id,
+                            entity_uid=entity_uid,
+                        ),
+                    ),
+                    expected_source_id=source_id,
+                )[0]
+            else:
+                if self._workspace is None:
+                    return None
+                active_source, _fingerprint = self._workspace.binding()
+                if source_id != active_source:
+                    return None
+                current = dict(
+                    self._workspace.get(
+                        entity_type=str(entity_type), entity_uid=entity_uid
+                    )
+                )
+        except Exception:
+            return None
+        if (
+            current.get("source_scope") != scope
+            or current.get("source_id") != source_id
+            or current.get("entity_type") != entity_type
+            or current.get("entity_uid") != entity_uid
+            or current.get("source_page") != page
+        ):
+            return None
+        return {
+            "source_scope": scope,
+            "source_id": source_id,
+            "entity_type": entity_type,
+            "entity_uid": entity_uid,
+            "page": page,
+            "title": str(current.get("display_title") or current.get("meaning") or current.get("article_title") or raw.get("title") or "证据")[:500],
+        }
 
     def _selected(self, request: Mapping[str, Any]) -> BusinessActionDraft:
         if set(request) != _SELECTED_KEYS:
@@ -983,6 +1094,7 @@ class HarnessBusinessProjector:
             "state_token": "",
             "suggested_actions": suggested,
             "review_map": [dict(row) for row in prompt.get("review_map") or ()],
+            "research_memory_count": int(prompt.get("research_memory_count") or 0),
         }
 
     def _selected(self, result: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -1029,11 +1141,16 @@ def harness_business_ports(
     session: FederatedSearchSessionProtocol,
     runtime: _HarnessRuntimePort,
     workspace: HarnessWorkspaceSourcePort | None = None,
+    research_memory: ResearchMemoryContextPort | None = None,
 ) -> HarnessBusinessPorts:
     snapshots = HarnessFederatedSnapshotAuthority(session, workspace)
     librarian = HarnessScopeBusinessPorts(
         assembler=HarnessBusinessAssembler(
-            scope="librarian", session=session, runtime=runtime, workspace=workspace
+            scope="librarian",
+            session=session,
+            runtime=runtime,
+            workspace=workspace,
+            research_memory=research_memory,
         ),
         executor=HarnessBusinessExecutor(scope="librarian", runtime=runtime),
         projector=HarnessBusinessProjector("librarian"),
