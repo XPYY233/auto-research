@@ -55,6 +55,33 @@ isolated.pin(previewTwo.tabId);const previewThree=isolated.open({{tabId:'evidenc
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_presentation_is_memory_only_and_capacity_eviction_repairs_active_group(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert');
+const memory=new Map();globalThis.localStorage={{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value)}};
+eval(fs.readFileSync({str(STORE)!r},'utf8'));
+const Store=globalThis.AutoResearchDocumentTabs.DocumentTabStore,store=new Store();
+const first=store.open({{tabId:'paper:paperId=1',kind:'paper',ownerView:'paper',title:'第一篇',identity:{{paperId:'1'}},payload:{{privateBody:'never persist'}}}},{{pin:true}});
+assert(store.rememberPresentation(first.tabId,{{scrollTop:321.4,focusToken:'evidence-question'}}));
+assert.deepEqual(store.presentation(first.tabId),{{scrollTop:321,focusToken:'evidence-question'}});
+assert(store.rememberPresentation(first.tabId,{{focusToken:'[unsafe selector]'}}));
+assert.equal(store.presentation(first.tabId).focusToken,'evidence-question');
+let saved=memory.get('auto-research-workspace-layout-v1');
+assert(!saved.includes('321'));assert(!saved.includes('evidence-question'));assert(!saved.includes('privateBody'));
+for(let id=2;id<=40;id+=1)store.open({{tabId:`paper:paperId=${{id}}`,kind:'paper',ownerView:'paper',title:`论文${{id}}`,identity:{{paperId:String(id)}}}},{{pin:true}});
+store.activate(first.tabId);assert.equal(store.activeTab('primary').tabId,first.tabId);
+store.open({{tabId:'paper:paperId=41',kind:'paper',ownerView:'paper',title:'论文41',identity:{{paperId:'41'}}}},{{activate:false,pin:true}});
+assert.equal(store.snapshot().tabs.length,40);assert.equal(store.snapshot().tabs.some(tab=>tab.tabId===first.tabId),false);
+assert(store.activeTab('primary'));assert.notEqual(store.activeTab('primary').tabId,first.tabId);
+assert.deepEqual(store.presentation(first.tabId),{{scrollTop:0,focusToken:''}});
+const active=store.activeTab('primary');store.rememberPresentation(active.tabId,{{scrollTop:777,focusToken:'table-cell'}});
+const closed=store.close(active.tabId);assert.equal(closed.tabId,active.tabId);const reopened=store.reopenClosed();
+assert.equal(reopened.tabId,active.tabId);assert.deepEqual(store.presentation(reopened.tabId),{{scrollTop:777,focusToken:'table-cell'}});
+saved=memory.get('auto-research-workspace-layout-v1');assert(!saved.includes('777'));assert(!saved.includes('table-cell'));
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

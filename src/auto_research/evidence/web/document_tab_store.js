@@ -9,11 +9,15 @@
   const KINDS = new Set(["paper", "evidence", "pdf", "personal-table", "package-job", "librarian", "review-candidate"]);
   const VIEWS = new Set(["paper", "search", "personal", "package"]);
   const clean = (value, limit = 300) => String(value ?? "").trim().slice(0, limit);
+  const cleanFocusToken = value => {
+    const token = clean(value, 200);
+    return /^[A-Za-z0-9_.:-]{1,200}$/.test(token) ? token : "";
+  };
 
   function publicIdentity(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const result = {};
-    for (const key of ["paperId", "paperUid", "sourceScope", "sourceId", "entityType", "entityUid", "jobId", "conversationId", "reviewOrdinal"]) {
+    for (const key of ["paperId", "paperUid", "sourceScope", "sourceId", "entityType", "entityUid", "jobId", "operation", "conversationId", "reviewOrdinal"]) {
       const text = clean(value[key], 500);
       if (text) result[key] = text;
     }
@@ -26,7 +30,7 @@
     const identity = publicIdentity(raw.identity);
     if (!identity) return null;
     const pinned = persisted && raw.pinned === undefined ? true : raw.pinned !== false;
-    const tab = { tabId, kind, ownerView, title: clean(raw.title, 160) || "未命名标签", identity, groupId: raw.groupId === "secondary" ? "secondary" : "primary", pinned, preview: !pinned };
+    const tab = { tabId, kind, ownerView, title: clean(raw.title, 160) || "未命名标签", identity, groupId: raw.groupId === "secondary" ? "secondary" : "primary", pinned, preview: !pinned, revision: Number.isSafeInteger(raw?.revision) && raw.revision >= 0 ? raw.revision : 0 };
     if (!persisted && raw.payload !== undefined) tab.payload = raw.payload;
     return tab;
   }
@@ -41,6 +45,7 @@
       this.narrow = false;
       this.recentlyClosed = [];
       this.requestGenerations = new Map();
+      this.presentations = new Map();
       this.listeners = new Set();
       this.restore();
     }
@@ -83,6 +88,18 @@
     group(id = this.activeGroupId) { return this.groups.find(group => group.id === id) || null; }
     activeTab(groupId = this.activeGroupId) { const group = this.group(groupId); return this.tabs.find(tab => tab.groupId === groupId && tab.tabId === group?.activeTabId) || null; }
 
+    rememberPresentation(tabId, value = {}) {
+      if (!this.tabs.some(tab => tab.tabId === tabId) || !value || typeof value !== "object") return false;
+      const prior = this.presentations.get(tabId) || { scrollTop: 0, focusToken: "" }, scrollTop = Number(value.scrollTop), focusToken = cleanFocusToken(value.focusToken);
+      this.presentations.set(tabId, {
+        scrollTop: Number.isFinite(scrollTop) ? Math.max(0, Math.min(10_000_000, Math.round(scrollTop))) : prior.scrollTop,
+        focusToken: focusToken || prior.focusToken,
+      });
+      return true;
+    }
+
+    presentation(tabId) { const value = this.presentations.get(tabId); return value ? { ...value } : { scrollTop: 0, focusToken: "" }; }
+
     focusGroup(groupId) { if (!this.group(groupId)) return false; if (this.activeGroupId === groupId) return false; this.activeGroupId = groupId; this.emit(); return true; }
 
     open(raw, { activate = true, groupId = null, preview = false, pin = false } = {}) {
@@ -92,10 +109,11 @@
       if (!tab) return null;
       let existing = this.tabs.find(value => value.tabId === tab.tabId);
       if (existing) {
-        const previousGroupId = existing.groupId;
+        const previousGroupId = existing.groupId, previousRevision = existing.revision;
         Object.assign(existing, tab, {
           pinned: existing.pinned || pin || !preview,
           preview: !(existing.pinned || pin || !preview),
+          revision: previousRevision + 1,
         });
         if (previousGroupId !== existing.groupId) {
           const previousGroup = this.group(previousGroupId);
@@ -106,11 +124,25 @@
           const replace = this.tabs.findIndex(value => value.groupId === selectedGroup && value.preview && !value.pinned);
           if (replace >= 0) {
             const [removed] = this.tabs.splice(replace, 1), group = this.group(selectedGroup);
-            this.requestGenerations.delete(removed.tabId);
+            this.requestGenerations.delete(removed.tabId); this.presentations.delete(removed.tabId);
             if (group?.activeTabId === removed.tabId) group.activeTabId = null;
           }
         }
-        if (this.tabs.length >= MAX_TABS) this.tabs.shift();
+        if (this.tabs.length >= MAX_TABS) {
+          const removed = this.tabs.shift();
+          if (removed) {
+            const removedGroup = this.group(removed.groupId);
+            this.requestGenerations.delete(removed.tabId);
+            this.presentations.delete(removed.tabId);
+            if (removedGroup?.activeTabId === removed.tabId) {
+              removedGroup.activeTabId = this.tabs.find(value => value.groupId === removed.groupId)?.tabId || null;
+            }
+            if (removed.groupId === "secondary" && !this.tabs.some(value => value.groupId === "secondary")) {
+              this.groups = this.groups.filter(group => group.id !== "secondary");
+              if (this.activeGroupId === "secondary") this.activeGroupId = "primary";
+            }
+          }
+        }
         this.tabs.push(tab); existing = tab;
       }
       if (activate) { this.activeGroupId = existing.groupId; this.group(existing.groupId).activeTabId = existing.tabId; }
@@ -128,6 +160,7 @@
       if (patch.title !== undefined) tab.title = clean(patch.title, 160) || tab.title;
       if (patch.payload !== undefined) tab.payload = patch.payload;
       if (patch.pin === true) { tab.pinned = true; tab.preview = false; }
+      tab.revision += 1;
       this.emit(); return { ...tab };
     }
 
@@ -187,8 +220,8 @@
 
     close(tabId) {
       const index = this.tabs.findIndex(tab => tab.tabId === tabId); if (index < 0) return null;
-      const closing = this.tabs[index], fallback = this.fallbackTabId(closing.groupId, tabId), [closed] = this.tabs.splice(index, 1), group = this.group(closed.groupId);
-      this.recentlyClosed.unshift({ ...closed }); this.recentlyClosed = this.recentlyClosed.slice(0, 10); this.requestGenerations.delete(tabId);
+      const closing = this.tabs[index], fallback = this.fallbackTabId(closing.groupId, tabId), [closed] = this.tabs.splice(index, 1), group = this.group(closed.groupId), presentation = this.presentation(tabId);
+      this.recentlyClosed.unshift({ ...closed, presentation }); this.recentlyClosed = this.recentlyClosed.slice(0, 10); this.requestGenerations.delete(tabId); this.presentations.delete(tabId);
       if (group?.activeTabId === tabId) group.activeTabId = fallback;
       if (closed.groupId === "secondary" && !this.tabs.some(tab => tab.groupId === "secondary")) this.merge(); else this.emit();
       return { ...closed };
@@ -196,7 +229,9 @@
 
     reopenClosed({ activate = true, groupId = null } = {}) {
       const closed = this.recentlyClosed.shift(); if (!closed) return null;
-      return this.open(closed, { activate, groupId: groupId || closed.groupId });
+      const reopened = this.open(closed, { activate, groupId: groupId || closed.groupId, pin: closed.pinned });
+      if (reopened && closed.presentation) this.rememberPresentation(reopened.tabId, closed.presentation);
+      return reopened;
     }
 
     setNarrow(narrow) { const next = Boolean(narrow); if (this.narrow === next) return false; this.narrow = next; this.emit(); return true; }
