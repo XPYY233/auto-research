@@ -62,6 +62,7 @@ _LITERATURE_ERROR_GUIDANCE = {
     "literature_pdf_empty": ("preflight", "replace_searchable_pdf"),
     "literature_pdf_too_large": ("preflight", "select_supported_pdf"),
     "literature_pdf_page_limit_exceeded": ("preflight", "select_supported_pdf"),
+    "literature_pdf_text_limit_exceeded": ("preflight", "select_supported_pdf"),
     "literature_source_stale": ("source_verification", "restart_from_current_pdf"),
     "literature_rescan_confirmation_required": ("preflight", "confirm_rescan"),
     "literature_not_validated": ("quality_gate", "review_extraction_candidates"),

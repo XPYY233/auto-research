@@ -36,6 +36,9 @@ from auto_research.evidence.literature_extraction_job import (
     LiteratureExtractionJobStore,
     LiteraturePDFSnapshotAuthority,
 )
+from auto_research.evidence.literature_extraction_checkpoint_workflow import (
+    _project_literature_error,
+)
 from auto_research.evidence.literature_extraction_stages import (
     ExistingLiteratureStagePlanner,
 )
@@ -419,6 +422,20 @@ def test_starter_rejects_oversized_article_instead_of_silently_truncating(tmp_pa
     assert projected.value.cause_code == "literature_pdf_page_limit_exceeded"
     assert projected.value.stage == "preflight"
     assert projected.value.next_action == "select_supported_pdf"
+
+
+def test_single_page_text_limit_has_actionable_preflight_guidance() -> None:
+    projected = _project_literature_error(
+        LiteratureExtractionJobError(
+            "literature_pdf_text_limit_exceeded",
+            "PDF 单页文本超过安全抽取上限，未创建截断任务",
+        ),
+        phase="preflight",
+    )
+
+    assert projected.cause_code == "literature_pdf_text_limit_exceeded"
+    assert projected.stage == "preflight"
+    assert projected.next_action == "select_supported_pdf"
 
 
 @pytest.mark.parametrize(
