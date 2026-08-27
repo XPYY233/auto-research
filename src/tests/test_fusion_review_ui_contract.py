@@ -269,6 +269,19 @@ assert.equal(html.dataset.theme,'dark');assert.equal(html.dataset.density,'compa
         self.assertIn('html[data-pane-resizing="true"]', self.css)
         self.assertIn("@container fusion-editor (max-width:1180px)", self.css)
         self.assertIn("@media(min-width:1200px) and (max-width:1599px)", self.css)
+        self.assertIn('grid-template-areas:"activity context context-separator editor inspector-separator inspector"', self.css)
+        self.assertIn('grid-template-areas:"activity context context-separator editor"', self.css)
+        self.assertIn('grid-template-areas:"activity editor"', self.css)
+        self.assertIn('grid-template-areas:"editor"', self.css)
+        for marker in (
+            ".fusion-activity { grid-area:activity; }",
+            ".fusion-context { grid-area:context; }",
+            ".fusion-context-separator { grid-area:context-separator; }",
+            ".fusion-editor { grid-area:editor; }",
+            ".fusion-inspector-separator { grid-area:inspector-separator; }",
+            ".fusion-inspector { grid-area:inspector; }",
+        ):
+            self.assertIn(marker, self.css)
         self.assertNotIn(".fusion-toolbar .fusion-action-cluster { order:3;width:100%", self.css)
         self.assertNotIn(".fusion-toolbar .fusion-action-cluster { order:3;max-width:100%", self.css)
         self.assertNotIn(".fusion-toolbar .fusion-action-cluster,.fusion-detail-toolbar>div { width:100%", self.css)

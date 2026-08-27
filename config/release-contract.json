@@ -49,7 +49,7 @@
   "web_assets": {
     "src/auto_research/evidence/web/index.html": "6873ef3816d8e8124d27c9847d71b3121980f462c5d9b5008878625a540d779f",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
-    "src/auto_research/evidence/web/workbench.css": "26d1b2aa384f61343378bafa630793755afee1e351e37a2679df8fa6cd7b3d99",
+    "src/auto_research/evidence/web/workbench.css": "64b91ea08a787a0b748af5e8f7aab35fe1cc434e5785191c00f98b9ed038c930",
     "src/auto_research/evidence/web/ai_consent.js": "606cded819b129a32e74d4532f1a5e6fddbf399d0a205f5abddb03af8c67141b",
     "src/auto_research/evidence/web/document_tab_store.js": "b0b8a930b0f6c54796cc6a926a6435162c6b51bb3fd95c16bd595ecdc234f2cf",
     "src/auto_research/evidence/web/pane_layout_controller.js": "bb2ebea79ba9d571065e7dc9ac5b9635fc19ecb77ac761fbf1cb8248bf98e154",
