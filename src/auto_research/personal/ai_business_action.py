@@ -202,6 +202,13 @@ class PersonalSuggestionBusinessExecutor:
                 if exc.code == "personal_ai_invalid_response"
                 else "business_action_execution_failed"
             )
+            if exc.code == "personal_ai_outcome_unknown":
+                raise BusinessActionError(
+                    code,
+                    cause_code="ai_provider_outcome_unknown",
+                    stage="provider_call",
+                    next_action="review_call_outcome",
+                ) from exc
             raise BusinessActionError(code) from exc
         except (KeyError, TypeError, ValueError) as exc:
             raise BusinessActionError("business_action_invalid") from exc

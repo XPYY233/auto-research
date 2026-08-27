@@ -129,6 +129,14 @@ class _Executor:
         return {"answer": "raw", "state_token": "signed-state"}
 
 
+class _OutcomeUnknownExecutor:
+    def execute(self, *, action, ai_client):
+        del action, ai_client
+        error = RuntimeError("provider body was still streaming")
+        error.code = "ai_provider_outcome_unknown"
+        raise error
+
+
 class _HarnessExecutor:
     requires_harness_budget = True
 
@@ -310,6 +318,27 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
         )
         self.assertNotIn("next_action", unsafe.public_dict())
         self.assertNotIn("/users/", repr(unsafe.public_dict()).casefold())
+
+    def test_provider_outcome_unknown_keeps_safe_non_retry_guidance(self):
+        self.executors["selected_evidence_chat"] = _OutcomeUnknownExecutor()
+        registry = self.make_registry(executors=self.executors)
+        summary = registry.prepare(
+            scope="selected_evidence_chat",
+            session_id="session-outcome-unknown",
+            request=object(),
+        )
+        action = self.consume(
+            summary, "session-outcome-unknown"
+        )
+
+        with self.assertRaises(BusinessActionError) as raised:
+            registry.execute(action)
+
+        self.assertEqual(raised.exception.code, "business_action_execution_failed")
+        self.assertEqual(raised.exception.cause_code, "ai_provider_outcome_unknown")
+        self.assertEqual(raised.exception.stage, "provider_call")
+        self.assertEqual(raised.exception.next_action, "review_call_outcome")
+        self.assertEqual(len(self.factory.actions), 1)
 
     def test_production_readiness_gate_blocks_before_assembler_or_client(self):
         gate = _ReadinessGate()

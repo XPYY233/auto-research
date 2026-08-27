@@ -105,6 +105,14 @@ class _BudgetClient:
         return copy.deepcopy(self.payload)
 
 
+class _OutcomeUnknownBudgetClient(_BudgetClient):
+    def request_json(self, messages, **options):
+        self.calls.append((copy.deepcopy(messages), copy.deepcopy(options)))
+        error = RuntimeError("provider response deadline exceeded")
+        error.code = "ai_provider_outcome_unknown"
+        raise error
+
+
 class DeepSeekNotConfigured(RuntimeError):
     pass
 
@@ -381,6 +389,33 @@ class PersonalSuggestionBusinessActionTests(unittest.TestCase):
         with self.assertRaises(BusinessActionError) as raised:
             registry.execute(action)
         self.assertEqual(raised.exception.code, "business_action_execution_failed")
+        self.assertFalse(self.service.has_cached_suggestion(IMPORT_ID, sheet_index=0))
+
+    def test_provider_outcome_unknown_is_not_flattened_or_cached(self) -> None:
+        client = _OutcomeUnknownBudgetClient()
+        registry = self._registry(client)
+        summary = registry.prepare(
+            scope="personal_suggestion",
+            session_id="session-personal-outcome-unknown",
+            request={"import_id": IMPORT_ID, "sheet_index": 0},
+        )
+        consent = self.prepared.issue_consent(
+            action_id=summary["action_id"],
+            session_id="session-personal-outcome-unknown",
+        )
+        action = self.prepared.consume(
+            action_id=summary["action_id"],
+            consent_nonce=consent["nonce"],
+            session_id="session-personal-outcome-unknown",
+        )
+
+        with self.assertRaises(BusinessActionError) as raised:
+            registry.execute(action)
+
+        self.assertEqual(raised.exception.cause_code, "ai_provider_outcome_unknown")
+        self.assertEqual(raised.exception.stage, "provider_call")
+        self.assertEqual(raised.exception.next_action, "review_call_outcome")
+        self.assertEqual(len(client.calls), 1)
         self.assertFalse(self.service.has_cached_suggestion(IMPORT_ID, sheet_index=0))
 
     def test_executor_reuses_validator_caches_result_and_never_confirms(self) -> None:

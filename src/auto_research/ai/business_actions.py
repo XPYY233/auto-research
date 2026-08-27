@@ -1389,6 +1389,13 @@ class BusinessPreparedActionRegistry:
         except BusinessActionError:
             raise
         except Exception as exc:
+            if getattr(exc, "code", "") == "ai_provider_outcome_unknown":
+                raise BusinessActionError(
+                    "business_action_execution_failed",
+                    cause_code="ai_provider_outcome_unknown",
+                    stage="provider_call",
+                    next_action="review_call_outcome",
+                ) from exc
             raise BusinessActionError("business_action_execution_failed") from exc
         return _public_result(result)
 

@@ -699,6 +699,12 @@ class PersonalImportService:
                     "尚未配置 AI；仍可使用本地预览并手动检查。",
                     retryable=False,
                 ) from exc
+            if getattr(exc, "code", "") == "ai_provider_outcome_unknown":
+                raise _service_error(
+                    "personal_ai_outcome_unknown",
+                    "AI 请求已发送，但未能确认结果；请先检查任务状态，不要立即重复提交。",
+                    retryable=False,
+                ) from exc
             raise _service_error(
                 "personal_ai_unavailable",
                 "AI 暂时无法完成识别；本地预览不受影响。",
