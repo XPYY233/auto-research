@@ -870,6 +870,10 @@ def _system_prompt(scope: str) -> str:
             "回答必须包含条件解释、检索过程、证据回答、引用卡片、相关文章建议和局限。"
             "任务输入已包含本机 Search V2 召回的 seed_evidence 和稳定 R 编号。"
             "本次只有一个模型回合，不得调用工具；直接依据 seed_evidence 输出最终 JSON。"
+            "citations 必须是至少一个仅含 ref 的对象，ref 只能来自 seed_evidence；"
+            "report.suggested_followups 必须是字符串数组，其他 report 数组也必须保持 JSON 数组。"
+            "recommended_articles 只能使用 local_recommendations 中的 paper_uid；没有匹配时返回空数组。"
+            "comparison_bundle_uids 固定返回空数组，应用会依据本地证据束重新计算。"
             "应用会再次核验每个 R 编号和 paper_uid，证据不足时必须在局限中如实说明。"
         )
     return common + (

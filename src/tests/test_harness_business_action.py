@@ -348,6 +348,183 @@ class HarnessBusinessActionTests(unittest.TestCase):
         )
         self.assertEqual(raw.calls, 1)
 
+    def test_librarian_filters_expansion_before_model_and_freezes_local_reasoning(self):
+        session = Session()
+        session.documents = [
+            document(
+                "direct",
+                paper_uid="paper-direct",
+                material_focus="W",
+                conditions_text="W，300 °C，离子辐照，辐照后",
+                meaning="硬度",
+                source_excerpt="The W hardness was measured at 300 °C after ion irradiation.",
+            ),
+            document(
+                "adjacent",
+                paper_uid="paper-adjacent",
+                material_focus="W",
+                conditions_text="W，300 °C，离子辐照，辐照后",
+                meaning="弹性模量",
+                source_excerpt="The elastic modulus was measured under the same conditions.",
+            ),
+            document(
+                "expansion",
+                paper_uid="paper-expansion",
+                material_focus="Ta",
+                conditions_text="Ta，1200 °C，中子辐照，未辐照",
+                meaning="热导率",
+                source_excerpt="A different material and irradiation condition.",
+            ),
+        ]
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        draft = ports.librarian.assembler.assemble(
+            {
+                "question": "W 在 300 °C 离子辐照后的硬度是多少？",
+                "conversation_id": "hard-conditions",
+                "history": [],
+            }
+        )
+        self.assertEqual(
+            {row["entity_uid"] for row in draft.outbound["documents"]},
+            {"direct", "adjacent"},
+        )
+        seed = draft.outbound["prompt"]["seed_evidence"]
+        self.assertEqual(
+            {row["match_class"] for row in seed}, {"direct", "adjacent"}
+        )
+        self.assertTrue(all(row.get("bundle_uid") for row in seed))
+        self.assertIn("source_excerpt", seed[0])
+        self.assertNotIn(
+            "expansion",
+            {row["entity_uid"] for row in draft.outbound["documents"]},
+        )
+
+    def test_quantitative_cross_bundle_comparison_fails_before_provider(self):
+        session = Session()
+        session.documents = [
+            document("paper-a", paper_uid="paper-a", article_title="Paper A"),
+            document("paper-b", paper_uid="paper-b", article_title="Paper B"),
+        ]
+
+        class CountingRuntime(Runtime):
+            def __init__(self):
+                super().__init__()
+                self.execute_calls = 0
+
+            def execute(self, **kwargs):
+                self.execute_calls += 1
+                return super().execute(**kwargs)
+
+        runtime = CountingRuntime()
+        ports = harness_business_ports(session=session, runtime=runtime)
+        with self.assertRaises(BusinessActionError) as rejected:
+            ports.librarian.assembler.assemble(
+                {
+                    "question": "比较这些论文中硬度的数值差异",
+                    "conversation_id": "cross-bundle",
+                    "history": [],
+                }
+            )
+        self.assertEqual(rejected.exception.cause_code, "unsupported_comparison")
+        self.assertEqual(rejected.exception.stage, "librarian_local_preflight")
+        self.assertEqual(runtime.execute_calls, 0)
+
+    def test_local_librarian_intent_returns_without_provider_or_readiness(self):
+        ports = harness_business_ports(session=Session(), runtime=Runtime())
+        local = ports.librarian.assembler.local_result(
+            {
+                "question": "你能做什么？",
+                "conversation_id": "local-intent",
+                "history": [],
+            }
+        )
+        self.assertIsNotNone(local)
+        projected = ports.librarian.projector.project(local)
+        self.assertEqual(projected["summary_mode"], "local_capability_manifest")
+        self.assertEqual(projected["search_operations"], 0)
+        self.assertEqual(projected["tool_calls"], [])
+        self.assertEqual(projected["intent"]["kind"], "system_capability")
+
+    def test_qualitative_review_freezes_local_review_map_and_one_call_budget(self):
+        session = Session()
+        session.documents = [
+            document(
+                "defect",
+                paper_uid="paper-defect",
+                meaning="缺陷形成",
+                finding_text="辐照后形成空位与间隙原子",
+            ),
+            document(
+                "diffusion",
+                paper_uid="paper-diffusion",
+                meaning="扩散迁移",
+                finding_text="辐照影响缺陷迁移与扩散",
+            ),
+        ]
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        draft = ports.librarian.assembler.assemble(
+            {
+                "question": "辐照研究有哪些用途？请做定性综述",
+                "conversation_id": "review-map",
+                "history": [],
+            }
+        )
+        prompt = draft.outbound["prompt"]
+        refs = {row["ref"] for row in prompt["seed_evidence"]}
+        self.assertEqual(prompt["intent"]["kind"], "research_review")
+        self.assertTrue(prompt["review_map"])
+        self.assertTrue(
+            all(
+                set(theme["representative_refs"]).issubset(refs)
+                for theme in prompt["review_map"]
+            )
+        )
+        self.assertEqual((draft.max_calls, draft.max_tokens), (1, 2_400))
+        self.assertEqual(draft.call_plan[0].task, "librarian_planning")
+
+    def test_projector_rejects_bundle_tamper_and_drops_unanswerable_followup(self):
+        ports = harness_business_ports(session=Session(), runtime=Runtime())
+        draft = ports.librarian.assembler.assemble(
+            {"question": "硬度", "conversation_id": "projection", "history": []}
+        )
+        prepared = action(draft, "librarian")
+        internal = ports.librarian.executor.execute(
+            action=prepared,
+            ai_client=HarnessBudgetedBusinessAIClient(
+                client=RawClient(), action=prepared
+            ),
+        )
+        internal["raw"]["report"]["suggested_followups"] = ["催化光学电池性能"]
+        result = ports.librarian.projector.project(internal)
+        self.assertNotIn("催化", repr(result["suggested_actions"]))
+        self.assertTrue(all(row["answerable"] for row in result["suggested_actions"]))
+
+        tampered = dict(internal)
+        tampered["raw"] = dict(internal["raw"])
+        tampered["raw"]["comparison_bundle_uids"] = ["bu-tampered"]
+        with self.assertRaises(BusinessActionError):
+            ports.librarian.projector.project(tampered)
+
+    def test_private_workspace_candidate_is_rejected_before_action(self):
+        workspace = Workspace()
+        workspace.documents = [
+            document(
+                "private-item",
+                source_scope="private",
+                source_id="private-library",
+                paper_uid="private-paper",
+            )
+        ]
+        ports = harness_business_ports(
+            session=Session(), runtime=Runtime(), workspace=workspace
+        )
+        with self.assertRaises(BusinessActionError) as rejected:
+            ports.librarian.assembler.assemble(
+                {"question": "硬度", "conversation_id": "private", "history": []}
+            )
+        self.assertEqual(rejected.exception.cause_code, "harness_private_forbidden")
+        self.assertEqual(rejected.exception.stage, "librarian_local_preflight")
+
     def test_librarian_decomposes_natural_question_before_bounded_recall(self):
         session = NaturalLanguageSession()
         ports = harness_business_ports(session=session, runtime=Runtime())

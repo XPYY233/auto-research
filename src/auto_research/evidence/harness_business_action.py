@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import time
 from typing import Any, Mapping, Protocol, Sequence
 
 from auto_research.ai.business_actions import (
@@ -33,6 +34,12 @@ from .harness_federated_backend import (
     official_source_binding,
     sanitize_official_documents,
 )
+from .librarian_harness_preflight import (
+    LibrarianHarnessPreflightError,
+    plan_librarian_harness,
+    validate_projected_followups,
+)
+from .librarian_intent import IntentDecision, route_librarian_intent
 from .librarian_reasoning import build_query_analysis, soft_recall_queries
 
 
@@ -56,12 +63,18 @@ _RECALL_STOPWORDS = frozenset(
     }
 )
 _SAFE_TRACE_ENABLED = os.environ.get("AUTO_RESEARCH_AI_SAFE_TRACE") == "1"
-_SEED_KEYS = (
-    "source_scope", "source_id", "entity_type", "entity_uid", "paper_uid",
-    "bundle_uid", "display_title", "article_title", "doi", "source_page",
-    "value_text", "unit", "meaning", "meaning_text", "finding_text", "caption",
-    "material_focus", "conditions_text", "method", "physical_quantities",
-    "quality_gate_status",
+_LIBRARIAN_PUBLIC_KEYS = frozenset(
+    {
+        "agent", "response_format", "librarian_core_version", "answered_at",
+        "evidence_version", "answer", "report", "query_analysis",
+        "evidence_bundles", "results", "recommended_articles",
+        "recommended_article_count", "tool_calls", "search_operations",
+        "candidate_count", "cited_count", "match_counts", "bundle_count",
+        "recall_queries", "plan_mode", "summary_mode", "clarification_required",
+        "scope", "model", "planning_model", "cache_hit", "intent",
+        "retrieval_policy", "research_state", "state_token", "suggested_actions",
+        "review_map",
+    }
 )
 
 
@@ -81,24 +94,62 @@ def _safe_trace(stage: str, code: str) -> None:
     )
 
 
-def _seed_evidence(documents: Sequence[Mapping[str, Any]], *, limit: int = 16) -> list[dict[str, Any]]:
-    """Bounded local recall projection for the single-turn Librarian path."""
-
-    result: list[dict[str, Any]] = []
-    for index, document in enumerate(documents[:limit], start=1):
-        row: dict[str, Any] = {"ref": f"R{index}"}
-        for key in _SEED_KEYS:
-            if key not in document:
-                continue
-            value = document[key]
-            if isinstance(value, str):
-                row[key] = value[:1_200]
-            elif isinstance(value, (list, tuple)):
-                row[key] = [item[:500] if isinstance(item, str) else item for item in value[:12]]
-            elif value is None or isinstance(value, (bool, int, float)):
-                row[key] = value
-        result.append(row)
-    return result
+def _local_librarian_result(decision: IntentDecision) -> dict[str, Any]:
+    if decision.kind == "system_capability":
+        answer = (
+            "我可以联合检索当前官方资料库和本机已发布文献，按材料、条件和物理量筛选四类证据，"
+            "给出可点击引用、相关文章和局限；我不会读取私人实验，也不会在没有授权时调用模型。"
+        )
+        summary_mode = "local_capability_manifest"
+    else:
+        answer = (
+            "你好。请告诉我材料、辐照或实验条件以及想核验的物理量；"
+            "我会先在本机检索，再用一次受控 AI 综合回答并保留可追溯引用。"
+        )
+        summary_mode = "local_conversation"
+    return {
+        "agent": {"name": "librarian", "runtime": "local"},
+        "response_format": "librarian-v3",
+        "librarian_core_version": "librarian-v3",
+        "answered_at": int(time.time()),
+        "evidence_version": "",
+        "answer": answer,
+        "report": {
+            "schema_version": "research-report-v1",
+            "direct_conclusion": {
+                "status": "informational", "text": answer, "refs": [],
+            },
+            "evidence_matrix": [],
+            "related_evidence": [],
+            "database_gaps": ["本轮是本地说明，未执行论文检索。"],
+            "suggested_followups": [],
+        },
+        "query_analysis": {},
+        "evidence_bundles": [],
+        "results": [],
+        "recommended_articles": [],
+        "recommended_article_count": 0,
+        "tool_calls": [],
+        "search_operations": 0,
+        "candidate_count": 0,
+        "cited_count": 0,
+        "match_counts": {"direct": 0, "adjacent": 0, "expansion": 0},
+        "bundle_count": 0,
+        "recall_queries": [],
+        "plan_mode": "local_only",
+        "summary_mode": summary_mode,
+        "clarification_required": False,
+        "scope": "literature",
+        "model": "",
+        "planning_model": "",
+        "cache_hit": False,
+        "intent": decision.as_dict(),
+        "retrieval_policy": "none",
+        "research_state": None,
+        "state_token": "",
+        "suggested_actions": [],
+        "review_map": [],
+    }
 
 
 class _HarnessRuntimePort(DeepSeekHarnessRuntime, Protocol):
@@ -317,6 +368,29 @@ class HarnessBusinessAssembler:
         self._workspace = workspace
         self._snapshots = HarnessFederatedSnapshotAuthority(session, workspace)
 
+    def local_result(self, request: object) -> dict[str, Any] | None:
+        """Answer capability and greeting turns locally before AI readiness.
+
+        These turns are part of the chat experience but require neither
+        literature recall nor a paid provider call.  Keeping them here also
+        prevents an unconfigured provider from making the whole Librarian UI
+        appear broken when the user is only asking what it can do.
+        """
+
+        if self._scope != "librarian" or not isinstance(request, Mapping):
+            return None
+        if set(request) - _LIBRARIAN_KEYS or not {"question", "conversation_id"} <= set(request):
+            raise BusinessActionError("business_action_invalid")
+        if request.get("research_state") is not None or request.get("state_token") not in {None, ""}:
+            return None
+        question = _safe_text(request.get("question"), maximum=2_000)
+        _safe_text(request.get("conversation_id"), maximum=256)
+        _history(request.get("history", []))
+        decision = route_librarian_intent(question)
+        if decision.retrieval_policy != "none":
+            return None
+        return _local_librarian_result(decision)
+
     def assemble(self, request: object) -> BusinessActionDraft:
         _runtime_ready(self._runtime)
         if not isinstance(request, Mapping):
@@ -377,10 +451,32 @@ class HarnessBusinessAssembler:
                 stage="harness_prepare",
                 next_action="refine_librarian_question",
             )
-        # The single model turn and its local citation authority must describe
-        # the exact same bounded candidate set.  Do not freeze 64 documents
-        # while exposing only the first 16 as R references.
-        documents = documents[:16]
+        try:
+            preflight = plan_librarian_harness(
+                question=question,
+                history=history,
+                documents=documents,
+                recall_queries=recall_queries,
+            )
+        except LibrarianHarnessPreflightError as exc:
+            next_action = (
+                "refine_librarian_question"
+                if exc.code in {
+                    "harness_recall_empty",
+                    "librarian_clarification_required",
+                    "librarian_anchor_state_required",
+                    "librarian_local_intent_required",
+                    "unsupported_comparison",
+                }
+                else "retry_harness_action"
+            )
+            raise BusinessActionError(
+                "business_action_prepare_failed",
+                cause_code=exc.code,
+                stage="librarian_local_preflight",
+                next_action=next_action,
+            ) from exc
+        documents = list(preflight.documents)
         prompt = {
             "question": question,
             "conversation_id": conversation_id,
@@ -388,8 +484,7 @@ class HarnessBusinessAssembler:
             "source_scope": "literature",
             "source_scopes": sorted({str(row["source_scope"]) for row in documents}),
             "evidence_count": len(documents),
-            "recall_queries": list(recall_queries),
-            "seed_evidence": _seed_evidence(documents),
+            **preflight.prompt_fields(),
         }
         return self._draft(
             documents=documents,
@@ -614,6 +709,13 @@ class HarnessBusinessProjector:
         self._scope = scope
 
     def project(self, result: Mapping[str, Any]) -> Mapping[str, Any]:
+        if (
+            self._scope == "librarian"
+            and isinstance(result, Mapping)
+            and result.get("librarian_core_version") == "librarian-v3"
+            and set(result) == _LIBRARIAN_PUBLIC_KEYS
+        ):
+            return dict(result)
         if not isinstance(result, Mapping) or set(result) != {
             "schema_version", "scope", "raw", "documents", "prompt",
             "answered_at", "source_fingerprint", "source_binding",
@@ -656,10 +758,70 @@ class HarnessBusinessProjector:
         prompt = result["prompt"]
         cited = self._ref_documents(result)
         refs = [ref for ref, _row in cited]
-        rows = [{**row, "ref": ref, "agent_cited": True} for ref, row in cited]
+        seed = prompt.get("seed_evidence")
+        bundles = prompt.get("evidence_bundles")
+        local_recommendations = prompt.get("local_recommendations")
+        if (
+            not isinstance(seed, list)
+            or len(seed) != len(result["documents"])
+            or not isinstance(bundles, list)
+            or not isinstance(local_recommendations, list)
+        ):
+            raise BusinessActionError("business_action_result_invalid")
+        seed_by_ref = {
+            str(row.get("ref")): row for row in seed if isinstance(row, Mapping)
+        }
+        if len(seed_by_ref) != len(seed):
+            raise BusinessActionError("business_action_result_invalid")
+        bundle_by_ref = {
+            str(ref): str(bundle.get("bundle_uid") or "")
+            for bundle in bundles if isinstance(bundle, Mapping)
+            for ref in bundle.get("refs") or ()
+        }
+        rows = []
+        for ref, row in cited:
+            local = seed_by_ref.get(ref)
+            if not isinstance(local, Mapping) or any(
+                local.get(key) != row.get(key)
+                for key in (
+                    "source_scope", "source_id", "entity_type", "entity_uid",
+                    "paper_uid", "bundle_uid",
+                )
+            ) or bundle_by_ref.get(ref) != row.get("bundle_uid"):
+                raise BusinessActionError("business_action_result_invalid")
+            rows.append(
+                {
+                    **row,
+                    "ref": ref,
+                    "agent_cited": True,
+                    "agent_match_class": str(local.get("match_class") or ""),
+                    "agent_matched_constraints": list(local.get("matched_constraints") or ()),
+                    "agent_missing_constraints": list(local.get("missing_constraints") or ()),
+                    "agent_constraint_coverage": float(local.get("constraint_coverage") or 0.0),
+                    "agent_bundle_uid": str(local.get("bundle_uid") or ""),
+                }
+            )
+        cited_bundle_uids = {str(row.get("bundle_uid") or "") for row in rows}
+        expected_comparison_bundles = (
+            sorted(cited_bundle_uids)
+            if "" not in cited_bundle_uids and len(cited_bundle_uids) == 1
+            else []
+        )
+        if list(raw.get("comparison_bundle_uids") or ()) != expected_comparison_bundles:
+            raise BusinessActionError("business_action_result_invalid")
         report_raw = raw["report"]
         matrix = []
-        for ref, row in cited[:20]:
+        direct_rows = [
+            (ref, row, seed_by_ref[ref])
+            for ref, row in cited
+            if seed_by_ref[ref].get("match_class") == "direct"
+        ]
+        adjacent_rows = [
+            (ref, row, seed_by_ref[ref])
+            for ref, row in cited
+            if seed_by_ref[ref].get("match_class") == "adjacent"
+        ]
+        for ref, row, _local in direct_rows[:20]:
             matrix.append(
                 {
                     "property": str(row.get("meaning") or row.get("display_title") or row.get("label") or row["entity_type"]),
@@ -671,23 +833,34 @@ class HarnessBusinessProjector:
                     "refs": [ref],
                 }
             )
-        followups = [str(item) for item in report_raw.get("suggested_followups", []) if isinstance(item, str) and item.strip()][:10]
-        suggested = [
-            {
-                "schema_version": "suggested-action-v1",
-                "text": question,
-                "answerable": any(question.casefold() in json.dumps(row, ensure_ascii=False).casefold() for row in result["documents"]),
-                "estimated_matches": sum(question.casefold() in json.dumps(row, ensure_ascii=False).casefold() for row in result["documents"]),
-            }
-            for question in followups
-        ]
+        cited_refs = set(refs)
+        suggested = validate_projected_followups(
+            report_raw.get("suggested_followups", []),
+            question=str(prompt["question"]),
+            seed_evidence=seed,
+            cited_refs=cited_refs,
+            bundles=bundles,
+        )
+        followups = [str(item["text"]) for item in suggested]
         recommended = []
-        for article in raw.get("recommended_articles", [])[:10]:
+        model_papers = {
+            str(article.get("paper_uid") or "")
+            for article in raw.get("recommended_articles", [])[:10]
+            if isinstance(article, Mapping)
+        }
+        seen_papers: set[str] = set()
+        for article in local_recommendations[:10]:
+            if not isinstance(article, Mapping):
+                raise BusinessActionError("business_action_result_invalid")
+            paper_uid = str(article.get("paper_uid") or "")
+            if not paper_uid or paper_uid not in model_papers or paper_uid in seen_papers:
+                continue
+            seen_papers.add(paper_uid)
             jump_evidence = next(
                 (
                     dict(row)
                     for row in result["documents"]
-                    if row.get("paper_uid") == article.get("paper_uid")
+                    if row.get("paper_uid") == paper_uid
                 ),
                 None,
             )
@@ -700,47 +873,90 @@ class HarnessBusinessProjector:
             recommended.append(
                 {
                     "article_title": str(jump_evidence.get("article_title") or "未命名论文"),
-                    "why_recommended": str(article.get("reason") or "包含相关公开证据。"),
+                    "why_recommended": str(article.get("why_recommended") or "包含相关公开证据。"),
                     "first_author": str(jump_evidence.get("first_author") or ""),
                     "year": year if isinstance(year, int) and not isinstance(year, bool) else None,
                     "doi": str(jump_evidence.get("doi") or ""),
-                    "recommendation_level": "related",
-                    "supporting_refs": article_refs,
+                    "recommendation_level": str(article.get("recommendation_level") or "related"),
+                    "supporting_refs": [
+                        ref for ref in article.get("supporting_refs") or () if ref in cited_refs
+                    ] or article_refs,
                     "coverage_warning": "建议打开引用证据核对具体实验条件。",
                     "jump_evidence": jump_evidence,
                 }
             )
+        if direct_rows:
+            direct_text = str(report_raw["direct_conclusion"])
+            direct_status = "found"
+            direct_refs = [ref for ref, _row, _local in direct_rows]
+            answer = str(raw["answer"])
+        else:
+            direct_text = (
+                "未检索到同时满足全部硬条件的直接证据。下方相关证据每项只放宽一个条件，"
+                "不能视为原问题的直接答案。"
+            )
+            direct_status = "not_found"
+            direct_refs = []
+            answer = direct_text
+        related_rows = []
+        for ref, row, local in adjacent_rows[:20]:
+            relaxed = [
+                str(item.get("label") or "")
+                for item in local.get("missing_constraints") or ()
+                if isinstance(item, Mapping) and item.get("label")
+            ]
+            related_rows.append(
+                {
+                    "summary": str(
+                        row.get("meaning")
+                        or row.get("finding_text")
+                        or row.get("caption")
+                        or row.get("display_title")
+                        or "相关证据"
+                    )[:260],
+                    "relaxed_constraints": relaxed,
+                    "refs": [ref],
+                }
+            )
+        local_gaps = sorted(
+            {
+                str(item.get("label") or "")
+                for row in seed
+                for item in row.get("missing_constraints") or ()
+                if isinstance(item, Mapping) and item.get("label")
+            }
+        )
         report = {
             "schema_version": "research-report-v1",
             "direct_conclusion": {
-                "status": "found",
-                "text": str(report_raw["direct_conclusion"]),
-                "refs": refs,
+                "status": direct_status,
+                "text": direct_text,
+                "refs": direct_refs,
             },
             "evidence_matrix": matrix,
-            "related_evidence": [
-                {"summary": str(item), "relaxed_constraints": [], "refs": refs[:3]}
-                for item in report_raw.get("related_evidence", [])[:20]
-                if isinstance(item, str)
-            ],
-            "database_gaps": [str(report_raw["database_gaps"])],
+            "related_evidence": related_rows,
+            "database_gaps": local_gaps or [str(report_raw["database_gaps"])],
             "suggested_followups": followups,
         }
         model = str(raw["harness"]["model"])
+        query_analysis = dict(prompt.get("query_analysis") or {})
+        query_analysis.update(
+            {
+                "question": str(prompt["question"]),
+                "source_scope": "literature",
+                "source_scopes": list(prompt.get("source_scopes") or ()),
+            }
+        )
         return {
             "agent": {"name": "librarian", "runtime": "deepseek-harness"},
             "response_format": "librarian-v3",
             "librarian_core_version": "librarian-v3",
             "answered_at": result["answered_at"],
             "evidence_version": result["source_fingerprint"],
-            "answer": str(raw["answer"]),
+            "answer": answer,
             "report": report,
-            "query_analysis": {
-                "question": str(prompt["question"]),
-                "source_scope": "literature",
-                "source_scopes": list(prompt.get("source_scopes") or ()),
-            },
-            "evidence_bundles": [],
+            "query_analysis": query_analysis,
+            "evidence_bundles": [dict(row) for row in bundles],
             "results": rows,
             "recommended_articles": recommended,
             "recommended_article_count": len(recommended),
@@ -748,8 +964,11 @@ class HarnessBusinessProjector:
             "search_operations": 1,
             "candidate_count": len(result["documents"]),
             "cited_count": len(rows),
-            "match_counts": {kind: sum(row["entity_type"] == kind for row in result["documents"]) for kind in _ENTITY_TYPES},
-            "bundle_count": len({row.get("bundle_uid") for row in result["documents"]}),
+            "match_counts": {
+                kind: sum(row.get("match_class") == kind for row in seed)
+                for kind in ("direct", "adjacent", "expansion")
+            },
+            "bundle_count": len(bundles),
             "recall_queries": [str(value) for value in prompt.get("recall_queries", ())],
             "plan_mode": "harness_literature_bounded",
             "summary_mode": "deepseek_harness",
@@ -758,12 +977,12 @@ class HarnessBusinessProjector:
             "model": model,
             "planning_model": model,
             "cache_hit": False,
-            "intent": {"name": "research_lookup"},
-            "retrieval_policy": "focused",
+            "intent": dict(prompt.get("intent") or {}),
+            "retrieval_policy": str((prompt.get("intent") or {}).get("retrieval_policy") or "focused"),
             "research_state": None,
             "state_token": "",
             "suggested_actions": suggested,
-            "review_map": [],
+            "review_map": [dict(row) for row in prompt.get("review_map") or ()],
         }
 
     def _selected(self, result: Mapping[str, Any]) -> Mapping[str, Any]:

@@ -345,6 +345,11 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertEqual(raw.calls[0][1], [])
         self.assertEqual(raw.calls[0][2]["max_tokens"], 2_400)
         self.assertIn("seed_evidence", raw.calls[0][0][-1]["content"])
+        system_prompt = OneTurnFinalHarness.latest.kwargs["env"][
+            "AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"
+        ]
+        self.assertIn("citations 必须是至少一个", system_prompt)
+        self.assertIn("comparison_bundle_uids 固定返回空数组", system_prompt)
 
     def test_one_turn_selected_evidence_uses_frozen_context_without_tools(self):
         base = action()
