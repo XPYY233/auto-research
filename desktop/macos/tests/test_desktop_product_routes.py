@@ -149,10 +149,11 @@ class DesktopProductRoutesTests(unittest.TestCase):
 
     def test_package_and_federated_get_routes_require_session(self) -> None:
         with self.opener.open(
-            f"{self.base_url}/static/desktop_product.js", timeout=5
+            f"{self.base_url}/static/fusion_review.js", timeout=5
         ) as response:
-            desktop_product_js = response.read().decode("utf-8")
-        self.assertIn("AutoResearchDesktopProduct", desktop_product_js)
+            fusion_review_js = response.read().decode("utf-8")
+        self.assertIn("AutoResearchFusion", fusion_review_js)
+        self.assertNotIn("AutoResearchDesktopProduct", fusion_review_js)
 
         with self.opener.open(
             f"{self.base_url}/api/desktop/evidence-packages", timeout=5
