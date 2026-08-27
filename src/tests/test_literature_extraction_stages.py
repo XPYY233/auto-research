@@ -76,6 +76,20 @@ def complete_with_payloads(store, token, planner, payload_factory):
     )
 
 
+def verification_payload(call):
+    import json
+    candidates = json.loads(
+        call.messages[1]["content"]
+        .split("\n\nSource pages:", 1)[0]
+        .split("Verify these candidates:\n", 1)[1]
+    )
+    return {"verdicts": [{
+        "candidate_id": item["candidate_id"],
+        "verdict": "supported",
+        "reason": "matched",
+    } for item in candidates]}
+
+
 def test_real_planner_freezes_each_stage_before_next_model_call(tmp_path: Path) -> None:
     path = tmp_path / "paper.pdf"
     make_pdf(path)
@@ -84,25 +98,10 @@ def test_real_planner_freezes_each_stage_before_next_model_call(tmp_path: Path) 
     summary = store.create(Papers(path), paper_id=1, session_id="owner")
 
     summary = complete_with_payloads(store, summary["job_token"], planner, lambda _call: extraction_payload())
-    assert summary["stage"] == "coverage_gap"
-    assert summary["call_count"] == 2
-    assert all(call.task == "extraction" for call in store.peek_stage(summary["job_token"], session_id="owner").calls)
-
-    summary = complete_with_payloads(store, summary["job_token"], planner, lambda _call: extraction_payload())
     assert summary["stage"] == "coverage_verification"
     assert summary["call_count"] == 2
     assert all(call.task == "verification" for call in store.peek_stage(summary["job_token"], session_id="owner").calls)
-
-    def verification(call):
-        import json
-        candidates = json.loads(call.messages[1]["content"].split("\n\nSource pages:", 1)[0].split("Verify these candidates:\n", 1)[1])
-        return {"verdicts": [{
-            "candidate_id": item["candidate_id"],
-            "verdict": "supported",
-            "reason": "matched",
-        } for item in candidates]}
-
-    summary = complete_with_payloads(store, summary["job_token"], planner, verification)
+    summary = complete_with_payloads(store, summary["job_token"], planner, verification_payload)
     assert summary["stage"] == "adversarial_branches"
     assert summary["call_count"] == 0
     summary = store.advance_local_stage(summary["job_token"], session_id="owner", planner=planner)
@@ -121,6 +120,93 @@ def test_real_planner_freezes_each_stage_before_next_model_call(tmp_path: Path) 
         "visual_evidence_ready": False,
         "atomic_commit_ready": False,
     }
+
+
+def test_coverage_gap_is_only_planned_for_local_uncertainty(tmp_path: Path) -> None:
+    path = tmp_path / "paper.pdf"
+    make_pdf(path)
+    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+    planner = ExistingLiteratureStagePlanner()
+    summary = store.create(Papers(path), paper_id=1, session_id="owner")
+
+    def initial(call):
+        payload = extraction_payload()
+        if call.call_id.startswith("a-"):
+            payload["pending_tasks"] = [{
+                "task_type": "ambiguous_condition",
+                "description": "sample condition needs review",
+                "locator": "Results",
+            }]
+        return payload
+
+    summary = complete_with_payloads(store, summary["job_token"], planner, initial)
+    assert summary["stage"] == "coverage_gap"
+    assert summary["call_count"] == 1
+    stage = store.peek_stage(summary["job_token"], session_id="owner")
+    assert stage.calls[0].call_id.startswith("a-")
+
+
+def test_uncovered_quantity_anchor_never_silently_skips_gap(tmp_path: Path) -> None:
+    path = tmp_path / "paper.pdf"
+    make_pdf(path)
+    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+    planner = ExistingLiteratureStagePlanner()
+    summary = store.create(Papers(path), paper_id=1, session_id="owner")
+    empty = {"data": [], "findings": [], "pending_tasks": []}
+    summary = complete_with_payloads(
+        store, summary["job_token"], planner, lambda _call: empty
+    )
+    assert summary["stage"] == "coverage_gap"
+    assert summary["call_count"] == 2
+
+
+def test_non_chinese_semantics_remain_manual_without_localization_charge(tmp_path: Path) -> None:
+    path = tmp_path / "paper.pdf"
+    make_pdf(path)
+    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+    planner = ExistingLiteratureStagePlanner()
+    summary = store.create(Papers(path), paper_id=1, session_id="owner")
+
+    def english_payload(_call):
+        payload = extraction_payload()
+        payload["data"][0]["meaning"] = "measured hardness"
+        payload["data"][0]["context_explanation"] = "sample A at 300 K"
+        return payload
+
+    summary = complete_with_payloads(
+        store, summary["job_token"], planner, english_payload
+    )
+    assert summary["stage"] == "coverage_verification"
+    summary = complete_with_payloads(
+        store, summary["job_token"], planner, verification_payload
+    )
+    assert summary["stage"] == "adversarial_branches"
+    assert summary["call_count"] == 0
+    summary = store.advance_local_stage(
+        summary["job_token"], session_id="owner", planner=planner
+    )
+    assert summary["stage"] == "validated"
+    records = store._jobs[summary["job_token"]].validated_package.quality_result["records"]
+    assert records[0]["gate_status"] == "manual_review"
+    assert "人工审核" in records[0]["gate_reason"]
+
+
+def test_verification_batches_use_bounded_authoritative_source_windows(tmp_path: Path) -> None:
+    path = tmp_path / "paper.pdf"
+    make_pdf(path)
+    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+    planner = ExistingLiteratureStagePlanner()
+    summary = store.create(Papers(path), paper_id=1, session_id="owner")
+    summary = complete_with_payloads(
+        store, summary["job_token"], planner, lambda _call: extraction_payload()
+    )
+    stage = store.peek_stage(summary["job_token"], session_id="owner")
+    assert len(stage.calls) == 2
+    for call in stage.calls:
+        source = call.messages[1]["content"].split("\n\nSource pages:\n", 1)[1]
+        assert len(source) < 48_000
+        assert "authoritative_page_window" in source
+        assert "candidate_id" in source
 
 
 def test_malformed_or_missing_stage_results_fail_closed_and_release_claim(tmp_path: Path) -> None:
@@ -153,7 +239,7 @@ def test_business_assembler_accepts_bounded_real_stage_under_shared_policy(tmp_p
     store = LiteratureExtractionJobStore(session_key=b"x" * 32)
     summary = store.create(Papers(path), paper_id=1, session_id="owner")
     stage = store.peek_stage(summary["job_token"], session_id="owner")
-    assert len(stage.calls) > 12
+    assert len(stage.calls) == 8
     assembler = LiteratureExtractionBusinessAssembler(store, session_id="owner")
     draft = assembler.assemble({"job_token": summary["job_token"]})
     assert draft.estimated_calls == len(stage.calls)
@@ -186,7 +272,7 @@ def test_business_assembler_snapshot_and_projector_use_frozen_stage(tmp_path: Pa
     assert "pdf_sha256" not in repr(public)
 
 
-def test_verification_and_localization_use_reviewed_runtime_task_slots(tmp_path: Path) -> None:
+def test_verification_uses_reviewed_runtime_task_without_localization_call(tmp_path: Path) -> None:
     path = tmp_path / "paper.pdf"
     make_pdf(path)
     store = LiteratureExtractionJobStore(session_key=b"x" * 32)
@@ -195,14 +281,16 @@ def test_verification_and_localization_use_reviewed_runtime_task_slots(tmp_path:
     summary = complete_with_payloads(
         store, summary["job_token"], planner, lambda _call: extraction_payload()
     )
-    summary = complete_with_payloads(
-        store, summary["job_token"], planner, lambda _call: extraction_payload()
-    )
     assert summary["stage"] == "coverage_verification"
     draft = LiteratureExtractionBusinessAssembler(store, session_id="owner").assemble(
         {"job_token": summary["job_token"]}
     )
     assert {call.task for call in draft.call_plan} == {"extraction"}
+    summary = complete_with_payloads(
+        store, summary["job_token"], planner, verification_payload
+    )
+    assert summary["stage"] == "adversarial_branches"
+    assert summary["call_count"] == 0
 
 
 def test_business_executor_releases_claim_after_arbitrary_client_failure(tmp_path: Path) -> None:
@@ -253,7 +341,8 @@ def test_unpaired_branch_freezes_exact_third_review_then_manual_on_missing_verdi
         }
 
     summary = complete_with_payloads(store, summary["job_token"], planner, initial)
-    summary = complete_with_payloads(store, summary["job_token"], planner, initial)
+    if summary["stage"] == "coverage_gap":
+        summary = complete_with_payloads(store, summary["job_token"], planner, initial)
 
     def verification(call):
         import json
@@ -301,7 +390,7 @@ def test_completed_stage_cannot_be_replayed_and_source_change_blocks_only_finali
     replacement = tmp_path / "replacement.pdf"
     make_pdf(replacement)
     replacement.replace(path)
-    assert store.peek_stage(summary["job_token"], session_id="owner").name == "coverage_gap"
+    assert store.peek_stage(summary["job_token"], session_id="owner").name == "coverage_verification"
     with pytest.raises(LiteratureExtractionJobError) as stale:
         store.assert_source_fresh(summary["job_token"], session_id="owner")
     assert stale.value.code == "literature_source_stale"
@@ -314,16 +403,7 @@ def test_validated_package_finalization_remains_fail_closed_without_atomic_adapt
     planner = ExistingLiteratureStagePlanner()
     summary = store.create(Papers(path), paper_id=1, session_id="owner")
     summary = complete_with_payloads(store, summary["job_token"], planner, lambda _call: extraction_payload())
-    summary = complete_with_payloads(store, summary["job_token"], planner, lambda _call: extraction_payload())
-
-    def verification(call):
-        import json
-        candidates = json.loads(call.messages[1]["content"].split("\n\nSource pages:", 1)[0].split("Verify these candidates:\n", 1)[1])
-        return {"verdicts": [{
-            "candidate_id": item["candidate_id"], "verdict": "supported", "reason": "matched",
-        } for item in candidates]}
-
-    summary = complete_with_payloads(store, summary["job_token"], planner, verification)
+    summary = complete_with_payloads(store, summary["job_token"], planner, verification_payload)
     summary = store.advance_local_stage(summary["job_token"], session_id="owner", planner=planner)
     assert summary["stage"] == "validated"
     writes = []

@@ -6,15 +6,13 @@ import re
 from typing import Any, Mapping, Sequence
 
 from .deepseek_extraction import (
-    LOCALIZATION_BATCH_SIZE,
     VERDICTS,
     _apply_document_mode_guard,
-    _apply_localization_payload,
     _coverage_gap_messages,
+    _coverage_quantity_anchors,
     _deduplicate,
     _deduplicate_findings,
     _evidence_check,
-    _localization_messages,
     _validated_candidates,
     _validated_findings,
     _verification_batches,
@@ -85,6 +83,70 @@ def _latest(context: LiteratureStageContext, stage: str) -> dict[str, Any]:
     return matches[0]
 
 
+def _normalized_source(value: object) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip().casefold()
+
+
+def _anchor_is_covered(anchor: Mapping[str, Any], candidates: Sequence[Mapping[str, Any]]) -> bool:
+    page = int(anchor.get("source_page") or 0)
+    anchor_text = _normalized_source(anchor.get("source_excerpt"))
+    if not anchor_text:
+        return False
+    for candidate in candidates:
+        if int(candidate.get("source_page") or 0) != page:
+            continue
+        excerpt = _normalized_source(candidate.get("source_excerpt"))
+        if excerpt and (excerpt in anchor_text or anchor_text in excerpt):
+            return True
+    return False
+
+
+def _coverage_gap_reasons(
+    chunk: Sequence[Mapping[str, Any]], chunk_state: Mapping[str, Any]
+) -> tuple[str, ...]:
+    """Conservatively decide whether another paid recall pass is justified."""
+
+    reasons: list[str] = []
+    pending = chunk_state.get("pending_tasks") or []
+    if pending:
+        reasons.append("pending_task")
+    if chunk_state.get("rejected") or chunk_state.get("finding_rejected"):
+        reasons.append("uncertain_rejected_output")
+    candidates = list(chunk_state.get("candidates") or [])
+    findings = list(chunk_state.get("findings") or [])
+    anchors = _coverage_quantity_anchors([_plain(page) for page in chunk])
+    if any(not _anchor_is_covered(anchor, candidates) for anchor in anchors):
+        reasons.append("uncovered_quantity_anchor")
+    page_anchor_counts: dict[int, int] = {}
+    for anchor in anchors:
+        page = int(anchor["source_page"])
+        page_anchor_counts[page] = page_anchor_counts.get(page, 0) + 1
+    if any(count >= 40 for count in page_anchor_counts.values()):
+        reasons.append("quantity_anchor_limit_reached")
+    if not candidates and not findings and any(
+        _normalized_source(page.get("text")) for page in chunk
+    ):
+        reasons.append("uncertain_empty_inventory")
+    return tuple(dict.fromkeys(reasons))
+
+
+def _has_chinese_semantics(candidate: Mapping[str, Any]) -> bool:
+    return bool(
+        re.search(r"[\u4e00-\u9fff]", str(candidate.get("meaning") or ""))
+        and re.search(
+            r"[\u4e00-\u9fff]", str(candidate.get("context_explanation") or "")
+        )
+    )
+
+
+def _requires_human_localization(record: Mapping[str, Any]) -> bool:
+    return any(
+        isinstance(candidate, Mapping) and not _has_chinese_semantics(candidate)
+        for candidate in (record.get("candidate"), record.get("alternate"))
+        if candidate is not None
+    )
+
+
 class ExistingLiteratureStagePlanner:
     """Pure adapter over the existing extraction parsers and adversarial gate."""
 
@@ -131,7 +193,7 @@ class ExistingLiteratureStagePlanner:
             target = state[branch]["chunks"][chunk_index - 1]
             for item in candidates:
                 item["extraction_pass"] = pass_index
-                item["extraction_focus"] = context.focuses[pass_index - 1]
+                item["extraction_focus"] = "combined_recall_checklist"
             target["candidates"].extend(candidates)
             target["rejected"].extend(rejected + mode_rejected)
             target["findings"].extend(findings)
@@ -140,11 +202,16 @@ class ExistingLiteratureStagePlanner:
             if not isinstance(pending, Sequence) or isinstance(pending, (str, bytes)):
                 raise ValueError("pending_tasks must be a list")
             target["pending_tasks"].extend(_plain(item) for item in pending if isinstance(item, Mapping))
-        calls = []
+        calls: list[FrozenModelCall] = []
         paper = {**_plain(context.paper), "_recognition_profile": _plain(context.experiment_profile)}
         for branch in BRANCHES:
             for chunk_index, chunk in enumerate(context.chunks, start=1):
-                existing = state[branch]["chunks"][chunk_index - 1]["candidates"]
+                chunk_state = state[branch]["chunks"][chunk_index - 1]
+                reasons = _coverage_gap_reasons(chunk, chunk_state)
+                chunk_state["coverage_gap_reasons"] = list(reasons)
+                if not reasons:
+                    continue
+                existing = chunk_state["candidates"]
                 calls.append(FrozenModelCall.create(
                     call_id=f"{branch}-chunk-{chunk_index}-focus-{len(context.focuses) + 1}",
                     task="extraction",
@@ -155,7 +222,9 @@ class ExistingLiteratureStagePlanner:
                     max_tokens=12_000,
                     options={"thinking": False, "temperature": 0.1 if branch == "a" else 0.45},
                 ))
-        return PlannedLiteratureStage("coverage_gap", state, tuple(calls), _fingerprint(state))
+        if calls:
+            return PlannedLiteratureStage("coverage_gap", state, tuple(calls), _fingerprint(state))
+        return self._plan_verification(context, state)
 
     def _coverage(self, context: LiteratureStageContext, raw_results) -> PlannedLiteratureStage:
         state = _latest(context, "initial_focus")
@@ -183,43 +252,47 @@ class ExistingLiteratureStagePlanner:
             if not isinstance(pending, Sequence) or isinstance(pending, (str, bytes)):
                 raise ValueError("pending_tasks must be a list")
             target["pending_tasks"].extend(_plain(item) for item in pending if isinstance(item, Mapping))
+        return self._plan_verification(context, state)
+
+    def _plan_verification(
+        self, context: LiteratureStageContext, state: dict[str, Any]
+    ) -> PlannedLiteratureStage:
         calls: list[FrozenModelCall] = []
         batch_map: list[dict[str, Any]] = []
+        all_pages = [_plain(page) for page in context.pages]
         for branch in BRANCHES:
+            local_passed: list[dict[str, Any]] = []
             for chunk_index, chunk_map in enumerate(state[branch]["chunks"], start=1):
                 chunk = _chunk(context, chunk_index)
                 page_by_number = {int(page["page"]): str(page["text"]) for page in chunk}
-                local_passed = []
                 for item in chunk_map["candidates"]:
                     item["local_evidence"] = _evidence_check(
                         item, page_by_number[int(item["source_page"])]
                     )
                     if item["local_evidence"]["passed"]:
                         local_passed.append(item)
-                for batch_index, batch in enumerate(_verification_batches(local_passed), start=1):
-                    calls.append(FrozenModelCall.create(
-                        call_id=f"{branch}-verify-{chunk_index}-{batch_index}",
-                        task="verification",
-                        messages=_verification_messages(chunk, batch),
-                        max_tokens=4_000,
-                        options={"thinking": False, "temperature": 0.0},
-                    ))
-                    batch_map.append({
-                        "branch": branch,
-                        "chunk_index": chunk_index,
-                        "candidate_ids": [item["candidate_id"] for item in batch],
-                    })
+            for batch_index, batch in enumerate(_verification_batches(local_passed), start=1):
+                calls.append(FrozenModelCall.create(
+                    call_id=f"{branch}-verify-{batch_index}",
+                    task="verification",
+                    messages=_verification_messages(all_pages, batch),
+                    max_tokens=4_000,
+                    options={"thinking": False, "temperature": 0.0},
+                ))
+                batch_map.append({
+                    "branch": branch,
+                    "candidate_ids": [item["candidate_id"] for item in batch],
+                })
         state["verification_batches"] = batch_map
-        if not calls:
-            # Preserve a deterministic verifier boundary without a paid call by
-            # advancing through the local-capable stage with an empty plan.
-            calls = []
         return PlannedLiteratureStage(
             "coverage_verification", state, tuple(calls), _fingerprint(state)
         )
 
     def _verification(self, context: LiteratureStageContext, raw_results) -> PlannedLiteratureStage:
-        state = _latest(context, "coverage_gap")
+        if any(item.stage == "coverage_gap" for item in context.prior_outputs):
+            state = _latest(context, "coverage_gap")
+        else:
+            state = _latest(context, "initial_focus")
         batch_map = state.pop("verification_batches", [])
         if len(batch_map) != len(raw_results):
             raise ValueError("verification batch count mismatch")
@@ -234,12 +307,10 @@ class ExistingLiteratureStagePlanner:
             expected = set(batch_meta["candidate_ids"])
             if set(verdicts) != expected:
                 raise ValueError("verification payload must cover each candidate exactly once")
-            candidates = state[batch_meta["branch"]]["chunks"][batch_meta["chunk_index"] - 1]["candidates"]
-            for item in candidates:
-                if item["candidate_id"] in expected:
-                    item["ai_verification"] = verdicts[item["candidate_id"]]
-        calls: list[FrozenModelCall] = []
-        localization_map: list[dict[str, Any]] = []
+            for chunk_map in state[batch_meta["branch"]]["chunks"]:
+                for item in chunk_map["candidates"]:
+                    if item["candidate_id"] in expected:
+                        item["ai_verification"] = verdicts[item["candidate_id"]]
         for branch in BRANCHES:
             verified = []
             findings = []
@@ -254,46 +325,20 @@ class ExistingLiteratureStagePlanner:
                 findings.extend(chunk_map["findings"])
             state[branch]["verified_candidates"] = _deduplicate(verified)
             state[branch]["qualitative_findings"] = _deduplicate_findings(findings)
-            needs_translation = [
-                item for item in state[branch]["verified_candidates"]
-                if not (
-                    re.search(r"[\u4e00-\u9fff]", str(item.get("meaning") or ""))
-                    and re.search(r"[\u4e00-\u9fff]", str(item.get("context_explanation") or ""))
-                )
-            ]
-            for batch_index, batch in enumerate(
-                _verification_batches(needs_translation, LOCALIZATION_BATCH_SIZE), start=1
-            ):
-                calls.append(FrozenModelCall.create(
-                    call_id=f"{branch}-localize-{batch_index}",
-                    task="localization",
-                    messages=_localization_messages(batch),
-                    max_tokens=8_000,
-                    options={"thinking": False, "temperature": 0.0},
-                ))
-                localization_map.append({
-                    "branch": branch,
-                    "candidate_ids": [item["candidate_id"] for item in batch],
-                })
-        state["localization_batches"] = localization_map
         return PlannedLiteratureStage(
-            "adversarial_branches", state, tuple(calls), _fingerprint(state)
+            "adversarial_branches", state, (), _fingerprint(state)
         )
 
     def _adversarial(self, context: LiteratureStageContext, raw_results) -> PlannedLiteratureStage:
         state = _latest(context, "coverage_verification")
-        batch_map = state.pop("localization_batches", [])
-        if len(batch_map) != len(raw_results):
-            raise ValueError("localization response count mismatch")
-        for batch_meta, payload in zip(batch_map, raw_results, strict=True):
-            ids = set(batch_meta["candidate_ids"])
-            batch = [
-                item for item in state[batch_meta["branch"]]["verified_candidates"]
-                if item["candidate_id"] in ids
-            ]
-            _apply_localization_payload(batch, _plain(payload))
+        if raw_results:
+            raise ValueError("adversarial comparison is a local stage")
         records = self._compare(state)
-        low_records = [record for record in records if record["gate_status"] == "manual_review"]
+        low_records = [
+            record for record in records
+            if record["gate_status"] == "manual_review"
+            and not _requires_human_localization(record)
+        ]
         pages = {int(page["page"]): str(page["text"]) for page in context.pages}
         calls = tuple(
             FrozenModelCall.create(
@@ -317,7 +362,11 @@ class ExistingLiteratureStagePlanner:
     def _third(self, context: LiteratureStageContext, raw_results) -> PlannedLiteratureStage:
         state = _latest(context, "adversarial_branches")
         records = state["records"]
-        low_records = [record for record in records if record["gate_status"] == "manual_review"]
+        low_records = [
+            record for record in records
+            if record["gate_status"] == "manual_review"
+            and not _requires_human_localization(record)
+        ]
         _apply_third_review_payloads(
             low_records, [_plain(item) for item in raw_results], self._threshold
         )
@@ -334,21 +383,33 @@ class ExistingLiteratureStagePlanner:
             right = state["b"][field]
             pairs, used_left, used_right = _pair_candidates(left, right, scorer)
             for left_index, right_index, scored in pairs:
-                records.append(_make_record(
+                record = _make_record(
                     entity_type, left[left_index], right[right_index],
                     float(scored["score"]), "extractor_a", self._threshold,
-                ))
+                )
+                self._enforce_human_localization(record)
+                records.append(record)
             for index, candidate in enumerate(left):
                 if index not in used_left:
-                    records.append(_make_record(
+                    record = _make_record(
                         entity_type, candidate, None, 0.0, "extractor_a", self._threshold
-                    ))
+                    )
+                    self._enforce_human_localization(record)
+                    records.append(record)
             for index, candidate in enumerate(right):
                 if index not in used_right:
-                    records.append(_make_record(
+                    record = _make_record(
                         entity_type, candidate, None, 0.0, "extractor_b", self._threshold
-                    ))
+                    )
+                    self._enforce_human_localization(record)
+                    records.append(record)
         return records
+
+    @staticmethod
+    def _enforce_human_localization(record: dict[str, Any]) -> None:
+        if _requires_human_localization(record):
+            record["gate_status"] = "manual_review"
+            record["gate_reason"] = "中文物理意义或实验条件缺失，必须人工审核"
 
     def _validated_result(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         allowed = {"dual_pass", "third_pass", "manual_review"}

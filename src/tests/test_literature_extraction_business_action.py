@@ -621,7 +621,7 @@ def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence)
     assert "pdf_sha256" not in repr(public)
     codes = [event["code"] for event in activity]
     assert codes[0] == "literature_initial_focus"
-    assert "literature_coverage_gap" in codes
+    assert "literature_coverage_verification" in codes
     assert codes[-1] == "literature_publishing"
     assert all("path" not in repr(event).casefold() for event in activity)
 
@@ -840,7 +840,7 @@ def test_stage_failure_does_not_retry_and_keeps_current_stage_prepared(evidence)
     assert failed.value.next_action == "review_call_outcome"
     assert raw.calls == len(draft.call_plan) + 1
     summary = store.summary(draft.outbound["job_handle"], session_id="owner")
-    assert summary["stage"] == "coverage_gap"
+    assert summary["stage"] == "coverage_verification"
     assert _counts(db) == before
 
 

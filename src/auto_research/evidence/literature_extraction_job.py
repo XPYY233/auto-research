@@ -16,9 +16,10 @@ import fitz
 from .context_chat import _read_stable_pdf_snapshot
 from .deepseek_extraction import (
     BASE_EXTRACTION_FOCUSES,
+    _bounded_page_chunks,
+    _combined_extraction_focus,
     _extraction_messages,
     _is_reference_dominant,
-    _page_chunks,
 )
 from .experiment_types import classify_experiment_types, extraction_focuses_for_profile
 from .quality_pipeline import ROLE_A, ROLE_B
@@ -50,7 +51,7 @@ MODEL_STAGES = frozenset({
     "initial_focus", "coverage_gap", "coverage_verification", "adversarial_branches",
     "third_review",
 })
-REQUIRED_CALL_STAGES = frozenset({"initial_focus", "coverage_gap"})
+REQUIRED_CALL_STAGES = frozenset({"initial_focus"})
 LOCAL_CAPABLE_STAGES = frozenset({
     "coverage_verification", "adversarial_branches", "third_review",
 })
@@ -679,23 +680,32 @@ class LiteratureExtractionJobStore:
         page_list = [_plain(page) for page in snapshot.pages]
         profile = _freeze(classify_experiment_types(dict(public_paper), pages=page_list))
         focuses = tuple(extraction_focuses_for_profile(_plain(profile)) or BASE_EXTRACTION_FOCUSES)
-        chunks = tuple(tuple(chunk) for chunk in _page_chunks(page_list, chunk_pages))
+        try:
+            chunks = tuple(
+                tuple(chunk) for chunk in _bounded_page_chunks(page_list, chunk_pages)
+            )
+        except ValueError as exc:
+            self._snapshots.release(snapshot_handle)
+            raise LiteratureExtractionJobError(
+                "literature_pdf_text_limit_exceeded",
+                "PDF 单页文本超过安全抽取上限，未创建截断任务",
+            ) from exc
         extraction_paper = {**dict(public_paper), "_recognition_profile": _plain(profile)}
+        combined_focus = _combined_extraction_focus(focuses)
         calls: list[FrozenModelCall] = []
         for branch, instruction in (("a", ROLE_A), ("b", ROLE_B)):
             for chunk_index, chunk in enumerate(chunks, start=1):
-                for focus_index, focus in enumerate(focuses, start=1):
-                    messages = _extraction_messages(
-                        extraction_paper, list(chunk), focus, learning_guidance
-                    )
-                    messages[0]["content"] = f"{instruction}\n\n{messages[0]['content']}"
-                    calls.append(FrozenModelCall.create(
-                        call_id=f"{branch}-chunk-{chunk_index}-focus-{focus_index}",
-                        task="extraction",
-                        messages=messages,
-                        max_tokens=16_000,
-                        options={"thinking": False, "temperature": 0.1 if branch == "a" else 0.45},
-                    ))
+                messages = _extraction_messages(
+                    extraction_paper, list(chunk), combined_focus, learning_guidance
+                )
+                messages[0]["content"] = f"{instruction}\n\n{messages[0]['content']}"
+                calls.append(FrozenModelCall.create(
+                    call_id=f"{branch}-chunk-{chunk_index}-focus-1",
+                    task="extraction",
+                    messages=messages,
+                    max_tokens=16_000,
+                    options={"thinking": False, "temperature": 0.1 if branch == "a" else 0.45},
+                ))
         now_value = self._clock.now()
         stage = FrozenExtractionStage.create(
             "initial_focus", calls, snapshot.content_fingerprint, now_value
@@ -906,6 +916,9 @@ class LiteratureExtractionJobStore:
                 valid_next = (
                     current_index + 1 < len(STAGE_ORDER)
                     and STAGE_ORDER[current_index + 1] == planned.next_stage
+                ) or (
+                    job.stage.name == "initial_focus"
+                    and planned.next_stage == "coverage_verification"
                 ) or (
                     job.stage.name == "adversarial_branches"
                     and planned.next_stage == "validated"

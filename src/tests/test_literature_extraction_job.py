@@ -6,6 +6,7 @@ from pathlib import Path
 import fitz
 import pytest
 
+from auto_research.evidence.deepseek_extraction import _bounded_page_chunks
 from auto_research.evidence.literature_extraction_job import (
     FrozenModelCall,
     LiteratureExtractionJobError,
@@ -78,12 +79,16 @@ def test_initial_stage_is_frozen_before_any_model_call_and_path_free(tmp_path: P
     store = LiteratureExtractionJobStore(session_key=b"x" * 32)
     summary = store.create(Papers(path), paper_id=7, session_id="session-a", chunk_pages=2)
     assert summary["stage"] == "initial_focus"
-    assert summary["call_count"] >= 4  # two roles times the deterministic focus set
+    assert summary["call_count"] == 2  # one merged-focus call per A/B branch and page block
     assert summary["possible_charges"] is True
     assert str(path) not in repr(summary)
     assert "pdf_sha256" not in repr(summary)
     stage = store.claim_stage(summary["job_token"], session_id="session-a")
     original = stage.calls[0].messages[0]["content"]
+    assert "experimental setup, sample/material identity" in original
+    assert "measured values, derived/calculated quantities" in original
+    assert "Do not read precise curve points" in original
+    assert "For a table row" in original
     with pytest.raises(TypeError):
         stage.calls[0].messages[0]["content"] = "changed"
     assert stage.calls[0].messages[0]["content"] == original
@@ -242,6 +247,46 @@ def test_cancel_releases_snapshot_authority(tmp_path: Path) -> None:
     assert handle not in store._snapshots._records
 
 
+def test_initial_call_budget_is_two_branches_per_bounded_page_block(tmp_path: Path) -> None:
+    for pages, expected_blocks, expected_calls in (
+        (1, 1, 2),
+        (7, 2, 4),
+        (15, 4, 8),
+    ):
+        path = tmp_path / f"paper-{pages}.pdf"
+        document = fitz.open()
+        for page_number in range(pages):
+            page = document.new_page()
+            page.insert_text(
+                (72, 72),
+                f"Measured property {page_number} was {page_number + 1}.0 GPa at 300 K.",
+            )
+        document.save(path)
+        document.close()
+        store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+        summary = store.create(
+            Papers(path), paper_id=1, session_id="owner", chunk_pages=4
+        )
+        assert summary["sending_scope"]["page_block_count"] == expected_blocks
+        assert summary["call_count"] == expected_calls
+        assert summary["max_token_budget"] == expected_calls * 16_000
+
+
+def test_page_chunking_preserves_whole_pages_and_enforces_character_bound() -> None:
+    pages = [
+        {"page": 1, "text": "a" * 60},
+        {"page": 2, "text": "b" * 60},
+        {"page": 3, "text": "c" * 20},
+    ]
+    chunks = _bounded_page_chunks(pages, 3, max_chars=100)
+    assert [[page["page"] for page in chunk] for chunk in chunks] == [[1], [2, 3]]
+    assert "".join(page["text"] for chunk in chunks for page in chunk) == (
+        "a" * 60 + "b" * 60 + "c" * 20
+    )
+    with pytest.raises(ValueError):
+        _bounded_page_chunks([{"page": 1, "text": "x" * 101}], 3, max_chars=100)
+
+
 def test_long_pdf_initial_plan_remains_within_existing_chunk_boundary(tmp_path: Path) -> None:
     path = tmp_path / "long.pdf"
     document = fitz.open()
@@ -253,7 +298,7 @@ def test_long_pdf_initial_plan_remains_within_existing_chunk_boundary(tmp_path: 
     store = LiteratureExtractionJobStore(session_key=b"x" * 32)
     summary = store.create(Papers(path), paper_id=1, session_id="owner", chunk_pages=2)
     assert summary["sending_scope"]["page_block_count"] == 30
-    assert summary["call_count"] == 120
-    assert summary["max_token_budget"] == 120 * 16_000
+    assert summary["call_count"] == 60
+    assert summary["max_token_budget"] == 60 * 16_000
     assert summary["transient"] is True
     assert summary["persistence_allowed"] is False

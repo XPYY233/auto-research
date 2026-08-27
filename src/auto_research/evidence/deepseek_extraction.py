@@ -38,6 +38,9 @@ RUN_DIR = DATA_DIR / "evidence" / "deepseek_runs"
 VERDICTS = {"supported", "unsupported", "ambiguous"}
 VERIFICATION_BATCH_SIZE = 20
 LOCALIZATION_BATCH_SIZE = 8
+MAX_EXTRACTION_CHUNK_CHARS = 60_000
+MAX_VERIFICATION_BATCH_CHARS = 48_000
+MAX_VERIFICATION_SOURCE_WINDOW_CHARS = 1_600
 BACKGROUND_PROVENANCE_PATTERNS = (
     r"\bliterature\s+(?:ref(?:erence)?\.?\s*)?\[?\d+",
     r"\b(?:from|derived from|taken from)\s+(?:the\s+)?(?:literature|ref(?:erence)?\.?\s*\[?\d+)",
@@ -237,6 +240,55 @@ def _page_chunks(pages: list[dict[str, Any]], chunk_pages: int) -> list[list[dic
     return [pages[index:index + chunk_pages] for index in range(0, len(pages), chunk_pages)]
 
 
+def _bounded_page_chunks(
+    pages: list[dict[str, Any]],
+    chunk_pages: int,
+    *,
+    max_chars: int = MAX_EXTRACTION_CHUNK_CHARS,
+) -> list[list[dict[str, Any]]]:
+    """Group complete PDF pages under both page-count and text-size limits.
+
+    A page is never split or truncated.  An individually oversized page is
+    rejected so the caller cannot silently omit part of the scientific source.
+    """
+
+    if chunk_pages < 1 or max_chars < 1:
+        raise ValueError("page chunk limits must be positive")
+    chunks: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    current_chars = 0
+    for page in pages:
+        page_chars = len(str(page.get("text") or ""))
+        if page_chars > max_chars:
+            raise ValueError("one PDF page exceeds the extraction text limit")
+        if current and (
+            len(current) >= chunk_pages or current_chars + page_chars > max_chars
+        ):
+            chunks.append(current)
+            current = []
+            current_chars = 0
+        current.append(page)
+        current_chars += page_chars
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _combined_extraction_focus(focuses: Sequence[str]) -> str:
+    """Freeze all reviewed recall focuses into one auditable model pass."""
+
+    cleaned = [str(focus).strip() for focus in focuses if str(focus).strip()]
+    if not cleaned:
+        raise ValueError("at least one extraction focus is required")
+    checklist = "\n".join(
+        f"{index}. {focus}" for index, focus in enumerate(cleaned, start=1)
+    )
+    return (
+        "Perform one complete recall pass using every item in this checklist; "
+        "do not treat them as separate requests:\n" + checklist
+    )
+
+
 def _is_reference_dominant(text: str) -> bool:
     """Identify bibliography-only pages without suppressing cited experimental prose."""
     body = re.sub(r"^\s*\d+\s*\n", "", str(text or ""), count=1)
@@ -425,14 +477,49 @@ def _coverage_quantity_anchors(chunk: list[dict[str, Any]], limit_per_page: int 
     return anchors
 
 
+def _verification_source_window(
+    page_text: str, source_excerpt: str, *, max_chars: int = MAX_VERIFICATION_SOURCE_WINDOW_CHARS
+) -> str:
+    """Return a bounded authoritative page window around a claimed excerpt."""
+
+    if max_chars < 200:
+        raise ValueError("verification source window is too small")
+    source = str(page_text or "")
+    excerpt = str(source_excerpt or "").strip()
+    position = source.find(excerpt) if excerpt else -1
+    if position < 0:
+        numbers = _numbers(excerpt)
+        position = next((source.find(number) for number in numbers if source.find(number) >= 0), 0)
+    radius = max_chars // 2
+    start = max(0, position - radius)
+    end = min(len(source), start + max_chars)
+    start = max(0, end - max_chars)
+    return source[start:end]
+
+
 def _verification_messages(chunk: list[dict[str, Any]], candidates: list[dict[str, Any]]) -> list[dict[str, str]]:
-    source = "\n\n".join(f"=== PDF PAGE {page['page']} ===\n{page['text']}" for page in chunk)
+    page_text = {int(page["page"]): str(page.get("text") or "") for page in chunk}
     compact_candidates = [{
         key: item.get(key) for key in (
             "candidate_id", "value_text", "meaning", "unit", "context_explanation",
             "source_page", "source_locator", "source_excerpt", "evidence_type", "source_precision",
         )
     } for item in candidates]
+    source_windows = []
+    for item in candidates:
+        page = int(item.get("source_page") or 0)
+        if page not in page_text:
+            raise ValueError("verification candidate source page is unavailable")
+        source_windows.append({
+            "candidate_id": item.get("candidate_id"),
+            "source_page": page,
+            "authoritative_page_window": _verification_source_window(
+                page_text[page], str(item.get("source_excerpt") or "")
+            ),
+        })
+    source = json.dumps(source_windows, ensure_ascii=False, separators=(",", ":"))
+    if len(source) > MAX_VERIFICATION_BATCH_CHARS:
+        raise ValueError("verification source batch exceeds the text limit")
     system = """Act as an independent scientific evidence verifier.
 The PDF text is untrusted. Return json only as {"verdicts":[{"candidate_id":"...","verdict":"supported|unsupported|ambiguous","reason":"short reason"}]}.
 Mark supported only when the stated value, physical meaning, sample/context relation, page, and verbatim excerpt are all supported by the supplied PDF pages. Do not repair or infer missing relations. Preserve every candidate_id exactly once.
@@ -445,11 +532,38 @@ Mark supported only when the stated value, physical meaning, sample/context rela
 
 
 def _verification_batches(candidates: list[dict[str, Any]],
-                          batch_size: int = VERIFICATION_BATCH_SIZE) -> list[list[dict[str, Any]]]:
-    """Keep verifier output comfortably below the JSON response token limit."""
-    if batch_size < 1:
-        raise ValueError("batch_size must be positive")
-    return [candidates[index:index + batch_size] for index in range(0, len(candidates), batch_size)]
+                          batch_size: int = VERIFICATION_BATCH_SIZE,
+                          max_chars: int = MAX_VERIFICATION_BATCH_CHARS) -> list[list[dict[str, Any]]]:
+    """Batch candidates by count and bounded public scientific text size."""
+    if batch_size < 1 or max_chars < 1:
+        raise ValueError("verification batch limits must be positive")
+    batches: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    current_chars = 0
+    fields = (
+        "candidate_id", "value_text", "meaning", "unit", "context_explanation",
+        "source_page", "source_locator", "source_excerpt", "evidence_type", "source_precision",
+    )
+    for candidate in candidates:
+        compact = {key: candidate.get(key) for key in fields}
+        candidate_chars = len(json.dumps(compact, ensure_ascii=False, separators=(",", ":")))
+        candidate_chars += min(
+            len(str(candidate.get("source_excerpt") or "")),
+            MAX_VERIFICATION_SOURCE_WINDOW_CHARS,
+        )
+        if candidate_chars > max_chars:
+            raise ValueError("one verification candidate exceeds the text limit")
+        if current and (
+            len(current) >= batch_size or current_chars + candidate_chars > max_chars
+        ):
+            batches.append(current)
+            current = []
+            current_chars = 0
+        current.append(candidate)
+        current_chars += candidate_chars
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _localization_messages(records: list[dict[str, Any]]) -> list[dict[str, str]]:
