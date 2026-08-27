@@ -101,7 +101,42 @@ async function exercise(receiptStatus){let calls=[];const state={jobs:new Map(),
  const request=async(url,options={})=>{calls.push([url,options.method||'GET']);if(url==='/api/desktop/package-center/dataset-export')return{job_id:'dataset-job-12345678',operation:'dataset_export',stage:'completed',progress:100,terminal:true,receipt_status:receiptStatus,result};if(url==='/api/desktop/package-center/receipts')return snapshot([],9);throw new Error('unexpected '+url)};
  const controller=globalThis.AutoResearchFusionPackage.createPackageCenterController({state,q:node,qa,request,safeError:(code,message)=>Object.assign(new Error(message),{code}),cleanText:(v,n=8000)=>String(v??'').slice(0,n),esc:v=>String(v??''),setOperation(){},native:{selectEvidencePackage:async()=>({cancelled:true}),selectPackageDestination:async()=>({cancelled:true}),selectDatasetDestination:async()=>({ok:true,cancelled:false,destination:{destination_token:'destination-token-1234'}})},projectJob(){},openOfficialSearch(){},getCurrentPaperId:()=>null,isActiveView:()=>true});
  await controller.exportDataset();return{calls,html:node('#fusion-package-jobs').innerHTML};}
-(async()=>{const stored=await exercise('stored');assert.deepEqual(stored.calls.map(x=>x[0]),['/api/desktop/package-center/dataset-export','/api/desktop/package-center/receipts']);const pending=await exercise('pending');assert.deepEqual(pending.calls.map(x=>x[0]),['/api/desktop/package-center/dataset-export']);assert(pending.html.includes('文件已导出，回执待恢复'));assert(pending.html.includes('请勿重复导出'));})().catch(error=>{console.error(error);process.exitCode=1});
+(async()=>{const stored=await exercise('stored');assert.deepEqual(stored.calls.map(x=>x[0]),['/api/desktop/package-center/dataset-export','/api/desktop/package-center/receipts']);assert.equal(stored.html.includes('恢复完成回执'),false);const pending=await exercise('pending');assert.deepEqual(pending.calls.map(x=>x[0]),['/api/desktop/package-center/dataset-export']);assert(pending.html.includes('文件已导出，回执待恢复'));assert(pending.html.includes('请勿重复导出'));assert(pending.html.includes('恢复完成回执'));})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+        )
+
+    def test_pending_receipt_retry_is_idempotent_and_never_reexports(self) -> None:
+        self._run_node(
+            """
+const pending={job_id:'dataset-job-12345678',operation:'dataset_export',stage:'completed',progress:100,terminal:true,receipt_status:'pending',result:{schema_version:'dataset-bundle-v1',status:'published'}};
+const stored={...pending,receipt_status:'stored'};
+const state={jobs:new Map([[pending.job_id,pending]]),receipts:[],receiptsLoaded:true,receiptsLoading:false,receiptsStatus:'ready'};
+let calls=[],operations=0,active=false;
+const request=async(url,options={})=>{calls.push([url,options.method||'GET',options.body]);if(url.endsWith('/receipt-retry'))return stored;if(url==='/api/desktop/package-center/receipts')return snapshot([dataset()],4);throw new Error('unexpected '+url)};
+const controller=globalThis.AutoResearchFusionPackage.createPackageCenterController({state,q:node,qa,request,safeError:(code,message)=>Object.assign(new Error(message),{code}),cleanText:(v,n=8000)=>String(v??'').slice(0,n),esc:v=>String(v??''),setOperation(){operations+=1},native:{selectEvidencePackage:async()=>({cancelled:true}),selectPackageDestination:async()=>{throw new Error('destination forbidden')},selectDatasetDestination:async()=>{throw new Error('destination forbidden')}},projectJob(){},openOfficialSearch(){throw new Error('navigation forbidden')},getCurrentPaperId:()=>null,isActiveView:()=>active});
+(async()=>{assert(node('#fusion-package-jobs').textContent==='');assert(await controller.retryPackageReceipt(pending.job_id));assert.deepEqual(calls.map(call=>call[0]),['/api/desktop/package-center/jobs/dataset-job-12345678/receipt-retry','/api/desktop/package-center/receipts']);assert.equal(calls[0][1],'POST');assert.equal(calls[0][2],'{}');assert(!calls.some(call=>call[0].includes('dataset-export')||call[0].includes('/export')));assert.equal(state.jobs.get(pending.job_id).receipt_status,'stored');assert.equal(state.receipts.length,1);assert.equal(operations,0,'inactive retry must not steal the active page');assert.equal(await controller.retryPackageReceipt(pending.job_id),false,'stored receipt has no retry');})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+        )
+
+    def test_retry_failure_keeps_pending_job_and_fixed_retry_message(self) -> None:
+        self._run_node(
+            """
+const pending={job_id:'transfer-job-12345678',operation:'transfer_export',stage:'completed',progress:100,terminal:true,receipt_status:'pending'};
+const state={jobs:new Map([[pending.job_id,pending]])};let calls=[];
+const request=async(url,options={})=>{calls.push([url,options.method||'GET',options.body]);throw Object.assign(new Error('/private/tmp/canary'),{code:'activity_receipt_store_unavailable'})};
+const controller=makeController(request,state);
+(async()=>{assert.equal(await controller.retryPackageReceipt(pending.job_id),false);assert.deepEqual(calls,[['/api/desktop/package-center/jobs/transfer-job-12345678/receipt-retry','POST','{}']]);assert.equal(state.jobs.get(pending.job_id).receipt_status,'pending');const html=node('#fusion-package-jobs').innerHTML;assert(html.includes('恢复完成回执'));assert(html.includes('文件已导出，请勿重复导出'));assert.equal(html.includes('/private'),false);const stored={...pending,receipt_status:'stored'},other={...pending,job_id:'import-job-12345678',operation:'transfer_import'};state.jobs=new Map([[stored.job_id,stored],[other.job_id,other]]);assert.equal(await controller.retryPackageReceipt(stored.job_id),false);assert.equal(await controller.retryPackageReceipt(other.job_id),false);assert.equal(calls.length,1);})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+        )
+
+    def test_late_retry_response_cannot_replace_newer_job_projection(self) -> None:
+        self._run_node(
+            """
+const pending={job_id:'dataset-job-87654321',operation:'dataset_export',stage:'completed',progress:100,terminal:true,receipt_status:'pending'};
+const newer={...pending,progress:99,recovery_marker:'newer'};const state={jobs:new Map([[pending.job_id,pending]])};let release;
+const request=async url=>{if(url.endsWith('/receipt-retry'))return new Promise(resolve=>{release=()=>resolve({...pending,receipt_status:'stored'})});throw new Error('unexpected '+url)};
+const controller=makeController(request,state);
+(async()=>{const retry=controller.retryPackageReceipt(pending.job_id);await Promise.resolve();state.jobs.set(pending.job_id,newer);release();assert.equal(await retry,false);assert.strictEqual(state.jobs.get(pending.job_id),newer);assert.equal(state.jobs.get(pending.job_id).receipt_status,'pending');})().catch(error=>{console.error(error);process.exitCode=1});
 """
         )
 

@@ -80,9 +80,10 @@ eval(source.slice(start,end));
  await request(ROUTES.settings);assert.equal(state.csrfToken,"csrf-1");assert.equal(calls[0].options.headers.get(CSRF_HEADER),null);
  await request(ROUTES.personalSearchRefresh,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});assert.equal(calls[1].options.headers.get(CSRF_HEADER),"csrf-1");
  await request(ROUTES.preferences,{method:"PATCH",headers:{"Content-Type":"application/json"},body:"{}"});assert.equal(calls[2].options.headers.get(CSRF_HEADER),"csrf-2");
- await request("/api/desktop/ai/credentials/deepseek",{method:"DELETE"});assert.equal(calls[3].options.headers.get(CSRF_HEADER),"csrf-3");
+ await request("/api/desktop/package-center/jobs/package_job_1234567890/receipt-retry",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});assert.equal(calls[3].options.headers.get(CSRF_HEADER),"csrf-3");
+ await request("/api/desktop/ai/credentials/deepseek",{method:"DELETE"});assert.equal(calls[4].options.headers.get(CSRF_HEADER),"csrf-4");
  const before=calls.length;await assert.rejects(()=>request("/api/desktop/not-authorized"),error=>error.code==="fusion_route_blocked");assert.equal(calls.length,before);
- assert.deepEqual(calls.map(call=>call.options.method),["GET","POST","PATCH","DELETE"]);
+ assert.deepEqual(calls.map(call=>call.options.method),["GET","POST","PATCH","POST","DELETE"]);
 })().catch(error=>{console.error(error);process.exit(1);});
 '''
         result = subprocess.run(

@@ -61,6 +61,8 @@
   const RECEIPT_CHECKSUM = /^[a-f0-9]{12}$/;
   const RECEIPT_STORAGE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
   const RECEIPT_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
+  const PACKAGE_JOB_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{7,159}$/;
+  const RECEIPT_RETRY_OPERATIONS = new Set(["transfer_export", "dataset_export"]);
 
   function createPackageCenterController(ports) {
     if (!ports || typeof ports !== "object") throw new TypeError("package_ports_required");
@@ -87,6 +89,9 @@
       throw new TypeError("package_native_ports_invalid");
     }
     let bound = false;
+    const receiptRetryRequests = new Map();
+    const receiptRetryPending = new Set();
+    const receiptRetryErrors = new Set();
 
     function packageNotice(message, kind = "info") {
       const node = q("#fusion-package-status");
@@ -474,6 +479,41 @@
       return updateActivityReceipts({operation: "clear", expected_revision: state.receiptsRevision, confirm_clear: true});
     }
 
+    function canRetryPackageReceipt(job) {
+      return Boolean(job && PACKAGE_JOB_ID.test(String(job.job_id || "")) && job.terminal === true && job.stage === "completed" && job.receipt_status === "pending" && RECEIPT_RETRY_OPERATIONS.has(job.operation));
+    }
+
+    async function retryPackageReceipt(jobId) {
+      const id = String(jobId || "");
+      const initial = state.jobs.get(id);
+      if (!canRetryPackageReceipt(initial) || receiptRetryPending.has(id)) return false;
+      const generation = (receiptRetryRequests.get(id) || 0) + 1;
+      receiptRetryRequests.set(id, generation);
+      receiptRetryPending.add(id);
+      receiptRetryErrors.delete(id);
+      renderPackageJobs();
+      try {
+        const job = await request(`/api/desktop/package-center/jobs/${encodeURIComponent(id)}/receipt-retry`, {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+        if (receiptRetryRequests.get(id) !== generation) return false;
+        const current = state.jobs.get(id);
+        if (current !== initial) return false;
+        if (!canRetryPackageReceipt(current) || !job || job.job_id !== id || job.operation !== current.operation || job.terminal !== true || job.stage !== "completed" || job.receipt_status !== "stored") throw safeError("package_receipt_retry_invalid", "完成回执恢复结果无效。");
+        rememberPackageJob(job, "transfer");
+        await loadActivityReceipts({force: true});
+        if (receiptRetryRequests.get(id) !== generation) return false;
+        packageNotice("完成回执已恢复；不会重复导出文件。", "success");
+        return true;
+      } catch (_error) {
+        if (receiptRetryRequests.get(id) !== generation) return false;
+        receiptRetryErrors.add(id);
+        packageNotice("文件已导出，请勿重复导出；完成回执暂未恢复，可再次尝试。", "error");
+        return false;
+      } finally {
+        if (receiptRetryRequests.get(id) === generation) receiptRetryPending.delete(id);
+        renderPackageJobs();
+      }
+    }
+
     function renderPackageJobs() {
       const host = q("#fusion-package-jobs");
       if (!host) return;
@@ -483,8 +523,11 @@
         const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
         const error = job.error || {};
         const receiptStatus = job.receipt_status === "stored" ? " · 完成回执已保存" : job.receipt_status === "pending" ? " · 文件已导出，回执待恢复；请勿重复导出" : "";
-        return `<article class="fusion-package-row"><div><strong>${esc(PACKAGE_STAGE_LABELS[job.stage] || job.stage || "资料包任务")}</strong><small>${esc(job.operation || "")} ${error.code ? `· ${esc(error.message || error.code)}` : ""}${esc(receiptStatus)}</small></div><div class="fusion-package-job-progress"><div class="fusion-package-job-track"><i style="width:${progress}%"></i></div><b>${progress}%</b></div></article>`;
+        const retry = canRetryPackageReceipt(job) ? `<button type="button" data-package-receipt-retry="${esc(job.job_id)}"${receiptRetryPending.has(String(job.job_id)) ? " disabled" : ""}>${receiptRetryPending.has(String(job.job_id)) ? "正在恢复回执…" : "恢复完成回执"}</button>` : "";
+        const retryError = receiptRetryErrors.has(String(job.job_id)) ? " · 回执恢复未完成，可重试；文件已导出，请勿重复导出" : "";
+        return `<article class="fusion-package-row"><div><strong>${esc(PACKAGE_STAGE_LABELS[job.stage] || job.stage || "资料包任务")}</strong><small>${esc(job.operation || "")} ${error.code ? `· ${esc(error.message || error.code)}` : ""}${esc(receiptStatus + retryError)}</small></div><div class="fusion-package-job-progress"><div class="fusion-package-job-track"><i style="width:${progress}%"></i></div><b>${progress}%</b></div>${retry}</article>`;
       }).join("") : "<p>本次还没有资料包任务。</p>";
+      qa("[data-package-receipt-retry]").forEach(button => button.addEventListener("click", () => void retryPackageReceipt(button.dataset.packageReceiptRetry)));
     }
 
     function rememberPackageJob(job, family = "transfer") {
@@ -848,6 +891,7 @@
       loadActivityReceipts,
       deleteActivityReceipt,
       clearActivityReceipts,
+      retryPackageReceipt,
       updateDatasetExportButton,
       planDataset,
       exportDataset,
