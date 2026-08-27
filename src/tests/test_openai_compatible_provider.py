@@ -4,6 +4,7 @@ import unittest
 
 from auto_research.ai.openai_compatible import (
     AIProviderCapabilityError,
+    AIProviderOutcomeUnknownError,
     AIProviderResponseError,
     OpenAICompatibleClient,
     OpenAICompatibleSettings,
@@ -45,6 +46,30 @@ class _FalseySession(_Session):
         return False
 
 
+class _Clock:
+    def __init__(self, values):
+        self.values = iter(values)
+
+    def __call__(self):
+        return next(self.values)
+
+
+class _ChunkedResponse:
+    ok = True
+    status_code = 200
+
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+        self.closed = False
+
+    def iter_content(self, *, chunk_size):
+        self.chunk_size = chunk_size
+        yield from self.chunks
+
+    def close(self):
+        self.closed = True
+
+
 class OpenAICompatibleProviderTests(unittest.TestCase):
     def settings(self, provider="openai", models=None, *, activated=False):
         selected = models or MODELS
@@ -83,6 +108,40 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         client = OpenAICompatibleClient(self.settings(), session=session)
         self.assertTrue(client.smoke_test()["ok"])
         self.assertEqual(len(session.calls), 1)
+
+    def test_chunked_response_has_hard_deadline_and_is_never_retried(self) -> None:
+        response = _ChunkedResponse(
+            [b'{"choices":[{"message":{"content":"{}"}}]}']
+        )
+        session = _Session(response)
+        client = OpenAICompatibleClient(
+            self.settings(activated=True),
+            session=session,
+            monotonic=_Clock((0.0, 181.0)),
+        )
+
+        with self.assertRaises(AIProviderOutcomeUnknownError) as raised:
+            client.request_json([])
+
+        self.assertEqual(raised.exception.code, "ai_provider_outcome_unknown")
+        self.assertFalse(raised.exception.retryable)
+        self.assertTrue(response.closed)
+        self.assertEqual(len(session.calls), 1)
+        self.assertTrue(session.calls[0][1]["stream"])
+
+    def test_chunked_response_is_decoded_within_deadline(self) -> None:
+        response = _ChunkedResponse(
+            [b'{"choices":[', b'{"message":{"content":"{\\"ok\\":true}"}}]}']
+        )
+        session = _Session(response)
+        client = OpenAICompatibleClient(
+            self.settings(activated=True),
+            session=session,
+            monotonic=_Clock((0.0, 1.0, 2.0, 3.0)),
+        )
+
+        self.assertEqual(client.request_json([]), {"ok": True})
+        self.assertTrue(response.closed)
 
     def test_openai_tool_request_uses_selected_planning_model(self) -> None:
         session = _Session(

@@ -32,6 +32,7 @@ _CREDENTIAL_REF_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _Result = TypeVar("_Result")
 _BACKEND_ACTIVATIONS = frozenset({"legacy_compatible", "connection_verified"})
 _VERIFICATION_MAX_TOKENS = 256
+_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 if TYPE_CHECKING:
     from auto_research.settings.ai_runtime_state import ResolvedAIRuntime
@@ -65,6 +66,20 @@ class AIProviderResponseError(AIProviderError):
 class AIProviderUnavailableError(AIProviderResponseError):
     code = "ai_provider_unavailable"
     retryable = True
+
+
+class AIProviderOutcomeUnknownError(AIProviderResponseError):
+    """The provider may have charged the call, so it must not be retried."""
+
+    code = "ai_provider_outcome_unknown"
+
+
+class _DecodedJSONResponse:
+    def __init__(self, payload: object) -> None:
+        self._payload = payload
+
+    def json(self) -> object:
+        return self._payload
 
 
 class AIProviderCapabilityError(AIProviderResponseError):
@@ -204,13 +219,52 @@ class OpenAICompatibleSettings:
 class OpenAICompatibleClient:
     """OpenAI Chat Completions adapter for audited, fixed-endpoint providers."""
 
-    def __init__(self, settings: OpenAICompatibleSettings, session=None):
+    def __init__(
+        self,
+        settings: OpenAICompatibleSettings,
+        session=None,
+        *,
+        monotonic: Callable[[], float] = time.monotonic,
+    ):
         profile = trusted_provider_profile(settings.provider_id)
         if not profile.capabilities.supports(CAPABILITY_AGENT):
             raise AIProviderCapabilityError(CAPABILITY_AGENT)
         self.settings = settings
         self.profile = profile
         self.session = session if session is not None else requests
+        self._monotonic = monotonic
+
+    def _read_bounded_response(self, response: Any, *, deadline: float) -> Any:
+        iterator = getattr(response, "iter_content", None)
+        if not callable(iterator):
+            return response
+        body = bytearray()
+        close = getattr(response, "close", None)
+        try:
+            for chunk in iterator(chunk_size=64 * 1024):
+                if self._monotonic() > deadline:
+                    raise AIProviderOutcomeUnknownError(
+                        "AI 提供商响应超过单次调用时限；结果状态未知，未自动重试。"
+                    )
+                if not chunk:
+                    continue
+                body.extend(chunk)
+                if len(body) > _MAX_RESPONSE_BYTES:
+                    raise AIProviderOutcomeUnknownError(
+                        "AI 提供商响应超过安全大小；结果状态未知，未自动重试。"
+                    )
+            if self._monotonic() > deadline:
+                raise AIProviderOutcomeUnknownError(
+                    "AI 提供商响应超过单次调用时限；结果状态未知，未自动重试。"
+                )
+        finally:
+            if callable(close):
+                close()
+        try:
+            payload = json.loads(bytes(body).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise AIProviderResponseError("AI 提供商返回格式无效。") from exc
+        return _DecodedJSONResponse(payload)
 
     def _require(self, capability: str) -> None:
         if not self.profile.capabilities.supports(capability):
@@ -232,6 +286,7 @@ class OpenAICompatibleClient:
         endpoint = trusted_chat_endpoint(self.profile.provider_id)
         last_error: Exception | None = None
         for attempt in range(self.settings.max_attempts):
+            deadline = self._monotonic() + self.settings.timeout_seconds
             try:
                 response = self.session.post(
                     endpoint,
@@ -242,6 +297,7 @@ class OpenAICompatibleClient:
                     json=payload,
                     timeout=(20, self.settings.timeout_seconds),
                     allow_redirects=False,
+                    stream=True,
                 )
             except requests.RequestException as exc:
                 last_error = exc
@@ -260,7 +316,11 @@ class OpenAICompatibleClient:
                 error_type = AIProviderUnavailableError if transient else AIProviderResponseError
                 raise error_type(f"AI 提供商请求失败：HTTP {response.status_code}")
             try:
-                return parser(response)
+                return parser(
+                    self._read_bounded_response(response, deadline=deadline)
+                )
+            except AIProviderOutcomeUnknownError:
+                raise
             except AIProviderResponseError as exc:
                 last_error = exc
                 if attempt + 1 < self.settings.max_attempts:
