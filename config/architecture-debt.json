@@ -153,7 +153,7 @@
       "area": "durable-user-activity-receipts",
       "owner": "product-runtime",
       "status": "experimental",
-      "problem": "用户资料包与数据集的成功导出已接入独立加密、path-free的30天完成回执，并可在资料包中心跨重启读取；但导入、失败、取消、长任务和回执写入pending后的安全重试仍只依赖当前进程或页面状态",
+      "problem": "用户资料包与数据集的成功导出已接入独立加密、path-free的30天完成回执，并可在资料包中心跨重启读取；当前进程内的pending回执已有显式、幂等且不重跑导出的安全恢复入口，但导入、失败、取消、长任务和pending任务跨App重启仍缺少独立持久操作历史",
       "target": "沿用独立公共活动收据存储补齐导入和长任务终态；只保存任务身份、类型、范围摘要、结果、校验码、时间和稳定next_action，不进入appearance设置，不保存路径、密钥或敏感正文",
       "removal_gate": "导入/导出完成、失败、取消及重启恢复均可从App内核对；文件落盘收据与真实文件哈希一致，失败不留下半成品"
     },
