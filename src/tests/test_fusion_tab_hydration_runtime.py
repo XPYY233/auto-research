@@ -107,7 +107,10 @@ api.state.papers=[
         self.assertNotIn("hydrateRestoredTabs", runtime)
         self.assertIn("preserveGroup=false", runtime)
         self.assertIn("initialView=restoredActive?.ownerView||\"paper\"", runtime)
-        self.assertIn("const restorationPrerequisites=Promise.all([loadLiterature(),loadLibrarianHistory()])", runtime)
+        self.assertIn(
+            "const restorationPrerequisites=Promise.all([loadLiterature().then(async()=>{await loadLiteratureTaskDirectory();return reconnectLiteratureJob();}),loadLibrarianHistory(),loadEvidenceChatHistory()])",
+            runtime,
+        )
         self.assertIn(".then(()=>hydrateActiveRestoredTabs())", runtime)
         self.assertIn("tabs: this.tabs.map(({ tabId, kind, ownerView, title, identity, groupId, pinned })", store)
         self.assertNotIn("scrollTop, focusToken", store[store.index("persist()") : store.index("snapshot()")])
