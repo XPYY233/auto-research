@@ -455,3 +455,57 @@ def test_operation_history_modules_are_bounded_and_acyclic():
             "operation_history_validation",
         },
     }
+
+
+def test_backend_record_is_atomic_idempotent_and_does_not_require_ui_cas():
+    store = MemoryStore()
+    service = OperationHistoryService(store, clock=Clock())
+    operation_uid, revision = service.record(job())
+    assert revision == 1
+    assert len(operation_uid) == 64
+
+    repeated_uid, repeated_revision = service.record(job())
+    assert repeated_uid == operation_uid
+    assert repeated_revision == revision
+
+    running = job(stage="build_archive", progress=62)
+    running_uid, running_revision = service.record(running)
+    assert running_uid == operation_uid
+    assert running_revision == 2
+    assert service.get()["operations"][0]["state"] == "running"
+
+
+def test_mark_receipt_stored_is_cas_guarded_and_idempotent():
+    service = OperationHistoryService(MemoryStore(), clock=Clock())
+    operation_uid, revision = service.record(completed_transfer())
+    with pytest.raises(OperationHistoryError) as conflict:
+        service.mark_receipt_stored(operation_uid, expected_revision=revision - 1)
+    assert conflict.value.code == "operation_history_revision_conflict"
+    assert service.pending_receipt(operation_uid)["result"] == transfer_result()
+
+    stored = service.mark_receipt_stored(
+        operation_uid,
+        expected_revision=revision,
+    )
+    assert stored["revision"] == revision + 1
+    entry = stored["operations"][0]
+    assert entry["receipt_status"] == "stored"
+    assert entry["next_action"] == "none"
+    assert "recovery_result" not in json.dumps(stored)
+
+    repeated = service.mark_receipt_stored(
+        operation_uid,
+        expected_revision=revision,
+    )
+    assert repeated == stored
+    with pytest.raises(OperationHistoryError) as missing:
+        service.pending_receipt(operation_uid)
+    assert missing.value.code == "operation_history_pending_receipt_not_found"
+
+
+def test_mark_receipt_stored_rejects_non_pending_history():
+    service = OperationHistoryService(MemoryStore(), clock=Clock())
+    operation_uid, revision = service.record(job())
+    with pytest.raises(OperationHistoryError) as raised:
+        service.mark_receipt_stored(operation_uid, expected_revision=revision)
+    assert raised.value.code == "operation_history_receipt_not_pending"

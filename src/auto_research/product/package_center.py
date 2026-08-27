@@ -23,6 +23,10 @@ from .package_job_contract import (
     begin_package_job,
     fail_package_job,
 )
+from .package_job_history import (
+    BestEffortPackageJobHistory,
+    PackageJobHistoryRecorder,
+)
 from .package_center_models import (
     MAX_TRANSFER_BYTES,
     SHA256_RE,
@@ -100,6 +104,7 @@ class PackageJobService:
         *,
         max_jobs: int = MAX_JOB_CACHE,
         receipt_recorder: ActivityReceiptRecorder | None = None,
+        history_recorder: PackageJobHistoryRecorder | None = None,
     ) -> None:
         if not 1 <= int(max_jobs) <= 1_000:
             raise ValueError("max_jobs must be between 1 and 1000")
@@ -110,6 +115,7 @@ class PackageJobService:
         self._order: list[str] = []
         self._receipt_recorder = receipt_recorder
         self._receipt_recording: set[str] = set()
+        self._history = BestEffortPackageJobHistory(history_recorder)
 
     def get(self, job_id: str) -> dict[str, Any]:
         normalized = normalize_token(job_id, label="package_job")
@@ -136,12 +142,16 @@ class PackageJobService:
             self._jobs[job_id] = _StoredJob(job_id, begin_package_job(operation))
             self._order.append(job_id)
             self._active_job_id = job_id
-            return job_id
+            public_job = self._jobs[job_id].public_dict()
+        self._history.record(public_job)
+        return job_id
 
     def _advance(self, job_id: str, stage: PackageJobStage) -> None:
         with self._lock:
             job = self._jobs[job_id]
             job.progress = advance_package_job(job.progress, stage)
+            public_job = job.public_dict()
+        self._history.record(public_job)
 
     def _complete(self, job_id: str, *, outcome: str, result: dict[str, Any]) -> None:
         receipt_operation: PackageOperation | None = None
@@ -161,6 +171,8 @@ class PackageJobService:
                 self._receipt_recording.add(job_id)
             if self._active_job_id == job_id:
                 self._active_job_id = None
+            completed_job = job.public_dict()
+        self._history.record(completed_job)
         if receipt_operation is None:
             return
         stored = False
@@ -178,6 +190,7 @@ class PackageJobService:
         else:
             stored = True
         finally:
+            stored_job: dict[str, Any] | None = None
             with self._lock:
                 self._receipt_recording.discard(job_id)
                 job = self._jobs.get(job_id)
@@ -188,11 +201,15 @@ class PackageJobService:
                     and job.receipt_status == "pending"
                 ):
                     job.receipt_status = "stored"
+                    stored_job = job.public_dict()
+            if stored_job is not None:
+                self._history.mark_receipt_stored(stored_job)
 
     def retry_receipt(self, job_id: str) -> dict[str, Any]:
         """Retry only the durable receipt for one already-completed export."""
 
         normalized = normalize_token(job_id, label="package_job")
+        already_stored: dict[str, Any] | None = None
         with self._lock:
             job = self._jobs.get(normalized)
             if job is None:
@@ -213,14 +230,18 @@ class PackageJobService:
                     "该任务没有可恢复的完成回执。",
                 )
             if job.receipt_status == "stored":
-                return job.public_dict()
-            if normalized in self._receipt_recording:
+                already_stored = job.public_dict()
+            if already_stored is not None:
+                operation = None
+                outcome = None
+                result = None
+            elif normalized in self._receipt_recording:
                 raise PackageCenterError(
                     "package_receipt_recovery_busy",
                     "该完成回执正在恢复，请稍后查看。",
                     retryable=True,
                 )
-            if (
+            elif (
                 self._receipt_recorder is None
                 or job.result is None
                 or not isinstance(job.progress.outcome, str)
@@ -230,10 +251,17 @@ class PackageJobService:
                     "package_receipt_not_recoverable",
                     "该任务没有可恢复的完成回执。",
                 )
-            operation = job.progress.operation
-            outcome = job.progress.outcome
-            result = dict(job.result)
-            self._receipt_recording.add(normalized)
+            else:
+                operation = job.progress.operation
+                outcome = job.progress.outcome
+                result = dict(job.result)
+                self._receipt_recording.add(normalized)
+                pending_job = job.public_dict()
+
+        if already_stored is not None:
+            self._history.mark_receipt_stored(already_stored)
+            return already_stored
+        self._history.record(pending_job)
 
         try:
             self._receipt_recorder.record_completed(
@@ -268,7 +296,9 @@ class PackageJobService:
                 )
             job.receipt_status = "stored"
             self._receipt_recording.discard(normalized)
-            return job.public_dict()
+            stored_job = job.public_dict()
+        self._history.mark_receipt_stored(stored_job)
+        return stored_job
 
     def _fail(self, job_id: str, error: PackageCenterError) -> None:
         with self._lock:
@@ -282,6 +312,8 @@ class PackageJobService:
             job.progress = fail_package_job(job.progress, failure)
             if self._active_job_id == job_id:
                 self._active_job_id = None
+            public_job = job.public_dict()
+        self._history.record(public_job)
 
     def _trim_locked(self) -> None:
         while len(self._order) >= self._max_jobs:

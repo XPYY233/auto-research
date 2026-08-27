@@ -164,9 +164,25 @@ class OperationHistoryService:
         ):
             raise invalid_history("资料包任务历史版本无效。")
         candidate = job_record(job, self._now(), self._retention)
+        snapshot = self._record_candidate(candidate, expected_revision=expected_revision)
+        return snapshot
+
+    def record(self, job: object) -> tuple[str, int]:
+        """Best-effort backend entry point that does not require renderer CAS."""
+
+        candidate = job_record(job, self._now(), self._retention)
+        snapshot = self._record_candidate(candidate, expected_revision=None)
+        return candidate["operation_uid"], int(snapshot["revision"])
+
+    def _record_candidate(
+        self,
+        candidate: dict[str, Any],
+        *,
+        expected_revision: int | None,
+    ) -> dict[str, Any]:
         with self._lock:
             revision, records = self._load_locked()
-            if expected_revision != revision:
+            if expected_revision is not None and expected_revision != revision:
                 raise history_error(
                     "operation_history_revision_conflict",
                     "资料包任务历史已更新，请刷新后重试。",
@@ -178,6 +194,69 @@ class OperationHistoryService:
             self._remember_liveness(candidate)
             records.sort(key=self._sort_key)
             records = records[: self._max_operations]
+            revision += 1
+            self._save_locked(revision, records)
+            return self._snapshot(revision, records)
+
+    def mark_receipt_stored(
+        self,
+        operation_uid: str,
+        *,
+        expected_revision: int,
+    ) -> dict[str, Any]:
+        if not is_operation_uid(operation_uid):
+            raise invalid_history("资料包任务历史身份无效。")
+        if (
+            isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision < 0
+        ):
+            raise invalid_history("资料包任务历史版本无效。")
+        with self._lock:
+            revision, records = self._load_locked()
+            record = next(
+                (item for item in records if item["operation_uid"] == operation_uid),
+                None,
+            )
+            if record is None:
+                raise history_error(
+                    "operation_history_not_found",
+                    "资料包任务历史不存在。",
+                    404,
+                )
+            already_stored = (
+                record["state"] == "completed"
+                and record["receipt_status"] == "stored"
+                and record["recovery_result"] is None
+                and record["next_action"] == "none"
+            )
+            if already_stored:
+                return self._snapshot(revision, records)
+            if expected_revision != revision:
+                raise history_error(
+                    "operation_history_revision_conflict",
+                    "资料包任务历史已更新，请刷新后重试。",
+                    409,
+                )
+            if (
+                record["state"] != "completed"
+                or record["receipt_status"] != "pending"
+                or not isinstance(record["recovery_result"], Mapping)
+            ):
+                raise history_error(
+                    "operation_history_receipt_not_pending",
+                    "该资料包任务没有待保存的完成回执。",
+                    409,
+                )
+            now = self._now()
+            record["receipt_status"] = "stored"
+            record["recovery_result"] = None
+            record["next_action"] = "none"
+            record["updated_at"] = now.isoformat().replace("+00:00", "Z")
+            record["expires_at"] = (now + self._retention).isoformat().replace(
+                "+00:00", "Z"
+            )
+            records.sort(key=self._sort_key)
             revision += 1
             self._save_locked(revision, records)
             return self._snapshot(revision, records)
