@@ -82,6 +82,8 @@ class FusionReviewUIContractTests(unittest.TestCase):
         self.assertIn('aiRoute(scope,"execute-jobs")', self.runtime)
         self.assertIn("ai-execution-job-v1", self.runtime)
         self.assertIn("/api/desktop/ai/jobs/", self.runtime)
+        self.assertIn("/api/desktop/ai/actions/literature_extraction/jobs", self.runtime)
+        self.assertIn("literature-extraction-task-directory-v1", self.runtime)
         self.assertIn('aiProgress("literature_extraction"', self.runtime)
         self.assertIn('aiProgress("personal_suggestion"', self.runtime)
         self.assertIn('aiProgress("librarian"', self.runtime)
@@ -386,9 +388,9 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
             self.assertIn(marker, self.runtime)
         self.assertNotIn("consent:true", self.runtime)
         self.assertNotIn("validLiteratureStage", self.runtime)
-        self.assertNotIn("domainRequest={job_token:", self.runtime)
         self.assertNotIn("stage<32", self.runtime)
         self.assertNotIn('localStorage.setItem("job_token', self.runtime)
+        self.assertNotIn('localStorage.setItem("resume_token', self.runtime)
         self.assertNotIn("/api/agents/librarian/chat", self.runtime)
         self.assertNotIn("/api/context-chat", self.runtime)
 
@@ -402,10 +404,69 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
         self.assertEqual(
             workflow.count('executePrepared("literature_extraction"'), 1
         )
-        self.assertNotIn("job_token", workflow)
+        self.assertIn("domainRequest={job_token:recovery.resumeToken}", workflow)
+        self.assertIn("正在免费检查论文、PDF 与可恢复任务", workflow)
+        self.assertNotIn("ensureAIReadiness", workflow)
+        self.assertNotIn("generation!==state.literatureAction", workflow)
         self.assertNotIn("for(", workflow)
-        self.assertIn("validLiteratureCommit(result)", workflow)
-        self.assertIn("没有发送论文内容，也没有执行模型调用", workflow)
+        self.assertIn("applyLiteratureResult(result)", workflow)
+        self.assertIn("没有执行文献提取模型调用", workflow)
+
+    def test_literature_jobs_reconnect_without_reauthorization_and_use_full_lease(self) -> None:
+        for marker in (
+            "ai-execution-job-list-v1",
+            'const job=listed.jobs[0]',
+            'executePrepared("literature_extraction",null,{existingJob:job,literaturePaper:jobPaper})',
+            "31*60*1000",
+            "30*60*1000",
+            "任务仍在后台继续，可离开此页并稍后返回查看",
+            'if(previous==="paper")closeCurrentPDF',
+            'if(name==="paper")void loadLiteratureTaskDirectory().then(()=>reconnectLiteratureJob())',
+            "function literaturePaperKey(paper)",
+            "后台文献处理完成",
+        ):
+            self.assertIn(marker, self.runtime)
+        self.assertNotIn('if(previous==="paper"){state.literatureAction+=1', self.runtime)
+
+    def test_literature_task_directory_is_ephemeral_and_user_driven(self) -> None:
+        for marker in (
+            'literatureTaskDirectory:"/api/desktop/ai/actions/literature_extraction/task-directory"',
+            "function publicLiteratureTaskDirectory(raw)",
+            'nextAction==="resume_extraction"',
+            "▶ 恢复上次提取",
+            "后端将从已保存检查点继续",
+            "本机正在或已尝试零模型收尾",
+            "上次调用结果无法确认",
+            "literature-extraction-receipt-summary-v1",
+            "旧任务没有可恢复的计数收据",
+        ):
+            self.assertIn(marker, self.runtime)
+        self.assertNotIn('localStorage.setItem("resume', self.runtime)
+        self.assertNotIn('localStorage.setItem("literatureTask', self.runtime)
+
+    def test_literature_reconnect_runtime_preserves_paid_job_and_free_preflight(self) -> None:
+        program = f"""
+const assert=require('assert'),fs=require('fs');
+globalThis.document={{readyState:'loading',documentElement:{{dataset:{{}},style:{{setProperty(){{}}}}}},body:{{dataset:{{}}}},querySelector:()=>null,querySelectorAll:()=>[],addEventListener(){{}},createElement:()=>({{dataset:{{}},append(){{}},replaceChildren(){{}},setAttribute(){{}}}})}};
+globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.addEventListener=()=>{{}};
+const response=(body,ok=true)=>Promise.resolve({{ok,headers:{{get:()=>null}},json:async()=>body}});
+const commit={{schema_version:'literature-extraction-commit-result-v2',status:'completed',paper:{{title:'W-Ta',doi:'10.1/example'}},visual_evidence_ready:true,candidate_count:3,published_item_count:2,existing_item_count:1,manual_review_count:0,table_candidate_count:1,figure_candidate_count:1,extraction_receipt:{{schema_version:'literature-extraction-receipt-v1'}},publication_receipt:{{schema_version:'literature-publication-receipt-v1'}},dataset_receipt:{{schema_version:'dataset-membership-receipt-v1'}},search_index:{{status:'refreshed'}}}};
+const completed={{schema_version:'ai-execution-job-v1',scope:'literature_extraction',job_id:'ai_job_abcdefghijklmnopqrstuvwxyz',status:'completed',events:[],result:commit}};
+let calls=[];globalThis.fetch=(url,options={{}})=>{{calls.push([String(url),String(options.method||'GET')]);if(String(url)==='/api/desktop/ai/actions/literature_extraction/task-directory')return response({{schema_version:'literature-extraction-task-directory-v1',tasks:[],startup_recovery:{{recovered:0,already_completed:0,skipped_or_blocked:0}},issues:[]}});if(String(url)==='/api/desktop/ai/actions/literature_extraction/jobs')return response({{schema_version:'ai-execution-job-list-v1',scope:'literature_extraction',jobs:[completed]}});if(String(url)==='/api/desktop/ai/actions/literature_extraction/prepare')return response({{code:'literature_pdf_missing',message:'PDF 不可用',next_action:'replace_valid_pdf'}},false);throw new Error('unexpected '+url);}};
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
+(async()=>{{
+ api.state.view='search';api.state.paper={{id:7,title:'W-Ta',doi:'10.1/example'}};const result=await api.reconnectLiteratureJob();assert.equal(result.status,'completed');assert.equal(api.state.view,'search','background completion must not steal navigation');assert.equal(api.state.literatureReceipt.status,'completed');assert.deepEqual(calls,[['/api/desktop/ai/actions/literature_extraction/task-directory','GET'],['/api/desktop/ai/actions/literature_extraction/jobs','GET']],'reconnect adopts latest job without prepare consent or execute');
+ api.state.paper={{id:8,title:'Other paper',doi:'10.1/other'}};api.state.literatureReceipt=null;calls=[];await api.reconnectLiteratureJob();assert.equal(api.state.literatureReceipt,null,'a receipt must not attach to another paper');assert.deepEqual(calls,[['/api/desktop/ai/actions/literature_extraction/jobs','GET']]);
+ const directory=api.publicLiteratureTaskDirectory({{schema_version:'literature-extraction-task-directory-v1',tasks:[{{resume_token:'resume_abcdefghijklmnop',state:'paused',stage:'coverage_gap',paper:{{title:'W-Ta',doi:'10.1/example'}},completed_calls:2,spent_calls:2,max_calls:8,updated_at:20,expires_at:200,next_action:'resume_extraction',receipt:null}}],startup_recovery:{{recovered:1,already_completed:0,skipped_or_blocked:0}},issues:[]}});assert(directory);api.state.paper={{id:7,title:'W-Ta',doi:'10.1/example'}};api.state.literatureTask.directory=directory;assert.equal(api.currentLiteratureRecovery().resumeToken,'resume_abcdefghijklmnop');assert.equal(JSON.stringify(globalThis.localStorage).includes('resume_'),false);
+ const summary=api.publicLiteratureReceiptSummary({{schema_version:'literature-extraction-receipt-summary-v1',status:'saved_index_pending',candidate_count:9,published_item_count:6,existing_item_count:1,manual_review_count:2,table_candidate_count:3,figure_candidate_count:4,visual_evidence_ready:true,search_index:{{status:'pending',document_count:null}},dataset_partition:'validation',entity_uids:['secret'],path:'/private/a'}});assert(summary);assert.equal(summary.publishedItemCount,6);assert.equal(summary.searchIndex.documentCount,null);assert.equal(summary.entity_uids,undefined);assert.equal(summary.path,undefined);
+ calls=[];await api.preparedAuthorization('literature_extraction',{{paper_id:7,force_rescan:false}}).then(()=>assert.fail('bad PDF must fail before readiness'),error=>assert.equal(error.code,'literature_pdf_missing'));assert.deepEqual(calls,[['/api/desktop/ai/actions/literature_extraction/prepare','POST']]);
+ const running={{schema_version:'ai-execution-job-v1',scope:'literature_extraction',job_id:'ai_job_running_abcdefghijklmnop',status:'running',events:[]}},originalNow=Date.now;let tick=0;Date.now=()=>tick++===0?0:1800001;const background=await api.executePrepared('literature_extraction',null,{{existingJob:running,deadlineMs:0}});Date.now=originalNow;assert.equal(background.schema_version,'ai-execution-background-v1');assert.equal(api.state.literatureTask.status,'running');
+}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(
+            ["node", "-e", program], capture_output=True, text=True, timeout=8, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_personal_preview_review_and_single_import_are_real(self) -> None:
         for marker in (

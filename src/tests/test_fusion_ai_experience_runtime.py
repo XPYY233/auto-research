@@ -30,6 +30,7 @@ globalThis.document=document;globalThis.requestAnimationFrame=callback=>callback
 eval(require('fs').readFileSync({str(RUNTIME)!r},'utf8'));
 const Controller=globalThis.AutoResearchAIExperience.AIExperienceController,controller=new Controller(document);
 assert(controller.begin('literature_extraction'));assert.equal(elapsed.textContent,'0 秒');
+assert.deepEqual(['initial_focus','coverage_gap','coverage_verification','adversarial_branches','third_review','publishing','completed'].map(stage=>controller.stage('literature_extraction',stage)?.name),['initial_focus','coverage_gap','coverage_verification','adversarial_branches','third_review','publishing','completed']);
 assert(controller.update('literature_extraction',{{stage:'coverage_verification',state:'running',detail:'真实来源页核验'}}));
 assert.equal(label.textContent,'核对覆盖率与来源页');assert.equal(valueNode.textContent,'58%');assert.equal(bar.style.width,'58%');assert.equal(progress.attrs['aria-busy'],'true');assert.equal(detail.textContent,'真实来源页核验');
 assert(stages.find(node=>node.dataset.aiStage==='coverage_verification').classList.values.has('active'));
