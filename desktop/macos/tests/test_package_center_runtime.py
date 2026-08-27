@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import sqlite3
@@ -39,6 +40,8 @@ from auto_research.product.runtime_api import (  # noqa: E402
     list_installed_transfer_packages,
     open_transferred_literature_repository,
 )
+from auto_research.product.operation_history import OperationHistoryService  # noqa: E402
+from auto_research.product.package_job_contract import PackageOperation  # noqa: E402
 from package_center_runtime import (  # noqa: E402
     DesktopPackageCenterRuntimeBuilder,
     NoAutomaticLiteratureLicenseVerifier,
@@ -49,6 +52,22 @@ from desktop_product_services import create_desktop_product_services  # noqa: E4
 from package_export_destination_broker import PackageExportDestinationBroker  # noqa: E402
 from package_import_service import PackageServiceStatus  # noqa: E402
 from package_selection_broker import PackageSelectionBroker, PackageSelectionSource  # noqa: E402
+
+
+class _OperationHistoryStore:
+    storage_label = "test-operation-history-aes-256-gcm"
+
+    def __init__(self) -> None:
+        self.value = None
+
+    def load(self):
+        return copy.deepcopy(self.value)
+
+    def save(self, value):
+        self.value = copy.deepcopy(value)
+
+    def clear(self):
+        self.value = None
 
 
 def _build_v12_database(path: Path, pdf: Path) -> None:
@@ -298,6 +317,7 @@ class PackageCenterRuntimeTests(unittest.TestCase):
         *,
         repository: PrivateExperimentRepository,
         session: FederatedSearchSession | None = None,
+        operation_history: OperationHistoryService | None = None,
     ):
         data_root = self.root / name
         broker = PackageSelectionBroker(local_volume_probe=lambda _path: True)
@@ -310,6 +330,7 @@ class PackageCenterRuntimeTests(unittest.TestCase):
             workspace_root=self.root,
             private_repository=repository,
             search_session=search,
+            operation_history=operation_history,
         )(
             package_service=_OfficialService(),
             package_broker=broker,
@@ -318,6 +339,19 @@ class PackageCenterRuntimeTests(unittest.TestCase):
             current_app_version="0.7.0-preview.1",
         )
         return services, broker, destination, search, data_root
+
+    def test_runtime_builder_forwards_operation_history_to_jobs_and_api(self) -> None:
+        history = OperationHistoryService(_OperationHistoryStore())
+        services, _, _, _, _ = self._runtime(
+            "operation-history-runtime",
+            repository=PrivateExperimentRepository(self.root / "history-private"),
+            operation_history=history,
+        )
+        self.assertIs(services.operation_history, history)
+        job_id = services.jobs._begin(PackageOperation.TRANSFER_IMPORT)
+        snapshot = history.get()
+        self.assertEqual(snapshot["operations"][0]["state"], "queued")
+        self.assertNotIn(job_id, json.dumps(snapshot, ensure_ascii=False))
 
     @staticmethod
     def _rights(plan: dict) -> dict:

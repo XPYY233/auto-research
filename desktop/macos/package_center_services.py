@@ -13,6 +13,7 @@ from auto_research.product.package_center import (
     run_package_job_inline,
 )
 from auto_research.product.activity_receipts import ActivityReceiptService
+from auto_research.product.operation_history import OperationHistoryService
 from auto_research.product.package_center_models import (
     PackageCenterError,
     PayloadPlanner,
@@ -183,6 +184,7 @@ class DesktopPackageCenterServices:
     api: PackageCenterAPI
     dataset_export_service: DatasetExportService | None = None
     activity_receipts: ActivityReceiptService | None = None
+    operation_history: OperationHistoryService | None = None
 
 
 def create_desktop_package_center_services(
@@ -202,12 +204,16 @@ def create_desktop_package_center_services(
     source_status: Mapping[str, Any] | None = None,
     dataset_source: DatasetExportSource | None = None,
     activity_receipts: ActivityReceiptService | None = None,
+    operation_history: OperationHistoryService | None = None,
 ) -> DesktopPackageCenterServices:
     """Compose shared algorithms with native opaque-token resolvers."""
 
     selection_resolver = _PackageSelectionResolver(package_broker)
     destination_resolver = _PackageDestinationResolver(destination_broker)
-    jobs = PackageJobService(receipt_recorder=activity_receipts)
+    jobs = PackageJobService(
+        receipt_recorder=activity_receipts,
+        history_recorder=operation_history,
+    )
     center = PackageCenter(
         selection_resolver=selection_resolver,
         inspector=transfer_inspector,
@@ -254,6 +260,7 @@ def create_desktop_package_center_services(
         jobs=jobs,
         dataset_export_service=dataset_export_service,
         activity_receipts=activity_receipts,
+        operation_history=operation_history,
     )
     return DesktopPackageCenterServices(
         center=center,
@@ -264,6 +271,7 @@ def create_desktop_package_center_services(
         api=api,
         dataset_export_service=dataset_export_service,
         activity_receipts=activity_receipts,
+        operation_history=operation_history,
     )
 
 

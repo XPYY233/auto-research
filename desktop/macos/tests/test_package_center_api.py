@@ -15,6 +15,8 @@ for path in (DESKTOP_ROOT, SOURCE_ROOT):
         sys.path.insert(0, str(path))
 
 from auto_research.product.package_center_models import PackageCenterError  # noqa: E402
+from auto_research.product.activity_receipts import ActivityReceiptError  # noqa: E402
+from auto_research.product.operation_history import OperationHistoryError  # noqa: E402
 from package_center_api import PackageCenterAPI  # noqa: E402
 
 
@@ -150,6 +152,8 @@ class _Dataset:
 class _Receipts:
     def __init__(self) -> None:
         self.mutations: list[object] = []
+        self.completed: list[dict] = []
+        self.fail_completed = False
 
     def get(self):
         return {
@@ -169,6 +173,71 @@ class _Receipts:
             )
         return {**self.get(), "revision": 4}
 
+    def record_completed(self, **kwargs):
+        self.completed.append(kwargs)
+        if self.fail_completed:
+            raise ActivityReceiptError(
+                "activity_receipt_store_unavailable",
+                "本机活动回执暂时不可用。",
+                http_status=503,
+            )
+        return {"schema_version": "activity-receipt-v1"}
+
+
+class _History:
+    operation_uid = "a" * 64
+
+    def __init__(self) -> None:
+        self.mutations: list[object] = []
+        self.pending_calls: list[str] = []
+        self.mark_calls: list[tuple[str, int]] = []
+        self.mark_conflict = False
+
+    def get(self):
+        return {
+            "schema_version": "operation-history-v1",
+            "revision": 7,
+            "storage": "test-operation-history-aes-256-gcm",
+            "operations": [],
+        }
+
+    def mutate(self, body):
+        self.mutations.append(body)
+        if body.get("operation") not in {"delete", "clear"}:
+            raise OperationHistoryError(
+                "operation_history_invalid",
+                "资料包任务历史操作无效。",
+                http_status=400,
+            )
+        return {**self.get(), "revision": 8}
+
+    def pending_receipt(self, operation_uid):
+        self.pending_calls.append(operation_uid)
+        return {
+            "schema_version": "operation-history-pending-receipt-v1",
+            "operation_uid": operation_uid,
+            "operation": "transfer_export",
+            "outcome": "exported",
+            "result": {
+                "schema": "package-summary-v1",
+                "package_kind": "literature_collection",
+                "package_id": "user-literature",
+                "package_version": "1.0.0",
+                "package_sha256": "b" * 64,
+                "outcome": "exported",
+            },
+        }
+
+    def mark_receipt_stored(self, operation_uid, *, expected_revision):
+        self.mark_calls.append((operation_uid, expected_revision))
+        if self.mark_conflict:
+            raise OperationHistoryError(
+                "operation_history_revision_conflict",
+                "资料包任务历史已更新，请刷新后重试。",
+                http_status=409,
+            )
+        return {**self.get(), "revision": expected_revision + 1}
+
 
 class PackageCenterAPITests(unittest.TestCase):
     def setUp(self) -> None:
@@ -177,6 +246,7 @@ class PackageCenterAPITests(unittest.TestCase):
         self.importer = _Import()
         self.dataset = _Dataset()
         self.receipts = _Receipts()
+        self.history = _History()
         self.jobs = _Jobs()
         self.api = PackageCenterAPI(
             summary_provider=_Summary(),
@@ -186,6 +256,140 @@ class PackageCenterAPITests(unittest.TestCase):
             jobs=self.jobs,
             dataset_export_service=self.dataset,
             activity_receipts=self.receipts,
+            operation_history=self.history,
+        )
+
+    def test_history_get_and_strict_mutation_are_shared_service_projections(self):
+        fetched = _Handler("/api/desktop/package-center/history")
+        self.assertTrue(self.api.handle_get(fetched))
+        self.assertEqual(fetched.responses[0][1], HTTPStatus.OK)
+        self.assertEqual(
+            fetched.responses[0][0]["schema_version"],
+            "operation-history-v1",
+        )
+
+        cleared = _Handler(
+            "/api/desktop/package-center/history",
+            {
+                "operation": "clear",
+                "expected_revision": 7,
+                "confirm_clear": True,
+            },
+        )
+        self.assertTrue(self.api.handle_post(cleared))
+        self.assertEqual(cleared.responses[0][1], HTTPStatus.OK)
+        self.assertEqual(self.history.mutations[-1]["operation"], "clear")
+
+        invalid = _Handler(
+            "/api/desktop/package-center/history",
+            {"operation": "create", "expected_revision": 8},
+        )
+        self.assertTrue(self.api.handle_post(invalid))
+        self.assertEqual(invalid.responses[0][1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(
+            invalid.responses[0][0]["code"],
+            "operation_history_invalid",
+        )
+
+    def test_history_receipt_retry_uses_public_uid_and_shared_services(self):
+        handler = _Handler(
+            f"/api/desktop/package-center/history/{self.history.operation_uid}/receipt-retry",
+            {"expected_revision": 7},
+        )
+        self.assertTrue(self.api.handle_post(handler))
+        self.assertEqual(handler.responses[0][1], HTTPStatus.OK)
+        self.assertEqual(self.history.pending_calls, [self.history.operation_uid])
+        self.assertEqual(
+            self.history.mark_calls,
+            [(self.history.operation_uid, 7)],
+        )
+        self.assertEqual(len(self.receipts.completed), 1)
+        self.assertEqual(
+            self.receipts.completed[0]["operation"].value,
+            "transfer_export",
+        )
+        encoded = json.dumps(handler.responses[0][0], ensure_ascii=False)
+        self.assertNotIn("job_id", encoded)
+        self.assertNotIn("/private/", encoded)
+
+    def test_history_receipt_retry_validates_before_side_effect_and_keeps_pending_on_failure(self):
+        invalid = _Handler(
+            f"/api/desktop/package-center/history/{self.history.operation_uid}/receipt-retry",
+            {"expected_revision": True, "extra": 1},
+        )
+        self.assertTrue(self.api.handle_post(invalid))
+        self.assertEqual(invalid.responses[0][1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(self.receipts.completed, [])
+        self.assertEqual(self.history.pending_calls, [])
+
+        self.receipts.fail_completed = True
+        failed = _Handler(
+            f"/api/desktop/package-center/history/{self.history.operation_uid}/receipt-retry",
+            {"expected_revision": 7},
+        )
+        self.assertTrue(self.api.handle_post(failed))
+        self.assertEqual(failed.responses[0][1], HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(self.history.pending_calls, [self.history.operation_uid])
+        self.assertEqual(self.history.mark_calls, [])
+
+    def test_history_receipt_retry_maps_post_receipt_cas_conflict(self):
+        self.history.mark_conflict = True
+        conflicted = _Handler(
+            f"/api/desktop/package-center/history/{self.history.operation_uid}/receipt-retry",
+            {"expected_revision": 6},
+        )
+        self.assertTrue(self.api.handle_post(conflicted))
+        self.assertEqual(conflicted.responses[0][1], HTTPStatus.CONFLICT)
+        self.assertEqual(
+            conflicted.responses[0][0]["code"],
+            "operation_history_revision_conflict",
+        )
+        self.assertEqual(len(self.receipts.completed), 1)
+        self.assertEqual(
+            self.history.mark_calls,
+            [(self.history.operation_uid, 6)],
+        )
+
+    def test_history_routes_fail_closed_when_services_are_not_injected(self):
+        unavailable = PackageCenterAPI(
+            summary_provider=_Summary(),
+            center=self.center,
+            export_service=self.export,
+            import_service=self.importer,
+            jobs=self.jobs,
+        )
+        fetched = _Handler("/api/desktop/package-center/history")
+        self.assertTrue(unavailable.handle_get(fetched))
+        self.assertEqual(fetched.responses[0][1], HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            fetched.responses[0][0]["code"],
+            "operation_history_store_unavailable",
+        )
+
+        retry = _Handler(
+            f"/api/desktop/package-center/history/{self.history.operation_uid}/receipt-retry",
+            {"expected_revision": 7},
+        )
+        self.assertTrue(unavailable.handle_post(retry))
+        self.assertEqual(retry.responses[0][1], HTTPStatus.SERVICE_UNAVAILABLE)
+
+        history_only = PackageCenterAPI(
+            summary_provider=_Summary(),
+            center=self.center,
+            export_service=self.export,
+            import_service=self.importer,
+            jobs=self.jobs,
+            operation_history=self.history,
+        )
+        no_receipts = _Handler(
+            f"/api/desktop/package-center/history/{self.history.operation_uid}/receipt-retry",
+            {"expected_revision": 7},
+        )
+        self.assertTrue(history_only.handle_post(no_receipts))
+        self.assertEqual(no_receipts.responses[0][1], HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            no_receipts.responses[0][0]["code"],
+            "activity_receipt_store_unavailable",
         )
 
     def test_receipts_get_and_only_delete_or_clear_post_are_exposed(self) -> None:

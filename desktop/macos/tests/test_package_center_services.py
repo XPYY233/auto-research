@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,7 @@ from auto_research.product.package_center_models import (  # noqa: E402
     PayloadPlanCandidate,
 )
 from auto_research.product.activity_receipts import ActivityReceiptService  # noqa: E402
+from auto_research.product.operation_history import OperationHistoryService  # noqa: E402
 from desktop_product_services import create_desktop_product_services  # noqa: E402
 from package_center_services import (  # noqa: E402
     OfficialPackageCenterSummary,
@@ -78,6 +80,22 @@ class _ReceiptStore:
 
     def save(self, value):
         self.value = value
+
+    def clear(self):
+        self.value = None
+
+
+class _OperationHistoryStore:
+    storage_label = "test-operation-history-aes-256-gcm"
+
+    def __init__(self) -> None:
+        self.value = None
+
+    def load(self):
+        return copy.deepcopy(self.value)
+
+    def save(self, value):
+        self.value = copy.deepcopy(value)
 
     def clear(self):
         self.value = None
@@ -315,6 +333,7 @@ class PackageCenterServicesTests(unittest.TestCase):
             )
             destination_snapshot = destination.select(root / "out.aresearch")
             receipts = ActivityReceiptService(_ReceiptStore())
+            history = OperationHistoryService(_OperationHistoryStore())
             services = create_desktop_package_center_services(
                 package_service=_OfficialService(),
                 package_broker=PackageSelectionBroker(
@@ -338,6 +357,7 @@ class PackageCenterServicesTests(unittest.TestCase):
                 job_submitter=callbacks.append,
                 installed_lister=lambda **_kwargs: (),
                 activity_receipts=receipts,
+                operation_history=history,
             )
             plan = services.export_service.plan(
                 "literature_collection", "selected", ["paper-1"]
@@ -355,6 +375,9 @@ class PackageCenterServicesTests(unittest.TestCase):
             self.assertEqual(queued["stage"], "queued")
             self.assertFalse(queued["terminal"])
             self.assertEqual(len(callbacks), 1)
+            queued_history = history.get()
+            self.assertEqual(queued_history["operations"][0]["state"], "queued")
+            self.assertNotIn(queued["job_id"], str(queued_history))
 
             callbacks.pop()()
             completed = services.jobs.get(queued["job_id"])
@@ -367,6 +390,12 @@ class PackageCenterServicesTests(unittest.TestCase):
                 receipt_snapshot["receipts"][0]["activity_type"],
                 "transfer_export",
             )
+            completed_history = history.get()
+            self.assertEqual(
+                completed_history["operations"][0]["receipt_status"],
+                "stored",
+            )
+            self.assertIs(services.operation_history, history)
 
     def test_desktop_product_composition_accepts_one_package_center_builder(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mac-package-center-composition-") as raw:
@@ -377,11 +406,13 @@ class PackageCenterServicesTests(unittest.TestCase):
                 calls.append(kwargs)
                 return marker
 
+            history = OperationHistoryService(_OperationHistoryStore())
             services = create_desktop_product_services(
                 data_root=Path(raw),
                 current_app_version="0.6.1-preview.1",
                 package_center_builder=builder,
                 activity_receipts=ActivityReceiptService(_ReceiptStore()),
+                operation_history=history,
             )
             self.assertIs(services.package_center, marker)
             self.assertIs(calls[0]["package_broker"], services.package_service.broker)
@@ -390,6 +421,7 @@ class PackageCenterServicesTests(unittest.TestCase):
                 services.package_export_destination_broker,
             )
             self.assertIsNotNone(calls[0]["activity_receipts"])
+            self.assertIs(calls[0]["operation_history"], history)
 
 
 if __name__ == "__main__":

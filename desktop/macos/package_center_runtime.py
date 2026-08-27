@@ -42,6 +42,7 @@ from auto_research.product.dataset_export_service import DatasetExportCandidate
 from auto_research.product.evidence_v12_export import plan_evidence_v12_export
 from auto_research.product.package_transfer_payloads import PayloadSelection
 from auto_research.product.activity_receipts import ActivityReceiptService
+from auto_research.product.operation_history import OperationHistoryService
 
 from package_center_services import (
     DesktopPackageCenterServices,
@@ -415,12 +416,14 @@ class DesktopPackageCenterRuntimeBuilder:
         private_repository: PrivateExperimentRepository,
         search_session: FederatedSearchSessionProtocol,
         activity_receipts: ActivityReceiptService | None = None,
+        operation_history: OperationHistoryService | None = None,
     ) -> None:
         self._workspace_database = Path(workspace_database)
         self._workspace_root = Path(workspace_root)
         self._private_repository = private_repository
         self._search_session = search_session
         self._activity_receipts = activity_receipts
+        self._operation_history = operation_history
 
     def __call__(
         self,
@@ -431,6 +434,7 @@ class DesktopPackageCenterRuntimeBuilder:
         data_root: Path,
         current_app_version: str,
         activity_receipts: ActivityReceiptService | None = None,
+        operation_history: OperationHistoryService | None = None,
     ) -> DesktopPackageCenterServices:
         personal_source = PrivateRepositoryPersonalPayloadSource(
             self._private_repository,
@@ -530,6 +534,11 @@ class DesktopPackageCenterRuntimeBuilder:
                 activity_receipts
                 if activity_receipts is not None
                 else self._activity_receipts
+            ),
+            operation_history=(
+                operation_history
+                if operation_history is not None
+                else self._operation_history
             ),
         )
 

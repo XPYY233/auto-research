@@ -18,6 +18,15 @@ from auto_research.product.activity_receipts import (
     ActivityReceiptError,
     ActivityReceiptService,
 )
+from auto_research.product.operation_history import (
+    OperationHistoryError,
+    OperationHistoryService,
+)
+from auto_research.product.operation_history_contract import (
+    invalid_history,
+    unavailable_history,
+)
+from auto_research.product.package_job_contract import PackageOperation
 
 
 PACKAGE_CENTER_PATH = "/api/desktop/package-center"
@@ -28,11 +37,15 @@ PACKAGE_CENTER_IMPORT_PATH = f"{PACKAGE_CENTER_PATH}/import"
 PACKAGE_CENTER_DATASET_PLAN_PATH = f"{PACKAGE_CENTER_PATH}/dataset-plan"
 PACKAGE_CENTER_DATASET_EXPORT_PATH = f"{PACKAGE_CENTER_PATH}/dataset-export"
 PACKAGE_CENTER_RECEIPTS_PATH = f"{PACKAGE_CENTER_PATH}/receipts"
+PACKAGE_CENTER_HISTORY_PATH = f"{PACKAGE_CENTER_PATH}/history"
 PACKAGE_CENTER_JOB_PATH_RE = re.compile(
     r"^/api/desktop/package-center/jobs/([A-Za-z0-9_-]{16,128})$"
 )
 PACKAGE_CENTER_RECEIPT_RETRY_PATH_RE = re.compile(
     r"^/api/desktop/package-center/jobs/([A-Za-z0-9_-]{16,128})/receipt-retry$"
+)
+PACKAGE_CENTER_HISTORY_RECEIPT_RETRY_PATH_RE = re.compile(
+    r"^/api/desktop/package-center/history/([0-9a-f]{64})/receipt-retry$"
 )
 MAX_PACKAGE_CENTER_REQUEST_BYTES = 512 * 1024
 
@@ -64,6 +77,7 @@ class PackageCenterAPI:
         jobs: PackageJobService,
         dataset_export_service: DatasetExportService | None = None,
         activity_receipts: ActivityReceiptService | None = None,
+        operation_history: OperationHistoryService | None = None,
     ) -> None:
         self._summary_provider = summary_provider
         self._center = center
@@ -72,25 +86,35 @@ class PackageCenterAPI:
         self._jobs = jobs
         self._dataset_export_service = dataset_export_service
         self._activity_receipts = activity_receipts
+        self._operation_history = operation_history
 
     @staticmethod
     def is_post_route(path: str) -> bool:
         parsed_path = urlparse(path).path
-        return parsed_path in {
-            PACKAGE_CENTER_INSPECT_PATH,
-            PACKAGE_CENTER_EXPORT_PLAN_PATH,
-            PACKAGE_CENTER_EXPORT_PATH,
-            PACKAGE_CENTER_IMPORT_PATH,
-            PACKAGE_CENTER_DATASET_PLAN_PATH,
-            PACKAGE_CENTER_DATASET_EXPORT_PATH,
-            PACKAGE_CENTER_RECEIPTS_PATH,
-        } or bool(PACKAGE_CENTER_RECEIPT_RETRY_PATH_RE.fullmatch(parsed_path))
+        return (
+            parsed_path
+            in {
+                PACKAGE_CENTER_INSPECT_PATH,
+                PACKAGE_CENTER_EXPORT_PLAN_PATH,
+                PACKAGE_CENTER_EXPORT_PATH,
+                PACKAGE_CENTER_IMPORT_PATH,
+                PACKAGE_CENTER_DATASET_PLAN_PATH,
+                PACKAGE_CENTER_DATASET_EXPORT_PATH,
+                PACKAGE_CENTER_RECEIPTS_PATH,
+                PACKAGE_CENTER_HISTORY_PATH,
+            }
+            or bool(PACKAGE_CENTER_RECEIPT_RETRY_PATH_RE.fullmatch(parsed_path))
+            or bool(
+                PACKAGE_CENTER_HISTORY_RECEIPT_RETRY_PATH_RE.fullmatch(parsed_path)
+            )
+        )
 
     def handle_get(self, handler: PackageCenterHTTPHandler) -> bool:
         parsed = urlparse(handler.path)
         known = parsed.path in {
             PACKAGE_CENTER_PATH,
             PACKAGE_CENTER_RECEIPTS_PATH,
+            PACKAGE_CENTER_HISTORY_PATH,
         } or bool(PACKAGE_CENTER_JOB_PATH_RE.fullmatch(parsed.path))
         if parsed.query:
             if known:
@@ -115,6 +139,9 @@ class PackageCenterAPI:
                     )
                 handler.json_response(self._activity_receipts.get())
                 return True
+            if parsed.path == PACKAGE_CENTER_HISTORY_PATH:
+                handler.json_response(self._history_service().get())
+                return True
             match = PACKAGE_CENTER_JOB_PATH_RE.fullmatch(parsed.path)
             if match:
                 handler.json_response(self._jobs.get(match.group(1)))
@@ -124,6 +151,9 @@ class PackageCenterAPI:
             return True
         except ActivityReceiptError as exc:
             self._respond_receipt_error(handler, exc)
+            return True
+        except OperationHistoryError as exc:
+            self._respond_history_error(handler, exc)
             return True
         return False
 
@@ -142,9 +172,23 @@ class PackageCenterAPI:
         try:
             body = self._read_json(handler)
             retry_match = PACKAGE_CENTER_RECEIPT_RETRY_PATH_RE.fullmatch(parsed.path)
-            if retry_match:
+            history_retry_match = (
+                PACKAGE_CENTER_HISTORY_RECEIPT_RETRY_PATH_RE.fullmatch(parsed.path)
+            )
+            if history_retry_match:
+                if set(body) != {"expected_revision"}:
+                    raise invalid_history()
+                result = self._retry_history_receipt(
+                    history_retry_match.group(1),
+                    body["expected_revision"],
+                )
+                status = HTTPStatus.OK
+            elif retry_match:
                 self._require_fields(body, set())
                 result = self._jobs.retry_receipt(retry_match.group(1))
+                status = HTTPStatus.OK
+            elif parsed.path == PACKAGE_CENTER_HISTORY_PATH:
+                result = self._history_service().mutate(body)
                 status = HTTPStatus.OK
             elif parsed.path == PACKAGE_CENTER_RECEIPTS_PATH:
                 if self._activity_receipts is None:
@@ -228,6 +272,8 @@ class PackageCenterAPI:
             self._respond_error(handler, exc)
         except ActivityReceiptError as exc:
             self._respond_receipt_error(handler, exc)
+        except OperationHistoryError as exc:
+            self._respond_history_error(handler, exc)
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
             self._respond_error(
                 handler,
@@ -238,6 +284,40 @@ class PackageCenterAPI:
         else:
             handler.json_response(result, status)
         return True
+
+    def _history_service(self) -> OperationHistoryService:
+        if self._operation_history is None:
+            raise unavailable_history()
+        return self._operation_history
+
+    def _retry_history_receipt(
+        self,
+        operation_uid: str,
+        expected_revision: object,
+    ) -> dict[str, Any]:
+        if (
+            isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision < 0
+        ):
+            raise invalid_history("资料包任务历史版本无效。")
+        history = self._history_service()
+        if self._activity_receipts is None:
+            raise ActivityReceiptError(
+                "activity_receipt_store_unavailable",
+                "本机活动回执暂时不可用。",
+                http_status=503,
+            )
+        pending = history.pending_receipt(operation_uid)
+        self._activity_receipts.record_completed(
+            operation=PackageOperation(pending["operation"]),
+            outcome=pending["outcome"],
+            result=pending["result"],
+        )
+        return history.mark_receipt_stored(
+            operation_uid,
+            expected_revision=expected_revision,
+        )
 
     @staticmethod
     def _require_fields(body: dict[str, Any], fields: set[str]) -> None:
@@ -292,6 +372,12 @@ class PackageCenterAPI:
     ) -> None:
         handler.json_response(error.public_dict(), HTTPStatus(error.http_status))
 
+    @staticmethod
+    def _respond_history_error(
+        handler: PackageCenterHTTPHandler, error: OperationHistoryError
+    ) -> None:
+        handler.json_response(error.public_dict(), HTTPStatus(error.http_status))
+
 
 __all__ = [
     "MAX_PACKAGE_CENTER_REQUEST_BYTES",
@@ -300,6 +386,8 @@ __all__ = [
     "PACKAGE_CENTER_DATASET_EXPORT_PATH",
     "PACKAGE_CENTER_DATASET_PLAN_PATH",
     "PACKAGE_CENTER_IMPORT_PATH",
+    "PACKAGE_CENTER_HISTORY_PATH",
+    "PACKAGE_CENTER_HISTORY_RECEIPT_RETRY_PATH_RE",
     "PACKAGE_CENTER_INSPECT_PATH",
     "PACKAGE_CENTER_PATH",
     "PACKAGE_CENTER_RECEIPTS_PATH",
