@@ -154,6 +154,22 @@ const controller=globalThis.AutoResearchFusionPackage.createPackageCenterControl
         self.assertNotIn("switchView", source)
         self.assertNotIn("package_center.js", source)
 
+    def test_package_center_composes_and_force_refreshes_operation_history(self) -> None:
+        program = f"""
+const assert=require('assert'),fs=require('fs');
+class El{{constructor(){{this.hidden=false;this.disabled=false;this.textContent='';this.innerHTML='';this.dataset={{}};this.listeners={{}};this.classList={{toggle(){{}}}};}}addEventListener(k,f){{(this.listeners[k]??=[]).push(f)}}setAttribute(){{}}closest(){{return this}}querySelector(){{return this}}focus(){{}}scrollIntoView(){{}}}}
+const nodes=new Map(),node=selector=>{{if(!nodes.has(selector))nodes.set(selector,new El());return nodes.get(selector)}};
+eval(fs.readFileSync({str(WEB / 'fusion_operation_history.js')!r},'utf8'));
+eval(fs.readFileSync({str(WEB / 'fusion_package_center.js')!r},'utf8'));
+let calls=[];
+const history={{schema_version:'operation-history-v1',revision:0,storage:'mac-private-encrypted-v1',operations:[]}};
+const request=async url=>{{calls.push(url);if(url==='/api/desktop/package-center/history')return history;if(url==='/api/desktop/package-center/receipts')return{{schema_version:'activity-receipts-v1',revision:0,storage:'mac-private-encrypted-v1',receipts:[]}};if(url==='/api/desktop/evidence-packages')return{{active:false,repository_audited:false,package_id:null,package_version:null,installed_packages:[]}};if(url==='/api/desktop/package-center')return{{schema:'package-center-status-v1',official:{{current:null,installed_versions:[]}},capabilities:{{dataset_export:false}}}};throw new Error('unexpected '+url)}};
+const state={{loaded:false,loading:false,official:null,center:null,jobs:new Map(),receipts:[],lastOfficialResult:null,literaturePlan:null,personalPlan:null,datasetPlan:null,datasetReceipt:null,userSelection:null,userInspection:null}};
+const controller=globalThis.AutoResearchFusionPackage.createPackageCenterController({{state,q:node,qa:()=>[],request,safeError:(code,message)=>Object.assign(new Error(message),{{code}}),cleanText:(v,n=8000)=>String(v??'').trim().slice(0,n),esc:v=>String(v??''),setOperation(){{}},native:{{selectEvidencePackage:async()=>null,selectPackageDestination:async()=>null,selectDatasetDestination:async()=>null}},projectJob(){{}},openOfficialSearch(){{}},getCurrentPaperId:()=>null,isActiveView:()=>true}});
+(async()=>{{controller.bind();await controller.loadPackageCenter({{force:true}});assert.equal(calls.filter(url=>url==='/api/desktop/package-center/history').length,1);assert(controller.operationHistory);assert.equal(state.operationHistoryCount,0);assert.equal(node('#fusion-package-history-clear').listeners.click.length,1);}})().catch(error=>{{console.error(error);process.exitCode=1}});
+"""
+        self._run_node(program)
+
 
 if __name__ == "__main__":
     unittest.main()

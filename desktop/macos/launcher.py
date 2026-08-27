@@ -75,6 +75,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
     workspace_layout_source = (WEB_DIR / "workspace_layout_controller.js").read_text(encoding="utf-8")
     pdf_controller_source = (WEB_DIR / "fusion_pdf_controller.js").read_text(encoding="utf-8")
     ai_experience_source = (WEB_DIR / "fusion_ai_experience.js").read_text(encoding="utf-8")
+    operation_history_source = (WEB_DIR / "fusion_operation_history.js").read_text(encoding="utf-8")
     package_center_source = (WEB_DIR / "fusion_package_center.js").read_text(encoding="utf-8")
     personal_import_source = (WEB_DIR / "fusion_personal_import.js").read_text(encoding="utf-8")
     ai_consent_source = (WEB_DIR / "ai_consent.js").read_text(encoding="utf-8")
@@ -108,6 +109,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and '<script src="/static/workspace_layout_controller.js"></script>' in index_source
             and '<script src="/static/fusion_pdf_controller.js"></script>' in index_source
             and '<script src="/static/fusion_ai_experience.js"></script>' in index_source
+            and '<script src="/static/fusion_operation_history.js"></script>' in index_source
             and '<script src="/static/fusion_package_center.js"></script>' in index_source
             and '<script src="/static/fusion_personal_import.js"></script>' in index_source
             and '<script src="/static/fusion_review.js"></script>' in index_source
@@ -117,6 +119,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             < index_source.index('<script src="/static/workspace_layout_controller.js"></script>')
             < index_source.index('<script src="/static/fusion_pdf_controller.js"></script>')
             < index_source.index('<script src="/static/fusion_ai_experience.js"></script>')
+            < index_source.index('<script src="/static/fusion_operation_history.js"></script>')
             < index_source.index('<script src="/static/fusion_package_center.js"></script>')
             < index_source.index('<script src="/static/fusion_personal_import.js"></script>')
             < index_source.index('<script src="/static/fusion_review.js"></script>')
@@ -133,6 +136,8 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and "AutoResearchFusionPDF" in pdf_controller_source
             and "AutoResearchAIExperience" in ai_experience_source
             and "fusion-ai-experience-v1" in ai_experience_source
+            and "AutoResearchFusionOperationHistory" in operation_history_source
+            and "createOperationHistoryController" in operation_history_source
             and "AutoResearchFusionPackage" in package_center_source
             and "createPackageCenterController" in package_center_source
             and "AutoResearchFusionPersonalImport" in personal_import_source
@@ -291,6 +296,7 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
                 "/static/workspace_layout_controller.js",
                 "/static/fusion_pdf_controller.js",
                 "/static/fusion_ai_experience.js",
+                "/static/fusion_operation_history.js",
                 "/static/fusion_package_center.js",
                 "/static/fusion_personal_import.js",
                 "/static/fusion_review.js",
@@ -320,6 +326,11 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
             "ai_experience_runtime",
             "/static/fusion_ai_experience.js",
             ("AutoResearchAIExperience", "fusion-ai-experience-v1"),
+        ),
+        (
+            "fusion_operation_history_runtime",
+            "/static/fusion_operation_history.js",
+            ("AutoResearchFusionOperationHistory", "createOperationHistoryController"),
         ),
         (
             "fusion_package_center_runtime",

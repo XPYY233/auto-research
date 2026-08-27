@@ -30,6 +30,7 @@ class WorkbenchRecoveryContractTest(unittest.TestCase):
             self.assertIn(f'id="{panel}"', html)
         self.assertEqual(html.count('class="fusion-shell"'), 1)
         self.assertNotIn("fusion-librarian-sidebar", html)
+        self.assertLess(html.index('/static/fusion_operation_history.js'), html.index('/static/fusion_package_center.js'))
         self.assertLess(html.index('/static/fusion_package_center.js'), html.index('/static/fusion_review.js'))
         self.assertLess(html.index('/static/fusion_package_center.js'), html.index('/static/fusion_personal_import.js'))
         self.assertLess(html.index('/static/fusion_personal_import.js'), html.index('/static/fusion_review.js'))
@@ -43,6 +44,7 @@ class WorkbenchRecoveryContractTest(unittest.TestCase):
             "/static/workspace_layout_controller.js",
             "/static/fusion_pdf_controller.js",
             "/static/fusion_ai_experience.js",
+            "/static/fusion_operation_history.js",
             "/static/fusion_package_center.js",
             "/static/fusion_personal_import.js",
             "/static/fusion_review.js",

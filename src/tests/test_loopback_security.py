@@ -70,7 +70,7 @@ class LoopbackRequestSecurityTests(unittest.TestCase):
         program = r'''
 const fs=require("fs"),assert=require("assert"),source=fs.readFileSync(process.argv[1],"utf8");
 const start=source.indexOf("  function isAllowedRoute"),end=source.indexOf("  async function readOnlyJSON",start);assert(start>0&&end>start);
-const ROUTES=new Proxy({settings:"/api/desktop/settings",preferences:"/api/desktop/settings/preferences",personalSearchRefresh:"/api/desktop/personal-imports/search-refresh"},{get:(target,key)=>target[key]||`/unused/${String(key)}`});
+const ROUTES=new Proxy({settings:"/api/desktop/settings",preferences:"/api/desktop/settings/preferences",personalSearchRefresh:"/api/desktop/personal-imports/search-refresh",packageHistory:"/api/desktop/package-center/history"},{get:(target,key)=>target[key]||`/unused/${String(key)}`});
 const PERSONAL_IMPORT_ROWS_PATH=/a^/,CSRF_HEADER="X-Auto-Research-CSRF",state={csrfToken:""},cleanText=value=>String(value??"");
 class TestHeaders{constructor(values={}){this.values={};for(const [key,value] of Object.entries(values))this.set(key,value);}set(key,value){this.values[String(key).toLowerCase()]=String(value);}get(key){return this.values[String(key).toLowerCase()]||null;}}
 globalThis.Headers=TestHeaders;const calls=[];let rotation=0;
@@ -81,9 +81,12 @@ eval(source.slice(start,end));
  await request(ROUTES.personalSearchRefresh,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});assert.equal(calls[1].options.headers.get(CSRF_HEADER),"csrf-1");
  await request(ROUTES.preferences,{method:"PATCH",headers:{"Content-Type":"application/json"},body:"{}"});assert.equal(calls[2].options.headers.get(CSRF_HEADER),"csrf-2");
  await request("/api/desktop/package-center/jobs/package_job_1234567890/receipt-retry",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});assert.equal(calls[3].options.headers.get(CSRF_HEADER),"csrf-3");
- await request("/api/desktop/ai/credentials/deepseek",{method:"DELETE"});assert.equal(calls[4].options.headers.get(CSRF_HEADER),"csrf-4");
+ await request(ROUTES.packageHistory);assert.equal(calls[4].options.headers.get(CSRF_HEADER),null);
+ await request(ROUTES.packageHistory,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});assert.equal(calls[5].options.headers.get(CSRF_HEADER),"csrf-5");
+ await request("/api/desktop/package-center/history/"+"a".repeat(64)+"/receipt-retry",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});assert.equal(calls[6].options.headers.get(CSRF_HEADER),"csrf-6");
+ await request("/api/desktop/ai/credentials/deepseek",{method:"DELETE"});assert.equal(calls[7].options.headers.get(CSRF_HEADER),"csrf-7");
  const before=calls.length;await assert.rejects(()=>request("/api/desktop/not-authorized"),error=>error.code==="fusion_route_blocked");assert.equal(calls.length,before);
- assert.deepEqual(calls.map(call=>call.options.method),["GET","POST","PATCH","POST","DELETE"]);
+ assert.deepEqual(calls.map(call=>call.options.method),["GET","POST","PATCH","POST","GET","POST","POST","DELETE"]);
 })().catch(error=>{console.error(error);process.exit(1);});
 '''
         result = subprocess.run(

@@ -29,6 +29,7 @@ analysis = Analysis(
                 "workspace_layout_controller.js",
                 "fusion_pdf_controller.js",
                 "fusion_ai_experience.js",
+                "fusion_operation_history.js",
                 "fusion_package_center.js",
                 "fusion_personal_import.js",
                 "fusion_review.js",

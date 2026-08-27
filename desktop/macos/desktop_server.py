@@ -100,6 +100,7 @@ FUSION_REVIEW_STATIC_ASSETS = frozenset(
         "document_tab_store.js", "pane_layout_controller.js", "workspace_layout_controller.js",
         "fusion_pdf_controller.js",
         "fusion_ai_experience.js",
+        "fusion_operation_history.js",
         "fusion_package_center.js",
         "fusion_personal_import.js",
         "codex-pet-working.webp",

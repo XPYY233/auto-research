@@ -640,6 +640,7 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
             "fusion-dataset-unreviewed-ack", "fusion-dataset-rights-ack",
             "fusion-dataset-export", "fusion-dataset-receipt",
             "fusion-package-jobs",
+            "fusion-package-history", "fusion-package-history-clear",
         ):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
         package_sources = self.runtime + self.package_runtime
@@ -654,6 +655,7 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
             '"/api/desktop/package-center/dataset-plan"',
             '"/api/desktop/package-center/dataset-export"',
             'packageReceipts:"/api/desktop/package-center/receipts"',
+            'packageHistory:"/api/desktop/package-center/history"',
             'select_dataset_export_destination', 'Auto-Research-dataset.zip',
             'include_private: includePrivate', 'rights_acknowledged:',
             'unreviewed_acknowledged:', 'dataset-export-plan-v1',

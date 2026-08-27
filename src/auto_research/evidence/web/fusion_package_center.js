@@ -92,6 +92,17 @@
     const receiptRetryRequests = new Map();
     const receiptRetryPending = new Set();
     const receiptRetryErrors = new Set();
+    const createHistory = globalThis.AutoResearchFusionOperationHistory?.createOperationHistoryController;
+    const operationHistory = typeof createHistory === "function" ? createHistory({
+      q, qa, request, safeError, cleanText, esc,
+      onCountChange(count) { state.operationHistoryCount = count; updatePackageActivityCount(); },
+      onReturnToWorkflow(operation) {
+        if (operation === "dataset_export") selectPackageWorkflow("dataset");
+        else if (operation === "transfer_import") selectPackageWorkflow("userImport");
+        else q(".fusion-package-flow")?.scrollIntoView?.({block: "start", behavior: "smooth"});
+      },
+      async onReceiptStored() { await loadActivityReceipts({force: true}); },
+    }) : null;
 
     function packageNotice(message, kind = "info") {
       const node = q("#fusion-package-status");
@@ -385,7 +396,7 @@
 
     function updatePackageActivityCount() {
       const node = q("#fusion-package-context-jobs");
-      if (node) node.textContent = String(state.jobs.size + (Array.isArray(state.receipts) ? state.receipts.length : 0));
+      if (node) node.textContent = String(state.jobs.size + (Array.isArray(state.receipts) ? state.receipts.length : 0) + (Number.isSafeInteger(state.operationHistoryCount) ? state.operationHistoryCount : 0));
     }
 
     function renderActivityReceipts() {
@@ -655,6 +666,7 @@
       state.loading = true;
       packageNotice("正在读取资料包状态…", "loading");
       const receiptLoad = loadActivityReceipts({force});
+      const historyLoad = operationHistory?.load({force}) || Promise.resolve([]);
       try {
         const [official, center] = await Promise.all([
           request("/api/desktop/evidence-packages"),
@@ -668,7 +680,7 @@
       } catch (_error) {
         packageNotice("资料包状态暂时不可用；现有文献与私人实验不受影响。", "error");
       } finally {
-        await receiptLoad;
+        await Promise.all([receiptLoad, historyLoad]);
         state.loading = false;
       }
       return state;
@@ -687,6 +699,7 @@
       if (!job?.terminal) throw safeError("package_job_timeout", "资料包任务等待超时，请稍后重新读取状态。");
       if (job.stage === "failed") throw safeError(String(job.error?.code || "package_job_failed"), String(job.error?.message || "资料包任务未完成。"));
       if (job.receipt_status === "stored") await loadActivityReceipts({force: true});
+      await operationHistory?.load({force: true});
       return job;
     }
 
@@ -875,6 +888,7 @@
       for (const selector of ["#fusion-package-checksum-ack", "#fusion-package-unencrypted-ack", "#fusion-package-source-ack"]) q(selector)?.addEventListener("change", updateUserPackageImportButton);
       q("#fusion-package-user-import")?.addEventListener("click", () => void importUserPackage());
       q("#fusion-package-receipts-clear")?.addEventListener("click", () => void clearActivityReceipts());
+      operationHistory?.bind();
       return true;
     }
 
@@ -891,6 +905,7 @@
       loadActivityReceipts,
       deleteActivityReceipt,
       clearActivityReceipts,
+      operationHistory,
       retryPackageReceipt,
       updateDatasetExportButton,
       planDataset,

@@ -201,6 +201,11 @@ class ReviewQueueRouteTests(unittest.TestCase):
                 b"AutoResearchAIExperience",
             ),
             (
+                "/static/fusion_operation_history.js",
+                "javascript",
+                b"AutoResearchFusionOperationHistory",
+            ),
+            (
                 "/static/fusion_package_center.js",
                 "javascript",
                 b"AutoResearchFusionPackage",

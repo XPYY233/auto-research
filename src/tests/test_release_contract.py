@@ -124,6 +124,18 @@ class ReleaseContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ReleaseContractError, "全部共享前端资产"):
             validate_release_contract(value)
 
+    def test_fusion_operation_history_asset_is_hashed(self) -> None:
+        contract = load_release_contract(PROJECT_ROOT / "config" / "release-contract.json")
+        relative = "src/auto_research/evidence/web/fusion_operation_history.js"
+        self.assertIn(relative, contract.value["web_assets"])
+        verify_web_asset_hashes(contract, PROJECT_ROOT)
+        value = json.loads(
+            (PROJECT_ROOT / "config" / "release-contract.json").read_text()
+        )
+        value["web_assets"].pop(relative)
+        with self.assertRaisesRegex(ReleaseContractError, "全部共享前端资产"):
+            validate_release_contract(value)
+
     def test_fusion_personal_import_asset_is_hashed(self) -> None:
         contract = load_release_contract(PROJECT_ROOT / "config" / "release-contract.json")
         relative = "src/auto_research/evidence/web/fusion_personal_import.js"
