@@ -73,6 +73,8 @@ macOS 静态路由白名单中，因此它们不是当前产品界面。
 - 只在当前controller确有缺口时做最小实现；
 - 暂不删除旧文件，也不修改Windows。
 
+状态：已由`4f90add`完成消费者迁移。三项行为均由当前Fusion controller真实运行时测试覆盖，生产控制器无需新增重复逻辑；旧文件仍暂留等待其他消费者退出。
+
 ### Batch C：`desktop_product.js` 消费者
 
 - 证明迟到的私人搜索不会切换当前模块或抢焦点；
@@ -80,6 +82,8 @@ macOS 静态路由白名单中，因此它们不是当前产品界面。
 - 把旧PDF断言替换为中央PDF和path-free身份断言；
 - 核实私人导入“已保存但索引待恢复”在Fusion中有显眼、幂等的恢复动作；
 - 将macOS静态资源冒烟改为当前Fusion脚本。
+
+状态：第一小步已由`0eb625b`完成。Fusion现在读取`personal-search-readiness-v1`，只在后端明确`stale / retry_required`或保存返回`personal_search_refresh_failed`时显示恢复入口；恢复只调用幂等`search-refresh`，不会重复人工确认、导入或AI。迟到状态不会覆盖新状态。仍待迁移旧PDF测试和macOS旧静态资源GET测试，并移除旧加载顺序测试。
 
 ### Batch D：`app.js` 消费者
 
