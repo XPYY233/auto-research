@@ -675,6 +675,7 @@ def test_uploaded_pdf_closes_scientific_chain_through_visual_search_and_source(
 
     assets = list_visual_assets(db, paper_id=paper_id)
     assert {asset["asset_type"] for asset in assets} == {"table", "figure"}
+    assert {asset["quality_gate_status"] for asset in assets} == {"manual_review"}
     for asset in assets:
         image = Path(str(asset["image_path"]))
         assert image.read_bytes().startswith(b"\x89PNG")
@@ -688,6 +689,14 @@ def test_uploaded_pdf_closes_scientific_chain_through_visual_search_and_source(
         refresh=False,
     )
     assert {row["entity_type"] for row in page.rows} == {"item", "table", "figure"}
+    published = search.search(
+        "hardness",
+        entity_types=("item", "table", "figure"),
+        paper_ids=(paper_id,),
+        quality_filter="published",
+        refresh=False,
+    )
+    assert {row["entity_type"] for row in published.rows} == {"item"}
     item = next(row for row in page.rows if row["entity_type"] == "item")
     source = get_source_view(db, int(item["entity_id"]))
     assert source["page_number"] == 1

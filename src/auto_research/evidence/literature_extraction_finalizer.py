@@ -210,6 +210,13 @@ class AtomicEvidenceDBFinalizer:
                 paper={"id": package.paper_id, **dict(package.paper)},
                 staged=staged_visuals,
             )
+            self._record_visual_review_candidates(
+                connection,
+                run_id=run_id,
+                paper_id=package.paper_id,
+                candidates=visual_summary["review_candidates"],
+                stamp=stamp,
+            )
             entity_uids.extend(
                 "workspace-visual-" + hashlib.sha256(value.encode("ascii")).hexdigest()[:32]
                 for value in visual_summary["asset_hashes"]
@@ -288,6 +295,86 @@ class AtomicEvidenceDBFinalizer:
             "visual_stage_completed" not in summary
             and isinstance(summary.get("visual_evidence_ready"), bool)
         )
+
+    @classmethod
+    def _record_visual_review_candidates(
+        cls,
+        connection: sqlite3.Connection,
+        *,
+        run_id: int,
+        paper_id: int,
+        candidates: object,
+        stamp: str,
+    ) -> None:
+        if not isinstance(candidates, list):
+            raise LiteratureExtractionJobError(
+                "literature_commit_failed", "视觉证据审核队列无效，未保存任何科学记录"
+            )
+        for raw in candidates:
+            if not isinstance(raw, Mapping):
+                raise LiteratureExtractionJobError(
+                    "literature_commit_failed", "视觉证据审核队列无效，未保存任何科学记录"
+                )
+            asset_id = raw.get("asset_id")
+            asset_type = raw.get("asset_type")
+            label = raw.get("label")
+            image_sha256 = raw.get("image_sha256")
+            if (
+                isinstance(asset_id, bool)
+                or not isinstance(asset_id, int)
+                or asset_id < 1
+                or asset_type not in {"table", "figure"}
+                or not isinstance(label, str)
+                or not label
+                or not isinstance(image_sha256, str)
+                or len(image_sha256) != 64
+            ):
+                raise LiteratureExtractionJobError(
+                    "literature_commit_failed", "视觉证据审核队列无效，未保存任何科学记录"
+                )
+            candidate = {
+                "is_new_asset": True,
+                "asset_type": asset_type,
+                "label": label,
+                "caption": str(raw.get("caption") or "")[:4000],
+                "page_start": int(raw.get("page_start") or 1),
+                "image_sha256": image_sha256,
+            }
+            candidate_key = hashlib.sha256(
+                _canonical_bytes({
+                    "asset_type": asset_type,
+                    "label": label,
+                    "image_sha256": image_sha256,
+                })
+            ).hexdigest()
+            connection.execute(
+                """INSERT INTO quality_candidates(
+                   pipeline_run_id,paper_id,entity_type,candidate_key,chosen_source,
+                   candidate_json,alternate_json,agreement_score,factuality_score,
+                   completeness_score,evidence_score,overall_score,gate_status,gate_reason,
+                   third_review_json,published_asset_id,created_at,updated_at
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    run_id,
+                    paper_id,
+                    asset_type,
+                    candidate_key,
+                    "merged",
+                    cls._json(candidate),
+                    None,
+                    0.0,
+                    100.0,
+                    0.0,
+                    100.0,
+                    0.0,
+                    "manual_review",
+                    "原始截图与来源页已校验；表格结构或图片语义仍需人工审核",
+                    None,
+                    asset_id,
+                    stamp,
+                    stamp,
+                ),
+            )
 
     @staticmethod
     def _publish_item(

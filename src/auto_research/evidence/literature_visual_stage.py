@@ -270,6 +270,17 @@ def publish_staged_visual_evidence(
         "figure_count": sum(row["asset_type"] == "figure" for row in published),
         "manual_review_count": sum(row.get("review_status") != "verified" for row in published),
         "asset_hashes": [str(row["image_sha256"]) for row in published],
+        "review_candidates": [
+            {
+                "asset_id": int(row["id"]),
+                "asset_type": str(row["asset_type"]),
+                "label": str(row["label"]),
+                "caption": str(row.get("caption") or "")[:4000],
+                "page_start": int(row["page_start"]),
+                "image_sha256": str(row["image_sha256"]),
+            }
+            for row in published
+        ],
         "links": links,
     }
 
