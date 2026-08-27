@@ -41,6 +41,11 @@ from auto_research.evidence.literature_extraction_stages import (
 )
 from auto_research.evidence.literature_job_persistence import decode_job_private_state
 from auto_research.evidence.literature_snapshot_blob import SealedImmutablePDFBlobStore
+from auto_research.evidence.search_index import EvidenceSearchIndex
+from auto_research.evidence.source_highlight import (
+    get_source_view,
+    render_source_highlight_png,
+)
 from auto_research.evidence.literature_task_checkpoint import (
     LiteratureTaskCheckpointError,
     LiteratureTaskManifest,
@@ -51,6 +56,8 @@ from auto_research.evidence.literature_task_checkpoint_service import (
 from auto_research.evidence.literature_task_checkpoint_store import (
     SealedSQLiteLiteratureCheckpointStore,
 )
+from auto_research.evidence.uploads import UploadService
+from auto_research.evidence.visual_evidence import list_visual_assets
 
 
 def _make_pdf(path: Path, *, pages: int = 1) -> None:
@@ -63,6 +70,55 @@ def _make_pdf(path: Path, *, pages: int = 1) -> None:
         )
     document.save(path)
     document.close()
+
+
+def _scientific_pdf_bytes() -> bytes:
+    """Small real PDF fixture covering text, table and figure evidence."""
+
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text(
+        (72, 72),
+        "The measured hardness was 3.2 GPa at 300 K in sample A.",
+    )
+
+    # A vector figure followed by a formal caption. Generic visual discovery
+    # must crop it without interpreting or inventing curve values.
+    page.draw_rect(
+        fitz.Rect(72, 110, 300, 235),
+        color=(0.1, 0.3, 0.7),
+        fill=(0.85, 0.9, 1.0),
+    )
+    page.draw_line((90, 215), (270, 140), color=(0.1, 0.3, 0.7), width=2)
+    page.insert_text((72, 255), "Figure 1. Irradiation hardness overview.")
+
+    page.insert_text((72, 320), "Table 1. Measured hardness summary.")
+    table = fitz.Rect(72, 340, 430, 445)
+    for y in (340, 375, 410, 445):
+        page.draw_line((table.x0, y), (table.x1, y), color=(0, 0, 0))
+    for x in (72, 250, 430):
+        page.draw_line((x, table.y0), (x, table.y1), color=(0, 0, 0))
+    page.insert_text((82, 362), "Condition")
+    page.insert_text((260, 362), "Hardness")
+    page.insert_text((82, 397), "300 K")
+    page.insert_text((260, 397), "3.2 GPa")
+    page.insert_text((82, 432), "Source")
+    page.insert_text((260, 432), "Measured")
+    page.insert_textbox(
+        fitz.Rect(72, 480, 520, 650),
+        (
+            "Results and discussion. The experiment compares the irradiation response "
+            "of sample A under a controlled temperature. The hardness measurement is "
+            "reported together with its unit, material identity, experimental condition, "
+            "and method so that the scientific record can be independently verified. "
+            "The figure is descriptive and no curve points are inferred from pixels."
+        ),
+        fontsize=10,
+    )
+
+    payload = document.tobytes()
+    document.close()
+    return payload
 
 
 @pytest.fixture
@@ -571,6 +627,71 @@ def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence)
     # The completed in-memory job is consumed; it cannot charge again.
     with pytest.raises(BusinessActionError):
         ports.assembler.assemble({"job_token": draft.outbound["job_handle"]})
+
+
+def test_uploaded_pdf_closes_scientific_chain_through_visual_search_and_source(
+    tmp_path: Path,
+) -> None:
+    """One fixture must traverse the same authorities used by the Mac App."""
+
+    db = EvidenceDB(tmp_path / "evidence.sqlite")
+    db.init()
+    uploaded = UploadService(db, storage_root=tmp_path / "uploads").upload(
+        _scientific_pdf_bytes(),
+        "scientific-chain.pdf",
+        title="Scientific chain paper",
+        doi="10.1/scientific-chain",
+    )
+    assert uploaded["outcome"] == "accepted"
+    assert uploaded["ready_for_extraction"] is True
+    paper_id = int(uploaded["paper_id"])
+
+    store = _persistent_job_store(tmp_path / "job-state")
+    runtime = _checkpoint_runtime(tmp_path / "checkpoint-state")
+    ports = literature_extraction_business_ports(
+        store,
+        session_id="owner",
+        db=db,
+        finalizer=AtomicEvidenceDBFinalizer(db),
+        checkpoint_runtime=runtime,
+    )
+    draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    action = _prepared_action(draft)
+    result = ports.projector.project(
+        ports.executor.execute(
+            action=action,
+            ai_client=_budget_client(action, _RawProvider()),
+        )
+    )
+
+    assert result["status"] == "completed"
+    assert result["published_item_count"] == 1
+    assert result["table_candidate_count"] == 1
+    assert result["figure_candidate_count"] == 1
+    assert result["visual_evidence_ready"] is True
+    assert result["search_index"]["status"] == "refreshed"
+
+    assets = list_visual_assets(db, paper_id=paper_id)
+    assert {asset["asset_type"] for asset in assets} == {"table", "figure"}
+    for asset in assets:
+        image = Path(str(asset["image_path"]))
+        assert image.read_bytes().startswith(b"\x89PNG")
+        assert hashlib.sha256(image.read_bytes()).hexdigest() == asset["image_sha256"]
+
+    search = EvidenceSearchIndex(db)
+    page = search.search(
+        "hardness",
+        entity_types=("item", "table", "figure"),
+        paper_ids=(paper_id,),
+        refresh=False,
+    )
+    assert {row["entity_type"] for row in page.rows} == {"item", "table", "figure"}
+    item = next(row for row in page.rows if row["entity_type"] == "item")
+    source = get_source_view(db, int(item["entity_id"]))
+    assert source["page_number"] == 1
+    assert source["has_highlight"] is True
+    assert source["image_url"].endswith("/source-highlight.png")
+    assert render_source_highlight_png(db, int(item["entity_id"])).startswith(b"\x89PNG")
 
 
 def test_publish_checkpoint_complete_and_acknowledge_are_strictly_ordered(
