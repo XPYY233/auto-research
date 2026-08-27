@@ -52,7 +52,7 @@ class UploadWorkflowTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_new_pdf_is_validated_stored_and_queued_for_deepseek(self):
+    def test_new_pdf_is_validated_stored_and_waits_for_explicit_extraction(self):
         result = self.service.upload(
             make_pdf("Ion irradiation experiment at 300 C with measured hardness"),
             "experiment.pdf",
@@ -68,7 +68,13 @@ class UploadWorkflowTests(unittest.TestCase):
         self.assertEqual(paper["local_article_key"], f"UPL{result['paper_id']:06d}")
         self.assertEqual(len(paper["documents"]), 1)
         jobs = self.db.list_processing_jobs()
-        self.assertEqual((jobs[0]["job_type"], jobs[0]["provider"]), ("extract", "deepseek"))
+        self.assertEqual(
+            (jobs[0]["job_type"], jobs[0]["provider"], jobs[0]["status"]),
+            ("extract", "prepared-action", "blocked"),
+        )
+        self.assertTrue(result["ready_for_extraction"])
+        self.assertEqual(result["next_action"], "start_literature_extraction")
+        self.assertIn("尚未调用模型", result["message"])
 
     def test_exact_file_is_not_stored_or_queued_twice(self):
         raw = make_pdf("Exact duplicate irradiation paper")
@@ -124,7 +130,10 @@ class UploadWorkflowTests(unittest.TestCase):
         blank.close()
         result = self.service.upload(raw, "scan.pdf", title="Scanned irradiation paper")
         self.assertTrue(result["needs_ocr"])
-        self.assertEqual(self.db.list_processing_jobs()[0]["job_type"], "ocr")
+        self.assertFalse(result["ready_for_extraction"])
+        self.assertEqual(result["next_action"], "replace_searchable_pdf")
+        job = self.db.list_processing_jobs()[0]
+        self.assertEqual((job["job_type"], job["status"]), ("ocr", "blocked"))
         with self.assertRaisesRegex(ValueError, "PDF"):
             self.service.upload(b"not a pdf", "fake.pdf")
         self.assertEqual(self.db.list_upload_events()[0]["outcome"], "rejected")

@@ -229,6 +229,15 @@ class AtomicEvidenceDBFinalizer:
                 "UPDATE quality_pipeline_runs SET summary_json=? WHERE id=?",
                 (self._json(final_summary), run_id),
             )
+            connection.execute(
+                """UPDATE processing_jobs
+                   SET status='completed',provider='prepared-action',
+                       message='提取、质量核验与原子发布已完成',updated_at=?
+                   WHERE id=(SELECT id FROM processing_jobs
+                     WHERE paper_id=? AND job_type='extract'
+                     ORDER BY id DESC LIMIT 1)""",
+                (stamp, package.paper_id),
+            )
             self._inject("before_commit")
             connection.commit()
             return self._public_result(package, final_summary, idempotent=False)

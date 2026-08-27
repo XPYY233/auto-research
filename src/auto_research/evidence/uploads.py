@@ -212,12 +212,13 @@ class UploadService:
                 conn, paper_id, filename, stored_path, inspection, "primary"
             )
             job_type = "ocr" if inspection.needs_ocr else "extract"
-            provider = "local" if inspection.needs_ocr else "deepseek"
+            provider = "local" if inspection.needs_ocr else "prepared-action"
             message = (
-                "PDF 文本过少，等待 OCR 后再抽取"
-                if inspection.needs_ocr else "PDF 已验证，等待 DeepSeek 自动抽取"
+                "PDF 文本层过少；当前不会自动调用模型，请更换可检索 PDF"
+                if inspection.needs_ocr
+                else "PDF 已验证；等待用户启动提取并确认模型范围与预算"
             )
-            job_id = self._insert_job(conn, paper_id, document_id, job_type, "queued", provider, message)
+            job_id = self._insert_job(conn, paper_id, document_id, job_type, "blocked", provider, message)
         details = {
             "page_count": inspection.page_count,
             "text_char_count": inspection.text_char_count,
@@ -229,12 +230,20 @@ class UploadService:
         return {
             "outcome": "accepted",
             "match_type": "new_paper",
-            "message": "PDF 已验证并加入处理队列。",
+            "message": (
+                "PDF 已加入文献工作区，但文字层不足，尚不能自动提取；请更换可检索 PDF。"
+                if inspection.needs_ocr
+                else "PDF 已验证并加入文献工作区；尚未调用模型，请点击“开始自动提取与核验”。"
+            ),
             "paper_id": paper_id,
             "document_id": document_id,
             "job_id": job_id,
             "title": resolved_title,
             "doi": resolved_doi,
+            "ready_for_extraction": not inspection.needs_ocr,
+            "next_action": (
+                "replace_searchable_pdf" if inspection.needs_ocr else "start_literature_extraction"
+            ),
             **details,
         }
 

@@ -288,6 +288,25 @@ def test_finalizer_renders_from_captured_bytes_after_source_path_replacement(
     assert counts(db)["quality_pipeline_runs"] == 1
 
 
+def test_successful_commit_closes_the_latest_explicit_upload_waiting_record(evidence) -> None:
+    db, pdf, paper_id = evidence
+    with db.connect() as connection:
+        connection.execute(
+            """INSERT INTO processing_jobs(
+               paper_id,document_id,job_type,status,provider,message,created_at,updated_at
+               ) VALUES(?,NULL,'extract','blocked','prepared-action','等待用户启动','2026-01-01','2026-01-01')""",
+            (paper_id,),
+        )
+    result = AtomicEvidenceDBFinalizer(db).finalize(
+        package(paper_id, "Safe experiment", "10.1/safe", pdf)
+    )
+    assert result["status"] == "completed"
+    job = db.list_processing_jobs()[0]
+    assert job["status"] == "completed"
+    assert job["provider"] == "prepared-action"
+    assert "原子发布已完成" in job["message"]
+
+
 def test_job_store_requires_trusted_finalizer_and_rechecks_source(evidence) -> None:
     db, pdf, paper_id = evidence
 
