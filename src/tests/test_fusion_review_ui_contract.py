@@ -644,8 +644,9 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
         self.assertIn("PDF 和图片二进制不会复制进训练载荷", self.index)
         self.assertRegex(self.index, r'id="fusion-dataset-include-private"(?![^>]*checked)')
         program = f"""
-globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
-globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+const nodes={{}};for(const id of ['fusion-package-official-result','fusion-package-open-official-search','fusion-package-result-title','fusion-package-result-outcome','fusion-package-result-counts'])nodes['#'+id]={{hidden:false,textContent:'',innerHTML:''}};
+globalThis.document={{readyState:'loading',querySelector:selector=>nodes[selector]||null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+let storageWrites=0;globalThis.localStorage={{getItem:()=>null,setItem:()=>{{storageWrites+=1}}}};
 eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
 const api=globalThis.AutoResearchFusion,assert=require('assert');
 const summary={{schema:'package-summary-v1',package_kind:'official_evidence',package_id:'official-main',package_version:'1.1',outcome:'activated',trusted_official:true,content_counts:{{paper_count:60,item_count:3142,finding_count:936,table_count:46,figure_count:232}},asset_counts:{{pdf_count:42,visual_asset_count:278}},next_action:{{view:'search',search_source:'official'}}}};
@@ -653,7 +654,14 @@ const result=api.publicOfficialPackageResult({{result:summary}});
 assert.equal(result.outcome,'activated');assert.equal(result.nextAction.searchSource,'official');assert(result.counts.some(row=>row[0]==='PDF'&&row[1]===42));
 assert.equal(api.publicOfficialPackageResult({{result:{{...summary,next_action:{{view:'search',search_source:'private'}}}}}}),null);
 assert.equal(api.publicOfficialPackageResult({{result:{{...summary,trusted_official:false}}}}),null);
-assert(api.rememberOfficialPackageResult({{result:summary}}));assert.equal(api.state.package.lastOfficialResult.packageId,'official-main');
+const fingerprint='a'.repeat(64),current={{active:true,repository_audited:true,can_search_offline:true,package_id:'official-main',package_version:'1.1',content_fingerprint:fingerprint}},content={{papers:60,entities:4369,items:3142,findings:936,tables:46,figures:245}},installed={{schema:'installed-official-package-v1',package_id:'official-main',package_version:'1.1',content_fingerprint:fingerprint,installed_at:'2026-08-27T00:00:00Z',active:true,audit_status:'ready',content_counts:content,asset_counts:{{paper_pdfs:59,visual_assets:291}},error_code:null}},center={{schema:'package-center-status-v1',official:{{current,installed_versions:[installed]}}}};
+let active=api.publicActiveOfficialPackageSummary(center);assert(active);assert.equal(active.outcome,'current_active');assert.deepEqual(active.counts,[['论文',60],['测量',3142],['结论',936],['表格',46],['图片',245],['PDF',59],['视觉资产',291]]);
+const v1={{...center,official:{{current,installed_versions:[{{...installed,asset_counts:{{}}}}]}}}};active=api.publicActiveOfficialPackageSummary(v1);assert(active);assert.equal(active.counts.some(row=>row[0]==='PDF'||row[0]==='视觉资产'),false,'v1 missing assets must not be rendered as zero');
+assert.equal(api.publicActiveOfficialPackageSummary({{...center,official:{{current,installed_versions:[{{...installed,content_fingerprint:'b'.repeat(64)}}]}}}}),null);
+assert.equal(api.publicActiveOfficialPackageSummary({{...center,official:{{current,installed_versions:[installed,{{...installed}}]}}}}),null);
+for(const bad of [{{...installed,content_counts:{{...content,papers:-1}}}},{{...installed,content_counts:{{...content,papers:true}}}},{{...installed,content_counts:{{...content,entities:999}}}},{{...installed,content_counts:{{...content,path:'/private/a'}}}},{{...installed,asset_counts:{{paper_pdfs:59,visual_assets:291,path:'/private/a'}}}},{{...installed,install_path:'/private/a'}}])assert.equal(api.publicActiveOfficialPackageSummary({{...center,official:{{current,installed_versions:[bad]}}}}),null);
+api.state.package.center=center;api.state.package.lastOfficialResult=null;api.renderOfficialPackageResult();assert.equal(nodes['#fusion-package-result-outcome'].textContent,'当前已启用');assert(nodes['#fusion-package-result-counts'].innerHTML.includes('>59</b>PDF'));assert.equal(nodes['#fusion-package-open-official-search'].hidden,false);
+assert(api.rememberOfficialPackageResult({{result:summary}}));api.renderOfficialPackageResult();assert.equal(api.state.package.lastOfficialResult.packageId,'official-main');assert.equal(nodes['#fusion-package-result-outcome'].textContent,'已切换并启用','session result must take priority over persistent summary');assert.equal(storageWrites,0,'package summary must not use localStorage');assert(!JSON.stringify(api.state.package.lastOfficialResult).includes('/private/'));
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
