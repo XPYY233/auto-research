@@ -377,7 +377,7 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
             "globalThis.AutoResearchAIConsent", ".accepted(scope,disclosureContext)", ".remember(scope,disclosureContext)", "disclosureSummary(scope,disclosureContext)", "ai_consent_gate_unavailable",
             "updateTrustedProviders", "prepared.provider_id!==context.provider_id",
             "prepared.disclosure_version!==disclosureVersion",
-            "literature-extraction-stage-summary-v1", "literature-extraction-commit-result-v2",
+            "literature-extraction-commit-result-v2", "一次授权覆盖四类提取、双分支质量核验、发布与索引",
             "librarian:8", "selected_evidence_chat:2", "personal_suggestion:2", "calls>AI_CALL_LIMITS[scope]",
             "librarianBusy:false", "if(state.librarianBusy)return", "harness_budget_exhausted",
             "本阶段最多调用 ${calls} 次", "harness_dependency_mismatch",
@@ -385,9 +385,27 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
         ):
             self.assertIn(marker, self.runtime)
         self.assertNotIn("consent:true", self.runtime)
+        self.assertNotIn("validLiteratureStage", self.runtime)
+        self.assertNotIn("domainRequest={job_token:", self.runtime)
+        self.assertNotIn("stage<32", self.runtime)
         self.assertNotIn('localStorage.setItem("job_token', self.runtime)
         self.assertNotIn("/api/agents/librarian/chat", self.runtime)
         self.assertNotIn("/api/context-chat", self.runtime)
+
+    def test_literature_extraction_uses_one_task_authorization(self) -> None:
+        start = self.runtime.index("async function runLiteratureExtraction()")
+        end = self.runtime.index("function runPDFAction", start)
+        workflow = self.runtime[start:end]
+        self.assertEqual(
+            workflow.count('preparedAuthorization("literature_extraction"'), 1
+        )
+        self.assertEqual(
+            workflow.count('executePrepared("literature_extraction"'), 1
+        )
+        self.assertNotIn("job_token", workflow)
+        self.assertNotIn("for(", workflow)
+        self.assertIn("validLiteratureCommit(result)", workflow)
+        self.assertIn("没有发送论文内容，也没有执行模型调用", workflow)
 
     def test_personal_preview_review_and_single_import_are_real(self) -> None:
         for marker in (
