@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -26,6 +27,10 @@ from .portable_repository import (
     RIGHTS_PATH,
     OfficialEvidenceRepository,
 )
+from .official_package_assets import (
+    OfficialPackageAssetError,
+    validate_official_package_asset_counts,
+)
 from .trusted_publishers import (
     TrustedPublisherPolicy,
     TrustedPublisherPolicyError,
@@ -36,6 +41,10 @@ from .trusted_publishers import (
 EXPECTED_DISTRIBUTION_SCHEMA = DISTRIBUTION_SCHEMA_VERSION
 ACTIVE_SELECTOR_RELATIVE_PATH = Path("official-packages") / "active.json"
 DEFAULT_OFFICIAL_CHANNEL = "internal-preview"
+_CONTENT_COUNT_FIELDS = frozenset(
+    {"papers", "entities", "items", "findings", "tables", "figures"}
+)
+_MAX_PUBLIC_COUNT = (1 << 53) - 1
 
 
 @dataclass(frozen=True)
@@ -61,7 +70,17 @@ class InstalledOfficialPackage:
     installed_at: str | None
     active: bool
     audit_status: str
+    content_counts: Mapping[str, int] = field(default_factory=dict)
+    asset_counts: Mapping[str, int] = field(default_factory=dict)
     error_code: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "content_counts", MappingProxyType(dict(self.content_counts))
+        )
+        object.__setattr__(
+            self, "asset_counts", MappingProxyType(dict(self.asset_counts))
+        )
 
     def public_dict(self) -> dict[str, Any]:
         return {
@@ -72,8 +91,49 @@ class InstalledOfficialPackage:
             "installed_at": self.installed_at,
             "active": self.active,
             "audit_status": self.audit_status,
+            "content_counts": dict(self.content_counts),
+            "asset_counts": dict(self.asset_counts),
             "error_code": self.error_code,
         }
+
+
+def _strict_public_counts(
+    value: object,
+    *,
+    fields: frozenset[str],
+    label: str,
+) -> dict[str, int]:
+    if not isinstance(value, Mapping) or set(value) != fields:
+        raise EvidencePackageError("invalid_manifest", f"资料包{label}字段无效")
+    output: dict[str, int] = {}
+    for key in sorted(fields):
+        count = value.get(key)
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+            or count > _MAX_PUBLIC_COUNT
+        ):
+            raise EvidencePackageError("invalid_manifest", f"资料包{label}数值无效")
+        output[key] = count
+    return output
+
+
+def _audited_manifest_counts(
+    manifest: Mapping[str, Any],
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Project counts only after the signed tree and repository both passed audit."""
+
+    content_counts = _strict_public_counts(
+        manifest.get("content_counts"),
+        fields=_CONTENT_COUNT_FIELDS,
+        label="内容数量摘要",
+    )
+    try:
+        asset_counts = validate_official_package_asset_counts(manifest)
+    except OfficialPackageAssetError as exc:
+        raise EvidencePackageError(exc.code, str(exc)) from exc
+    return content_counts, asset_counts
 
 
 def default_active_state_path(data_root: Path | str) -> Path:
@@ -351,6 +411,7 @@ def list_installed_official_packages(
                     version_root, manifest
                 )
                 fingerprint = repository.content_fingerprint
+                content_counts, asset_counts = _audited_manifest_counts(manifest)
                 results.append(
                     InstalledOfficialPackage(
                         package_id=package_id,
@@ -359,6 +420,8 @@ def list_installed_official_packages(
                         installed_at=installed_at,
                         active=is_active,
                         audit_status="ready",
+                        content_counts=content_counts,
+                        asset_counts=asset_counts,
                     )
                 )
             except EvidencePackageError as exc:

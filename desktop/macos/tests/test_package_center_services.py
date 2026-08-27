@@ -37,6 +37,8 @@ class _Installed:
     package_id: str
     package_version: str
     active: bool
+    content_counts: dict[str, int] | None = None
+    asset_counts: dict[str, int] | None = None
 
     def public_dict(self):
         return {
@@ -47,6 +49,8 @@ class _Installed:
             "installed_at": "2026-08-09T00:00:00Z",
             "active": self.active,
             "audit_status": "ready",
+            "content_counts": dict(self.content_counts or {}),
+            "asset_counts": dict(self.asset_counts or {}),
             "error_code": None,
         }
 
@@ -111,7 +115,20 @@ class PackageCenterServicesTests(unittest.TestCase):
         def list_installed(**kwargs):
             seen.append(kwargs)
             return (
-                _Installed("auto-research-internal-evidence", "0.2.0-preview.1", True),
+                _Installed(
+                    "auto-research-internal-evidence",
+                    "0.2.0-preview.1",
+                    True,
+                    content_counts={
+                        "papers": 60,
+                        "entities": 4369,
+                        "items": 3142,
+                        "findings": 936,
+                        "tables": 46,
+                        "figures": 245,
+                    },
+                    asset_counts={"paper_pdfs": 59, "visual_assets": 291},
+                ),
                 _Installed("auto-research-internal-evidence", "0.1.0-preview.1", False),
             )
 
@@ -122,6 +139,13 @@ class PackageCenterServicesTests(unittest.TestCase):
             installed_lister=list_installed,
         ).summary()
         self.assertEqual(len(summary["official"]["installed_versions"]), 2)
+        self.assertEqual(
+            summary["official"]["installed_versions"][0]["asset_counts"],
+            {"paper_pdfs": 59, "visual_assets": 291},
+        )
+        self.assertEqual(
+            summary["official"]["installed_versions"][1]["asset_counts"], {}
+        )
         self.assertTrue(summary["official"]["current"]["active"])
         self.assertEqual(summary["transfer_policy"]["integrity"], "sha256-only")
         self.assertNotIn("/private/not-public", str(summary))
@@ -138,6 +162,8 @@ class PackageCenterServicesTests(unittest.TestCase):
                     "installed_at": "2026-08-09T00:00:00Z",
                     "active": True,
                     "audit_status": "ready",
+                    "content_counts": {},
+                    "asset_counts": {},
                     "error_code": None,
                     "install_path": "/private/unsafe",
                 }

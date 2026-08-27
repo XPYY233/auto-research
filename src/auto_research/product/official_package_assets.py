@@ -14,6 +14,8 @@ OFFICIAL_DISTRIBUTION_SCOPE = "internal-group-restricted"
 OFFICIAL_PDF_RIGHTS = "internal-group-noncommercial-rights-unverified"
 MAX_OFFICIAL_PDF_BYTES = 1024 * 1024 * 1024
 MAX_OFFICIAL_PDFS_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
+OFFICIAL_ASSET_COUNT_FIELDS = frozenset({"paper_pdfs", "visual_assets"})
+MAX_PUBLIC_ASSET_COUNT = (1 << 53) - 1
 PAPER_UID_RE = re.compile(r"^paper_[0-9a-f]{32}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PORTABLE_PATH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
@@ -175,6 +177,44 @@ def plan_official_pdf_payloads(
     return tuple(rows), payloads
 
 
+def validate_official_package_asset_counts(
+    manifest: Mapping[str, Any],
+) -> dict[str, int]:
+    """Validate and project the one authoritative official v2 asset summary."""
+
+    contract = manifest.get("official_package_contract")
+    if contract is None:
+        return {}
+    if contract != OFFICIAL_PACKAGE_CONTRACT_V2:
+        raise OfficialPackageAssetError(
+            "official_asset_contract_unsupported", "官方资料包资产契约不受支持"
+        )
+    raw_counts = manifest.get("asset_counts")
+    if not isinstance(raw_counts, Mapping) or set(raw_counts) != OFFICIAL_ASSET_COUNT_FIELDS:
+        raise OfficialPackageAssetError(
+            "official_asset_counts_invalid", "官方资料包资产数量摘要字段无效"
+        )
+    counts: dict[str, int] = {}
+    for key in sorted(OFFICIAL_ASSET_COUNT_FIELDS):
+        value = raw_counts.get(key)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < 0
+            or value > MAX_PUBLIC_ASSET_COUNT
+        ):
+            raise OfficialPackageAssetError(
+                "official_asset_counts_invalid", "官方资料包资产数量摘要数值无效"
+            )
+        counts[key] = value
+    rows = manifest.get("paper_pdfs")
+    if not isinstance(rows, list) or counts["paper_pdfs"] != len(rows):
+        raise OfficialPackageAssetError(
+            "official_asset_counts_invalid", "官方资料包 PDF 数量摘要不一致"
+        )
+    return counts
+
+
 def validate_official_package_asset_manifest(
     manifest: Mapping[str, Any],
     *,
@@ -251,6 +291,7 @@ def validate_official_package_asset_manifest(
         raise OfficialPackageAssetError(
             "official_pdf_coverage", "官方资料包 PDF 与论文清单不一致"
         )
+    validate_official_package_asset_counts(manifest)
     return tuple(sorted(output, key=lambda value: value.paper_uid))
 
 
@@ -309,5 +350,6 @@ __all__ = [
     "OfficialPdfLease",
     "open_official_pdf_lease",
     "plan_official_pdf_payloads",
+    "validate_official_package_asset_counts",
     "validate_official_package_asset_manifest",
 ]

@@ -12,6 +12,7 @@ from auto_research.product.official_package_assets import (
     OfficialPackageAssetError,
     open_official_pdf_lease,
     plan_official_pdf_payloads,
+    validate_official_package_asset_counts,
     validate_official_package_asset_manifest,
 )
 
@@ -38,6 +39,7 @@ class OfficialPackageAssetsTests(unittest.TestCase):
             "official_package_contract": OFFICIAL_PACKAGE_CONTRACT_V2,
             "distribution_scope": OFFICIAL_DISTRIBUTION_SCOPE,
             "paper_pdfs": rows,
+            "asset_counts": {"paper_pdfs": len(rows), "visual_assets": 0},
         }
 
     def test_plans_complete_deterministic_internal_pdf_inventory(self) -> None:
@@ -60,6 +62,32 @@ class OfficialPackageAssetsTests(unittest.TestCase):
 
     def test_v1_manifest_remains_valid_without_assets(self) -> None:
         self.assertEqual(validate_official_package_asset_manifest({}), ())
+        self.assertEqual(validate_official_package_asset_counts({}), {})
+
+    def test_v2_requires_strict_asset_counts(self) -> None:
+        valid = self._manifest([{}])
+        self.assertEqual(
+            validate_official_package_asset_counts(valid),
+            {"paper_pdfs": 1, "visual_assets": 0},
+        )
+        invalid_counts = (
+            None,
+            {"paper_pdfs": -1, "visual_assets": 0},
+            {"paper_pdfs": "1", "visual_assets": 0},
+            {"paper_pdfs": True, "visual_assets": 0},
+            {"paper_pdfs": 0, "visual_assets": 0},
+            {"paper_pdfs": 1, "visual_assets": 0, "path": "/private/leak"},
+        )
+        for counts in invalid_counts:
+            with self.subTest(counts=counts):
+                manifest = dict(valid)
+                if counts is None:
+                    manifest.pop("asset_counts")
+                else:
+                    manifest["asset_counts"] = counts
+                with self.assertRaises(OfficialPackageAssetError) as raised:
+                    validate_official_package_asset_counts(manifest)
+                self.assertEqual(raised.exception.code, "official_asset_counts_invalid")
 
     def test_installed_manifest_reaudits_pdf_and_identity(self) -> None:
         pdf = self.root / "papers" / f"{PAPER_ONE}.pdf"

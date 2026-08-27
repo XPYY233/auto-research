@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import tempfile
 import unittest
+import zipfile
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,7 +14,12 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from auto_research.product.evidence_package import (
+    CHECKSUMS_NAME,
     EvidencePackageError,
+    MANIFEST_NAME,
+    SIGNATURE_DOMAIN,
+    SIGNATURE_NAME,
+    _canonical_json_bytes,
     build_evidence_package,
     import_evidence_package,
 )
@@ -20,6 +28,11 @@ from auto_research.product.official_package_store import (
     list_installed_official_packages,
     open_active_official_repository,
     rollback_official_evidence_package,
+)
+from auto_research.product.official_package_assets import (
+    OFFICIAL_DISTRIBUTION_SCOPE,
+    OFFICIAL_PACKAGE_CONTRACT_V2,
+    OFFICIAL_PDF_RIGHTS,
 )
 from auto_research.product.portable_repository import (
     DATABASE_CONTRACT,
@@ -114,6 +127,7 @@ class OfficialPackageStoreTests(unittest.TestCase):
         version: str = "0.1.0-preview.1",
         publisher_name: str = "Auto Research internal preview",
         redistribution: str = "internal-preview-only",
+        asset_counts: dict[str, object] | None = None,
     ) -> Path:
         self.package_counter += 1
         suffix = self.package_counter
@@ -135,7 +149,7 @@ class OfficialPackageStoreTests(unittest.TestCase):
             provenance=provenance_for_papers((self.paper,), publisher=publisher_name),
         )
         counts = Counter(document["entity_type"] for document in self._documents(repository.root))
-        manifest = {
+        manifest: dict[str, object] = {
             "format": "auto-research-evidence-package",
             "format_version": 1,
             "package_id": repository.package_id,
@@ -154,22 +168,79 @@ class OfficialPackageStoreTests(unittest.TestCase):
                 "tables": counts["table"],
                 "figures": counts["figure"],
             },
-            "app_compatibility": {"minimum": "0.3.0", "maximum_exclusive": "1.0.0"},
+            "app_compatibility": {
+                "minimum": "1.1.0" if asset_counts is not None else "0.3.0",
+                "maximum_exclusive": "2.0.0" if asset_counts is not None else "1.0.0",
+            },
             "database_path": DATABASE_PATH,
             "rights_path": RIGHTS_PATH,
             "provenance_path": PROVENANCE_PATH,
         }
+        payload_files = {
+            DATABASE_PATH: repository.database_path,
+            RIGHTS_PATH: repository.rights_path,
+            PROVENANCE_PATH: repository.provenance_path,
+        }
+        if asset_counts is not None:
+            pdf_bytes = b"%PDF-1.4\n%%EOF\n"
+            pdf_path = self.root / f"paper-{suffix}.pdf"
+            pdf_path.write_bytes(pdf_bytes)
+            relative_pdf = f"papers/{self.paper_uid}.pdf"
+            manifest.update(
+                {
+                    "official_package_contract": OFFICIAL_PACKAGE_CONTRACT_V2,
+                    "distribution_scope": OFFICIAL_DISTRIBUTION_SCOPE,
+                    "paper_pdfs": [
+                        {
+                            "paper_uid": self.paper_uid,
+                            "path": relative_pdf,
+                            "sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+                            "size_bytes": len(pdf_bytes),
+                            "media_type": "application/pdf",
+                            "rights": OFFICIAL_PDF_RIGHTS,
+                        }
+                    ],
+                    "asset_counts": asset_counts,
+                }
+            )
+            payload_files[relative_pdf] = pdf_path
         return build_evidence_package(
             self.root / f"official-{suffix}.aresearch",
             manifest=manifest,
-            payload_files={
-                DATABASE_PATH: repository.database_path,
-                RIGHTS_PATH: repository.rights_path,
-                PROVENANCE_PATH: repository.provenance_path,
-            },
+            payload_files=payload_files,
             signing_key=self.key,
             signer_key_id="internal-test-key",
         )
+
+    def resign_asset_counts(
+        self,
+        package: Path,
+        asset_counts: dict[str, object],
+    ) -> Path:
+        with zipfile.ZipFile(package, "r") as source:
+            members = {name: source.read(name) for name in source.namelist()}
+        manifest = json.loads(members[MANIFEST_NAME].decode("utf-8"))
+        manifest["asset_counts"] = asset_counts
+        manifest_bytes = _canonical_json_bytes(manifest)
+        checksums_bytes = members[CHECKSUMS_NAME]
+        signature_document = {
+            "algorithm": "ed25519",
+            "key_id": "internal-test-key",
+            "signature": base64.b64encode(
+                self.key.sign(
+                    SIGNATURE_DOMAIN + manifest_bytes + b"\0" + checksums_bytes
+                )
+            ).decode("ascii"),
+        }
+        members[MANIFEST_NAME] = manifest_bytes
+        members[SIGNATURE_NAME] = _canonical_json_bytes(signature_document)
+        target = self.root / f"resigned-{self.package_counter}.aresearch"
+        with zipfile.ZipFile(
+            target, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
+        ) as archive:
+            for name, payload in members.items():
+                archive.writestr(name, payload)
+        return target
 
     @staticmethod
     def _documents(root: Path):
@@ -358,6 +429,18 @@ class OfficialPackageStoreTests(unittest.TestCase):
         ])
         self.assertTrue(versions[0].active)
         self.assertTrue(all(entry.audit_status == "ready" for entry in versions))
+        self.assertEqual(
+            versions[0].public_dict()["content_counts"],
+            {
+                "papers": 1,
+                "entities": 1,
+                "items": 1,
+                "findings": 0,
+                "tables": 0,
+                "figures": 0,
+            },
+        )
+        self.assertEqual(versions[0].public_dict()["asset_counts"], {})
         self.assertNotIn("path", str([entry.public_dict() for entry in versions]).lower())
 
         damaged = (
@@ -380,6 +463,131 @@ class OfficialPackageStoreTests(unittest.TestCase):
         self.assertEqual(by_version["0.1.0-preview.1"].audit_status, "invalid")
         self.assertFalse(by_version["0.1.0-preview.1"].active)
         self.assertTrue(by_version["0.1.0-preview.1"].error_code)
+        self.assertEqual(by_version["0.1.0-preview.1"].content_counts, {})
+        self.assertEqual(by_version["0.1.0-preview.1"].asset_counts, {})
+
+    def test_list_installed_v2_projects_audited_asset_counts(self) -> None:
+        package = self.build_package(
+            version="1.2.0",
+            asset_counts={"paper_pdfs": 1, "visual_assets": 0},
+        )
+        data_root = self.root / "installed-v2"
+        imported = import_official_evidence_package(
+            package,
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="1.2.0",
+            publisher_policy=self.policy,
+        )
+        installed = list_installed_official_packages(
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="1.2.0",
+            publisher_policy=self.policy,
+        )
+        self.assertEqual(installed[0].audit_status, "ready")
+        self.assertEqual(
+            installed[0].public_dict()["asset_counts"],
+            {"paper_pdfs": 1, "visual_assets": 0},
+        )
+        with self.assertRaises(TypeError):
+            installed[0].asset_counts["paper_pdfs"] = 2  # type: ignore[index]
+
+        manifest_path = imported.install_path / "manifest.json"
+        damaged_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        damaged_manifest["asset_counts"]["visual_assets"] = -1
+        manifest_path.write_text(json.dumps(damaged_manifest), encoding="utf-8")
+        damaged = list_installed_official_packages(
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="1.2.0",
+            publisher_policy=self.policy,
+        )[0]
+        self.assertEqual(damaged.audit_status, "invalid")
+        self.assertEqual(damaged.content_counts, {})
+        self.assertEqual(damaged.asset_counts, {})
+
+    def test_list_installed_ignores_untrusted_marker_counts(self) -> None:
+        package = self.build_package()
+        data_root = self.root / "marker-counts"
+        imported = import_official_evidence_package(
+            package,
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="0.6.1-preview.1",
+            publisher_policy=self.policy,
+        )
+        marker_path = imported.install_path / "install.json"
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        marker["content_counts"] = {"papers": 999999}
+        marker["asset_counts"] = {"install_path": "/private/not-trusted"}
+        marker_path.write_text(json.dumps(marker), encoding="utf-8")
+
+        installed = list_installed_official_packages(
+            data_root=data_root,
+            trusted_public_keys=self.trusted,
+            current_app_version="0.6.1-preview.1",
+            publisher_policy=self.policy,
+        )
+        self.assertEqual(installed[0].content_counts["papers"], 1)
+        self.assertEqual(installed[0].asset_counts, {})
+        self.assertNotIn("/private/not-trusted", str(installed[0].public_dict()))
+
+    def test_import_rejects_invalid_asset_counts_without_changing_active(self) -> None:
+        cases = (
+            {"paper_pdfs": -1, "visual_assets": 0},
+            {"paper_pdfs": "1", "visual_assets": 0},
+            {"paper_pdfs": 0, "visual_assets": 0},
+            {"paper_pdfs": 1, "visual_assets": 0, "install_path": "/private/leak"},
+        )
+        for index, asset_counts in enumerate(cases):
+            with self.subTest(index=index):
+                data_root = self.root / f"invalid-assets-{index}"
+                healthy = self.build_package(
+                    version=f"1.1.{index}",
+                    asset_counts={"paper_pdfs": 1, "visual_assets": 0},
+                )
+                imported = import_official_evidence_package(
+                    healthy,
+                    data_root=data_root,
+                    trusted_public_keys=self.trusted,
+                    current_app_version="1.2.0",
+                    publisher_policy=self.policy,
+                )
+                selector = data_root / "official-packages" / "active.json"
+                selector_before = selector.read_bytes()
+                package = self.build_package(
+                    version=f"1.2.{index}",
+                    asset_counts={"paper_pdfs": 1, "visual_assets": 0},
+                )
+                package = self.resign_asset_counts(package, asset_counts)
+                with self.assertRaises(EvidencePackageError) as raised:
+                    import_official_evidence_package(
+                        package,
+                        data_root=data_root,
+                        trusted_public_keys=self.trusted,
+                        current_app_version="1.2.0",
+                        publisher_policy=self.policy,
+                    )
+                self.assertEqual(
+                    raised.exception.code, "official_asset_counts_invalid"
+                )
+                self.assertEqual(selector.read_bytes(), selector_before)
+                active, _repository = open_active_official_repository(
+                    data_root=data_root,
+                    trusted_public_keys=self.trusted,
+                    current_app_version="1.2.0",
+                    publisher_policy=self.policy,
+                )
+                self.assertEqual(active.package_version, imported.package_version)
+                self.assertFalse(
+                    (
+                        data_root
+                        / "official-packages"
+                        / "auto-research-internal-evidence"
+                        / f"1.2.{index}"
+                    ).exists()
+                )
 
     def test_list_installed_versions_rejects_unsafe_directory_topology(self) -> None:
         data_root = self.root / "unsafe-list"
