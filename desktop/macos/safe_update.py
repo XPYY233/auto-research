@@ -15,11 +15,38 @@ from pathlib import Path
 DESKTOP_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = DESKTOP_ROOT.parents[1]
 BACKUP_ROOT = PROJECT_ROOT.parent / "auto-research-backups"
+RELEASE_CONTRACT_PATH = PROJECT_ROOT / "config" / "release-contract.json"
 
 
 def run(command: list[str], *, env: dict[str, str] | None = None) -> None:
     print(f"\n→ {' '.join(command)}", flush=True)
     subprocess.run(command, cwd=PROJECT_ROOT, env=env, check=True)
+
+
+def production_javascript_assets(
+    contract_path: Path = RELEASE_CONTRACT_PATH,
+) -> tuple[str, ...]:
+    """Return the JavaScript assets that the signed release contract publishes."""
+
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    if contract.get("schema") != "auto-research-release-contract-v1":
+        raise ValueError("发布契约格式不受支持")
+    web_assets = contract.get("web_assets")
+    if not isinstance(web_assets, dict):
+        raise ValueError("发布契约缺少 web_assets")
+
+    scripts: list[str] = []
+    web_root = (PROJECT_ROOT / "src" / "auto_research" / "evidence" / "web").resolve()
+    for relative_path in web_assets:
+        if not isinstance(relative_path, str) or not relative_path.endswith(".js"):
+            continue
+        candidate = (PROJECT_ROOT / relative_path).resolve()
+        if candidate.parent != web_root or not candidate.is_file():
+            raise ValueError("发布契约包含无效的 JavaScript 资源")
+        scripts.append(relative_path)
+    if not scripts:
+        raise ValueError("发布契约没有可检查的 JavaScript 资源")
+    return tuple(scripts)
 
 
 def git_status() -> str:
@@ -89,7 +116,8 @@ def main() -> int:
         env=source_environment,
     )
     run([sys.executable, "-m", "compileall", "-q", "src", "desktop/macos"])
-    run(["node", "--check", "src/auto_research/evidence/web/app.js"])
+    for script_path in production_javascript_assets():
+        run(["node", "--check", script_path])
     run(["git", "diff", "--check"])
     run(
         [sys.executable, "-m", "auto_research.cli", "evidence-db-health"],
