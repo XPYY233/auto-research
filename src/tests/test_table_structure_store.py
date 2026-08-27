@@ -154,6 +154,11 @@ class TableStructureStoreTests(unittest.TestCase):
         visible = self.store.latest(visual_asset_id=self.table_id, include_unverified=True)
         self.assertEqual(visible["version"], 1)
         self.assertEqual(visible["status"], "candidate")
+        candidate = self.store.candidate_for_review(
+            visual_asset_id=self.table_id,
+            expected_version=1,
+        )
+        self.assertEqual(candidate.rows[1][1], "300")
 
     def test_approve_appends_verified_version_and_public_projection_is_path_free(self) -> None:
         self._save()

@@ -203,6 +203,29 @@ class TableStructureStore:
         except sqlite3.Error as exc:
             raise TableStructureStoreError("table_structure_store_unavailable") from exc
 
+    def candidate_for_review(
+        self, *, visual_asset_id: int, expected_version: int
+    ) -> contract.TableStructureCandidate:
+        """Return one exact current candidate to the domain review service."""
+
+        asset_id, expected = _positive(visual_asset_id), _positive(expected_version)
+        try:
+            self._database.init()
+            with self._database.connect() as connection:
+                _require_table(connection, asset_id)
+                row = _latest(connection, asset_id)
+                if row is None:
+                    raise TableStructureStoreError("table_structure_store_not_found")
+                if int(row["version_no"]) != expected:
+                    raise TableStructureStoreError("table_structure_store_version_conflict")
+                if str(row["status"]) not in {"candidate", "manual_review"}:
+                    raise TableStructureStoreError("table_structure_store_version_conflict")
+                return _decode(row, self._limits)
+        except TableStructureStoreError:
+            raise
+        except sqlite3.Error as exc:
+            raise TableStructureStoreError("table_structure_store_unavailable") from exc
+
     def _review(
         self,
         visual_asset_id: int,
