@@ -46,16 +46,16 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "eec0ddaf7099a41750893649527352827ebedc2c36f018001852194845ba39d0",
+    "src/auto_research/evidence/web/index.html": "e29a76d1f6d1263482ca20ea83169c7d805147a23a61861dd604cceef5a7a53f",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
-    "src/auto_research/evidence/web/workbench.css": "b661b4068e0194ecae475c8e2c24a4ce09bf7d94f5b5ad4dbd3abf22a42b23d4",
+    "src/auto_research/evidence/web/workbench.css": "098618ed818eacf5f5079a6dc84d43d31c2668e4c3a03b15c4e2eee072983a90",
     "src/auto_research/evidence/web/ai_consent.js": "606cded819b129a32e74d4532f1a5e6fddbf399d0a205f5abddb03af8c67141b",
     "src/auto_research/evidence/web/document_tab_store.js": "b0b8a930b0f6c54796cc6a926a6435162c6b51bb3fd95c16bd595ecdc234f2cf",
     "src/auto_research/evidence/web/pane_layout_controller.js": "bb2ebea79ba9d571065e7dc9ac5b9635fc19ecb77ac761fbf1cb8248bf98e154",
     "src/auto_research/evidence/web/workspace_layout_controller.js": "de2e31f4a20b7b2b34f0901e9c8d79296a356fe0e8be7b68014624a7d4aff4e9",
     "src/auto_research/evidence/web/fusion_pdf_controller.js": "9922b08f8ae42ea24c6188120615ccbf775bba7f8f3b67770ae793dbad19c4d6",
     "src/auto_research/evidence/web/fusion_ai_experience.js": "f58c7a3757bd7093bc99ecba850ddc0d460078d8d6b678d931fa193ffa1f696b",
-    "src/auto_research/evidence/web/fusion_review.js": "5ff3dd204a4d7a67772f2711638e4cdf64cd23f135c7882d5c7323b6679f0b55",
+    "src/auto_research/evidence/web/fusion_review.js": "ba6a8c367d2168cf7587a8bbde623e4511344dc8a9cf7a003562f944a3c6be34",
     "src/auto_research/evidence/web/codex-pet-working.webp": "eeb657c8dd3dc9431cea8d88b8ec08e4c44471dd258ac3d8008483f2b40f0ef9"
   }
 }

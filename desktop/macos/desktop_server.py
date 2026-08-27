@@ -40,6 +40,7 @@ from package_import_service import PackageImportService, PackageImportServiceErr
 from personal_import_api import PersonalImportAPI
 from personal_table_api import PersonalTableAPI
 from review_queue_api import ReviewQueueAPI
+from search_index_recovery_api import SearchIndexRecoveryAPI
 from desktop_ai_api import MacDesktopAIAPI
 from auto_research.desktop.research_memory import (
     ResearchMemoryError,
@@ -185,6 +186,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     personal_import_api: PersonalImportAPI | None = None
     personal_table_api: PersonalTableAPI | None = None
     review_queue_api: ReviewQueueAPI | None = None
+    search_index_recovery_api: SearchIndexRecoveryAPI | None = None
     desktop_ai_api: MacDesktopAIAPI | None = None
     release_info: Mapping[str, object] = RELEASE_INFO
     experience_mode: str = "standard"
@@ -799,6 +801,19 @@ class DesktopEvidenceHandler(EvidenceHandler):
                         HTTPStatus.FORBIDDEN,
                     )
                 return self.review_queue_api.handle_post(self)
+            if (
+                self.search_index_recovery_api is not None
+                and self.search_index_recovery_api.is_post_route(self.path)
+            ):
+                if self.read_only:
+                    return self.json_response(
+                        {
+                            "error": "当前为只读模式，不允许恢复搜索索引。",
+                            "code": "read_only",
+                        },
+                        HTTPStatus.FORBIDDEN,
+                    )
+                return self.search_index_recovery_api.handle_post(self)
             return super().do_POST()
         finally:
             if high_cost:
@@ -884,6 +899,7 @@ def create_desktop_server(
     personal_import_api: PersonalImportAPI | None = None,
     personal_table_api: PersonalTableAPI | None = None,
     review_queue_api: ReviewQueueAPI | None = None,
+    search_index_recovery_api: SearchIndexRecoveryAPI | None = None,
     desktop_ai_api: MacDesktopAIAPI | None = None,
     release_info: Mapping[str, object] | None = None,
     session_token: str | None = None,
@@ -901,13 +917,16 @@ def create_desktop_server(
         document_index: dict[str, int | bool] = {"indexed": 0, "skipped": 0, "disabled": True}
     else:
         document_index = {**upload_service.index_existing_pdfs(), "disabled": False}
-    search_index = EvidenceSearchIndex(database).ensure_fresh()
+    search_index_service = EvidenceSearchIndex(database)
+    search_index = search_index_service.ensure_fresh()
     if review_queue_api is None:
         from auto_research.evidence.review_queue import ReviewQueueService
 
         review_queue_api = ReviewQueueAPI(
-            ReviewQueueService(database, search_index=search_index)
+            ReviewQueueService(database, search_index=search_index_service)
         )
+    if search_index_recovery_api is None:
+        search_index_recovery_api = SearchIndexRecoveryAPI(search_index_service)
     if evidence_export_api is None:
         from auto_research.evidence.evidence_export import (
             EvidenceExportService,
@@ -950,6 +969,7 @@ def create_desktop_server(
             "personal_import_api": personal_import_api,
             "personal_table_api": personal_table_api,
             "review_queue_api": review_queue_api,
+            "search_index_recovery_api": search_index_recovery_api,
             "desktop_ai_api": desktop_ai_api,
             "release_info": dict(release_info or RELEASE_INFO),
             "experience_mode": experience_mode,

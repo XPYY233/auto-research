@@ -790,6 +790,37 @@ finishPaidJob();await paid;assert.equal(api.state.evidenceChat.busy,false);asser
         self.assertNotIn('localStorage.setItem("review', self.runtime)
         self.assertNotIn('localStorage.setItem("candidate', self.runtime)
 
+    def test_saved_index_pending_has_a_real_idempotent_recovery_action(self) -> None:
+        self.assertEqual(self.index.count('id="fusion-repair-search-index"'), 1)
+        for marker in (
+            'searchIndexRecovery:"/api/desktop/search-index/refresh"',
+            "async function recoverSearchIndex()",
+            'body:"{}"',
+            'schema_version!=="search-index-recovery-v1"',
+            "不会重新提取、发布或调用模型",
+            "showSearchIndexRecovery(true)",
+            'q("#fusion-repair-search-index")?.addEventListener',
+        ):
+            self.assertIn(marker, self.runtime + self.index)
+
+    def test_completed_extraction_exposes_a_truthful_path_free_receipt(self) -> None:
+        self.assertEqual(self.index.count('id="fusion-literature-receipt"'), 1)
+        for marker in (
+            "function renderLiteratureReceipt(result)",
+            "双分支核验",
+            "正式发布",
+            "视觉证据",
+            "人工审核",
+            "搜索索引",
+            "尚未生成 JSONL / Parquet 文件",
+            "renderLiteratureReceipt(result)",
+            "updateLiteratureReceiptIndex",
+        ):
+            self.assertIn(marker, self.runtime + self.index)
+        receipt_renderer = self.runtime.split("function renderLiteratureReceipt(result)", 1)[1].split("function updateLiteratureReceiptIndex", 1)[0]
+        for forbidden in ("source_fingerprint", "content_fingerprint", "entity_uids", "visual_asset_hashes"):
+            self.assertNotIn(forbidden, receipt_renderer)
+
     def test_review_queue_public_projection_and_candidate_runtime(self) -> None:
         program = f"""
 globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};

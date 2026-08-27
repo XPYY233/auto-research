@@ -133,6 +133,7 @@
               <button type="button" class="fusion-primary-action" id="fusion-start-extraction" disabled>▶ 开始自动提取与核验</button>
               <button type="button" id="fusion-open-pdf" disabled>打开 PDF</button>
               <button type="button" class="fusion-review-queue-action" id="fusion-open-review-queue" aria-describedby="fusion-literature-action-status">待审核 <b id="fusion-review-queue-count">—</b></button>
+              <button type="button" id="fusion-repair-search-index" hidden>恢复搜索索引</button>
             </div>
             <div class="fusion-export-group" aria-label="导出当前论文测量数据"><strong>导出当前论文</strong><a id="fusion-paper-export-csv" aria-disabled="true" tabindex="-1" download rel="noopener">测量 CSV</a><a id="fusion-paper-export-xlsx" aria-disabled="true" tabindex="-1" download rel="noopener">测量 XLSX</a></div>
             <button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button>
@@ -142,6 +143,10 @@
             <div class="fusion-ai-progress-agent"><img src="/static/codex-pet-working.webp" alt="" aria-hidden="true"><span>文献提取任务</span></div>
             <div class="fusion-ai-progress-main"><header><strong data-ai-progress-label>检查论文与提取计划</strong><b data-ai-progress-value>0%</b></header><div class="fusion-ai-progress-track" role="progressbar" aria-label="文献提取进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i data-ai-progress-bar></i></div><small data-ai-progress-detail hidden></small><ol class="fusion-ai-progress-stages"><li data-ai-stage="prepare">准备</li><li data-ai-stage="initial_focus">提取</li><li data-ai-stage="coverage_verification">核验</li><li data-ai-stage="third_review">纠错</li><li data-ai-stage="publishing">发布</li></ol><div class="fusion-ai-activity"><header><strong>任务活动</strong><span data-ai-elapsed>0 秒</span></header><small>显示可审计阶段与工具活动，不展示模型内部思维链。</small><ol data-ai-activity></ol></div></div>
           </section>
+          <details class="fusion-operation-receipt" id="fusion-literature-receipt" hidden>
+            <summary>查看本次处理验收单</summary>
+            <div id="fusion-literature-receipt-body"></div>
+          </details>
           <div class="fusion-scroll" id="fusion-literature-content" aria-live="polite" aria-busy="true">
             <div class="fusion-state-card large" data-literature-state="loading"><strong>正在载入真实文献快照…</strong><span>文献标题、公开元数据与四类证据来自现有只读接口。</span></div>
           </div>
