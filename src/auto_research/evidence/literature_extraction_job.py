@@ -7,7 +7,7 @@ import secrets
 import threading
 import time
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
@@ -164,6 +164,60 @@ class FrozenPDFContext:
 
 
 @dataclass(frozen=True)
+class ImmutablePDFSnapshot:
+    """Private immutable PDF bytes captured by the snapshot authority.
+
+    The payload is intentionally excluded from repr/equality so it cannot be
+    projected accidentally with the public job/package metadata.  Consumers
+    must present the already-bound SHA-256 before receiving the bytes.
+    """
+
+    sha256: str
+    size: int
+    _content: bytes = field(repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if (
+            type(self._content) is not bytes
+            or not self._content
+            or len(self._content) > MAX_SNAPSHOT_BYTES
+            or self.size != len(self._content)
+            or not isinstance(self.sha256, str)
+            or len(self.sha256) != 64
+            or not hmac.compare_digest(
+                self.sha256, hashlib.sha256(self._content).hexdigest()
+            )
+        ):
+            raise LiteratureExtractionJobError(
+                "literature_pdf_invalid", "PDF 快照无效"
+            )
+
+    @classmethod
+    def create(cls, content: bytes) -> "ImmutablePDFSnapshot":
+        if type(content) is not bytes or not content or len(content) > MAX_SNAPSHOT_BYTES:
+            raise LiteratureExtractionJobError(
+                "literature_pdf_invalid", "PDF 快照无效"
+            )
+        return cls(
+            sha256=hashlib.sha256(content).hexdigest(),
+            size=len(content),
+            _content=content,
+        )
+
+    def verified_bytes(self, expected_sha256: str) -> bytes:
+        if (
+            not isinstance(expected_sha256, str)
+            or len(expected_sha256) != 64
+            or not hmac.compare_digest(self.sha256, expected_sha256)
+            or self.size != len(self._content)
+        ):
+            raise LiteratureExtractionJobError(
+                "literature_source_stale", "PDF 快照身份不一致"
+            )
+        return self._content
+
+
+@dataclass(frozen=True)
 class FrozenModelCall:
     call_id: str
     task: str
@@ -255,6 +309,7 @@ class ValidatedLiteraturePackage:
     paper: Mapping[str, Any]
     snapshot_fingerprint: str
     pdf_sha256: str
+    pdf_snapshot: ImmutablePDFSnapshot = field(repr=False, compare=False)
     experiment_profile: Mapping[str, Any]
     quality_result: Mapping[str, Any]
 
@@ -313,7 +368,7 @@ class _Job:
 @dataclass(frozen=True)
 class _SnapshotRecord:
     source_path: str
-    content: bytes
+    snapshot: ImmutablePDFSnapshot
     context: FrozenPDFContext
 
 
@@ -331,11 +386,14 @@ class LiteraturePDFSnapshotAuthority:
         raw, context = _capture_pdf_snapshot(pdf_path, max_pages=max_pages)
         if len(raw) > MAX_SNAPSHOT_BYTES:
             raise LiteratureExtractionJobError("literature_pdf_too_large", "PDF 超出抽取快照限制")
+        snapshot = ImmutablePDFSnapshot.create(raw)
+        if not hmac.compare_digest(snapshot.sha256, context.pdf_sha256):
+            raise LiteratureExtractionJobError("literature_pdf_invalid", "PDF 快照身份不一致")
         with self._lock:
-            if sum(len(item.content) for item in self._records.values()) + len(raw) > self._max_total_bytes:
+            if sum(item.snapshot.size for item in self._records.values()) + snapshot.size > self._max_total_bytes:
                 raise LiteratureExtractionJobError("literature_job_store_full", "抽取快照空间不足，请稍后重试")
             handle = secrets.token_urlsafe(32)
-            self._records[handle] = _SnapshotRecord(pdf_path, raw, context)
+            self._records[handle] = _SnapshotRecord(pdf_path, snapshot, context)
         return handle, context
 
     def assert_fresh(self, handle: str) -> None:
@@ -346,6 +404,18 @@ class LiteraturePDFSnapshotAuthority:
         current = _read_stable_pdf_snapshot(record.source_path)
         if not hmac.compare_digest(record.context.pdf_sha256, current.sha256):
             raise LiteratureExtractionJobError("literature_source_stale", "原始 PDF 已发生变化")
+
+    def snapshot_for_finalization(
+        self, handle: str, *, expected_sha256: str
+    ) -> ImmutablePDFSnapshot:
+        """Return the private captured snapshot, never the source path."""
+
+        with self._lock:
+            record = self._records.get(handle)
+        if record is None:
+            raise LiteratureExtractionJobError("literature_job_expired", "抽取快照已过期")
+        record.snapshot.verified_bytes(expected_sha256)
+        return record.snapshot
 
     def release(self, handle: str) -> None:
         with self._lock:
@@ -649,6 +719,10 @@ class LiteratureExtractionJobStore:
                         paper=job.paper,
                         snapshot_fingerprint=job.snapshot.content_fingerprint,
                         pdf_sha256=job.snapshot.pdf_sha256,
+                        pdf_snapshot=self._snapshots.snapshot_for_finalization(
+                            job.snapshot_handle,
+                            expected_sha256=job.snapshot.pdf_sha256,
+                        ),
                         experiment_profile=job.experiment_profile,
                         quality_result=frozen_result,
                     )
@@ -708,6 +782,10 @@ class LiteratureExtractionJobStore:
                 paper=job.paper,
                 snapshot_fingerprint=job.snapshot.content_fingerprint,
                 pdf_sha256=job.snapshot.pdf_sha256,
+                pdf_snapshot=self._snapshots.snapshot_for_finalization(
+                    job.snapshot_handle,
+                    expected_sha256=job.snapshot.pdf_sha256,
+                ),
                 experiment_profile=job.experiment_profile,
                 quality_result=frozen_quality,
             )
@@ -756,6 +834,13 @@ class LiteratureExtractionJobStore:
             snapshot_handle = job.snapshot_handle
         try:
             self._snapshots.assert_fresh(snapshot_handle)
+            authority_snapshot = self._snapshots.snapshot_for_finalization(
+                snapshot_handle, expected_sha256=package.pdf_sha256
+            )
+            if package.pdf_snapshot is not authority_snapshot:
+                raise LiteratureExtractionJobError(
+                    "literature_source_stale", "抽取 PDF 快照已脱离受控来源"
+                )
             result = finalizer.finalize(package)
             _validate_intermediate(result)
         except LiteratureExtractionJobError:

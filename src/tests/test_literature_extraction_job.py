@@ -47,6 +47,21 @@ def test_safe_snapshot_uses_one_immutable_byte_source(tmp_path: Path) -> None:
     assert "3.2 GPa" in snapshot.pages[0]["text"]
 
 
+def test_snapshot_authority_keeps_private_bytes_for_finalization(tmp_path: Path) -> None:
+    path = tmp_path / "private" / "paper.pdf"
+    path.parent.mkdir()
+    make_pdf(path)
+    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+    summary = store.create(Papers(path), paper_id=1, session_id="owner")
+    job = store._jobs[summary["job_token"]]
+    snapshot = store._snapshots.snapshot_for_finalization(
+        job.snapshot_handle, expected_sha256=job.snapshot.pdf_sha256
+    )
+    assert snapshot.verified_bytes(job.snapshot.pdf_sha256) == path.read_bytes()
+    assert str(path) not in repr(snapshot)
+    assert "%PDF" not in repr(snapshot)
+
+
 def test_safe_snapshot_rejects_symlink(tmp_path: Path) -> None:
     target = tmp_path / "paper.pdf"
     link = tmp_path / "link.pdf"

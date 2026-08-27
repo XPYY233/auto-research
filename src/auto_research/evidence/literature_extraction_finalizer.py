@@ -10,6 +10,7 @@ from typing import Any, Callable, Mapping
 from .db import EvidenceDB, now
 from .fact_model import classify_nonreportable_row
 from .literature_extraction_job import (
+    ImmutablePDFSnapshot,
     LiteratureExtractionJobError,
     ValidatedLiteraturePackage,
     _canonical_bytes,
@@ -64,6 +65,7 @@ class AtomicEvidenceDBFinalizer:
             self._db,
             paper_id=package.paper_id,
             expected_pdf_sha256=package.pdf_sha256,
+            pdf_snapshot=package.pdf_snapshot,
         )
         committed = False
         try:
@@ -351,6 +353,16 @@ class AtomicEvidenceDBFinalizer:
             raise LiteratureExtractionJobError(
                 "literature_commit_failed", "抽取来源身份无效，未保存任何科学记录"
             )
+        if not isinstance(package.pdf_snapshot, ImmutablePDFSnapshot):
+            raise LiteratureExtractionJobError(
+                "literature_commit_failed", "抽取 PDF 快照无效，未保存任何科学记录"
+            )
+        try:
+            package.pdf_snapshot.verified_bytes(package.pdf_sha256)
+        except LiteratureExtractionJobError as exc:
+            raise LiteratureExtractionJobError(
+                "literature_commit_failed", "抽取 PDF 快照无效，未保存任何科学记录"
+            ) from exc
         payload = _plain(package.quality_result)
         if (
             not isinstance(payload, dict)

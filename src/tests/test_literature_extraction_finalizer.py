@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-import hashlib
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 
@@ -12,6 +12,7 @@ import pytest
 from auto_research.evidence.db import EvidenceDB
 from auto_research.evidence.literature_extraction_finalizer import AtomicEvidenceDBFinalizer
 from auto_research.evidence.literature_extraction_job import (
+    ImmutablePDFSnapshot,
     LiteratureExtractionJobError,
     LiteratureExtractionJobStore,
     ValidatedLiteraturePackage,
@@ -76,6 +77,7 @@ def record(key: str, entity_type: str, gate: str, candidate: dict) -> dict:
 
 
 def package(paper_id: int, title: str, doi: str, pdf_path: Path) -> ValidatedLiteraturePackage:
+    snapshot = ImmutablePDFSnapshot.create(pdf_path.read_bytes())
     records = [
         record("data-pass", "data", "dual_pass", data_candidate()),
         record("finding-pass", "finding", "third_pass", finding_candidate()),
@@ -104,7 +106,8 @@ def package(paper_id: int, title: str, doi: str, pdf_path: Path) -> ValidatedLit
         paper_id=paper_id,
         paper=MappingProxyType({"title": title, "doi": doi}),
         snapshot_fingerprint="a" * 64,
-        pdf_sha256=hashlib.sha256(pdf_path.read_bytes()).hexdigest(),
+        pdf_sha256=snapshot.sha256,
+        pdf_snapshot=snapshot,
         experiment_profile=MappingProxyType({"paper_mode": "experimental"}),
         quality_result=MappingProxyType(result),
     )
@@ -236,12 +239,53 @@ def test_inconsistent_gate_summary_is_rejected_before_write(evidence) -> None:
         paper=source.paper,
         snapshot_fingerprint=source.snapshot_fingerprint,
         pdf_sha256=source.pdf_sha256,
+        pdf_snapshot=source.pdf_snapshot,
         experiment_profile=source.experiment_profile,
         quality_result=payload,
     )
     with pytest.raises(LiteratureExtractionJobError):
         AtomicEvidenceDBFinalizer(db).finalize(malformed)
     assert counts(db)["quality_pipeline_runs"] == 0
+
+
+def test_finalizer_renders_from_captured_bytes_after_source_path_replacement(
+    evidence, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db, pdf, paper_id = evidence
+    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+
+    class Papers:
+        def get_paper(self, requested: int):
+            return db.get_paper(requested)
+
+    summary = store.create(Papers(), paper_id=paper_id, session_id="owner")
+    job = store._jobs[summary["job_token"]]
+    original = package(paper_id, "Safe experiment", "10.1/safe", pdf)
+    original = replace(
+        original,
+        pdf_snapshot=store._snapshots.snapshot_for_finalization(
+            job.snapshot_handle, expected_sha256=job.snapshot.pdf_sha256
+        ),
+    )
+    job.status = "validated"
+    job.validated_package = original
+    replacement = pdf.with_name("replacement.pdf")
+    make_pdf(replacement, "Figure 9. Replacement source must not be rendered.")
+    assert_fresh = store._snapshots.assert_fresh
+
+    def replace_after_freshness_check(handle: str) -> None:
+        assert_fresh(handle)
+        replacement.replace(pdf)
+
+    monkeypatch.setattr(store._snapshots, "assert_fresh", replace_after_freshness_check)
+    result = store.finalize(
+        summary["job_token"],
+        session_id="owner",
+        finalizer=AtomicEvidenceDBFinalizer(db),
+    )
+    assert result["status"] == "completed"
+    assert original.pdf_snapshot.verified_bytes(original.pdf_sha256) != pdf.read_bytes()
+    assert counts(db)["quality_pipeline_runs"] == 1
 
 
 def test_job_store_requires_trusted_finalizer_and_rechecks_source(evidence) -> None:
@@ -256,7 +300,13 @@ def test_job_store_requires_trusted_finalizer_and_rechecks_source(evidence) -> N
     summary = store.create(Papers(), paper_id=paper_id, session_id="owner")
     job = store._jobs[summary["job_token"]]
     job.status = "validated"
-    job.validated_package = package(paper_id, "Safe experiment", "10.1/safe", pdf)
+    payload = package(paper_id, "Safe experiment", "10.1/safe", pdf)
+    job.validated_package = replace(
+        payload,
+        pdf_snapshot=store._snapshots.snapshot_for_finalization(
+            job.snapshot_handle, expected_sha256=job.snapshot.pdf_sha256
+        ),
+    )
 
     class Untrusted:
         def finalize(self, package):
@@ -288,7 +338,13 @@ def test_job_store_trusted_finalize_consumes_job_and_snapshot(evidence) -> None:
     job = store._jobs[summary["job_token"]]
     snapshot_handle = job.snapshot_handle
     job.status = "validated"
-    job.validated_package = package(paper_id, "Safe experiment", "10.1/safe", pdf)
+    payload = package(paper_id, "Safe experiment", "10.1/safe", pdf)
+    job.validated_package = replace(
+        payload,
+        pdf_snapshot=store._snapshots.snapshot_for_finalization(
+            job.snapshot_handle, expected_sha256=job.snapshot.pdf_sha256
+        ),
+    )
     result = store.finalize(
         summary["job_token"], session_id="owner", finalizer=AtomicEvidenceDBFinalizer(db)
     )

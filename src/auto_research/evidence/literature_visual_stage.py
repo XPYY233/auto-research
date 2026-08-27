@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import math
 import os
 from pathlib import Path
 import shutil
+import stat
 import tempfile
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 from auto_research.paths import DATA_DIR
 
 from .db import EVIDENCE_DB_PATH, EvidenceDB
-from .literature_extraction_job import LiteratureExtractionJobError
+from .literature_extraction_job import (
+    ImmutablePDFSnapshot,
+    LiteratureExtractionJobError,
+)
 from .visual_evidence import (
     _generic_specs,
     _render_crop,
@@ -56,27 +61,103 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+@dataclass(frozen=True)
+class _StableSnapshotFile:
+    fd: int
+    path: Path
+    expected_sha256: str
+    expected_size: int
+
+    def assert_unchanged(self) -> None:
+        """Fail closed if the private materialization was replaced or altered."""
+
+        try:
+            descriptor_stat = os.fstat(self.fd)
+            path_stat = os.lstat(self.path)
+            if (
+                not stat.S_ISREG(descriptor_stat.st_mode)
+                or not stat.S_ISREG(path_stat.st_mode)
+                or not os.path.samestat(descriptor_stat, path_stat)
+                or descriptor_stat.st_size != self.expected_size
+                or path_stat.st_size != self.expected_size
+            ):
+                raise OSError("snapshot identity changed")
+            position = os.lseek(self.fd, 0, os.SEEK_CUR)
+            os.lseek(self.fd, 0, os.SEEK_SET)
+            digest = hashlib.sha256()
+            remaining = self.expected_size
+            while remaining:
+                chunk = os.read(self.fd, min(1024 * 1024, remaining))
+                if not chunk:
+                    raise OSError("snapshot was truncated")
+                digest.update(chunk)
+                remaining -= len(chunk)
+            if os.read(self.fd, 1) or digest.hexdigest() != self.expected_sha256:
+                raise OSError("snapshot content changed")
+            os.lseek(self.fd, position, os.SEEK_SET)
+        except (OSError, ValueError) as exc:
+            raise LiteratureExtractionJobError(
+                "literature_visual_hash_mismatch",
+                "视觉证据使用的 PDF 快照已变化，未发布任何新记录",
+            ) from exc
+
+
+@contextmanager
+def _materialized_snapshot(
+    root: Path,
+    snapshot: ImmutablePDFSnapshot,
+    *,
+    expected_pdf_sha256: str,
+) -> Iterator[_StableSnapshotFile]:
+    """Materialize immutable bytes privately for legacy PyMuPDF helpers.
+
+    The original paper path is never reopened.  The descriptor stays open and
+    its identity/content are checked before and after every helper invocation,
+    so a path replacement can only abort staging, never publish mixed bytes.
+    """
+
+    content = snapshot.verified_bytes(expected_pdf_sha256)
+    fd, raw_path = tempfile.mkstemp(prefix="source-", suffix=".pdf", dir=root)
+    path = Path(raw_path)
+    try:
+        if callable(getattr(os, "fchmod", None)):
+            os.fchmod(fd, 0o600)
+        offset = 0
+        while offset < len(content):
+            written = os.write(fd, content[offset:])
+            if written <= 0:
+                raise OSError("snapshot write failed")
+            offset += written
+        os.fsync(fd)
+        stable = _StableSnapshotFile(fd, path, expected_pdf_sha256, len(content))
+        stable.assert_unchanged()
+        yield stable
+    except LiteratureExtractionJobError:
+        raise
+    except OSError as exc:
+        raise LiteratureExtractionJobError(
+            "literature_visual_unavailable",
+            "无法安全暂存 PDF 快照，未发布任何新记录",
+        ) from exc
+    finally:
+        try:
+            os.close(fd)
+        finally:
+            path.unlink(missing_ok=True)
+
+
 def prepare_visual_evidence(
     db: EvidenceDB,
     *,
     paper_id: int,
     expected_pdf_sha256: str,
+    pdf_snapshot: ImmutablePDFSnapshot,
 ) -> StagedVisualEvidence:
     paper = db.get_paper(paper_id)
     if not paper:
         raise LiteratureExtractionJobError(
             "literature_paper_missing", "目标文献不存在，未生成视觉证据"
         )
-    pdf_path = Path(str(paper.get("pdf_path") or ""))
-    if not pdf_path.is_file() or pdf_path.is_symlink():
-        raise LiteratureExtractionJobError(
-            "literature_pdf_missing", "目标 PDF 不可用，未生成视觉证据"
-        )
-    if _sha256(pdf_path) != expected_pdf_sha256:
-        raise LiteratureExtractionJobError(
-            "literature_source_changed", "目标 PDF 已变化，未发布任何新记录"
-        )
-    specs = _target_specs(paper) or _generic_specs(pdf_path)
     staging_parent = db.path.parent / ".visual-staging"
     staging_parent.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix=f"paper-{paper_id}-", dir=staging_parent))
@@ -90,46 +171,56 @@ def prepare_visual_evidence(
     ).hexdigest()[:10]
     staged: list[StagedVisualAsset] = []
     try:
-        for index, raw in enumerate(specs):
-            spec = dict(raw)
-            asset_type = str(spec.get("asset_type") or "")
-            number = spec.get("number")
-            page = spec.get("page")
-            bbox = spec.get("bbox")
-            if (
-                asset_type not in {"table", "figure"}
-                or isinstance(number, bool)
-                or not isinstance(number, int)
-                or number < 1
-                or isinstance(page, bool)
-                or not isinstance(page, int)
-                or page < 1
-                or not isinstance(bbox, list)
-                or len(bbox) != 4
-                or any(
-                    isinstance(value, bool)
-                    or not isinstance(value, (int, float))
-                    or not math.isfinite(float(value))
-                    for value in bbox
+        with _materialized_snapshot(
+            root, pdf_snapshot, expected_pdf_sha256=expected_pdf_sha256
+        ) as source:
+            specs = _target_specs(paper)
+            if not specs:
+                source.assert_unchanged()
+                specs = _generic_specs(source.path)
+                source.assert_unchanged()
+            for index, raw in enumerate(specs):
+                spec = dict(raw)
+                asset_type = str(spec.get("asset_type") or "")
+                number = spec.get("number")
+                page = spec.get("page")
+                bbox = spec.get("bbox")
+                if (
+                    asset_type not in {"table", "figure"}
+                    or isinstance(number, bool)
+                    or not isinstance(number, int)
+                    or number < 1
+                    or isinstance(page, bool)
+                    or not isinstance(page, int)
+                    or page < 1
+                    or not isinstance(bbox, list)
+                    or len(bbox) != 4
+                    or any(
+                        isinstance(value, bool)
+                        or not isinstance(value, (int, float))
+                        or not math.isfinite(float(value))
+                        for value in bbox
+                    )
+                    or float(bbox[2]) <= float(bbox[0])
+                    or float(bbox[3]) <= float(bbox[1])
+                ):
+                    raise LiteratureExtractionJobError(
+                        "literature_visual_invalid", "视觉证据定位无效，未发布任何新记录"
+                    )
+                temporary = root / f"{index:04d}-{asset_type}-{number}.png"
+                source.assert_unchanged()
+                image_sha = _render_crop(source.path, page, list(bbox), temporary)
+                source.assert_unchanged()
+                if _sha256(temporary) != image_sha:
+                    raise LiteratureExtractionJobError(
+                        "literature_visual_hash_mismatch", "视觉证据校验失败，未发布任何新记录"
+                    )
+                final = (
+                    output_root
+                    / f"paper_{paper_id:03d}_{identity}"
+                    / f"{asset_type}_{number:02d}_{image_sha[:12]}.png"
                 )
-                or float(bbox[2]) <= float(bbox[0])
-                or float(bbox[3]) <= float(bbox[1])
-            ):
-                raise LiteratureExtractionJobError(
-                    "literature_visual_invalid", "视觉证据定位无效，未发布任何新记录"
-                )
-            temporary = root / f"{index:04d}-{asset_type}-{number}.png"
-            image_sha = _render_crop(pdf_path, page, list(bbox), temporary)
-            if _sha256(temporary) != image_sha:
-                raise LiteratureExtractionJobError(
-                    "literature_visual_hash_mismatch", "视觉证据校验失败，未发布任何新记录"
-                )
-            final = (
-                output_root
-                / f"paper_{paper_id:03d}_{identity}"
-                / f"{asset_type}_{number:02d}_{image_sha[:12]}.png"
-            )
-            staged.append(StagedVisualAsset(spec, temporary, final, image_sha))
+                staged.append(StagedVisualAsset(spec, temporary, final, image_sha))
         return StagedVisualEvidence(root, tuple(staged), [])
     except Exception:
         shutil.rmtree(root, ignore_errors=True)
