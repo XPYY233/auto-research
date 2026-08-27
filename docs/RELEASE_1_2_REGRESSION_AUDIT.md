@@ -34,13 +34,18 @@ App or satisfy the release gate.
 - A table candidate or parsing failure never fabricates numeric evidence. A
   screenshot may remain useful while structure is explicitly unavailable;
   only a human-approved version can enter CSV/XLSX or later dataset projection.
+- Commit `32cb790` connects the same review service to the Mac desktop and
+  Fusion document tabs. The original screenshot remains authoritative; main
+  and secondary tabs keep independent request generations, and review POSTs
+  reuse the shared session, Origin, CSRF and body-size authority.
 - Targeted checks through this checkpoint passed: 19 parser tests, 14 store
   tests, 11 grid-export tests, 53 visual/finalizer adjacency tests and 48
-  service/store/export tests. These overlap and must not be summed as a unique
-  full-suite count.
+  service/store/export tests. The integrated table chain then passed 139 target
+  tests and the synchronized release contract passed 23 checks. These groups
+  overlap and must not be summed as a unique full-suite count.
 
-Still open before release: Mac HTTP/Fusion integration of the table review
-surface, dataset/package projection of approved grids, Librarian and selected
+Still open before release: dataset/package projection of approved grids,
+Librarian and selected
 evidence real-model acceptance, personal experiment and package flows, code
 retirement, full serial tests, installed-App walkthrough and release packaging.
 
