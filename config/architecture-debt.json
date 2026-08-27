@@ -163,8 +163,8 @@
       "area": "legacy-web-compatibility",
       "owner": "maintenance",
       "status": "compatibility",
-      "problem": "不再由生产index.html加载的旧Web控制器仍由desktop_server静态白名单、safe_update校验和历史权限/路由测试引用，导致生产资源与兼容资源边界不清，误删会破坏安全回归，保留又会制造第二套产品仍受支持的错觉",
-      "target": "为每个旧资源建立最后消费者清单；把仍有价值的安全/迁移断言改写到Fusion资源或独立fixture，随后从更新清单、静态白名单和仓库中按批删除",
+      "problem": "不再由生产index.html或macOS App加载的旧Web控制器仍被safe_update、历史安全/路由测试和Windows冻结静态白名单引用；app.js还混有历史简报与维护者工具，直接删除会丢失安全回归，继续含糊保留又会制造第二套产品仍受支持的错觉",
+      "target": "按docs/LEGACY_WEB_CONSUMER_AUDIT_1_2.md的Batch B-E迁移：先把资料包权限、异步隔离、PDF、CSRF、prepared action和加密历史断言改写到Fusion或平台中立服务；维护者能力单独决定；最后移除平台清单并逐文件删除",
       "removal_gate": "app.js、desktop_product.js、package_center.js、workbench.js均无生产、更新、安全或兼容消费者；发布契约只登记实际安装App加载的资源"
     },
     {

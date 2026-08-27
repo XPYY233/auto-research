@@ -163,6 +163,7 @@ AI设计必须遵循：
 - `fusion_review.js`当前874行；资料包/数据集和持久导出回执逻辑已迁入865行的 `fusion_package_center.js`，个人导入核验逻辑已迁入569行的 `fusion_personal_import.js`。主脚本仍掌管文献、搜索、设置、AI、标签和布局协调。
 - 当前生产HTML只加载 `ai_consent.js`、`document_tab_store.js`、`pane_layout_controller.js`、`workspace_layout_controller.js`、`fusion_pdf_controller.js`、`fusion_ai_experience.js`、`fusion_package_center.js`、`fusion_personal_import.js` 与 `fusion_review.js`。旧 `app.js`、`desktop_product.js`、旧 `package_center.js`、`workbench.js` 不属于生产启动链。
 - 这些旧资源仍被桌面静态白名单、safe-update检查、权限/路由兼容测试或历史研究测试消费，必须先迁移消费者，不能用一次粗暴删除冒充清债。
+- 四个旧控制器的逐文件消费者、不得迁移行为和Batch B—E删除门已经冻结在`docs/LEGACY_WEB_CONSUMER_AUDIT_1_2.md`；Windows冻结期间只迁移Mac/Fusion消费者，不通过共享改动偷跑Windows删除。
 - DocumentTabStore、PaneLayoutController和Fusion各自拥有部分可见性/恢复语义，导致“所有栏被收起”及标签内容错位。
 - 当前UI回归测试大量以字符串、DOM ID和fake DOM为主，无法证明真实WebView的排版、焦点、滚动和拖拽。
 
