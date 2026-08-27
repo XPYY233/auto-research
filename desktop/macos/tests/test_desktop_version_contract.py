@@ -91,12 +91,12 @@ class DesktopVersionContractTests(unittest.TestCase):
             command.index('codesign --force --deep --sign - "${CANDIDATE_APP}"'),
         )
         self.assertIn("${PREVIOUS_SHORT_VERSION}-build${PREVIOUS_BUILD_NUMBER}", command)
-        self.assertIn("macOS 课题组稳定版构建器", command)
+        self.assertIn("macOS 课题组${RELEASE_LABEL}构建器", command)
         self.assertIn("ad-hoc 签名，未经 Apple 公证", command)
         self.assertNotIn("开发预览构建器", command)
         self.assertNotIn("正式用户端目标为 Windows", command)
 
-    def test_current_distribution_copy_is_stable_mac_release_not_preview(self) -> None:
+    def test_current_distribution_copy_uses_explicit_release_status(self) -> None:
         build_command = (DESKTOP_ROOT / "build_app.command").read_text(encoding="utf-8")
         dmg_command = (DESKTOP_ROOT / "make_dmg.command").read_text(encoding="utf-8")
         version_command = (DESKTOP_ROOT / "查看当前桌面版本.command").read_text(
@@ -114,7 +114,10 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn('-volname "Auto Research"', dmg_command)
         self.assertIn("manifest['desktop_version']", version_command)
         self.assertIn("manifest.get('build_number'", version_command)
-        self.assertIn("课题组稳定版", version_command)
+        self.assertIn('manifest.get("release_status")', version_command)
+        self.assertIn('release_label = "稳定版" if release_status == "stable" else "候选版"', version_command)
+        self.assertIn('plutil -extract release_status', dmg_command)
+        self.assertNotIn("课题组稳定版：ad-hoc", dmg_command)
         self.assertIn("Apple Silicon", current_readme)
         self.assertIn("未经 Apple 公证", current_readme)
         self.assertIn("Windows：1.1迁移冻结", current_readme)
@@ -204,6 +207,13 @@ class DesktopVersionContractTests(unittest.TestCase):
             'EXPECTED_BUILD="$(/usr/bin/plutil -extract build_number', command
         )
         self.assertIn("${EXPECTED_VERSION}-build${EXPECTED_BUILD}", command)
+
+    def test_builder_labels_candidate_and_stable_from_version_metadata(self) -> None:
+        command = (DESKTOP_ROOT / "build_app.command").read_text(encoding="utf-8")
+        self.assertIn('plutil -extract release_status', command)
+        self.assertIn('candidate) RELEASE_LABEL="候选版"', command)
+        self.assertIn('stable) RELEASE_LABEL="稳定版"', command)
+        self.assertNotIn('echo "Auto Research macOS 课题组稳定版构建器"', command)
         self.assertNotIn("build19", command)
 
     def test_frozen_candidate_imports_all_product_contracts(self) -> None:

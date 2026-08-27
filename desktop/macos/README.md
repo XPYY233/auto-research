@@ -1,11 +1,11 @@
 # Auto Research macOS v1.1.0
 
-这是 Auto Research 面向课题组本机使用的 macOS 稳定版。核心、`.aresearch` 资料包、私人库和凭据接口保持跨平台，但当前只发布 Apple Silicon Mac 版。用户唯一入口是 App，不再使用浏览器工作台、导师只读或 ngrok。
+这是 Auto Research 面向课题组本机使用的 macOS 发行线。核心、`.aresearch` 资料包、私人库和凭据接口保持跨平台，但当前只发布 Apple Silicon Mac 版。用户唯一入口是 App，不再使用浏览器工作台、导师只读或 ngrok。每个构建由 `release_status` 明确标记为候选版或稳定版，未完成真实 App 验收的构建不得称为稳定版。
 
 ## 当前阶段
 
 - 当前稳定身份：`1.1.0`（bundle `1.1.0`，build `24`）
-- 当前源码候选：`1.1.0` / build `43`；真实App与付费AI验收完成前不得称为稳定版
+- 当前源码候选：`1.2.0` / build `51`；真实 App WebView 验收完成前不得称为稳定版
 - 界面：继续使用项目唯一的 `src/auto_research/evidence/web/` 前端
 - 核心：继续使用项目现有 Python、SQLite 和 PyMuPDF；图书管理员与选中证据问答统一由锁定的 DeepSeek Harness 运行时执行
 - 数据：v12 本地文献工作区继续可编辑；官方 `.aresearch` 和本机私人实验库作为相互隔离的只读检索来源，不复制回 v12

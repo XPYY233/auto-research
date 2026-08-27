@@ -4,6 +4,12 @@ set -euo pipefail
 SCRIPT_DIR="${0:A:h}"
 APP_PATH="${SCRIPT_DIR}/dist/Auto Research.app"
 DESKTOP_VERSION="$(/usr/bin/plutil -extract desktop_version raw -o - "${SCRIPT_DIR}/version.json")"
+RELEASE_STATUS="$(/usr/bin/plutil -extract release_status raw -o - "${SCRIPT_DIR}/version.json")"
+case "${RELEASE_STATUS}" in
+  candidate) RELEASE_LABEL="候选版" ;;
+  stable) RELEASE_LABEL="稳定版" ;;
+  *) echo "version.json 的 release_status 无效。"; exit 2 ;;
+esac
 DMG_PATH="${SCRIPT_DIR}/dist/Auto-Research-${DESKTOP_VERSION}-macOS-arm64.dmg"
 
 if [[ ! -d "${APP_PATH}" ]]; then
@@ -24,6 +30,6 @@ hdiutil create \
   "${DMG_PATH}"
 
 echo "DMG 已生成：${DMG_PATH}"
-echo "这是 Apple Silicon 课题组稳定版：ad-hoc 签名，未经 Apple 公证。"
+echo "这是 Apple Silicon 课题组${RELEASE_LABEL}：ad-hoc 签名，未经 Apple 公证。"
 echo "首次打开如被 macOS 拦截，请在访达中按住 Control 点击 App，选择“打开”并再次确认。"
 echo "Windows 发行已暂停，当前没有 Windows 安装版。"

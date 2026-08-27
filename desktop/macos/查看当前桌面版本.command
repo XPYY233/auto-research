@@ -24,6 +24,10 @@ import sys
 from pathlib import Path
 
 manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+release_status = manifest.get("release_status")
+if release_status not in {"candidate", "stable"}:
+    raise SystemExit("构建清单缺少有效的 release_status。")
+release_label = "稳定版" if release_status == "stable" else "候选版"
 print("Auto Research 桌面版状态")
 print(f"桌面版本：{manifest['desktop_version']}")
 print(f"核心提交：{manifest['core_commit'][:12]}")
@@ -36,7 +40,7 @@ print(f"构建时工作树：{'干净、可复现' if manifest['worktree_clean']
 print("科学数据：保留在外部工作区，没有打包进应用")
 print(
     f"发布状态：macOS v{manifest['desktop_version']} "
-    f"build {manifest.get('build_number', '未记录')} 课题组稳定版"
+    f"build {manifest.get('build_number', '未记录')} 课题组{release_label}"
 )
 print("签名状态：ad-hoc 签名，未经 Apple 公证")
 print("Windows 状态：暂停且未发布，当前没有 Windows 安装版")

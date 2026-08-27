@@ -11,6 +11,16 @@ PREVIOUS_ROOT="${SCRIPT_DIR}/releases"
 APP_PATH="${OUTPUT_ROOT}/Auto Research.app"
 BUILD_STAMP="$(date '+%Y%m%d-%H%M%S')"
 DESKTOP_VERSION="$(/usr/bin/plutil -extract desktop_version raw -o - "${SCRIPT_DIR}/version.json")"
+RELEASE_STATUS="$(/usr/bin/plutil -extract release_status raw -o - "${SCRIPT_DIR}/version.json")"
+
+case "${RELEASE_STATUS}" in
+  candidate) RELEASE_LABEL="候选版" ;;
+  stable) RELEASE_LABEL="稳定版" ;;
+  *)
+    echo "version.json 的 release_status 必须是 candidate 或 stable。"
+    exit 2
+    ;;
+esac
 
 pause_on_error() {
   local exit_code=$?
@@ -31,7 +41,7 @@ if ! "${PYTHON_BIN}" "${PROJECT_ROOT}/scripts/sync_release_contract.py"; then
   exit 2
 fi
 
-echo "Auto Research macOS 课题组稳定版构建器"
+echo "Auto Research macOS 课题组${RELEASE_LABEL}构建器"
 echo "桌面版本: ${DESKTOP_VERSION}"
 echo "目标设备: Apple Silicon Mac（arm64）"
 echo "签名边界: ad-hoc 签名，未经 Apple 公证"
