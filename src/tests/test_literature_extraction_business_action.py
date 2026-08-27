@@ -19,6 +19,7 @@ from auto_research.evidence.literature_extraction_finalizer import (
     AtomicEvidenceDBFinalizer,
 )
 from auto_research.evidence.literature_extraction_job import (
+    LiteratureExtractionJobError,
     LiteratureExtractionJobStore,
 )
 from auto_research.evidence.literature_extraction_stages import (
@@ -160,6 +161,24 @@ def test_starter_covers_supported_article_without_eight_page_truncation(tmp_path
     )
     assert summary["sending_scope"]["pdf_page_count"] == 10
     assert summary["sending_scope"]["page_block_count"] == 3
+
+
+def test_starter_rejects_oversized_article_instead_of_silently_truncating(tmp_path: Path) -> None:
+    db = EvidenceDB(tmp_path / "evidence.sqlite")
+    db.init()
+    pdf = tmp_path / "too-long.pdf"
+    _make_pdf(pdf, pages=65)
+    paper_id = db.upsert_paper(title="Too long", doi="10.1/too-long", pdf_path=str(pdf))
+    store = LiteratureExtractionJobStore(session_key=b"x" * 32)
+
+    with pytest.raises(LiteratureExtractionJobError) as error:
+        EvidenceDBLiteratureJobStarter(db, store).start(
+            paper_id=paper_id, force_rescan=False, session_id="owner"
+        )
+
+    assert error.value.code == "literature_pdf_page_limit_exceeded"
+    assert "未创建截断任务" in error.value.safe_message
+    assert store._jobs == {}
 
 
 @pytest.mark.parametrize(

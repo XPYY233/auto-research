@@ -430,13 +430,20 @@ def _capture_pdf_snapshot(
     pages: list[Mapping[str, Any]] = []
     try:
         with fitz.open(stream=raw.content, filetype="pdf") as document:
-            limit = min(len(document), max_pages) if max_pages else len(document)
+            page_count = len(document)
+            if max_pages is not None and page_count > max_pages:
+                raise LiteratureExtractionJobError(
+                    "literature_pdf_page_limit_exceeded",
+                    f"PDF 共 {page_count} 页，当前完整提取最多支持 {max_pages} 页；未创建截断任务",
+                )
+            limit = page_count
             for index in range(limit):
                 text = document[index].get_text("text").strip()
                 if _is_reference_dominant(text):
                     continue
                 pages.append(MappingProxyType({"page": index + 1, "text": text}))
-            page_count = len(document)
+    except LiteratureExtractionJobError:
+        raise
     except Exception as exc:
         raise LiteratureExtractionJobError("literature_pdf_invalid", "PDF 无法安全解析") from exc
     if not pages:
