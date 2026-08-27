@@ -5,7 +5,7 @@ Status: mandatory release gate, not a release claim.
 Baseline evidence:
 
 - 0.5.1 build 6, source checkpoint `63b34f2`, was transactionally installed and exercised on macOS on 2026-08-25.
-- Current source checkpoint is `4017cdb`; the current release contract still identifies 1.1.0 build 46.
+- Current runtime source checkpoint is `5c2055f`; the release contract identifies 1.2.0 build 51 with `release_status=candidate`. The installed App remains build 50 from `45720ce` until build 51 is built and accepted.
 - The production evidence database and the isolated `paper_056` recovery directory are outside this audit and must not be used by tests or builds.
 - Windows remains frozen until the Mac workflow is accepted.
 
@@ -44,10 +44,12 @@ App or satisfy the release gate.
   tests and the synchronized release contract passed 23 checks. These groups
   overlap and must not be summed as a unique full-suite count.
 
-Still open before release: dataset/package projection of approved grids,
-Librarian and selected
-evidence real-model acceptance, personal experiment and package flows, code
-retirement, full serial tests, installed-App walkthrough and release packaging.
+The current source now includes dataset/package projection of approved grids,
+bounded Librarian and selected-evidence history, personal experiment/package
+flows, task receipts and the task-aware workbench projection. The full serial
+source gate passed on 2026-08-28 (1116 shared plus 80 explicit skips; 307 macOS).
+Still open before release: clean build 51, installed-App walkthrough, four real
+AI workflow checks against that exact frozen App, and final release packaging.
 
 ## User-flow lineage and release gates
 
