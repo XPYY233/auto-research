@@ -41,6 +41,7 @@ from auto_research.product.dataset_bundle_sources import (
 from auto_research.product.dataset_export_service import DatasetExportCandidate
 from auto_research.product.evidence_v12_export import plan_evidence_v12_export
 from auto_research.product.package_transfer_payloads import PayloadSelection
+from auto_research.product.activity_receipts import ActivityReceiptService
 
 from package_center_services import (
     DesktopPackageCenterServices,
@@ -413,11 +414,13 @@ class DesktopPackageCenterRuntimeBuilder:
         workspace_root: Path | str,
         private_repository: PrivateExperimentRepository,
         search_session: FederatedSearchSessionProtocol,
+        activity_receipts: ActivityReceiptService | None = None,
     ) -> None:
         self._workspace_database = Path(workspace_database)
         self._workspace_root = Path(workspace_root)
         self._private_repository = private_repository
         self._search_session = search_session
+        self._activity_receipts = activity_receipts
 
     def __call__(
         self,
@@ -427,6 +430,7 @@ class DesktopPackageCenterRuntimeBuilder:
         destination_broker: PackageExportDestinationBroker,
         data_root: Path,
         current_app_version: str,
+        activity_receipts: ActivityReceiptService | None = None,
     ) -> DesktopPackageCenterServices:
         personal_source = PrivateRepositoryPersonalPayloadSource(
             self._private_repository,
@@ -522,6 +526,11 @@ class DesktopPackageCenterRuntimeBuilder:
                 "recovery": recovery,
             },
             dataset_source=dataset_source,
+            activity_receipts=(
+                activity_receipts
+                if activity_receipts is not None
+                else self._activity_receipts
+            ),
         )
 
 

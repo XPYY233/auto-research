@@ -113,6 +113,18 @@ class _Activator:
         return _Summary(outcome="imported", extra={"search_ready": True})
 
 
+class _ReceiptRecorder:
+    def __init__(self, *, fail=False):
+        self.fail = fail
+        self.calls = []
+
+    def record_completed(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.fail:
+            raise RuntimeError("receipt store failed at /private/receipt")
+        return {"schema_version": "activity-receipt-v1"}
+
+
 def _risk_ack(*, paper_rights=None):
     return {
         "unencrypted_ack": True,
@@ -123,6 +135,58 @@ def _risk_ack(*, paper_rights=None):
 
 
 class PackageCenterTests(unittest.TestCase):
+    def test_completed_export_records_receipt_without_changing_artifact_result(self):
+        recorder = _ReceiptRecorder()
+        jobs = PackageJobService(receipt_recorder=recorder)
+        service = PackageExportService(
+            payload_planner=_Planner(),
+            destination_resolver=_Resolver(),
+            exporter=lambda *args, **kwargs: _Summary(outcome="exported"),
+            jobs=jobs,
+        )
+        plan = service.plan("personal_experiments", "all", None)
+        completed = service.start(plan["plan_token"], _risk_ack(), DESTINATION_TOKEN)
+        self.assertEqual(completed["stage"], "completed")
+        self.assertEqual(completed["receipt_status"], "stored")
+        self.assertEqual(len(recorder.calls), 1)
+        self.assertEqual(recorder.calls[0]["operation"].value, "transfer_export")
+
+    def test_receipt_failure_keeps_completed_artifact_and_does_not_repeat_export(self):
+        recorder = _ReceiptRecorder(fail=True)
+        exports = []
+        jobs = PackageJobService(receipt_recorder=recorder)
+        service = PackageExportService(
+            payload_planner=_Planner(),
+            destination_resolver=_Resolver(),
+            exporter=lambda *args, **kwargs: (
+                exports.append(args) or _Summary(outcome="exported")
+            ),
+            jobs=jobs,
+        )
+        plan = service.plan("personal_experiments", "all", None)
+        completed = service.start(plan["plan_token"], _risk_ack(), DESTINATION_TOKEN)
+        self.assertEqual(completed["stage"], "completed")
+        self.assertEqual(completed["receipt_status"], "pending")
+        self.assertEqual(len(exports), 1)
+        self.assertEqual(len(recorder.calls), 1)
+        self.assertEqual(jobs.get(completed["job_id"])["receipt_status"], "pending")
+
+    def test_non_export_completion_does_not_create_activity_receipt(self):
+        recorder = _ReceiptRecorder()
+        service = PackageTransferImportService(
+            selection_resolver=_Resolver(),
+            inspector=lambda source: _Summary(),
+            importer=lambda *args, **kwargs: _Summary(outcome="imported"),
+            activator=_Activator(),
+            jobs=PackageJobService(receipt_recorder=recorder),
+        )
+        completed = service.start(
+            SELECTION_TOKEN, checksum_ack=True, expected_sha=CHECKSUM
+        )
+        self.assertEqual(completed["stage"], "completed")
+        self.assertNotIn("receipt_status", completed)
+        self.assertEqual(recorder.calls, [])
+
     def test_inspect_resolves_opaque_token_and_returns_path_free_summary(self):
         resolver = _Resolver()
         center = PackageCenter(

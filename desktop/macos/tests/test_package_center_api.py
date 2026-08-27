@@ -119,12 +119,36 @@ class _Dataset:
         }
 
 
+class _Receipts:
+    def __init__(self) -> None:
+        self.mutations: list[object] = []
+
+    def get(self):
+        return {
+            "schema_version": "activity-receipts-v1",
+            "revision": 3,
+            "storage": "test-aes-256-gcm",
+            "receipts": [],
+        }
+
+    def mutate(self, body):
+        self.mutations.append(body)
+        if body.get("operation") not in {"delete", "clear"}:
+            from auto_research.product.activity_receipts import ActivityReceiptError
+
+            raise ActivityReceiptError(
+                "activity_receipt_invalid", "活动回执操作无效。", http_status=400
+            )
+        return {**self.get(), "revision": 4}
+
+
 class PackageCenterAPITests(unittest.TestCase):
     def setUp(self) -> None:
         self.center = _Center()
         self.export = _Export()
         self.importer = _Import()
         self.dataset = _Dataset()
+        self.receipts = _Receipts()
         self.api = PackageCenterAPI(
             summary_provider=_Summary(),
             center=self.center,
@@ -132,7 +156,34 @@ class PackageCenterAPITests(unittest.TestCase):
             import_service=self.importer,
             jobs=_Jobs(),
             dataset_export_service=self.dataset,
+            activity_receipts=self.receipts,
         )
+
+    def test_receipts_get_and_only_delete_or_clear_post_are_exposed(self) -> None:
+        fetched = _Handler("/api/desktop/package-center/receipts")
+        self.assertTrue(self.api.handle_get(fetched))
+        self.assertEqual(fetched.responses[0][1], HTTPStatus.OK)
+        self.assertEqual(fetched.responses[0][0]["schema_version"], "activity-receipts-v1")
+
+        deleted = _Handler(
+            "/api/desktop/package-center/receipts",
+            {"operation": "delete", "expected_revision": 3, "receipt_uid": "a" * 64},
+        )
+        self.assertTrue(self.api.handle_post(deleted))
+        self.assertEqual(deleted.responses[0][1], HTTPStatus.OK)
+        self.assertEqual(self.receipts.mutations[-1]["operation"], "delete")
+
+        created = _Handler(
+            "/api/desktop/package-center/receipts",
+            {"operation": "create", "expected_revision": 4},
+        )
+        self.assertTrue(self.api.handle_post(created))
+        self.assertEqual(created.responses[0][1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(created.responses[0][0]["code"], "activity_receipt_invalid")
+
+        query = _Handler("/api/desktop/package-center/receipts?include=all")
+        self.assertTrue(self.api.handle_get(query))
+        self.assertEqual(query.responses[0][1], HTTPStatus.BAD_REQUEST)
 
     def test_summary_and_job_are_path_free_get_routes(self) -> None:
         summary = _Handler("/api/desktop/package-center")

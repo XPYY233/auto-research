@@ -19,6 +19,7 @@ from auto_research.product.package_center_models import (  # noqa: E402
     PackageCenterError,
     PayloadPlanCandidate,
 )
+from auto_research.product.activity_receipts import ActivityReceiptService  # noqa: E402
 from desktop_product_services import create_desktop_product_services  # noqa: E402
 from package_center_services import (  # noqa: E402
     OfficialPackageCenterSummary,
@@ -64,6 +65,22 @@ class _OfficialService:
             package_version="0.2.0-preview.1",
             content_fingerprint="a" * 64,
         )
+
+
+class _ReceiptStore:
+    storage_label = "test-activity-receipts"
+
+    def __init__(self) -> None:
+        self.value = None
+
+    def load(self):
+        return self.value
+
+    def save(self, value):
+        self.value = value
+
+    def clear(self):
+        self.value = None
 
 
 class _Planner:
@@ -297,6 +314,7 @@ class PackageCenterServicesTests(unittest.TestCase):
                 local_volume_probe=lambda _path: True
             )
             destination_snapshot = destination.select(root / "out.aresearch")
+            receipts = ActivityReceiptService(_ReceiptStore())
             services = create_desktop_package_center_services(
                 package_service=_OfficialService(),
                 package_broker=PackageSelectionBroker(
@@ -319,6 +337,7 @@ class PackageCenterServicesTests(unittest.TestCase):
                 transfer_activator=_Activator(),
                 job_submitter=callbacks.append,
                 installed_lister=lambda **_kwargs: (),
+                activity_receipts=receipts,
             )
             plan = services.export_service.plan(
                 "literature_collection", "selected", ["paper-1"]
@@ -341,6 +360,13 @@ class PackageCenterServicesTests(unittest.TestCase):
             completed = services.jobs.get(queued["job_id"])
             self.assertEqual(completed["stage"], "completed")
             self.assertTrue(completed["terminal"])
+            self.assertEqual(completed["receipt_status"], "stored")
+            receipt_snapshot = receipts.get()
+            self.assertEqual(len(receipt_snapshot["receipts"]), 1)
+            self.assertEqual(
+                receipt_snapshot["receipts"][0]["activity_type"],
+                "transfer_export",
+            )
 
     def test_desktop_product_composition_accepts_one_package_center_builder(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mac-package-center-composition-") as raw:
@@ -355,6 +381,7 @@ class PackageCenterServicesTests(unittest.TestCase):
                 data_root=Path(raw),
                 current_app_version="0.6.1-preview.1",
                 package_center_builder=builder,
+                activity_receipts=ActivityReceiptService(_ReceiptStore()),
             )
             self.assertIs(services.package_center, marker)
             self.assertIs(calls[0]["package_broker"], services.package_service.broker)
@@ -362,6 +389,7 @@ class PackageCenterServicesTests(unittest.TestCase):
                 calls[0]["destination_broker"],
                 services.package_export_destination_broker,
             )
+            self.assertIsNotNone(calls[0]["activity_receipts"])
 
 
 if __name__ == "__main__":

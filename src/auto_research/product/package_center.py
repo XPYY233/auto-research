@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
+from .activity_receipts import ActivityReceiptRecorder
 from .package_job_contract import (
     PackageJobError,
     PackageJobProgress,
@@ -78,12 +79,15 @@ class _StoredJob:
     job_id: str
     progress: PackageJobProgress
     result: dict[str, Any] | None = None
+    receipt_status: str | None = None
 
     def public_dict(self) -> dict[str, Any]:
         value = self.progress.public_dict()
         value["job_id"] = self.job_id
         if self.result is not None:
             value["result"] = self.result
+        if self.receipt_status is not None:
+            value["receipt_status"] = self.receipt_status
         assert_path_free(value)
         return value
 
@@ -91,7 +95,12 @@ class _StoredJob:
 class PackageJobService:
     """Small in-memory single-flight job registry shared by package actions."""
 
-    def __init__(self, *, max_jobs: int = MAX_JOB_CACHE) -> None:
+    def __init__(
+        self,
+        *,
+        max_jobs: int = MAX_JOB_CACHE,
+        receipt_recorder: ActivityReceiptRecorder | None = None,
+    ) -> None:
         if not 1 <= int(max_jobs) <= 1_000:
             raise ValueError("max_jobs must be between 1 and 1000")
         self._max_jobs = int(max_jobs)
@@ -99,6 +108,7 @@ class PackageJobService:
         self._active_job_id: str | None = None
         self._jobs: dict[str, _StoredJob] = {}
         self._order: list[str] = []
+        self._receipt_recorder = receipt_recorder
 
     def get(self, job_id: str) -> dict[str, Any]:
         normalized = normalize_token(job_id, label="package_job")
@@ -127,14 +137,39 @@ class PackageJobService:
             job.progress = advance_package_job(job.progress, stage)
 
     def _complete(self, job_id: str, *, outcome: str, result: dict[str, Any]) -> None:
+        receipt_operation: PackageOperation | None = None
         with self._lock:
             job = self._jobs[job_id]
             job.progress = advance_package_job(
                 job.progress, PackageJobStage.COMPLETED, outcome=outcome
             )
             job.result = result
+            if (
+                self._receipt_recorder is not None
+                and job.progress.operation
+                in {PackageOperation.TRANSFER_EXPORT, PackageOperation.DATASET_EXPORT}
+            ):
+                job.receipt_status = "pending"
+                receipt_operation = job.progress.operation
             if self._active_job_id == job_id:
                 self._active_job_id = None
+        if receipt_operation is None:
+            return
+        try:
+            self._receipt_recorder.record_completed(
+                operation=receipt_operation,
+                outcome=outcome,
+                result=dict(result),
+            )
+        except Exception:
+            # The artifact is already published.  Receipt persistence is a
+            # separate convenience boundary and must never change the export
+            # outcome or trigger another exporter call.
+            return
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is not None and job.progress.stage is PackageJobStage.COMPLETED:
+                job.receipt_status = "stored"
 
     def _fail(self, job_id: str, error: PackageCenterError) -> None:
         with self._lock:

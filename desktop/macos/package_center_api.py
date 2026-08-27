@@ -14,6 +14,10 @@ from auto_research.product.package_center import (
 )
 from auto_research.product.package_center_models import PackageCenterError
 from auto_research.product.dataset_export_service import DatasetExportService
+from auto_research.product.activity_receipts import (
+    ActivityReceiptError,
+    ActivityReceiptService,
+)
 
 
 PACKAGE_CENTER_PATH = "/api/desktop/package-center"
@@ -23,6 +27,7 @@ PACKAGE_CENTER_EXPORT_PATH = f"{PACKAGE_CENTER_PATH}/export"
 PACKAGE_CENTER_IMPORT_PATH = f"{PACKAGE_CENTER_PATH}/import"
 PACKAGE_CENTER_DATASET_PLAN_PATH = f"{PACKAGE_CENTER_PATH}/dataset-plan"
 PACKAGE_CENTER_DATASET_EXPORT_PATH = f"{PACKAGE_CENTER_PATH}/dataset-export"
+PACKAGE_CENTER_RECEIPTS_PATH = f"{PACKAGE_CENTER_PATH}/receipts"
 PACKAGE_CENTER_JOB_PATH_RE = re.compile(
     r"^/api/desktop/package-center/jobs/([A-Za-z0-9_-]{16,128})$"
 )
@@ -55,6 +60,7 @@ class PackageCenterAPI:
         import_service: PackageTransferImportService,
         jobs: PackageJobService,
         dataset_export_service: DatasetExportService | None = None,
+        activity_receipts: ActivityReceiptService | None = None,
     ) -> None:
         self._summary_provider = summary_provider
         self._center = center
@@ -62,6 +68,7 @@ class PackageCenterAPI:
         self._import_service = import_service
         self._jobs = jobs
         self._dataset_export_service = dataset_export_service
+        self._activity_receipts = activity_receipts
 
     @staticmethod
     def is_post_route(path: str) -> bool:
@@ -72,13 +79,15 @@ class PackageCenterAPI:
             PACKAGE_CENTER_IMPORT_PATH,
             PACKAGE_CENTER_DATASET_PLAN_PATH,
             PACKAGE_CENTER_DATASET_EXPORT_PATH,
+            PACKAGE_CENTER_RECEIPTS_PATH,
         }
 
     def handle_get(self, handler: PackageCenterHTTPHandler) -> bool:
         parsed = urlparse(handler.path)
-        known = parsed.path == PACKAGE_CENTER_PATH or bool(
-            PACKAGE_CENTER_JOB_PATH_RE.fullmatch(parsed.path)
-        )
+        known = parsed.path in {
+            PACKAGE_CENTER_PATH,
+            PACKAGE_CENTER_RECEIPTS_PATH,
+        } or bool(PACKAGE_CENTER_JOB_PATH_RE.fullmatch(parsed.path))
         if parsed.query:
             if known:
                 self._respond_error(
@@ -93,12 +102,24 @@ class PackageCenterAPI:
             if parsed.path == PACKAGE_CENTER_PATH:
                 handler.json_response(self._summary_provider.summary())
                 return True
+            if parsed.path == PACKAGE_CENTER_RECEIPTS_PATH:
+                if self._activity_receipts is None:
+                    raise ActivityReceiptError(
+                        "activity_receipt_store_unavailable",
+                        "本机活动回执暂时不可用。",
+                        http_status=503,
+                    )
+                handler.json_response(self._activity_receipts.get())
+                return True
             match = PACKAGE_CENTER_JOB_PATH_RE.fullmatch(parsed.path)
             if match:
                 handler.json_response(self._jobs.get(match.group(1)))
                 return True
         except PackageCenterError as exc:
             self._respond_error(handler, exc)
+            return True
+        except ActivityReceiptError as exc:
+            self._respond_receipt_error(handler, exc)
             return True
         return False
 
@@ -116,7 +137,16 @@ class PackageCenterAPI:
             return True
         try:
             body = self._read_json(handler)
-            if parsed.path == PACKAGE_CENTER_INSPECT_PATH:
+            if parsed.path == PACKAGE_CENTER_RECEIPTS_PATH:
+                if self._activity_receipts is None:
+                    raise ActivityReceiptError(
+                        "activity_receipt_store_unavailable",
+                        "本机活动回执暂时不可用。",
+                        http_status=503,
+                    )
+                result = self._activity_receipts.mutate(body)
+                status = HTTPStatus.OK
+            elif parsed.path == PACKAGE_CENTER_INSPECT_PATH:
                 self._require_fields(body, {"selection_token"})
                 result = self._center.inspect(body["selection_token"])
                 status = HTTPStatus.OK
@@ -187,6 +217,8 @@ class PackageCenterAPI:
                 status = HTTPStatus.ACCEPTED
         except PackageCenterError as exc:
             self._respond_error(handler, exc)
+        except ActivityReceiptError as exc:
+            self._respond_receipt_error(handler, exc)
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
             self._respond_error(
                 handler,
@@ -241,6 +273,12 @@ class PackageCenterAPI:
             status = HTTPStatus.BAD_REQUEST
         handler.json_response(error.public_dict(), status)
 
+    @staticmethod
+    def _respond_receipt_error(
+        handler: PackageCenterHTTPHandler, error: ActivityReceiptError
+    ) -> None:
+        handler.json_response(error.public_dict(), HTTPStatus(error.http_status))
+
 
 __all__ = [
     "MAX_PACKAGE_CENTER_REQUEST_BYTES",
@@ -251,5 +289,6 @@ __all__ = [
     "PACKAGE_CENTER_IMPORT_PATH",
     "PACKAGE_CENTER_INSPECT_PATH",
     "PACKAGE_CENTER_PATH",
+    "PACKAGE_CENTER_RECEIPTS_PATH",
     "PackageCenterAPI",
 ]

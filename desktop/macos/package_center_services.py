@@ -12,6 +12,7 @@ from auto_research.product.package_center import (
     PackageTransferImportService,
     run_package_job_inline,
 )
+from auto_research.product.activity_receipts import ActivityReceiptService
 from auto_research.product.package_center_models import (
     PackageCenterError,
     PayloadPlanner,
@@ -181,6 +182,7 @@ class DesktopPackageCenterServices:
     summary_provider: OfficialPackageCenterSummary
     api: PackageCenterAPI
     dataset_export_service: DatasetExportService | None = None
+    activity_receipts: ActivityReceiptService | None = None
 
 
 def create_desktop_package_center_services(
@@ -199,12 +201,13 @@ def create_desktop_package_center_services(
     installed_lister: InstalledOfficialLister = list_installed_official_packages,
     source_status: Mapping[str, Any] | None = None,
     dataset_source: DatasetExportSource | None = None,
+    activity_receipts: ActivityReceiptService | None = None,
 ) -> DesktopPackageCenterServices:
     """Compose shared algorithms with native opaque-token resolvers."""
 
     selection_resolver = _PackageSelectionResolver(package_broker)
     destination_resolver = _PackageDestinationResolver(destination_broker)
-    jobs = PackageJobService()
+    jobs = PackageJobService(receipt_recorder=activity_receipts)
     center = PackageCenter(
         selection_resolver=selection_resolver,
         inspector=transfer_inspector,
@@ -250,6 +253,7 @@ def create_desktop_package_center_services(
         import_service=import_service,
         jobs=jobs,
         dataset_export_service=dataset_export_service,
+        activity_receipts=activity_receipts,
     )
     return DesktopPackageCenterServices(
         center=center,
@@ -259,6 +263,7 @@ def create_desktop_package_center_services(
         summary_provider=summary,
         api=api,
         dataset_export_service=dataset_export_service,
+        activity_receipts=activity_receipts,
     )
 
 

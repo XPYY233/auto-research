@@ -423,6 +423,8 @@ def _run_smoke_test(project_root: Path) -> int:
     from secure_history import SecureHistoryStore, StaticHistoryKeyProvider
     from secure_research_memory import SecureResearchMemoryStore
     from secure_evidence_chat_history import SecureEvidenceChatHistoryStore
+    from secure_activity_receipts import SecureActivityReceiptStore
+    from auto_research.product.activity_receipts import ActivityReceiptService
     from auto_research.desktop.research_memory import ResearchMemoryService
     from auto_research.desktop.evidence_chat_history import EvidenceChatHistoryService
 
@@ -463,11 +465,19 @@ def _run_smoke_test(project_root: Path) -> int:
                 storage_label="test-static-aes-256-gcm",
             )
         )
+        activity_receipts = ActivityReceiptService(
+            SecureActivityReceiptStore(
+                application_support / "History" / "activity-receipts-v1.enc",
+                StaticHistoryKeyProvider(b"\x94" * 32),
+                storage_label="test-static-aes-256-gcm",
+            )
+        )
         product_services = create_desktop_product_services(
             data_root=application_support,
             current_app_version=DESKTOP_VERSION,
             workspace_database=temporary_database,
             workspace_root=project_root,
+            activity_receipts=activity_receipts,
         )
         database = EvidenceDB(temporary_database)
         desktop_session_id = new_session_token()
@@ -599,6 +609,8 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     from secure_history import default_secure_history_store
     from secure_research_memory import default_secure_research_memory_store
     from secure_evidence_chat_history import default_secure_evidence_chat_history_store
+    from secure_activity_receipts import default_secure_activity_receipt_store
+    from auto_research.product.activity_receipts import ActivityReceiptService
     from auto_research.desktop.research_memory import ResearchMemoryService
     from auto_research.desktop.evidence_chat_history import EvidenceChatHistoryService
 
@@ -621,11 +633,15 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     try:
         workspace_database = project_root / "db" / "experimental_evidence.sqlite"
         database = EvidenceDB(workspace_database)
+        activity_receipts = ActivityReceiptService(
+            default_secure_activity_receipt_store()
+        )
         product_services = create_desktop_product_services(
             data_root=DEFAULT_PACKAGE_DATA_ROOT,
             current_app_version=DESKTOP_VERSION,
             workspace_database=workspace_database,
             workspace_root=project_root,
+            activity_receipts=activity_receipts,
         )
         desktop_session_id = new_session_token()
         research_memory_service = ResearchMemoryService(

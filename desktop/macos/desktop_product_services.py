@@ -7,6 +7,7 @@ from typing import Protocol
 from auto_research.personal.import_service import PersonalImportService
 from auto_research.personal.private_repository import PrivateExperimentRepository
 from auto_research.personal.table_detail import PersonalTableDetailService
+from auto_research.product.activity_receipts import ActivityReceiptService
 
 from federated_search_api import (
     DesktopFederatedSearchService,
@@ -34,6 +35,7 @@ class PackageCenterServicesBuilder(Protocol):
         destination_broker: PackageExportDestinationBroker,
         data_root: Path,
         current_app_version: str,
+        activity_receipts: ActivityReceiptService | None = None,
     ) -> DesktopPackageCenterServices: ...
 
 
@@ -59,6 +61,7 @@ def create_desktop_product_services(
     workspace_database: Path | str | None = None,
     workspace_root: Path | str | None = None,
     package_center_builder: PackageCenterServicesBuilder | None = None,
+    activity_receipts: ActivityReceiptService | None = None,
 ) -> DesktopProductServices:
     """Compose product services after the launcher has configured core imports."""
 
@@ -102,6 +105,7 @@ def create_desktop_product_services(
             ),
             private_repository=personal_repository,
             search_session=federated_search_service.session,
+            activity_receipts=activity_receipts,
         )
     package_center = (
         package_center_builder(
@@ -110,6 +114,7 @@ def create_desktop_product_services(
             destination_broker=package_export_destination_broker,
             data_root=application_data_root,
             current_app_version=str(current_app_version),
+            activity_receipts=activity_receipts,
         )
         if package_center_builder is not None
         else None
