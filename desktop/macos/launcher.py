@@ -226,6 +226,7 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
         "librarian_history": "/api/desktop/librarian-history",
         "research_memories": "/api/desktop/research-memories",
         "evidence_chat_history": "/api/desktop/evidence-chat-history",
+        "package_operation_history": "/api/desktop/package-center/history",
         "personal_search_status": "/api/desktop/personal-imports/search-status",
         "federated_search": "/api/desktop/federated-search?q=%E6%B8%A9%E5%BA%A6&source_scope=official&page=1&page_size=2",
     }.items():
@@ -424,7 +425,9 @@ def _run_smoke_test(project_root: Path) -> int:
     from secure_research_memory import SecureResearchMemoryStore
     from secure_evidence_chat_history import SecureEvidenceChatHistoryStore
     from secure_activity_receipts import SecureActivityReceiptStore
+    from secure_operation_history import SecureOperationHistoryStore
     from auto_research.product.activity_receipts import ActivityReceiptService
+    from auto_research.product.operation_history import OperationHistoryService
     from auto_research.desktop.research_memory import ResearchMemoryService
     from auto_research.desktop.evidence_chat_history import EvidenceChatHistoryService
 
@@ -472,12 +475,20 @@ def _run_smoke_test(project_root: Path) -> int:
                 storage_label="test-static-aes-256-gcm",
             )
         )
+        operation_history = OperationHistoryService(
+            SecureOperationHistoryStore(
+                application_support / "History" / "operation-history-v1.enc",
+                StaticHistoryKeyProvider(b"\x95" * 32),
+                storage_label="test-static-operation-history-aes-256-gcm",
+            )
+        )
         product_services = create_desktop_product_services(
             data_root=application_support,
             current_app_version=DESKTOP_VERSION,
             workspace_database=temporary_database,
             workspace_root=project_root,
             activity_receipts=activity_receipts,
+            operation_history=operation_history,
         )
         database = EvidenceDB(temporary_database)
         desktop_session_id = new_session_token()
@@ -610,7 +621,9 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     from secure_research_memory import default_secure_research_memory_store
     from secure_evidence_chat_history import default_secure_evidence_chat_history_store
     from secure_activity_receipts import default_secure_activity_receipt_store
+    from secure_operation_history import default_secure_operation_history_store
     from auto_research.product.activity_receipts import ActivityReceiptService
+    from auto_research.product.operation_history import OperationHistoryService
     from auto_research.desktop.research_memory import ResearchMemoryService
     from auto_research.desktop.evidence_chat_history import EvidenceChatHistoryService
 
@@ -636,12 +649,16 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
         activity_receipts = ActivityReceiptService(
             default_secure_activity_receipt_store()
         )
+        operation_history = OperationHistoryService(
+            default_secure_operation_history_store()
+        )
         product_services = create_desktop_product_services(
             data_root=DEFAULT_PACKAGE_DATA_ROOT,
             current_app_version=DESKTOP_VERSION,
             workspace_database=workspace_database,
             workspace_root=project_root,
             activity_receipts=activity_receipts,
+            operation_history=operation_history,
         )
         desktop_session_id = new_session_token()
         research_memory_service = ResearchMemoryService(
