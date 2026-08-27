@@ -5,7 +5,7 @@ Status: mandatory release gate, not a release claim.
 Baseline evidence:
 
 - 0.5.1 build 6, source checkpoint `63b34f2`, was transactionally installed and exercised on macOS on 2026-08-25.
-- Current runtime source checkpoint is `5c2055f`; the release contract identifies 1.2.0 build 51 with `release_status=candidate`. The installed App remains build 50 from `45720ce` until build 51 is built and accepted.
+- The installed candidate is Auto Research 1.2.0 build 51, built transactionally from clean source checkpoint `4040a73`; the release contract still identifies it as `release_status=candidate`. Shared/macOS suites, frozen smoke, signing, DMG and installation have passed, but the exact installed App still requires the real WebView walkthrough and four AI workflow checks before it can replace the verified build 24 rollback conclusion.
 - The production evidence database and the isolated `paper_056` recovery directory are outside this audit and must not be used by tests or builds.
 - Windows remains frozen until the Mac workflow is accepted.
 
@@ -48,8 +48,10 @@ The current source now includes dataset/package projection of approved grids,
 bounded Librarian and selected-evidence history, personal experiment/package
 flows, task receipts and the task-aware workbench projection. The full serial
 source gate passed on 2026-08-28 (1116 shared plus 80 explicit skips; 307 macOS).
-Still open before release: clean build 51, installed-App walkthrough, four real
-AI workflow checks against that exact frozen App, and final release packaging.
+Build 51 has since completed the clean build, signing, DMG, transactional install
+and candidate-kit packaging gates. Still open before a stable release claim are
+the installed-App walkthrough, four real AI workflow checks against that exact
+frozen App, and the separately human-adjudicated scientific gold-set gate.
 
 ## User-flow lineage and release gates
 
