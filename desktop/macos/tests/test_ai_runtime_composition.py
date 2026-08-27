@@ -215,6 +215,17 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 services.literature_recovery._projector,
                 services.literature_extraction_ports.projector,
             )
+            self.assertEqual(
+                services.literature_recovery_report,
+                {
+                    "schema_version": "literature-extraction-recovery-sweep-v1",
+                    "scanned": 0,
+                    "recovered": 0,
+                    "already_completed": 0,
+                    "skipped_or_blocked": 0,
+                    "issues": [],
+                },
+            )
             self.assertTrue((root / "literature-tasks-v1").is_dir())
             self.assertFalse(hasattr(services, "literature_finalizer"))
             self.assertFalse(hasattr(services.literature_extraction_ports, "finalizer"))

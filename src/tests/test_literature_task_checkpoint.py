@@ -164,6 +164,33 @@ class LiteratureTaskCheckpointTests(unittest.TestCase):
         self.assertEqual(loaded, checkpoint)
         self.assertEqual(loaded.private_payload, b"UNIQUE_PRIVATE_PDF_AND_PROMPT")
 
+    def test_task_listing_is_bounded_recent_and_opaque(self) -> None:
+        first = self.service.create(
+            manifest=_manifest(),
+            private_payload=b"first-private-state",
+        )
+        second_manifest = LiteratureTaskManifest(
+            **{
+                **_manifest().__dict__,
+                "task_id": "task_QRSTUVWXYZabcdef",
+                "issued_at": 901,
+            }
+        )
+        self.clock.advance(1)
+        second = self.service.create(
+            manifest=second_manifest,
+            private_payload=b"second-private-state",
+        )
+
+        self.assertEqual(self.store.list_task_ids(limit=1), (second.manifest.task_id,))
+        self.assertEqual(
+            self.store.list_task_ids(limit=2),
+            (second.manifest.task_id, first.manifest.task_id),
+        )
+        with self.assertRaises(LiteratureTaskCheckpointError) as caught:
+            self.store.list_task_ids(limit=0)
+        self.assertEqual(caught.exception.code, "literature_checkpoint_invalid")
+
     def test_compare_and_swap_rejects_stale_writer(self) -> None:
         created = self.service.create(manifest=_manifest(), private_payload=b"state")
         acquired = self.service.acquire(

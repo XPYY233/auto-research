@@ -206,6 +206,27 @@ class LiteratureExtractionFinalizerRecovery:
                 "literature_recovery_unavailable"
             ) from exc
 
+    def recover_task(self, task_id: str) -> Mapping[str, Any]:
+        """Resolve the opaque job identity from an authenticated checkpoint."""
+
+        try:
+            validate_task_id(task_id)
+            checkpoint, job_state = self._runtime.recover_job_state(task_id)
+            decoded = _decode_checkpoint_job_state(job_state)
+            if checkpoint.manifest.task_id != task_id:
+                raise LiteratureTaskCheckpointError("literature_checkpoint_corrupt")
+            return self.recover(task_id=task_id, job_token=decoded.token)
+        except LiteratureExtractionRecoveryError:
+            raise
+        except LiteratureTaskCheckpointError as exc:
+            raise LiteratureExtractionRecoveryError(exc.code) from exc
+        except LiteratureExtractionJobError as exc:
+            raise LiteratureExtractionRecoveryError(exc.code) from exc
+        except Exception as exc:
+            raise LiteratureExtractionRecoveryError(
+                "literature_recovery_unavailable"
+            ) from exc
+
     @staticmethod
     def _validate_request(*, task_id: object, job_token: object) -> None:
         try:

@@ -94,6 +94,8 @@ class LiteratureCheckpointPersistence(Protocol):
 
     def load(self, task_id: str) -> "LiteratureTaskCheckpoint": ...
 
+    def list_task_ids(self, *, limit: int = 64) -> tuple[str, ...]: ...
+
     def compare_and_swap(
         self,
         checkpoint: "LiteratureTaskCheckpoint",

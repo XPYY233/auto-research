@@ -81,6 +81,27 @@ class SealedSQLiteLiteratureCheckpointStore:
         revision = int(row[0])
         return self._open(task_id, revision, bytes(row[1]))
 
+    def list_task_ids(self, *, limit: int = 64) -> tuple[str, ...]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 128:
+            raise LiteratureTaskCheckpointError("literature_checkpoint_invalid")
+        try:
+            with closing(self._connect()) as connection:
+                rows = connection.execute(
+                    "SELECT task_id FROM checkpoints "
+                    "ORDER BY updated_at DESC, task_id ASC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        except LiteratureTaskCheckpointError:
+            raise
+        except Exception:
+            raise LiteratureTaskCheckpointError(
+                "literature_checkpoint_store_unavailable"
+            ) from None
+        task_ids = tuple(str(row[0]) for row in rows)
+        for task_id in task_ids:
+            validate_task_id(task_id)
+        return task_ids
+
     def compare_and_swap(
         self,
         checkpoint: LiteratureTaskCheckpoint,

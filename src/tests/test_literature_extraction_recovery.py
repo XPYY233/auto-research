@@ -279,6 +279,26 @@ def test_finalizer_only_recovery_is_zero_model_and_strictly_ordered(tmp_path: Pa
         jobs.summary(token, session_id="new-session")
 
 
+def test_recover_task_resolves_token_only_from_authenticated_checkpoint(
+    tmp_path: Path,
+) -> None:
+    token, task_id, _state, runtime, events = _validated_fixture(tmp_path)
+    finalizer = _RecordingFinalizer(events=events)
+    recovery = LiteratureExtractionFinalizerRecovery(
+        runtime=runtime,
+        jobs=_job_store(tmp_path, session_key=b"b" * 32, events=events),
+        finalizer=finalizer,
+        projector=_RecordingProjector(events=events),
+        session_id="new-session",
+    )
+
+    result = recovery.recover_task(task_id)
+
+    assert result["status"] == "completed"
+    assert finalizer.calls == 1
+    assert token not in repr(result)
+
+
 def test_checkpoint_complete_failure_keeps_job_and_retry_is_idempotent(
     tmp_path: Path,
 ) -> None:

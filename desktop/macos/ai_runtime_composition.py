@@ -4,6 +4,7 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 
 from auto_research.ai.business_actions import BusinessPreparedActionRegistry
 from auto_research.ai.custom_provider import CustomProviderService
@@ -41,6 +42,9 @@ from auto_research.evidence.literature_extraction_finalizer import (
 )
 from auto_research.evidence.literature_extraction_recovery import (
     LiteratureExtractionFinalizerRecovery,
+)
+from auto_research.evidence.literature_extraction_recovery_sweep import (
+    LiteratureExtractionRecoverySweep,
 )
 from auto_research.personal.ai_business_action import (
     PersonalSuggestionBusinessPorts,
@@ -155,6 +159,7 @@ class MacAIRuntimeServices:
     literature_jobs: LiteratureExtractionJobStore | None = None
     literature_checkpoints: MacLiteratureCheckpointServices | None = None
     literature_recovery: LiteratureExtractionFinalizerRecovery | None = None
+    literature_recovery_report: Mapping[str, object] | None = None
 
 
 _SERVICES: MacAIRuntimeServices | None = None
@@ -266,6 +271,7 @@ def create_mac_ai_runtime_services(
     literature_jobs = None
     literature_checkpoints = None
     literature_recovery = None
+    literature_recovery_report = None
     snapshots = None
     business_actions = None
     harness_ports = None
@@ -306,6 +312,10 @@ def create_mac_ai_runtime_services(
             projector=literature_ports.projector,
             session_id=str(desktop_session_id),
         )
+        literature_recovery_report = LiteratureExtractionRecoverySweep(
+            checkpoints=literature_checkpoints.checkpoint_store,
+            recovery=literature_recovery,
+        ).run(limit=16)
         snapshots = CompositeContentSnapshotAuthority(
             {
                 "personal_table": personal_ports.snapshots,
@@ -375,6 +385,7 @@ def create_mac_ai_runtime_services(
         literature_jobs=literature_jobs,
         literature_checkpoints=literature_checkpoints,
         literature_recovery=literature_recovery,
+        literature_recovery_report=literature_recovery_report,
     )
 
 
