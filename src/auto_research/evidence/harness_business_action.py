@@ -768,16 +768,28 @@ class HarnessBusinessExecutor:
                 self._identity(value) for value in (payload.get("allowed_neighbors") or ())
             )
             adapter = DeepSeekHarnessAdapter(runtime=self._runtime, backend=backend)
-            raw = adapter.execute_consumed(
-                action=action,
-                session_id=action.session_digest,
-                model=ai_client,
-                evidence=identities,
-                current_entity=current,
-                allowed_neighbors=neighbors,
-                allow_source_view=True,
-                prompt=payload.get("prompt"),
-            )
+            try:
+                raw = adapter.execute_consumed(
+                    action=action,
+                    session_id=action.session_digest,
+                    model=ai_client,
+                    evidence=identities,
+                    current_entity=current,
+                    allowed_neighbors=neighbors,
+                    allow_source_view=True,
+                    prompt=payload.get("prompt"),
+                )
+            except HarnessError as exc:
+                if self._scope != "librarian" or exc.code not in {
+                    "harness_output_invalid",
+                    "harness_provider_response_invalid",
+                }:
+                    raise
+                raw = self._local_librarian_fallback(
+                    prompt=payload.get("prompt"),
+                    model=action.models[0] if action.models else "unavailable",
+                    cause_code=exc.code,
+                )
             return {
                 "schema_version": "harness-business-internal-v1",
                 "scope": self._scope,
@@ -799,6 +811,63 @@ class HarnessBusinessExecutor:
                 stage="harness_execute",
                 next_action="repair_harness_runtime",
             ) from exc
+
+    @staticmethod
+    def _local_librarian_fallback(
+        *,
+        prompt: object,
+        model: str,
+        cause_code: str,
+    ) -> Mapping[str, Any]:
+        """Return only deterministic, already-frozen evidence after bad AI JSON.
+
+        The paid call is never repeated.  This fallback cannot turn model prose
+        into facts: it cites the locally reasoned seed rows and explicitly says
+        that the AI answer itself was rejected.
+        """
+
+        if not isinstance(prompt, Mapping):
+            raise HarnessError("harness_output_invalid")
+        seed = prompt.get("seed_evidence")
+        if not isinstance(seed, list) or not seed:
+            raise HarnessError("harness_output_invalid")
+        direct = [row for row in seed if isinstance(row, Mapping) and row.get("match_class") == "direct"]
+        adjacent = [row for row in seed if isinstance(row, Mapping) and row.get("match_class") == "adjacent"]
+        selected = (direct[:8] + adjacent[:4]) if direct else adjacent[:8]
+        refs = [str(row.get("ref") or "") for row in selected]
+        if not refs or any(not re.fullmatch(r"R[1-9][0-9]{0,3}", ref) for ref in refs):
+            raise HarnessError("harness_output_invalid")
+        bundles = {str(row.get("bundle_uid") or "") for row in selected}
+        comparison_bundles = sorted(bundles) if "" not in bundles and len(bundles) == 1 else []
+        if direct:
+            answer = (
+                "AI 返回内容未通过结构与引用校验。本次没有采用模型回答；"
+                f"下面仅展示本地条件分析确认的 {len(direct)} 条直接证据和可核验来源。"
+            )
+            conclusion = f"找到 {len(direct)} 条满足当前硬条件的直接证据，请打开引用逐条核对。"
+        else:
+            answer = (
+                "AI 返回内容未通过结构与引用校验。本次没有采用模型回答；"
+                "当前仅有放宽一个条件的相关证据，不能视为原问题的直接答案。"
+            )
+            conclusion = "未检索到同时满足全部硬条件的直接证据。"
+        return {
+            "schema_version": "librarian-harness-result-v1",
+            "answer": answer,
+            "report": {
+                "direct_conclusion": conclusion,
+                "evidence_matrix": [],
+                "related_evidence": [],
+                "database_gaps": "模型输出未通过安全校验；已保留本地检索结果供人工核验。",
+                "suggested_followups": [],
+            },
+            "citations": [{"ref": ref} for ref in refs],
+            "recommended_articles": [],
+            "comparison_bundle_uids": comparison_bundles,
+            "harness": {"model": model},
+            "execution_mode": "local_deterministic_after_harness_rejection",
+            "rejected_cause_code": cause_code,
+        }
 
     @staticmethod
     def _identity(value: object) -> HarnessEvidenceIdentity | None:
@@ -866,6 +935,10 @@ class HarnessBusinessProjector:
 
     def _librarian(self, result: Mapping[str, Any]) -> Mapping[str, Any]:
         raw = result["raw"]
+        local_fallback = (
+            raw.get("execution_mode")
+            == "local_deterministic_after_harness_rejection"
+        )
         prompt = result["prompt"]
         cited = self._ref_documents(result)
         refs = [ref for ref, _row in cited]
@@ -1059,7 +1132,14 @@ class HarnessBusinessProjector:
             }
         )
         return {
-            "agent": {"name": "librarian", "runtime": "deepseek-harness"},
+            "agent": {
+                "name": "librarian",
+                "runtime": (
+                    "auto-research-local-fallback"
+                    if local_fallback
+                    else "deepseek-harness"
+                ),
+            },
             "response_format": "librarian-v3",
             "librarian_core_version": "librarian-v3",
             "answered_at": result["answered_at"],
@@ -1071,7 +1151,16 @@ class HarnessBusinessProjector:
             "results": rows,
             "recommended_articles": recommended,
             "recommended_article_count": len(recommended),
-            "tool_calls": [{"runtime": "deepseek-harness", "status": "completed"}],
+            "tool_calls": [
+                {
+                    "runtime": "deepseek-harness",
+                    "status": (
+                        "output_rejected_local_evidence_used"
+                        if local_fallback
+                        else "completed"
+                    ),
+                }
+            ],
             "search_operations": 1,
             "candidate_count": len(result["documents"]),
             "cited_count": len(rows),
@@ -1082,7 +1171,11 @@ class HarnessBusinessProjector:
             "bundle_count": len(bundles),
             "recall_queries": [str(value) for value in prompt.get("recall_queries", ())],
             "plan_mode": "harness_literature_bounded",
-            "summary_mode": "deepseek_harness",
+            "summary_mode": (
+                "local_deterministic_after_harness_rejection"
+                if local_fallback
+                else "deepseek_harness"
+            ),
             "clarification_required": False,
             "scope": "literature",
             "model": model,

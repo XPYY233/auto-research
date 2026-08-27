@@ -190,6 +190,18 @@ class Runtime:
         }
 
 
+class InvalidOutputRuntime(Runtime):
+    def execute(self, *, job, model, tools, prompt=None):
+        model.request_tool_message(
+            [{"role": "user", "content": "bounded"}],
+            [],
+            task=job.task,
+            max_tokens=1_000,
+            temperature=0.0,
+        )
+        raise HarnessError("harness_output_invalid")
+
+
 def action(draft, scope):
     now = int(time.time())
     task = draft.call_plan[0].task if scope == "librarian" else "extraction"
@@ -328,6 +340,31 @@ class HarnessBusinessActionTests(unittest.TestCase):
         self.assertEqual(article["jump_evidence"]["paper_uid"], "paper-1")
         self.assertNotIn("fabricated", repr(result["recommended_articles"]).casefold())
         self.assertNotIn("tampered", repr(result["recommended_articles"]).casefold())
+
+    def test_invalid_librarian_model_output_uses_local_evidence_without_second_call(self):
+        ports = harness_business_ports(
+            session=Session(), runtime=InvalidOutputRuntime()
+        )
+        draft = ports.librarian.assembler.assemble(
+            {"question": "硬度", "conversation_id": "fallback", "history": []}
+        )
+        prepared = action(draft, "librarian")
+        raw = RawClient()
+        internal = ports.librarian.executor.execute(
+            action=prepared,
+            ai_client=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
+        )
+        result = ports.librarian.projector.project(internal)
+        self.assertEqual(raw.calls, 1)
+        self.assertEqual(
+            result["summary_mode"],
+            "local_deterministic_after_harness_rejection",
+        )
+        self.assertEqual(result["agent"]["runtime"], "auto-research-local-fallback")
+        self.assertTrue(result["results"])
+        self.assertTrue(all(row["agent_cited"] for row in result["results"]))
+        self.assertIn("没有采用模型回答", result["answer"])
+        self.assertNotIn("provider body", repr(result))
 
     def test_librarian_combines_official_and_published_workspace_only(self):
         workspace = Workspace()
