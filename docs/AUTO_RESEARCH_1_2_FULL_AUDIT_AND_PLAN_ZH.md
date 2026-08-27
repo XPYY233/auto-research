@@ -1,12 +1,13 @@
 # Auto Research 全面审计与下一阶段实施计划
 
 > 审计日期：2026-08-25
-> 源码基线：`aa64c21390fc5d6873822f2798d76c18871c0f20`
+> 原始审计基线：`aa64c21390fc5d6873822f2798d76c18871c0f20`
+> 当前实施检查点：`2d9a7de554c6bee7c3e7fa0a6e2f4889f6ac19cd`
 > 0.5 对照基线：`63b34f2`（0.5.1 build 6）
 > 当前已安装 App：1.2.0 build 47，来自 `033b12b3a38b6852c11569bd502637632f8c82f8`
 > 审计边界：本轮停止生产代码修复，不构建、不调用模型、不读写生产 SQLite。
 
-> 2026-08-27 实施检查点：审计后已开始按契约恢复主链；当前源码已完成上传论文原子发布证明、视觉空结果诚实状态、新视觉资产人工隔离，以及“表格截图 → 保守二维候选 → 不可变人工审核版本 → Fusion主/次栏核验 → verified-only CSV/XLSX”的闭环。macOS薄HTTP层复用既有session/Origin/CSRF安全门，发布资源哈希已经同步。以上均只是源码与定向测试状态，尚未替换已安装 App，也不构成 1.2 稳定声明。生产 SQLite 与 `paper_056` 隔离现场继续排除在测试、构建与提交之外。
+> 2026-08-27 实施检查点：审计后已开始按契约恢复主链。除上传论文原子发布、视觉资产人工隔离、表格人工审核与verified-only导出外，当前源码还已恢复图书管理员/证据对话的有界历史与引用复核、私人表格分页核验与人工序列编辑、确认导入后的精确打开，以及官方包活动版本和审计数量的冷启动恢复。以上均只是源码与定向测试状态，尚未替换已安装 App，也不构成 1.2 稳定声明。生产 SQLite 与 `paper_056` 隔离现场继续排除在测试、构建与提交之外。
 
 ## 1. 执行结论
 
@@ -139,32 +140,40 @@ AI设计必须遵循：
 
 ### 7.1 规模与变化
 
-- `src/auto_research` Python约59,841行。
-- 共享Web资源约8,288行；最大文件仍是 `app.js` 4,379行。
+- `src/auto_research` Python当前约68,141行。
+- 共享Web资源当前约8,667行；最大文件仍是兼容资源 `app.js` 4,379行。
 - 从0.5基线到当前核心范围约新增39,416行、删除2,923行。
-- 17个Python模块超过1,000行，涉及repository、transfer、提取、质量、AI和webapp关键边界。
+- 19个Python模块超过1,000行，涉及repository、transfer、提取、质量、AI和webapp关键边界。
 
 新增远多于删除并不自动等于“屎山”，但在本项目中它伴随旧路径、重复状态和治理清单漂移，已经构成高风险结构债务。
 
 ### 7.2 已确认的循环依赖
 
-静态导入图发现5组强连通分量：
+静态导入图当前发现4组强连通分量；更严重的是既有预算门已捕获到一次扩张：
 
-1. 9模块：CLI、webapp、goal/self-check、export及多组测试集工具互相依赖。
+1. 20模块：原9模块CLI/webapp/goal/self-check/export环与原3模块finalizer/job/visual环已经合并，并新增checkpoint、recovery、task directory、table structure等生产模块；这是当前必须先打断的P1结构故障。
 2. 6模块：deepseek extraction、benchmark、learning、quality pipeline、six-column、visual evidence互相依赖。
-3. 3模块：literature finalizer、job、visual stage互相依赖。
-4. 2模块：OpenAI-compatible client与AI runtime state互相依赖。
-5. 2模块：package transfer payloads与transfer package互相依赖。
+3. 2模块：OpenAI-compatible client与AI runtime state互相依赖。
+4. 2模块：package transfer payloads与transfer package互相依赖。
 
-前三组直接穿过核心提取与发布链，必须在恢复功能前先冻结接口和依赖方向。
+前两组直接穿过核心提取与发布链。现有 `python-import-cycle-baseline.json` 不得更新来“承认”扩张；应先抽出纯契约和端口，让实际环重新缩小并使既有预算门恢复通过。
 
 ### 7.3 前端主要债务
 
-- `fusion_review.js`约748行，但导出超过100个函数/状态入口，同时掌管文献、搜索、实验、资料包、设置、AI、标签和布局协调。
-- 存在空实现 `bindColumnEditor()` 与恒定失败 `updateColumnDefinition()`，说明历史职责迁移未完成。
-- 当前生产HTML不再加载 `app.js`、`desktop_product.js` 等旧资源，这是正确方向；但这些大文件仍在仓库、测试和平台白名单中形成兼容负担。
+- `fusion_review.js`已增长到957行，同时掌管文献、搜索、实验、资料包、设置、AI、标签和布局协调；继续追加业务会再次形成单文件编排中心。
+- 当前生产HTML只加载 `ai_consent.js`、`document_tab_store.js`、`pane_layout_controller.js`、`workspace_layout_controller.js`、`fusion_pdf_controller.js`、`fusion_ai_experience.js` 与 `fusion_review.js`。旧 `app.js`、`desktop_product.js`、`package_center.js`、`workbench.js` 不属于生产启动链。
+- 这些旧资源仍被桌面静态白名单、safe-update检查、权限/路由兼容测试或历史研究测试消费，必须先迁移消费者，不能用一次粗暴删除冒充清债。
 - DocumentTabStore、PaneLayoutController和Fusion各自拥有部分可见性/恢复语义，导致“所有栏被收起”及标签内容错位。
 - 当前UI回归测试大量以字符串、DOM ID和fake DOM为主，无法证明真实WebView的排版、焦点、滚动和拖拽。
+
+当前生产前端拆分边界冻结为：
+
+1. `fusion_review.js`继续作为唯一bootstrap、导航和共享请求端口；
+2. `DocumentTabStore`只拥有文档身份与组别，不直接投影栏位；
+3. `WorkspaceLayoutController`只拥有可见栏位组合，`PaneLayoutController`只拥有几何；
+4. 第一批只抽离已经完成端到端契约的personal与package切片；
+5. 新模块只能消费bootstrap注入的端口，不得创建第二请求包装器、第二导航监听器或第二全局状态机；
+6. 每新增一个生产静态资源，必须同步macOS资源白名单、冻结冒烟、发布哈希和MIME/no-store契约。Windows继续冻结，不借共享拆分偷偷启动Windows迁移。
 
 ### 7.4 Python主要债务
 
@@ -175,8 +184,8 @@ AI设计必须遵循：
 
 ### 7.5 治理数据自身不可信
 
-- `config/module-ownership.json`把共享Fusion UI标为`stable`，与用户实机反馈和发布门矛盾。
-- `config/architecture-debt.json`仍引用build25及旧规模，当前已到build47。
+- `config/module-ownership.json`已把生产Fusion资源与旧Web兼容资源分开登记，前者保持`experimental`，后者固定为`compatibility`；在真实安装App验收前不得把生产UI升为`stable`。
+- `config/architecture-debt.json`在本检查点前仍引用旧行数与旧消费者边界；现已按真实生产加载链更新，但仍需在每个物理删除批次同步维护。
 - `docs/ARCHITECTURE_AUDIT_1_1.md`把尚未完成实机验收的能力写成“已完成”，需要降级为源码状态说明。
 
 ## 8. 代码处置清单

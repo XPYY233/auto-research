@@ -1,6 +1,6 @@
 {
   "schema": "auto-research-architecture-debt-v1",
-  "generated_at": "2026-08-25",
+  "generated_at": "2026-08-27",
   "policy": {
     "allowed_statuses": ["stable", "experimental", "compatibility", "retired"],
     "owner_required": true,
@@ -83,9 +83,9 @@
       "area": "frontend",
       "owner": "shared-frontend",
       "status": "experimental",
-      "problem": "当前生产HTML已不加载app.js和desktop_product.js，但约748行fusion_review.js仍导出超过100个入口并同时承担文献、搜索、实验、资料包、设置、AI、标签和布局协调；旧大文件及消费者仍留在仓库",
-      "target": "先冻结bootstrap、workspace、document和各业务controller依赖方向，再迁移消费者并物理删除不再加载的旧控制器",
-      "removal_gate": "唯一生产bootstrap与导航所有者、无死导出/重复监听、旧文件无生产或测试消费者、真实WebView主链通过"
+      "problem": "生产HTML仅加载Fusion七个经典脚本，但fusion_review.js已增长到957行并同时承担文献、搜索、实验、资料包、设置、AI、标签和布局协调；app.js(4379行)、desktop_product.js(968行)、package_center.js(419行)和workbench.js(392行)虽不在生产HTML中，仍被平台白名单、安全检查、safe update或兼容测试消费",
+      "target": "先冻结单一bootstrap、workspace、document和业务模块端口；优先抽离已冻结的personal/package垂直切片，再迁移旧资源的最后消费者，最后物理删除不再加载的控制器",
+      "removal_gate": "唯一生产bootstrap与导航所有者、无死导出/重复监听、新静态资源进入macOS发布哈希与冻结冒烟、旧文件无生产/安全/迁移消费者、真实WebView主链通过"
     },
     {
       "id": "ARCH-P1-002",
@@ -133,8 +133,8 @@
       "area": "python-import-cycles",
       "owner": "shared-core",
       "status": "experimental",
-      "problem": "静态导入图存在5组循环依赖，其中9模块、6模块和3模块强连通分量穿过webapp、提取、质量、视觉和原子发布主链",
-      "target": "抽出纯契约/DTO和单向orchestration端口，禁止finalizer/job/visual stage及quality/extraction相互导入",
+      "problem": "静态导入图当前存在4组循环依赖；原先9模块的webapp/CLI环与3模块的finalizer/job/visual环已经意外合并并扩张为20模块强连通分量，循环预算门因此失败；另有6模块质量/提取环及两组2模块环",
+      "target": "不放宽或重写既有循环预算基线；先抽出提取任务纯契约/DTO、task directory端口和单向orchestration接口，把20模块环重新拆开，再处理quality/extraction及两组2模块环",
       "removal_gate": "静态依赖门报告核心生产模块零循环，公开DTO和两条端到端主链保持兼容"
     },
     {
@@ -146,6 +146,26 @@
       "problem": "用户配置的公开HTTPS OpenAI-compatible服务虽然受SSRF和DNS重绑定门保护，但尚未完成真实App连接和四业务能力验收",
       "target": "custom与内置provider共用凭据generation、连接验证、分业务能力缓存、prepared-action预算和path-free错误",
       "removal_gate": "真实Mac App通过连接、结构化输出、工具调用、取消零业务请求、重定向/DNS重绑定攻击回归"
+    },
+    {
+      "id": "ARCH-P1-008",
+      "priority": "P1",
+      "area": "durable-user-activity-receipts",
+      "owner": "product-runtime",
+      "status": "experimental",
+      "problem": "官方包活动版本与审计数量已可在重启后恢复，但用户资料包、数据集导出及长任务收据仍主要依赖当前页面内存；重启后用户难以确认文件是否真实生成、保存到哪一步以及失败后的安全重试入口",
+      "target": "建立独立的path-free公共活动收据存储；只保存任务身份、类型、范围摘要、结果、校验码、时间和稳定next_action，不进入appearance设置，不保存路径、密钥或敏感正文",
+      "removal_gate": "导入/导出完成、失败、取消及重启恢复均可从App内核对；文件落盘收据与真实文件哈希一致，失败不留下半成品"
+    },
+    {
+      "id": "ARCH-P1-009",
+      "priority": "P1",
+      "area": "legacy-web-compatibility",
+      "owner": "maintenance",
+      "status": "compatibility",
+      "problem": "不再由生产index.html加载的旧Web控制器仍由desktop_server静态白名单、safe_update校验和历史权限/路由测试引用，导致生产资源与兼容资源边界不清，误删会破坏安全回归，保留又会制造第二套产品仍受支持的错觉",
+      "target": "为每个旧资源建立最后消费者清单；把仍有价值的安全/迁移断言改写到Fusion资源或独立fixture，随后从更新清单、静态白名单和仓库中按批删除",
+      "removal_gate": "app.js、desktop_product.js、package_center.js、workbench.js均无生产、更新、安全或兼容消费者；发布契约只登记实际安装App加载的资源"
     },
     {
       "id": "ARCH-P2-001",

@@ -1,6 +1,6 @@
 {
   "schema": "auto-research-module-ownership-v1",
-  "updated_at": "2026-08-25",
+  "updated_at": "2026-08-27",
   "allowed_statuses": ["stable", "experimental", "compatibility", "retired"],
   "modules": [
     {
@@ -89,10 +89,33 @@
     },
     {
       "id": "shared-desktop-ui",
-      "paths": ["src/auto_research/evidence/web", "src/auto_research/evidence/web/pane_layout_controller.js"],
+      "paths": [
+        "src/auto_research/evidence/web/index.html",
+        "src/auto_research/evidence/web/app.css",
+        "src/auto_research/evidence/web/workbench.css",
+        "src/auto_research/evidence/web/ai_consent.js",
+        "src/auto_research/evidence/web/document_tab_store.js",
+        "src/auto_research/evidence/web/pane_layout_controller.js",
+        "src/auto_research/evidence/web/workspace_layout_controller.js",
+        "src/auto_research/evidence/web/fusion_pdf_controller.js",
+        "src/auto_research/evidence/web/fusion_ai_experience.js",
+        "src/auto_research/evidence/web/fusion_review.js"
+      ],
       "owner": "shared-frontend",
       "status": "experimental",
       "authority": "single Fusion workbench recovery path; workbench-recovery-contract-v1 governs hierarchy, DocumentTabStore governs document identity, and the UI cannot become stable before installed-App visual and workflow acceptance"
+    },
+    {
+      "id": "legacy-web-compatibility",
+      "paths": [
+        "src/auto_research/evidence/web/app.js",
+        "src/auto_research/evidence/web/desktop_product.js",
+        "src/auto_research/evidence/web/package_center.js",
+        "src/auto_research/evidence/web/workbench.js"
+      ],
+      "owner": "maintenance",
+      "status": "compatibility",
+      "authority": "non-production compatibility resources retained only while safe-update, route, permission and migration consumers are moved to the Fusion authority; never a second supported UI"
     },
     {
       "id": "macos-shell",
