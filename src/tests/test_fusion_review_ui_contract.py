@@ -625,6 +625,7 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
             '"/api/desktop/package-center/import"',
             '"/api/desktop/package-center/dataset-plan"',
             '"/api/desktop/package-center/dataset-export"',
+            'packageReceipts:"/api/desktop/package-center/receipts"',
             'select_dataset_export_destination', 'Auto-Research-dataset.zip',
             'include_private: includePrivate', 'rights_acknowledged:',
             'unreviewed_acknowledged:', 'dataset-export-plan-v1',
@@ -638,6 +639,11 @@ columns[2].querySelector=s=>s.includes('role')?control('ignore'):s.includes('mea
             'setSearchSource("official")',
         ):
             self.assertIn(marker, package_sources)
+        self.assertGreaterEqual(
+            self.runtime.count("ROUTES.packageReceipts"),
+            3,
+            "the fixed receipts route must be authorized for GET, POST, and read-only projection",
+        )
         self.assertIn("前往搜索官方资料", self.index)
         export_body = re.search(
             r"async function exportPlannedPackage\(kind\) \{(?P<body>.*?)\n    function updateUserPackageImportButton",

@@ -49,6 +49,18 @@
   const OFFICIAL_PACKAGE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/;
   const OFFICIAL_PACKAGE_VERSION = /^[A-Za-z0-9][A-Za-z0-9.+_-]{0,79}$/;
   const OFFICIAL_FINGERPRINT = /^[a-f0-9]{64}$/;
+  const ACTIVITY_RECEIPT_ROOT_KEYS = Object.freeze(["receipts", "revision", "schema_version", "storage"]);
+  const ACTIVITY_RECEIPT_KEYS = Object.freeze([
+    "activity_type", "artifact_kind", "completed_at", "expires_at", "outcome",
+    "receipt_uid", "schema_version", "summary",
+  ]);
+  const DATASET_RECEIPT_SUMMARY_KEYS = Object.freeze(["archive_size", "checksum_code", "entity_counts", "record_count", "split_counts"]);
+  const DATASET_RECEIPT_REQUIRED_KEYS = Object.freeze(["checksum_code", "entity_counts", "record_count", "split_counts"]);
+  const TRANSFER_RECEIPT_SUMMARY_KEYS = Object.freeze(["checksum_code", "file_count", "total_bytes"]);
+  const RECEIPT_UID = /^[a-f0-9]{64}$/;
+  const RECEIPT_CHECKSUM = /^[a-f0-9]{12}$/;
+  const RECEIPT_STORAGE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+  const RECEIPT_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
 
   function createPackageCenterController(ports) {
     if (!ports || typeof ports !== "object") throw new TypeError("package_ports_required");
@@ -295,15 +307,183 @@
       return Array.isArray(values) ? values : [];
     }
 
+    function exactObjectKeys(value, keys) {
+      return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join("|") === [...keys].sort().join("|"));
+    }
+
+    function safeReceiptCount(value) {
+      return Number.isSafeInteger(value) && value >= 0 ? value : null;
+    }
+
+    function safeReceiptTimestamp(value) {
+      if (typeof value !== "string" || !RECEIPT_TIMESTAMP.test(value) || !Number.isFinite(Date.parse(value))) return null;
+      return value;
+    }
+
+    function publicActivityReceipt(raw) {
+      if (!exactObjectKeys(raw, ACTIVITY_RECEIPT_KEYS) || raw.schema_version !== "activity-receipt-v1" || !RECEIPT_UID.test(String(raw.receipt_uid || "")) || raw.outcome !== "completed") return null;
+      const activityType = raw.activity_type;
+      const artifactKind = raw.artifact_kind;
+      const validPair = activityType === "dataset_export" ? artifactKind === "dataset_bundle" : activityType === "transfer_export" && ["literature_collection", "personal_experiments"].includes(artifactKind);
+      const completedAt = safeReceiptTimestamp(raw.completed_at);
+      const expiresAt = safeReceiptTimestamp(raw.expires_at);
+      if (!validPair || !completedAt || !expiresAt || Date.parse(expiresAt) <= Date.parse(completedAt)) return null;
+      const summary = raw.summary;
+      let metrics;
+      if (activityType === "dataset_export") {
+        const keys = Object.keys(summary || {}).sort();
+        if (keys.some(key => !DATASET_RECEIPT_SUMMARY_KEYS.includes(key)) || DATASET_RECEIPT_REQUIRED_KEYS.some(key => !keys.includes(key)) || !RECEIPT_CHECKSUM.test(String(summary.checksum_code || ""))) return null;
+        const recordCount = safeReceiptCount(summary.record_count);
+        const archiveSize = summary.archive_size === undefined ? null : safeReceiptCount(summary.archive_size);
+        const entityCounts = strictOfficialCounts(summary.entity_counts, DATASET_TYPES);
+        const splitCounts = strictOfficialCounts(summary.split_counts, DATASET_SPLITS);
+        if (recordCount === null || (summary.archive_size !== undefined && archiveSize === null) || !entityCounts || !splitCounts || Object.values(entityCounts).reduce((sum, value) => sum + value, 0) !== recordCount || Object.values(splitCounts).reduce((sum, value) => sum + value, 0) !== recordCount) return null;
+        metrics = [["记录", recordCount], ["测量", entityCounts.item], ["结论", entityCounts.finding], ["表格", entityCounts.table], ["图片", entityCounts.figure], ["训练", splitCounts.train], ["验证", splitCounts.validation], ["留出", splitCounts.test]];
+        if (archiveSize !== null) metrics.push(["大小", formatBytes(archiveSize)]);
+      } else {
+        const keys = Object.keys(summary || {}).sort();
+        if (!keys.length || keys.some(key => !TRANSFER_RECEIPT_SUMMARY_KEYS.includes(key)) || !keys.includes("checksum_code") || !RECEIPT_CHECKSUM.test(String(summary.checksum_code || ""))) return null;
+        const fileCount = summary.file_count === undefined ? null : safeReceiptCount(summary.file_count);
+        const totalBytes = summary.total_bytes === undefined ? null : safeReceiptCount(summary.total_bytes);
+        if ((summary.file_count !== undefined && fileCount === null) || (summary.total_bytes !== undefined && totalBytes === null)) return null;
+        metrics = [];
+        if (fileCount !== null) metrics.push(["文件", fileCount]);
+        if (totalBytes !== null) metrics.push(["大小", formatBytes(totalBytes)]);
+      }
+      return Object.freeze({
+        receiptUid: raw.receipt_uid,
+        activityType,
+        artifactKind,
+        completedAt,
+        checksumCode: raw.summary.checksum_code,
+        metrics,
+      });
+    }
+
+    function publicActivityReceiptSnapshot(raw) {
+      if (!exactObjectKeys(raw, ACTIVITY_RECEIPT_ROOT_KEYS) || raw.schema_version !== "activity-receipts-v1" || !Number.isSafeInteger(raw.revision) || raw.revision < 0 || !RECEIPT_STORAGE.test(String(raw.storage || "")) || !Array.isArray(raw.receipts) || raw.receipts.length > 100) return null;
+      const receipts = raw.receipts.map(publicActivityReceipt);
+      return receipts.every(Boolean) ? Object.freeze({revision: raw.revision, receipts: Object.freeze(receipts)}) : null;
+    }
+
+    function receiptTypeLabel(receipt) {
+      return {literature_collection: "论文集合", personal_experiments: "私人实验", dataset_bundle: "训练数据集"}[receipt.artifactKind] || "导出任务";
+    }
+
+    function receiptCompletedLabel(value) {
+      try {
+        return new Intl.DateTimeFormat("zh-CN", {year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false}).format(new Date(value));
+      } catch (_error) {
+        return "完成时间不可用";
+      }
+    }
+
+    function updatePackageActivityCount() {
+      const node = q("#fusion-package-context-jobs");
+      if (node) node.textContent = String(state.jobs.size + (Array.isArray(state.receipts) ? state.receipts.length : 0));
+    }
+
+    function renderActivityReceipts() {
+      const host = q("#fusion-package-receipts");
+      const status = q("#fusion-package-receipts-status");
+      const clear = q("#fusion-package-receipts-clear");
+      if (!host || !status || !clear) return;
+      const receipts = Array.isArray(state.receipts) ? state.receipts : [];
+      const receiptState = state.receiptsStatus || "idle";
+      updatePackageActivityCount();
+      clear.disabled = receiptState === "loading" || receipts.length === 0;
+      if (receiptState === "loading") {
+        status.textContent = "正在读取最近完成回执…";
+        status.dataset.kind = "loading";
+        host.innerHTML = "<p>读取完成后将在此显示。</p>";
+        return;
+      }
+      if (receiptState === "error") {
+        status.textContent = "最近完成回执暂时不可用；本次任务与已导出文件不受影响。";
+        status.dataset.kind = "error";
+        host.innerHTML = "<p>稍后重新进入资料包中心即可再次读取。</p>";
+        return;
+      }
+      status.textContent = receipts.length ? `已读取 ${receipts.length} 条最近完成回执。` : "目前没有最近完成回执。";
+      status.dataset.kind = receipts.length ? "success" : "empty";
+      host.innerHTML = receipts.length ? receipts.map((receipt, index) => `<article class="fusion-package-receipt"><div><strong>${esc(receiptTypeLabel(receipt))}</strong><small>${esc(receiptCompletedLabel(receipt.completedAt))}</small></div><div class="fusion-package-metrics">${receipt.metrics.map(([label, value]) => `<span><b>${esc(value)}</b>${esc(label)}</span>`).join("")}<span><b>${esc(receipt.checksumCode)}</b>12 位校验码</span></div><button type="button" data-receipt-index="${index}">删除回执</button></article>`).join("") : "<p>完成导出并保存回执后会显示在这里。</p>";
+      qa("[data-receipt-index]").forEach(button => button.addEventListener("click", () => {
+        const receipt = receipts[Number(button.dataset.receiptIndex)];
+        if (receipt) void deleteActivityReceipt(receipt.receiptUid);
+      }));
+    }
+
+    async function loadActivityReceipts({force = false} = {}) {
+      if (state.receiptsLoading || (state.receiptsLoaded && !force)) return state.receipts || [];
+      state.receiptsLoading = true;
+      state.receiptsStatus = "loading";
+      renderActivityReceipts();
+      try {
+        const snapshot = publicActivityReceiptSnapshot(await request("/api/desktop/package-center/receipts"));
+        if (!snapshot) throw safeError("activity_receipts_invalid", "活动回执格式无效。");
+        state.receiptsRevision = snapshot.revision;
+        state.receipts = [...snapshot.receipts];
+        state.receiptsLoaded = true;
+        state.receiptsStatus = "ready";
+      } catch (_error) {
+        state.receiptsStatus = "error";
+      } finally {
+        state.receiptsLoading = false;
+        renderActivityReceipts();
+      }
+      return state.receipts || [];
+    }
+
+    async function updateActivityReceipts(body) {
+      try {
+        const snapshot = publicActivityReceiptSnapshot(await request("/api/desktop/package-center/receipts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}));
+        if (!snapshot) throw safeError("activity_receipts_invalid", "活动回执格式无效。");
+        state.receiptsRevision = snapshot.revision;
+        state.receipts = [...snapshot.receipts];
+        state.receiptsLoaded = true;
+        state.receiptsStatus = "ready";
+        renderActivityReceipts();
+        return true;
+      } catch (error) {
+        if (error?.code === "activity_receipt_revision_conflict") {
+          await loadActivityReceipts({force: true});
+          const status = q("#fusion-package-receipts-status");
+          if (status) {
+            status.textContent = "回执列表已在别处更新，现已刷新；请确认后重试。";
+            status.dataset.kind = "error";
+          }
+          return false;
+        }
+        const status = q("#fusion-package-receipts-status");
+        if (status) {
+          status.textContent = "回执操作未完成；本次任务与已导出文件不受影响。";
+          status.dataset.kind = "error";
+        }
+        return false;
+      }
+    }
+
+    async function deleteActivityReceipt(receiptUid) {
+      if (!RECEIPT_UID.test(String(receiptUid || "")) || !Number.isSafeInteger(state.receiptsRevision)) return false;
+      return updateActivityReceipts({operation: "delete", expected_revision: state.receiptsRevision, receipt_uid: receiptUid});
+    }
+
+    async function clearActivityReceipts() {
+      if (!Array.isArray(state.receipts) || !state.receipts.length || !Number.isSafeInteger(state.receiptsRevision)) return false;
+      if (typeof globalThis.confirm !== "function" || !globalThis.confirm("确认清空最近完成回执？这不会删除已导出的文件，也不会清除本次任务状态。")) return false;
+      return updateActivityReceipts({operation: "clear", expected_revision: state.receiptsRevision, confirm_clear: true});
+    }
+
     function renderPackageJobs() {
       const host = q("#fusion-package-jobs");
       if (!host) return;
       const jobs = [...state.jobs.values()].reverse();
-      q("#fusion-package-context-jobs").textContent = String(jobs.length);
+      updatePackageActivityCount();
       host.innerHTML = jobs.length ? jobs.map(job => {
         const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
         const error = job.error || {};
-        return `<article class="fusion-package-row"><div><strong>${esc(PACKAGE_STAGE_LABELS[job.stage] || job.stage || "资料包任务")}</strong><small>${esc(job.operation || "")} ${error.code ? `· ${esc(error.message || error.code)}` : ""}</small></div><div class="fusion-package-job-progress"><div class="fusion-package-job-track"><i style="width:${progress}%"></i></div><b>${progress}%</b></div></article>`;
+        const receiptStatus = job.receipt_status === "stored" ? " · 完成回执已保存" : job.receipt_status === "pending" ? " · 文件已导出，回执待恢复；请勿重复导出" : "";
+        return `<article class="fusion-package-row"><div><strong>${esc(PACKAGE_STAGE_LABELS[job.stage] || job.stage || "资料包任务")}</strong><small>${esc(job.operation || "")} ${error.code ? `· ${esc(error.message || error.code)}` : ""}${esc(receiptStatus)}</small></div><div class="fusion-package-job-progress"><div class="fusion-package-job-track"><i style="width:${progress}%"></i></div><b>${progress}%</b></div></article>`;
       }).join("") : "<p>本次还没有资料包任务。</p>";
     }
 
@@ -343,10 +523,6 @@
           ["视觉资产", count(assets, ["visual_asset_count", "visual_assets", "visual"])],
         ].filter(([, value]) => value !== null),
       };
-    }
-
-    function exactObjectKeys(value, keys) {
-      return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join("|") === keys.join("|"));
     }
 
     function strictOfficialCounts(value, keys) {
@@ -428,9 +604,14 @@
     }
 
     async function loadPackageCenter(force = false) {
-      if (state.loading || (state.loaded && !force)) return state;
+      if (state.loading) return state;
+      if (state.loaded && !force) {
+        await loadActivityReceipts();
+        return state;
+      }
       state.loading = true;
       packageNotice("正在读取资料包状态…", "loading");
+      const receiptLoad = loadActivityReceipts({force});
       try {
         const [official, center] = await Promise.all([
           request("/api/desktop/evidence-packages"),
@@ -444,6 +625,7 @@
       } catch (_error) {
         packageNotice("资料包状态暂时不可用；现有文献与私人实验不受影响。", "error");
       } finally {
+        await receiptLoad;
         state.loading = false;
       }
       return state;
@@ -461,6 +643,7 @@
       }
       if (!job?.terminal) throw safeError("package_job_timeout", "资料包任务等待超时，请稍后重新读取状态。");
       if (job.stage === "failed") throw safeError(String(job.error?.code || "package_job_failed"), String(job.error?.message || "资料包任务未完成。"));
+      if (job.receipt_status === "stored") await loadActivityReceipts({force: true});
       return job;
     }
 
@@ -648,6 +831,7 @@
       q("#fusion-package-user-sha")?.addEventListener("input", updateUserPackageImportButton);
       for (const selector of ["#fusion-package-checksum-ack", "#fusion-package-unencrypted-ack", "#fusion-package-source-ack"]) q(selector)?.addEventListener("change", updateUserPackageImportButton);
       q("#fusion-package-user-import")?.addEventListener("click", () => void importUserPackage());
+      q("#fusion-package-receipts-clear")?.addEventListener("click", () => void clearActivityReceipts());
       return true;
     }
 
@@ -660,6 +844,10 @@
       rememberOfficialPackageResult,
       publicDatasetPlan,
       publicDatasetReceipt,
+      publicActivityReceiptSnapshot,
+      loadActivityReceipts,
+      deleteActivityReceipt,
+      clearActivityReceipts,
       updateDatasetExportButton,
       planDataset,
       exportDataset,
