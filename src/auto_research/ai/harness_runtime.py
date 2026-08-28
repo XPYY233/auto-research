@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -26,6 +28,50 @@ from .business_actions import (
 
 HARNESS_EXECUTION_RESULT_SCHEMA_VERSION = "harness-execution-result-v1"
 MAX_ACTIVE_HARNESS_JOBS = 32
+
+
+def _safe_trace(stage: str, exc: BaseException) -> None:
+    """Emit only exception type and stage for opt-in release diagnostics."""
+
+    if os.environ.get("AUTO_RESEARCH_AI_SAFE_TRACE") != "1":
+        return
+    print(
+        "AUTO_RESEARCH_AI_SAFE_TRACE "
+        + json.dumps(
+            {
+                "event": "harness_runtime_exception",
+                "stage": stage,
+                "error_type": type(exc).__name__,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def _safe_rejection(reason: str) -> None:
+    """Record a path-free projector rejection category for release QA."""
+
+    if os.environ.get("AUTO_RESEARCH_AI_SAFE_TRACE") != "1":
+        return
+    print(
+        "AUTO_RESEARCH_AI_SAFE_TRACE "
+        + json.dumps(
+            {
+                "event": "harness_output_rejected",
+                "stage": "output_project",
+                "reason": reason,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 class HarnessClock(Protocol):
@@ -333,8 +379,10 @@ class HarnessOutputProjector:
         try:
             value = canonical_public(raw)
         except HarnessError as exc:
+            _safe_rejection("public_shape")
             raise HarnessError("harness_output_invalid") from exc
         if not isinstance(value, dict):
+            _safe_rejection("top_level_object")
             raise HarnessError("harness_output_invalid")
         report_value = value.get("report")
         report_value = report_value if isinstance(report_value, Mapping) else {}
@@ -343,6 +391,7 @@ class HarnessOutputProjector:
         if not isinstance(answer, str) or not answer.strip():
             answer = direct_conclusion
         if not isinstance(answer, str) or not answer.strip():
+            _safe_rejection("answer_missing")
             raise HarnessError("harness_output_invalid")
         if not isinstance(direct_conclusion, str) or not direct_conclusion.strip():
             direct_conclusion = answer
@@ -400,6 +449,7 @@ class HarnessOutputProjector:
             re.findall(r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", rendered_claims)
         )
         if not mentioned_refs.issubset(tools.verified_refs):
+            _safe_rejection("unverified_text_reference")
             raise HarnessError("harness_output_invalid")
         # Providers occasionally return citations as a string array, or omit
         # the redundant list while citing R identities directly in prose.
@@ -408,6 +458,7 @@ class HarnessOutputProjector:
         # answer for representational drift.
         refs.update(mentioned_refs)
         if not refs:
+            _safe_rejection("citation_missing")
             raise HarnessError("harness_output_invalid")
         ref_bundles = [str(tools.verified_ref_bundles.get(ref) or "") for ref in refs]
         bundles = set(ref_bundles)
@@ -420,6 +471,7 @@ class HarnessOutputProjector:
             {"answer": answer, "report": report},
             supported_context_quantities=supported_context,
         ):
+            _safe_rejection("cross_bundle_quantitative_claim")
             raise HarnessError("harness_output_invalid")
         recommendations = []
         seen_papers: set[str] = set()
@@ -615,6 +667,14 @@ class DeepSeekHarnessAdapter:
             )
             if not isinstance(raw, Mapping):
                 raise HarnessError("harness_output_invalid")
+        except HarnessError:
+            self._store.finish(job.job_id, success=False)
+            raise
+        except Exception as exc:
+            self._store.finish(job.job_id, success=False)
+            _safe_trace("runtime_execute", exc)
+            raise HarnessError("harness_runtime_failed") from exc
+        try:
             if running.session.scope == "librarian":
                 public = HarnessOutputProjector.librarian(
                     raw,
@@ -630,7 +690,8 @@ class DeepSeekHarnessAdapter:
             raise
         except Exception as exc:
             self._store.finish(job.job_id, success=False)
-            raise HarnessError("harness_runtime_failed") from exc
+            _safe_trace("output_project", exc)
+            raise HarnessError("harness_output_invalid") from exc
         self._store.finish(job.job_id, success=True)
         return {
             **public,
