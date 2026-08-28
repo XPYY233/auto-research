@@ -863,8 +863,9 @@ assert.equal(api.selectedEvidenceAIIdentity(),null,'list selection alone must no
 assert.deepEqual(api.selectedEvidenceAIIdentity(api.state.selectedEvidence),{{key:'official:official-main:item:item:17',sourceScope:'official',sourceId:'official-main',entityType:'item',entityUid:'item:17'}});
 api.state.selectedEvidence={{type:'figure',sourceScope:'official',sourceId:'official-main',entityUid:'figure:23'}};
 assert.equal(api.selectedEvidenceAIIdentity(api.state.selectedEvidence).entityUid,'figure:23');
-api.state.selectedEvidence={{type:'item',sourceScope:'workspace',itemId:17}};
-assert.deepEqual(api.selectedEvidenceAIIdentity(api.state.selectedEvidence),{{key:'workspace:workspace:item:17',sourceScope:'workspace',sourceId:'workspace',entityType:'item',entityUid:'17'}});
+api.state.selectedEvidence={{type:'item',sourceScope:'workspace',itemId:17,entityUid:'workspace:item:stable'}};
+assert.deepEqual(api.selectedEvidenceAIIdentity(api.state.selectedEvidence),{{key:'workspace:workspace:item:workspace:item:stable',sourceScope:'workspace',sourceId:'workspace',entityType:'item',entityUid:'workspace:item:stable'}});
+assert.equal(api.selectedEvidenceAIIdentity({{type:'item',sourceScope:'workspace',itemId:17}}),null,'internal ids are not stable Harness identities');
 api.state.selectedEvidence={{type:'item',sourceScope:'private',itemId:17}};
 assert.equal(api.selectedEvidenceAIIdentity(api.state.selectedEvidence),null);
 api.state.selectedEvidence={{type:'item',sourceScope:'official',sourceId:'official-main',entityUid:''}};
@@ -1277,6 +1278,24 @@ eval(fs.readFileSync({str(WEB / 'ai_consent.js')!r},'utf8'));eval(fs.readFileSyn
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+
+    def test_evidence_workspace_uses_stable_identity_and_clears_empty_mount(self) -> None:
+        self.assertIn('entityUid=cleanText(row.entityUid,500)', self.runtime)
+        self.assertNotIn(
+            'entityUid=row.sourceScope==="workspace"?String(row.assetId||row.itemId||"")',
+            self.runtime,
+        )
+        self.assertIn('host.dataset.documentEmpty=tab?"false":"true"', self.runtime)
+        self.assertIn('if(host.dataset?.documentEmpty==="true")', self.runtime)
+        self.assertIn('class="fusion-evidence-workspace"', self.runtime)
+        for marker in (
+            ".fusion-evidence-workspace",
+            "grid-template-rows:minmax(240px,1.15fr) minmax(260px,.85fr)",
+            ".fusion-evidence-workspace>.fusion-secondary-evidence",
+            ".fusion-evidence-workspace>.fusion-evidence-chat",
+        ):
+            self.assertIn(marker, self.css)
 
 
 if __name__ == "__main__":
