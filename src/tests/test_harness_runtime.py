@@ -4,6 +4,7 @@ import hashlib
 import time
 import unittest
 from dataclasses import replace
+from types import MappingProxyType
 
 from auto_research.ai.business_actions import BudgetedBusinessAIClient
 from auto_research.ai.harness_contract import (
@@ -518,6 +519,22 @@ class HarnessRuntimeTests(unittest.TestCase):
         )
         self.assertIn("300 °C", contextual["answer"])
         self.assertEqual(contextual["comparison_bundle_uids"], [])
+
+        immutable_prompt = dict(prompt)
+        immutable_prompt["seed_evidence"] = tuple(
+            MappingProxyType(dict(row)) for row in prompt["seed_evidence"]
+        )
+        _, model = self.budgeted(prepared)
+        immutable_contextual = DeepSeekHarnessAdapter(
+            runtime=SupportedConditionCrossBundle(), backend=CrossBundleBackend()
+        ).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL, other),
+            prompt=immutable_prompt,
+        )
+        self.assertIn("300 °C", immutable_contextual["answer"])
 
         class ExactCitedValuesCrossBundle(CrossBundle):
             def execute(self, **kwargs):

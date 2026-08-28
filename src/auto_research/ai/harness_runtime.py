@@ -220,6 +220,39 @@ class HarnessOutputProjector:
     def _quantity_key(value: str) -> str:
         return re.sub(r"\s+", "", value).replace("μ", "µ").casefold()
 
+    @staticmethod
+    def _cited_seed_text(
+        prompt: Mapping[str, Any] | None,
+        refs: set[str],
+    ) -> str:
+        """Serialize cited seed rows after removing immutable wrappers.
+
+        Production search snapshots deliberately use read-only mappings and
+        tuples.  ``json.dumps`` cannot encode ``MappingProxyType`` directly,
+        even though it implements ``Mapping``.  Canonicalizing first preserves
+        the path/sensitive-field guard while giving the quantity validator a
+        plain JSON-compatible structure.
+        """
+
+        if not isinstance(prompt, Mapping):
+            return ""
+        seed = prompt.get("seed_evidence")
+        if not isinstance(seed, Sequence) or isinstance(
+            seed, (str, bytes, bytearray)
+        ):
+            return ""
+        cited_seed = [
+            row
+            for row in seed
+            if isinstance(row, Mapping) and str(row.get("ref") or "") in refs
+        ]
+        public_seed = canonical_public(cited_seed, byte_cap=512 * 1024)
+        return json.dumps(
+            public_seed,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
     @classmethod
     def _supported_context_quantities(
         cls,
@@ -238,11 +271,8 @@ class HarnessOutputProjector:
         if not isinstance(prompt, Mapping):
             return frozenset()
         question = prompt.get("question")
-        seed = prompt.get("seed_evidence")
         if (
             not isinstance(question, str)
-            or not isinstance(seed, Sequence)
-            or isinstance(seed, (str, bytes, bytearray))
         ):
             return frozenset()
         question_values = {
@@ -251,16 +281,7 @@ class HarnessOutputProjector:
         }
         if not question_values:
             return frozenset()
-        cited_seed = [
-            row
-            for row in seed
-            if isinstance(row, Mapping) and str(row.get("ref") or "") in refs
-        ]
-        cited_text = json.dumps(
-            cited_seed,
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
+        cited_text = cls._cited_seed_text(prompt, refs)
         cited_values = {
             cls._quantity_key(match.group(0))
             for match in cls._QUANTITY.finditer(cited_text)
@@ -286,21 +307,9 @@ class HarnessOutputProjector:
 
         if not isinstance(prompt, Mapping):
             return frozenset()
-        seed = prompt.get("seed_evidence")
-        if not isinstance(seed, Sequence) or isinstance(
-            seed, (str, bytes, bytearray)
-        ):
+        cited_text = cls._cited_seed_text(prompt, refs)
+        if not cited_text:
             return frozenset()
-        cited_seed = [
-            row
-            for row in seed
-            if isinstance(row, Mapping) and str(row.get("ref") or "") in refs
-        ]
-        cited_text = json.dumps(
-            cited_seed,
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
         return frozenset(
             cls._quantity_key(match.group(0))
             for match in cls._QUANTITY.finditer(cited_text)
