@@ -189,6 +189,58 @@ class HarnessRuntimeTests(unittest.TestCase):
         self.assertEqual(result["report"]["evidence_matrix"], [])
         self.assertEqual(result["report"]["related_evidence"], [])
 
+    def test_librarian_normalizes_provider_representation_drift(self) -> None:
+        class DriftedRuntime(Runtime):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value.pop("schema_version")
+                value.pop("comparison_bundle_uids")
+                value["report"] = {
+                    "direct_conclusion": "R1 支持定性结论。",
+                    "database_gaps": ["尚缺独立复核", "尚缺金标准"],
+                    "suggested_followups": "继续核对 R1",
+                }
+                value["answer"] = "R1 支持定性结论。"
+                value["citations"] = ["R1"]
+                value.pop("recommended_articles")
+                return value
+
+        prepared = action()
+        _raw, model = self.budgeted(prepared)
+        result = self.adapter(DriftedRuntime()).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL,),
+            prompt=librarian_prompt(),
+        )
+        self.assertEqual(result["citations"], [{"ref": "R1"}])
+        self.assertEqual(
+            result["report"]["database_gaps"],
+            "尚缺独立复核；尚缺金标准",
+        )
+        self.assertEqual(result["report"]["suggested_followups"], ["继续核对 R1"])
+
+    def test_librarian_recovers_verified_refs_mentioned_in_prose(self) -> None:
+        class MentionOnlyRuntime(Runtime):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["answer"] = "现有证据支持定性结论，见 R1。"
+                value["report"]["direct_conclusion"] = value["answer"]
+                value["citations"] = []
+                return value
+
+        prepared = action()
+        _raw, model = self.budgeted(prepared)
+        result = self.adapter(MentionOnlyRuntime()).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL,),
+            prompt=librarian_prompt(),
+        )
+        self.assertEqual(result["citations"], [{"ref": "R1"}])
+
     def test_one_turn_librarian_preverifies_frozen_seed_without_provider_tools(self) -> None:
         class OneTurnRuntime(Runtime):
             def execute(self, *, model, **kwargs):

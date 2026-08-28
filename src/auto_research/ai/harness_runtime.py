@@ -336,59 +336,99 @@ class HarnessOutputProjector:
             raise HarnessError("harness_output_invalid") from exc
         if not isinstance(value, dict):
             raise HarnessError("harness_output_invalid")
-        report = value.get("report")
-        if (
-            value.get("schema_version") != "librarian-harness-result-v1"
-            or not isinstance(value.get("answer"), str)
-            or not value["answer"].strip()
-            or not isinstance(report, dict)
-            or not {
-                "direct_conclusion", "database_gaps", "suggested_followups",
-            } <= set(report)
-            or not isinstance(report.get("direct_conclusion"), str)
-            or not isinstance(report.get("database_gaps"), str)
-            or not isinstance(report.get("suggested_followups"), list)
-            or not isinstance(value.get("citations"), list)
-            or len(value.get("citations", [])) > 64
-            or not isinstance(value.get("recommended_articles"), list)
-            or len(value.get("recommended_articles", [])) > 10
-            or not isinstance(value.get("comparison_bundle_uids"), list)
-        ):
+        report_value = value.get("report")
+        report_value = report_value if isinstance(report_value, Mapping) else {}
+        answer = value.get("answer")
+        direct_conclusion = report_value.get("direct_conclusion")
+        if not isinstance(answer, str) or not answer.strip():
+            answer = direct_conclusion
+        if not isinstance(answer, str) or not answer.strip():
             raise HarnessError("harness_output_invalid")
+        if not isinstance(direct_conclusion, str) or not direct_conclusion.strip():
+            direct_conclusion = answer
+        database_gaps = report_value.get("database_gaps")
+        if isinstance(database_gaps, Sequence) and not isinstance(
+            database_gaps, (str, bytes, bytearray)
+        ):
+            database_gaps = "；".join(
+                str(item).strip()
+                for item in database_gaps
+                if isinstance(item, str) and item.strip()
+            )
+        if not isinstance(database_gaps, str):
+            database_gaps = ""
+        followups_value = report_value.get("suggested_followups")
+        if isinstance(followups_value, str):
+            followups_value = [followups_value]
+        suggested_followups = [
+            item.strip()
+            for item in (
+                followups_value
+                if isinstance(followups_value, Sequence)
+                and not isinstance(followups_value, (str, bytes, bytearray))
+                else ()
+            )
+            if isinstance(item, str) and item.strip()
+        ][:16]
+        report = {
+            "direct_conclusion": direct_conclusion.strip(),
+            "database_gaps": database_gaps.strip(),
+            "suggested_followups": suggested_followups,
+        }
+        citations_value = value.get("citations")
+        if not isinstance(citations_value, Sequence) or isinstance(
+            citations_value, (str, bytes, bytearray)
+        ) or len(citations_value) > 64:
+            citations_value = ()
         refs: set[str] = set()
-        for citation in value["citations"]:
-            if not isinstance(citation, dict) or not isinstance(citation.get("ref"), str):
+        for citation in citations_value:
+            ref = (
+                citation.get("ref")
+                if isinstance(citation, Mapping)
+                else citation
+            )
+            if not isinstance(ref, str):
                 continue
-            ref = citation["ref"]
             if ref in tools.verified_refs:
                 refs.add(ref)
-        if not refs:
-            raise HarnessError("harness_output_invalid")
-        ref_bundles = [str(tools.verified_ref_bundles.get(ref) or "") for ref in refs]
-        bundles = set(ref_bundles)
-        complete_bundle_identity = all(ref_bundles)
         rendered_claims = json.dumps(
-            {"answer": value["answer"], "report": report},
+            {"answer": answer, "report": report},
             ensure_ascii=False,
             separators=(",", ":"),
         )
         mentioned_refs = set(
             re.findall(r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", rendered_claims)
         )
-        if not mentioned_refs.issubset(refs):
+        if not mentioned_refs.issubset(tools.verified_refs):
             raise HarnessError("harness_output_invalid")
+        # Providers occasionally return citations as a string array, or omit
+        # the redundant list while citing R identities directly in prose.
+        # The application already froze and verified those identities, so use
+        # their safe intersection instead of rejecting an otherwise traceable
+        # answer for representational drift.
+        refs.update(mentioned_refs)
+        if not refs:
+            raise HarnessError("harness_output_invalid")
+        ref_bundles = [str(tools.verified_ref_bundles.get(ref) or "") for ref in refs]
+        bundles = set(ref_bundles)
+        complete_bundle_identity = all(ref_bundles)
         supported_context = (
             HarnessOutputProjector._supported_context_quantities(prompt, refs)
             | HarnessOutputProjector._supported_cited_quantities(prompt, refs)
         )
         if (not complete_bundle_identity or len(bundles) != 1) and HarnessOutputProjector._has_quantitative_comparison(
-            {"answer": value["answer"], "report": report},
+            {"answer": answer, "report": report},
             supported_context_quantities=supported_context,
         ):
             raise HarnessError("harness_output_invalid")
         recommendations = []
         seen_papers: set[str] = set()
-        for article in value["recommended_articles"]:
+        recommended_value = value.get("recommended_articles")
+        if not isinstance(recommended_value, Sequence) or isinstance(
+            recommended_value, (str, bytes, bytearray)
+        ):
+            recommended_value = ()
+        for article in recommended_value[:10]:
             if not isinstance(article, dict):
                 continue
             paper_uid = article.get("paper_uid")
@@ -412,7 +452,7 @@ class HarnessOutputProjector:
         # recommendations; untrusted extra keys are discarded.
         return {
             "schema_version": "librarian-harness-result-v1",
-            "answer": value["answer"],
+            "answer": answer.strip(),
             "report": {
                 "direct_conclusion": report["direct_conclusion"],
                 # These sections are reconstructed from locally verified seed
