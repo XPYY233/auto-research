@@ -10,7 +10,7 @@ from auto_research.ai.harness_contract import HarnessError, HarnessEvidenceIdent
 from auto_research.evidence.federated_search import validate_public_evidence_document
 from auto_research.evidence.federated_search_session import FederatedSearchSessionProtocol
 from auto_research.evidence.public_dto import public_evidence_dto
-from auto_research.product.portable_repository import stable_entity_uid, stable_paper_uid
+from auto_research.evidence.workspace_public_identity import workspace_public_identity
 
 
 MAX_HARNESS_CANDIDATES = 64
@@ -161,45 +161,14 @@ def sanitize_workspace_documents(
             raise HarnessError("harness_tool_invalid")
         public = public_evidence_dto(dict(raw))
         try:
-            paper_uid = stable_paper_uid(
-                doi=raw.get("doi"),
-                title=raw.get("article_title"),
-                year=raw.get("year"),
-                first_author=raw.get("first_author"),
-            )
-            if entity_type in {"table", "figure"}:
-                identity_key = (
-                    f"visual:{entity_type}:{raw.get('label') or ''}:"
-                    f"{int(raw.get('asset_number') or 0)}"
-                )
-            else:
-                identity_key = str(raw.get("stable_key") or "").strip() or "\0".join(
-                    str(raw.get(key) or "")
-                    for key in (
-                        "value_text",
-                        "finding_text",
-                        "meaning",
-                        "unit",
-                        "source_page",
-                        "source_locator",
-                    )
-                )
-            entity_uid = stable_entity_uid(paper_uid, entity_type, identity_key)
+            identity = workspace_public_identity(raw, source_id=expected_source_id)
         except Exception as exc:
             raise HarnessError("harness_tool_invalid") from exc
-        public.update(
-            {
-                "source_scope": "workspace",
-                "source_id": expected_source_id,
-                "entity_type": entity_type,
-                "entity_uid": entity_uid,
-                "paper_uid": paper_uid,
-            }
-        )
-        identity = (entity_type, entity_uid)
-        if identity in seen:
+        public.update(identity)
+        identity_key = (entity_type, identity["entity_uid"])
+        if identity_key in seen:
             raise HarnessError("harness_tool_invalid")
-        seen.add(identity)
+        seen.add(identity_key)
         selected = {
             key: _clean_value(public[key]) for key in _DETAIL_KEYS if key in public
         }

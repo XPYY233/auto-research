@@ -4,11 +4,17 @@ import json
 import math
 from typing import Any
 
+from .workspace_public_identity import (
+    WorkspacePublicIdentityError,
+    workspace_public_identity,
+)
+
 
 # One public projection is shared by Search V2, visual details and the
 # Librarian.  Local paths, Zotero installation identities and reviewer notes
 # must never cross the read-only HTTP boundary.
 PUBLIC_EVIDENCE_FIELDS = {
+    "source_scope", "source_id", "entity_uid", "paper_uid",
     "id", "item_id", "entity_id", "entity_type", "paper_id", "fact_id", "finding_id", "asset_type", "asset_number",
     "label", "value_text", "meaning", "unit", "finding_text", "article_title", "doi",
     "year", "context_explanation", "source_page", "page_start", "page_end", "source_locator",
@@ -52,7 +58,15 @@ def _public_bbox(value: Any) -> list[int | float] | None:
 
 
 def public_evidence_dto(row: dict[str, Any]) -> dict[str, Any]:
-    public = {key: row.get(key) for key in PUBLIC_EVIDENCE_FIELDS if key in row}
+    projected = dict(row)
+    if projected.get("source_scope") in (None, "", "workspace"):
+        try:
+            projected.update(workspace_public_identity(projected))
+        except WorkspacePublicIdentityError:
+            # Older or intentionally partial DTOs remain readable, but they do
+            # not become eligible for stable-identity actions such as AI chat.
+            pass
+    public = {key: projected.get(key) for key in PUBLIC_EVIDENCE_FIELDS if key in projected}
     bbox = _public_bbox(row.get("bbox"))
     if bbox is None:
         bbox = _public_bbox(row.get("bbox_json"))
