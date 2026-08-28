@@ -354,6 +354,7 @@ class HarnessOutputProjector:
             # Ranges and ratios are derived comparison surfaces even when
             # their endpoint values separately occur in cited rows.
             if cls._RANGE_OR_RATIO.search(text):
+                _safe_rejection("cross_bundle_range_or_ratio")
                 return True
             supported_matches = [
                 match
@@ -373,6 +374,7 @@ class HarnessOutputProjector:
             ):
                 # Two cited values do not authorize the model to calculate or
                 # assert a new cross-paper ordering/difference in one claim.
+                _safe_rejection("cross_bundle_two_value_comparison")
                 return True
             if supported_context_quantities:
                 text = cls._QUANTITY.sub(
@@ -386,7 +388,11 @@ class HarnessOutputProjector:
                 )
             # Exact cited quantities have been removed. Any remaining number
             # or unit-bearing value is unsupported and therefore rejected.
-            if cls._QUANTITY.search(text) or cls._NUMBER.search(text):
+            if cls._QUANTITY.search(text):
+                _safe_rejection("cross_bundle_unsupported_quantity")
+                return True
+            if cls._NUMBER.search(text):
+                _safe_rejection("cross_bundle_unsupported_number")
                 return True
         return False
 
