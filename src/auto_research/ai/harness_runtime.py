@@ -35,6 +35,17 @@ def _safe_trace(stage: str, exc: BaseException) -> None:
 
     if os.environ.get("AUTO_RESEARCH_AI_SAFE_TRACE") != "1":
         return
+    traceback = exc.__traceback__
+    while traceback is not None and traceback.tb_next is not None:
+        traceback = traceback.tb_next
+    location = (
+        {
+            "function": traceback.tb_frame.f_code.co_name,
+            "line": traceback.tb_lineno,
+        }
+        if traceback is not None
+        else {}
+    )
     print(
         "AUTO_RESEARCH_AI_SAFE_TRACE "
         + json.dumps(
@@ -42,6 +53,7 @@ def _safe_trace(stage: str, exc: BaseException) -> None:
                 "event": "harness_runtime_exception",
                 "stage": stage,
                 "error_type": type(exc).__name__,
+                **location,
             },
             ensure_ascii=True,
             sort_keys=True,
