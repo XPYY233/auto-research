@@ -210,33 +210,118 @@ class HarnessOutputProjector:
         return frozenset(question_values & cited_values)
 
     @classmethod
+    def _supported_cited_quantities(
+        cls,
+        prompt: Mapping[str, Any] | None,
+        refs: set[str],
+    ) -> frozenset[str]:
+        """Return unit-bearing values present in application-verified seed rows.
+
+        Cross-bundle synthesis must not invent a new value, range, ratio or
+        difference.  It may, however, quote an exact per-source value that the
+        application already froze and whose R identity the model selected.
+        The previous gate allowed only quantities repeated in the question;
+        real Librarian answers were consequently rejected merely for quoting
+        their cited evidence.  Identity and citation authority remain local:
+        this helper never trusts a model-supplied value or reference.
+        """
+
+        if not isinstance(prompt, Mapping):
+            return frozenset()
+        seed = prompt.get("seed_evidence")
+        if not isinstance(seed, Sequence) or isinstance(
+            seed, (str, bytes, bytearray)
+        ):
+            return frozenset()
+        cited_seed = [
+            row
+            for row in seed
+            if isinstance(row, Mapping) and str(row.get("ref") or "") in refs
+        ]
+        cited_text = json.dumps(
+            cited_seed,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        return frozenset(
+            cls._quantity_key(match.group(0))
+            for match in cls._QUANTITY.finditer(cited_text)
+        )
+
+    @staticmethod
+    def _claim_segments(value: object) -> list[str]:
+        """Flatten report prose into sentence-sized validation segments."""
+
+        values: list[str] = []
+
+        def collect(item: object) -> None:
+            if isinstance(item, str):
+                values.extend(
+                    part.strip()
+                    for part in re.split(r"[。！？!?;；\n]+", item)
+                    if part.strip()
+                )
+            elif isinstance(item, Mapping):
+                for child in item.values():
+                    collect(child)
+            elif isinstance(item, Sequence) and not isinstance(
+                item, (str, bytes, bytearray)
+            ):
+                for child in item:
+                    collect(child)
+
+        collect(value)
+        return values
+
+    @classmethod
     def _has_quantitative_comparison(
         cls,
         value: object,
         *,
         supported_context_quantities: frozenset[str] = frozenset(),
     ) -> bool:
-        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        text = re.sub(r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", "", text)
-        if supported_context_quantities:
-            text = cls._QUANTITY.sub(
-                lambda match: (
-                    ""
-                    if cls._quantity_key(match.group(0))
-                    in supported_context_quantities
-                    else match.group(0)
-                ),
-                text,
+        for claim in cls._claim_segments(value):
+            text = re.sub(
+                r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", "", claim
             )
-        # A multi-bundle answer has no authority to synthesize *any* numeric
-        # claim.  Fail closed for bare/scientific numbers, ranges and ratios,
-        # not just for the small historical unit list.  R reference ordinals
-        # are removed above so citation labels do not trigger this gate.
-        if cls._RANGE_OR_RATIO.search(text) or cls._QUANTITY.search(text):
-            return True
-        if cls._NUMBER.search(text):
-            return True
-        return bool(cls._COMPARISON.search(text) and re.search(r"\d", text))
+            # Ranges and ratios are derived comparison surfaces even when
+            # their endpoint values separately occur in cited rows.
+            if cls._RANGE_OR_RATIO.search(text):
+                return True
+            supported_matches = [
+                match
+                for match in cls._QUANTITY.finditer(text)
+                if cls._quantity_key(match.group(0))
+                in supported_context_quantities
+            ]
+            if (
+                cls._COMPARISON.search(text)
+                and len(
+                    {
+                        cls._quantity_key(match.group(0))
+                        for match in supported_matches
+                    }
+                )
+                >= 2
+            ):
+                # Two cited values do not authorize the model to calculate or
+                # assert a new cross-paper ordering/difference in one claim.
+                return True
+            if supported_context_quantities:
+                text = cls._QUANTITY.sub(
+                    lambda match: (
+                        ""
+                        if cls._quantity_key(match.group(0))
+                        in supported_context_quantities
+                        else match.group(0)
+                    ),
+                    text,
+                )
+            # Exact cited quantities have been removed. Any remaining number
+            # or unit-bearing value is unsupported and therefore rejected.
+            if cls._QUANTITY.search(text) or cls._NUMBER.search(text):
+                return True
+        return False
 
     @staticmethod
     def librarian(
@@ -292,9 +377,9 @@ class HarnessOutputProjector:
         )
         if not mentioned_refs.issubset(refs):
             raise HarnessError("harness_output_invalid")
-        supported_context = HarnessOutputProjector._supported_context_quantities(
-            prompt,
-            refs,
+        supported_context = (
+            HarnessOutputProjector._supported_context_quantities(prompt, refs)
+            | HarnessOutputProjector._supported_cited_quantities(prompt, refs)
         )
         if (not complete_bundle_identity or len(bundles) != 1) and HarnessOutputProjector._has_quantitative_comparison(
             {"answer": value["answer"], "report": report},

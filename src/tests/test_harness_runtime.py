@@ -467,6 +467,32 @@ class HarnessRuntimeTests(unittest.TestCase):
         self.assertIn("300 °C", contextual["answer"])
         self.assertEqual(contextual["comparison_bundle_uids"], [])
 
+        class ExactCitedValuesCrossBundle(CrossBundle):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["answer"] = (
+                    "R1 报告硬度为 500 HV。R2 报告硬度为 420 HV。"
+                    "这些是逐篇引用值，不计算跨论文差值。"
+                )
+                value["report"]["direct_conclusion"] = value["answer"]
+                return value
+
+        cited_value_prompt = librarian_prompt((OFFICIAL, other))
+        cited_value_prompt["seed_evidence"][0]["evidence_text"] = "硬度 500 HV"
+        cited_value_prompt["seed_evidence"][1]["evidence_text"] = "硬度 420 HV"
+        _, model = self.budgeted(prepared)
+        cited_values = DeepSeekHarnessAdapter(
+            runtime=ExactCitedValuesCrossBundle(), backend=CrossBundleBackend()
+        ).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL, other),
+            prompt=cited_value_prompt,
+        )
+        self.assertIn("500 HV", cited_values["answer"])
+        self.assertEqual(cited_values["comparison_bundle_uids"], [])
+
         class QuantitativeCrossBundle(CrossBundle):
             def execute(self, **kwargs):
                 value = super().execute(**kwargs)
@@ -486,6 +512,22 @@ class HarnessRuntimeTests(unittest.TestCase):
                 prompt=librarian_prompt((OFFICIAL, other)),
             )
         self.assertEqual(quantitative.exception.code, "harness_output_invalid")
+
+        _, model = self.budgeted(prepared)
+        with self.assertRaises(HarnessError) as derived_comparison:
+            DeepSeekHarnessAdapter(
+                runtime=QuantitativeCrossBundle(), backend=CrossBundleBackend()
+            ).execute_consumed(
+                action=prepared,
+                session_id="session-1",
+                model=model,
+                evidence=(OFFICIAL, other),
+                prompt=cited_value_prompt,
+            )
+        self.assertEqual(
+            derived_comparison.exception.code,
+            "harness_output_invalid",
+        )
 
     def test_missing_bundle_identity_never_grants_comparison_authority(self) -> None:
         missing_bundle = HarnessEvidenceIdentity(
