@@ -78,6 +78,8 @@ This project is a local literature automation workflow for fusion materials, rad
 - API key 与 generation 必须在平台凭据 envelope 中原子更新。旧 DeepSeek route 如保留，只能委托同一 provider manager/AIDesktopService，不得有第二套 secret、generation、状态或环境变量权威。
 - 共享接口顺序固定为 core freeze → macOS thin wiring/targeted acceptance → Windows thin parity。Windows 在真实 Win11 Setup/安装/导包/搜索/上传/BYOK 验收前保持 `installer_ready=false / SETUP_PRESENT=NO`。
 - 多对话协作使用项目已有 Codex 对话，不由 root 随意新建子 agent。root 唯一 stage/commit；其他对话只编辑明确文件并停手报告。电脑发热时最多两个开发对话，禁止并行全测、构建、App 和模型调用。
+- 开发提交、目标测试通过或单个缺陷修复不得递增 App build，也不得各自生成 App、DMG、UserKit、release worktree 或完整 Git bundle。一个发布批次只维护一个可覆盖的临时候选目录；只有整张安装后用户流程验收表全部通过，才分配新的 build 并生成一次正式候选。
+- 仓库外制品实行硬留存上限：只保留一个经 `git bundle verify` 的最新完整源码恢复包、一个 0.5 功能比较回退 App、一个最近稳定回退 App、一个当前候选回退 App，以及无法从 Git 重建的签名资料包源/数据库快照。失败候选、重复 DMG/UserKit、旧 release worktree 和被新完整 bundle 覆盖的历史 bundle 应在身份与哈希核对后删除；含未知数据库改动的工作树不得自动清理。
 - 前端重构必须删除被新工作台取代的旧选择器/DOM 所有权，不能在 `app.css` 尾部叠加第三套皮肤。personal/package 静态归位；主导航唯一 owner；异步完成不得抢页或滚动。
 - 跨平台代码用 `os.open` 读取或写入归档、PDF、CSV/TSV/XLSX、SQLite、密钥或设置等文件字节时，flags 必须包含 `getattr(os, "O_BINARY", 0)`；仅用于目录 `fsync` 的描述符除外。Windows CRT 文本模式会翻译或截断二进制流，不能依靠 macOS/Linux 测试推断可移植性。
 - Windows 构建锁定 Python 3.12；该版本在 Windows 不提供 `os.fchmod`。跨平台原子写只能在 `os.fchmod` 可调用时设置 fd mode；Windows 依赖受控 AppData/Temp ACL，不能用路径 `chmod(0o600)` 冒充 POSIX 私密权限。关闭全部文件描述符后才能 replace/unlink/remove；对 Defender、索引器和预览器造成的 WinError 5/32/33 只做有界重试，其他错误立即失败关闭。
