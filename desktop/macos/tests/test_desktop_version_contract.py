@@ -33,7 +33,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertEqual(metadata["release_status"], contract["desktop"]["macos"]["release_status"])
         self.assertEqual(launcher.DESKTOP_VERSION, "1.2.0")
         self.assertEqual(metadata["bundle_short_version"], "1.2.0")
-        self.assertEqual(metadata["build_number"], "53")
+        self.assertEqual(metadata["build_number"], "54")
         self.assertEqual(metadata["target"], "macOS arm64 Auto Research workbench")
         self.assertIn("workspace-schema-v12", metadata["data_mode"])
         self.assertIn("private-library", metadata["data_mode"])
