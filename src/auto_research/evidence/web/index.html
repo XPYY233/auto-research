@@ -151,7 +151,6 @@
           <div class="fusion-scroll" id="fusion-literature-content" aria-live="polite" aria-busy="true">
             <div class="fusion-state-card large" data-literature-state="loading"><strong>正在载入真实文献快照…</strong><span>文献标题、公开元数据与四类证据来自现有只读接口。</span></div>
           </div>
-          <section class="fusion-pdf-viewer" id="fusion-pdf-viewer" hidden aria-label="当前论文 PDF 查看器"><header><button type="button" id="fusion-close-pdf">← 返回当前论文</button><strong id="fusion-pdf-title">当前论文原文</strong><div class="fusion-pdf-controls" role="toolbar" aria-label="PDF 缩放"><button type="button" data-pdf-action="fit-width" data-pdf-viewer="paper">适合宽度</button><button type="button" data-pdf-action="fit-page" data-pdf-viewer="paper">适合页面</button><button type="button" data-pdf-action="zoom-out" data-pdf-viewer="paper" aria-label="缩小">−</button><button type="button" data-pdf-action="reset" data-pdf-viewer="paper">100%</button><button type="button" data-pdf-action="zoom-in" data-pdf-viewer="paper" aria-label="放大">＋</button></div><span>本机同源查看 · 不离开工作台</span></header><iframe id="fusion-pdf-frame" title="当前论文 PDF" loading="lazy"></iframe></section>
         </section>
 
         <section class="fusion-view" id="view-search" data-view-panel="search" hidden aria-label="搜索工作区">
@@ -218,16 +217,11 @@
             <div><strong id="fusion-detail-heading">证据详情</strong><small id="fusion-detail-identity">公开安全字段</small></div>
             <span class="fusion-spacer"></span>
             <a id="fusion-detail-export-csv" aria-disabled="true" tabindex="-1" download rel="noopener">证据元数据 CSV</a><a id="fusion-detail-export-xlsx" aria-disabled="true" tabindex="-1" download rel="noopener">证据元数据 XLSX</a><a id="fusion-detail-download-image" hidden aria-hidden="true" tabindex="-1" download rel="noopener">下载原图</a>
-            <button type="button" id="fusion-detail-open-pdf" disabled>查看原文</button>
             <button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button>
           </header>
           <div class="fusion-evidence-detail-scroll fusion-scroll" id="fusion-evidence-detail-body" aria-live="polite" aria-busy="false"></div>
-          <section class="fusion-detail-pdf" id="fusion-detail-pdf" hidden aria-label="证据来源 PDF 查看器">
-            <header><button type="button" id="fusion-detail-close-pdf">← 返回证据详情</button><button type="button" id="fusion-detail-show-highlight" disabled>重新显示高亮</button><button type="button" id="fusion-detail-close-pdf-view">关闭 PDF</button><strong id="fusion-detail-pdf-title">证据来源原文</strong><div class="fusion-pdf-controls" role="toolbar" aria-label="PDF 缩放"><button type="button" data-pdf-action="fit-width" data-pdf-viewer="detail">适合宽度</button><button type="button" data-pdf-action="fit-page" data-pdf-viewer="detail">适合页面</button><button type="button" data-pdf-action="zoom-out" data-pdf-viewer="detail" aria-label="缩小">−</button><button type="button" data-pdf-action="reset" data-pdf-viewer="detail">100%</button><button type="button" data-pdf-action="zoom-in" data-pdf-viewer="detail" aria-label="放大">＋</button></div><span>本机同源查看 · 不离开工作台</span></header>
-            <figure class="fusion-source-highlight" id="fusion-detail-source-highlight" hidden><img id="fusion-detail-highlight-image" alt="证据在原文中的高亮位置"><figcaption id="fusion-detail-highlight-status">高亮位置尚未读取。</figcaption></figure>
-            <iframe id="fusion-detail-pdf-frame" title="证据来源 PDF" loading="lazy"></iframe>
-          </section>
         </section>
+          <div class="fusion-primary-document-body fusion-scroll" id="fusion-primary-document-body" data-document-empty="true" hidden aria-live="polite"></div>
           </div>
           <div class="fusion-pane-separator fusion-editor-group-separator" id="fusion-editor-group-separator" data-pane-separator="editor-groups" role="separator" aria-label="调整两个编辑组的宽度" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="58" tabindex="0" hidden></div>
           <section class="fusion-editor-surface fusion-secondary-editor" id="fusion-secondary-editor-surface" data-editor-surface="secondary" aria-label="第二编辑组" hidden tabindex="-1">

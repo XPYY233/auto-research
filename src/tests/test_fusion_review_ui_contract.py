@@ -178,7 +178,7 @@ assert.equal(html.dataset.theme,'dark');assert.equal(html.dataset.density,'compa
             "fusion-import-pdf", "fusion-start-extraction", "fusion-open-pdf",
             "fusion-run-precise-search", "fusion-open-librarian",
             "fusion-select-data-file", "fusion-personal-ai", "fusion-personal-confirm",
-            "fusion-pdf-viewer", "fusion-close-pdf", "fusion-pdf-frame",
+            "fusion-primary-document-body", "fusion-secondary-editor-body",
         ):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
         self.assertEqual(self.index.count('id="fusion-tab-more"'), 1)
@@ -187,14 +187,15 @@ assert.equal(html.dataset.theme,'dark');assert.equal(html.dataset.density,'compa
             self.assertEqual(self.index.count(f'data-command-action="{action}"'), 1)
         self.assertNotIn("globalThis.open", self.runtime)
         self.assertNotIn("_blank", self.runtime)
-        self.assertIn("不离开工作台", self.index)
+        self.assertIn("不离开工作台", self.runtime)
         self.assertIn("closeCurrentPDF", self.runtime)
+        self.assertNotIn('id="fusion-pdf-viewer"', self.index)
+        self.assertNotIn('id="fusion-detail-pdf"', self.index)
 
     def test_four_evidence_types_share_one_central_detail_workspace(self) -> None:
         for element_id in (
             "fusion-evidence-detail", "fusion-evidence-detail-body", "fusion-detail-back",
-            "fusion-detail-open-pdf", "fusion-detail-pdf", "fusion-detail-close-pdf",
-            "fusion-detail-pdf-frame",
+            "fusion-primary-document-body", "fusion-secondary-editor-body",
         ):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
         self.assertEqual(self.index.count('id="fusion-document-tabs-primary"'), 1)
@@ -202,9 +203,9 @@ assert.equal(html.dataset.theme,'dark');assert.equal(html.dataset.density,'compa
         self.assertIn('id="fusion-evidence-detail"', self.index)
         for marker in (
             'const EVIDENCE_LABELS=Object.freeze({item:', "function openEvidenceDetail(",
-            "function closeEvidenceDetail(", "function renderEvidenceDetail(",
+            "function closeEvidenceDetail(", "function secondaryEvidenceHTML(",
             'visualAsset:"/api/visual-assets"', 'federatedEvidence:"/api/desktop/federated-evidence"',
-            "state.evidenceDetailRequest", "evidenceIdentity(state.evidenceDetail)!==identity",
+            "documentTabs.beginRequest(tab.tabId)", "documentTabs.completeRequest(tab.tabId,generation",
         ):
             self.assertIn(marker, self.runtime)
         self.assertNotIn("#visual-dialog", self.runtime)
@@ -215,8 +216,7 @@ assert.equal(html.dataset.theme,'dark');assert.equal(html.dataset.density,'compa
             "fusion-editor-group-content", "fusion-primary-editor-surface",
             "fusion-secondary-editor-surface", "fusion-secondary-editor-body",
             "fusion-split-tab", "fusion-reopen-tab", "fusion-secondary-move-primary",
-            "fusion-detail-show-highlight", "fusion-detail-close-pdf-view",
-            "fusion-detail-source-highlight", "fusion-detail-highlight-image",
+            "fusion-primary-document-body",
         ):
             self.assertEqual(self.index.count(f'id="{element_id}"'), 1)
         for marker in (
@@ -227,11 +227,10 @@ assert.equal(html.dataset.theme,'dark');assert.equal(html.dataset.density,'compa
             'single=geometry.projection.secondary==="single"',
             'geometry.projection.secondary==="hidden"',
             'state.activeGroupByView[tab.ownerView]=tab.groupId',
-            'openTab&&documentTabs&&paneViewport()>=900',
-            'openSecondaryEvidence(row,state.view,{preview,pin})',
-            '/api/six-data/${row.itemId}/source-view',
+            'const groupId=paneViewport()>=900?"secondary":"primary"',
+            'openSecondaryEvidence(row,state.view,{preview,pin,groupId,focusReturn})',
             '/api/six-data/${row.itemId}/source-highlight.png',
-            "state.evidenceDetailReturn.scrollTop", "state.sourceHighlightRequest+=1",
+            "function closeDocumentPDFTab(", "function returnToDocumentTab(",
         ):
             self.assertIn(marker, self.runtime)
         self.assertIn(".fusion-editor-group-content.split", self.css)
@@ -318,7 +317,7 @@ const tableHTML=api.secondaryDocumentHTML({{tabId:'personal-table:x',kind:'perso
             'event.detail>1', 'addEventListener("dblclick"',
                 'pinDocumentIdentity("paper"', 'pinDocumentTab(detail.tab.tabId)',
             'function openSecondaryEvidence(', 'function loadSecondaryPersonalTablePage(',
-            'page:Number(row.page)||1,highlight', 'data-secondary-pdf-highlight-toggle',
+            'page:Number(row.page)||1,highlight', 'data-document-pdf-highlight-toggle',
             'state.searchOffset=offset+raw.length', 'pageNumber=append?state.searchPage+1:1',
             'payload.cause_code||payload.code', 'error.stage=cleanText(detail?.stage',
             'error.nextAction=cleanText(detail?.next_action',
@@ -358,8 +357,8 @@ const tableHTML=api.secondaryDocumentHTML({{tabId:'personal-table:x',kind:'perso
 const fs=require('fs'),assert=require('assert');
 class Classes{{constructor(){{this.values=new Set()}}toggle(key,value){{value?this.values.add(key):this.values.delete(key)}}add(key){{this.values.add(key)}}remove(key){{this.values.delete(key)}}}}
 class El{{constructor(){{this.hidden=false;this.disabled=false;this.textContent='';this.innerHTML='';this.src='';this.scrollTop=0;this.classList=new Classes();this.attrs={{}};this.listeners={{}};}}setAttribute(key,value){{this.attrs[key]=String(value)}}removeAttribute(key){{delete this.attrs[key];if(key==='src')this.src=''}}addEventListener(key,fn){{(this.listeners[key]??=[]).push(fn)}}focus(){{globalThis.focused=this}}closest(){{return null}}}}
-const ids={{}};for(const id of ['fusion-editor-group-content','fusion-primary-editor-surface','fusion-secondary-editor-surface','fusion-secondary-editor-title','fusion-secondary-editor-body','fusion-evidence-detail','fusion-evidence-detail-body','fusion-detail-heading','fusion-detail-identity','fusion-detail-pdf','fusion-detail-pdf-frame','fusion-detail-pdf-title','fusion-detail-open-pdf','fusion-detail-close-pdf','fusion-detail-show-highlight','fusion-detail-source-highlight','fusion-detail-highlight-image','fusion-detail-highlight-status'])ids['#'+id]=new El();
-const all={{'[data-view-panel]':[],'[data-secondary-return-tab]':[],'[data-secondary-pdf-highlight-toggle]':[],'[data-secondary-open-pdf]':[],'[data-secondary-open-paper-pdf]':[],'[data-secondary-paper-evidence]':[],'[data-secondary-table-page]':[]}};
+const ids={{}};for(const id of ['fusion-editor-group-content','fusion-primary-editor-surface','fusion-primary-document-body','fusion-secondary-editor-surface','fusion-secondary-editor-title','fusion-secondary-editor-body','fusion-evidence-detail'])ids['#'+id]=new El();
+const all={{'[data-view-panel]':[],'[data-evidence-chat]':[],'[data-pdf-action][data-pdf-viewer]':[]}};
 globalThis.document={{readyState:'loading',querySelector:selector=>ids[selector]||null,querySelectorAll:selector=>all[selector]||[],addEventListener:()=>{{}}}};globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
 let timer=null;globalThis.setTimeout=fn=>{{timer=fn;return 1}};globalThis.clearTimeout=()=>{{timer=null}};
     eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_pdf_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion,tabs=api.documentTabs;
@@ -368,15 +367,38 @@ const A=row(1357,'Table 2 · 纯bcc金属与MoNbTaVW基本性质对比表',7),B=
 const a=tabs.open({{tabId:'evidence:a',kind:'evidence',ownerView:'paper',title:A.title,identity:{{sourceScope:'workspace',entityType:'table',entityUid:'1357'}},payload:{{row:A,status:'ready'}}}},{{pin:true}});
 const c=tabs.open({{tabId:'evidence:c',kind:'evidence',ownerView:'paper',title:C.title,identity:{{sourceScope:'workspace',entityType:'table',entityUid:'1359'}},payload:{{row:C,status:'ready'}}}},{{pin:true}});tabs.activate(a.tabId);
 const b=tabs.open({{tabId:'evidence:b',kind:'evidence',ownerView:'paper',title:B.title,identity:{{sourceScope:'workspace',entityType:'table',entityUid:'1358'}},payload:{{row:B,status:'ready'}}}},{{groupId:'secondary',pin:true}});
-api.state.evidenceDetailOpen=true;api.renderEditorSurfaces();
-assert(ids['#fusion-evidence-detail-body'].innerHTML.includes(A.title));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('/api/visual-assets/1357/image'));assert(!ids['#fusion-evidence-detail-body'].innerHTML.includes(B.title));
+api.renderEditorSurfaces();
+assert(ids['#fusion-primary-document-body'].innerHTML.includes(A.title));assert(ids['#fusion-primary-document-body'].innerHTML.includes('/api/visual-assets/1357/image'));assert(!ids['#fusion-primary-document-body'].innerHTML.includes(B.title));
 assert(ids['#fusion-secondary-editor-body'].innerHTML.includes(B.title));assert(ids['#fusion-secondary-editor-body'].innerHTML.includes('/api/visual-assets/1358/image'));assert(!ids['#fusion-secondary-editor-body'].innerHTML.includes(A.title));
-const generation=tabs.beginRequest(b.tabId);tabs.completeRequest(b.tabId,generation,{{payload:{{row:{{...B,caption:'Table 3 late complete'}},status:'ready'}}}});api.renderEditorSurfaces();assert(ids['#fusion-evidence-detail-body'].innerHTML.includes(A.title));assert(ids['#fusion-secondary-editor-body'].innerHTML.includes('Table 3 late complete'));
-tabs.activate(c.tabId);api.renderEditorSurfaces();assert(ids['#fusion-evidence-detail-body'].innerHTML.includes(C.title));assert(ids['#fusion-secondary-editor-body'].innerHTML.includes(B.title));
+const generation=tabs.beginRequest(b.tabId);tabs.completeRequest(b.tabId,generation,{{payload:{{row:{{...B,caption:'Table 3 late complete'}},status:'ready'}}}});api.renderEditorSurfaces();assert(ids['#fusion-primary-document-body'].innerHTML.includes(A.title));assert(ids['#fusion-secondary-editor-body'].innerHTML.includes('Table 3 late complete'));
+tabs.activate(c.tabId);api.renderEditorSurfaces();assert(ids['#fusion-primary-document-body'].innerHTML.includes(C.title));assert(ids['#fusion-secondary-editor-body'].innerHTML.includes(B.title));
 tabs.move(c.tabId,'secondary');assert.equal(tabs.activeTab('primary').tabId,a.tabId);tabs.move(c.tabId,'primary');assert.equal(tabs.activeTab('secondary').tabId,b.tabId);
 const projected=api.publicEvidence({{asset_type:'table',id:1358,paper_id:56,page_start:8,bbox:[51.172,606.053,278.053,737.169],label:B.title,image_url:'/api/visual-assets/1358/image'}});assert.deepEqual(projected.bbox,[51.172,606.053,278.053,737.169]);
-    tabs.move(a.tabId,'secondary');tabs.activate(b.tabId);tabs.move(b.tabId,'primary');assert.equal(tabs.activeTab('secondary').tabId,a.tabId);api.state.evidenceDetail=projected;api.state.evidenceDetailOpen=true;assert(api.openDetailPDF({{openTab:false}}));assert.equal(ids['#fusion-detail-pdf-frame'].src,'/api/papers/56/pdf#page=8&zoom=page-width');
-setImmediate(()=>{{assert.equal(ids['#fusion-detail-show-highlight'].disabled,false);assert.equal(ids['#fusion-detail-source-highlight'].hidden,false);assert.equal(ids['#fusion-detail-highlight-image'].src,'/api/visual-assets/1358/image');assert.equal(api.state.sourceHighlight.sourceTabId,b.tabId);timer();assert.equal(ids['#fusion-detail-source-highlight'].hidden,true);assert.equal(ids['#fusion-detail-show-highlight'].textContent,'重新显示高亮');api.toggleSourceHighlight();setImmediate(()=>{{assert.equal(ids['#fusion-detail-source-highlight'].hidden,false);assert.equal(ids['#fusion-detail-highlight-image'].src,'/api/visual-assets/1358/image');assert.equal(tabs.activeTab('secondary').tabId,a.tabId);}});}});
+const pdfHTML=api.secondaryDocumentHTML({{tabId:'pdf:b',kind:'pdf',title:'Table 3 PDF',payload:{{url:'/api/papers/56/pdf',returnTabId:b.tabId,page:8,highlight:{{kind:'visual',url:'/api/visual-assets/1358/image'}}}}}},'secondary');assert(pdfHTML.includes('data-document-return-tab="evidence:b"'));assert(pdfHTML.includes('data-document-close-pdf="pdf:b"'));assert(pdfHTML.includes('/api/visual-assets/1358/image'));assert(pdfHTML.includes('data-pdf-viewer="document:secondary:pdf:b"'));
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_primary_and_secondary_pdf_close_restore_return_tab_presentation(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert');
+globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
+globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));
+eval(fs.readFileSync({str(WEB / 'fusion_pdf_controller.js')!r},'utf8'));
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
+const api=globalThis.AutoResearchFusion,tabs=api.documentTabs;
+const primary=tabs.open({{tabId:'evidence:a',kind:'evidence',ownerView:'paper',title:'证据 A',identity:{{sourceScope:'workspace',entityType:'item',entityUid:'11'}},payload:{{row:{{type:'item',title:'证据 A',sourceScope:'workspace',itemId:11,paperId:7}},status:'ready'}}}},{{pin:true}});
+const secondary=tabs.open({{tabId:'evidence:b',kind:'evidence',ownerView:'search',title:'证据 B',identity:{{sourceScope:'official',sourceId:'official',entityType:'finding',entityUid:'finding-b'}},payload:{{row:{{type:'finding',title:'证据 B',sourceScope:'official',sourceId:'official',entityUid:'finding-b'}},status:'ready'}}}},{{groupId:'secondary',pin:true}});
+tabs.rememberPresentation(primary.tabId,{{scrollTop:318,focusToken:'evidence-question'}});
+tabs.rememberPresentation(secondary.tabId,{{scrollTop:427,focusToken:'evidence-question'}});
+const pdfA=tabs.open({{tabId:'pdf:paperId=7',kind:'pdf',ownerView:'paper',title:'A PDF',identity:{{paperId:'7'}},payload:{{url:'/api/papers/7/pdf',returnTabId:primary.tabId,page:2}}}},{{groupId:'primary',pin:true}});
+assert.equal(tabs.activeTab('primary').tabId,pdfA.tabId);assert(api.closeCurrentPDF({{focus:false}}));assert.equal(tabs.activeTab('primary').tabId,primary.tabId);assert.deepEqual(tabs.presentation(primary.tabId),{{scrollTop:318,focusToken:'evidence-question'}});
+const pdfB=tabs.open({{tabId:'pdf:source=official',kind:'pdf',ownerView:'search',title:'B PDF',identity:{{sourceScope:'official',sourceId:'official',paperUid:'paper-b'}},payload:{{url:'/api/desktop/federated-pdf?source_id=official&paper_uid=paper-b',returnTabId:secondary.tabId,page:4}}}},{{groupId:'secondary',pin:true}});
+assert.equal(tabs.activeTab('secondary').tabId,pdfB.tabId);assert(api.closeCurrentPDF({{focus:false}}));assert.equal(tabs.activeTab('secondary').tabId,secondary.tabId);assert.deepEqual(tabs.presentation(secondary.tabId),{{scrollTop:427,focusToken:'evidence-question'}});
+assert.equal(tabs.snapshot().tabs.some(tab=>tab.tabId===pdfA.tabId||tab.tabId===pdfB.tabId),false);
+const primaryPDF=api.secondaryDocumentHTML({{...pdfA,payload:{{...pdfA.payload}}}},'primary'),secondaryPDF=api.secondaryDocumentHTML({{...pdfB,payload:{{...pdfB.payload}}}},'secondary');
+assert(primaryPDF.includes('document:primary:pdf:paperId=7'));assert(secondaryPDF.includes('document:secondary:pdf:source=official'));
 """
         result = subprocess.run(["node", "-e", program], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -443,7 +465,7 @@ eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=global
         for marker in (
             "physical_quantities", "variables", "materials", "conditions_text", "methods_text",
             "linked_item_count", "source_excerpt", "source_locator", "quality_gate_status",
-            "本机 PyMuPDF", "不会生成替代图", "filter:none", "mix-blend-mode:normal",
+            "本机同源查看", "权威视觉依据", "filter:none", "mix-blend-mode:normal",
         ):
             self.assertIn(marker, self.runtime + self.css)
         for forbidden in ("pdf_path", "image_path", "zotero_key", "local_article_key", "reviewer", "edit_note"):
@@ -452,7 +474,7 @@ eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=global
         self.assertNotIn("_blank", self.index + self.runtime)
 
     def test_imported_literature_pdf_reuses_central_viewer(self) -> None:
-        self.assertIn("查看原文", self.index)
+        self.assertIn("查看原文", self.runtime)
         self.assertIn('federated-pdf?source_id=${encodeURIComponent(row.sourceId)}&paper_uid=${encodeURIComponent(row.paperUid)}', self.runtime)
         program = f"""
 globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
@@ -543,7 +565,7 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
             "31*60*1000",
             "30*60*1000",
             "任务仍在后台继续，可离开此页并稍后返回查看",
-            'if(previous==="paper")closeCurrentPDF',
+            'function closeDocumentPDFTab(',
             'if(name==="paper")void loadLiteratureTaskDirectory().then(()=>reconnectLiteratureJob())',
             "function literaturePaperKey(paper)",
             "后台文献处理完成",
@@ -1238,7 +1260,7 @@ class Classes{{constructor(){{this.s=new Set()}}toggle(k,v){{v?this.s.add(k):thi
 class El{{constructor(dataset={{}}){{this.dataset=dataset;this.hidden=false;this.disabled=false;this.classList=new Classes();this.attrs={{}};this.listeners={{}};this.textContent='';this.innerHTML='';this.value='';this.src='';this.tabIndex=0;this.isConnected=true;}} addEventListener(k,f){{(this.listeners[k]??=[]).push(f)}} setAttribute(k,v){{this.attrs[k]=String(v)}} removeAttribute(k){{delete this.attrs[k]}} focus(){{globalThis.focused=this}} querySelector(){{return new El()}} querySelectorAll(){{return []}} matches(){{return false}}}}
 const panels=['paper','search','personal','package','settings'].map(viewPanel=>new El({{viewPanel}})),navs=['paper','search','personal','package','settings'].map(view=>new El({{view}})),contexts=['paper','search','personal','package','settings'].map(contextView=>new El({{contextView}}));
 const modes=['precise','librarian'].map(searchModePanel=>new El({{searchModePanel}})),sources=['workspace','official','private','all'].map(searchSource=>new El({{searchSource}}));
-const ids={{}};for(const id of ['fusion-editor','fusion-context-title','fusion-breadcrumb','fusion-primary-tab-label','fusion-detail-tab-label','fusion-status-context','fusion-status-operation','fusion-inspector-title','fusion-inspector-body','fusion-context','fusion-inspector','fusion-search-results','fusion-search-query','fusion-run-precise-search','fusion-open-librarian','fusion-librarian-stage','fusion-librarian-status','fusion-literature-content','fusion-pdf-viewer','fusion-pdf-frame','fusion-pdf-title','fusion-close-pdf','fusion-open-pdf','fusion-start-extraction','fusion-literature-action-status','fusion-personal-status','fusion-personal-filename','fusion-personal-review','fusion-personal-sheet','fusion-personal-columns','fusion-project-name','fusion-sample-name','fusion-sample-material','fusion-run-name','fusion-run-method','fusion-run-conditions','fusion-run-note','fusion-personal-series-list','fusion-personal-series-warning','fusion-personal-series-add','fusion-personal-ai','fusion-personal-confirm','fusion-reviewed-state','fusion-review-context-state','fusion-ai-demo-context-state','fusion-sheet-summary','fusion-data-grid','fusion-personal-grid-wrap','fusion-personal-page-controls','fusion-personal-page-status','fusion-personal-page-prev','fusion-personal-page-next','fusion-personal-search-recovery','fusion-personal-search-recovery-title','fusion-personal-search-recovery-note','fusion-personal-search-refresh','fusion-ai-settings-status','fusion-ai-provider','fusion-ai-models','fusion-ai-model-save','fusion-ai-key-save','fusion-ai-key-delete','fusion-ai-test','fusion-ai-credential-state','fusion-ai-test-plan','fusion-ai-key','fusion-evidence-detail','fusion-evidence-detail-body','fusion-detail-heading','fusion-detail-identity','fusion-detail-pdf'])ids['#'+id]=new El();
+const ids={{}};for(const id of ['fusion-editor','fusion-context-title','fusion-breadcrumb','fusion-primary-tab-label','fusion-detail-tab-label','fusion-status-context','fusion-status-operation','fusion-inspector-title','fusion-inspector-body','fusion-context','fusion-inspector','fusion-search-results','fusion-search-query','fusion-run-precise-search','fusion-open-librarian','fusion-librarian-stage','fusion-librarian-status','fusion-literature-content','fusion-open-pdf','fusion-start-extraction','fusion-literature-action-status','fusion-personal-status','fusion-personal-filename','fusion-personal-review','fusion-personal-sheet','fusion-personal-columns','fusion-project-name','fusion-sample-name','fusion-sample-material','fusion-run-name','fusion-run-method','fusion-run-conditions','fusion-run-note','fusion-personal-series-list','fusion-personal-series-warning','fusion-personal-series-add','fusion-personal-ai','fusion-personal-confirm','fusion-reviewed-state','fusion-review-context-state','fusion-ai-demo-context-state','fusion-sheet-summary','fusion-data-grid','fusion-personal-grid-wrap','fusion-personal-page-controls','fusion-personal-page-status','fusion-personal-page-prev','fusion-personal-page-next','fusion-personal-search-recovery','fusion-personal-search-recovery-title','fusion-personal-search-recovery-note','fusion-personal-search-refresh','fusion-ai-settings-status','fusion-ai-provider','fusion-ai-models','fusion-ai-model-save','fusion-ai-key-save','fusion-ai-key-delete','fusion-ai-test','fusion-ai-credential-state','fusion-ai-test-plan','fusion-ai-key','fusion-evidence-detail','fusion-evidence-detail-body','fusion-detail-heading','fusion-detail-identity'])ids['#'+id]=new El();
 ids['[data-close-all-drawers]']=new El();
 ids['.fusion-sheet-tabs']=new El();ids['[data-context-view="personal"] .fusion-tree-row.active span']=new El();
 const all={{'[data-view-panel]':panels,'.fusion-nav[data-view]':navs,'[data-context-view]':contexts,'[data-search-mode-panel]':modes,'[data-search-source]':sources,'[data-evidence-index],[data-search-evidence-index]':[],'[data-search-evidence-index]':[],'[data-open-drawer]':[],'[data-personal-column]':[],'[data-context-view="personal"] [data-sheet]':[],'[data-fusion-ai-task]':[]}};
@@ -1265,7 +1287,7 @@ let pendingResolvers=[],reviewCount=0,refreshCount=0,failTable=false;const calls
  if(url.startsWith('/api/desktop/federated-search?'))return new Promise(resolve=>pendingResolvers.push(()=>resolve({{ok:true,headers,json:async()=>({{schema_version:'federated-search-page-v1',results:[{{document:{{entity_type:'table',source_scope:'private',source_id:'lab',entity_uid:'e1',display_title:'硬度表',source_excerpt:'真实私人实验'}}}}]}})}})));
  throw new Error('unexpected:'+url)}};
 eval(fs.readFileSync({str(WEB / 'ai_consent.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'pane_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'workspace_layout_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_pdf_controller.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_personal_import.js')!r},'utf8'));eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
-    (async()=>{{await api.loadAISettingsUI();ids['#fusion-ai-key'].value='sk-private-never-render';await api.saveAIKey();assert.equal(ids['#fusion-ai-key'].value,'');assert(!Object.values(ids).some(node=>node.textContent.includes('sk-private-never-render')));api.state.paper={{id:7,title:'Real paper'}};assert(api.openCurrentPDF());assert.equal(ids['#fusion-pdf-frame'].src,'/api/papers/7/pdf#page=1&zoom=page-width');assert.equal(ids['#fusion-literature-content'].hidden,true);assert(api.closeCurrentPDF());assert.equal(ids['#fusion-literature-content'].hidden,false);
+    (async()=>{{await api.loadAISettingsUI();ids['#fusion-ai-key'].value='sk-private-never-render';await api.saveAIKey();assert.equal(ids['#fusion-ai-key'].value,'');assert(!Object.values(ids).some(node=>node.textContent.includes('sk-private-never-render')));api.state.paper={{id:7,title:'Real paper'}};const paperTab=api.documentTabs.open({{tabId:'paper:paperId=7',kind:'paper',ownerView:'paper',title:'Real paper',identity:{{paperId:'7'}},payload:{{paper:api.state.paper}}}},{{pin:true}});assert(api.openCurrentPDF());let pdfTab=api.documentTabs.activeTab();assert.equal(pdfTab.kind,'pdf');assert.equal(pdfTab.payload.url,'/api/papers/7/pdf');assert.equal(pdfTab.payload.returnTabId,paperTab.tabId);assert(api.closeCurrentPDF());assert.equal(api.documentTabs.activeTab().tabId,paperTab.tabId);
  const auth=await api.preparedAuthorization('personal_suggestion',{{import_id:'personal_import_abcdefghijklmnop',sheet_index:0}});assert.equal(auth.actionId,'action-1');assert(calls.some(x=>x[0]==='/api/desktop/ai/consents'));
  api.switchView('search',{{focus:false}});api.setSearchSource('private');const late=api.runPreciseSearch();api.switchView('package',{{focus:false}});pendingResolvers.shift()();await late;assert.equal(api.state.view,'package');assert.equal(api.state.searchResults.length,0,'late private search must not replace the current package module');
  api.switchView('search',{{focus:false}});api.setSearchSource('private');const ready=api.runPreciseSearch();pendingResolvers.shift()();await ready;assert.equal(api.state.searchResults[0].title,'硬度表');assert(calls.some(x=>x[0].includes('source_scope=private')));
