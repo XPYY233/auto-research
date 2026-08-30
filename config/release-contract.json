@@ -47,19 +47,19 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "6873ef3816d8e8124d27c9847d71b3121980f462c5d9b5008878625a540d779f",
+    "src/auto_research/evidence/web/index.html": "41a00fb6cc6ad4516f81e18e286dcffbb1bd2aaca48f2c11723b511b5e008e93",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
-    "src/auto_research/evidence/web/workbench.css": "e5cc3f9d5b080f5e1c6789c24e610904c237768ae53f7cbae8214def4fee95d5",
+    "src/auto_research/evidence/web/workbench.css": "c457d9849ff775acacbe70112723188635a2fac783307d8e1768367b3d5c10a1",
     "src/auto_research/evidence/web/ai_consent.js": "606cded819b129a32e74d4532f1a5e6fddbf399d0a205f5abddb03af8c67141b",
     "src/auto_research/evidence/web/document_tab_store.js": "b0b8a930b0f6c54796cc6a926a6435162c6b51bb3fd95c16bd595ecdc234f2cf",
     "src/auto_research/evidence/web/pane_layout_controller.js": "bb2ebea79ba9d571065e7dc9ac5b9635fc19ecb77ac761fbf1cb8248bf98e154",
-    "src/auto_research/evidence/web/workspace_layout_controller.js": "2d66a746ebf0b981d9fb5a8126c8af174e17ec42ee9e8bc569ea14c69c58e568",
+    "src/auto_research/evidence/web/workspace_layout_controller.js": "aa08b01c77f2ad43bc37947603e9ea4d04e930449049fd0c2146778eadcb4f6b",
     "src/auto_research/evidence/web/fusion_pdf_controller.js": "9922b08f8ae42ea24c6188120615ccbf775bba7f8f3b67770ae793dbad19c4d6",
     "src/auto_research/evidence/web/fusion_ai_experience.js": "3ee6c56620d53412a9baae314cfc3b8add41bb3867828010c0e1d1aeaf439b57",
     "src/auto_research/evidence/web/fusion_operation_history.js": "0272560dec019433df0fcdfe765e5e30d9d1e196521a1fa329ad5b9232377dc0",
     "src/auto_research/evidence/web/fusion_package_center.js": "6cb7bac3d0716d37df5a96019694a4aaefaa5e084e9afce1c38b707a01ab3397",
     "src/auto_research/evidence/web/fusion_personal_import.js": "f31a8861931cc1395a6d22f28b70aebe3f8066307b6a2fbc14aa0bc42044b672",
-    "src/auto_research/evidence/web/fusion_review.js": "50d630df52e33f8503659a09a41173265cc1426e6849b9141694c0ecc2afeae7",
+    "src/auto_research/evidence/web/fusion_review.js": "0698dbafe5277ef54d2153c89a8fd628d3d4d5d8e53c5e9c7e2febadc39ee813",
     "src/auto_research/evidence/web/codex-pet-working.webp": "eeb657c8dd3dc9431cea8d88b8ec08e4c44471dd258ac3d8008483f2b40f0ef9"
   }
 }
