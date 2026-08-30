@@ -52,11 +52,11 @@
       inspector = "hidden";
       if (resultNavigator) {
         if (mode === "wide") context = contextPreferred ? "docked" : "hidden";
-        else if (mode === "desktop") context = "hidden";
+        else if (mode === "desktop") context = contextPreferred ? "drawer" : "hidden";
         secondary = "hidden";
       } else if (hasSecondary) {
         if (mode === "wide") context = contextPreferred ? "docked" : "hidden";
-        else if (mode === "desktop") context = "hidden";
+        else if (mode === "desktop") context = contextPreferred ? "drawer" : "hidden";
         secondary = mode === "wide" || mode === "desktop" ? "docked" : "single";
       } else {
         secondary = "hidden";

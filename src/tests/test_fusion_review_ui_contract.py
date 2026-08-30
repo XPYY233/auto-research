@@ -173,6 +173,43 @@ assert.equal(html.dataset.theme,'dark');assert.equal(html.dataset.density,'compa
         self.assertIn("Enter 发送 · Shift+Enter 换行", self.index)
         self.assertNotIn("setInterval(updateLibrarianProgress", self.runtime)
 
+    def test_librarian_history_remains_recoverable_and_evidence_chat_is_compact(self) -> None:
+        self.assertEqual(self.index.count('class="fusion-librarian-history-toggle"'), 1)
+        self.assertIn('data-open-drawer="context"', self.index)
+        self.assertIn('data-workspace-context="drawer"', self.css)
+        self.assertIn('.fusion-librarian-history-toggle { display:inline-flex; }', self.css)
+        for marker in (
+            'data-expanded="false"',
+            'data-evidence-ai-expand',
+            'data-evidence-chat-body hidden',
+            'expanded:new Set(),collapsed:new Set()',
+            'function setEvidenceChatExpanded(',
+            'state.evidenceChat.messages.length&&!state.evidenceChat.collapsed.has',
+            'state.evidenceChat.expanded.add(key)',
+            'state.evidenceChat.collapsed.delete(key)',
+        ):
+            self.assertIn(marker, self.runtime)
+        self.assertIn('.fusion-evidence-chat-body[hidden] { display:none; }', self.css)
+        self.assertIn('grid-template-rows:minmax(240px,1fr) auto', self.css)
+        self.assertNotIn('grid-template-rows:minmax(240px,1.15fr) minmax(260px,.85fr)', self.css)
+
+    def test_literature_toolbar_keeps_primary_actions_on_the_first_row(self) -> None:
+        toolbar = self.index[
+            self.index.index('<header class="fusion-toolbar fusion-literature-toolbar">'):
+            self.index.index('<div class="fusion-toolbar-note" id="fusion-literature-action-status"')
+        ]
+        self.assertEqual(toolbar.count('class="fusion-literature-primary-row"'), 1)
+        self.assertEqual(toolbar.count('class="fusion-literature-secondary-row"'), 1)
+        first_row = toolbar[:toolbar.index('class="fusion-literature-secondary-row"')]
+        second_row = toolbar[toolbar.index('class="fusion-literature-secondary-row"'):]
+        for element_id in ("fusion-import-pdf", "fusion-start-extraction", "fusion-open-pdf"):
+            self.assertIn(f'id="{element_id}"', first_row)
+            self.assertNotIn(f'id="{element_id}"', second_row)
+        for element_id in ("fusion-open-review-queue", "fusion-paper-export-csv", "fusion-paper-export-xlsx"):
+            self.assertIn(f'id="{element_id}"', second_row)
+        self.assertIn('.fusion-toolbar.fusion-literature-toolbar { display:grid;', self.css)
+        self.assertIn('.fusion-literature-secondary-row { min-height:42px;', self.css)
+
     def test_real_workflows_are_top_level_and_pdf_stays_in_workspace(self) -> None:
         for element_id in (
             "fusion-import-pdf", "fusion-start-extraction", "fusion-open-pdf",
@@ -1315,7 +1352,7 @@ eval(fs.readFileSync({str(WEB / 'ai_consent.js')!r},'utf8'));eval(fs.readFileSyn
         self.assertIn('class="fusion-evidence-workspace"', self.runtime)
         for marker in (
             ".fusion-evidence-workspace",
-            "grid-template-rows:minmax(240px,1.15fr) minmax(260px,.85fr)",
+            "grid-template-rows:minmax(240px,1fr) auto",
             ".fusion-evidence-workspace>.fusion-secondary-evidence",
             ".fusion-evidence-workspace>.fusion-evidence-chat",
         ):

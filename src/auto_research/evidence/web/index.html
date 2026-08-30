@@ -124,20 +124,24 @@
           <div class="fusion-editor-surface active" id="fusion-primary-editor-surface" data-editor-surface="primary">
 
         <section class="fusion-view active" id="view-paper" data-view-panel="paper" aria-label="文献工作区">
-          <header class="fusion-toolbar">
-            <button type="button" class="fusion-mobile-toggle" data-open-drawer="context">上下文</button>
-            <div><strong>当前论文</strong><small>真实文献快照 · 只读展示</small></div>
-            <span class="fusion-spacer"></span>
-            <div class="fusion-action-cluster" aria-label="文献主操作">
-              <input type="file" id="fusion-pdf-file" accept="application/pdf,.pdf" hidden>
-              <button type="button" class="fusion-primary-action" id="fusion-import-pdf">＋ 导入 PDF</button>
-              <button type="button" class="fusion-primary-action" id="fusion-start-extraction" disabled>▶ 开始自动提取与核验</button>
-              <button type="button" id="fusion-open-pdf" disabled>打开 PDF</button>
+          <header class="fusion-toolbar fusion-literature-toolbar">
+            <div class="fusion-literature-primary-row">
+              <button type="button" class="fusion-mobile-toggle" data-open-drawer="context">上下文</button>
+              <div class="fusion-literature-heading"><strong>当前论文</strong><small>真实文献快照 · 只读展示</small></div>
+              <span class="fusion-spacer"></span>
+              <div class="fusion-action-cluster" aria-label="文献主操作">
+                <input type="file" id="fusion-pdf-file" accept="application/pdf,.pdf" hidden>
+                <button type="button" class="fusion-primary-action" id="fusion-import-pdf">＋ 导入 PDF</button>
+                <button type="button" class="fusion-primary-action" id="fusion-start-extraction" disabled>▶ 开始自动提取与核验</button>
+                <button type="button" id="fusion-open-pdf" disabled>打开 PDF</button>
+              </div>
+            </div>
+            <div class="fusion-literature-secondary-row" aria-label="文献审核与导出">
               <button type="button" class="fusion-review-queue-action" id="fusion-open-review-queue" aria-describedby="fusion-literature-action-status">待审核 <b id="fusion-review-queue-count">—</b></button>
               <button type="button" id="fusion-repair-search-index" hidden>恢复搜索索引</button>
+              <div class="fusion-export-group" aria-label="导出当前论文测量数据"><strong>导出当前论文</strong><a id="fusion-paper-export-csv" aria-disabled="true" tabindex="-1" download rel="noopener">测量 CSV</a><a id="fusion-paper-export-xlsx" aria-disabled="true" tabindex="-1" download rel="noopener">测量 XLSX</a></div>
+              <button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button>
             </div>
-            <div class="fusion-export-group" aria-label="导出当前论文测量数据"><strong>导出当前论文</strong><a id="fusion-paper-export-csv" aria-disabled="true" tabindex="-1" download rel="noopener">测量 CSV</a><a id="fusion-paper-export-xlsx" aria-disabled="true" tabindex="-1" download rel="noopener">测量 XLSX</a></div>
-            <button type="button" class="fusion-mobile-toggle" data-open-drawer="inspector">检查器</button>
           </header>
           <div class="fusion-toolbar-note" id="fusion-literature-action-status" aria-live="polite">选择文献后可在中央打开原文；导入与自动提取均由你明确启动。</div>
           <section class="fusion-ai-progress" id="fusion-literature-progress" data-state="idle" hidden aria-live="polite" aria-busy="false">
@@ -158,7 +162,7 @@
           <section class="fusion-search-mode" id="fusion-precise-panel" data-search-mode-panel="precise"><div class="fusion-scroll fusion-result-stream" id="fusion-search-results" role="listbox" aria-label="精确检索结果"><div class="fusion-state-card large" data-literature-state="loading"><strong>正在读取真实证据…</strong><span>精确检索只消费四类公开证据。</span></div></div></section>
           <section class="fusion-search-mode fusion-librarian-panel" id="fusion-librarian-panel" data-search-mode-panel="librarian" hidden>
             <section class="fusion-librarian-chat" aria-label="图书管理员聊天">
-              <header><div><strong>图书管理员</strong><small>检索、核验引用并支持连续追问</small></div><button type="button" id="fusion-librarian-remember" disabled>记住本轮结论</button><button type="button" class="fusion-librarian-results-toggle" id="fusion-librarian-results-toggle" hidden aria-controls="fusion-librarian-results" aria-expanded="false">检索结果 <b id="fusion-librarian-results-count">0</b></button><span id="fusion-librarian-status" aria-live="polite">可以开始新的研究问题</span></header>
+              <header><div><strong>图书管理员</strong><small>检索、核验引用并支持连续追问</small></div><button type="button" class="fusion-librarian-history-toggle" data-open-drawer="context" aria-controls="fusion-context" aria-expanded="false">历史会话</button><button type="button" id="fusion-librarian-remember" disabled>记住本轮结论</button><button type="button" class="fusion-librarian-results-toggle" id="fusion-librarian-results-toggle" hidden aria-controls="fusion-librarian-results" aria-expanded="false">检索结果 <b id="fusion-librarian-results-count">0</b></button><span id="fusion-librarian-status" aria-live="polite">可以开始新的研究问题</span></header>
               <div class="fusion-scroll fusion-librarian-output fusion-chat-thread" id="fusion-librarian-output" aria-live="polite"><div class="fusion-chat-welcome"><strong>直接描述你的研究问题</strong><p>我会先理解条件，再检索四类证据，最后给出可追溯回答、引用论文和相关建议。</p></div></div>
               <section class="fusion-ai-progress" id="fusion-librarian-progress" data-state="idle" hidden aria-live="polite" aria-busy="false"><div class="fusion-ai-progress-agent"><img src="/static/codex-pet-working.webp" alt="" aria-hidden="true"><span>图书管理员</span></div><div class="fusion-ai-progress-main"><header><strong data-ai-progress-label>理解研究问题与约束</strong><b data-ai-progress-value>0%</b></header><div class="fusion-ai-progress-track" role="progressbar" aria-label="图书管理员进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i data-ai-progress-bar></i></div><small data-ai-progress-detail hidden></small><ol class="fusion-ai-progress-stages"><li data-ai-stage="prepare">理解问题</li><li data-ai-stage="planner">检索证据</li><li data-ai-stage="organizing">核验并回答</li><li data-ai-stage="completed">完成</li></ol><div class="fusion-ai-activity"><header><strong>Harness 活动</strong><span data-ai-elapsed>0 秒</span></header><small>显示检索、只读工具与引用核验，不展示模型内部思维链。</small><ol data-ai-activity></ol></div></div></section>
               <form class="fusion-chat-composer fusion-librarian-form" id="fusion-librarian-form"><label class="sr-only" for="fusion-librarian-question">研究问题</label><textarea id="fusion-librarian-question" rows="2" maxlength="4000" placeholder="询问材料、条件、物理量或继续追问…"></textarea><button type="submit" class="fusion-primary-action" id="fusion-librarian-send" aria-label="发送给图书管理员">发送</button><small>Enter 发送 · Shift+Enter 换行</small></form>
