@@ -36,15 +36,19 @@ class FederatedPdfUIContractTests(unittest.TestCase):
         self.assertIn('["official","private"].includes(row?.sourceScope)', self.fusion)
         self.assertIn('row.pdfAvailable===true', self.fusion)
         self.assertIn('return ""', self.fusion[self.fusion.index("function detailPDFURL"):self.fusion.index("function openDetailPDF")])
-        self.assertIn('id="fusion-pdf-viewer"', self.index)
-        self.assertIn('id="fusion-close-pdf"', self.index)
-        self.assertIn('id="fusion-detail-close-pdf"', self.index)
+        self.assertIn("function openPDFDocumentTab", self.fusion)
+        self.assertIn('data-document-pdf-frame', self.fusion)
+        self.assertIn('data-document-close-pdf', self.fusion)
+        self.assertIn('data-document-return-tab', self.fusion)
+        self.assertNotIn('id="fusion-pdf-viewer"', self.index)
+        self.assertNotIn('id="fusion-close-pdf"', self.index)
+        self.assertNotIn('id="fusion-detail-close-pdf"', self.index)
         self.assertIn("closeCurrentPDF", self.fusion)
         self.assertIn("closeDetailPDF", self.fusion)
         self.assertIn("returnTabId", self.fusion)
         self.assertNotIn("globalThis.open", self.fusion)
         self.assertNotIn("_blank", self.fusion)
-        self.assertIn(".fusion-pdf-viewer", self.styles)
+        self.assertIn(".fusion-secondary-pdf", self.styles)
 
 
 if __name__ == "__main__":
