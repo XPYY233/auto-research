@@ -536,6 +536,37 @@ class HarnessRuntimeTests(unittest.TestCase):
         )
         self.assertIn("300 °C", immutable_contextual["answer"])
 
+        class SourceLocalConditionsAcrossBundles(CrossBundle):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["answer"] = (
+                    "R1 在 300 °C、1 MeV 和 1 dpa 条件下报告硬化增加。"
+                    "R2 在 300 °C 条件下报告约 1 GPa 的硬化增加。"
+                )
+                value["report"]["direct_conclusion"] = value["answer"]
+                return value
+
+        source_local_prompt = librarian_prompt((OFFICIAL, other))
+        source_local_prompt["seed_evidence"][0]["evidence_text"] = (
+            "300 °C，1 MeV，1 dpa，硬化增加"
+        )
+        source_local_prompt["seed_evidence"][1]["evidence_text"] = (
+            "300 °C，约 1 GPa，硬化增加"
+        )
+        _, model = self.budgeted(prepared)
+        source_local = DeepSeekHarnessAdapter(
+            runtime=SourceLocalConditionsAcrossBundles(),
+            backend=CrossBundleBackend(),
+        ).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL, other),
+            prompt=source_local_prompt,
+        )
+        self.assertIn("1 GPa", source_local["answer"])
+        self.assertEqual(source_local["comparison_bundle_uids"], [])
+
         class ExactCitedValuesCrossBundle(CrossBundle):
             def execute(self, **kwargs):
                 value = super().execute(**kwargs)
@@ -652,6 +683,39 @@ class HarnessRuntimeTests(unittest.TestCase):
                 HarnessOutputProjector._has_quantitative_comparison(claim),
                 claim,
             )
+
+    def test_cross_bundle_gate_does_not_treat_alloy_grade_or_separate_conditions_as_comparison(self) -> None:
+        self.assertIsNone(HarnessOutputProjector._QUANTITY.search("316H"))
+        supported = frozenset(
+            HarnessOutputProjector._quantity_key(value)
+            for value in ("300 °C", "1 MeV", "1 dpa")
+        )
+        self.assertFalse(
+            HarnessOutputProjector._has_quantitative_comparison(
+                "在 300 °C、1 MeV 和 1 dpa 条件下，316H 与高熵合金分别呈现不同的微观结构。",
+                supported_context_quantities=supported,
+            )
+        )
+        measured = frozenset(
+            HarnessOutputProjector._quantity_key(value)
+            for value in ("500 HV", "420 HV")
+        )
+        self.assertTrue(
+            HarnessOutputProjector._has_quantitative_comparison(
+                "R1 的硬度为 500 HV，高于 R2 的 420 HV。",
+                supported_context_quantities=measured,
+            )
+        )
+        self.assertFalse(
+            HarnessOutputProjector._has_quantitative_comparison(
+                "1. R1 支持定性观察。\n（2）R2 支持另一项定性观察。"
+            )
+        )
+        self.assertTrue(
+            HarnessOutputProjector._has_quantitative_comparison(
+                "R1 报告了无单位数值 500。"
+            )
+        )
 
     def test_librarian_accepts_published_workspace_evidence(self) -> None:
         prepared = action()

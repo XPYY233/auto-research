@@ -350,11 +350,14 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertEqual(raw.calls[0][2]["max_tokens"], 2_400)
         self.assertIs(raw.calls[0][2]["thinking"], False)
         self.assertIn("seed_evidence", raw.calls[0][0][-1]["content"])
+        self.assertIn("跨来源归纳句只能写定性差异", raw.calls[0][0][-1]["content"])
+        self.assertEqual(OneTurnFinalHarness.latest.prompt.count("任务输入："), 1)
         system_prompt = OneTurnFinalHarness.latest.kwargs["env"][
             "AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"
         ]
         self.assertIn("citations 必须是至少一个", system_prompt)
         self.assertIn("comparison_bundle_uids 固定返回空数组", system_prompt)
+        self.assertIn("每个带单位数值只能作为单一 R 引用", system_prompt)
 
     def test_structured_final_disables_thinking_only_for_supported_provider(self):
         raw = RawClient()

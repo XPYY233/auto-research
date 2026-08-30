@@ -200,11 +200,11 @@ class HarnessOutputProjector:
         r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*"
         r"(?:%|°\s*[CF]|K|Pa|kPa|MPa|GPa|TPa|HV|HRC|nm|µm|μm|mm|cm|m|"
         r"eV|keV|MeV|J|mJ|W(?:\s*/\s*m(?:\s*K)?)?|g\s*/\s*cm(?:\^?3|³)|"
-        r"kg\s*/\s*m(?:\^?3|³)|dpa|at\.?\s*%|wt\.?\s*%|s|min|h)(?![A-Za-z])",
+        r"kg\s*/\s*m(?:\^?3|³)|dpa|at\.?\s*%|wt\.?\s*%|s|min|(?-i:h))(?![A-Za-z])",
         re.IGNORECASE,
     )
     _COMPARISON = re.compile(
-        r"(?:相比|比较|对比|分别|高于|低于|大于|小于|超过|不及|相差|差异为|"
+        r"(?:相比|比较|对比|高于|低于|大于|小于|超过|不及|相差|差异为|"
         r"增加|降低|提升|下降|变化(?:了|为)?|倍|比值|比例|范围|区间|"
         r"greater\s+than|less\s+than|higher\s+than|lower\s+than|versus|vs\.?|[<>≥≤])",
         re.IGNORECASE,
@@ -215,6 +215,7 @@ class HarnessOutputProjector:
         r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?",
         re.IGNORECASE,
     )
+    _LIST_ORDINAL = re.compile(r"^\s*(?:[（(]?\d{1,2}[）).、:：])\s*")
 
     @staticmethod
     def _quantity_key(value: str) -> str:
@@ -351,6 +352,11 @@ class HarnessOutputProjector:
             text = re.sub(
                 r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", "", claim
             )
+            # Provider prose sometimes numbers a JSON string as ``1. ...`` or
+            # ``（2）...``.  A leading list ordinal is presentation, not a
+            # scientific value.  Only the sentence prefix is removed; bare
+            # numbers anywhere in the scientific claim remain fail-closed.
+            text = cls._LIST_ORDINAL.sub("", text, count=1)
             # Ranges and ratios are derived comparison surfaces even when
             # their endpoint values separately occur in cited rows.
             if cls._RANGE_OR_RATIO.search(text):
@@ -393,6 +399,86 @@ class HarnessOutputProjector:
                 return True
             if cls._NUMBER.search(text):
                 _safe_rejection("cross_bundle_unsupported_number")
+                return True
+        return False
+
+    @classmethod
+    def _has_cross_bundle_quantitative_claim(
+        cls,
+        value: object,
+        *,
+        prompt: Mapping[str, Any] | None,
+        refs: set[str],
+        ref_bundles: Mapping[str, str],
+    ) -> bool:
+        """Validate quantitative prose at the sentence's actual source scope.
+
+        A complete Librarian answer can cite several incompatible evidence
+        bundles while each sentence still reports only one paper's verified
+        observation.  Treating the whole answer as one comparison rejected
+        legitimate source-local conditions such as ``300 °C / 1 MeV / 1 dpa``.
+        A sentence tied to one complete bundle may repeat exact values frozen
+        in those cited seed rows; cross-bundle or unscoped sentences retain the
+        stricter no-derived-comparison rule.
+        """
+
+        global_supported = (
+            cls._supported_context_quantities(prompt, refs)
+            | cls._supported_cited_quantities(prompt, refs)
+        )
+        safe_source_local: set[str] = set()
+        deferred: list[tuple[str, set[str]]] = []
+
+        def claim_key(claim: str) -> str:
+            without_refs = re.sub(
+                r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", "", claim
+            )
+            return re.sub(r"\s+", "", without_refs).casefold()
+
+        for claim in cls._claim_segments(value):
+            claim_refs = {
+                ref
+                for ref in re.findall(
+                    r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", claim
+                )
+                if ref in refs
+            }
+            bundles = {str(ref_bundles.get(ref) or "") for ref in claim_refs}
+            if claim_refs and "" not in bundles and len(bundles) == 1:
+                supported = (
+                    cls._supported_context_quantities(prompt, claim_refs)
+                    | cls._supported_cited_quantities(prompt, claim_refs)
+                )
+                text = re.sub(
+                    r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", "", claim
+                )
+                text = cls._LIST_ORDINAL.sub("", text, count=1)
+                text = cls._QUANTITY.sub(
+                    lambda match: (
+                        ""
+                        if cls._quantity_key(match.group(0)) in supported
+                        else match.group(0)
+                    ),
+                    text,
+                )
+                if cls._QUANTITY.search(text) or cls._NUMBER.search(text):
+                    _safe_rejection("source_local_unsupported_number")
+                    return True
+                safe_source_local.add(claim_key(claim))
+                continue
+            deferred.append((claim, claim_refs))
+
+        for claim, claim_refs in deferred:
+            # ``answer`` and ``report.direct_conclusion`` commonly repeat the
+            # same sentence, with the redundant report copy omitting its R
+            # marker.  It carries no new authority and can reuse the already
+            # verified source-local sentence.
+            if not claim_refs and claim_key(claim) in safe_source_local:
+                continue
+            if cls._has_quantitative_comparison(
+                claim,
+                supported_context_quantities=global_supported,
+            ):
                 return True
         return False
 
@@ -490,13 +576,11 @@ class HarnessOutputProjector:
         ref_bundles = [str(tools.verified_ref_bundles.get(ref) or "") for ref in refs]
         bundles = set(ref_bundles)
         complete_bundle_identity = all(ref_bundles)
-        supported_context = (
-            HarnessOutputProjector._supported_context_quantities(prompt, refs)
-            | HarnessOutputProjector._supported_cited_quantities(prompt, refs)
-        )
-        if (not complete_bundle_identity or len(bundles) != 1) and HarnessOutputProjector._has_quantitative_comparison(
+        if (not complete_bundle_identity or len(bundles) != 1) and HarnessOutputProjector._has_cross_bundle_quantitative_claim(
             {"answer": answer, "report": report},
-            supported_context_quantities=supported_context,
+            prompt=prompt,
+            refs=refs,
+            ref_bundles=tools.verified_ref_bundles,
         ):
             _safe_rejection("cross_bundle_quantitative_claim")
             raise HarnessError("harness_output_invalid")
