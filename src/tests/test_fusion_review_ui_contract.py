@@ -1288,6 +1288,8 @@ eval(fs.readFileSync({str(WEB / 'ai_consent.js')!r},'utf8'));eval(fs.readFileSyn
         )
         self.assertIn('host.dataset.documentEmpty=tab?"false":"true"', self.runtime)
         self.assertIn('if(host.dataset?.documentEmpty==="true")', self.runtime)
+        self.assertIn('if(!child?.dataset?.documentMount)child.remove?.()', self.runtime)
+        self.assertIn('data-document-empty="true"', self.index)
         self.assertIn('class="fusion-evidence-workspace"', self.runtime)
         for marker in (
             ".fusion-evidence-workspace",

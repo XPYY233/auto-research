@@ -14,8 +14,8 @@ class FusionTabHydrationRuntimeTests(unittest.TestCase):
         program = f"""
 const fs=require('fs'),assert=require('assert');
 class Mount{{constructor(){{this.dataset={{}};this.hidden=false;this.scrollTop=0;this.innerHTML='';this.className='';this.tabIndex=0;this.parent=null;}}remove(){{if(this.parent)this.parent.children=this.parent.children.filter(value=>value!==this)}}querySelector(){{return null}}}}
-class Host{{constructor(){{this.children=[];this.innerHTML=''}}append(node){{node.parent=this;this.children.push(node)}}querySelectorAll(selector){{return selector==='[data-document-mount]'?this.children:[]}}querySelector(selector){{return selector==='[data-document-mount]:not([hidden])'?this.children.find(node=>!node.hidden)||null:null}}}}
-const host=new Host(),memory=new Map();
+class Host{{constructor(){{this.children=[];this.innerHTML='';this.dataset={{documentEmpty:'true'}}}}append(node){{node.parent=this;this.children.push(node)}}replaceChildren(){{this.children=[]}}querySelectorAll(selector){{return selector==='[data-document-mount]'?this.children.filter(node=>node.dataset?.documentMount):[]}}querySelector(selector){{return selector==='[data-document-mount]:not([hidden])'?this.children.find(node=>node.dataset?.documentMount&&!node.hidden)||null:null}}}}
+const host=new Host(),placeholder=new Mount(),memory=new Map();placeholder.className='fusion-state-card';host.append(placeholder);
 globalThis.localStorage={{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value)}};
 globalThis.document={{readyState:'loading',activeElement:null,documentElement:{{style:{{setProperty:()=>{{}}}},dataset:{{}}}},body:{{dataset:{{}}}},querySelector:selector=>selector==='#fusion-secondary-editor-body'?host:null,querySelectorAll:()=>[],addEventListener:()=>{{}},createElement:()=>new Mount()}};
 globalThis.addEventListener=()=>{{}};globalThis.innerWidth=1440;
@@ -25,7 +25,7 @@ const api=globalThis.AutoResearchFusion,tabs=api.documentTabs;
 const row=(id,title)=>({{type:'finding',title,findingText:title,sourceScope:'workspace',itemId:id,paperId:1,page:1,quantities:[],variables:{{}},materials:[],tags:[]}});
 const first=tabs.open({{tabId:'evidence:first',kind:'evidence',ownerView:'search',title:'第一条',identity:{{sourceScope:'workspace',entityType:'finding',entityUid:'1',paperId:'1'}},payload:{{row:row(1,'第一条'),status:'ready'}}}},{{groupId:'secondary',pin:true}});
 const second=tabs.open({{tabId:'evidence:second',kind:'evidence',ownerView:'search',title:'第二条',identity:{{sourceScope:'workspace',entityType:'finding',entityUid:'2',paperId:'1'}},payload:{{row:row(2,'第二条'),status:'ready'}}}},{{groupId:'secondary',pin:true}});
-tabs.activate(first.tabId);const firstMount=api.renderStableTabMount('secondary',tabs.activeTab('secondary'));firstMount.scrollTop=418;tabs.rememberPresentation(first.tabId,{{scrollTop:418}});
+tabs.activate(first.tabId);const firstMount=api.renderStableTabMount('secondary',tabs.activeTab('secondary'));assert.equal(host.children.includes(placeholder),false,'first restored tab must remove the static empty placeholder');assert.equal(host.children.length,1);firstMount.scrollTop=418;tabs.rememberPresentation(first.tabId,{{scrollTop:418}});
 tabs.activate(second.tabId);const secondMount=api.renderStableTabMount('secondary',tabs.activeTab('secondary'));
 assert.notEqual(firstMount,secondMount);assert.equal(host.children.length,2);assert.equal(firstMount.hidden,true);assert.equal(secondMount.hidden,false);
 tabs.activate(first.tabId);const restored=api.renderStableTabMount('secondary',tabs.activeTab('secondary'));
