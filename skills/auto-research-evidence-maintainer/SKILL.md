@@ -50,7 +50,7 @@ Keep these invariants:
 
 ## Continue from the 1.2 Mac release line
 
-Before editing, read the top `PROJECT_HANDOFF.md` release section. Build50 from clean commit `45720ce` is installed as `1.2.0` and has passed the complete shared/macOS suites, frozen smoke, signing, DMG and transactional-install gates. It remains a release candidate until the locked Mac is unlocked and the installed WebView user flow passes; build24 remains the verified stable rollback. Verify the installed App and artifact hashes live because source completion, build completion, installation acceptance and scientific accuracy are separate claims.
+Before editing, read the top `PROJECT_HANDOFF.md` release section. The installed App is `1.2.0` build53 and remains a rejected candidate after real user-flow failures; build24 remains the verified stable rollback. Current fixes stay on one unnumbered, overwritable source candidate until every installed-App user-flow gate passes. Verify installed identity and artifact hashes live because source completion, build completion, installation acceptance and scientific accuracy are separate claims.
 
 - Preserve the uncommitted production evidence database. The legacy paper_056 run/quality/visual artifacts were explicitly deleted by the user before the 0.8 build and should not be recreated unless a new real extraction is authorized.
 - Use existing project Codex threads for frontend/macOS, core, Windows and security. Root is the only Git writer; every other thread receives an exact file list and returns a no-stage/no-commit handoff.

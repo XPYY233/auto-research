@@ -5,7 +5,7 @@ Status: mandatory release gate, not a release claim.
 Baseline evidence:
 
 - 0.5.1 build 6, source checkpoint `63b34f2`, was transactionally installed and exercised on macOS on 2026-08-25.
-- The installed candidate is Auto Research 1.2.0 build 51, built transactionally from clean source checkpoint `4040a73`; the release contract still identifies it as `release_status=candidate`. Shared/macOS suites, frozen smoke, signing, DMG and installation have passed, but the exact installed App still requires the real WebView walkthrough and four AI workflow checks before it can replace the verified build 24 rollback conclusion.
+- The installed candidate is Auto Research 1.2.0 build53 (`release_status=candidate`, core commit `d41f9d1`). Real user testing has rejected it because audited P0 flows remain broken. Current source fixes stay on one unnumbered candidate; no new build is assigned until the complete WebView walkthrough and four AI workflows pass. Build24 remains the verified rollback.
 - The production evidence database and the isolated `paper_056` recovery directory are outside this audit and must not be used by tests or builds.
 - Windows remains frozen until the Mac workflow is accepted.
 

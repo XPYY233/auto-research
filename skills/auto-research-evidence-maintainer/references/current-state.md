@@ -1,12 +1,14 @@
 # Current state checkpoint
 
-## v1.1.0 build27 candidate checkpoint (2026-08-23)
+## v1.2.0 single-candidate recovery checkpoint (2026-08-30)
 
-- Stable rollback remains build24. Build25 failed its real DeepSeek connection acceptance because a 32-token probe exhausted its budget in reasoning content. Build26 fixed connection and forced-tool verification, but real App acceptance exposed a separate frontend cap mismatch that blocked personal-suggestion capability verification. Source/release contract now targets build27.
-- Build27 uses a distinct capability-verification budget (`personal_suggestion=2`) instead of conflating it with the one-call business action budget. DeepSeek V4 Pro and Flash have both passed real structured-output and tool-call probes; all four App business gates and real business outputs remain release requirements.
-- Pane layout: `fusion-pane-layout-v2`, one `PaneLayoutController`, collapsible context/inspector/two editor groups, automatic right-side unpinned evidence preview, preserved pinned details and narrow-window single-group fallback.
-- AI: `ai-readiness-v1`, separate provider/Harness/four-scope states, DeepSeek/OpenAI plus security-gated public HTTPS OpenAI-compatible configuration, provider-separated credentials, one-call connection test and per-scope capability verification.
-- Validation so far: 896 shared tests with 80 explicit external-fixture skips and 236 macOS tests, plus targeted frontend/AI/release checks. No real provider call, App replacement, DMG or UserKit has yet occurred.
+- Installed identity: `1.2.0` build53, manifest `release_status=candidate`, core commit `d41f9d1`. Real user testing rejected it; it is not the stable release. Build24 remains the verified rollback.
+- Current source checkpoint: `689c34f`. Stable workspace evidence identity and stale secondary-editor placeholder fixes are source-only and have not yet been rebuilt into an App.
+- Release rule: keep one unnumbered, overwritable source candidate. Do not increment the App build or create App/DMG/UserKit/worktree artifacts for an isolated fix. Allocate one build only after the complete installed-App checklist passes.
+- Remaining P0 includes real Librarian acceptance, selected-evidence chat, personal suggestion, isolated PDF extraction and the full Fusion/WebView workflow. Windows remains frozen.
+- Production DB SHA-256 is `0389a5aa0faf4967696e3c3a5a574eaaf0bec08a34f48c69b98f50c705aa80b0`; keep it and `paper_056` user artifacts untracked and untouched.
+
+The build27 notes below are historical only and must not be used as current release authority.
 - Production DB SHA-256 at the candidate checkpoint is `18b9a4a3a4cbdf9ffcbe4fe14fa0e4855727a6211c1f61902e3d30324903bc84`; keep it and `paper_056` user artifacts untracked and untouched.
 
 ## v1.1.0 Mac source checkpoint (2026-08-22)
