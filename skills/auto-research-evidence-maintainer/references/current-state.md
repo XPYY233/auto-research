@@ -1,11 +1,12 @@
 # Current state checkpoint
 
-## v1.2.0 single-candidate recovery checkpoint (2026-08-30)
+## v1.2.0 single-candidate recovery checkpoint (2026-09-01)
 
-- Installed identity: `1.2.0` build53, manifest `release_status=candidate`, core commit `d41f9d1`. Real user testing rejected it; it is not the stable release. Build24 remains the verified rollback.
-- Current source checkpoint: `689c34f`. Stable workspace evidence identity and stale secondary-editor placeholder fixes are source-only and have not yet been rebuilt into an App.
-- Release rule: keep one unnumbered, overwritable source candidate. Do not increment the App build or create App/DMG/UserKit/worktree artifacts for an isolated fix. Allocate one build only after the complete installed-App checklist passes.
-- Remaining P0 includes real Librarian acceptance, selected-evidence chat, personal suggestion, isolated PDF extraction and the full Fusion/WebView workflow. Windows remains frozen.
+- Installed identity: `1.2.0` build54, manifest `release_status=candidate`, core commit `71f5ddf`. It is not the stable release. Build24 remains the verified rollback.
+- Verified in this release batch: Librarian, selected-evidence chat and personal suggestion in the installed App; an isolated one-page PDF extraction with two real model calls; 1,127 shared tests (80 explicit skips), 308 macOS tests; first/repeat official-package import; and a path-free official PDF lease from the real active package.
+- Remaining ordered gates: unlock the Mac and complete the installed WebView official `search → evidence → PDF → return` chain; then restore the official Table 3 source-local table image/verified structure without fabrication; then run the final installed workflow and release gates.
+- Release rule: overwrite build54 for the whole batch. Do not create build55, DMG, UserKit or another persistent release worktree for an isolated fix. Allocate/finalize a release artifact only after the complete installed-App checklist passes.
+- The temporary build54 worktree and two temporary install rollback copies were removed after identity verification, releasing about 1.9GB. The unknown-database build49 worktree remains protected. Windows remains frozen.
 - Production DB SHA-256 is `0389a5aa0faf4967696e3c3a5a574eaaf0bec08a34f48c69b98f50c705aa80b0`; keep it and `paper_056` user artifacts untracked and untouched.
 
 The build27 notes below are historical only and must not be used as current release authority.

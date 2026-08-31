@@ -5,7 +5,7 @@ Status: mandatory release gate, not a release claim.
 Baseline evidence:
 
 - 0.5.1 build 6, source checkpoint `63b34f2`, was transactionally installed and exercised on macOS on 2026-08-25.
-- The installed candidate is Auto Research 1.2.0 build53 (`release_status=candidate`, core commit `d41f9d1`). Real user testing has rejected it because audited P0 flows remain broken. Current source fixes stay on one unnumbered candidate; no new build is assigned until the complete WebView walkthrough and four AI workflows pass. Build24 remains the verified rollback.
+- The installed candidate is Auto Research 1.2.0 build54 (`release_status=candidate`, core commit `71f5ddf`). Real Librarian, selected-evidence, personal-suggestion and isolated one-page extraction checks have passed in this batch, as has the real active official-package backend PDF lease. The installed WebView official PDF click/return chain and official table/figure display remain open; no build55 or stable claim is allowed until the complete walkthrough passes. Build24 remains the verified rollback.
 - The production evidence database and the isolated `paper_056` recovery directory are outside this audit and must not be used by tests or builds.
 - Windows remains frozen until the Mac workflow is accepted.
 
