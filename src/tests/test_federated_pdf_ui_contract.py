@@ -19,13 +19,13 @@ class FederatedPdfUIContractTests(unittest.TestCase):
         )
 
     def test_transfer_literature_pdf_uses_only_path_free_identity(self) -> None:
-        self.assertIn('collectionKind:sourceScope==="private"?cleanText(raw?.collection_kind,80):""', self.fusion)
-        self.assertIn('pdfAvailable:sourceScope==="private"&&raw?.pdf_available===true', self.fusion)
+        self.assertIn('collectionKind=["official","private"].includes(sourceScope)?cleanText(raw?.collection_kind,80):""', self.fusion)
+        self.assertIn('pdfAvailable=["official","private"].includes(sourceScope)&&collectionKind==="literature_collection"&&raw?.pdf_available===true', self.fusion)
         self.assertIn('row.collectionKind==="literature_collection"', self.fusion)
         self.assertIn("row.sourceId", self.fusion)
         self.assertIn("row.paperUid", self.fusion)
         self.assertIn(
-            'federated-pdf?source_id=${encodeURIComponent(row.sourceId)}&paper_uid=${encodeURIComponent(row.paperUid)}',
+            'federated-pdf?source_scope=${encodeURIComponent(row.sourceScope)}&source_id=${encodeURIComponent(row.sourceId)}&paper_uid=${encodeURIComponent(row.paperUid)}',
             self.fusion,
         )
         self.assertNotIn("raw?.pdf_path", self.fusion)

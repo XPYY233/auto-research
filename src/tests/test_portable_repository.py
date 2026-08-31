@@ -229,10 +229,15 @@ class PortableRepositoryTests(unittest.TestCase):
         self.assertEqual(row["entity_type"], "item")
         self.assertEqual(row["source_scope"], "official")
         self.assertEqual(row["source_id"], "official-fusion-preview")
+        self.assertEqual(row["collection_kind"], "literature_collection")
+        self.assertFalse(row["pdf_available"])
         self.assertEqual(row["article_title"], self.paper["title"])
         self.assertEqual(row["meaning"], "辐照注量")
         forbidden = {"paper_id", "item_id", "zotero_key", "pdf_path", "reviewer"}
         self.assertTrue(forbidden.isdisjoint(row))
+        detail = repo.get_entity(row["entity_uid"])
+        self.assertEqual(detail["collection_kind"], "literature_collection")
+        self.assertFalse(detail["pdf_available"])
 
     def test_same_public_input_produces_same_database_bytes(self) -> None:
         first = self.build("first")

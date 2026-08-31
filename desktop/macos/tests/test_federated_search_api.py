@@ -93,11 +93,18 @@ class _BrokenSource:
 
 
 class _PdfLease:
-    source_id = "literature-test"
-    paper_uid = "paper-test"
     media_type = "application/pdf"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        source_scope: str = "private",
+        source_id: str = "literature-test",
+        paper_uid: str = "paper-test",
+    ) -> None:
+        self.source_scope = source_scope
+        self.source_id = source_id
+        self.paper_uid = paper_uid
         self._payload = io.BytesIO(b"%PDF-1.7\n%%EOF\n")
         self.size_bytes = len(self._payload.getvalue())
         self.closed = False
@@ -111,7 +118,7 @@ class _PdfLease:
     def public_metadata(self):
         return {
             "schema_version": "private-pdf-lease-v1",
-            "source_scope": "private",
+            "source_scope": self.source_scope,
             "source_id": self.source_id,
             "paper_uid": self.paper_uid,
             "size_bytes": self.size_bytes,
@@ -149,6 +156,29 @@ class _PdfSource:
         if paper_uid != "paper-test":
             return None
         self.last_lease = _PdfLease()
+        return self.last_lease
+
+
+class _OfficialPdfSource(_Repository):
+    def __init__(self) -> None:
+        document = _document("item", "official-item-pdf")
+        document.update(
+            {
+                "paper_uid": "paper-test",
+                "collection_kind": "literature_collection",
+                "pdf_available": True,
+            }
+        )
+        super().__init__((document,))
+        self.last_lease = None
+
+    def open_pdf(self, paper_uid):
+        if paper_uid != "paper-test":
+            return None
+        self.last_lease = _PdfLease(
+            source_scope="official",
+            source_id="official-preview",
+        )
         return self.last_lease
 
 
@@ -369,7 +399,8 @@ class DesktopFederatedSearchTests(unittest.TestCase):
             )
         )
         handler = _Handler(
-            "/api/desktop/federated-pdf?source_id=literature-test&paper_uid=paper-test"
+            "/api/desktop/federated-pdf?source_scope=private"
+            "&source_id=literature-test&paper_uid=paper-test"
         )
         self.assertTrue(self.api.handle_get(handler))
         self.assertEqual(handler.status, HTTPStatus.OK)
@@ -384,6 +415,26 @@ class DesktopFederatedSearchTests(unittest.TestCase):
         )
         self.assertTrue(self.api.handle_get(invalid))
         self.assertEqual(invalid.responses[0][1], HTTPStatus.BAD_REQUEST)
+
+    def test_official_pdf_requires_explicit_official_source_identity(self) -> None:
+        source = _OfficialPdfSource()
+        self.service.install_official_repository(_active(), source)
+        handler = _Handler(
+            "/api/desktop/federated-pdf?source_scope=official"
+            "&source_id=official-preview&paper_uid=paper-test"
+        )
+        self.assertTrue(self.api.handle_get(handler))
+        self.assertEqual(handler.status, HTTPStatus.OK)
+        self.assertEqual(handler.headers["Content-Type"], "application/pdf")
+        self.assertEqual(handler.wfile.getvalue(), b"%PDF-1.7\n%%EOF\n")
+        self.assertTrue(source.last_lease.closed)
+
+        wrong_scope = _Handler(
+            "/api/desktop/federated-pdf?source_scope=private"
+            "&source_id=official-preview&paper_uid=paper-test"
+        )
+        self.assertTrue(self.api.handle_get(wrong_scope))
+        self.assertEqual(wrong_scope.responses[0][1], HTTPStatus.NOT_FOUND)
 
     def test_invalid_filters_and_unknown_routes_are_bounded(self) -> None:
         self.service.install_official_repository(_active(), _Repository())
