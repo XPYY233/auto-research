@@ -45,7 +45,7 @@ _PAYLOAD_KEYS = frozenset({
     "initial_content_fingerprint",
 })
 _PLANNER_ID = "existing_literature_stage_planner"
-_PLANNER_VERSION = "v1"
+_PLANNER_VERSION = "v2"
 _EXECUTOR_ID = "literature_extraction_executor"
 _EXECUTOR_VERSION = "v1"
 _STAGE_ACTIVITY_CODES = {
@@ -80,6 +80,7 @@ _CHECKPOINT_ERROR_GUIDANCE = {
     "literature_checkpoint_corrupt": ("checkpoint_integrity", "restart_extraction"),
     "literature_checkpoint_store_unavailable": ("checkpoint", "retry_current_stage"),
     "literature_checkpoint_budget_exhausted": ("budget", "restart_extraction"),
+    "literature_checkpoint_policy_changed": ("checkpoint_policy", "restart_extraction"),
     "literature_checkpoint_lease_lost": ("checkpoint", "retry_current_stage"),
     "literature_call_replayed": ("checkpoint_integrity", "restart_extraction"),
     "literature_call_outcome_unknown": ("provider_call", "review_call_outcome"),
@@ -352,6 +353,13 @@ class LiteratureExtractionBusinessExecutor:
         state = decode_execution_state(checkpoint.private_payload)
         decoded = _decode_checkpoint_job_state(state.job_state)
         if (
+            manifest.max_calls != action.max_calls
+            or manifest.max_tokens != action.max_tokens
+        ):
+            raise LiteratureTaskCheckpointError(
+                "literature_checkpoint_policy_changed"
+            )
+        if (
             manifest.task_id != _checkpoint_task_id(job_token)
             or manifest.provider_id != action.provider_id
             or manifest.runtime_revision != action.runtime_revision
@@ -359,8 +367,6 @@ class LiteratureExtractionBusinessExecutor:
             or manifest.task_models != tuple(action.task_models)
             or manifest.executor_id != _EXECUTOR_ID
             or manifest.executor_version != _EXECUTOR_VERSION
-            or manifest.max_calls != action.max_calls
-            or manifest.max_tokens != action.max_tokens
             or decoded.token != job_token
             or manifest.pdf_snapshot_fingerprint
             != decoded.snapshot.get("content_fingerprint")

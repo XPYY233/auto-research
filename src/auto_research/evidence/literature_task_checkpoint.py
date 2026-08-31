@@ -55,6 +55,7 @@ class LiteratureTaskCheckpointError(RuntimeError):
         "literature_checkpoint_corrupt": "提取任务检查点无法安全读取。",
         "literature_checkpoint_store_unavailable": "提取任务检查点存储暂时不可用。",
         "literature_checkpoint_budget_exhausted": "提取任务预算不足。",
+        "literature_checkpoint_policy_changed": "提取任务使用的旧预算策略已停用，请从当前 PDF 重新开始。",
         "literature_checkpoint_lease_lost": "提取任务执行权已失效。",
         "literature_call_replayed": "该模型调用已经处理。",
         "literature_call_outcome_unknown": "上一次模型调用结果未知，不能自动重试。",

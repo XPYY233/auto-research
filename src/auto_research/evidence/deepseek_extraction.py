@@ -25,6 +25,10 @@ from .extraction_benchmark import compare_candidates
 from .experiment_types import classify_experiment_types, extraction_focuses_for_profile
 from .fact_model import classify_nonreportable_row
 from .learning import build_learning_guidance
+from .literature_extraction_budget import (
+    MAX_EXTRACTED_RECORDS_PER_RESPONSE,
+    VERIFICATION_BATCH_SIZE,
+)
 from .six_column import (
     add_qualitative_item,
     collect_learning_samples,
@@ -36,7 +40,6 @@ from .six_column import (
 
 RUN_DIR = DATA_DIR / "evidence" / "deepseek_runs"
 VERDICTS = {"supported", "unsupported", "ambiguous"}
-VERIFICATION_BATCH_SIZE = 20
 LOCALIZATION_BATCH_SIZE = 8
 MAX_EXTRACTION_CHUNK_CHARS = 60_000
 MAX_VERIFICATION_BATCH_CHARS = 48_000
@@ -389,6 +392,7 @@ Rules:
 14. A table cell written as nominal (measured) contains two distinct data. Emit separate nominal and measured rows, each with one value and an explicit meaning/context label.
 15. value_text must contain only the reported numeric value, inequality, range, sequence, or allowed table marker. Put variable labels such as ΔH_mix, δ, Tm, or U in meaning, never as a "label = value" prefix.
 16. For computational_modeling papers, outputs must be calculated or derived, never measured. For review_report papers, values attributed to cited studies are secondary evidence and must not be published as this paper's direct data. For mixed papers, explicitly separate experimental measurements from computed outputs.
+17. Return at most {MAX_EXTRACTED_RECORDS_PER_RESPONSE} records across data and findings for this page block. If a dense table or page contains more, keep the most atomic directly supported records and create a pending task stating that the dense source requires additional human review; never truncate a value or invent a summary row.
 This pass has a specific recall focus: {focus}
 """
     if learning_guidance:
@@ -753,8 +757,15 @@ def _validated_candidates(payload: Any, chunk_pages: set[int], chunk_index: int,
     candidates: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     required_strings = ("value_text", "meaning", "context_explanation", "source_excerpt")
+    public_fields = (
+        "value_text", "meaning", "unit", "context_explanation", "source_page",
+        "source_locator", "source_excerpt", "evidence_type", "source_precision",
+    )
     for index, raw in enumerate(payload["data"]):
-        item = dict(raw) if isinstance(raw, dict) else {}
+        item = (
+            {field: raw.get(field) for field in public_fields}
+            if isinstance(raw, dict) else {}
+        )
         errors: list[str] = []
         for field in required_strings:
             if not isinstance(item.get(field), str) or not item[field].strip():
@@ -819,8 +830,15 @@ def _validated_findings(payload: Any, chunk: list[dict[str, Any]], chunk_index: 
     page_text = {int(page["page"]): str(page.get("text") or "") for page in chunk}
     accepted: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
+    public_fields = (
+        "finding_text", "meaning", "context_explanation", "source_page",
+        "source_locator", "source_excerpt", "source_precision",
+    )
     for index, raw in enumerate(raw_findings):
-        item = dict(raw) if isinstance(raw, dict) else {}
+        item = (
+            {field: raw.get(field) for field in public_fields}
+            if isinstance(raw, dict) else {}
+        )
         item["candidate_id"] = f"f{chunk_index:02d}p{pass_index}-{index:04d}"
         errors: list[str] = []
         for field in ("finding_text", "meaning", "context_explanation", "source_excerpt"):

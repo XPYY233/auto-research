@@ -33,6 +33,7 @@ from .literature_job_persistence import (
     decode_job_private_state,
     encode_job_private_state,
 )
+from .literature_extraction_budget import INITIAL_MAX_TOKENS_PER_CALL
 from .literature_finalizer_port import TrustedAtomicLiteratureFinalizer
 
 
@@ -703,7 +704,7 @@ class LiteratureExtractionJobStore:
                     call_id=f"{branch}-chunk-{chunk_index}-focus-1",
                     task="extraction",
                     messages=messages,
-                    max_tokens=16_000,
+                    max_tokens=INITIAL_MAX_TOKENS_PER_CALL,
                     options={"thinking": False, "temperature": 0.1 if branch == "a" else 0.45},
                 ))
         now_value = self._clock.now()

@@ -34,6 +34,7 @@ from .literature_extraction_job import (
 )
 from .literature_checkpoint_runtime import LiteratureCheckpointRuntime
 from .literature_extraction_stages import ExistingLiteratureStagePlanner
+from .literature_extraction_budget import task_budget_for_page_blocks
 from .literature_task_checkpoint import LiteratureTaskCheckpointError
 from .six_column import collect_learning_samples, get_six_extraction_status
 
@@ -201,13 +202,26 @@ class LiteratureExtractionBusinessAssembler:
             stage = self._restore_continuation_stage(token, original=exc)
         self._assert_shared_policy(stage)
         calls = _prepared_calls(stage)
+        summary = self._store.summary(token, session_id=self._session_id)
+        sending_scope = summary.get("sending_scope")
+        try:
+            budget = task_budget_for_page_blocks(
+                sending_scope["page_block_count"]
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BusinessActionError("business_action_invalid") from exc
+        if (
+            budget.max_calls > LITERATURE_POLICY_MAX_CALLS
+            or budget.max_tokens > LITERATURE_POLICY_MAX_TOKENS
+        ):
+            raise BusinessActionError("business_action_invalid")
         payload = {
             "job_handle": token,
             "stage_fingerprint": stage.stage_fingerprint,
             "stage": stage.name,
             "call_count": len(stage.calls),
-            "task_max_calls": LITERATURE_POLICY_MAX_CALLS,
-            "task_max_tokens": LITERATURE_POLICY_MAX_TOKENS,
+            "task_max_calls": budget.max_calls,
+            "task_max_tokens": budget.max_tokens,
             "planner_id": _PLANNER_ID,
             "planner_version": _PLANNER_VERSION,
             "initial_content_fingerprint": stage.input_fingerprint,
@@ -223,8 +237,8 @@ class LiteratureExtractionBusinessAssembler:
             outbound=payload,
             content_units=(unit,),
             estimated_calls=len(calls),
-            max_calls=LITERATURE_POLICY_MAX_CALLS,
-            max_tokens=LITERATURE_POLICY_MAX_TOKENS,
+            max_calls=budget.max_calls,
+            max_tokens=budget.max_tokens,
             call_plan=calls,
         )
 

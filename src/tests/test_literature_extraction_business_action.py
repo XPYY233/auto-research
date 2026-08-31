@@ -4,6 +4,7 @@ import json
 import hashlib
 import hmac
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import fitz
@@ -38,6 +39,9 @@ from auto_research.evidence.literature_extraction_job import (
 )
 from auto_research.evidence.literature_extraction_checkpoint_workflow import (
     _project_literature_error,
+)
+from auto_research.evidence.literature_extraction_budget import (
+    task_budget_for_page_blocks,
 )
 from auto_research.evidence.literature_extraction_stages import (
     ExistingLiteratureStagePlanner,
@@ -367,8 +371,11 @@ def test_initial_request_is_server_started_with_fixed_bounds_and_no_write(eviden
     draft = assembler.assemble({"paper_id": paper_id, "force_rescan": False})
     assert draft.outbound["stage"] == "initial_focus"
     assert draft.estimated_calls == len(draft.call_plan)
-    assert draft.max_calls == 512
-    assert draft.max_tokens == 8_200_000
+    assert draft.max_calls == 12
+    assert draft.max_tokens == 92_000
+    assert draft.outbound["task_max_calls"] == 12
+    assert draft.outbound["task_max_tokens"] == 92_000
+    assert draft.outbound["planner_version"] == "v2"
     assert draft.outbound["initial_content_fingerprint"]
     assert store.summary(draft.outbound["job_handle"], session_id="owner")[
         "sending_scope"
@@ -379,6 +386,21 @@ def test_initial_request_is_server_started_with_fixed_bounds_and_no_write(eviden
     retry = assembler.assemble({"paper_id": paper_id, "force_rescan": False})
     assert retry.outbound["job_handle"] != draft.outbound["job_handle"]
     assert _counts(db) == before
+
+
+def test_task_budget_uses_actual_frozen_page_blocks_and_stays_below_policy() -> None:
+    assert task_budget_for_page_blocks(1).__dict__ == {
+        "max_calls": 12, "max_tokens": 92_000,
+    }
+    assert task_budget_for_page_blocks(2).__dict__ == {
+        "max_calls": 20, "max_tokens": 164_000,
+    }
+    assert task_budget_for_page_blocks(4).__dict__ == {
+        "max_calls": 36, "max_tokens": 308_000,
+    }
+    assert task_budget_for_page_blocks(16).__dict__ == {
+        "max_calls": 132, "max_tokens": 1_172_000,
+    }
 
 
 def test_starter_covers_supported_article_without_eight_page_truncation(tmp_path: Path) -> None:
@@ -393,6 +415,11 @@ def test_starter_covers_supported_article_without_eight_page_truncation(tmp_path
     )
     assert summary["sending_scope"]["pdf_page_count"] == 10
     assert summary["sending_scope"]["page_block_count"] == 3
+    draft = LiteratureExtractionBusinessAssembler(store, session_id="owner").assemble(
+        {"job_token": summary["job_token"]}
+    )
+    assert draft.max_calls == 28
+    assert draft.max_tokens == 236_000
 
 
 def test_starter_rejects_oversized_article_instead_of_silently_truncating(tmp_path: Path) -> None:
@@ -548,6 +575,43 @@ def test_restart_preflight_restores_authenticated_job_without_lease_or_model(
     )
     assert recovered.lease_owner_digest is None
     assert recovered.state == "authorized"
+
+
+def test_legacy_global_budget_checkpoint_requires_zero_call_restart(evidence) -> None:
+    db, paper_id = evidence
+    root = db.path.parent
+    store = _persistent_job_store(root / "job-state")
+    runtime = _checkpoint_runtime(root / "checkpoint-state")
+    draft = LiteratureExtractionBusinessAssembler(
+        store,
+        session_id="owner",
+        starter=EvidenceDBLiteratureJobStarter(db, store),
+        checkpoint_runtime=runtime,
+    ).assemble({"paper_id": paper_id, "force_rescan": False})
+    action = _prepared_action(draft)
+    checkpoint = _start_checkpoint(runtime, store, action, session_id="owner")
+    legacy = replace(
+        checkpoint,
+        manifest=replace(
+            checkpoint.manifest,
+            max_calls=512,
+            max_tokens=8_200_000,
+        ),
+    )
+    executor = LiteratureExtractionBusinessExecutor(
+        store,
+        ExistingLiteratureStagePlanner(),
+        session_id="owner",
+        checkpoint_runtime=runtime,
+    )
+    with pytest.raises(LiteratureTaskCheckpointError) as rejected:
+        executor._assert_checkpoint_binding(
+            checkpoint=legacy,
+            action=action,
+            job_token=draft.outbound["job_handle"],
+        )
+    assert rejected.value.code == "literature_checkpoint_policy_changed"
+    assert rejected.value.public_dict()["retryable"] is False
 
 
 def test_succeeded_receipt_prefix_resumes_budget_without_duplicate_provider_call(

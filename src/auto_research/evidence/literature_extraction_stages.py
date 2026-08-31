@@ -26,6 +26,15 @@ from .literature_extraction_job import (
     _canonical_bytes,
     _plain,
 )
+from .literature_extraction_budget import (
+    COVERAGE_GAP_MAX_TOKENS_PER_CALL,
+    MAX_EXTRACTED_RECORDS_PER_RESPONSE,
+    MAX_THIRD_REVIEW_CALLS_PER_TASK,
+    MAX_VERIFICATION_BATCHES_PER_BRANCH_BLOCK,
+    THIRD_REVIEW_BATCH_SIZE,
+    THIRD_REVIEW_MAX_TOKENS_PER_CALL,
+    VERIFICATION_MAX_TOKENS_PER_CALL,
+)
 from .quality_pipeline import (
     DEFAULT_THRESHOLD,
     _apply_third_review_payloads,
@@ -38,6 +47,19 @@ from .quality_pipeline import (
 
 
 BRANCHES = ("a", "b")
+
+
+def _assert_extraction_payload_bounds(payload: object) -> None:
+    if not isinstance(payload, Mapping):
+        return
+    data = payload.get("data")
+    findings = payload.get("findings", [])
+    if not isinstance(data, Sequence) or isinstance(data, (str, bytes)):
+        return
+    if not isinstance(findings, Sequence) or isinstance(findings, (str, bytes)):
+        return
+    if len(data) + len(findings) > MAX_EXTRACTED_RECORDS_PER_RESPONSE:
+        raise ValueError("extraction response exceeds the reviewed record limit")
 
 
 def _fingerprint(value: Any) -> str:
@@ -179,6 +201,7 @@ class ExistingLiteratureStagePlanner:
     def _initial(self, context: LiteratureStageContext, raw_results) -> PlannedLiteratureStage:
         state = _empty_branch_state(context)
         for call, payload in zip(context.stage.calls, raw_results, strict=True):
+            _assert_extraction_payload_bounds(payload)
             branch, chunk_index, pass_index = _call_parts(call.call_id)
             chunk = _chunk(context, chunk_index)
             candidates, rejected = _validated_candidates(
@@ -209,6 +232,7 @@ class ExistingLiteratureStagePlanner:
                 chunk_state = state[branch]["chunks"][chunk_index - 1]
                 reasons = _coverage_gap_reasons(chunk, chunk_state)
                 chunk_state["coverage_gap_reasons"] = list(reasons)
+                chunk_state["coverage_incomplete_reasons"] = list(reasons)
                 if not reasons:
                     continue
                 existing = chunk_state["candidates"]
@@ -219,7 +243,7 @@ class ExistingLiteratureStagePlanner:
                         paper, [_plain(page) for page in chunk], existing,
                         learning_guidance=context.learning_guidance,
                     ),
-                    max_tokens=12_000,
+                    max_tokens=COVERAGE_GAP_MAX_TOKENS_PER_CALL,
                     options={"thinking": False, "temperature": 0.1 if branch == "a" else 0.45},
                 ))
         if calls:
@@ -229,6 +253,7 @@ class ExistingLiteratureStagePlanner:
     def _coverage(self, context: LiteratureStageContext, raw_results) -> PlannedLiteratureStage:
         state = _latest(context, "initial_focus")
         for call, payload in zip(context.stage.calls, raw_results, strict=True):
+            _assert_extraction_payload_bounds(payload)
             branch, chunk_index, pass_index = _call_parts(call.call_id)
             chunk = _chunk(context, chunk_index)
             candidates, rejected = _validated_candidates(
@@ -252,6 +277,11 @@ class ExistingLiteratureStagePlanner:
             if not isinstance(pending, Sequence) or isinstance(pending, (str, bytes)):
                 raise ValueError("pending_tasks must be a list")
             target["pending_tasks"].extend(_plain(item) for item in pending if isinstance(item, Mapping))
+        for branch in BRANCHES:
+            for chunk_index, chunk_map in enumerate(state[branch]["chunks"], start=1):
+                chunk_map["coverage_incomplete_reasons"] = list(
+                    _coverage_gap_reasons(_chunk(context, chunk_index), chunk_map)
+                )
         return self._plan_verification(context, state)
 
     def _plan_verification(
@@ -261,28 +291,45 @@ class ExistingLiteratureStagePlanner:
         batch_map: list[dict[str, Any]] = []
         all_pages = [_plain(page) for page in context.pages]
         for branch in BRANCHES:
-            local_passed: list[dict[str, Any]] = []
             for chunk_index, chunk_map in enumerate(state[branch]["chunks"], start=1):
                 chunk = _chunk(context, chunk_index)
                 page_by_number = {int(page["page"]): str(page["text"]) for page in chunk}
+                local_passed: list[dict[str, Any]] = []
                 for item in chunk_map["candidates"]:
                     item["local_evidence"] = _evidence_check(
                         item, page_by_number[int(item["source_page"])]
                     )
                     if item["local_evidence"]["passed"]:
                         local_passed.append(item)
-            for batch_index, batch in enumerate(_verification_batches(local_passed), start=1):
-                calls.append(FrozenModelCall.create(
-                    call_id=f"{branch}-verify-{batch_index}",
-                    task="verification",
-                    messages=_verification_messages(all_pages, batch),
-                    max_tokens=4_000,
-                    options={"thinking": False, "temperature": 0.0},
-                ))
-                batch_map.append({
-                    "branch": branch,
-                    "candidate_ids": [item["candidate_id"] for item in batch],
-                })
+                batches = _verification_batches(local_passed)
+                selected = batches[:MAX_VERIFICATION_BATCHES_PER_BRANCH_BLOCK]
+                overflow = [
+                    item
+                    for batch in batches[MAX_VERIFICATION_BATCHES_PER_BRANCH_BLOCK:]
+                    for item in batch
+                ]
+                chunk_map["verification_overflow_candidate_ids"] = [
+                    item["candidate_id"] for item in overflow
+                ]
+                if overflow:
+                    chunk_map["pending_tasks"].append({
+                        "task_type": "ambiguous_condition",
+                        "description": "候选数量超过自动核验预算，剩余记录必须人工审核",
+                        "locator": f"PDF pages {chunk[0]['page']}-{chunk[-1]['page']}",
+                    })
+                for batch_index, batch in enumerate(selected, start=1):
+                    calls.append(FrozenModelCall.create(
+                        call_id=f"{branch}-chunk-{chunk_index}-verify-{batch_index}",
+                        task="verification",
+                        messages=_verification_messages(all_pages, batch),
+                        max_tokens=VERIFICATION_MAX_TOKENS_PER_CALL,
+                        options={"thinking": False, "temperature": 0.0},
+                    ))
+                    batch_map.append({
+                        "branch": branch,
+                        "chunk_index": chunk_index,
+                        "candidate_ids": [item["candidate_id"] for item in batch],
+                    })
         state["verification_batches"] = batch_map
         return PlannedLiteratureStage(
             "coverage_verification", state, tuple(calls), _fingerprint(state)
@@ -314,17 +361,37 @@ class ExistingLiteratureStagePlanner:
         for branch in BRANCHES:
             verified = []
             findings = []
+            overflow_candidates = []
             for chunk_map in state[branch]["chunks"]:
+                overflow_ids = set(
+                    chunk_map.get("verification_overflow_candidate_ids") or []
+                )
                 for item in chunk_map["candidates"]:
-                    item.setdefault("ai_verification", {
-                        "candidate_id": item["candidate_id"], "verdict": "unsupported",
-                        "reason": item["local_evidence"]["reason"],
-                    })
-                    if item["local_evidence"]["passed"] and item["ai_verification"]["verdict"] == "supported":
+                    if item["candidate_id"] in overflow_ids:
+                        item["ai_verification"] = {
+                            "candidate_id": item["candidate_id"],
+                            "verdict": "unsupported",
+                            "reason": "超出自动核验预算，必须人工审核",
+                        }
+                        overflow_candidates.append(item)
+                    else:
+                        item.setdefault("ai_verification", {
+                            "candidate_id": item["candidate_id"],
+                            "verdict": "unsupported",
+                            "reason": item["local_evidence"]["reason"],
+                        })
+                    if (
+                        item["candidate_id"] not in overflow_ids
+                        and item["local_evidence"]["passed"]
+                        and item["ai_verification"]["verdict"] == "supported"
+                    ):
                         verified.append(item)
                 findings.extend(chunk_map["findings"])
             state[branch]["verified_candidates"] = _deduplicate(verified)
             state[branch]["qualitative_findings"] = _deduplicate_findings(findings)
+            state[branch]["verification_overflow_candidates"] = _deduplicate(
+                overflow_candidates
+            )
         return PlannedLiteratureStage(
             "adversarial_branches", state, (), _fingerprint(state)
         )
@@ -334,27 +401,40 @@ class ExistingLiteratureStagePlanner:
         if raw_results:
             raise ValueError("adversarial comparison is a local stage")
         records = self._compare(state)
+        coverage_incomplete = any(
+            chunk_map.get("coverage_incomplete_reasons")
+            for branch in BRANCHES
+            for chunk_map in state[branch]["chunks"]
+        )
         low_records = [
             record for record in records
             if record["gate_status"] == "manual_review"
             and not _requires_human_localization(record)
         ]
         pages = {int(page["page"]): str(page["text"]) for page in context.pages}
+        review_batches = [
+            low_records[start:start + THIRD_REVIEW_BATCH_SIZE]
+            for start in range(0, len(low_records), THIRD_REVIEW_BATCH_SIZE)
+        ][:MAX_THIRD_REVIEW_CALLS_PER_TASK]
         calls = tuple(
             FrozenModelCall.create(
                 call_id=f"third-review-{index + 1}",
                 task="verification",
                 messages=_third_review_messages(batch, pages),
-                max_tokens=5_000,
+                max_tokens=THIRD_REVIEW_MAX_TOKENS_PER_CALL,
                 options={"thinking": False, "temperature": 0.0},
             )
-            for index, batch in enumerate(
-                [low_records[start:start + 10] for start in range(0, len(low_records), 10)]
-            )
+            for index, batch in enumerate(review_batches)
         )
         result = (
-            {"records": records, "threshold": self._threshold}
-            if calls else self._validated_result(records)
+            {
+                "records": records,
+                "threshold": self._threshold,
+                "coverage_incomplete": coverage_incomplete,
+            }
+            if calls else self._validated_result(
+                records, coverage_incomplete=coverage_incomplete
+            )
         )
         next_stage = "third_review" if calls else "validated"
         return PlannedLiteratureStage(next_stage, result, calls, _fingerprint(result))
@@ -366,11 +446,14 @@ class ExistingLiteratureStagePlanner:
             record for record in records
             if record["gate_status"] == "manual_review"
             and not _requires_human_localization(record)
-        ]
+        ][:MAX_THIRD_REVIEW_CALLS_PER_TASK * THIRD_REVIEW_BATCH_SIZE]
         _apply_third_review_payloads(
             low_records, [_plain(item) for item in raw_results], self._threshold
         )
-        result = self._validated_result(records)
+        result = self._validated_result(
+            records,
+            coverage_incomplete=bool(state.get("coverage_incomplete")),
+        )
         return PlannedLiteratureStage("validated", result, (), _fingerprint(result))
 
     def _compare(self, state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -403,6 +486,17 @@ class ExistingLiteratureStagePlanner:
                     )
                     self._enforce_human_localization(record)
                     records.append(record)
+        for branch in BRANCHES:
+            for candidate in state[branch].get(
+                "verification_overflow_candidates", []
+            ):
+                record = _make_record(
+                    "data", candidate, None, 0.0, f"extractor_{branch}",
+                    self._threshold,
+                )
+                record["gate_status"] = "manual_review"
+                record["gate_reason"] = "超出自动核验预算，必须人工审核"
+                records.append(record)
         return records
 
     @staticmethod
@@ -411,7 +505,12 @@ class ExistingLiteratureStagePlanner:
             record["gate_status"] = "manual_review"
             record["gate_reason"] = "中文物理意义或实验条件缺失，必须人工审核"
 
-    def _validated_result(self, records: list[dict[str, Any]]) -> dict[str, Any]:
+    def _validated_result(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        coverage_incomplete: bool = False,
+    ) -> dict[str, Any]:
         allowed = {"dual_pass", "third_pass", "manual_review"}
         if any(record.get("gate_status") not in allowed for record in records):
             raise ValueError("quality result contains an unsupported gate")
@@ -419,8 +518,8 @@ class ExistingLiteratureStagePlanner:
         return {
             "schema_version": "literature-extraction-validated-v1",
             "coverage": {
-                "numeric_items": True,
-                "qualitative_findings": True,
+                "numeric_items": not coverage_incomplete,
+                "qualitative_findings": not coverage_incomplete,
                 "visual_evidence_ready": False,
                 "atomic_commit_ready": False,
             },
