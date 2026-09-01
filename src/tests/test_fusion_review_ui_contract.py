@@ -645,6 +645,43 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
             self.assertIn(marker, self.runtime)
         self.assertNotIn('if(previous==="paper"){state.literatureAction+=1', self.runtime)
 
+    def test_literature_job_and_pdf_picker_cancellation_are_safe_and_bounded(self) -> None:
+        for marker in (
+            '/^\\/api\\/desktop\\/ai\\/jobs\\/ai_job_[A-Za-z0-9_-]{24,160}\\/cancel$/.test(path)',
+            'async function cancelLiteratureJob()',
+            'body:"{}"',
+            '正在安全停止；若模型请求已发出，会先保存结果回执，不会强制中断或重复收费。',
+            '已取消；现有数据与收费回执已保留，可从当前论文重新开始。',
+            'pdfInput?.addEventListener("cancel"',
+            'pdfInput?.addEventListener("change",handlePDFFileSelection)',
+            '已取消选择；未导入文件、未调用模型。',
+        ):
+            self.assertIn(marker, self.runtime)
+        self.assertEqual(self.runtime.count('addEventListener("cancel"'), 1)
+
+        program = f"""
+const assert=require('assert'),fs=require('fs');
+class El{{constructor(){{this.textContent='';this.hidden=false;this.disabled=false;this.dataset={{}};this.children=[];this.listeners={{}};this.value='';}}setAttribute(){{}}append(node){{this.children.push(node);}}addEventListener(type,fn){{(this.listeners[type]??=[]).push(fn);}}querySelector(selector){{return selector==='.fusion-ai-progress-main > header'?header:null;}}}}
+const header=new El(),progress=new El(),status=new El(),operation=new El(),ids={{'#fusion-literature-progress':progress,'#fusion-literature-action-status':status,'#fusion-status-operation':operation}};
+globalThis.document={{readyState:'loading',documentElement:{{dataset:{{}},style:{{setProperty(){{}}}}}},body:{{dataset:{{}}}},querySelector:selector=>ids[selector]||(selector==='#fusion-stop-extraction'?header.children.find(node=>node.id==='fusion-stop-extraction')||null:null),querySelectorAll:()=>[],addEventListener(){{}},createElement:()=>new El()}};
+globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.addEventListener=()=>{{}};
+const response=body=>({{ok:true,headers:{{get:()=>null}},json:async()=>body}}),jobId='ai_job_abcdefghijklmnopqrstuvwxyz',running={{schema_version:'ai-execution-job-v1',scope:'literature_extraction',job_id:jobId,status:'running',cancel_requested:false,events:[]}},cancelled={{...running,status:'cancelled',cancel_requested:true}};
+let calls=[],finishCancel=null;globalThis.fetch=(url,options={{}})=>{{calls.push([String(url),String(options.method||'GET'),String(options.body||'')]);if(String(url)===`/api/desktop/ai/jobs/${{jobId}}/cancel`)return new Promise(resolve=>{{finishCancel=()=>resolve(response(cancelled));}});throw new Error('unexpected '+url);}};
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
+(async()=>{{
+ api.state.literatureTask.job=running;api.state.literatureTask.jobId=jobId;api.state.literatureTask.status='running';assert(api.syncLiteratureCancelControl());const button=header.children[0];assert(button);assert.equal(button.hidden,false);assert.equal(button.disabled,false);assert.equal(button.textContent,'停止任务');
+ const pending=api.cancelLiteratureJob();assert.equal(button.disabled,true);assert.equal(button.textContent,'正在安全停止…');assert(status.textContent.includes('不会强制中断或重复收费'));assert.equal(await api.cancelLiteratureJob(),false,'a second click must not send another cancel');assert.deepEqual(calls,[[`/api/desktop/ai/jobs/${{jobId}}/cancel`,'POST','{{}}']]);finishCancel();assert.equal(await pending,true);assert.equal(button.hidden,true);assert(status.textContent.includes('现有数据与收费回执已保留'));
+ const terminal=await api.executePrepared('literature_extraction',null,{{existingJob:cancelled}});assert.equal(terminal.schema_version,'ai-execution-cancelled-v1');assert.equal(calls.length,1,'adopting a cancelled job must not prepare, consent, execute or poll');
+ const directory=api.publicLiteratureTaskDirectory({{schema_version:'literature-extraction-task-directory-v1',tasks:[{{resume_token:'',state:'cancelled',stage:'cancelled',paper:{{title:'W-Ta',doi:'10.1/example'}},completed_calls:1,spent_calls:1,max_calls:8,updated_at:20,expires_at:200,next_action:'restart_extraction',receipt:null}}],startup_recovery:{{recovered:1,already_completed:0,skipped_or_blocked:0}},issues:[]}});assert(directory);assert.equal(directory.tasks[0].state,'cancelled');
+ const before=calls.length,input={{value:'unchanged',files:[]}};assert.equal(api.handlePDFFileSelection({{currentTarget:input}}),false);assert.equal(input.value,'');assert.equal(calls.length,before);assert(status.textContent.includes('未导入文件、未调用模型'));input.value='again';assert.equal(api.cancelPDFFileSelection(input),false);assert.equal(input.value,'');assert.equal(calls.length,before);
+ const personal={{schema_version:'ai-execution-job-v1',scope:'personal_suggestion',job_id:'ai_job_personal_abcdefghijklmnop',status:'running',cancel_requested:false,events:[]}};api.state.literatureTask.job=personal;assert.equal(api.syncLiteratureCancelControl(),false);assert.equal(button.hidden,true,'non-literature jobs never expose the stop control');
+}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(
+            ["node", "-e", program], capture_output=True, text=True, timeout=8, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_literature_task_directory_is_ephemeral_and_user_driven(self) -> None:
         for marker in (
             'literatureTaskDirectory:"/api/desktop/ai/actions/literature_extraction/task-directory"',
