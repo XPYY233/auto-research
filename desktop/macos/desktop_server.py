@@ -42,6 +42,7 @@ from personal_table_api import PersonalTableAPI
 from review_queue_api import ReviewQueueAPI
 from search_index_recovery_api import SearchIndexRecoveryAPI
 from table_structure_api import TableStructureAPI
+from workspace_evidence_api import WorkspaceEvidenceAPI
 from desktop_ai_api import MacDesktopAIAPI
 from auto_research.desktop.research_memory import (
     ResearchMemoryError,
@@ -198,6 +199,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     personal_table_api: PersonalTableAPI | None = None
     review_queue_api: ReviewQueueAPI | None = None
     table_structure_api: TableStructureAPI | None = None
+    workspace_evidence_api: WorkspaceEvidenceAPI | None = None
     search_index_recovery_api: SearchIndexRecoveryAPI | None = None
     desktop_ai_api: MacDesktopAIAPI | None = None
     release_info: Mapping[str, object] = RELEASE_INFO
@@ -773,6 +775,11 @@ class DesktopEvidenceHandler(EvidenceHandler):
         ):
             return
         if (
+            self.workspace_evidence_api is not None
+            and self.workspace_evidence_api.handle_get(self)
+        ):
+            return
+        if (
             self.evidence_export_api is not None
             and self.evidence_export_api.handle_get(self)
         ):
@@ -989,6 +996,7 @@ def create_desktop_server(
     personal_table_api: PersonalTableAPI | None = None,
     review_queue_api: ReviewQueueAPI | None = None,
     table_structure_api: TableStructureAPI | None = None,
+    workspace_evidence_api: WorkspaceEvidenceAPI | None = None,
     search_index_recovery_api: SearchIndexRecoveryAPI | None = None,
     desktop_ai_api: MacDesktopAIAPI | None = None,
     release_info: Mapping[str, object] | None = None,
@@ -1021,6 +1029,20 @@ def create_desktop_server(
         )
 
         table_structure_api = TableStructureAPI(WorkspaceTableStructureService(database))
+    if workspace_evidence_api is None:
+        from auto_research.evidence.workspace_evidence_resolver import (
+            WorkspacePublicEvidenceResolver,
+        )
+
+        workspace_evidence_api = WorkspaceEvidenceAPI(
+            WorkspacePublicEvidenceResolver(
+                database,
+                table_structures=getattr(table_structure_api, "service", None),
+                linked_official_tables=getattr(
+                    table_structure_api, "linked_official_service", None
+                ),
+            )
+        )
     if search_index_recovery_api is None:
         search_index_recovery_api = SearchIndexRecoveryAPI(search_index_service)
     if evidence_export_api is None:
@@ -1067,6 +1089,7 @@ def create_desktop_server(
             "personal_table_api": personal_table_api,
             "review_queue_api": review_queue_api,
             "table_structure_api": table_structure_api,
+            "workspace_evidence_api": workspace_evidence_api,
             "search_index_recovery_api": search_index_recovery_api,
             "desktop_ai_api": desktop_ai_api,
             "release_info": dict(release_info or RELEASE_INFO),

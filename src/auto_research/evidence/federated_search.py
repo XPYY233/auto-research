@@ -263,6 +263,19 @@ def validate_public_source_id(value: Any) -> str:
     return source_id
 
 
+def validate_public_projection(value: Any) -> None:
+    """Apply the shared renderer privacy guard to a non-federated projection.
+
+    Some desktop DTOs, such as opaque workspace evidence details, intentionally
+    use a source scope that is not registered in the federated search session.
+    They still must obey the same path, private-identifier, size and nesting
+    limits.  Keeping this small public entry point avoids importing the private
+    recursive implementation from another domain service.
+    """
+
+    _validate_public_value(value, depth=0)
+
+
 def _validate_public_value(
     value: Any,
     *,

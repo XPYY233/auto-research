@@ -433,6 +433,10 @@ def _run_smoke_test(project_root: Path) -> int:
     from desktop_settings_api import DesktopSettingsAPI
     from desktop_settings_store import MacAtomicDesktopSettingsStore
     from table_structure_api import TableStructureAPI
+    from workspace_evidence_api import WorkspaceEvidenceAPI
+    from auto_research.evidence.workspace_evidence_resolver import (
+        WorkspacePublicEvidenceResolver,
+    )
     from auto_research.evidence.table_structure_service import (
         WorkspaceTableStructureService,
     )
@@ -542,6 +546,12 @@ def _run_smoke_test(project_root: Path) -> int:
             consumed_probe.scope == "capability_test"
             and consumed_probe.action_id == consent_probe["action_id"]
         )
+        workspace_table_structures = WorkspaceTableStructureService(database)
+        workspace_linked_tables = WorkspaceOfficialTableLinkService(
+            database,
+            product_services.package_service,
+            product_services.official_table_structure_service,
+        )
         server, _ = create_desktop_server(
             database,
             host="127.0.0.1",
@@ -571,13 +581,16 @@ def _run_smoke_test(project_root: Path) -> int:
             personal_import_api=product_services.personal_import_api,
             personal_table_api=product_services.personal_table_api,
             table_structure_api=TableStructureAPI(
-                WorkspaceTableStructureService(database),
+                workspace_table_structures,
                 official_service=product_services.official_table_structure_service,
-                linked_official_service=WorkspaceOfficialTableLinkService(
+                linked_official_service=workspace_linked_tables,
+            ),
+            workspace_evidence_api=WorkspaceEvidenceAPI(
+                WorkspacePublicEvidenceResolver(
                     database,
-                    product_services.package_service,
-                    product_services.official_table_structure_service,
-                ),
+                    table_structures=workspace_table_structures,
+                    linked_official_tables=workspace_linked_tables,
+                )
             ),
             release_info=_desktop_release_info(),
             session_token=desktop_session_id,
@@ -643,6 +656,10 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     from desktop_settings_api import DesktopSettingsAPI
     from desktop_settings_store import DEFAULT_SETTINGS_PATH, MacAtomicDesktopSettingsStore
     from table_structure_api import TableStructureAPI
+    from workspace_evidence_api import WorkspaceEvidenceAPI
+    from auto_research.evidence.workspace_evidence_resolver import (
+        WorkspacePublicEvidenceResolver,
+    )
     from auto_research.evidence.table_structure_service import (
         WorkspaceTableStructureService,
     )
@@ -714,6 +731,12 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             product_services.personal_file_selection_broker,
             product_services.package_export_destination_broker,
         )
+        workspace_table_structures = WorkspaceTableStructureService(database)
+        workspace_linked_tables = WorkspaceOfficialTableLinkService(
+            database,
+            product_services.package_service,
+            product_services.official_table_structure_service,
+        )
         server, _ = create_desktop_server(
             database,
             host=host,
@@ -739,13 +762,16 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             personal_import_api=product_services.personal_import_api,
             personal_table_api=product_services.personal_table_api,
             table_structure_api=TableStructureAPI(
-                WorkspaceTableStructureService(database),
+                workspace_table_structures,
                 official_service=product_services.official_table_structure_service,
-                linked_official_service=WorkspaceOfficialTableLinkService(
+                linked_official_service=workspace_linked_tables,
+            ),
+            workspace_evidence_api=WorkspaceEvidenceAPI(
+                WorkspacePublicEvidenceResolver(
                     database,
-                    product_services.package_service,
-                    product_services.official_table_structure_service,
-                ),
+                    table_structures=workspace_table_structures,
+                    linked_official_tables=workspace_linked_tables,
+                )
             ),
             release_info=_desktop_release_info(),
             session_token=desktop_session_id,
