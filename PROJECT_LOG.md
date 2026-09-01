@@ -4,6 +4,13 @@
 >
 > 过去逐缺陷顺延build的条目只记录事故经过，不是现行流程。当前规则是源码小改不升build、不生成制品；完整安装后用户验收表通过才分配一个新build。
 
+## 2026-09-02：文献提取检查点零模型收尾与重复收费阻断（源码检查点，不升build）
+
+- 修复任务目录返回`retry_finalization`时Fusion仍可能落入新`prepare`的问题：新增严格的`recover-finalization`入口，只接受一次性恢复令牌，不接收provider、model、consent、task id或路径；现有validated检查点直接完成本机质量包校验、原子发布、搜索索引和真实发布收据，不调用模型。
+- 服务端在新建文献提取prepared action前，按论文ID、当前稳定PDF SHA和已认证检查点核对未完成任务；发现`authorized/running/paused/validated/outcome_unknown`任务即在AI就绪、授权与模型调用前失败关闭。任务目录不可用、损坏或含异常项同样阻断，不以“普通新任务”兜底。
+- Fusion把`resume_extraction / retry_finalization / open_search / restart_extraction / review_call_outcome`拆成五种用户可理解的动作；目录状态无法确认时按钮禁用，重新开始必须明确确认新的费用，已完成任务可直接前往本机搜索，失败不会删除检查点。
+- 源码提交`e72fffe`。目标验证分别为111项提取/检查点/AI控制器/macOS路由、59项Fusion和27项路由/架构/发布契约通过（套件有重叠）；未调用模型、未构建、未生成build55，生产SQLite和`paper_056`未暂存。
+
 ## 2026-09-02：工作区表格严格链接同源官方核验结构（源码检查点，不升build）
 
 - 修复“本机文献工作区的Table 3详情只有图注、意义和语境，没有真实行列表格”：新增只读的工作区→官方表格结构链接服务，只有DOI、工作区PDF实际SHA、页码和工作区截图实际SHA与活动官方包唯一匹配时才返回官方`verified`二维字符串结构；任何缺失、重复、源文件变化或哈希不一致均失败关闭。

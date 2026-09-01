@@ -5,7 +5,7 @@ Status: mandatory release gate, not a release claim.
 Baseline evidence:
 
 - 0.5.1 build 6, source checkpoint `63b34f2`, was transactionally installed and exercised on macOS on 2026-08-25.
-- The installed candidate is Auto Research 1.2.0 build54 (`release_status=candidate`, core commit `505d0c0`). Real Librarian, selected-evidence, personal-suggestion and isolated one-page extraction checks have passed in this batch. The installed WebView also passed the official Table 3 source-image, PDF-open and return-to-source chain. The remaining table defect is the absence of human-verified row/column structure in the immutable official package; no build55 or stable claim is allowed until that recovery and the complete walkthrough pass. Build24 remains the verified rollback.
+- The installed candidate is Auto Research 1.2.0 build54 (`release_status=candidate`, core commit `b2578a6`). Real Librarian, selected-evidence, personal-suggestion and isolated one-page extraction checks have passed in this batch. The installed WebView also passed the official Table 3 source-image, PDF-open/return, 5×4 human review, restart persistence and CSV/XLSX export chain. Source checkpoint `e72fffe` additionally fixes strict workspace-to-official grid linking and validated-checkpoint zero-model finalization, but is not yet installed. No build55 or stable claim is allowed until the complete walkthrough passes. Build24 remains the verified rollback.
 - The production evidence database and the isolated `paper_056` recovery directory are outside this audit and must not be used by tests or builds.
 - Windows remains frozen until the Mac workflow is accepted.
 
