@@ -436,6 +436,9 @@ def _run_smoke_test(project_root: Path) -> int:
     from auto_research.evidence.table_structure_service import (
         WorkspaceTableStructureService,
     )
+    from auto_research.evidence.workspace_official_table_link import (
+        WorkspaceOfficialTableLinkService,
+    )
     from secure_history import SecureHistoryStore, StaticHistoryKeyProvider
     from secure_research_memory import SecureResearchMemoryStore
     from secure_evidence_chat_history import SecureEvidenceChatHistoryStore
@@ -570,6 +573,11 @@ def _run_smoke_test(project_root: Path) -> int:
             table_structure_api=TableStructureAPI(
                 WorkspaceTableStructureService(database),
                 official_service=product_services.official_table_structure_service,
+                linked_official_service=WorkspaceOfficialTableLinkService(
+                    database,
+                    product_services.package_service,
+                    product_services.official_table_structure_service,
+                ),
             ),
             release_info=_desktop_release_info(),
             session_token=desktop_session_id,
@@ -637,6 +645,9 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     from table_structure_api import TableStructureAPI
     from auto_research.evidence.table_structure_service import (
         WorkspaceTableStructureService,
+    )
+    from auto_research.evidence.workspace_official_table_link import (
+        WorkspaceOfficialTableLinkService,
     )
     from native_desktop_bridge import NativeDesktopBridge
     from package_import_service import DEFAULT_PACKAGE_DATA_ROOT
@@ -730,6 +741,11 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             table_structure_api=TableStructureAPI(
                 WorkspaceTableStructureService(database),
                 official_service=product_services.official_table_structure_service,
+                linked_official_service=WorkspaceOfficialTableLinkService(
+                    database,
+                    product_services.package_service,
+                    product_services.official_table_structure_service,
+                ),
             ),
             release_info=_desktop_release_info(),
             session_token=desktop_session_id,

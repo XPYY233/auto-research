@@ -372,6 +372,15 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             production,
         )
         self.assertIn(
+            "linked_official_service=WorkspaceOfficialTableLinkService(",
+            production,
+        )
+        self.assertIn(
+            "product_services.package_service,\n"
+            "                    product_services.official_table_structure_service,",
+            production,
+        )
+        self.assertIn(
             "research_memory_service=research_memory_service",
             production,
         )

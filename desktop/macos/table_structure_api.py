@@ -10,6 +10,10 @@ from auto_research.evidence.table_structure_service import (
     TableStructureServiceError,
     WorkspaceTableStructureService,
 )
+from auto_research.evidence.workspace_official_table_link import (
+    WorkspaceOfficialTableLinkError,
+    WorkspaceOfficialTableLinkService,
+)
 
 from official_table_structure_service import (
     OfficialTableStructureService,
@@ -18,6 +22,7 @@ from official_table_structure_service import (
 
 
 TABLE_STRUCTURE_PATH = "/api/desktop/table-structures"
+TABLE_STRUCTURE_LINK_PATH = "/api/desktop/table-structures/linked-official"
 TABLE_STRUCTURE_REVIEW_PATH = "/api/desktop/table-structures/reviews"
 TABLE_STRUCTURE_CANDIDATE_PATH = "/api/desktop/table-structures/candidates"
 TABLE_STRUCTURE_EXPORT_PATH = "/api/desktop/table-structures/export"
@@ -49,13 +54,19 @@ class TableStructureAPI:
         service: WorkspaceTableStructureService,
         *,
         official_service: OfficialTableStructureService | None = None,
+        linked_official_service: WorkspaceOfficialTableLinkService | None = None,
     ) -> None:
         self.service = service
         self.official_service = official_service
+        self.linked_official_service = linked_official_service
 
     def handle_get(self, handler: TableStructureHTTPHandler) -> bool:
         parsed = urlparse(handler.path)
-        if parsed.path not in {TABLE_STRUCTURE_PATH, TABLE_STRUCTURE_EXPORT_PATH}:
+        if parsed.path not in {
+            TABLE_STRUCTURE_PATH,
+            TABLE_STRUCTURE_LINK_PATH,
+            TABLE_STRUCTURE_EXPORT_PATH,
+        }:
             return False
         try:
             query = parse_qs(
@@ -66,7 +77,13 @@ class TableStructureAPI:
             )
             if any(len(values) != 1 or values[0] == "" for values in query.values()):
                 raise TableStructureServiceError("table_structure_service_invalid")
-            if parsed.path == TABLE_STRUCTURE_PATH:
+            if parsed.path == TABLE_STRUCTURE_LINK_PATH:
+                if set(query) != {"entity_uid"}:
+                    raise WorkspaceOfficialTableLinkError(
+                        "workspace_official_table_link_invalid"
+                    )
+                payload = self._linked_official().get(query["entity_uid"][0])
+            elif parsed.path == TABLE_STRUCTURE_PATH:
                 scope = _query_scope(query)
                 flag = query["include_unverified"][0]
                 if flag not in {"0", "1"}:
@@ -93,7 +110,12 @@ class TableStructureAPI:
                     artifact = self.service.export(
                         query["entity_uid"][0], format=query["format"][0]
                     )
-        except (ValueError, TableStructureServiceError, OfficialTableStructureServiceError) as exc:
+        except (
+            ValueError,
+            TableStructureServiceError,
+            OfficialTableStructureServiceError,
+            WorkspaceOfficialTableLinkError,
+        ) as exc:
             error = _public_error(exc)
             handler.json_response(error.public_dict(), _error_status(error))
         except Exception:
@@ -191,6 +213,13 @@ class TableStructureAPI:
             )
         return self.official_service
 
+    def _linked_official(self) -> WorkspaceOfficialTableLinkService:
+        if self.linked_official_service is None:
+            raise WorkspaceOfficialTableLinkError(
+                "workspace_official_table_link_unavailable"
+            )
+        return self.linked_official_service
+
     @staticmethod
     def _send_artifact(
         handler: TableStructureHTTPHandler,
@@ -229,16 +258,35 @@ def _invalid_error(scope: str) -> Exception:
 
 
 def _public_error(exc: Exception):
-    if isinstance(exc, (TableStructureServiceError, OfficialTableStructureServiceError)):
+    if isinstance(
+        exc,
+        (
+            TableStructureServiceError,
+            OfficialTableStructureServiceError,
+            WorkspaceOfficialTableLinkError,
+        ),
+    ):
         return exc
     return TableStructureServiceError("table_structure_service_invalid")
 
 
 def _error_status(
-    error: TableStructureServiceError | OfficialTableStructureServiceError,
+    error: (
+        TableStructureServiceError
+        | OfficialTableStructureServiceError
+        | WorkspaceOfficialTableLinkError
+    ),
 ) -> HTTPStatus:
     if isinstance(error, OfficialTableStructureServiceError):
         return HTTPStatus(error.http_status)
+    if isinstance(error, WorkspaceOfficialTableLinkError):
+        return {
+            "workspace_official_table_link_invalid": HTTPStatus.BAD_REQUEST,
+            "workspace_official_table_link_not_found": HTTPStatus.NOT_FOUND,
+            "workspace_official_table_link_source_changed": HTTPStatus.CONFLICT,
+            "workspace_official_table_link_corrupt": HTTPStatus.CONFLICT,
+            "workspace_official_table_link_unavailable": HTTPStatus.SERVICE_UNAVAILABLE,
+        }[error.code]
     return {
         "table_structure_service_invalid": HTTPStatus.BAD_REQUEST,
         "table_structure_service_not_found": HTTPStatus.NOT_FOUND,
@@ -254,6 +302,7 @@ __all__ = [
     "MAX_TABLE_STRUCTURE_REQUEST_BYTES",
     "TABLE_STRUCTURE_CANDIDATE_PATH",
     "TABLE_STRUCTURE_EXPORT_PATH",
+    "TABLE_STRUCTURE_LINK_PATH",
     "TABLE_STRUCTURE_PATH",
     "TABLE_STRUCTURE_REVIEW_PATH",
     "TableStructureAPI",

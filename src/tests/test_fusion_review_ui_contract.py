@@ -1184,6 +1184,7 @@ assert.equal(calls.filter(url=>url==='/api/desktop/evidence-chat-history').lengt
     def test_table_structure_review_is_scoped_and_path_free(self) -> None:
         for marker in (
             'tableStructures:"/api/desktop/table-structures"',
+            'tableStructureLinks:"/api/desktop/table-structures/linked-official"',
             'tableStructureCandidates:"/api/desktop/table-structures/candidates"',
             'tableStructureReviews:"/api/desktop/table-structures/reviews"',
             "include_unverified=1",
@@ -1197,6 +1198,8 @@ assert.equal(calls.filter(url=>url==='/api/desktop/evidence-chat-history').lengt
             "在主栏审核",
             "结构 CSV",
             "结构 XLSX",
+            "官方资料库已核验 · 同源只读",
+            "没有写入本机审核记录",
             "tableStructureRequests.get(tabId)!==generation",
             'body={entity_uid:identity.entityUid,expected_version:structure.version,operation,note:""}',
             'source_scope:"official",source_id:identity.sourceId',
@@ -1224,7 +1227,7 @@ globalThis.document={{readyState:'loading',documentElement:{{style:{{setProperty
 globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};globalThis.innerWidth=1400;globalThis.addEventListener=()=>{{}};
 eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));
 let source=fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8');
- source=source.replace('globalThis.AutoResearchFusion=Object.freeze({{initialize','globalThis.AutoResearchFusion=Object.freeze({{publicTableStructure,tableStructureHTML,tableStructureExportURL,loadTableStructure,moveTableStructureReviewToPrimary,initialize');
+ source=source.replace('globalThis.AutoResearchFusion=Object.freeze({{initialize','globalThis.AutoResearchFusion=Object.freeze({{moveTableStructureReviewToPrimary,initialize');
 const pending=[];globalThis.fetch=(url,options={{}})=>new Promise(resolve=>pending.push({{url:String(url),options,resolve}}));
 eval(source);const api=globalThis.AutoResearchFusion,store=api.documentTabs;
 const table=(id,title)=>({{type:'table',title,sourceScope:'workspace',sourceId:'',entityUid:'',assetId:id,itemId:null,paperId:56,imageUrl:`/api/visual-assets/${{id}}/image`,caption:'真实截图',materials:[],quantities:[],variables:{{}},tags:[],linkedItemCount:0}});
@@ -1253,6 +1256,9 @@ store.open({{tabId:'evidence:b',kind:'evidence',ownerView:'paper',title:'B',iden
  const originalPending=store.snapshot().tabs.find(tab=>tab.tabId==='evidence:b').payload.tableStructure;
  assert(api.moveTableStructureReviewToPrimary('evidence:b'));
  const moved=store.snapshot().tabs.find(tab=>tab.tabId==='evidence:b');assert.equal(moved.groupId,'primary');assert.deepEqual(moved.payload.tableStructure,originalPending);assert.equal(pending.length,4,'moving an existing candidate must not issue another request');
+ const c=table(1360,'Table C');store.open({{tabId:'evidence:c',kind:'evidence',ownerView:'search',title:'C',identity:{{sourceScope:'workspace',entityType:'table',entityUid:'1360'}},payload:{{row:c,status:'ready'}}}},{{groupId:'secondary',pin:true}});
+ const linkedPromise=api.loadTableStructure('evidence:c',c);assert.equal(pending[4].url,'/api/desktop/table-structures?entity_uid=1360&include_unverified=1');const failure=(code,status=404)=>({{ok:false,status,headers:{{get:()=>null}},json:async()=>({{code,message:'missing'}})}});pending[4].resolve(failure('table_structure_service_not_found'));await new Promise(resolve=>setImmediate(resolve));assert.equal(pending[5].url,'/api/desktop/table-structures/linked-official?entity_uid=1360');
+ const linkedRaw={{schema_version:'workspace-linked-official-table-structure-v1',linked_workspace_entity_uid:'1360',match_basis:['doi','pdf_sha256','source_page','visual_asset_sha256'],structure:{{...officialRaw,version:4,rows:[['材料','硬度'],['316H','4.63 GPa']]}}}};pending[5].resolve(response(linkedRaw));assert(await linkedPromise);const linkedTab=store.snapshot().tabs.find(tab=>tab.tabId==='evidence:c'),linked=linkedTab.payload.tableStructure;assert.equal(linked.linkedWorkspaceEntityUid,'1360');const linkedHTML=api.tableStructureHTML('evidence:c',c,linkedTab.payload,true);assert(linkedHTML.includes('官方资料库已核验 · 同源只读'));assert(linkedHTML.includes('316H'));assert(linkedHTML.includes('source_scope=official'));assert(!linkedHTML.includes('data-table-structure-action='));const linkedDetail=api.secondaryDocumentHTML(linkedTab,'secondary');assert(linkedDetail.includes('/api/visual-assets/1360/image'),'workspace screenshot remains visible beside linked grid');
 }})().catch(error=>{{console.error(error);process.exitCode=1}});
 """
         result = subprocess.run(

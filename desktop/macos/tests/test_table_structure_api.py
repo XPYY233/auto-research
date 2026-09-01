@@ -102,6 +102,25 @@ class _OfficialService:
         return export_verified_table_structure(value, format=kwargs["format"])
 
 
+class _LinkedOfficialService:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def get(self, entity_uid):
+        self.calls.append(entity_uid)
+        return {
+            "schema_version": "workspace-linked-official-table-structure-v1",
+            "linked_workspace_entity_uid": entity_uid,
+            "match_basis": [
+                "doi",
+                "pdf_sha256",
+                "source_page",
+                "visual_asset_sha256",
+            ],
+            "structure": _OfficialService._value(status="verified", version=2),
+        }
+
+
 class _Handler:
     def __init__(self, path: str, body: object | bytes | None = None) -> None:
         self.path = path
@@ -138,6 +157,44 @@ class _Handler:
 
 
 class TableStructureAPITests(unittest.TestCase):
+    def test_workspace_linked_official_get_is_exact_and_read_only(self) -> None:
+        linked = _LinkedOfficialService()
+        api = TableStructureAPI(  # type: ignore[arg-type]
+            _Service(),
+            linked_official_service=linked,  # type: ignore[arg-type]
+        )
+        handler = _Handler(
+            "/api/desktop/table-structures/linked-official?entity_uid=1358"
+        )
+        self.assertTrue(api.handle_get(handler))
+        self.assertEqual(linked.calls, ["1358"])
+        payload, status = handler.responses[0]
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertEqual(
+            payload["schema_version"],
+            "workspace-linked-official-table-structure-v1",
+        )
+
+        for suffix in ("", "entity_uid=", "entity_uid=1358&extra=x"):
+            with self.subTest(suffix=suffix):
+                invalid = _Handler(
+                    "/api/desktop/table-structures/linked-official"
+                    + (f"?{suffix}" if suffix else "")
+                )
+                api.handle_get(invalid)
+                self.assertEqual(invalid.responses[0][1], HTTPStatus.BAD_REQUEST)
+
+        missing = _Handler(
+            "/api/desktop/table-structures/linked-official?entity_uid=1358"
+        )
+        TableStructureAPI(_Service()).handle_get(missing)  # type: ignore[arg-type]
+        response, unavailable = missing.responses[0]
+        self.assertEqual(unavailable, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response["code"],
+            "workspace_official_table_link_unavailable",
+        )
+
     def test_get_and_export_accept_only_exact_public_queries(self) -> None:
         service = _Service()
         api = TableStructureAPI(service)  # type: ignore[arg-type]
