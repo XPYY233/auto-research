@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 import unittest
 
 from auto_research.ai.harness_contract import HarnessError
@@ -86,6 +86,28 @@ class HarnessFederatedBackendTests(unittest.TestCase):
         self.assertFalse(backend.source_view(identity)["available"])
         self.assertEqual(backend.citation_verify(["R1"])[0]["bundle_uid"], "bundle-1")
         self.assertEqual(backend.recommend_papers({"question": "硬度", "limit": 3})[0]["paper_uid"], "paper-1")
+
+    def test_prepared_action_frozen_official_table_is_revalidated(self):
+        frozen = MappingProxyType(
+            document(
+                "table-1",
+                "table",
+                label="Table 1",
+                materials=("316H", "HEA"),
+                physical_quantities=("hardness",),
+                tags=("irradiation",),
+                variables=MappingProxyType(
+                    {"columns": ("material", "hardness_GPa")}
+                ),
+            )
+        )
+        backend = HarnessFederatedBackend((frozen,))
+        row = backend.documents[0]
+        self.assertEqual(row["materials"], ["316H", "HEA"])
+        self.assertEqual(
+            row["variables"], {"columns": ["material", "hardness_GPa"]}
+        )
+        self.assertEqual(backend.citation_verify(["R1"])[0]["entity_uid"], "table-1")
 
     def test_private_or_internal_fields_fail_closed(self):
         private = document(source_scope="private", source_id="mine")

@@ -112,7 +112,11 @@
         bar.style.width = `${snapshot.progress}%`;
         bar.parentElement?.setAttribute?.("aria-valuenow", String(Math.round(snapshot.progress)));
       }
-      if (valueNode) valueNode.textContent = `${Math.round(snapshot.progress)}%`;
+      if (valueNode) valueNode.textContent = state === "error"
+        ? "未完成"
+        : state === "cancelled"
+          ? "已取消"
+          : `${Math.round(snapshot.progress)}%`;
       host.querySelectorAll?.("[data-ai-stage]").forEach((node) => {
         const row = this.stage(scope, node.dataset.aiStage);
         const reached = row && row.progress <= snapshot.progress;

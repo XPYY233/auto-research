@@ -55,11 +55,11 @@
     "src/auto_research/evidence/web/pane_layout_controller.js": "bb2ebea79ba9d571065e7dc9ac5b9635fc19ecb77ac761fbf1cb8248bf98e154",
     "src/auto_research/evidence/web/workspace_layout_controller.js": "945083a260ac058ca846dff01343e306ba6649329e460201a6e016d01c203d8b",
     "src/auto_research/evidence/web/fusion_pdf_controller.js": "9922b08f8ae42ea24c6188120615ccbf775bba7f8f3b67770ae793dbad19c4d6",
-    "src/auto_research/evidence/web/fusion_ai_experience.js": "3ee6c56620d53412a9baae314cfc3b8add41bb3867828010c0e1d1aeaf439b57",
+    "src/auto_research/evidence/web/fusion_ai_experience.js": "da5256c9d14adae59ed21b104040c38aac2e2cc760f9cf43c2556e2bf24eb494",
     "src/auto_research/evidence/web/fusion_operation_history.js": "0272560dec019433df0fcdfe765e5e30d9d1e196521a1fa329ad5b9232377dc0",
     "src/auto_research/evidence/web/fusion_package_center.js": "6cb7bac3d0716d37df5a96019694a4aaefaa5e084e9afce1c38b707a01ab3397",
-    "src/auto_research/evidence/web/fusion_personal_import.js": "f31a8861931cc1395a6d22f28b70aebe3f8066307b6a2fbc14aa0bc42044b672",
-    "src/auto_research/evidence/web/fusion_review.js": "af03c47068af557431240d5b4c35c85e9a77cf004d12cbabbb1fccc058378992",
+    "src/auto_research/evidence/web/fusion_personal_import.js": "ba58c01a479d04196921e6db3c5a24933077e991431432992192207db022318f",
+    "src/auto_research/evidence/web/fusion_review.js": "857d9482f9533d9ee40515e71dce396b74d75a2605fb73dbf38fb2be42578ff5",
     "src/auto_research/evidence/web/codex-pet-working.webp": "eeb657c8dd3dc9431cea8d88b8ec08e4c44471dd258ac3d8008483f2b40f0ef9"
   }
 }

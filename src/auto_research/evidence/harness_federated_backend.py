@@ -121,7 +121,15 @@ def sanitize_official_documents(
     seen: set[tuple[str, str]] = set()
     for raw in documents:
         try:
-            public = validate_public_evidence_document(raw)
+            # PreparedOutbound freezes nested JSON containers as tuples and
+            # mapping proxies.  Rebuild only the already-bounded public DTO
+            # shape before the ordinary validator runs; otherwise real table
+            # rows (notably ``variables``) fail after consent even though the
+            # identical draft passed the preflight audit.
+            thawed = _clean_value(raw)
+            if not isinstance(thawed, dict):
+                raise TypeError("official document is not an object")
+            public = validate_public_evidence_document(thawed)
         except Exception as exc:
             raise HarnessError("harness_tool_invalid") from exc
         if public.get("source_scope") != "official" or public.get("source_id") != expected_source_id:

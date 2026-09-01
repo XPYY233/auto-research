@@ -1161,7 +1161,8 @@ assert.equal(calls.filter(url=>url==='/api/desktop/evidence-chat-history').lengt
         ):
             self.assertIn(marker, self.runtime + self.css)
         self.assertNotIn("aiExperience?.activity(scope,{...event,job_id:job.job_id})", self.runtime)
-        self.assertIn('state==="error"?"请查看对话中的原因与处理建议":detail', self.runtime)
+        self.assertIn('state==="error"?(cleanText(detail,1000)||"请查看对话中的原因与处理建议"):detail', self.runtime)
+        self.assertIn('function aiFailureStage(scope,error={}', self.runtime)
 
     def test_private_table_and_rescan_contracts_are_bounded(self) -> None:
         for marker in (

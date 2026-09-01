@@ -25,6 +25,7 @@
       executeAI,
       aiProgress,
       aiErrorCopy,
+      aiFailureStage,
       resetAI,
       isPersonalActive,
       setOperation,
@@ -37,6 +38,9 @@
     for (const fn of [q, qa, esc, cleanText, safeError, request, authorizeAI, executeAI, aiProgress, aiErrorCopy, resetAI, isPersonalActive, setOperation, selectCell, projectInspector, openImportedTable, confirmAction]) {
       if (typeof fn !== "function") throw new TypeError("personal_import_port_invalid");
     }
+    const failureStage = typeof aiFailureStage === "function"
+      ? aiFailureStage
+      : (_scope, _error, fallback) => fallback;
     if (!native || typeof native.selectPersonalFile !== "function") throw new TypeError("personal_import_native_port_invalid");
     let bound = false;
 
@@ -506,7 +510,7 @@
         if (generation === state.personalAction) {
           const message = aiErrorCopy(error, "AI 预填未完成；本地文件检查结果仍可人工核验。");
           personalStatus(message, "error");
-          aiProgress("personal_suggestion", "analyzing", "error", "AI 预填未完成", message);
+          aiProgress("personal_suggestion", failureStage("personal_suggestion", error, "analyzing"), "error", "AI 预填未完成", message);
         }
       } finally {
         if (generation === state.personalAction) {

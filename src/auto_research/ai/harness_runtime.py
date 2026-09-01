@@ -198,7 +198,7 @@ class HarnessOutputProjector:
     )
     _QUANTITY = re.compile(
         r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*"
-        r"(?:%|°\s*[CF]|K|Pa|kPa|MPa|GPa|TPa|HV|HRC|nm|µm|μm|mm|cm|m|"
+        r"(?:%|°\s*[CF]|°(?![A-Za-z])|K|Pa|kPa|MPa|GPa|TPa|HV|HRC|nm|µm|μm|mm|cm|m|"
         r"eV|keV|MeV|J|mJ|W(?:\s*/\s*m(?:\s*K)?)?|g\s*/\s*cm(?:\^?3|³)|"
         r"kg\s*/\s*m(?:\^?3|³)|dpa|at\.?\s*%|wt\.?\s*%|s|min|(?-i:h))(?![A-Za-z])",
         re.IGNORECASE,
@@ -216,10 +216,28 @@ class HarnessOutputProjector:
         re.IGNORECASE,
     )
     _LIST_ORDINAL = re.compile(r"^\s*(?:[（(]?\d{1,2}[）).、:：])\s*")
+    _SCIENTIFIC_UNIT_SUFFIX = re.compile(
+        r"^\s*(?:%|°|K\b|Pa\b|kPa\b|MPa\b|GPa\b|TPa\b|HV\b|HRC\b|"
+        r"nm\b|µm\b|μm\b|mm\b|cm\b|m\b|eV\b|keV\b|MeV\b|J\b|mJ\b|"
+        r"W\b|g\s*/\s*cm|kg\s*/\s*m|dpa\b|at\.?\s*%|wt\.?\s*%|s\b|min\b|h\b)",
+        re.IGNORECASE,
+    )
 
     @staticmethod
     def _quantity_key(value: str) -> str:
         return re.sub(r"\s+", "", value).replace("μ", "µ").casefold()
+
+    @classmethod
+    def _quantity_unit_key(cls, value: str) -> str:
+        """Return the normalized unit/dimension suffix of one quantity."""
+
+        suffix = re.sub(
+            r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*",
+            "",
+            value,
+            count=1,
+        )
+        return re.sub(r"\s+", "", suffix).replace("μ", "µ").casefold()
 
     @staticmethod
     def _cited_seed_text(
@@ -317,6 +335,69 @@ class HarnessOutputProjector:
         )
 
     @staticmethod
+    def _supported_cited_years(
+        prompt: Mapping[str, Any] | None,
+        refs: set[str],
+    ) -> frozenset[str]:
+        """Return publication years from the exact application-owned rows.
+
+        A publication year is provenance metadata, not authority for a new
+        scientific number.  Keep the allowance deliberately narrow: the year
+        must come from the cited seed row's dedicated ``year`` field and later
+        appear in an ordinary bibliographic form.  It never exempts a value
+        followed by a scientific unit.
+        """
+
+        if not isinstance(prompt, Mapping):
+            return frozenset()
+        seed = prompt.get("seed_evidence")
+        if not isinstance(seed, Sequence) or isinstance(
+            seed, (str, bytes, bytearray)
+        ):
+            return frozenset()
+        years: set[str] = set()
+        for row in seed:
+            if not isinstance(row, Mapping) or str(row.get("ref") or "") not in refs:
+                continue
+            value = row.get("year")
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int) and 1_000 <= value <= 2_999:
+                years.add(str(value))
+            elif isinstance(value, str) and re.fullmatch(r"[12][0-9]{3}", value):
+                years.add(value)
+        return frozenset(years)
+
+    @classmethod
+    def _strip_supported_bibliographic_years(
+        cls,
+        text: str,
+        years: frozenset[str],
+    ) -> str:
+        """Remove only cited publication years used as bibliography prose."""
+
+        for year in years:
+            escaped = re.escape(year)
+            patterns = (
+                rf"(?<![0-9]){escaped}\s*年",
+                rf"(?:等|et\s+al\.?)\s*[,，(（]?\s*{escaped}",
+                rf"[(（]\s*{escaped}\s*[)）]",
+                rf"[,，]\s*{escaped}\s*[,，]",
+            )
+            for pattern in patterns:
+                text = re.sub(
+                    pattern,
+                    lambda match: (
+                        match.group(0)
+                        if cls._SCIENTIFIC_UNIT_SUFFIX.match(text[match.end():])
+                        else ""
+                    ),
+                    text,
+                    flags=re.IGNORECASE,
+                )
+        return text
+
+    @staticmethod
     def _claim_segments(value: object) -> list[str]:
         """Flatten report prose into sentence-sized validation segments."""
 
@@ -347,6 +428,7 @@ class HarnessOutputProjector:
         value: object,
         *,
         supported_context_quantities: frozenset[str] = frozenset(),
+        supported_bibliographic_years: frozenset[str] = frozenset(),
     ) -> bool:
         for claim in cls._claim_segments(value):
             text = re.sub(
@@ -368,20 +450,21 @@ class HarnessOutputProjector:
                 if cls._quantity_key(match.group(0))
                 in supported_context_quantities
             ]
-            if (
-                cls._COMPARISON.search(text)
-                and len(
-                    {
-                        cls._quantity_key(match.group(0))
-                        for match in supported_matches
-                    }
-                )
-                >= 2
-            ):
-                # Two cited values do not authorize the model to calculate or
-                # assert a new cross-paper ordering/difference in one claim.
-                _safe_rejection("cross_bundle_two_value_comparison")
-                return True
+            if cls._COMPARISON.search(text):
+                values_by_unit: dict[str, set[str]] = {}
+                for match in supported_matches:
+                    values_by_unit.setdefault(
+                        cls._quantity_unit_key(match.group(0)), set()
+                    ).add(cls._quantity_key(match.group(0)))
+                if any(len(values) >= 2 for values in values_by_unit.values()):
+                    # Two cited values of the same physical dimension do not
+                    # authorize a new cross-paper ordering or difference.  A
+                    # source-local sentence may still state distinct frozen
+                    # conditions (300 °C / 1 MeV / 1 dpa) and one measured
+                    # outcome (1 GPa) without that ordinary prose being treated
+                    # as a derived comparison.
+                    _safe_rejection("cross_bundle_two_value_comparison")
+                    return True
             if supported_context_quantities:
                 text = cls._QUANTITY.sub(
                     lambda match: (
@@ -391,6 +474,11 @@ class HarnessOutputProjector:
                         else match.group(0)
                     ),
                     text,
+                )
+            if supported_bibliographic_years:
+                text = cls._strip_supported_bibliographic_years(
+                    text,
+                    supported_bibliographic_years,
                 )
             # Exact cited quantities have been removed. Any remaining number
             # or unit-bearing value is unsupported and therefore rejected.
@@ -426,6 +514,7 @@ class HarnessOutputProjector:
             cls._supported_context_quantities(prompt, refs)
             | cls._supported_cited_quantities(prompt, refs)
         )
+        global_supported_years = cls._supported_cited_years(prompt, refs)
         safe_source_local: set[str] = set()
         deferred: list[tuple[str, set[str]]] = []
 
@@ -449,6 +538,7 @@ class HarnessOutputProjector:
                     cls._supported_context_quantities(prompt, claim_refs)
                     | cls._supported_cited_quantities(prompt, claim_refs)
                 )
+                supported_years = cls._supported_cited_years(prompt, claim_refs)
                 text = re.sub(
                     r"(?<![A-Za-z0-9_])R[1-9][0-9]{0,3}(?![0-9])", "", claim
                 )
@@ -460,6 +550,10 @@ class HarnessOutputProjector:
                         else match.group(0)
                     ),
                     text,
+                )
+                text = cls._strip_supported_bibliographic_years(
+                    text,
+                    supported_years,
                 )
                 if cls._QUANTITY.search(text) or cls._NUMBER.search(text):
                     _safe_rejection("source_local_unsupported_number")
@@ -478,6 +572,7 @@ class HarnessOutputProjector:
             if cls._has_quantitative_comparison(
                 claim,
                 supported_context_quantities=global_supported,
+                supported_bibliographic_years=global_supported_years,
             ):
                 return True
         return False

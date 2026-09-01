@@ -593,6 +593,77 @@ class HarnessRuntimeTests(unittest.TestCase):
         self.assertIn("500 HV", cited_values["answer"])
         self.assertEqual(cited_values["comparison_bundle_uids"], [])
 
+        class CitedYearAngleAndOutcome(CrossBundle):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["answer"] = (
+                    "同一论文（Chen等，2018，Journal）在 300 °C、1 MeV、"
+                    "15°入射角和 1 dpa 条件下报告硬度增加约 1 GPa"
+                    "（R1、R2）；这不是跨论文差值。"
+                )
+                value["report"]["direct_conclusion"] = value["answer"]
+                return value
+
+        metadata_prompt = librarian_prompt((OFFICIAL, other))
+        metadata_prompt["question"] = "300 °C 离子辐照下有哪些可核验结果？"
+        for row in metadata_prompt["seed_evidence"]:
+            row["year"] = 2018
+            row["evidence_text"] = (
+                "300 °C，1 MeV，15°入射角，1 dpa，硬度增加约 1 GPa"
+            )
+        _, model = self.budgeted(prepared)
+        metadata_result = DeepSeekHarnessAdapter(
+            runtime=CitedYearAngleAndOutcome(), backend=CrossBundleBackend()
+        ).execute_consumed(
+            action=prepared,
+            session_id="session-1",
+            model=model,
+            evidence=(OFFICIAL, other),
+            prompt=metadata_prompt,
+        )
+        self.assertIn("2018", metadata_result["answer"])
+        self.assertIn("15°", metadata_result["answer"])
+
+        class UnsupportedBibliographicYear(CitedYearAngleAndOutcome):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["answer"] = "Chen等，2019，Journal 报告了相关结果（R1）。"
+                value["report"]["direct_conclusion"] = value["answer"]
+                return value
+
+        _, model = self.budgeted(prepared)
+        with self.assertRaises(HarnessError) as unsupported_year:
+            DeepSeekHarnessAdapter(
+                runtime=UnsupportedBibliographicYear(), backend=CrossBundleBackend()
+            ).execute_consumed(
+                action=prepared,
+                session_id="session-1",
+                model=model,
+                evidence=(OFFICIAL, other),
+                prompt=metadata_prompt,
+            )
+        self.assertEqual(unsupported_year.exception.code, "harness_output_invalid")
+
+        class YearCannotBecomeScientificValue(CitedYearAngleAndOutcome):
+            def execute(self, **kwargs):
+                value = super().execute(**kwargs)
+                value["answer"] = "Chen等，2018 dpa 条件下报告了相关结果（R1）。"
+                value["report"]["direct_conclusion"] = value["answer"]
+                return value
+
+        _, model = self.budgeted(prepared)
+        with self.assertRaises(HarnessError) as year_as_value:
+            DeepSeekHarnessAdapter(
+                runtime=YearCannotBecomeScientificValue(), backend=CrossBundleBackend()
+            ).execute_consumed(
+                action=prepared,
+                session_id="session-1",
+                model=model,
+                evidence=(OFFICIAL, other),
+                prompt=metadata_prompt,
+            )
+        self.assertEqual(year_as_value.exception.code, "harness_output_invalid")
+
         class QuantitativeCrossBundle(CrossBundle):
             def execute(self, **kwargs):
                 value = super().execute(**kwargs)
