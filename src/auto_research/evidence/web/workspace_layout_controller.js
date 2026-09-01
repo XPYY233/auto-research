@@ -22,6 +22,7 @@
     const contextPreferred = input.contextExpanded !== false;
     const inspectorPreferred = input.inspectorExpanded !== false;
     const resultNavigator = librarian && Boolean(input.librarianResultsOpen);
+    const librarianDetail = librarian && Boolean(input.librarianDetailOpen);
 
     let context = "hidden";
     let secondary = "hidden";
@@ -50,16 +51,17 @@
     if (view === "personal") secondary = librarianResults = "hidden";
     if (librarian) {
       inspector = "hidden";
+      // The librarian owns the primary research surface. Preserve unrelated
+      // document tabs in the store without charging their editor column to chat.
+      secondary = "hidden";
       if (resultNavigator) {
         if (mode === "wide") context = contextPreferred ? "docked" : "hidden";
         else if (mode === "desktop") context = contextPreferred ? "drawer" : "hidden";
-        secondary = "hidden";
-      } else if (hasSecondary) {
+      } else if (librarianDetail && hasSecondary) {
         if (mode === "wide") context = contextPreferred ? "docked" : "hidden";
         else if (mode === "desktop") context = contextPreferred ? "drawer" : "hidden";
         secondary = mode === "wide" || mode === "desktop" ? "docked" : "single";
       } else {
-        secondary = "hidden";
         if (mode === "wide" || mode === "desktop") context = contextPreferred ? "docked" : "hidden";
       }
     }
@@ -75,6 +77,7 @@
       mode,
       view,
       librarian,
+      librarianDetail,
       context,
       primary: "docked",
       secondary,
