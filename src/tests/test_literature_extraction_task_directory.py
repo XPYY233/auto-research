@@ -95,6 +95,29 @@ def test_directory_reports_store_failure_without_backend_details() -> None:
     ]
 
 
+def test_cancelled_task_is_terminal_but_keeps_paid_call_count(monkeypatch) -> None:
+    checkpoint = _checkpoint(state="cancelled", stage="initial_focus")
+    monkeypatch.setattr(
+        "auto_research.evidence.literature_extraction_task_directory.decode_execution_state",
+        lambda _payload: SimpleNamespace(job_state=b"job-state", completion_result=None),
+    )
+    monkeypatch.setattr(
+        "auto_research.evidence.literature_extraction_task_directory._decode_checkpoint_job_state",
+        lambda _payload: SimpleNamespace(
+            token="opaque_resume_token_abcdefghijklmnopqrstuvwxyz",
+            paper={"title": "A paper", "doi": "10.1/safe"},
+        ),
+    )
+    result = LiteratureExtractionTaskDirectory(
+        checkpoints=_Store((("task-secret", checkpoint),))
+    ).status()
+    task = result["tasks"][0]
+    assert task["state"] == "cancelled"
+    assert task["completed_calls"] == 1
+    assert task["resume_token"] is None
+    assert task["next_action"] == "restart_extraction"
+
+
 def test_completed_task_projects_only_concise_persistent_receipt(monkeypatch) -> None:
     checkpoint = _checkpoint(state="completed", stage="completed")
     completion = {

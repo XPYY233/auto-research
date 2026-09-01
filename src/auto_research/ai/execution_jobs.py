@@ -20,6 +20,7 @@ AI_EXECUTION_JOB_ACTIVE_LEASE_SECONDS = 30 * 60
 
 _ERRORS = {
     "ai_execution_job_invalid": ("AI 任务不存在或无权访问。", False),
+    "ai_execution_job_not_cancellable": ("AI 任务当前无法安全取消。", False),
     "ai_execution_job_store_full": ("AI 任务队列已满，请稍后再试。", True),
 }
 
@@ -50,6 +51,8 @@ class _Job:
     error: dict[str, object] | None = None
     events: list[dict[str, object]] = field(default_factory=list)
     next_sequence: int = 1
+    cancel_requested: bool = False
+    cancel: Callable[[str], None] | None = field(default=None, repr=False)
 
 
 class AIExecutionJobService:
@@ -74,8 +77,14 @@ class AIExecutionJobService:
         session_id: str,
         scope: str,
         execute: Callable[[Callable[[Mapping[str, object]], None]], Mapping[str, object]],
+        cancel: Callable[[str], None] | None = None,
     ) -> dict[str, object]:
-        if not session_id or not scope or not callable(execute):
+        if (
+            not session_id
+            or not scope
+            or not callable(execute)
+            or (cancel is not None and not callable(cancel))
+        ):
             raise AIExecutionJobError("ai_execution_job_invalid")
         now = self._now()
         with self._lock:
@@ -84,7 +93,7 @@ class AIExecutionJobService:
             if len(self._jobs) >= self._capacity or active >= MAX_ACTIVE_AI_EXECUTION_JOBS:
                 raise AIExecutionJobError("ai_execution_job_store_full")
             job_id = f"ai_job_{secrets.token_urlsafe(24)}"
-            job = _Job(job_id, session_id, scope, now, now)
+            job = _Job(job_id, session_id, scope, now, now, cancel=cancel)
             self._jobs[job_id] = job
             self._append_event(job, {
                 "schema_version": "ai-activity-event-v1",
@@ -101,6 +110,34 @@ class AIExecutionJobService:
         )
         thread.start()
         return self.get(session_id=session_id, job_id=job_id)
+
+    def cancel(self, *, session_id: str, job_id: str) -> dict[str, object]:
+        """Request cancellation without interrupting an in-flight provider call."""
+
+        now = self._now()
+        with self._lock:
+            self._purge(now)
+            job = self._jobs.get(job_id)
+            if job is None or not secrets.compare_digest(job.owner_session_id, session_id):
+                raise AIExecutionJobError("ai_execution_job_invalid")
+            if job.status == "cancelled":
+                return self._public(job)
+            if job.status == "running" and job.cancel_requested:
+                return self._public(job)
+            if job.status not in {"queued", "running"} or job.cancel is None:
+                raise AIExecutionJobError("ai_execution_job_not_cancellable")
+            phase = job.status
+            try:
+                job.cancel(phase)
+            except (AIExecutionJobError, BusinessActionError):
+                raise
+            except Exception:
+                raise AIExecutionJobError("ai_execution_job_not_cancellable") from None
+            job.cancel_requested = True
+            job.updated_at = now
+            if phase == "queued":
+                job.status = "cancelled"
+            return self._public(job)
 
     def get(self, *, session_id: str, job_id: str) -> dict[str, object]:
         now = self._now()
@@ -150,7 +187,7 @@ class AIExecutionJobService:
 
         with self._lock:
             job = self._jobs.get(job_id)
-            if job is None:
+            if job is None or job.status != "queued":
                 return
             job.status = "running"
             emit = observe
@@ -179,7 +216,11 @@ class AIExecutionJobService:
                         "code": "execution_completed",
                     })
         except BusinessActionError as exc:
-            self._fail(job_id, exc.public_dict())
+            if (
+                exc.cause_code != "literature_task_cancelled"
+                or not self._mark_cancelled(job_id)
+            ):
+                self._fail(job_id, exc.public_dict())
         except Exception:
             self._fail(job_id, {
                 "schema_version": "ai-business-action-error-v1",
@@ -204,6 +245,22 @@ class AIExecutionJobService:
                 "label": "任务未完成",
             })
 
+    def _mark_cancelled(self, job_id: str) -> bool:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if (
+                job is None
+                or job.scope != "literature_extraction"
+                or job.status not in {"queued", "running"}
+            ):
+                return False
+            job.cancel_requested = True
+            job.result = None
+            job.error = None
+            job.status = "cancelled"
+            job.updated_at = self._now()
+            return True
+
     def _append_event(self, job: _Job, event: Mapping[str, object]) -> None:
         safe = safe_ai_activity_event(event)
         if safe is None:
@@ -223,6 +280,7 @@ class AIExecutionJobService:
             "job_id": job.job_id,
             "scope": job.scope,
             "status": job.status,
+            "cancel_requested": job.cancel_requested,
             "events": [dict(event) for event in job.events],
         }
         if job.status == "completed" and job.result is not None:

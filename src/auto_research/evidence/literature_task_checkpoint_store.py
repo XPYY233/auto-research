@@ -19,6 +19,10 @@ from auto_research.evidence.literature_task_checkpoint import (
     require_nonnegative_int,
     validate_task_id,
 )
+from auto_research.evidence.literature_task_cancellation import (
+    decode_cancel_request,
+    encode_cancel_request,
+)
 
 
 DB_FILENAME = "literature-task-checkpoints-v1.sqlite"
@@ -159,6 +163,11 @@ class SealedSQLiteLiteratureCheckpointStore:
                     "task_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, "
                     "sealed BLOB NOT NULL, updated_at INTEGER NOT NULL)"
                 )
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS cancellation_requests("
+                    "task_id TEXT PRIMARY KEY, sealed BLOB NOT NULL, "
+                    "requested_at INTEGER NOT NULL)"
+                )
                 connection.commit()
             if self._db_path.is_symlink() or not self._db_path.is_file():
                 raise LiteratureTaskCheckpointError("literature_checkpoint_store_unavailable")
@@ -197,6 +206,47 @@ class SealedSQLiteLiteratureCheckpointStore:
         if not isinstance(sealed, bytes) or not sealed or len(sealed) > _MAX_SEALED_BYTES:
             raise LiteratureTaskCheckpointError("literature_checkpoint_store_unavailable")
         return sealed
+
+    def request_cancel(self, task_id: str, *, requested_at: int) -> None:
+        try:
+            sealed = encode_cancel_request(
+                sealer=self._sealer,
+                task_id=task_id,
+                requested_at=requested_at,
+            )
+            with closing(self._connect()) as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute(
+                    "INSERT INTO cancellation_requests(task_id, sealed, requested_at) "
+                    "VALUES (?, ?, ?) ON CONFLICT(task_id) DO NOTHING",
+                    (task_id, sealed, requested_at),
+                )
+                connection.commit()
+        except Exception:
+            raise LiteratureTaskCheckpointError(
+                "literature_checkpoint_store_unavailable"
+            ) from None
+
+    def cancellation_requested(self, task_id: str) -> bool:
+        validate_task_id(task_id)
+        try:
+            with closing(self._connect()) as connection:
+                row = connection.execute(
+                    "SELECT sealed FROM cancellation_requests WHERE task_id = ?",
+                    (task_id,),
+                ).fetchone()
+            if row is None:
+                return False
+            decode_cancel_request(
+                sealer=self._sealer,
+                task_id=task_id,
+                sealed=bytes(row[0]),
+            )
+            return True
+        except LiteratureTaskCheckpointError:
+            raise
+        except Exception:
+            raise LiteratureTaskCheckpointError("literature_checkpoint_corrupt") from None
 
     def _open(self, task_id: str, revision: int, sealed: bytes) -> LiteratureTaskCheckpoint:
         if not sealed or len(sealed) > _MAX_SEALED_BYTES:

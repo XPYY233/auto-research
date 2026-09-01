@@ -15,12 +15,14 @@ from .literature_extraction_checkpoint_workflow import (
     LITERATURE_POLICY_MAX_CALLS,
     LITERATURE_POLICY_MAX_TOKENS,
     LITERATURE_POLICY_TASKS,
-    LiteratureExtractionBusinessExecutor,
+    LiteratureExtractionBusinessExecutor as _CheckpointedLiteratureExecutor,
     _CONTINUATION_REQUEST_KEYS,
     _INITIAL_REQUEST_KEYS,
     _PLANNER_ID,
     _PLANNER_VERSION,
+    _PAYLOAD_KEYS,
     _checkpoint_task_id,
+    _decode_checkpoint_job_state,
     _prepared_calls,
     _project_checkpoint_error,
     _project_literature_error,
@@ -35,7 +37,10 @@ from .literature_extraction_job import (
 from .literature_checkpoint_runtime import LiteratureCheckpointRuntime
 from .literature_extraction_stages import ExistingLiteratureStagePlanner
 from .literature_extraction_budget import task_budget_for_page_blocks
-from .literature_task_checkpoint import LiteratureTaskCheckpointError
+from .literature_task_checkpoint import (
+    LiteratureTaskCheckpointError,
+    LiteratureTaskManifest,
+)
 from .six_column import collect_learning_samples, get_six_extraction_status
 
 
@@ -152,6 +157,94 @@ class LiteratureExtractionStageSnapshotAuthority:
         if not token:
             raise ValueError("literature extraction stage is invalid")
         return self._store.stage_fingerprint(token)
+
+
+class LiteratureExtractionBusinessExecutor(_CheckpointedLiteratureExecutor):
+    """Checkpointed executor with a provider-free cancellation control port."""
+
+    def execute(self, *, action: object, ai_client: object) -> Mapping[str, Any]:
+        try:
+            return super().execute(action=action, ai_client=ai_client)
+        except BusinessActionError as exc:
+            if exc.cause_code != "literature_task_cancelled":
+                raise
+            raise BusinessActionError(
+                "business_action_execution_failed",
+                cause_code="literature_task_cancelled",
+                stage="cancelled",
+                next_action="restart_extraction",
+            ) from exc
+
+    def request_cancel(self, *, action: object, phase: str) -> None:
+        if phase not in {"queued", "running"}:
+            raise BusinessActionError("business_action_invalid")
+        try:
+            payload = action.outbound["payload"]
+            if not isinstance(payload, Mapping) or set(payload) != _PAYLOAD_KEYS:
+                raise BusinessActionError("business_action_invalid")
+            job_token = payload["job_handle"]
+            if not isinstance(job_token, str) or not job_token:
+                raise BusinessActionError("business_action_invalid")
+            runtime = self._checkpoint_runtime
+            if runtime is None:
+                raise LiteratureTaskCheckpointError(
+                    "literature_checkpoint_store_unavailable"
+                )
+            task_id = _checkpoint_task_id(job_token)
+            checkpoint = runtime.request_cancel(task_id)
+            if checkpoint is not None:
+                return
+            job_state = self._store.export_private_state(
+                job_token, session_id=self._session_id
+            )
+            decoded = _decode_checkpoint_job_state(job_state)
+            if decoded.token != job_token:
+                raise LiteratureTaskCheckpointError("literature_checkpoint_invalid")
+            manifest = LiteratureTaskManifest(
+                task_id=task_id,
+                session_digest=action.session_digest,
+                provider_id=action.provider_id,
+                runtime_revision=action.runtime_revision,
+                credential_generation=action.credential_generation,
+                task_models=tuple(action.task_models),
+                executor_id=action.executor_id,
+                executor_version=action.executor_version,
+                pdf_snapshot_fingerprint=str(decoded.snapshot["content_fingerprint"]),
+                max_calls=action.max_calls,
+                max_tokens=action.max_tokens,
+                issued_at=action.issued_at,
+                expires_at=int(decoded.expires_at),
+            )
+            try:
+                runtime.start(
+                    manifest=manifest,
+                    job_state=job_state,
+                    stage=str(payload["stage"]),
+                    stage_fingerprint=str(payload["stage_fingerprint"]),
+                )
+            except LiteratureTaskCheckpointError as exc:
+                if exc.code != "literature_checkpoint_conflict":
+                    raise
+            runtime.request_cancel(task_id)
+        except BusinessActionError:
+            raise
+        except LiteratureTaskCheckpointError as exc:
+            raise _project_checkpoint_error(exc) from exc
+        except LiteratureExtractionJobError as exc:
+            raise _project_literature_error(exc, phase="execution") from exc
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise BusinessActionError("business_action_invalid") from exc
+
+    def _finalize_checkpointed_job(self, **kwargs: object) -> Mapping[str, Any]:
+        runtime = self._checkpoint_runtime
+        if runtime is None:
+            raise LiteratureTaskCheckpointError(
+                "literature_checkpoint_store_unavailable"
+            )
+        runtime.assert_not_cancelled(
+            kwargs["checkpoint"], owner_id=str(kwargs["owner_id"])
+        )
+        return super()._finalize_checkpointed_job(**kwargs)
 
 
 class LiteratureExtractionBusinessAssembler:

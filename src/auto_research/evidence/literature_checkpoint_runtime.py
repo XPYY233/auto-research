@@ -105,6 +105,20 @@ class LiteratureCheckpointRuntime:
         state = decode_execution_state(checkpoint.private_payload)
         return checkpoint, state.job_state
 
+    def request_cancel(self, task_id: str) -> LiteratureTaskCheckpoint | None:
+        return self._service.request_cancel(task_id)
+
+    def assert_not_cancelled(
+        self,
+        checkpoint: LiteratureTaskCheckpoint,
+        *,
+        owner_id: str,
+    ) -> LiteratureTaskCheckpoint:
+        if self._service.cancellation_requested(checkpoint.manifest.task_id):
+            self._service.cancel_at_boundary(checkpoint, owner_id=owner_id)
+            raise LiteratureTaskCheckpointError("literature_task_cancelled")
+        return checkpoint
+
     def execute_stage(
         self,
         checkpoint: LiteratureTaskCheckpoint,
@@ -140,6 +154,7 @@ class LiteratureCheckpointRuntime:
         results = list(state.completed_results)
         current = checkpoint
         for index, call in enumerate(normalized_calls):
+            self.assert_not_cancelled(current, owner_id=owner_id)
             existing = relevant[index] if index < len(relevant) else None
             if existing is not None and existing.state == "succeeded":
                 continue
@@ -191,6 +206,7 @@ class LiteratureCheckpointRuntime:
                 result_digest=_result_digest(result),
                 private_payload=payload,
             )
+            self.assert_not_cancelled(current, owner_id=owner_id)
         return current, tuple(results)
 
     def advance_stage(
@@ -202,6 +218,7 @@ class LiteratureCheckpointRuntime:
         stage: str,
         stage_fingerprint: str,
     ) -> LiteratureTaskCheckpoint:
+        self.assert_not_cancelled(checkpoint, owner_id=owner_id)
         payload = encode_execution_state(
             LiteratureExecutionState(
                 job_state=job_state,

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
-from typing import Mapping, Protocol
+from typing import Mapping, Protocol, Sequence
 
 
 CHECKPOINT_SCHEMA_VERSION = "literature-task-checkpoint-v1"
@@ -17,6 +18,7 @@ TASK_STATES = frozenset(
         "validated",
         "completed",
         "failed",
+        "cancelled",
         "outcome_unknown",
     }
 )
@@ -59,6 +61,7 @@ class LiteratureTaskCheckpointError(RuntimeError):
         "literature_checkpoint_lease_lost": "提取任务执行权已失效。",
         "literature_call_replayed": "该模型调用已经处理。",
         "literature_call_outcome_unknown": "上一次模型调用结果未知，不能自动重试。",
+        "literature_task_cancelled": "文献提取任务已安全取消。",
     }
 
     def __init__(self, code: str) -> None:
@@ -103,6 +106,10 @@ class LiteratureCheckpointPersistence(Protocol):
         *,
         expected_revision: int,
     ) -> None: ...
+
+    def request_cancel(self, task_id: str, *, requested_at: int) -> None: ...
+
+    def cancellation_requested(self, task_id: str) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -287,6 +294,45 @@ def require_sha256(value: object) -> None:
 
 def validate_task_id(task_id: object) -> None:
     require(isinstance(task_id, str) and bool(_OPAQUE_TASK_ID_RE.fullmatch(task_id)))
+
+
+def checkpoint_owner_digest(owner_id: str) -> str:
+    if not isinstance(owner_id, str) or not owner_id or len(owner_id) > 256:
+        raise LiteratureTaskCheckpointError("literature_checkpoint_invalid")
+    return hashlib.sha256(owner_id.encode("utf-8")).hexdigest()
+
+
+def receipt_by_digest(
+    checkpoint: LiteratureTaskCheckpoint,
+    call_digest: str,
+) -> LiteratureCallReceipt:
+    require_sha256(call_digest)
+    matches = tuple(
+        receipt for receipt in checkpoint.receipts if receipt.call_digest == call_digest
+    )
+    if len(matches) != 1:
+        raise LiteratureTaskCheckpointError("literature_call_replayed")
+    return matches[0]
+
+
+def single_receipt(
+    checkpoint: LiteratureTaskCheckpoint,
+    state: str,
+) -> LiteratureCallReceipt | None:
+    matches = tuple(receipt for receipt in checkpoint.receipts if receipt.state == state)
+    if len(matches) > 1:
+        raise LiteratureTaskCheckpointError("literature_checkpoint_corrupt")
+    return matches[0] if matches else None
+
+
+def replace_receipt(
+    receipts: Sequence[LiteratureCallReceipt],
+    replacement: LiteratureCallReceipt,
+) -> tuple[LiteratureCallReceipt, ...]:
+    return tuple(
+        replacement if item.ordinal == replacement.ordinal else item
+        for item in receipts
+    )
 
 
 __all__ = [

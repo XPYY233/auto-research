@@ -317,6 +317,39 @@ class BusinessPreparedActionRegistryTests(unittest.TestCase):
                 self.assertEqual(self.factory.actions[-1], (action, 1))
                 self.assertEqual(self.factory.events[-2:], ["enter", "exit"])
 
+    def test_literature_cancel_delegates_without_creating_provider_client(self):
+        class _CancelableExecutor(_Executor):
+            def __init__(self, scope):
+                super().__init__(scope)
+                self.cancelled = []
+
+            def request_cancel(self, *, action, phase):
+                self.cancelled.append((action.action_id, phase))
+
+        cancelable = _CancelableExecutor("literature_extraction")
+        self.executors["literature_extraction"] = cancelable
+        registry = self.make_registry(executors=self.executors)
+        summary = registry.prepare(
+            scope="literature_extraction",
+            session_id="cancel-owner",
+            request=object(),
+        )
+        action = self.consume(summary, "cancel-owner")
+        registry.request_cancel(action, phase="queued")
+        self.assertEqual(cancelable.cancelled, [(action.action_id, "queued")])
+        self.assertEqual(self.factory.actions, [])
+
+        other_summary = registry.prepare(
+            scope="personal_suggestion",
+            session_id="not-cancellable",
+            request=object(),
+        )
+        other = self.consume(other_summary, "not-cancellable")
+        with self.assertRaises(BusinessActionError) as rejected:
+            registry.request_cancel(other, phase="queued")
+        self.assertEqual(rejected.exception.code, "business_action_scope_unsupported")
+        self.assertEqual(self.factory.actions, [])
+
     def test_error_next_action_is_a_safe_identifier_not_renderer_copy(self):
         safe = BusinessActionError(
             "business_action_execution_failed",

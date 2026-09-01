@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import hashlib
 import time
 from dataclasses import replace
-from typing import Callable, Sequence
+from typing import Callable
 
 from auto_research.evidence.literature_task_checkpoint import (
     DEFAULT_LEASE_SECONDS,
@@ -13,9 +12,16 @@ from auto_research.evidence.literature_task_checkpoint import (
     LiteratureTaskCheckpoint,
     LiteratureTaskCheckpointError,
     LiteratureTaskManifest,
+    checkpoint_owner_digest,
+    receipt_by_digest,
+    replace_receipt,
     require_nonnegative_int,
     require_positive_int,
     require_sha256,
+    single_receipt,
+)
+from auto_research.evidence.literature_task_cancellation import (
+    LiteratureTaskCancellationCoordinator,
 )
 
 
@@ -30,6 +36,10 @@ class LiteratureTaskCheckpointService:
     ) -> None:
         self._store = store
         self._clock = clock or (lambda: int(time.time()))
+        self._cancellation = LiteratureTaskCancellationCoordinator(
+            store=store,
+            clock=self._clock,
+        )
 
     def create(
         self,
@@ -64,9 +74,9 @@ class LiteratureTaskCheckpointService:
         self._ensure_live(checkpoint, now)
         if checkpoint.state == "outcome_unknown":
             raise LiteratureTaskCheckpointError("literature_call_outcome_unknown")
-        in_flight = _single_receipt(checkpoint, "in_flight")
+        in_flight = single_receipt(checkpoint, "in_flight")
         if in_flight is not None:
-            receipts = _replace_receipt(
+            receipts = replace_receipt(
                 checkpoint.receipts,
                 replace(in_flight, state="outcome_unknown", finished_at=now),
             )
@@ -81,6 +91,13 @@ class LiteratureTaskCheckpointService:
             )
             self._cas(checkpoint, updated)
             raise LiteratureTaskCheckpointError("literature_call_outcome_unknown")
+        if checkpoint.state == "completed":
+            return checkpoint
+        if checkpoint.state == "cancelled":
+            raise LiteratureTaskCheckpointError("literature_task_cancelled")
+        if self.cancellation_requested(task_id):
+            self._cancellation.cancel_recovered(checkpoint, now=now)
+            raise LiteratureTaskCheckpointError("literature_task_cancelled")
         if checkpoint.lease_expires_at is not None and checkpoint.lease_expires_at <= now:
             updated = self._next(
                 checkpoint,
@@ -92,6 +109,23 @@ class LiteratureTaskCheckpointService:
             self._cas(checkpoint, updated)
             return updated
         return checkpoint
+
+    def request_cancel(self, task_id: str) -> LiteratureTaskCheckpoint | None:
+        return self._cancellation.request(task_id)
+
+    def cancellation_requested(self, task_id: str) -> bool:
+        return self._cancellation.requested(task_id)
+
+    def cancel_at_boundary(
+        self,
+        checkpoint: LiteratureTaskCheckpoint,
+        *,
+        owner_id: str,
+    ) -> LiteratureTaskCheckpoint:
+        return self._cancellation.cancel_at_boundary(
+            checkpoint,
+            owner_id=owner_id,
+        )
 
     def acquire(
         self,
@@ -106,7 +140,8 @@ class LiteratureTaskCheckpointService:
         now = self._now()
         self._ensure_live(checkpoint, now)
         self._ensure_not_unknown(checkpoint)
-        owner_digest = _digest_owner(owner_id)
+        self._ensure_not_cancelled(checkpoint)
+        owner_digest = checkpoint_owner_digest(owner_id)
         if (
             checkpoint.lease_owner_digest is not None
             and checkpoint.lease_expires_at is not None
@@ -133,7 +168,7 @@ class LiteratureTaskCheckpointService:
     ) -> LiteratureTaskCheckpoint:
         checkpoint = self._expected(task_id, expected_revision)
         self._require_owner(checkpoint, owner_id, self._now())
-        if _single_receipt(checkpoint, "in_flight") is not None:
+        if single_receipt(checkpoint, "in_flight") is not None:
             raise LiteratureTaskCheckpointError("literature_call_outcome_unknown")
         updated = self._next(
             checkpoint,
@@ -160,7 +195,8 @@ class LiteratureTaskCheckpointService:
         now = self._now()
         self._require_owner(checkpoint, owner_id, now)
         self._ensure_not_unknown(checkpoint)
-        if _single_receipt(checkpoint, "in_flight") is not None or any(
+        self._ensure_not_cancelled(checkpoint)
+        if single_receipt(checkpoint, "in_flight") is not None or any(
             receipt.state == "planned" for receipt in checkpoint.receipts
         ):
             raise LiteratureTaskCheckpointError("literature_call_replayed")
@@ -198,14 +234,15 @@ class LiteratureTaskCheckpointService:
         now = self._now()
         self._require_owner(checkpoint, owner_id, now)
         self._ensure_not_unknown(checkpoint)
-        receipt = _receipt_by_digest(checkpoint, call_digest)
+        self._ensure_not_cancelled(checkpoint)
+        receipt = receipt_by_digest(checkpoint, call_digest)
         if receipt.state != "planned":
             raise LiteratureTaskCheckpointError("literature_call_replayed")
         if checkpoint.spent_calls + 1 > checkpoint.manifest.max_calls:
             raise LiteratureTaskCheckpointError("literature_checkpoint_budget_exhausted")
         if checkpoint.spent_tokens + receipt.max_tokens > checkpoint.manifest.max_tokens:
             raise LiteratureTaskCheckpointError("literature_checkpoint_budget_exhausted")
-        receipts = _replace_receipt(
+        receipts = replace_receipt(
             checkpoint.receipts,
             replace(receipt, state="in_flight", started_at=now),
         )
@@ -233,10 +270,10 @@ class LiteratureTaskCheckpointService:
         checkpoint = self._expected(task_id, expected_revision)
         now = self._now()
         self._require_owner(checkpoint, owner_id, now)
-        receipt = _receipt_by_digest(checkpoint, call_digest)
+        receipt = receipt_by_digest(checkpoint, call_digest)
         if receipt.state != "in_flight":
             raise LiteratureTaskCheckpointError("literature_call_replayed")
-        receipts = _replace_receipt(
+        receipts = replace_receipt(
             checkpoint.receipts,
             replace(receipt, state="succeeded", result_digest=result_digest, finished_at=now),
         )
@@ -260,10 +297,10 @@ class LiteratureTaskCheckpointService:
         checkpoint = self._expected(task_id, expected_revision)
         now = self._now()
         self._require_owner(checkpoint, owner_id, now)
-        receipt = _receipt_by_digest(checkpoint, call_digest)
+        receipt = receipt_by_digest(checkpoint, call_digest)
         if receipt.state != "in_flight":
             raise LiteratureTaskCheckpointError("literature_call_replayed")
-        receipts = _replace_receipt(
+        receipts = replace_receipt(
             checkpoint.receipts,
             replace(receipt, state="outcome_unknown", finished_at=now),
         )
@@ -354,6 +391,11 @@ class LiteratureTaskCheckpointService:
         if checkpoint.state == "outcome_unknown":
             raise LiteratureTaskCheckpointError("literature_call_outcome_unknown")
 
+    @staticmethod
+    def _ensure_not_cancelled(checkpoint: LiteratureTaskCheckpoint) -> None:
+        if checkpoint.state == "cancelled":
+            raise LiteratureTaskCheckpointError("literature_task_cancelled")
+
     def _require_owner(
         self,
         checkpoint: LiteratureTaskCheckpoint,
@@ -363,7 +405,7 @@ class LiteratureTaskCheckpointService:
         self._ensure_live(checkpoint, now)
         self._ensure_not_unknown(checkpoint)
         if (
-            checkpoint.lease_owner_digest != _digest_owner(owner_id)
+            checkpoint.lease_owner_digest != checkpoint_owner_digest(owner_id)
             or checkpoint.lease_expires_at is None
             or checkpoint.lease_expires_at <= now
         ):
@@ -385,40 +427,6 @@ class LiteratureTaskCheckpointService:
             raise LiteratureTaskCheckpointError("literature_checkpoint_store_unavailable") from None
         require_nonnegative_int(now)
         return now
-
-
-def _digest_owner(owner_id: str) -> str:
-    if not isinstance(owner_id, str) or not owner_id or len(owner_id) > 256:
-        raise LiteratureTaskCheckpointError("literature_checkpoint_invalid")
-    return hashlib.sha256(owner_id.encode("utf-8")).hexdigest()
-
-
-def _receipt_by_digest(
-    checkpoint: LiteratureTaskCheckpoint,
-    call_digest: str,
-) -> LiteratureCallReceipt:
-    require_sha256(call_digest)
-    matches = tuple(receipt for receipt in checkpoint.receipts if receipt.call_digest == call_digest)
-    if len(matches) != 1:
-        raise LiteratureTaskCheckpointError("literature_call_replayed")
-    return matches[0]
-
-
-def _single_receipt(
-    checkpoint: LiteratureTaskCheckpoint,
-    state: str,
-) -> LiteratureCallReceipt | None:
-    matches = tuple(receipt for receipt in checkpoint.receipts if receipt.state == state)
-    if len(matches) > 1:
-        raise LiteratureTaskCheckpointError("literature_checkpoint_corrupt")
-    return matches[0] if matches else None
-
-
-def _replace_receipt(
-    receipts: Sequence[LiteratureCallReceipt],
-    replacement: LiteratureCallReceipt,
-) -> tuple[LiteratureCallReceipt, ...]:
-    return tuple(replacement if item.ordinal == replacement.ordinal else item for item in receipts)
 
 
 __all__ = ["LiteratureTaskCheckpointService"]

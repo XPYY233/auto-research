@@ -80,6 +80,16 @@ class FakeHarnessRuntime:
         raise AssertionError("Harness must not execute in route framing tests")
 
 
+class MacDesktopAICancelStaticTests(unittest.TestCase):
+    def test_cancel_route_is_owned_once_with_a_small_json_body_cap(self):
+        path = "/api/desktop/ai/jobs/ai_job_abcdefghijklmnopqrstuvwxyz/cancel"
+        matches = [route for route in DESKTOP_AI_ROUTES if route.match("POST", path)]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].route_id, "desktop_ai.business_job_cancel")
+        self.assertLessEqual(matches[0].body_cap_bytes, 256)
+        self.assertTrue(MacDesktopAIAPI.is_path(path))
+
+
 class DesktopAIRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -192,8 +202,9 @@ class DesktopAIRouteTests(unittest.TestCase):
             ("POST", "/api/desktop/ai/actions/personal_suggestion/execute-jobs"),
             ("POST", "/api/desktop/ai/actions/literature_extraction/recover-finalization"),
             ("GET", "/api/desktop/ai/jobs/ai_job_abcdefghijklmnopqrstuvwxyz"),
+            ("POST", "/api/desktop/ai/jobs/ai_job_abcdefghijklmnopqrstuvwxyz/cancel"),
         }
-        self.assertEqual(len(DESKTOP_AI_ROUTES), 19)
+        self.assertEqual(len(DESKTOP_AI_ROUTES), 20)
         for method, path in expected:
             with self.subTest(method=method, path=path):
                 self.assertTrue(MacDesktopAIAPI.is_path(path))
@@ -229,6 +240,25 @@ class DesktopAIRouteTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, 403)
         raised.exception.close()
+
+    def test_cancel_route_reuses_origin_csrf_and_strict_empty_body(self):
+        opener, csrf = self.bootstrap()
+        path = "/api/desktop/ai/jobs/ai_job_abcdefghijklmnopqrstuvwxyz/cancel"
+        with self.assertRaises(urllib.error.HTTPError) as missing:
+            self.request(opener, "POST", path, payload={}, csrf=csrf)
+        self.assertEqual(missing.exception.code, 404)
+        self.assertEqual(json.load(missing.exception)["code"], "ai_execution_job_invalid")
+        missing.exception.close()
+
+        with self.assertRaises(urllib.error.HTTPError) as forged:
+            self.request(opener, "POST", path, payload={"prompt": "forged"}, csrf=csrf)
+        self.assertEqual(forged.exception.code, 400)
+        forged.exception.close()
+
+        with self.assertRaises(urllib.error.HTTPError) as no_origin:
+            self.request(opener, "POST", path, payload={}, csrf=csrf, origin=False)
+        self.assertEqual(no_origin.exception.code, 403)
+        no_origin.exception.close()
 
     def test_literature_prepare_error_keeps_safe_stage_and_recovery_action(self):
         paper_id = self.database.upsert_paper(

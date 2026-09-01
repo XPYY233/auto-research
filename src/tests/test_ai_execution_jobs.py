@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+from unittest import mock
 
 from auto_research.ai.activity import emit_ai_activity
 from auto_research.ai.business_actions import BusinessActionError
@@ -264,6 +265,105 @@ class AIExecutionJobServiceTests(unittest.TestCase):
         final = service.get(session_id="owner", job_id=started["job_id"])
         self.assertEqual(final["error"]["cause_code"], "ai_execution_job_timeout")
         self.assertNotIn("result", final)
+
+    def test_queued_cancel_is_terminal_without_starting_execution(self):
+        executions = []
+        cancellations = []
+
+        class _DeferredThread:
+            def __init__(self, *, target, args, **_kwargs):
+                self.target = target
+                self.args = args
+
+            def start(self):
+                return None
+
+        service = AIExecutionJobService()
+        with mock.patch(
+            "auto_research.ai.execution_jobs.threading.Thread", _DeferredThread
+        ):
+            started = service.start(
+                session_id="owner",
+                scope="literature_extraction",
+                execute=lambda _observer: executions.append("provider"),
+                cancel=lambda phase: cancellations.append(phase),
+            )
+        cancelled = service.cancel(
+            session_id="owner", job_id=started["job_id"]
+        )
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertTrue(cancelled["cancel_requested"])
+        self.assertEqual(cancellations, ["queued"])
+        self.assertEqual(executions, [])
+        repeated = service.cancel(session_id="owner", job_id=started["job_id"])
+        self.assertEqual(repeated["status"], "cancelled")
+        self.assertEqual(cancellations, ["queued"])
+
+    def test_running_cancel_waits_for_safe_boundary(self):
+        entered = threading.Event()
+        release = threading.Event()
+        cancellations = []
+        service = AIExecutionJobService()
+
+        def execute(_observer):
+            entered.set()
+            release.wait(timeout=2)
+            raise BusinessActionError(
+                "business_action_execution_failed",
+                cause_code="literature_task_cancelled",
+                stage="cancelled",
+                next_action="restart_extraction",
+            )
+
+        def cancel(phase):
+            cancellations.append(phase)
+            release.set()
+
+        started = service.start(
+            session_id="owner",
+            scope="literature_extraction",
+            execute=execute,
+            cancel=cancel,
+        )
+        self.assertTrue(entered.wait(timeout=1))
+        requested = service.cancel(session_id="owner", job_id=started["job_id"])
+        self.assertEqual(requested["status"], "running")
+        self.assertTrue(requested["cancel_requested"])
+        final = self.wait(service, "owner", started["job_id"])
+        self.assertEqual(final["status"], "cancelled")
+        self.assertNotIn("result", final)
+        self.assertNotIn("error", final)
+        self.assertEqual(cancellations, ["running"])
+
+    def test_cancel_does_not_hide_unknown_provider_outcome(self):
+        entered = threading.Event()
+        release = threading.Event()
+        service = AIExecutionJobService()
+
+        def execute(_observer):
+            entered.set()
+            release.wait(timeout=2)
+            raise BusinessActionError(
+                "business_action_execution_failed",
+                cause_code="literature_call_outcome_unknown",
+                stage="provider_call",
+                next_action="review_call_outcome",
+            )
+
+        started = service.start(
+            session_id="owner",
+            scope="literature_extraction",
+            execute=execute,
+            cancel=lambda _phase: release.set(),
+        )
+        self.assertTrue(entered.wait(timeout=1))
+        service.cancel(session_id="owner", job_id=started["job_id"])
+        final = self.wait(service, "owner", started["job_id"])
+        self.assertEqual(final["status"], "failed")
+        self.assertTrue(final["cancel_requested"])
+        self.assertEqual(
+            final["error"]["cause_code"], "literature_call_outcome_unknown"
+        )
 
 
 if __name__ == "__main__":

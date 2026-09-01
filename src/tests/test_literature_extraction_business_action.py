@@ -538,6 +538,96 @@ def test_continuation_remains_bound_to_starting_session(evidence) -> None:
     assert rejected.value.code == "business_action_prepare_failed"
 
 
+def test_queued_cancel_persists_terminal_checkpoint_without_provider(evidence) -> None:
+    db, paper_id = evidence
+    root = db.path.parent
+    store = _persistent_job_store(root / "job-state")
+    runtime = _checkpoint_runtime(root / "checkpoint-state")
+    ports = literature_extraction_business_ports(
+        store,
+        session_id="owner",
+        db=db,
+        finalizer=AtomicEvidenceDBFinalizer(db),
+        checkpoint_runtime=runtime,
+    )
+    draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    action = _prepared_action(draft)
+
+    ports.executor.request_cancel(action=action, phase="queued")
+
+    task_id = _checkpoint_task_id(draft.outbound["job_handle"])
+    persisted = runtime._service.load(task_id)
+    assert persisted.state == "cancelled"
+    assert persisted.spent_calls == 0
+    assert persisted.receipts == ()
+    with pytest.raises(LiteratureTaskCheckpointError) as recovered:
+        runtime.recover_job_state(task_id)
+    assert recovered.value.code == "literature_task_cancelled"
+
+
+def test_running_cancel_stops_after_persisting_successful_paid_receipt(evidence) -> None:
+    db, paper_id = evidence
+    root = db.path.parent
+    store = _persistent_job_store(root / "job-state")
+    runtime = _checkpoint_runtime(root / "checkpoint-state")
+    ports = literature_extraction_business_ports(
+        store,
+        session_id="owner",
+        db=db,
+        finalizer=AtomicEvidenceDBFinalizer(db),
+        checkpoint_runtime=runtime,
+    )
+    draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    action = _prepared_action(draft)
+    task_id = _checkpoint_task_id(draft.outbound["job_handle"])
+
+    class _CancelAfterFirst(_RawProvider):
+        def request_json(self, messages, **kwargs):
+            result = super().request_json(messages, **kwargs)
+            runtime.request_cancel(task_id)
+            return result
+
+    raw = _CancelAfterFirst()
+    with pytest.raises(BusinessActionError) as cancelled:
+        ports.executor.execute(action=action, ai_client=_budget_client(action, raw))
+    assert cancelled.value.cause_code == "literature_task_cancelled"
+    assert cancelled.value.stage == "cancelled"
+    assert raw.calls == 1
+    persisted = runtime._service.load(task_id)
+    assert persisted.state == "cancelled"
+    assert persisted.receipts[0].state == "succeeded"
+
+
+def test_cancel_during_unknown_provider_result_never_claims_cancelled(evidence) -> None:
+    db, paper_id = evidence
+    root = db.path.parent
+    store = _persistent_job_store(root / "job-state")
+    runtime = _checkpoint_runtime(root / "checkpoint-state")
+    ports = literature_extraction_business_ports(
+        store,
+        session_id="owner",
+        db=db,
+        finalizer=AtomicEvidenceDBFinalizer(db),
+        checkpoint_runtime=runtime,
+    )
+    draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
+    action = _prepared_action(draft)
+    task_id = _checkpoint_task_id(draft.outbound["job_handle"])
+
+    class _CancelThenFail(_RawProvider):
+        def request_json(self, messages, **kwargs):
+            self.calls += 1
+            runtime.request_cancel(task_id)
+            raise RuntimeError("provider outcome unknown")
+
+    raw = _CancelThenFail()
+    with pytest.raises(BusinessActionError) as failed:
+        ports.executor.execute(action=action, ai_client=_budget_client(action, raw))
+    assert failed.value.cause_code == "literature_call_outcome_unknown"
+    assert runtime._service.load(task_id).state == "outcome_unknown"
+    assert raw.calls == 1
+
+
 def test_restart_preflight_restores_authenticated_job_without_lease_or_model(
     evidence,
 ) -> None:

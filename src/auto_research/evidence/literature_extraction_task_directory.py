@@ -109,10 +109,13 @@ class LiteratureExtractionTaskDirectory:
             "validated": "retry_finalization",
             "completed": "open_search",
             "failed": "restart_extraction",
+            "cancelled": "restart_extraction",
             "outcome_unknown": "review_call_outcome",
         }[state]
         return {
-            "resume_token": token if state not in {"completed", "failed"} else None,
+            "resume_token": (
+                token if state not in {"completed", "failed", "cancelled"} else None
+            ),
             "state": state,
             "stage": checkpoint.stage,
             "paper": {

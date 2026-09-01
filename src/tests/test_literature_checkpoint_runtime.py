@@ -196,6 +196,64 @@ class LiteratureCheckpointRuntimeTests(unittest.TestCase):
             )
         self.assertEqual(recovered.exception.code, "literature_call_outcome_unknown")
 
+    def test_cancel_requested_during_call_persists_success_before_stopping(self) -> None:
+        checkpoint = self.runtime.start(
+            manifest=self.manifest,
+            job_state=b"job-v1",
+            stage="initial_focus",
+            stage_fingerprint="5" * 64,
+        )
+        checkpoint = self.runtime.recover(
+            checkpoint.manifest.task_id,
+            owner_id="worker-one",
+        )
+        invoked = []
+
+        def invoke(index):
+            invoked.append(index)
+            self.runtime.request_cancel(checkpoint.manifest.task_id)
+            return {"index": index}
+
+        with self.assertRaises(LiteratureTaskCheckpointError) as caught:
+            self.runtime.execute_stage(
+                checkpoint,
+                owner_id="worker-one",
+                stage_fingerprint="5" * 64,
+                calls=self.calls,
+                invoke=invoke,
+            )
+        self.assertEqual(caught.exception.code, "literature_task_cancelled")
+        self.assertEqual(invoked, [0])
+        persisted = self.service.load(checkpoint.manifest.task_id)
+        self.assertEqual(persisted.state, "cancelled")
+        self.assertEqual(persisted.receipts[0].state, "succeeded")
+        self.assertEqual(len(persisted.receipts), 1)
+
+    def test_cancel_before_call_is_zero_provider_and_survives_reopen(self) -> None:
+        checkpoint = self.runtime.start(
+            manifest=self.manifest,
+            job_state=b"job-v1",
+            stage="initial_focus",
+            stage_fingerprint="5" * 64,
+        )
+        checkpoint = self.runtime.recover(
+            checkpoint.manifest.task_id,
+            owner_id="worker-one",
+        )
+        self.runtime.request_cancel(checkpoint.manifest.task_id)
+        invoked = []
+        with self.assertRaises(LiteratureTaskCheckpointError) as caught:
+            self.runtime.execute_stage(
+                checkpoint,
+                owner_id="worker-one",
+                stage_fingerprint="5" * 64,
+                calls=self.calls,
+                invoke=lambda index: invoked.append(index) or {"index": index},
+            )
+        self.assertEqual(caught.exception.code, "literature_task_cancelled")
+        self.assertEqual(invoked, [])
+        self.assertEqual(self.service.load(checkpoint.manifest.task_id).state, "cancelled")
+
     def test_advance_resets_partial_results_but_preserves_receipt_budget(self) -> None:
         checkpoint = self.runtime.start(
             manifest=self.manifest,

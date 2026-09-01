@@ -150,6 +150,65 @@ class LiteratureTaskCheckpointTests(unittest.TestCase):
         self.assertNotIn(str(self.root), str(public))
         return caught.exception
 
+    def test_persisted_cancel_does_not_race_main_revision_and_keeps_receipt(self):
+        call_digest, in_flight = self._plan_and_begin(self._create_and_acquire())
+        revision = in_flight.revision
+
+        requested = self.service.request_cancel(in_flight.manifest.task_id)
+        self.assertEqual(requested.state, "running")
+        self.assertEqual(self.store.load(in_flight.manifest.task_id).revision, revision)
+        self.assertTrue(self.store.cancellation_requested(in_flight.manifest.task_id))
+
+        completed = self.service.complete_call(
+            in_flight.manifest.task_id,
+            expected_revision=revision,
+            owner_id="worker-a",
+            call_digest=call_digest,
+            result_digest=_sha("paid-result"),
+            private_payload=b"sealed-success-result",
+        )
+        cancelled = self.service.cancel_at_boundary(completed, owner_id="worker-a")
+        self.assertEqual(cancelled.state, "cancelled")
+        self.assertEqual(cancelled.receipts[-1].state, "succeeded")
+        self.assertEqual(cancelled.reason_code, "literature_task_cancelled")
+        self.assert_error(
+            "literature_task_cancelled",
+            lambda: self.service.recover(cancelled.manifest.task_id),
+        )
+
+        reopened = SealedSQLiteLiteratureCheckpointStore(
+            data_root=self.root,
+            sealer=self.sealer,
+        )
+        self.assertTrue(reopened.cancellation_requested(cancelled.manifest.task_id))
+        self.assertEqual(reopened.load(cancelled.manifest.task_id).state, "cancelled")
+
+        with closing(sqlite3.connect(self.root / "literature-task-checkpoints-v1.sqlite")) as db:
+            db.execute(
+                "UPDATE cancellation_requests SET sealed = ? WHERE task_id = ?",
+                (b"tampered", cancelled.manifest.task_id),
+            )
+            db.commit()
+        self.assert_error(
+            "literature_checkpoint_corrupt",
+            lambda: reopened.cancellation_requested(cancelled.manifest.task_id),
+        )
+
+    def test_unknown_provider_outcome_has_priority_over_cancel_request(self):
+        call_digest, in_flight = self._plan_and_begin(self._create_and_acquire())
+        self.service.request_cancel(in_flight.manifest.task_id)
+        unknown = self.service.mark_call_outcome_unknown(
+            in_flight.manifest.task_id,
+            expected_revision=in_flight.revision,
+            owner_id="worker-a",
+            call_digest=call_digest,
+        )
+        self.assertEqual(unknown.state, "outcome_unknown")
+        self.assert_error(
+            "literature_call_outcome_unknown",
+            lambda: self.service.recover(unknown.manifest.task_id),
+        )
+
     def test_round_trip_survives_store_reopen_and_body_is_sealed(self) -> None:
         checkpoint = self.service.create(
             manifest=_manifest(),

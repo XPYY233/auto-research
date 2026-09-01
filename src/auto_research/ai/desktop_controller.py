@@ -34,6 +34,7 @@ MAX_CONSENT_BODY_BYTES = 4 * 1024
 MAX_PROTECTED_ACTION_BODY_BYTES = 4 * 1024
 MAX_BUSINESS_PREPARE_BODY_BYTES = 256 * 1024
 MAX_LITERATURE_RECOVERY_BODY_BYTES = 4 * 1024
+MAX_JOB_CANCEL_BODY_BYTES = 256
 _PROVIDER_PATH = r"(?P<provider_id>deepseek|openai|custom)"
 _BUSINESS_SCOPE_PATH = (
     r"(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)"
@@ -252,6 +253,12 @@ DESKTOP_AI_ROUTES = (
         rf"^/api/desktop/ai/jobs/{_AI_JOB_PATH}$",
         0,
     ),
+    DesktopAIRoute(
+        "desktop_ai.business_job_cancel",
+        "POST",
+        rf"^/api/desktop/ai/jobs/{_AI_JOB_PATH}/cancel$",
+        MAX_JOB_CANCEL_BODY_BYTES,
+    ),
 )
 
 
@@ -293,6 +300,7 @@ _ERROR_STATUS = {
     "custom_provider_unavailable": 503,
     "custom_provider_endpoint_unsafe": 400,
     "ai_execution_job_invalid": 404,
+    "ai_execution_job_not_cancellable": 409,
     "ai_execution_job_store_full": 429,
     "literature_task_directory_unavailable": 503,
     "literature_task_directory_corrupt": 409,
@@ -515,6 +523,11 @@ class DesktopAIController:
                 execute=lambda observer: registry.execute(
                     action, activity_callback=observer
                 ),
+                cancel=(
+                    (lambda phase: registry.request_cancel(action, phase=phase))
+                    if scope == "literature_extraction"
+                    else None
+                ),
             )
         elif route.route_id == "desktop_ai.business_job_get":
             if self._execution_jobs is None:
@@ -525,6 +538,19 @@ class DesktopAIController:
                     True,
                 )
             result = self._execution_jobs.get(
+                session_id=_session_id(request),
+                job_id=str(parameters.get("job_id") or ""),
+            )
+        elif route.route_id == "desktop_ai.business_job_cancel":
+            if self._execution_jobs is None:
+                return _error_response(
+                    503,
+                    "desktop_ai_business_unavailable",
+                    "该 AI 功能尚未在当前桌面版本中启用。",
+                    True,
+                )
+            _exact_keys(payload, set())
+            result = self._execution_jobs.cancel(
                 session_id=_session_id(request),
                 job_id=str(parameters.get("job_id") or ""),
             )

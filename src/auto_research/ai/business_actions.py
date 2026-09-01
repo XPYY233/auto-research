@@ -1526,6 +1526,36 @@ class BusinessPreparedActionRegistry:
             raise BusinessActionError("business_action_execution_failed") from exc
         return _public_result(result)
 
+    def request_cancel(self, action: PreparedOutbound, *, phase: str) -> None:
+        """Delegate a no-model cancellation request to the domain executor."""
+
+        if not isinstance(action, PreparedOutbound) or phase not in {"queued", "running"}:
+            raise BusinessActionError("business_action_invalid")
+        policy = self._policy(action.scope)
+        self._validate_consumed_action(action, policy)
+        if action.scope != "literature_extraction":
+            raise BusinessActionError("business_action_scope_unsupported")
+        cancel = getattr(self._executors[action.scope], "request_cancel", None)
+        if not callable(cancel):
+            raise BusinessActionError("business_action_execution_failed")
+        try:
+            cancel(action=action, phase=phase)
+        except BusinessActionError:
+            raise
+        except Exception as exc:
+            cause_code = getattr(exc, "code", "")
+            raise BusinessActionError(
+                "business_action_execution_failed",
+                cause_code=(
+                    cause_code
+                    if isinstance(cause_code, str)
+                    and re.fullmatch(r"[a-z][a-z0-9_]{2,95}", cause_code)
+                    else "literature_checkpoint_store_unavailable"
+                ),
+                stage="cancellation",
+                next_action="retry_cancel_request",
+            ) from exc
+
     def _now(self) -> int:
         try:
             value = self._clock.now()

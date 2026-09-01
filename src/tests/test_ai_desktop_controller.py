@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import time
 import unittest
+from unittest import mock
 
 from auto_research.ai.consent import AIConsentError
 from auto_research.ai.desktop_controller import (
@@ -13,6 +14,7 @@ from auto_research.ai.desktop_controller import (
     DesktopAIController,
 )
 from auto_research.ai.prepared_actions import PreparedActionError
+from auto_research.ai.execution_jobs import AIExecutionJobService
 from auto_research.settings.ai_desktop_service import AIDesktopServiceError
 from auto_research.settings.ai_runtime_state import AIRuntimeStateError
 
@@ -91,6 +93,9 @@ class _Business:
             })
         return {"schema_version": "business-result-v1", "ok": True}
 
+    def request_cancel(self, action, *, phase):
+        self.calls.append(("cancel", action, phase))
+
 
 class _LiteratureRecovery:
     def __init__(self):
@@ -136,7 +141,7 @@ class DesktopAIControllerTests(unittest.TestCase):
 
     def test_route_contract_has_server_prepare_consent_and_execute(self):
         contract = DesktopAIController.route_contract()
-        self.assertEqual(len(contract), 19)
+        self.assertEqual(len(contract), 20)
         patterns = {(row["method"], row["pattern"]) for row in contract}
         self.assertIn(("POST", r"^/api/desktop/ai/providers/(?P<provider_id>deepseek|openai|custom)/test-actions$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/consents$"), patterns)
@@ -147,7 +152,49 @@ class DesktopAIControllerTests(unittest.TestCase):
         self.assertIn(("GET", r"^/api/desktop/ai/actions/literature_extraction/task-directory$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/actions/literature_extraction/recover-finalization$"), patterns)
         self.assertIn(("GET", r"^/api/desktop/ai/jobs/(?P<job_id>ai_job_[A-Za-z0-9_-]{24,160})$"), patterns)
-        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 19)
+        self.assertIn(("POST", r"^/api/desktop/ai/jobs/(?P<job_id>ai_job_[A-Za-z0-9_-]{24,160})/cancel$"), patterns)
+        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 20)
+
+    def test_cancel_route_is_session_bound_csrf_protected_and_body_strict(self):
+        class _DeferredThread:
+            def __init__(self, **_kwargs):
+                pass
+
+            def start(self):
+                return None
+
+        business = _Business()
+        jobs = AIExecutionJobService()
+        controller = DesktopAIController(
+            settings=self.settings,
+            prepared_actions=self.prepared,
+            business_actions=business,
+            execution_jobs=jobs,
+        )
+        action = type("Action", (), {"scope": "literature_extraction"})()
+        with mock.patch(
+            "auto_research.ai.execution_jobs.threading.Thread", _DeferredThread
+        ):
+            started = jobs.start(
+                session_id="owner",
+                scope="literature_extraction",
+                execute=lambda _observer: {"schema_version": "never-v1"},
+                cancel=lambda phase: business.request_cancel(action, phase=phase),
+            )
+        path = f"/api/desktop/ai/jobs/{started['job_id']}/cancel"
+        wrong_session = controller(self.request("POST", path, {}, session_id="other"))
+        self.assertEqual(wrong_session.status, 404)
+        unknown = controller(self.request("POST", path, {"prompt": "forged"}, session_id="owner"))
+        self.assertEqual(unknown.status, 400)
+        no_csrf_request = self.request("POST", path, {}, session_id="owner")
+        no_csrf_request.csrf_validated = False
+        no_csrf = controller(no_csrf_request)
+        self.assertEqual(no_csrf.status, 403)
+        cancelled = controller(self.request("POST", path, {}, session_id="owner"))
+        self.assertEqual(cancelled.status, 200)
+        self.assertEqual(cancelled.body["status"], "cancelled")
+        self.assertTrue(cancelled.body["cancel_requested"])
+        self.assertEqual(business.calls[-1], ("cancel", action, "queued"))
 
     def test_literature_prepare_guard_and_zero_model_recovery_route(self):
         from auto_research.evidence.literature_extraction_recovery_controller import (
