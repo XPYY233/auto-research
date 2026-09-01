@@ -1224,7 +1224,7 @@ globalThis.document={{readyState:'loading',documentElement:{{style:{{setProperty
 globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};globalThis.innerWidth=1400;globalThis.addEventListener=()=>{{}};
 eval(fs.readFileSync({str(WEB / 'document_tab_store.js')!r},'utf8'));
 let source=fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8');
- source=source.replace('globalThis.AutoResearchFusion=Object.freeze({{initialize','globalThis.AutoResearchFusion=Object.freeze({{publicTableStructure,tableStructureHTML,tableStructureExportURL,loadTableStructure,initialize');
+ source=source.replace('globalThis.AutoResearchFusion=Object.freeze({{initialize','globalThis.AutoResearchFusion=Object.freeze({{publicTableStructure,tableStructureHTML,tableStructureExportURL,loadTableStructure,moveTableStructureReviewToPrimary,initialize');
 const pending=[];globalThis.fetch=(url,options={{}})=>new Promise(resolve=>pending.push({{url:String(url),options,resolve}}));
 eval(source);const api=globalThis.AutoResearchFusion,store=api.documentTabs;
 const table=(id,title)=>({{type:'table',title,sourceScope:'workspace',sourceId:'',entityUid:'',assetId:id,itemId:null,paperId:56,imageUrl:`/api/visual-assets/${{id}}/image`,caption:'真实截图',materials:[],quantities:[],variables:{{}},tags:[],linkedItemCount:0}});
@@ -1243,6 +1243,16 @@ store.open({{tabId:'evidence:b',kind:'evidence',ownerView:'paper',title:'B',iden
  const official={{...a,sourceScope:'official',sourceId:'official-main',entityUid:'entity_table_'+ '2'.repeat(32),assetId:null,assetAvailable:true}},officialRaw={{...raw(1358,2,'verified','4.63'),schema_version:'official-table-structure-version-v1',source_scope:'official',source_id:'official-main',entity_uid:official.entityUid}};const officialProjected=api.publicTableStructure(officialRaw,{{sourceScope:'official',sourceId:'official-main',entityUid:official.entityUid}});assert(officialProjected);const officialHTML=api.tableStructureHTML('evidence:o',official,{{tableStructure:officialProjected,tableStructureState:'ready'}},true);assert(officialHTML.includes('source_scope=official'));assert(officialHTML.includes('source_id=official-main'));
  const unavailable=api.tableStructureHTML('evidence:o',official,{{tableStructure:null,tableStructureState:'terminal',tableStructureError:'official_table_structure_not_found'}},true);assert(unavailable.includes('没有可核验的表格区域'));assert(!unavailable.includes('data-table-structure-candidate='));
  const located={{...official,bbox:[10,20,100,200]}},available=api.tableStructureHTML('evidence:o',located,{{tableStructure:null,tableStructureState:'terminal',tableStructureError:'official_table_structure_not_found'}},true);assert(available.includes('data-table-structure-candidate="auto"'));assert(available.includes('data-table-structure-candidate="manual"'));
+ const secondaryAvailable=api.tableStructureHTML('evidence:o',located,{{tableStructure:null,tableStructureState:'terminal',tableStructureError:'official_table_structure_not_found'}},false);assert(secondaryAvailable.includes('data-table-structure-primary="evidence:o"'));assert(!secondaryAvailable.includes('data-table-structure-candidate='));
+ const pendingOfficial={{...officialProjected,status:'manual_review'}},pendingTab={{tabId:'evidence:o',kind:'evidence',title:'Table 3',payload:{{row:official,tableStructure:pendingOfficial,status:'ready'}}}};
+ const primaryHTML=api.secondaryDocumentHTML(pendingTab,'primary'),secondaryHTML=api.secondaryDocumentHTML(pendingTab,'secondary');
+ assert(primaryHTML.includes('data-table-structure-action="approve"'),'primary editor must expose review actions');
+ assert(!primaryHTML.includes('data-table-structure-primary='),'primary editor must not ask to move to itself');
+ assert(secondaryHTML.includes('data-table-structure-primary="evidence:o"'),'secondary editor remains read-only and offers an explicit move');
+ assert(!secondaryHTML.includes('data-table-structure-action="approve"'),'secondary editor must not mutate review state');
+ const originalPending=store.snapshot().tabs.find(tab=>tab.tabId==='evidence:b').payload.tableStructure;
+ assert(api.moveTableStructureReviewToPrimary('evidence:b'));
+ const moved=store.snapshot().tabs.find(tab=>tab.tabId==='evidence:b');assert.equal(moved.groupId,'primary');assert.deepEqual(moved.payload.tableStructure,originalPending);assert.equal(pending.length,4,'moving an existing candidate must not issue another request');
 }})().catch(error=>{{console.error(error);process.exitCode=1}});
 """
         result = subprocess.run(
