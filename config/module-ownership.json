@@ -40,7 +40,7 @@
     },
     {
       "id": "official-package-runtime",
-      "paths": ["src/auto_research/product/evidence_package.py", "src/auto_research/product/official_package_store.py", "src/auto_research/product/portable_repository.py", "src/auto_research/product/official_package_v2_release.py", "src/auto_research/product/official_table_structures.py", "src/auto_research/product/internal_preview_builder.py"],
+      "paths": ["src/auto_research/official_table_structure_contract.py", "src/auto_research/product/evidence_package.py", "src/auto_research/product/official_package_store.py", "src/auto_research/product/portable_repository.py", "src/auto_research/product/official_package_v2_release.py", "src/auto_research/product/official_table_structures.py", "src/auto_research/product/internal_preview_builder.py"],
       "owner": "shared-product-runtime",
       "status": "stable",
       "authority": "signed official package verification, immutable repository audit, activation and rollback, including verified official table-structure sidecars"

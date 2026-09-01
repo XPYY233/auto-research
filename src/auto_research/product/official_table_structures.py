@@ -9,14 +9,19 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Sequence
 
-from auto_research.evidence import table_structure as structure
-from auto_research.evidence.official_table_structure_review import (
-    OfficialTableSource,
+from auto_research.official_table_structure_contract import (
+    OfficialTableStructureCell,
+    OfficialTableStructureContractError,
+    OfficialTableStructureLimits,
     RELEASE_SCHEMA_VERSION,
+    normalized_cell,
     official_table_structure_content_fingerprint,
+    validate_official_table_source,
+    validated_bbox,
 )
 
 
@@ -253,8 +258,8 @@ def _normalized_record(
         if expected_sha is None or str(raw["source_pdf_sha256"]) != str(expected_sha):
             raise OfficialTableStructuresError("official_table_structures_pdf_changed")
     try:
-        bbox = structure._validated_bbox(raw["bbox"])
-    except structure.TableStructureError as exc:
+        bbox = validated_bbox(raw["bbox"])
+    except OfficialTableStructureContractError as exc:
         raise OfficialTableStructuresError("official_table_structures_invalid") from exc
     rows = _rows(raw["rows"])
     reasons = raw["reason_codes"]
@@ -266,13 +271,8 @@ def _normalized_record(
     ):
         raise OfficialTableStructuresError("official_table_structures_invalid")
     cells = _cells(raw["cells"], rows, bbox, reasons)
-    source = OfficialTableSource(
-        package_id,
-        paper_uid,
-        entity_uid,
-        str(raw["source_pdf_sha256"]),
-        int(raw["page"]),
-        bbox,
+    source = _OfficialTableSource(
+        package_id, paper_uid, entity_uid, str(raw["source_pdf_sha256"]), int(raw["page"]), bbox
     )
     expected_fingerprint = official_table_structure_content_fingerprint(
         source,
@@ -303,7 +303,7 @@ def _normalized_record(
 
 
 def _rows(value: object) -> tuple[tuple[str, ...], ...]:
-    limits = structure.TableStructureLimits()
+    limits = OfficialTableStructureLimits()
     if not isinstance(value, list) or not value or len(value) > limits.max_rows:
         raise OfficialTableStructuresError("official_table_structures_invalid")
     columns = len(value[0]) if isinstance(value[0], list) else 0
@@ -315,10 +315,10 @@ def _rows(value: object) -> tuple[tuple[str, ...], ...]:
         for raw in value:
             if not isinstance(raw, list) or len(raw) != columns:
                 raise OfficialTableStructuresError("official_table_structures_invalid")
-            row = tuple(structure._normalized_cell(item, limits) for item in raw)
+            row = tuple(normalized_cell(item, limits) for item in raw)
             total += sum(len(item) for item in row)
             rows.append(row)
-    except structure.TableStructureError as exc:
+    except OfficialTableStructureContractError as exc:
         raise OfficialTableStructuresError("official_table_structures_invalid") from exc
     if total > limits.max_total_chars or not any(item.strip() for row in rows for item in row):
         raise OfficialTableStructuresError("official_table_structures_invalid")
@@ -330,7 +330,7 @@ def _cells(
     rows: tuple[tuple[str, ...], ...],
     outer: tuple[float, float, float, float],
     reasons: Sequence[str],
-) -> tuple[structure.TableStructureCell, ...]:
+) -> tuple[OfficialTableStructureCell, ...]:
     if not isinstance(value, list):
         raise OfficialTableStructuresError("official_table_structures_invalid")
     if not value:
@@ -340,7 +340,7 @@ def _cells(
     columns = len(rows[0])
     if len(value) != len(rows) * columns:
         raise OfficialTableStructuresError("official_table_structures_invalid")
-    output: list[structure.TableStructureCell] = []
+    output: list[OfficialTableStructureCell] = []
     missing_geometry = False
     boxes: list[tuple[float, float, float, float]] = []
     for position, raw in enumerate(value):
@@ -358,8 +358,8 @@ def _cells(
         bbox = None
         if raw.get("bbox") is not None:
             try:
-                bbox = structure._validated_bbox(raw["bbox"])
-            except structure.TableStructureError as exc:
+                bbox = validated_bbox(raw["bbox"])
+            except OfficialTableStructureContractError as exc:
                 raise OfficialTableStructuresError("official_table_structures_invalid") from exc
             if not _contains(outer, bbox):
                 raise OfficialTableStructuresError("official_table_structures_invalid")
@@ -372,13 +372,39 @@ def _cells(
             boxes.append(bbox)
         else:
             missing_geometry = True
-        output.append(structure.TableStructureCell(row, column, rows[row][column], bbox))
+        output.append(OfficialTableStructureCell(row, column, rows[row][column], bbox))
     if missing_geometry and not {
         "cell_geometry_unavailable",
         "merged_or_missing_cell_geometry",
     }.intersection(reasons):
         raise OfficialTableStructuresError("official_table_structures_invalid")
     return tuple(output)
+
+
+@dataclass(frozen=True)
+class _OfficialTableSource:
+    """Canonical source value local to signed-package validation."""
+
+    source_id: str
+    paper_uid: str
+    entity_uid: str
+    source_pdf_sha256: str
+    page: int
+    table_bbox: tuple[float, float, float, float] | None
+
+    def __post_init__(self) -> None:
+        try:
+            normalized = validate_official_table_source(
+                self.source_id,
+                self.paper_uid,
+                self.entity_uid,
+                self.source_pdf_sha256,
+                self.page,
+                self.table_bbox,
+            )
+        except OfficialTableStructureContractError as exc:
+            raise OfficialTableStructuresError("official_table_structures_invalid") from exc
+        object.__setattr__(self, "table_bbox", normalized)
 
 
 def public_official_table_structure(value: Mapping[str, object]) -> dict[str, object]:

@@ -16,18 +16,22 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
+from auto_research.official_table_structure_contract import (
+    OfficialTableStructureContractError,
+    RELEASE_SCHEMA_VERSION,
+    official_table_structure_content_fingerprint,
+    validate_official_table_source,
+)
+
 from . import table_structure as structure
 
 
 PUBLIC_SCHEMA_VERSION = "official-table-structure-review-v1"
 STORE_SCHEMA_VERSION = "official-table-structure-review-store-v1"
-RELEASE_SCHEMA_VERSION = "official-table-structure-version-v1"
 ERROR_SCHEMA_VERSION = "official-table-structure-review-error-v1"
 MAX_STORE_BYTES = 16 * 1024 * 1024
 MAX_VERSIONS = 2_000
-_PAPER_UID_RE = re.compile(r"^paper_[0-9a-f]{32}$")
 _ENTITY_UID_RE = re.compile(r"^entity_table_[0-9a-f]{32}$")
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _OPERATIONS = frozenset({"approve", "correct", "reject"})
 _STATUSES = frozenset({"candidate", "manual_review", "verified", "rejected"})
 _MANUAL_REASON = "manual_transcription"
@@ -104,23 +108,17 @@ class OfficialTableSource:
 
     def __post_init__(self) -> None:
         try:
-            structure.PublicTableIdentity("official", self.source_id, self.entity_uid)
-        except structure.TableStructureError as exc:
+            normalized = validate_official_table_source(
+                self.source_id,
+                self.paper_uid,
+                self.entity_uid,
+                self.source_pdf_sha256,
+                self.page,
+                self.table_bbox,
+            )
+        except OfficialTableStructureContractError as exc:
             raise OfficialTableStructureReviewError("official_table_review_invalid") from exc
-        if (
-            not _PAPER_UID_RE.fullmatch(self.paper_uid)
-            or not _ENTITY_UID_RE.fullmatch(self.entity_uid)
-            or not _SHA256_RE.fullmatch(self.source_pdf_sha256)
-            or type(self.page) is not int
-            or self.page <= 0
-        ):
-            raise OfficialTableStructureReviewError("official_table_review_invalid")
-        if self.table_bbox is not None:
-            try:
-                normalized = structure._validated_bbox(self.table_bbox)
-            except structure.TableStructureError as exc:
-                raise OfficialTableStructureReviewError("official_table_review_invalid") from exc
-            object.__setattr__(self, "table_bbox", normalized)
+        object.__setattr__(self, "table_bbox", normalized)
 
 
 @dataclass(frozen=True)
@@ -489,32 +487,6 @@ def _make_version(
         review_action=review_action,
         review_note=review_note,
     )
-
-
-def official_table_structure_content_fingerprint(
-    source: OfficialTableSource,
-    reason_codes: tuple[str, ...],
-    rows: tuple[tuple[str, ...], ...],
-    cells: tuple[structure.TableStructureCell, ...],
-) -> str:
-    value = {
-        "schema_version": RELEASE_SCHEMA_VERSION,
-        "source_scope": "official",
-        "source_id": source.source_id,
-        "paper_uid": source.paper_uid,
-        "entity_uid": source.entity_uid,
-        "entity_type": "table",
-        "source_pdf_sha256": source.source_pdf_sha256,
-        "page": source.page,
-        "bbox": list(source.table_bbox) if source.table_bbox is not None else None,
-        "reason_codes": list(reason_codes),
-        "rows": [list(row) for row in rows],
-        "cells": [cell.public_dict() for cell in cells],
-    }
-    canonical = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(
-        b"auto-research/official-table-structure/v1\0" + canonical.encode("utf-8")
-    ).hexdigest()
 
 
 def _public_version(value: _ReviewVersion) -> dict[str, object]:

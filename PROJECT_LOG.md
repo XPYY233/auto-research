@@ -10,6 +10,7 @@
 - macOS使用独立AES-GCM、原子CAS审校存储；Fusion按标签隔离加载、编辑和迟到请求，候选/拒绝/缺失不会伪装成表格或产生CSV/XLSX。旧包缺少可信bbox时在写入前失败关闭；维护者审计bbox不进入HTTP或renderer DTO。
 - 现行真实官方包构建入口不再丢弃可选`evidence/table-structures.json`，并在制包前重新绑定package id/version、entity与本次PDF SHA；sidecar进入checksum、签名、内容指纹与安装审计，旧无sidecar包保持兼容。
 - DOI `10.1016/j.jnucmat.2018.08.031`的Table 3已从同一官方PDF SHA、第5页和bbox建立5×4本地加密候选，状态仍为`manual_review`，未替用户批准。真实隔离验收验证CSV/XLSX逐格一致；整批154项定向回归通过。源码尚未覆盖安装App，也未生成build55、DMG或新资料包。
+- 完整共享门首次发现签名包校验器反向依赖科学证据层并据架构预算失败；没有放宽基线，而是抽出仅依赖标准库的官方表格中立契约。独立只读审计确认v1规范JSON与SHA-256字节兼容、隐私门等价或更严；新增固定指纹金向量后，共享1,139项（80项按设计跳过）及macOS 323项串行通过。
 
 ## 2026-09-01：官方 Table 3 真实视觉与 PDF 返回链完成（build54 同批次）
 
