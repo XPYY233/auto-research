@@ -92,6 +92,37 @@ class _Business:
         return {"schema_version": "business-result-v1", "ok": True}
 
 
+class _LiteratureRecovery:
+    def __init__(self):
+        self.calls = []
+        self.prepare_failure = None
+
+    def assert_prepare_allowed(self, request):
+        self.calls.append(("guard", dict(request)))
+        if self.prepare_failure:
+            raise self.prepare_failure
+
+    def recover_finalization(self, request):
+        self.calls.append(("recover", dict(request)))
+        return {
+            "schema_version": "literature-extraction-recovery-result-v1",
+            "status": "completed",
+            "completion": {
+                "schema_version": "literature-extraction-commit-result-v2",
+                "status": "completed",
+            },
+        }
+
+    def task_directory(self):
+        self.calls.append(("directory",))
+        return {
+            "schema_version": "literature-extraction-task-directory-v1",
+            "tasks": [],
+            "startup_recovery": {},
+            "issues": [],
+        }
+
+
 class DesktopAIControllerTests(unittest.TestCase):
     def setUp(self):
         self.settings = _Settings()
@@ -105,7 +136,7 @@ class DesktopAIControllerTests(unittest.TestCase):
 
     def test_route_contract_has_server_prepare_consent_and_execute(self):
         contract = DesktopAIController.route_contract()
-        self.assertEqual(len(contract), 18)
+        self.assertEqual(len(contract), 19)
         patterns = {(row["method"], row["pattern"]) for row in contract}
         self.assertIn(("POST", r"^/api/desktop/ai/providers/(?P<provider_id>deepseek|openai|custom)/test-actions$"), patterns)
         self.assertIn(("POST", r"^/api/desktop/ai/consents$"), patterns)
@@ -114,8 +145,48 @@ class DesktopAIControllerTests(unittest.TestCase):
         self.assertIn(("POST", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/execute-jobs$"), patterns)
         self.assertIn(("GET", r"^/api/desktop/ai/actions/(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)/jobs$"), patterns)
         self.assertIn(("GET", r"^/api/desktop/ai/actions/literature_extraction/task-directory$"), patterns)
+        self.assertIn(("POST", r"^/api/desktop/ai/actions/literature_extraction/recover-finalization$"), patterns)
         self.assertIn(("GET", r"^/api/desktop/ai/jobs/(?P<job_id>ai_job_[A-Za-z0-9_-]{24,160})$"), patterns)
-        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 18)
+        self.assertEqual(len({route.route_id for route in DESKTOP_AI_ROUTES}), 19)
+
+    def test_literature_prepare_guard_and_zero_model_recovery_route(self):
+        from auto_research.evidence.literature_extraction_recovery_controller import (
+            LiteratureRecoveryControllerError,
+        )
+
+        business = _Business()
+        recovery = _LiteratureRecovery()
+        controller = DesktopAIController(
+            settings=self.settings,
+            prepared_actions=self.prepared,
+            business_actions=business,
+            literature_recovery=recovery,
+        )
+        recovery.prepare_failure = LiteratureRecoveryControllerError(
+            "literature_active_task_exists",
+            next_action="retry_finalization",
+            retryable=False,
+        )
+        blocked = controller(self.request(
+            "POST",
+            "/api/desktop/ai/actions/literature_extraction/prepare",
+            {"paper_id": 7, "force_rescan": True},
+        ))
+        self.assertEqual(blocked.status, 409)
+        self.assertEqual(blocked.body["code"], "literature_active_task_exists")
+        self.assertEqual(blocked.body["next_action"], "retry_finalization")
+        self.assertEqual(business.calls, [])
+        self.assertEqual(self.prepared.calls, [])
+
+        recovered = controller(self.request(
+            "POST",
+            "/api/desktop/ai/actions/literature_extraction/recover-finalization",
+            {"resume_token": "T" * 48},
+        ))
+        self.assertEqual(recovered.status, 200)
+        self.assertEqual(recovered.body["completion"]["status"], "completed")
+        self.assertEqual(business.calls, [])
+        self.assertEqual(self.prepared.calls, [])
 
     def test_literature_task_directory_is_shared_and_path_free(self):
         class _Directory:

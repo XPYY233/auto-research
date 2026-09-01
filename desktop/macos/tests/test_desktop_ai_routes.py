@@ -190,9 +190,10 @@ class DesktopAIRouteTests(unittest.TestCase):
             ("POST", "/api/desktop/ai/actions/personal_suggestion/prepare"),
             ("POST", "/api/desktop/ai/actions/personal_suggestion/execute"),
             ("POST", "/api/desktop/ai/actions/personal_suggestion/execute-jobs"),
+            ("POST", "/api/desktop/ai/actions/literature_extraction/recover-finalization"),
             ("GET", "/api/desktop/ai/jobs/ai_job_abcdefghijklmnopqrstuvwxyz"),
         }
-        self.assertEqual(len(DESKTOP_AI_ROUTES), 18)
+        self.assertEqual(len(DESKTOP_AI_ROUTES), 19)
         for method, path in expected:
             with self.subTest(method=method, path=path):
                 self.assertTrue(MacDesktopAIAPI.is_path(path))

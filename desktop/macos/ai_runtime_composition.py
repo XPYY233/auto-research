@@ -4,7 +4,7 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 from auto_research.ai.business_actions import BusinessPreparedActionRegistry
 from auto_research.ai.custom_provider import CustomProviderService
@@ -37,11 +37,15 @@ from auto_research.evidence.literature_extraction_job import (
     LiteratureExtractionJobStore,
     LiteraturePDFSnapshotAuthority,
 )
+from auto_research.evidence.context_chat import _read_stable_pdf_snapshot
 from auto_research.evidence.literature_extraction_finalizer import (
     AtomicEvidenceDBFinalizer,
 )
 from auto_research.evidence.literature_extraction_recovery import (
     LiteratureExtractionFinalizerRecovery,
+)
+from auto_research.evidence.literature_extraction_recovery_controller import (
+    LiteratureExtractionRecoveryController,
 )
 from auto_research.evidence.literature_extraction_recovery_sweep import (
     LiteratureExtractionRecoverySweep,
@@ -174,6 +178,7 @@ class MacAIRuntimeServices:
     literature_jobs: LiteratureExtractionJobStore | None = None
     literature_checkpoints: MacLiteratureCheckpointServices | None = None
     literature_recovery: LiteratureExtractionFinalizerRecovery | None = None
+    literature_recovery_controller: LiteratureExtractionRecoveryController | None = None
     literature_recovery_report: Mapping[str, object] | None = None
     literature_task_directory: LiteratureExtractionTaskDirectory | None = None
 
@@ -288,6 +293,7 @@ def create_mac_ai_runtime_services(
     literature_jobs = None
     literature_checkpoints = None
     literature_recovery = None
+    literature_recovery_controller = None
     literature_recovery_report = None
     literature_task_directory = None
     snapshots = None
@@ -343,6 +349,13 @@ def create_mac_ai_runtime_services(
             checkpoints=literature_checkpoints.checkpoint_store,
             startup_recovery=literature_recovery_report,
         )
+        literature_recovery_controller = LiteratureExtractionRecoveryController(
+            recovery=literature_recovery,
+            checkpoints=literature_checkpoints.checkpoint_store,
+            papers=database,
+            task_directory=literature_task_directory,
+            pdf_fingerprint=_current_literature_pdf_fingerprint,
+        )
         snapshots = CompositeContentSnapshotAuthority(
             {
                 "personal_table": personal_ports.snapshots,
@@ -383,6 +396,7 @@ def create_mac_ai_runtime_services(
         prepared_actions=prepared_actions,
         business_actions=business_actions,
         literature_task_directory=literature_task_directory,
+        literature_recovery=literature_recovery_controller,
     )
     return MacAIRuntimeServices(
         execution_lock=execution_lock,
@@ -414,6 +428,7 @@ def create_mac_ai_runtime_services(
         literature_jobs=literature_jobs,
         literature_checkpoints=literature_checkpoints,
         literature_recovery=literature_recovery,
+        literature_recovery_controller=literature_recovery_controller,
         literature_recovery_report=literature_recovery_report,
         literature_task_directory=literature_task_directory,
     )
@@ -426,6 +441,17 @@ def _default_literature_private_root_for_state(state_path: Path) -> Path:
     if state_parent.name == "State":
         return state_parent.parent / "Private Data" / "Literature Tasks"
     return state_parent / "literature-tasks-v1"
+
+
+def _current_literature_pdf_fingerprint(paper: Mapping[str, Any]) -> str:
+    path = paper.get("pdf_path")
+    if not isinstance(path, str) or not path:
+        raise ValueError("literature PDF is unavailable")
+    snapshot = _read_stable_pdf_snapshot(path)
+    declared = str(paper.get("pdf_sha256") or "").casefold()
+    if declared and declared != snapshot.sha256:
+        raise ValueError("literature PDF identity changed")
+    return snapshot.sha256
 
 
 def mac_ai_runtime_services(

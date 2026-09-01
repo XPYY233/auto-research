@@ -618,6 +618,16 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
         self.assertNotIn("for(", workflow)
         self.assertIn("applyLiteratureResult(result)", workflow)
         self.assertIn("没有执行文献提取模型调用", workflow)
+        self.assertLess(
+            workflow.index('nextAction==="open_search"'),
+            workflow.index('preparedAuthorization("literature_extraction"'),
+        )
+        self.assertIn('setSearchSource("workspace")', workflow)
+        self.assertIn("await runPreciseSearch()", workflow)
+        self.assertIn('nextAction==="retry_finalization"', workflow)
+        self.assertIn("return recoverLiteratureFinalization(recovery,taskPaper)", workflow)
+        self.assertIn('nextAction==="restart_extraction"', workflow)
+        self.assertIn("重新调用模型并可能产生新的 API 费用", workflow)
 
     def test_literature_jobs_reconnect_without_reauthorization_and_use_full_lease(self) -> None:
         for marker in (
@@ -638,14 +648,18 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
     def test_literature_task_directory_is_ephemeral_and_user_driven(self) -> None:
         for marker in (
             'literatureTaskDirectory:"/api/desktop/ai/actions/literature_extraction/task-directory"',
+            'literatureFinalizationRecovery:"/api/desktop/ai/actions/literature_extraction/recover-finalization"',
             "function publicLiteratureTaskDirectory(raw)",
             'nextAction==="resume_extraction"',
             "▶ 恢复上次提取",
+            "✓ 完成本机发布（不调用模型）",
             "后端将从已保存检查点继续",
-            "本机正在或已尝试零模型收尾",
+            "只会校验、发布并刷新索引，不会请求模型或再次收费",
             "上次调用结果无法确认",
             "literature-extraction-receipt-summary-v1",
             "旧任务没有可恢复的计数收据",
+            'body:JSON.stringify({resume_token:recovery.resumeToken})',
+            'directoryState="unavailable"',
         ):
             self.assertIn(marker, self.runtime)
         self.assertNotIn('localStorage.setItem("resume', self.runtime)
@@ -664,12 +678,55 @@ eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=global
 (async()=>{{
  api.state.view='search';api.state.paper={{id:7,title:'W-Ta',doi:'10.1/example'}};const result=await api.reconnectLiteratureJob();assert.equal(result.status,'completed');assert.equal(api.state.view,'search','background completion must not steal navigation');assert.equal(api.state.literatureReceipt.status,'completed');assert.deepEqual(calls,[['/api/desktop/ai/actions/literature_extraction/task-directory','GET'],['/api/desktop/ai/actions/literature_extraction/jobs','GET']],'reconnect adopts latest job without prepare consent or execute');
  api.state.paper={{id:8,title:'Other paper',doi:'10.1/other'}};api.state.literatureReceipt=null;calls=[];await api.reconnectLiteratureJob();assert.equal(api.state.literatureReceipt,null,'a receipt must not attach to another paper');assert.deepEqual(calls,[['/api/desktop/ai/actions/literature_extraction/jobs','GET']]);
- const directory=api.publicLiteratureTaskDirectory({{schema_version:'literature-extraction-task-directory-v1',tasks:[{{resume_token:'resume_abcdefghijklmnop',state:'paused',stage:'coverage_gap',paper:{{title:'W-Ta',doi:'10.1/example'}},completed_calls:2,spent_calls:2,max_calls:8,updated_at:20,expires_at:200,next_action:'resume_extraction',receipt:null}}],startup_recovery:{{recovered:1,already_completed:0,skipped_or_blocked:0}},issues:[]}});assert(directory);api.state.paper={{id:7,title:'W-Ta',doi:'10.1/example'}};api.state.literatureTask.directory=directory;assert.equal(api.currentLiteratureRecovery().resumeToken,'resume_abcdefghijklmnop');assert.equal(JSON.stringify(globalThis.localStorage).includes('resume_'),false);
+ const directory=api.publicLiteratureTaskDirectory({{schema_version:'literature-extraction-task-directory-v1',tasks:[{{resume_token:'resume_abcdefghijklmnop',state:'paused',stage:'coverage_gap',paper:{{title:'W-Ta',doi:'10.1/example'}},completed_calls:2,spent_calls:2,max_calls:8,updated_at:20,expires_at:200,next_action:'resume_extraction',receipt:null}}],startup_recovery:{{recovered:1,already_completed:0,skipped_or_blocked:0}},issues:[]}});assert(directory);api.state.paper={{id:7,title:'W-Ta',doi:'10.1/example'}};api.state.literatureTask.directory=directory;api.state.literatureTask.directoryState='ready';assert.equal(api.currentLiteratureRecovery().resumeToken,'resume_abcdefghijklmnop');assert.equal(JSON.stringify(globalThis.localStorage).includes('resume_'),false);
  const summary=api.publicLiteratureReceiptSummary({{schema_version:'literature-extraction-receipt-summary-v1',status:'saved_index_pending',candidate_count:9,published_item_count:6,existing_item_count:1,manual_review_count:2,table_candidate_count:3,figure_candidate_count:4,visual_evidence_ready:true,visual_stage_status:'ready',search_index:{{status:'pending',document_count:null}},dataset_partition:'validation',entity_uids:['secret'],path:'/private/a'}});assert(summary);assert.equal(summary.publishedItemCount,6);assert.equal(summary.searchIndex.documentCount,null);assert.equal(summary.entity_uids,undefined);assert.equal(summary.path,undefined);
  const noVisual=api.publicLiteratureReceiptSummary({{schema_version:'literature-extraction-receipt-summary-v1',status:'completed',candidate_count:2,published_item_count:2,existing_item_count:0,manual_review_count:0,table_candidate_count:0,figure_candidate_count:0,visual_evidence_ready:false,visual_stage_status:'not_found',search_index:{{status:'refreshed',document_count:2}},dataset_partition:'train'}});assert(noVisual);assert.equal(noVisual.visualEvidenceReady,false);assert.equal(noVisual.visualStageStatus,'not_found');
  calls=[];await api.preparedAuthorization('literature_extraction',{{paper_id:7,force_rescan:false}}).then(()=>assert.fail('bad PDF must fail before readiness'),error=>assert.equal(error.code,'literature_pdf_missing'));assert.deepEqual(calls,[['/api/desktop/ai/actions/literature_extraction/prepare','POST']]);
  const running={{schema_version:'ai-execution-job-v1',scope:'literature_extraction',job_id:'ai_job_running_abcdefghijklmnop',status:'running',events:[]}},originalNow=Date.now;let tick=0;Date.now=()=>tick++===0?0:1800001;const background=await api.executePrepared('literature_extraction',null,{{existingJob:running,deadlineMs:0}});Date.now=originalNow;assert.equal(background.schema_version,'ai-execution-background-v1');assert.equal(api.state.literatureTask.status,'running');
 }})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(
+            ["node", "-e", program], capture_output=True, text=True, timeout=8, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_literature_finalization_recovery_is_local_and_never_prepares_ai(self) -> None:
+        program = f"""
+const assert=require('assert'),fs=require('fs');
+class El{{constructor(){{this.textContent='';this.disabled=false;this.hidden=false;this.dataset={{}};this.value='';}}setAttribute(){{}}removeAttribute(){{}}}}
+const ids={{'#fusion-start-extraction':new El(),'#fusion-open-pdf':new El(),'#fusion-literature-action-status':new El(),'#fusion-status-operation':new El()}};
+globalThis.document={{readyState:'loading',documentElement:{{dataset:{{}},style:{{setProperty(){{}}}}}},body:{{dataset:{{}}}},querySelector:s=>ids[s]||null,querySelectorAll:()=>[],addEventListener(){{}},createElement:()=>new El()}};
+globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.addEventListener=()=>{{}};
+const response=(body,ok=true)=>Promise.resolve({{ok,headers:{{get:()=>null}},json:async()=>body}});
+const commit={{schema_version:'literature-extraction-commit-result-v2',status:'completed',paper:{{title:'W-Ta',doi:'10.1/example'}},visual_evidence_ready:true,visual_stage_status:'ready',candidate_count:3,published_item_count:2,existing_item_count:1,manual_review_count:0,table_candidate_count:1,figure_candidate_count:1,extraction_receipt:{{schema_version:'literature-extraction-receipt-v1'}},publication_receipt:{{schema_version:'literature-publication-receipt-v1'}},dataset_receipt:{{schema_version:'dataset-membership-receipt-v1',paper_partition:'train'}},search_index:{{status:'refreshed'}}}};
+const readyDirectory={{schema_version:'literature-extraction-task-directory-v1',tasks:[],startup_recovery:{{recovered:0,already_completed:1,skipped_or_blocked:0}},issues:[]}};
+let calls=[];globalThis.fetch=(url,options={{}})=>{{calls.push([String(url),String(options.method||'GET'),String(options.body||'')]);if(String(url)==='/api/desktop/ai/actions/literature_extraction/recover-finalization')return response({{schema_version:'literature-extraction-recovery-result-v1',already_completed:false,completion:commit}});if(String(url)==='/api/desktop/ai/actions/literature_extraction/task-directory')return response(readyDirectory);throw new Error('unexpected '+url);}};
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
+(async()=>{{
+ const directory=api.publicLiteratureTaskDirectory({{schema_version:'literature-extraction-task-directory-v1',tasks:[{{resume_token:'resume_abcdefghijklmnop',state:'validated',stage:'validated',paper:{{title:'W-Ta',doi:'10.1/example'}},completed_calls:4,spent_calls:4,max_calls:8,updated_at:20,expires_at:200,next_action:'retry_finalization',receipt:null}}],startup_recovery:{{recovered:1,already_completed:0,skipped_or_blocked:0}},issues:[]}});assert(directory);
+ api.state.paper={{id:7,title:'W-Ta',doi:'10.1/example'}};api.state.literatureTask.directory=directory;api.state.literatureTask.directoryState='ready';
+ const result=await api.runLiteratureExtraction();assert.equal(result.status,'completed');assert.equal(api.state.literatureReceipt.status,'completed');
+ assert.deepEqual(calls,[['/api/desktop/ai/actions/literature_extraction/recover-finalization','POST','{{"resume_token":"resume_abcdefghijklmnop"}}'],['/api/desktop/ai/actions/literature_extraction/task-directory','GET','']]);
+ assert(!calls.some(([url])=>/prepare|consents|providers/.test(url)),'local finalization must not prepare, consent, verify, or call a provider');
+}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(
+            ["node", "-e", program], capture_output=True, text=True, timeout=8, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_literature_directory_failure_and_issues_fail_closed(self) -> None:
+        program = f"""
+const assert=require('assert'),fs=require('fs');
+class El{{constructor(){{this.textContent='';this.disabled=false;this.hidden=false;this.dataset={{}};}}setAttribute(){{}}removeAttribute(){{}}}}
+const ids={{'#fusion-start-extraction':new El(),'#fusion-open-pdf':new El(),'#fusion-literature-action-status':new El(),'#fusion-status-operation':new El()}};
+globalThis.document={{readyState:'loading',documentElement:{{dataset:{{}},style:{{setProperty(){{}}}}}},body:{{dataset:{{}}}},querySelector:s=>ids[s]||null,querySelectorAll:()=>[],addEventListener(){{}},createElement:()=>new El()}};
+globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.addEventListener=()=>{{}};
+const response=(body,ok=true)=>Promise.resolve({{ok,headers:{{get:()=>null}},json:async()=>body}});let mode='issues',calls=[];
+globalThis.fetch=(url,options={{}})=>{{calls.push([String(url),String(options.method||'GET')]);if(mode==='issues')return response({{schema_version:'literature-extraction-task-directory-v1',tasks:[],startup_recovery:{{recovered:0,already_completed:0,skipped_or_blocked:1}},issues:[{{code:'checkpoint_corrupt',count:1}}]}});return response({{code:'directory_unavailable',message:'unavailable'}},false);}};
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
+(async()=>{{api.state.paper={{id:7,title:'W-Ta',doi:'10.1/example'}};await api.loadLiteratureTaskDirectory();assert.equal(api.state.literatureTask.directoryState,'blocked');assert.equal(ids['#fusion-start-extraction'].disabled,true);const before=calls.length;await api.runLiteratureExtraction();assert.equal(calls.length,before);assert(ids['#fusion-literature-action-status'].textContent.includes('没有准备或执行模型调用'));
+ mode='error';await api.loadLiteratureTaskDirectory();assert.equal(api.state.literatureTask.directoryState,'unavailable');assert.equal(ids['#fusion-start-extraction'].disabled,true);const second=calls.length;await api.runLiteratureExtraction();assert.equal(calls.length,second);assert(!calls.some(([url])=>/prepare|consents|providers/.test(url)));}})().catch(error=>{{console.error(error);process.exitCode=1;}});
 """
         result = subprocess.run(
             ["node", "-e", program], capture_output=True, text=True, timeout=8, check=False
@@ -1013,7 +1070,7 @@ const dto=page=>({{schema_version:'personal-table-page-v1',source_id:'private-pu
 api.state.view='search';api.state.evidenceDetailOpen=true;api.state.evidenceDetail=row;
 assert.deepEqual(api.privateTableIdentity(row),{{sourceId:'private-public',entityUid:'private:table:opaque',key:'private:private-public:private:table:opaque'}});assert.equal(api.privateTableIdentity({{...row,sourceScope:'official'}}),null);assert.equal(api.privateTableIdentity({{...row,type:'finding'}}),null);
 const first=api.loadPrivateTablePage(row,1),second=api.loadPrivateTablePage(row,2);pending.get(2)(dto(2));await second;pending.get(1)(dto(1));await first;assert.equal(api.state.personalTablePage.page,2,'late page must not replace current page');assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('硬度'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('第 2 页'));assert(ids['#fusion-inspector-body'].innerHTML.includes('辐照剂量'));assert(ids['#fusion-inspector-body'].innerHTML.includes('300 K'));assert(ids['#fusion-inspector-body'].innerHTML.includes('硬度曲线'));assert(calls.some(([url])=>url.includes('source_id=private-public')&&url.includes('entity_uid=private%3Atable%3Aopaque')&&url.includes('page_size=50')));
-const before=calls.length;api.state.paper={{id:9,title:'已扫描论文',requiresRescanConfirmation:true}};globalThis.confirm=()=>false;await api.runLiteratureExtraction();assert.equal(calls.length,before,'rescan cancellation must make zero prepare requests');assert(ids['#fusion-literature-action-status'].textContent.includes('没有准备或执行模型调用'));
+const before=calls.length;api.state.paper={{id:9,title:'已扫描论文',requiresRescanConfirmation:true}};api.state.literatureTask.directory={{tasks:[],issues:[]}};api.state.literatureTask.directoryState='ready';globalThis.confirm=()=>false;await api.runLiteratureExtraction();assert.equal(calls.length,before,'rescan cancellation must make zero prepare requests');assert(ids['#fusion-literature-action-status'].textContent.includes('没有准备或执行模型调用'));
 api.renderLibrarianFinal({{librarian_core_version:'librarian-v3',answer:'完整回答',research_state:null,state_token:'',query_analysis:{{source_scopes:['official','workspace']}},intent:{{intent:'research_review'}},retrieval_policy:'review_map',candidate_count:7,cited_count:1,bundle_count:2,match_counts:{{direct:1,adjacent:2,expansion:4}},review_map:[{{theme:'主题一'}},{{theme:'主题二'}}],results:[{{entity_type:'item',source_scope:'official',source_id:'official-v1',entity_uid:'official:item:1',meaning:'硬度变化',value_text:'4.1',unit:'GPa',article_title:'论文A',source_page:3,source_excerpt:'原文证据'}}],report:{{schema_version:'research-report-v1',direct_conclusion:{{status:'found',text:'直接结论正文',refs:['R1']}},evidence_matrix:[{{property:'硬度',result:'4.1 GPa',material:'W',conditions:'300 K',article_title:'论文A',source_page:3,refs:['R1']}}],related_evidence:[{{summary:'相关证据正文',relaxed_constraints:['温度'],refs:['R2']}}],database_gaps:['缺少剂量范围'],suggested_followups:['继续解释R1']}},recommended_articles:[{{article_title:'推荐论文',why_recommended:'满足硬条件',first_author:'A',year:2025,doi:'10.1/a',recommendation_level:'direct',supporting_refs:['R1'],coverage_warning:'缺少图片',jump_evidence:{{entity_type:'item',source_scope:'official',source_id:'official-v1',entity_uid:'official:item:1',meaning:'硬度变化',article_title:'论文A',source_page:3,source_excerpt:'原文证据'}}}}],suggested_actions:[{{schema_version:'suggested-action-v1',answerable:true,text:'详细解释R1'}}]}},'问题');const html=ids['#fusion-librarian-output'].innerHTML;for(const text of ['完整回答','直接结论正文','证据矩阵','相关证据正文','缺少剂量范围','继续解释R1','原文证据','推荐论文','缺少图片','详细解释R1','官方资料库 + 本机文献工作区','主题综述','直接 1 · 相关 2 · 扩展 4','候选 7 · 引用 1 · 证据组 2 · 主题 2'])assert(html.includes(text),text);assert(!html.includes('官方全库'));assert(html.includes('data-librarian-evidence-link="0"'));assert(html.includes('data-librarian-article-link="0"'));
 }})().catch(error=>{{console.error(error);process.exitCode=1}});
 """
@@ -1172,7 +1229,7 @@ assert.equal(calls.filter(url=>url==='/api/desktop/evidence-chat-history').lengt
             "source_id=${encodeURIComponent(identity.sourceId)}",
             "entity_uid=${encodeURIComponent(identity.entityUid)}",
             'requiresRescanConfirmation:raw?.requires_rescan_confirmation===true',
-            "会重新调用模型并可能产生 API 费用", "force_rescan:forceRescan",
+            "重新调用模型并可能产生新的 API 费用", "force_rescan:forceRescan",
             "renderRecommendedArticles", "renderSuggestedActions", "renderLibrarianReport",
         ):
             self.assertIn(marker, self.runtime)

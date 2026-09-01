@@ -20,6 +20,10 @@ from .business_actions import (
     BusinessPreparedActionRegistry,
 )
 from .prepared_actions import PreparedActionError, PreparedActionService
+from auto_research.evidence.literature_extraction_recovery_controller import (
+    LiteratureExtractionRecoveryController,
+    LiteratureRecoveryControllerError,
+)
 
 
 DESKTOP_AI_HTTP_ERROR_SCHEMA_VERSION = "desktop-ai-http-error-v1"
@@ -29,6 +33,7 @@ MAX_TEST_BODY_BYTES = 4 * 1024
 MAX_CONSENT_BODY_BYTES = 4 * 1024
 MAX_PROTECTED_ACTION_BODY_BYTES = 4 * 1024
 MAX_BUSINESS_PREPARE_BODY_BYTES = 256 * 1024
+MAX_LITERATURE_RECOVERY_BODY_BYTES = 4 * 1024
 _PROVIDER_PATH = r"(?P<provider_id>deepseek|openai|custom)"
 _BUSINESS_SCOPE_PATH = (
     r"(?P<scope>librarian|selected_evidence_chat|literature_extraction|personal_suggestion)"
@@ -236,6 +241,12 @@ DESKTOP_AI_ROUTES = (
         0,
     ),
     DesktopAIRoute(
+        "desktop_ai.literature_recover_finalization",
+        "POST",
+        r"^/api/desktop/ai/actions/literature_extraction/recover-finalization$",
+        MAX_LITERATURE_RECOVERY_BODY_BYTES,
+    ),
+    DesktopAIRoute(
         "desktop_ai.business_job_get",
         "GET",
         rf"^/api/desktop/ai/jobs/{_AI_JOB_PATH}$",
@@ -283,6 +294,25 @@ _ERROR_STATUS = {
     "custom_provider_endpoint_unsafe": 400,
     "ai_execution_job_invalid": 404,
     "ai_execution_job_store_full": 429,
+    "literature_task_directory_unavailable": 503,
+    "literature_task_directory_corrupt": 409,
+    "literature_active_task_exists": 409,
+    "literature_source_stale": 409,
+    "literature_recovery_invalid": 400,
+    "literature_recovery_not_ready": 409,
+    "literature_recovery_result_invalid": 502,
+    "literature_recovery_unavailable": 503,
+    "literature_checkpoint_not_found": 404,
+    "literature_checkpoint_conflict": 409,
+    "literature_checkpoint_busy": 409,
+    "literature_checkpoint_expired": 410,
+    "literature_checkpoint_corrupt": 409,
+    "literature_checkpoint_store_unavailable": 503,
+    "literature_checkpoint_lease_lost": 409,
+    "literature_call_outcome_unknown": 409,
+    "literature_commit_failed": 503,
+    "literature_commit_unavailable": 503,
+    "literature_job_expired": 410,
 }
 
 
@@ -297,6 +327,7 @@ class DesktopAIController:
         business_actions: BusinessPreparedActionRegistry | None = None,
         execution_jobs: AIExecutionJobService | None = None,
         literature_task_directory: DesktopAILiteratureTaskDirectory | None = None,
+        literature_recovery: LiteratureExtractionRecoveryController | None = None,
     ) -> None:
         self._settings = settings
         self._prepared = prepared_actions
@@ -305,6 +336,7 @@ class DesktopAIController:
             AIExecutionJobService() if business_actions is not None else None
         )
         self._literature_task_directory = literature_task_directory
+        self._literature_recovery = literature_recovery
 
     def __call__(self, request: DesktopAIRequestContext) -> DesktopAIHTTPResponse:
         try:
@@ -324,6 +356,7 @@ class DesktopAIController:
             BusinessActionError,
             CustomProviderError,
             AIExecutionJobError,
+            LiteratureRecoveryControllerError,
         ) as exc:
             return _known_error(exc)
         except Exception:
@@ -429,6 +462,12 @@ class DesktopAIController:
             scope = str(parameters.get("scope") or "")
             if scope not in BUSINESS_ACTION_SCOPES:
                 raise BusinessActionError("business_action_scope_unsupported")
+            if scope == "literature_extraction":
+                if self._literature_recovery is None:
+                    raise LiteratureRecoveryControllerError(
+                        "literature_task_directory_unavailable"
+                    )
+                self._literature_recovery.assert_prepare_allowed(payload)
             result = self._business.prepare(
                 scope=scope,
                 session_id=_session_id(request),
@@ -512,7 +551,16 @@ class DesktopAIController:
                     "文献提取任务目录尚未在当前桌面版本中启用。",
                     True,
                 )
-            result = self._literature_task_directory.status(limit=16)
+            if self._literature_recovery is not None:
+                result = self._literature_recovery.task_directory()
+            else:
+                result = self._literature_task_directory.status(limit=16)
+        elif route.route_id == "desktop_ai.literature_recover_finalization":
+            if self._literature_recovery is None:
+                raise LiteratureRecoveryControllerError(
+                    "literature_task_directory_unavailable"
+                )
+            result = self._literature_recovery.recover_finalization(payload)
         else:  # pragma: no cover - route table and dispatch are reviewed together
             raise RuntimeError("unhandled AI route")
         if not isinstance(result, Mapping):
@@ -628,7 +676,8 @@ def _known_error(
     | AIConsentError
     | PreparedActionError
     | BusinessActionError
-    | AIExecutionJobError,
+    | AIExecutionJobError
+    | LiteratureRecoveryControllerError,
 ) -> DesktopAIHTTPResponse:
     status = _ERROR_STATUS.get(error.code, 500)
     response = _error_response(
