@@ -198,6 +198,15 @@ assert.equal(html.dataset.theme,'dark');assert.equal(html.dataset.density,'compa
             self.assertIn(marker, self.runtime)
         self.assertIn('.fusion-evidence-chat-body[hidden] { display:none; }', self.css)
         self.assertIn('grid-template-rows:minmax(240px,1fr) auto', self.css)
+        self.assertIn(
+            '.fusion-evidence-workspace:has(>.fusion-evidence-chat[data-expanded="true"])',
+            self.css,
+        )
+        self.assertIn('grid-template-rows:minmax(132px,.8fr) minmax(250px,1.2fr)', self.css)
+        self.assertIn(
+            '.fusion-evidence-workspace>.fusion-evidence-chat[data-expanded="true"] .fusion-evidence-chat-body { height:auto;min-height:0; }',
+            self.css,
+        )
         self.assertNotIn('grid-template-rows:minmax(240px,1.15fr) minmax(260px,.85fr)', self.css)
 
     def test_literature_toolbar_keeps_primary_actions_on_the_first_row(self) -> None:

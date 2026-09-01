@@ -188,5 +188,8 @@ body[data-workspace-librarian-results="drawer"] .fusion-librarian-results { posi
 .fusion-evidence-workspace { display:grid;grid-template-rows:minmax(240px,1fr) auto;gap:var(--f-content-gap);height:100%;min-width:0;min-height:0;overflow:hidden; }
 .fusion-evidence-workspace>.fusion-secondary-evidence { min-height:0;padding-right:4px;overflow:auto;scrollbar-gutter:stable; }
 .fusion-evidence-workspace>.fusion-evidence-chat { min-height:0;max-height:none; }
+.fusion-evidence-workspace:has(>.fusion-evidence-chat[data-expanded="true"]) { grid-template-rows:minmax(132px,.8fr) minmax(250px,1.2fr); }
+.fusion-evidence-workspace>.fusion-evidence-chat[data-expanded="true"] { display:grid!important;grid-template-rows:auto minmax(0,1fr);overflow:hidden; }
+.fusion-evidence-workspace>.fusion-evidence-chat[data-expanded="true"] .fusion-evidence-chat-body { height:auto;min-height:0; }
 .fusion-result>b { max-width:44%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 @media(prefers-reduced-motion:reduce) { .fusion-context,.fusion-inspector,.fusion-scrim,.fusion-command-palette,.fusion-thinking-dots,.fusion-ai-progress-track i { transition:none!important;animation:none!important;scroll-behavior:auto!important; }.fusion-ai-progress-agent img { display:none; } }
