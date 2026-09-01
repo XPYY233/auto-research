@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from auto_research.product import portable_repository as repository_module
+from auto_research.product.official_package_assets import OfficialPaperPdf
 
 from auto_research.product.portable_repository import (
     DATABASE_CONTRACT,
@@ -23,6 +24,10 @@ from auto_research.product.portable_repository import (
     provenance_for_papers,
     stable_entity_uid,
     stable_paper_uid,
+)
+from auto_research.evidence.official_table_structure_review import (
+    OfficialTableSource,
+    official_table_structure_content_fingerprint,
 )
 
 
@@ -319,6 +324,120 @@ class PortableRepositoryTests(unittest.TestCase):
         with self.assertRaises(PortableRepositoryError) as changed:
             repository.open_entity_asset(entity_uid)
         self.assertIn(changed.exception.code, {"asset_media", "asset_checksum"})
+
+    def test_optional_verified_table_structure_is_audited_and_not_in_search(self) -> None:
+        entity = json.loads(json.dumps(self.entity))
+        entity["entity_type"] = "table"
+        entity["identity_key"] = "stable-source-table-grid-1"
+        entity["source_kind"] = "table"
+        entity["payload"] = {
+            "display_name": "Table 1",
+            "label": "Table 1",
+            "page_start": 3,
+        }
+        entity_uid = stable_entity_uid(self.paper_uid, "table", entity["identity_key"])
+        source = OfficialTableSource(
+            "official-fusion-preview",
+            self.paper_uid,
+            entity_uid,
+            "b" * 64,
+            3,
+            (70.0, 90.0, 350.0, 190.0),
+        )
+        rows = (("Material", "Value"), ("A", "1.0"))
+        reasons = ("manual_transcription",)
+        record = {
+            "schema_version": "official-table-structure-version-v1",
+            "source_scope": "official",
+            "source_id": source.source_id,
+            "paper_uid": source.paper_uid,
+            "entity_uid": source.entity_uid,
+            "entity_type": "table",
+            "source_pdf_sha256": source.source_pdf_sha256,
+            "version": 2,
+            "status": "verified",
+            "page": 3,
+            "bbox": list(source.table_bbox),
+            "reason_codes": list(reasons),
+            "rows": [list(row) for row in rows],
+            "cells": [],
+            "content_fingerprint": official_table_structure_content_fingerprint(
+                source, reasons, rows, ()
+            ),
+            "reviewed_at": "2026-09-01T00:00:00+00:00",
+        }
+        plan = PortableExportPlan(
+            papers=(self.paper,),
+            entities=(entity,),
+            dropped_by_reason={"manual_review": 2},
+            table_structures=(record,),
+        )
+        output = materialize_portable_repository(
+            plan,
+            self.root / "repository-with-grid",
+            package_id="official-fusion-preview",
+            package_version="0.1.0-preview.1",
+            release_policy=self.policy(),
+            provenance=provenance_for_papers(
+                (self.paper,), publisher="Auto Research internal preview"
+            ),
+        )
+        self.assertEqual(output.table_structure_count, 1)
+        self.assertIsNotNone(output.table_structures_path)
+        audit = audit_portable_repository(output.root)
+        self.assertEqual(audit.table_structure_count, 1)
+        repository = OfficialEvidenceRepository.open(output.root)
+        public = repository.get_table_structure(entity_uid)
+        self.assertEqual(public["rows"], [["Material", "Value"], ["A", "1.0"]])
+        encoded = json.dumps(public, ensure_ascii=False)
+        self.assertNotIn("source_pdf_sha256", encoded)
+        search = list(repository.iter_search_documents())[0]
+        self.assertNotIn("rows", search)
+        self.assertNotIn("cells", search)
+
+        sidecar = output.table_structures_path
+        assert sidecar is not None
+        tampered = json.loads(sidecar.read_text(encoding="utf-8"))
+        tampered["structures"][0]["rows"][1][1] = "99"
+        sidecar.write_text(
+            json.dumps(tampered, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        with self.assertRaises(PortableRepositoryError):
+            audit_portable_repository(output.root)
+
+    def test_old_distribution_schema_has_no_structure_and_remains_compatible(self) -> None:
+        output = self.build("old-compatible")
+        self.assertEqual(output.table_structure_count, 0)
+        self.assertIsNone(output.table_structures_path)
+        repository = OfficialEvidenceRepository.open(output.root)
+        with self.assertRaises(KeyError):
+            repository.get_table_structure("entity_table_" + "f" * 32)
+
+    def test_backend_pdf_identity_is_path_free_and_missing_is_explicit(self) -> None:
+        output = self.build("pdf-identity")
+        audit = audit_portable_repository(output.root)
+        row = OfficialPaperPdf(
+            self.paper_uid,
+            f"papers/{self.paper_uid}.pdf",
+            "c" * 64,
+            1234,
+        )
+        repository = OfficialEvidenceRepository(output.root, audit, paper_pdfs=(row,))
+        identity = repository.get_pdf_identity(self.paper_uid)
+        self.assertEqual(
+            identity,
+            {
+                "schema_version": "official-pdf-identity-v1",
+                "paper_uid": self.paper_uid,
+                "sha256": "c" * 64,
+                "size_bytes": 1234,
+                "media_type": "application/pdf",
+            },
+        )
+        self.assertNotIn("path", json.dumps(identity))
+        with self.assertRaises(KeyError):
+            repository.get_pdf_identity("paper_" + "f" * 32)
 
     def test_same_public_input_produces_same_database_bytes(self) -> None:
         first = self.build("first")

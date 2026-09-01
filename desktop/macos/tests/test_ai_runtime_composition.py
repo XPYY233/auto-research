@@ -368,6 +368,10 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             production,
         )
         self.assertIn(
+            "official_service=product_services.official_table_structure_service",
+            production,
+        )
+        self.assertIn(
             "research_memory_service=research_memory_service",
             production,
         )

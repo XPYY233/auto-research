@@ -65,6 +65,43 @@ class _Service:
         return export_verified_table_structure(_structure(), format=format)
 
 
+class _OfficialService:
+    def __init__(self) -> None:
+        self.get_calls: list[dict[str, object]] = []
+        self.candidate_calls: list[dict[str, object]] = []
+        self.review_calls: list[dict[str, object]] = []
+        self.export_calls: list[dict[str, object]] = []
+
+    @staticmethod
+    def _value(*, status="manual_review", version=1):
+        return {
+            **_structure(status=status),
+            "schema_version": "official-table-structure-review-v1",
+            "source_scope": "official",
+            "source_id": "official-main",
+            "entity_uid": "entity_table_" + "2" * 32,
+            "version": version,
+        }
+
+    def get(self, entity_uid, **kwargs):
+        self.get_calls.append({"entity_uid": entity_uid, **kwargs})
+        return self._value()
+
+    def candidate(self, entity_uid, **kwargs):
+        self.candidate_calls.append({"entity_uid": entity_uid, **kwargs})
+        return self._value()
+
+    def review(self, **kwargs):
+        self.review_calls.append(dict(kwargs))
+        return self._value(status="verified", version=2)
+
+    def export(self, entity_uid, **kwargs):
+        self.export_calls.append({"entity_uid": entity_uid, **kwargs})
+        value = self._value(status="verified", version=2)
+        value["schema_version"] = "table-structure-version-v1"
+        return export_verified_table_structure(value, format=kwargs["format"])
+
+
 class _Handler:
     def __init__(self, path: str, body: object | bytes | None = None) -> None:
         self.path = path
@@ -183,6 +220,92 @@ class TableStructureAPITests(unittest.TestCase):
                 api.handle_post(handler)
                 self.assertEqual(handler.responses[0][1], HTTPStatus.BAD_REQUEST)
 
+    def test_official_get_candidate_review_and_export_require_exact_identity(self) -> None:
+        workspace = _Service()
+        official = _OfficialService()
+        api = TableStructureAPI(  # type: ignore[arg-type]
+            workspace,
+            official_service=official,  # type: ignore[arg-type]
+        )
+        entity_uid = "entity_table_" + "2" * 32
+        query = (
+            f"source_scope=official&source_id=official-main&entity_uid={entity_uid}"
+            "&include_unverified=1"
+        )
+        handler = _Handler(f"/api/desktop/table-structures?{query}")
+        self.assertTrue(api.handle_get(handler))
+        self.assertEqual(
+            official.get_calls,
+            [
+                {
+                    "entity_uid": entity_uid,
+                    "source_id": "official-main",
+                    "include_unverified": True,
+                }
+            ],
+        )
+        candidate = _Handler(
+            "/api/desktop/table-structures/candidates",
+            {
+                "source_scope": "official",
+                "source_id": "official-main",
+                "entity_uid": entity_uid,
+                "expected_version": 0,
+                "manual_rows": [["材料", "硬度"], ["A", "4.63"]],
+            },
+        )
+        self.assertTrue(api.handle_post(candidate))
+        self.assertEqual(official.candidate_calls[0]["expected_version"], 0)
+        self.assertEqual(
+            official.candidate_calls[0]["manual_rows"][1],  # type: ignore[index]
+            ["A", "4.63"],
+        )
+        review = _Handler(
+            "/api/desktop/table-structures/reviews",
+            {
+                "source_scope": "official",
+                "source_id": "official-main",
+                "entity_uid": entity_uid,
+                "expected_version": 1,
+                "operation": "approve",
+                "note": "逐格核对",
+            },
+        )
+        self.assertTrue(api.handle_post(review))
+        self.assertEqual(official.review_calls[0]["source_id"], "official-main")
+        export = _Handler(
+            "/api/desktop/table-structures/export?"
+            f"source_scope=official&source_id=official-main&entity_uid={entity_uid}&format=xlsx"
+        )
+        self.assertTrue(api.handle_get(export))
+        self.assertEqual(export.status, HTTPStatus.OK)
+        self.assertTrue(export.wfile.getvalue().startswith(b"PK"))
+        self.assertEqual(workspace.get_calls, [])
+
+        invalid = _Handler(
+            "/api/desktop/table-structures?"
+            f"source_scope=official&entity_uid={entity_uid}&include_unverified=1"
+        )
+        api.handle_get(invalid)
+        self.assertEqual(invalid.responses[0][1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(
+            invalid.responses[0][0]["code"],
+            "official_table_structure_invalid",
+        )
+
+    def test_official_routes_fail_closed_when_coordinator_is_not_injected(self) -> None:
+        entity_uid = "entity_table_" + "2" * 32
+        api = TableStructureAPI(_Service())  # type: ignore[arg-type]
+        handler = _Handler(
+            "/api/desktop/table-structures?"
+            f"source_scope=official&source_id=official-main&entity_uid={entity_uid}"
+            "&include_unverified=1"
+        )
+        api.handle_get(handler)
+        payload, status = handler.responses[0]
+        self.assertEqual(status, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(payload["code"], "official_table_structure_unavailable")
+
     def test_error_mapping_is_stable_and_path_free(self) -> None:
         expected = {
             "table_structure_service_invalid": HTTPStatus.BAD_REQUEST,
@@ -223,45 +346,60 @@ class TableStructureAPITests(unittest.TestCase):
 
             @staticmethod
             def is_post_route(path: str) -> bool:
-                return path == "/api/desktop/table-structures/reviews"
+                return path in {
+                    "/api/desktop/table-structures/candidates",
+                    "/api/desktop/table-structures/reviews",
+                }
 
             def handle_post(self, handler) -> bool:
                 self.calls.append(handler.path)
                 handler.json_response({"ok": True})
                 return True
 
-        for authorized, read_only, expected in (
-            (False, False, None),
-            (True, True, HTTPStatus.FORBIDDEN),
-            (True, False, HTTPStatus.OK),
+        for route in (
+            "/api/desktop/table-structures/candidates",
+            "/api/desktop/table-structures/reviews",
         ):
-            with self.subTest(authorized=authorized, read_only=read_only):
-                handler = object.__new__(DesktopEvidenceHandler)
-                handler.path = "/api/desktop/table-structures/reviews"
-                handler.read_only = read_only
-                handler.experience_mode = "standard"
-                handler.table_structure_api = API()
-                handler.review_queue_api = None
-                handler.package_api = None
-                handler.package_center_api = None
-                handler.personal_import_api = None
-                handler.search_index_recovery_api = None
-                handler.desktop_ai_api = None
-                handler.responses = []
-                handler._authorize_post = lambda path: authorized and path == handler.path
-                handler.json_response = lambda payload, status=HTTPStatus.OK: handler.responses.append(
-                    (payload, HTTPStatus(status))
-                )
-                handler.do_POST()
-                if not authorized:
-                    self.assertEqual(handler.responses, [])
-                    self.assertEqual(handler.table_structure_api.calls, [])
-                else:
-                    self.assertEqual(handler.responses[0][1], expected)
-                    self.assertEqual(
-                        handler.table_structure_api.calls,
-                        [] if read_only else [handler.path],
+            for authorized, read_only, expected in (
+                (False, False, None),
+                (True, True, HTTPStatus.FORBIDDEN),
+                (True, False, HTTPStatus.OK),
+            ):
+                with self.subTest(
+                    route=route,
+                    authorized=authorized,
+                    read_only=read_only,
+                ):
+                    handler = object.__new__(DesktopEvidenceHandler)
+                    handler.path = route
+                    handler.read_only = read_only
+                    handler.experience_mode = "standard"
+                    handler.table_structure_api = API()
+                    handler.review_queue_api = None
+                    handler.package_api = None
+                    handler.package_center_api = None
+                    handler.personal_import_api = None
+                    handler.search_index_recovery_api = None
+                    handler.desktop_ai_api = None
+                    handler.responses = []
+                    handler._authorize_post = (
+                        lambda path: authorized and path == handler.path
                     )
+                    handler.json_response = (
+                        lambda payload, status=HTTPStatus.OK: handler.responses.append(
+                            (payload, HTTPStatus(status))
+                        )
+                    )
+                    handler.do_POST()
+                    if not authorized:
+                        self.assertEqual(handler.responses, [])
+                        self.assertEqual(handler.table_structure_api.calls, [])
+                    else:
+                        self.assertEqual(handler.responses[0][1], expected)
+                        self.assertEqual(
+                            handler.table_structure_api.calls,
+                            [] if read_only else [handler.path],
+                        )
 
 
 if __name__ == "__main__":

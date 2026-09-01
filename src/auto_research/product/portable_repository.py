@@ -23,6 +23,14 @@ from .official_package_assets import (
     open_official_pdf_lease,
     validate_official_package_asset_manifest,
 )
+from .official_table_structures import (
+    OFFICIAL_TABLE_STRUCTURES_PATH,
+    OfficialTableStructuresError,
+    build_official_table_structures_document,
+    canonical_official_table_structures_bytes,
+    parse_official_table_structures_bytes,
+    public_official_table_structure,
+)
 
 
 DISTRIBUTION_SCHEMA_VERSION = 1
@@ -379,6 +387,7 @@ class PortableExportPlan:
     entities: tuple[Mapping[str, Any], ...]
     dropped_by_reason: Mapping[str, int] = field(default_factory=dict)
     private_source_sha256: str | None = None
+    table_structures: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -392,6 +401,8 @@ class PortableRepositoryExport:
     paper_count: int
     entity_count: int
     asset_count: int
+    table_structure_count: int
+    table_structures_path: Path | None
     content_fingerprint: str
     database_sha256: str
     private_source_sha256: str | None
@@ -407,6 +418,8 @@ class RepositoryAudit:
     paper_count: int
     entity_count: int
     asset_count: int
+    table_structure_count: int = 0
+    table_structures: tuple[Mapping[str, Any], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -420,6 +433,7 @@ class RepositoryAudit:
             "paper_count": self.paper_count,
             "entity_count": self.entity_count,
             "asset_count": self.asset_count,
+            "table_structure_count": self.table_structure_count,
         }
 
 
@@ -1442,6 +1456,17 @@ def materialize_portable_repository(
         entities=entity_records.values(),
     )
     provenance_value = _validate_provenance(provenance, paper_records=paper_records)
+    table_structures_document: dict[str, object] | None = None
+    if plan.table_structures:
+        try:
+            table_structures_document = build_official_table_structures_document(
+                plan.table_structures,
+                package_id=str(package_id),
+                package_version=str(package_version),
+                entities=entity_records,
+            )
+        except OfficialTableStructuresError as exc:
+            raise PortableRepositoryError(exc.code, exc.safe_message) from exc
     public_content = {
         "database_contract": DATABASE_CONTRACT,
         "schema_version": DISTRIBUTION_SCHEMA_VERSION,
@@ -1449,6 +1474,8 @@ def materialize_portable_repository(
         "papers": [paper_records[key] for key in sorted(paper_records)],
         "entities": [entity_records[key] for key in sorted(entity_records)],
     }
+    if table_structures_document is not None:
+        public_content["table_structures"] = table_structures_document["structures"]
     content_fingerprint = _sha256_bytes(_canonical_json_bytes(public_content))
 
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1459,6 +1486,18 @@ def materialize_portable_repository(
         provenance_path = staging.joinpath(*PurePosixPath(PROVENANCE_PATH).parts)
         _write_canonical_json(rights_path, rights)
         _write_canonical_json(provenance_path, provenance_value)
+        table_structures_path: Path | None = None
+        if table_structures_document is not None:
+            table_structures_path = staging.joinpath(
+                *PurePosixPath(OFFICIAL_TABLE_STRUCTURES_PATH).parts
+            )
+            table_structures_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = canonical_official_table_structures_bytes(table_structures_document)
+            with table_structures_path.open("xb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(table_structures_path, 0o600)
         rights_digest, _ = _sha256_file(rights_path)
         provenance_digest, _ = _sha256_file(provenance_path)
         asset_rows = _prepare_assets(
@@ -1501,6 +1540,12 @@ def materialize_portable_repository(
             paper_count=len(paper_records),
             entity_count=len(entity_records),
             asset_count=len(asset_rows),
+            table_structure_count=len(plan.table_structures),
+            table_structures_path=(
+                destination.joinpath(*PurePosixPath(OFFICIAL_TABLE_STRUCTURES_PATH).parts)
+                if table_structures_document is not None
+                else None
+            ),
             content_fingerprint=content_fingerprint,
             database_sha256=database_digest,
             private_source_sha256=plan.private_source_sha256,
@@ -1527,6 +1572,36 @@ def _read_canonical_json(path: Path, *, label: str) -> dict[str, Any]:
     if not isinstance(value, dict) or raw != _canonical_json_bytes(value, newline=True):
         raise PortableRepositoryError("audit_metadata", f"{label}不是规范 JSON")
     return value
+
+
+def _read_table_structures(
+    root: Path,
+    *,
+    package_id: str,
+    package_version: str,
+    entities: Mapping[str, Mapping[str, Any]],
+    paper_pdf_sha256: Mapping[str, str] | None = None,
+) -> tuple[dict[str, object], ...]:
+    path = root.joinpath(*PurePosixPath(OFFICIAL_TABLE_STRUCTURES_PATH).parts)
+    if not path.exists() and not path.is_symlink():
+        return ()
+    if path.is_symlink() or not path.is_file():
+        raise PortableRepositoryError("audit_table_structures", "官方表格结构清单缺失或不安全")
+    try:
+        payload = path.read_bytes()
+        return parse_official_table_structures_bytes(
+            payload,
+            package_id=package_id,
+            package_version=package_version,
+            entities=entities,
+            paper_pdf_sha256=paper_pdf_sha256,
+        )
+    except OfficialTableStructuresError as exc:
+        raise PortableRepositoryError(exc.code, exc.safe_message) from exc
+    except OSError as exc:
+        raise PortableRepositoryError(
+            "audit_table_structures", "无法安全读取官方表格结构清单"
+        ) from exc
 
 
 def _repository_inventory(root: Path) -> set[str]:
@@ -1706,6 +1781,13 @@ def audit_portable_repository(
             entity_uids=set(entity_by_uid),
         )
 
+        table_structures = _read_table_structures(
+            repository_root,
+            package_id=metadata["package_id"],
+            package_version=metadata["package_version"],
+            entities=entity_by_uid,
+        )
+
         aliases = [dict(row) for row in connection.execute("SELECT * FROM identity_aliases")]
         alias_owners: dict[tuple[str, str], str] = {}
         object_alias_counts: dict[tuple[str, str], int] = {}
@@ -1729,17 +1811,16 @@ def audit_portable_repository(
         ):
             raise PortableRepositoryError("audit_identity", "公开对象缺少持久身份别名")
 
-        content_fingerprint = _sha256_bytes(
-            _canonical_json_bytes(
-                {
-                    "database_contract": DATABASE_CONTRACT,
-                    "schema_version": DISTRIBUTION_SCHEMA_VERSION,
-                    "identity_version": IDENTITY_VERSION,
-                    "papers": papers,
-                    "entities": public_content_entities,
-                }
-            )
-        )
+        public_content: dict[str, object] = {
+            "database_contract": DATABASE_CONTRACT,
+            "schema_version": DISTRIBUTION_SCHEMA_VERSION,
+            "identity_version": IDENTITY_VERSION,
+            "papers": papers,
+            "entities": public_content_entities,
+        }
+        if table_structures:
+            public_content["table_structures"] = list(table_structures)
+        content_fingerprint = _sha256_bytes(_canonical_json_bytes(public_content))
         if content_fingerprint != metadata["content_fingerprint"]:
             raise PortableRepositoryError("audit_payload", "公开内容指纹不一致")
 
@@ -1773,6 +1854,8 @@ def audit_portable_repository(
 
     safe_extra_paths = {_safe_relative_path(str(path)) for path in allowed_extra_paths}
     required_inventory = {DATABASE_PATH, RIGHTS_PATH, PROVENANCE_PATH, *asset_paths}
+    if table_structures:
+        required_inventory.add(OFFICIAL_TABLE_STRUCTURES_PATH)
     if safe_extra_paths & required_inventory:
         raise PortableRepositoryError("audit_tree", "允许的包控制文件与仓库内容冲突")
     expected_inventory = required_inventory | safe_extra_paths
@@ -1786,6 +1869,8 @@ def audit_portable_repository(
         paper_count=len(paper_by_uid),
         entity_count=len(entity_by_uid),
         asset_count=len(asset_rows),
+        table_structure_count=len(table_structures),
+        table_structures=table_structures,
     )
 
 
@@ -1798,6 +1883,7 @@ class OfficialEvidenceRepository:
         audit: RepositoryAudit,
         *,
         paper_pdfs: Iterable[OfficialPaperPdf] = (),
+        table_structures: Iterable[Mapping[str, Any]] | None = None,
     ) -> None:
         self.root = root
         self.database_path = root.joinpath(*PurePosixPath(DATABASE_PATH).parts)
@@ -1805,6 +1891,11 @@ class OfficialEvidenceRepository:
         self.package_version = audit.package_version
         self.content_fingerprint = audit.content_fingerprint
         self._paper_pdfs = {row.paper_uid: row for row in paper_pdfs}
+        source_structures = audit.table_structures if table_structures is None else table_structures
+        self._table_structures = {
+            str(row["entity_uid"]): public_official_table_structure(row)
+            for row in source_structures
+        }
 
     @classmethod
     def open(
@@ -1854,6 +1945,22 @@ class OfficialEvidenceRepository:
             expected_paper_uids=expected_papers if paper_pdfs else None,
         )
         repository._paper_pdfs = {row.paper_uid: row for row in validated}
+        with repository._connect() as connection:
+            entities = {
+                str(row["entity_uid"]): dict(row)
+                for row in connection.execute("SELECT entity_uid,paper_uid,entity_type FROM entities")
+            }
+        checked_structures = _read_table_structures(
+            audit.root,
+            package_id=audit.package_id,
+            package_version=audit.package_version,
+            entities=entities,
+            paper_pdf_sha256={row.paper_uid: row.sha256 for row in validated},
+        )
+        repository._table_structures = {
+            str(row["entity_uid"]): public_official_table_structure(row)
+            for row in checked_structures
+        }
         return repository
 
     @contextmanager
@@ -1950,6 +2057,14 @@ class OfficialEvidenceRepository:
         )
         return result
 
+    def get_table_structure(self, entity_uid: str) -> dict[str, Any]:
+        """Return one human-verified official grid without changing search DTOs."""
+
+        value = self._table_structures.get(str(entity_uid))
+        if value is None:
+            raise KeyError(f"official table structure not found: {entity_uid}")
+        return json.loads(json.dumps(value, ensure_ascii=False))
+
     def list_entity_assets(self, entity_uid: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
             return [
@@ -1965,6 +2080,20 @@ class OfficialEvidenceRepository:
         if row is None:
             return None
         return open_official_pdf_lease(self.root, row, source_id=self.package_id)
+
+    def get_pdf_identity(self, paper_uid: str) -> dict[str, Any]:
+        """Return backend-only immutable PDF identity without a filesystem path."""
+
+        row = self._paper_pdfs.get(str(paper_uid))
+        if row is None:
+            raise KeyError(f"official PDF identity not found: {paper_uid}")
+        return {
+            "schema_version": "official-pdf-identity-v1",
+            "paper_uid": row.paper_uid,
+            "sha256": row.sha256,
+            "size_bytes": row.size_bytes,
+            "media_type": "application/pdf",
+        }
 
     def open_entity_asset(self, entity_uid: str) -> OfficialVisualAssetLease | None:
         """Open the single visual asset bound to one public evidence identity."""

@@ -26,12 +26,17 @@ from .evidence_v12_export import plan_evidence_v12_export
 from .official_package_assets import (
     OFFICIAL_DISTRIBUTION_SCOPE,
     OFFICIAL_PACKAGE_CONTRACT_V2,
+    OfficialPaperPdf,
     plan_official_pdf_payloads,
 )
 from .official_package_v2_release import (
     apply_official_package_v2_exclusions,
     load_official_package_v2_exclusions,
     normalize_official_package_v2_approved_scope,
+)
+from .official_table_structures import (
+    OfficialTableStructuresError,
+    build_official_table_structures_document,
 )
 from .official_package_store import (
     import_official_evidence_package,
@@ -49,6 +54,7 @@ from .portable_repository import (
     ReleasePolicy,
     materialize_portable_repository,
     provenance_for_papers,
+    stable_entity_uid,
 )
 from .trusted_publishers import (
     assert_trusted_package_identity,
@@ -159,6 +165,52 @@ def _budget_official_excerpts(plan: PortableExportPlan) -> PortableExportPlan:
         entities=tuple(entities),
         dropped_by_reason=plan.dropped_by_reason,
         private_source_sha256=plan.private_source_sha256,
+        table_structures=tuple(getattr(plan, "table_structures", ())),
+    )
+
+
+def _bind_official_table_structures(
+    plan: PortableExportPlan,
+    *,
+    package_id: str,
+    package_version: str,
+    pdf_rows: Sequence[OfficialPaperPdf],
+) -> PortableExportPlan:
+    """Revalidate optional verified grids against this exact package build."""
+
+    if not plan.table_structures:
+        return plan
+    if not pdf_rows:
+        raise RuntimeError("官方表格结构必须绑定本次资料包的完整 PDF 清单")
+    entities = {
+        str(
+            row.get("entity_uid")
+            or stable_entity_uid(
+                str(row.get("paper_uid") or ""),
+                str(row.get("entity_type") or ""),
+                row.get("identity_key"),
+            )
+        ): row
+        for row in plan.entities
+    }
+    try:
+        document = build_official_table_structures_document(
+            plan.table_structures,
+            package_id=package_id,
+            package_version=package_version,
+            entities=entities,
+            paper_pdf_sha256={
+                str(row.paper_uid): str(row.sha256) for row in pdf_rows
+            },
+        )
+    except (AttributeError, OfficialTableStructuresError) as exc:
+        raise RuntimeError("官方表格结构与本次资料包身份或 PDF 不一致") from exc
+    return PortableExportPlan(
+        papers=plan.papers,
+        entities=plan.entities,
+        dropped_by_reason=plan.dropped_by_reason,
+        private_source_sha256=plan.private_source_sha256,
+        table_structures=tuple(document["structures"]),
     )
 
 
@@ -434,6 +486,12 @@ def _build_internal_preview_package_in_directory(
         pdf_rows, pdf_payloads = plan_official_pdf_payloads(
             paper_pdf_paths, expected_paper_uids=approved
         )
+    plan = _bind_official_table_structures(
+        plan,
+        package_id=package_id,
+        package_version=package_version,
+        pdf_rows=pdf_rows,
+    )
     asset_sources = dict(binary_assets or {})
     asset_permissions = _binary_asset_permissions(asset_sources)
     distribution_scope = "internal-preview-only"

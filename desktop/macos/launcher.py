@@ -432,6 +432,10 @@ def _run_smoke_test(project_root: Path) -> int:
     from desktop_server import create_desktop_server, new_session_token
     from desktop_settings_api import DesktopSettingsAPI
     from desktop_settings_store import MacAtomicDesktopSettingsStore
+    from table_structure_api import TableStructureAPI
+    from auto_research.evidence.table_structure_service import (
+        WorkspaceTableStructureService,
+    )
     from secure_history import SecureHistoryStore, StaticHistoryKeyProvider
     from secure_research_memory import SecureResearchMemoryStore
     from secure_evidence_chat_history import SecureEvidenceChatHistoryStore
@@ -563,6 +567,10 @@ def _run_smoke_test(project_root: Path) -> int:
             federated_search_api=product_services.federated_search_api,
             personal_import_api=product_services.personal_import_api,
             personal_table_api=product_services.personal_table_api,
+            table_structure_api=TableStructureAPI(
+                WorkspaceTableStructureService(database),
+                official_service=product_services.official_table_structure_service,
+            ),
             release_info=_desktop_release_info(),
             session_token=desktop_session_id,
             experience_mode="fusion-product",
@@ -626,6 +634,10 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     from desktop_product_services import create_desktop_product_services
     from desktop_settings_api import DesktopSettingsAPI
     from desktop_settings_store import DEFAULT_SETTINGS_PATH, MacAtomicDesktopSettingsStore
+    from table_structure_api import TableStructureAPI
+    from auto_research.evidence.table_structure_service import (
+        WorkspaceTableStructureService,
+    )
     from native_desktop_bridge import NativeDesktopBridge
     from package_import_service import DEFAULT_PACKAGE_DATA_ROOT
     from secure_history import default_secure_history_store
@@ -715,6 +727,10 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             federated_search_api=product_services.federated_search_api,
             personal_import_api=product_services.personal_import_api,
             personal_table_api=product_services.personal_table_api,
+            table_structure_api=TableStructureAPI(
+                WorkspaceTableStructureService(database),
+                official_service=product_services.official_table_structure_service,
+            ),
             release_info=_desktop_release_info(),
             session_token=desktop_session_id,
             experience_mode="fusion-product",

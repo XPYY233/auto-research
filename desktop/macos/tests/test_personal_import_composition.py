@@ -80,6 +80,28 @@ class PersonalImportCompositionTests(unittest.TestCase):
                 services.federated_search_service.status()["private_ready"]
             )
 
+    def test_official_table_review_uses_the_injected_application_data_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            data_root = Path(temporary) / "Application Support"
+            services = create_desktop_product_services(
+                data_root=data_root,
+                current_app_version="1.2.0",
+            )
+
+            review_service = services.official_table_structure_service._review
+            review_store = review_service._store
+            expected_directory = data_root / "Private Data"
+            self.assertEqual(
+                review_store.path,
+                expected_directory / "official-table-structure-review-v1.enc",
+            )
+            self.assertEqual(
+                review_store.key_provider.path,
+                expected_directory / "official-table-structure-review-v1.key",
+            )
+            self.assertFalse(review_store.path.exists())
+            self.assertFalse(review_store.key_provider.path.exists())
+
     def test_startup_restores_nonempty_private_search_snapshot(self) -> None:
         snapshot = _PrivateSource()
 

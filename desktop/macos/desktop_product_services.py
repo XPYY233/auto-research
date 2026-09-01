@@ -25,6 +25,8 @@ from personal_import_service import DEFAULT_PERSONAL_LIBRARY_DIRECTORY
 from package_center_services import DesktopPackageCenterServices
 from package_center_runtime import DesktopPackageCenterRuntimeBuilder
 from package_selection_broker import PackageSelectionBroker
+from official_table_structure_service import OfficialTableStructureService
+from secure_official_table_review import default_secure_official_table_review_store
 
 
 class PackageCenterServicesBuilder(Protocol):
@@ -53,6 +55,7 @@ class DesktopProductServices:
     personal_import_api: PersonalImportAPI
     personal_table_api: PersonalTableAPI
     personal_repository: PrivateExperimentRepository
+    official_table_structure_service: OfficialTableStructureService
     package_center: DesktopPackageCenterServices | None
 
 
@@ -75,6 +78,10 @@ def create_desktop_product_services(
         current_app_version=current_app_version,
         repository_listener=federated_search_service.install_official_repository,
         repository_reset=federated_search_service.clear_official_repository,
+    )
+    official_table_structure_service = OfficialTableStructureService(
+        package_service,
+        default_secure_official_table_review_store(data_root=application_data_root),
     )
     personal_file_selection_broker = PersonalFileSelectionBroker()
     package_export_destination_broker = PackageExportDestinationBroker()
@@ -135,5 +142,6 @@ def create_desktop_product_services(
         personal_import_api=personal_import_api,
         personal_table_api=personal_table_api,
         personal_repository=personal_repository,
+        official_table_structure_service=official_table_structure_service,
         package_center=package_center,
     )

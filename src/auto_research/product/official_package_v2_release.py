@@ -10,6 +10,10 @@ from typing import Any, Iterable, Mapping
 
 from .evidence_v12_export import plan_evidence_v12_export
 from .official_package_assets import OfficialPackageAssetError, plan_official_pdf_payloads
+from .official_table_structures import (
+    OfficialTableStructuresError,
+    build_official_table_structures_document,
+)
 from .portable_repository import (
     PortableExportPlan,
     stable_entity_uid,
@@ -41,6 +45,7 @@ class OfficialPackageV2Inputs:
     visual_total_bytes: int
     visual_review_counts: Mapping[str, int]
     excluded_papers: tuple[Mapping[str, str], ...] = ()
+    table_structures_document: Mapping[str, Any] | None = None
 
     def public_summary(self) -> dict[str, Any]:
         return {
@@ -54,6 +59,11 @@ class OfficialPackageV2Inputs:
             "visual_asset_count": len(self.binary_assets),
             "visual_total_bytes": self.visual_total_bytes,
             "visual_review_counts": dict(sorted(self.visual_review_counts.items())),
+            "verified_table_structure_count": (
+                int(self.table_structures_document.get("structure_count", 0))
+                if self.table_structures_document is not None
+                else 0
+            ),
             "excluded_papers": [dict(row) for row in self.excluded_papers],
             "identity_audit": "matched",
             "visual_content_hash_audit": "matched",
@@ -105,6 +115,11 @@ def apply_official_package_v2_exclusions(
             entities=entities,
             dropped_by_reason=plan.dropped_by_reason,
             private_source_sha256=plan.private_source_sha256,
+            table_structures=tuple(
+                row
+                for row in plan.table_structures
+                if str(row.get("paper_uid") or "") not in excluded_uids
+            ),
         ),
         tuple(sorted(declarations, key=lambda row: row["doi"].casefold())),
     )
@@ -235,6 +250,9 @@ def plan_official_package_v2_inputs(
     paper_pdf_overrides: Mapping[str, Path | str] | None = None,
     export_plan: PortableExportPlan | None = None,
     excluded_dois: Mapping[str, str] | None = None,
+    verified_table_structures: Iterable[Mapping[str, Any]] | None = None,
+    package_id: str | None = None,
+    package_version: str | None = None,
 ) -> OfficialPackageV2Inputs:
     """Resolve complete PDF and visual payloads from one immutable v12 snapshot.
 
@@ -315,7 +333,9 @@ def plan_official_package_v2_inputs(
         # This additionally verifies the PDF header, exact coverage, per-file
         # limit, and aggregate 2 GiB package limit.
         try:
-            plan_official_pdf_payloads(pdf_paths, expected_paper_uids=approved)
+            pdf_manifest_rows, _pdf_payloads = plan_official_pdf_payloads(
+                pdf_paths, expected_paper_uids=approved
+            )
         except OfficialPackageAssetError as exc:
             raise OfficialPackageV2ReleaseError(exc.code, str(exc)) from exc
 
@@ -363,6 +383,41 @@ def plan_official_package_v2_inputs(
         raise OfficialPackageV2ReleaseError(
             "release_visual_coverage", "官方资料包未完整覆盖导出计划中的图表截图"
         )
+    requested_structures = tuple(
+        verified_table_structures
+        if verified_table_structures is not None
+        else plan.table_structures
+    )
+    table_structures_document: Mapping[str, Any] | None = None
+    if requested_structures:
+        if package_id is None or package_version is None:
+            raise OfficialPackageV2ReleaseError(
+                "release_table_structures_invalid",
+                "携带表格结构时必须绑定明确的资料包身份和版本",
+            )
+        entity_catalog = {
+            str(row.get("entity_uid") or ""): row for row in plan.entities
+        }
+        try:
+            table_structures_document = build_official_table_structures_document(
+                requested_structures,
+                package_id=package_id,
+                package_version=package_version,
+                entities=entity_catalog,
+                paper_pdf_sha256={
+                    row.paper_uid: row.sha256 for row in pdf_manifest_rows
+                },
+            )
+        except (OfficialTableStructuresError, OSError) as exc:
+            code = getattr(exc, "code", "release_table_structures_invalid")
+            raise OfficialPackageV2ReleaseError(str(code), "官方表格结构发行输入无效") from exc
+        plan = PortableExportPlan(
+            papers=plan.papers,
+            entities=plan.entities,
+            dropped_by_reason=plan.dropped_by_reason,
+            private_source_sha256=plan.private_source_sha256,
+            table_structures=tuple(table_structures_document["structures"]),
+        )
     return OfficialPackageV2Inputs(
         export_plan=plan,
         paper_pdf_paths=dict(sorted(pdf_paths.items())),
@@ -374,6 +429,7 @@ def plan_official_package_v2_inputs(
         visual_total_bytes=sum(visual_sizes.values()),
         visual_review_counts=dict(review_counts),
         excluded_papers=exclusion_declarations,
+        table_structures_document=table_structures_document,
     )
 
 

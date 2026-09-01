@@ -4,6 +4,13 @@
 >
 > 过去逐缺陷顺延build的条目只记录事故经过，不是现行流程。当前规则是源码小改不升build、不生成制品；完整安装后用户验收表通过才分配一个新build。
 
+## 2026-09-02：官方 Table 3 真实行列结构源码闭环（build54 同批次，尚未安装）
+
+- 新增平台中立的官方表格候选/审核权威：只从身份已核验的官方PDF租约读取，绑定package、paper/entity、PDF SHA、页码与bbox；自动解析或人工转录都只能生成待核验候选，只有独立`approve/correct`版本可导出。
+- macOS使用独立AES-GCM、原子CAS审校存储；Fusion按标签隔离加载、编辑和迟到请求，候选/拒绝/缺失不会伪装成表格或产生CSV/XLSX。旧包缺少可信bbox时在写入前失败关闭；维护者审计bbox不进入HTTP或renderer DTO。
+- 现行真实官方包构建入口不再丢弃可选`evidence/table-structures.json`，并在制包前重新绑定package id/version、entity与本次PDF SHA；sidecar进入checksum、签名、内容指纹与安装审计，旧无sidecar包保持兼容。
+- DOI `10.1016/j.jnucmat.2018.08.031`的Table 3已从同一官方PDF SHA、第5页和bbox建立5×4本地加密候选，状态仍为`manual_review`，未替用户批准。真实隔离验收验证CSV/XLSX逐格一致；整批154项定向回归通过。源码尚未覆盖安装App，也未生成build55、DMG或新资料包。
+
 ## 2026-09-01：官方 Table 3 真实视觉与 PDF 返回链完成（build54 同批次）
 
 - 提交`505d0c0`为官方资料包增加只读视觉资产租约：从已校验普通文件复制到不可变临时快照，流式提供PNG/JPEG，不向渲染器暴露路径或资产内部ID，并防止校验后的源文件变化影响已签发租约。

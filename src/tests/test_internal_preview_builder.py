@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import io
 import tempfile
 import unittest
+import zipfile
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from auto_research.evidence.official_table_structure_review import (
+    OfficialTableSource,
+    official_table_structure_content_fingerprint,
+)
+from auto_research.product.evidence_package import verify_evidence_package
 from auto_research.product.internal_preview_builder import (
     build_internal_preview_package,
     initialize_preview_signing_key,
@@ -20,7 +27,22 @@ from auto_research.product.internal_preview_builder import (
     preview_public_key_base64,
     _budget_official_excerpts,
 )
-from auto_research.product.portable_repository import PortableExportPlan, stable_paper_uid
+from auto_research.product.official_package_store import (
+    import_official_evidence_package,
+    open_active_official_repository,
+)
+from auto_research.product.official_table_structures import (
+    OFFICIAL_TABLE_STRUCTURES_PATH,
+)
+from auto_research.product.portable_repository import (
+    PortableExportPlan,
+    stable_entity_uid,
+    stable_paper_uid,
+)
+from auto_research.product.trusted_publishers import (
+    TrustedPublisher,
+    TrustedPublisherPolicy,
+)
 
 
 SYNTHETIC_UID = stable_paper_uid(
@@ -139,6 +161,7 @@ class InternalPreviewBuilderTests(unittest.TestCase):
             pass
 
         def stop_materialization(*args, **kwargs):
+            captured["plan"] = args[0]
             captured["policy"] = kwargs["release_policy"]
             raise StopAfterPolicy
 
@@ -150,7 +173,9 @@ class InternalPreviewBuilderTests(unittest.TestCase):
             ), patch(
                 "auto_research.product.internal_preview_builder.materialize_portable_repository",
                 side_effect=stop_materialization,
-            ):
+            ), patch(
+                "auto_research.product.internal_preview_builder.build_official_table_structures_document"
+            ) as table_structures_builder:
                 with self.assertRaises(StopAfterPolicy):
                     build_internal_preview_package(
                         source_snapshot=root / "synthetic.sqlite",
@@ -159,6 +184,8 @@ class InternalPreviewBuilderTests(unittest.TestCase):
                         expected_source_sha256="a" * 64,
                         approved_paper_uids={uid},
                     )
+        table_structures_builder.assert_not_called()
+        self.assertEqual(captured["plan"].table_structures, ())
         policy = captured["policy"]
         self.assertEqual(policy.allowed_paper_uids, frozenset({uid}))
         self.assertEqual(policy.maximum_excerpt_chars, 1000)
@@ -168,6 +195,7 @@ class InternalPreviewBuilderTests(unittest.TestCase):
 
     def test_realistic_long_context_is_trimmed_without_changing_scientific_fields(self) -> None:
         uid = SYNTHETIC_UID
+        structures = ({"stable_marker": "verified-grid"},)
         plan = PortableExportPlan(
             papers=self.synthetic_plan().papers,
             entities=(
@@ -187,6 +215,7 @@ class InternalPreviewBuilderTests(unittest.TestCase):
                 },
             ),
             private_source_sha256="a" * 64,
+            table_structures=structures,
         )
         budgeted = _budget_official_excerpts(plan)
         payload = budgeted.entities[0]["payload"]
@@ -194,6 +223,143 @@ class InternalPreviewBuilderTests(unittest.TestCase):
         self.assertEqual(payload["unit"], "K")
         self.assertEqual(len(payload["source_context"]), 1000)
         self.assertEqual(len(payload["occurrences"][0]["source_excerpt"]), 900)
+        self.assertEqual(budgeted.table_structures, structures)
+
+    def test_real_signed_archive_preserves_verified_table_structure(self) -> None:
+        package_id = "auto-research-internal-evidence"
+        package_version = "1.2.0-test.1"
+        signer_key_id = "test-official-table-key"
+        entity_identity = "stable-source-table-grid-3"
+        entity_uid = stable_entity_uid(SYNTHETIC_UID, "table", entity_identity)
+        rows = (("Material", "Hardness"), ("Alloy A", "4.63"))
+        reasons = ("manual_transcription",)
+        with tempfile.TemporaryDirectory(prefix="preview-table-sidecar-") as temporary:
+            root = Path(temporary)
+            pdf = root / "paper.pdf"
+            pdf_bytes = b"%PDF-1.4\nsynthetic official table source\n"
+            pdf.write_bytes(pdf_bytes)
+            pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+            source = OfficialTableSource(
+                package_id,
+                SYNTHETIC_UID,
+                entity_uid,
+                pdf_sha256,
+                3,
+                (70.0, 90.0, 350.0, 190.0),
+            )
+            record = {
+                "schema_version": "official-table-structure-version-v1",
+                "source_scope": "official",
+                "source_id": package_id,
+                "paper_uid": SYNTHETIC_UID,
+                "entity_uid": entity_uid,
+                "entity_type": "table",
+                "source_pdf_sha256": pdf_sha256,
+                "version": 2,
+                "status": "verified",
+                "page": 3,
+                "bbox": list(source.table_bbox or ()),
+                "reason_codes": list(reasons),
+                "rows": [list(row) for row in rows],
+                "cells": [],
+                "content_fingerprint": official_table_structure_content_fingerprint(
+                    source, reasons, rows, ()
+                ),
+                "reviewed_at": "2026-09-02T00:00:00+00:00",
+            }
+            plan = PortableExportPlan(
+                papers=self.synthetic_plan().papers,
+                entities=(
+                    {
+                        "paper_uid": SYNTHETIC_UID,
+                        "entity_type": "table",
+                        "identity_key": entity_identity,
+                        "quality_gate_status": "manual_approved",
+                        "source_kind": "table",
+                        "review_action": "manual",
+                        "payload": {
+                            "display_name": "Table 3",
+                            "label": "Table 3",
+                            "caption": "Verified synthetic table",
+                            "page_start": 3,
+                        },
+                    },
+                ),
+                private_source_sha256="a" * 64,
+                table_structures=(record,),
+            )
+            key_path = root / "signing.key"
+            signing_key = initialize_preview_signing_key(key_path)
+            publisher = TrustedPublisher(
+                key_id=signer_key_id,
+                display_name="Test official table publisher",
+                manifest_publisher_name="Auto Research internal preview",
+                public_key_base64=preview_public_key_base64(signing_key),
+                channel="test-official-table",
+                allowed_package_ids=(package_id,),
+                required_rights_redistribution="internal-group-restricted",
+            )
+            policy = TrustedPublisherPolicy(
+                channel=publisher.channel,
+                publishers=(publisher,),
+            )
+            published = root / "published"
+            with patch(
+                "auto_research.product.internal_preview_builder.plan_evidence_v12_export",
+                return_value=plan,
+            ), patch(
+                "auto_research.product.internal_preview_builder.assert_trusted_package_identity",
+                return_value=publisher,
+            ), patch(
+                "auto_research.product.internal_preview_builder.trusted_public_keys",
+                return_value=policy.public_keys(),
+            ), patch(
+                "auto_research.product.official_package_store.trusted_publisher_policy",
+                return_value=policy,
+            ):
+                report = build_internal_preview_package(
+                    source_snapshot=root / "synthetic.sqlite",
+                    output_directory=published,
+                    signing_key_path=key_path,
+                    expected_source_sha256="a" * 64,
+                    approved_paper_uids={SYNTHETIC_UID},
+                    package_id=package_id,
+                    package_version=package_version,
+                    signer_key_id=signer_key_id,
+                    current_app_version="1.2.0",
+                    app_minimum="1.1.0",
+                    app_maximum_exclusive="2.0.0",
+                    paper_pdf_paths={SYNTHETIC_UID: pdf},
+                )
+            package = published / report.package_path
+            verified = verify_evidence_package(
+                package,
+                trusted_public_keys=policy.public_keys(),
+                current_app_version="1.2.0",
+            )
+            self.assertIn(OFFICIAL_TABLE_STRUCTURES_PATH, verified.payload_members)
+            with zipfile.ZipFile(package) as archive:
+                sidecar = archive.read(OFFICIAL_TABLE_STRUCTURES_PATH)
+            self.assertEqual(
+                verified.checksums[OFFICIAL_TABLE_STRUCTURES_PATH]["sha256"],
+                hashlib.sha256(sidecar).hexdigest(),
+            )
+
+            installed_root = root / "installed"
+            import_official_evidence_package(
+                package,
+                data_root=installed_root,
+                current_app_version="1.2.0",
+                publisher_policy=policy,
+            )
+            _active, repository = open_active_official_repository(
+                data_root=installed_root,
+                current_app_version="1.2.0",
+                publisher_policy=policy,
+            )
+            structure = repository.get_table_structure(entity_uid)
+            self.assertEqual(structure["status"], "verified")
+            self.assertEqual(structure["rows"], [list(row) for row in rows])
 
     def test_public_report_and_cli_are_path_free_and_use_v06_compatibility(self) -> None:
         report = InternalPreviewBuildReport(

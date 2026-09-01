@@ -18,6 +18,10 @@ from auto_research.product.portable_repository import (
     stable_entity_uid,
     stable_paper_uid,
 )
+from auto_research.evidence.official_table_structure_review import (
+    OfficialTableSource,
+    official_table_structure_content_fingerprint,
+)
 
 
 class OfficialPackageV2ReleaseTests(unittest.TestCase):
@@ -82,7 +86,9 @@ class OfficialPackageV2ReleaseTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "release_paper_scope")
 
-    def _fixture(self, root: Path) -> tuple[Path, PortableExportPlan, str, Path]:
+    def _fixture(
+        self, root: Path, *, asset_type: str = "figure"
+    ) -> tuple[Path, PortableExportPlan, str, Path]:
         pdf = root / "paper.pdf"
         pdf.write_bytes(b"%PDF-1.7\nsynthetic\n%%EOF\n")
         image = root / "figure.png"
@@ -96,7 +102,9 @@ class OfficialPackageV2ReleaseTests(unittest.TestCase):
             doi="10.1/test", title="Synthetic paper", year=2026, first_author="A"
         )
         entity_uid = stable_entity_uid(
-            paper_uid, "figure", "visual:figure:Figure 1:1"
+            paper_uid,
+            asset_type,
+            f"visual:{asset_type}:{'Table 1' if asset_type == 'table' else 'Figure 1'}:1",
         )
         database = root / "snapshot.sqlite"
         connection = sqlite3.connect(database)
@@ -124,14 +132,26 @@ class OfficialPackageV2ReleaseTests(unittest.TestCase):
             ),
         )
         connection.execute(
-            "INSERT INTO visual_assets VALUES(1,1,'figure','Figure 1',1,?,?,?)",
-            (str(image), hashlib.sha256(image.read_bytes()).hexdigest(), "draft"),
+            "INSERT INTO visual_assets VALUES(1,1,?,?,1,?,?,?)",
+            (
+                asset_type,
+                "Table 1" if asset_type == "table" else "Figure 1",
+                str(image),
+                hashlib.sha256(image.read_bytes()).hexdigest(),
+                "draft",
+            ),
         )
         connection.commit()
         connection.close()
         plan = PortableExportPlan(
             papers=({"paper_uid": paper_uid},),
-            entities=({"entity_uid": entity_uid, "entity_type": "figure"},),
+            entities=(
+                {
+                    "entity_uid": entity_uid,
+                    "entity_type": asset_type,
+                    "paper_uid": paper_uid,
+                },
+            ),
         )
         return database, plan, paper_uid, pdf
 
@@ -179,6 +199,66 @@ class OfficialPackageV2ReleaseTests(unittest.TestCase):
                     export_plan=plan,
                 )
             self.assertEqual(raised.exception.code, "release_paper_scope")
+
+    def test_verified_table_structures_are_bound_to_exact_pdf_and_release_identity(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="official-v2-release-") as temporary:
+            database, plan, paper_uid, pdf = self._fixture(
+                Path(temporary), asset_type="table"
+            )
+            entity_uid = str(plan.entities[0]["entity_uid"])
+            pdf_sha = hashlib.sha256(pdf.read_bytes()).hexdigest()
+            source = OfficialTableSource(
+                "official-main",
+                paper_uid,
+                entity_uid,
+                pdf_sha,
+                1,
+                (10.0, 10.0, 100.0, 100.0),
+            )
+            rows = (("Material", "Value"), ("A", "1"))
+            reasons = ("manual_transcription",)
+            structure = {
+                "schema_version": "official-table-structure-version-v1",
+                "source_scope": "official",
+                "source_id": "official-main",
+                "paper_uid": paper_uid,
+                "entity_uid": entity_uid,
+                "entity_type": "table",
+                "source_pdf_sha256": pdf_sha,
+                "version": 2,
+                "status": "verified",
+                "page": 1,
+                "bbox": [10.0, 10.0, 100.0, 100.0],
+                "reason_codes": list(reasons),
+                "rows": [list(row) for row in rows],
+                "cells": [],
+                "content_fingerprint": official_table_structure_content_fingerprint(
+                    source, reasons, rows, ()
+                ),
+                "reviewed_at": "2026-09-01T00:00:00+00:00",
+            }
+            inputs = plan_official_package_v2_inputs(
+                database,
+                approved_paper_uids=[paper_uid],
+                export_plan=plan,
+                verified_table_structures=[structure],
+                package_id="official-main",
+                package_version="1.1.1",
+            )
+            self.assertEqual(inputs.public_summary()["verified_table_structure_count"], 1)
+            self.assertEqual(len(inputs.export_plan.table_structures), 1)
+            self.assertNotIn(str(Path(temporary)), str(inputs.public_summary()))
+
+            changed = dict(structure, source_pdf_sha256="f" * 64)
+            with self.assertRaises(OfficialPackageV2ReleaseError):
+                plan_official_package_v2_inputs(
+                    database,
+                    approved_paper_uids=[paper_uid],
+                    export_plan=plan,
+                    verified_table_structures=[changed],
+                    package_id="official-main",
+                    package_version="1.1.1",
+                )
 
 
 if __name__ == "__main__":
