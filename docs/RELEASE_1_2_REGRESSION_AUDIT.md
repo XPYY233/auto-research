@@ -5,7 +5,7 @@ Status: mandatory release gate, not a release claim.
 Baseline evidence:
 
 - 0.5.1 build 6, source checkpoint `63b34f2`, was transactionally installed and exercised on macOS on 2026-08-25.
-- The installed candidate is Auto Research 1.2.0 build54 (`release_status=candidate`, core commit `b2578a6`). Real Librarian, selected-evidence, personal-suggestion and isolated one-page extraction checks have passed in this batch. The installed WebView also passed the official Table 3 source-image, PDF-open/return, 5×4 human review, restart persistence and CSV/XLSX export chain. Source checkpoint `e72fffe` additionally fixes strict workspace-to-official grid linking and validated-checkpoint zero-model finalization, but is not yet installed. No build55 or stable claim is allowed until the complete walkthrough passes. Build24 remains the verified rollback.
+- The installed candidate is Auto Research 1.2.0 build54 (`release_status=candidate`, core commit `b2578a6`). Real Librarian, selected-evidence, personal-suggestion and isolated one-page extraction checks have passed in this batch. The installed WebView also passed the official Table 3 source-image, PDF-open/return, 5×4 human review, restart persistence and CSV/XLSX export chain. Source checkpoint `ad72177` additionally fixes strict workspace-to-official grid linking, validated-checkpoint zero-model finalization, a persisted safe-cancellation boundary and visible zero-request PDF-picker cancellation; it is not yet installed. No build55 or stable claim is allowed until the complete walkthrough passes. Build24 remains the verified rollback.
 - The production evidence database and the isolated `paper_056` recovery directory are outside this audit and must not be used by tests or builds.
 - Windows remains frozen until the Mac workflow is accepted.
 
@@ -52,6 +52,24 @@ Build 51 has since completed the clean build, signing, DMG, transactional instal
 and candidate-kit packaging gates. Still open before a stable release claim are
 the installed-App walkthrough, four real AI workflow checks against that exact
 frozen App, and the separately human-adjudicated scientific gold-set gate.
+
+## Implementation checkpoint — 2026-09-02 safe cancellation
+
+- Literature extraction now has one authenticated, session-bound cancel route.
+  A queued task reaches a zero-model terminal state; a running task records a
+  cancellation request separately from the main checkpoint CAS revision and
+  stops only at a safe paid-call boundary.
+- A successful provider result is sealed in its receipt before cancellation is
+  committed. An unknown provider outcome remains `outcome_unknown` and is never
+  mislabeled as cancelled or automatically retried.
+- Fusion exposes one stop control only for queued/running literature jobs,
+  prevents duplicate cancel requests, survives refresh/reconnect, and projects
+  `cancelled` as a terminal state with an explicit restart action.
+- Closing the native PDF picker or returning an empty selection is a visible
+  terminal no-op: no upload, prepare, consent or model request is sent.
+- Source commits `d8fd944` and `ad72177` passed 117 backend target tests, 139
+  combined target tests and 81 Fusion/release-contract tests. These suites
+  overlap and are not a full release claim. No App, DMG or new build was made.
 
 ## User-flow lineage and release gates
 

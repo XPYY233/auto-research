@@ -8,7 +8,7 @@
     "source_checkpoint": "63b34f2",
     "installed_audit_date": "2026-08-25"
   },
-  "current_source_checkpoint": "4040a73",
+  "current_source_checkpoint": "ad72177",
   "release_constraints": {
     "macos_only": true,
     "windows_frozen": true,
@@ -20,7 +20,9 @@
   "required_gates": [
     "paper_library_scroll_filter_reveal",
     "pdf_import_preflight_dedup_receipt",
+    "pdf_picker_cancel_zero_request_terminal_feedback",
     "literature_extraction_progress_resume_atomic_publish",
+    "literature_extraction_safe_cancelled_terminal",
     "server_side_four_type_search",
     "real_evidence_detail_visual_and_structure",
     "evidence_ai_only_inside_active_detail",
