@@ -155,6 +155,10 @@ class RouteRegistryTests(unittest.TestCase):
             by_id["federated.pdf"]["path"],
             "/api/desktop/federated-pdf",
         )
+        self.assertEqual(
+            by_id["federated.asset"]["path"],
+            "/api/desktop/federated-asset",
+        )
         self.assertEqual(by_id["personal.preview"]["body_cap_bytes"], 512 * 1024)
         self.assertEqual(
             by_id["settings.preferences.patch"]["method"], "PATCH"

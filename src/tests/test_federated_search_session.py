@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 import threading
 import unittest
 from collections.abc import Iterable, Mapping
@@ -71,6 +72,57 @@ class FlakySource(MemorySource):
         if self.fail:
             raise RuntimeError("source refresh failed")
         yield from self.documents
+
+
+class AssetLease:
+    def __init__(self, *, source_id: str, entity_uid: str) -> None:
+        self.source_id = source_id
+        self.entity_uid = entity_uid
+        self.size_bytes = 8
+        self.media_type = "image/png"
+        self._payload = io.BytesIO(b"PNG-DATA")
+        self.closed = False
+
+    def read(self, size=1024 * 1024):
+        return self._payload.read(size)
+
+    def close(self):
+        self.closed = True
+
+    def public_metadata(self):
+        return {
+            "schema_version": "official-visual-asset-lease-v1",
+            "source_scope": "official",
+            "source_id": self.source_id,
+            "entity_uid": self.entity_uid,
+            "size_bytes": self.size_bytes,
+            "media_type": self.media_type,
+        }
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
+
+
+class AssetSource(MemorySource):
+    def __init__(self, source_id: str, entity_uid: str) -> None:
+        super().__init__(
+            (document("official", source_id, "table", entity_uid, "官方表格"),)
+        )
+        self.source_id = source_id
+        self.entity_uid = entity_uid
+        self.last_lease = None
+
+    def open_entity_asset(self, entity_uid):
+        if entity_uid != self.entity_uid:
+            return None
+        self.last_lease = AssetLease(
+            source_id=self.source_id,
+            entity_uid=self.entity_uid,
+        )
+        return self.last_lease
 
 
 def official_registration(version: str = "v1", *, source: object | None = None):
@@ -439,6 +491,80 @@ class FederatedSearchSessionTests(unittest.TestCase):
         with self.assertRaises(FederatedSearchSessionError) as raised:
             session.open_private_pdf("private-personal-pdf", "paper_" + "1" * 32)
         self.assertEqual(raised.exception.code, "private_pdf_unavailable")
+
+    def test_official_visual_asset_uses_bound_source_and_entity_identity(self):
+        source = AssetSource("official-assets", "entity-table-assets")
+        session = FederatedSearchSession(
+            official=SearchSourceRegistration.official(
+                source,
+                source_id="official-assets",
+                fingerprint="sha256:official-assets",
+            )
+        )
+        lease = session.open_asset(
+            "official", "official-assets", "entity-table-assets"
+        )
+        self.assertEqual(lease.public_metadata()["source_scope"], "official")
+        self.assertEqual(lease.public_metadata()["entity_uid"], "entity-table-assets")
+        self.assertNotIn("path", json.dumps(lease.public_metadata()))
+        lease.close()
+        self.assertTrue(source.last_lease.closed)
+
+        with self.assertRaises(FederatedSearchSessionError) as missing:
+            session.open_asset("official", "official-assets", "entity-table-missing")
+        self.assertEqual(missing.exception.code, "source_asset_unavailable")
+        with self.assertRaises(FederatedSearchSessionError) as wrong_source:
+            session.open_asset("official", "official-other", "entity-table-assets")
+        self.assertEqual(wrong_source.exception.code, "asset_source_not_found")
+
+        personal = FederatedSearchSession(private=private_registration())
+        with self.assertRaises(FederatedSearchSessionError) as unavailable:
+            personal.open_asset("private", "private-v1", "private-table-v1")
+        self.assertEqual(unavailable.exception.code, "source_asset_unavailable")
+
+    def test_official_visual_asset_rejects_mismatched_public_lease_metadata(self):
+        mismatches = {
+            "schema_version": "wrong-v1",
+            "source_id": "official-other",
+            "entity_uid": "entity-table-other",
+            "size_bytes": 9,
+            "media_type": "image/jpeg",
+        }
+
+        for field, value in mismatches.items():
+            with self.subTest(field=field):
+                class MismatchedLease(AssetLease):
+                    def public_metadata(self):
+                        metadata = super().public_metadata()
+                        metadata[field] = value
+                        return metadata
+
+                class MismatchedSource(AssetSource):
+                    def open_entity_asset(self, entity_uid):
+                        if entity_uid != self.entity_uid:
+                            return None
+                        self.last_lease = MismatchedLease(
+                            source_id=self.source_id,
+                            entity_uid=self.entity_uid,
+                        )
+                        return self.last_lease
+
+                source = MismatchedSource(
+                    "official-assets", "entity-table-assets"
+                )
+                session = FederatedSearchSession(
+                    official=SearchSourceRegistration.official(
+                        source,
+                        source_id="official-assets",
+                        fingerprint="sha256:official-assets",
+                    )
+                )
+                with self.assertRaises(FederatedSearchSessionError) as raised:
+                    session.open_asset(
+                        "official", "official-assets", "entity-table-assets"
+                    )
+                self.assertEqual(raised.exception.code, "source_asset_unavailable")
+                self.assertTrue(source.last_lease.closed)
 
 
 if __name__ == "__main__":

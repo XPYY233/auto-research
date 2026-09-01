@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -238,6 +240,85 @@ class PortableRepositoryTests(unittest.TestCase):
         detail = repo.get_entity(row["entity_uid"])
         self.assertEqual(detail["collection_kind"], "literature_collection")
         self.assertFalse(detail["pdf_available"])
+
+    def test_official_visual_asset_opens_by_public_entity_identity(self) -> None:
+        entity = json.loads(json.dumps(self.entity))
+        entity["entity_type"] = "table"
+        entity["identity_key"] = "stable-source-table-1"
+        entity["source_kind"] = "table"
+        entity["payload"] = {
+            "display_name": "Table 1",
+            "label": "Table 1",
+            "context_explanation": "Audited source table screenshot.",
+            "page_start": 3,
+        }
+        entity_uid = stable_entity_uid(
+            self.paper_uid, "table", entity["identity_key"]
+        )
+        png = bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000d49444154789c6360000000020001e221bc330000000049454e44ae426082"
+        )
+        source = self.root / "table.png"
+        source.write_bytes(png)
+        digest = hashlib.sha256(png).hexdigest()
+        policy = ReleasePolicy(
+            distribution_scope="internal-preview-only",
+            allowed_paper_uids=frozenset({self.paper_uid}),
+            allow_structured_evidence=True,
+            allow_short_excerpts=True,
+            maximum_excerpt_chars=1000,
+            maximum_excerpt_chars_per_paper=4000,
+            maximum_excerpt_chars_total=8000,
+            binary_asset_allowlist={
+                entity_uid: repository_module.BinaryAssetPermission(
+                    digest, "image/png"
+                )
+            },
+            accepted_dropped_by_reason={"manual_review": 2},
+        )
+        output = materialize_portable_repository(
+            self.plan(entity=entity),
+            self.root / "visual-lease",
+            package_id="official-fusion-preview",
+            package_version="0.1.0-preview.1",
+            release_policy=policy,
+            provenance=provenance_for_papers(
+                (self.paper,), publisher="Auto Research internal preview"
+            ),
+            binary_assets={entity_uid: source},
+        )
+        repository = OfficialEvidenceRepository.open(output.root)
+        lease = repository.open_entity_asset(entity_uid)
+        self.assertIsNotNone(lease)
+        with lease:
+            self.assertEqual(lease.read(), png)
+            metadata = lease.public_metadata()
+        self.assertEqual(metadata["source_scope"], "official")
+        self.assertEqual(metadata["source_id"], "official-fusion-preview")
+        self.assertEqual(metadata["entity_uid"], entity_uid)
+        self.assertEqual(metadata["media_type"], "image/png")
+        self.assertNotIn("path", json.dumps(metadata))
+        self.assertNotIn("asset_uid", metadata)
+        self.assertIsNone(repository.open_entity_asset("entity_table_" + "f" * 32))
+
+        asset_row = repository.list_entity_assets(entity_uid)[0]
+        asset_path = output.root / asset_row["relative_path"]
+        hardlink = self.root / "hardlinked-asset.png"
+        os.link(asset_path, hardlink)
+        try:
+            with self.assertRaises(PortableRepositoryError) as linked:
+                repository.open_entity_asset(entity_uid)
+            self.assertEqual(linked.exception.code, "asset_missing")
+        finally:
+            hardlink.unlink()
+        stable_lease = repository.open_entity_asset(entity_uid)
+        asset_path.write_bytes(b"x" * len(png))
+        with stable_lease:
+            self.assertEqual(stable_lease.read(), png)
+        with self.assertRaises(PortableRepositoryError) as changed:
+            repository.open_entity_asset(entity_uid)
+        self.assertIn(changed.exception.code, {"asset_media", "asset_checksum"})
 
     def test_same_public_input_produces_same_database_bytes(self) -> None:
         first = self.build("first")

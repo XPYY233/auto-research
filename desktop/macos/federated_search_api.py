@@ -16,7 +16,8 @@ from auto_research.product.runtime_api import ActiveOfficialPackage, OfficialEvi
 FEDERATED_SEARCH_PATH = "/api/desktop/federated-search"
 FEDERATED_EVIDENCE_PATH = "/api/desktop/federated-evidence"
 FEDERATED_PDF_PATH = "/api/desktop/federated-pdf"
-PDF_STREAM_CHUNK_BYTES = 1024 * 1024
+FEDERATED_ASSET_PATH = "/api/desktop/federated-asset"
+BINARY_STREAM_CHUNK_BYTES = 1024 * 1024
 
 
 class FederatedHTTPHandler(Protocol):
@@ -192,6 +193,38 @@ class DesktopFederatedSearchService:
                 status=status,
             ) from None
 
+    def open_asset(self, *, source_scope: str, source_id: str, entity_uid: str):
+        try:
+            resolver = getattr(self.session, "open_asset", None)
+            if not callable(resolver):
+                raise FederatedSearchSessionError(
+                    "source_asset_unavailable", "该资料来源不提供视觉资产。"
+                )
+            return resolver(source_scope, source_id, entity_uid)
+        except ValueError as exc:
+            raise DesktopFederatedSearchError(
+                "federated_identity_invalid",
+                "视觉证据身份无效。",
+                status=HTTPStatus.BAD_REQUEST,
+            ) from exc
+        except FederatedSearchSessionError as exc:
+            if exc.code in {
+                "asset_source_not_found",
+                "source_asset_unavailable",
+            }:
+                status = HTTPStatus.NOT_FOUND
+                code = "federated_asset_not_found"
+                message = "该证据没有可打开的原始图像。"
+            else:
+                status = HTTPStatus.CONFLICT
+                code = "federated_asset_changed"
+                message = "原始图像缺失或发生变化，请重新导入资料包。"
+            raise DesktopFederatedSearchError(
+                code,
+                message,
+                status=status,
+            ) from None
+
     @staticmethod
     def _session_unavailable(
         error: FederatedSearchSessionError,
@@ -219,6 +252,7 @@ class FederatedSearchAPI:
             FEDERATED_SEARCH_PATH,
             FEDERATED_EVIDENCE_PATH,
             FEDERATED_PDF_PATH,
+            FEDERATED_ASSET_PATH,
         }:
             return False
         query = parse_qs(parsed.query, keep_blank_values=True)
@@ -227,11 +261,29 @@ class FederatedSearchAPI:
                 payload = self.service.search(**self._search_arguments(query))
             elif parsed.path == FEDERATED_EVIDENCE_PATH:
                 payload = self.service.get(**self._identity_arguments(query))
-            else:
+            elif parsed.path == FEDERATED_PDF_PATH:
                 lease = self.service.open_pdf(
                     **self._pdf_arguments(query)
                 )
-                self._serve_pdf(handler, lease)
+                self._serve_binary(
+                    handler,
+                    lease,
+                    allowed_media={"application/pdf"},
+                    unavailable_code="federated_pdf_unavailable",
+                    unavailable_message="论文 PDF 无法安全打开。",
+                )
+                return True
+            else:
+                lease = self.service.open_asset(
+                    **self._identity_arguments(query)
+                )
+                self._serve_binary(
+                    handler,
+                    lease,
+                    allowed_media={"image/png", "image/jpeg"},
+                    unavailable_code="federated_asset_changed",
+                    unavailable_message="原始图像无法安全打开。",
+                )
                 return True
         except DesktopFederatedSearchError as exc:
             handler.json_response(exc.public_dict(), exc.status)
@@ -251,23 +303,37 @@ class FederatedSearchAPI:
         }
 
     @staticmethod
-    def _serve_pdf(handler: FederatedHTTPHandler, lease: Any) -> None:
+    def _serve_binary(
+        handler: FederatedHTTPHandler,
+        lease: Any,
+        *,
+        allowed_media: set[str],
+        unavailable_code: str,
+        unavailable_message: str,
+    ) -> None:
         try:
             metadata = lease.public_metadata()
             size = int(metadata["size_bytes"])
             media_type = str(metadata["media_type"])
-            if size < 5 or media_type != "application/pdf":
-                raise ValueError("invalid private PDF lease")
+            if size < 5 or media_type not in allowed_media:
+                raise ValueError("invalid federated binary lease")
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", media_type)
             handler.send_header("Content-Length", str(size))
-            handler.send_header("Content-Disposition", 'inline; filename="evidence.pdf"')
+            extension = {
+                "application/pdf": "pdf",
+                "image/png": "png",
+                "image/jpeg": "jpg",
+            }[media_type]
+            handler.send_header(
+                "Content-Disposition", f'inline; filename="evidence.{extension}"'
+            )
             handler.send_header("Cache-Control", "no-store")
             handler.send_header("X-Content-Type-Options", "nosniff")
             handler.end_headers()
             with lease:
                 while True:
-                    chunk = lease.read(PDF_STREAM_CHUNK_BYTES)
+                    chunk = lease.read(BINARY_STREAM_CHUNK_BYTES)
                     if not chunk:
                         break
                     handler.wfile.write(chunk)
@@ -277,8 +343,8 @@ class FederatedSearchAPI:
             except Exception:
                 pass
             raise DesktopFederatedSearchError(
-                "federated_pdf_unavailable",
-                "论文 PDF 无法安全打开。",
+                unavailable_code,
+                unavailable_message,
                 status=HTTPStatus.CONFLICT,
             ) from None
 

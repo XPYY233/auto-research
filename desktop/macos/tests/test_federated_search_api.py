@@ -132,6 +132,44 @@ class _PdfLease:
         self.close()
 
 
+class _AssetLease:
+    media_type = "image/png"
+
+    def __init__(
+        self,
+        *,
+        source_id: str = "official-preview",
+        entity_uid: str = "entity-table-asset",
+    ) -> None:
+        self.source_id = source_id
+        self.entity_uid = entity_uid
+        self._payload = io.BytesIO(b"PNG-DATA")
+        self.size_bytes = len(self._payload.getvalue())
+        self.closed = False
+
+    def read(self, size=1024 * 1024):
+        return self._payload.read(size)
+
+    def close(self):
+        self.closed = True
+
+    def public_metadata(self):
+        return {
+            "schema_version": "official-visual-asset-lease-v1",
+            "source_scope": "official",
+            "source_id": self.source_id,
+            "entity_uid": self.entity_uid,
+            "size_bytes": self.size_bytes,
+            "media_type": self.media_type,
+        }
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
+
+
 class _PdfSource:
     def __init__(self) -> None:
         self.last_lease = None
@@ -179,6 +217,25 @@ class _OfficialPdfSource(_Repository):
             source_scope="official",
             source_id="official-preview",
         )
+        return self.last_lease
+
+
+class _OfficialAssetSource(_Repository):
+    def __init__(self) -> None:
+        document = _document("table", "entity-table-asset")
+        document.update(
+            {
+                "collection_kind": "literature_collection",
+                "asset_available": True,
+            }
+        )
+        super().__init__((document,))
+        self.last_lease = None
+
+    def open_entity_asset(self, entity_uid):
+        if entity_uid != "entity-table-asset":
+            return None
+        self.last_lease = _AssetLease(entity_uid=entity_uid)
         return self.last_lease
 
 
@@ -435,6 +492,42 @@ class DesktopFederatedSearchTests(unittest.TestCase):
         )
         self.assertTrue(self.api.handle_get(wrong_scope))
         self.assertEqual(wrong_scope.responses[0][1], HTTPStatus.NOT_FOUND)
+
+    def test_official_visual_asset_streams_from_entity_bound_lease(self) -> None:
+        source = _OfficialAssetSource()
+        self.service.install_official_repository(_active(), source)
+        handler = _Handler(
+            "/api/desktop/federated-asset?source_scope=official"
+            "&source_id=official-preview&entity_uid=entity-table-asset"
+        )
+        self.assertTrue(self.api.handle_get(handler))
+        self.assertEqual(handler.status, HTTPStatus.OK)
+        self.assertEqual(handler.headers["Content-Type"], "image/png")
+        self.assertEqual(handler.headers["Cache-Control"], "no-store")
+        self.assertEqual(handler.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(handler.wfile.getvalue(), b"PNG-DATA")
+        self.assertTrue(source.last_lease.closed)
+        metadata = source.last_lease.public_metadata()
+        self.assertNotIn("path", json.dumps(metadata))
+        self.assertNotIn("asset_uid", metadata)
+
+        missing = _Handler(
+            "/api/desktop/federated-asset?source_scope=official"
+            "&source_id=official-preview&entity_uid=entity-table-missing"
+        )
+        self.assertTrue(self.api.handle_get(missing))
+        self.assertEqual(missing.responses[0][1], HTTPStatus.NOT_FOUND)
+        self.assertEqual(
+            missing.responses[0][0]["code"], "federated_asset_not_found"
+        )
+
+        repeated = _Handler(
+            "/api/desktop/federated-asset?source_scope=official"
+            "&source_id=official-preview&source_id=other"
+            "&entity_uid=entity-table-asset"
+        )
+        self.assertTrue(self.api.handle_get(repeated))
+        self.assertEqual(repeated.responses[0][1], HTTPStatus.BAD_REQUEST)
 
     def test_invalid_filters_and_unknown_routes_are_bounded(self) -> None:
         self.service.install_official_repository(_active(), _Repository())

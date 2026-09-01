@@ -349,6 +349,12 @@ DEFAULT_DESKTOP_ROUTES: tuple[RouteSpec, ...] = (
         "federated.pdf",
         modes=SEARCH_MODES,
     ),
+    _get(
+        "federated.asset",
+        "/api/desktop/federated-asset",
+        "federated.asset",
+        modes=SEARCH_MODES,
+    ),
     # Librarian remains read-only; POST is a bounded query, not a mutation.
     _post(
         "librarian.chat",

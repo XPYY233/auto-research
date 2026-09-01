@@ -136,6 +136,10 @@ class FederatedSearchSessionProtocol(Protocol):
         self, source_scope: str, source_id: str, paper_uid: str
     ) -> "PrivatePdfLeaseProtocol": ...
 
+    def open_asset(
+        self, source_scope: str, source_id: str, entity_uid: str
+    ) -> "VisualAssetLeaseProtocol": ...
+
     def clear_official(self) -> dict[str, Any]: ...
 
     def clear_private(self) -> dict[str, Any]: ...
@@ -166,6 +170,37 @@ class PrivatePdfLeaseProtocol(Protocol):
     def close(self) -> None: ...
 
     def public_metadata(self) -> Mapping[str, Any]: ...
+
+    def __enter__(self) -> "PrivatePdfLeaseProtocol": ...
+
+    def __exit__(self, *_exc: Any) -> None: ...
+
+
+@runtime_checkable
+class VisualAssetLeaseProtocol(Protocol):
+    """Path-free descriptor lease used by protected federated image streaming."""
+
+    @property
+    def source_id(self) -> str: ...
+
+    @property
+    def entity_uid(self) -> str: ...
+
+    @property
+    def size_bytes(self) -> int: ...
+
+    @property
+    def media_type(self) -> str: ...
+
+    def read(self, size: int = 1024 * 1024) -> bytes: ...
+
+    def close(self) -> None: ...
+
+    def public_metadata(self) -> Mapping[str, Any]: ...
+
+    def __enter__(self) -> "VisualAssetLeaseProtocol": ...
+
+    def __exit__(self, *_exc: Any) -> None: ...
 
 
 class _IdentityBoundSource:
@@ -378,6 +413,91 @@ class FederatedSearchSession:
             lease.close()
             raise FederatedSearchSessionError(
                 unavailable_code, "论文 PDF 来源身份不一致。"
+            )
+        return lease
+
+    def open_asset(
+        self, source_scope: str, source_id: str, entity_uid: str
+    ) -> VisualAssetLeaseProtocol:
+        """Open a verified visual asset without exposing its path or asset key."""
+
+        if source_scope not in SOURCE_SCOPES:
+            raise ValueError("unsupported source scope")
+        normalized_source = _stable_identity(source_id, "source_id")
+        normalized_entity = _stable_identity(entity_uid, "entity_uid")
+        with self._lock:
+            if source_scope == "official":
+                registration = self._official
+                if registration is not None and registration.source_id != normalized_source:
+                    registration = None
+            else:
+                registration = self._privates.get(normalized_source)
+        if registration is None:
+            raise FederatedSearchSessionError(
+                "asset_source_not_found", "找不到所选的文献来源。"
+            )
+        if registration.source_kind != "official_repository":
+            raise FederatedSearchSessionError(
+                "source_asset_unavailable", "该资料来源不提供视觉资产。"
+            )
+        resolver = getattr(registration.source, "open_entity_asset", None)
+        if not callable(resolver):
+            raise FederatedSearchSessionError(
+                "source_asset_unavailable", "该资料来源不提供视觉资产。"
+            )
+        try:
+            lease = resolver(normalized_entity)
+        except Exception as exc:
+            code = str(getattr(exc, "code", "source_asset_changed"))
+            raise FederatedSearchSessionError(
+                code
+                if code in {
+                    "asset_missing",
+                    "asset_checksum",
+                    "asset_media",
+                    "asset_ambiguous",
+                }
+                else "source_asset_changed",
+                "视觉资产缺失或发生变化，请重新导入资料包。",
+            ) from None
+        if lease is None:
+            raise FederatedSearchSessionError(
+                "source_asset_unavailable", "该证据没有可用的视觉资产。"
+            )
+        if not isinstance(lease, VisualAssetLeaseProtocol):
+            try:
+                lease.close()
+            except Exception:
+                pass
+            raise FederatedSearchSessionError(
+                "source_asset_unavailable", "该视觉资产无法安全打开。"
+            )
+        try:
+            metadata = lease.public_metadata()
+            metadata_size = metadata.get("size_bytes")
+            valid_identity = (
+                isinstance(metadata, Mapping)
+                and metadata.get("schema_version")
+                == "official-visual-asset-lease-v1"
+                and lease.source_id == normalized_source
+                and lease.entity_uid == normalized_entity
+                and metadata.get("source_scope") == source_scope
+                and metadata.get("source_id") == normalized_source
+                and metadata.get("entity_uid") == normalized_entity
+                and not isinstance(metadata_size, bool)
+                and isinstance(metadata_size, int)
+                and not isinstance(lease.size_bytes, bool)
+                and isinstance(lease.size_bytes, int)
+                and metadata_size == lease.size_bytes
+                and metadata.get("media_type") == lease.media_type
+                and lease.media_type in {"image/png", "image/jpeg"}
+            )
+        except Exception:
+            valid_identity = False
+        if not valid_identity:
+            lease.close()
+            raise FederatedSearchSessionError(
+                "source_asset_unavailable", "视觉资产来源身份不一致。"
             )
         return lease
 

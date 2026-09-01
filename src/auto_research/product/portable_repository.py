@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
 import tempfile
 import unicodedata
 from contextlib import contextmanager
@@ -280,6 +281,75 @@ class PortableRepositoryError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+class OfficialVisualAssetLease:
+    """Path-free immutable snapshot lease for one audited official visual asset."""
+
+    __slots__ = (
+        "_stream",
+        "_closed",
+        "source_id",
+        "entity_uid",
+        "size_bytes",
+        "media_type",
+    )
+
+    def __init__(
+        self,
+        stream: Any,
+        *,
+        source_id: str,
+        entity_uid: str,
+        size_bytes: int,
+        media_type: str,
+    ) -> None:
+        self._stream = stream
+        self._closed = False
+        self.source_id = str(source_id)
+        self.entity_uid = str(entity_uid)
+        self.size_bytes = int(size_bytes)
+        self.media_type = str(media_type)
+
+    def read(self, size: int = 1024 * 1024) -> bytes:
+        if self._closed:
+            raise ValueError("visual asset lease is closed")
+        if (
+            isinstance(size, bool)
+            or not isinstance(size, int)
+            or not 1 <= size <= 4 * 1024 * 1024
+        ):
+            raise ValueError("visual asset lease read size is invalid")
+        return self._stream.read(size)
+
+    def close(self) -> None:
+        if not self._closed:
+            self._stream.close()
+            self._closed = True
+
+    def public_metadata(self) -> dict[str, Any]:
+        return {
+            "schema_version": "official-visual-asset-lease-v1",
+            "source_scope": "official",
+            "source_id": self.source_id,
+            "entity_uid": self.entity_uid,
+            "size_bytes": self.size_bytes,
+            "media_type": self.media_type,
+        }
+
+    def __enter__(self) -> "OfficialVisualAssetLease":
+        if self._closed:
+            raise ValueError("visual asset lease is closed")
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self.close()
+
+    def __del__(self) -> None:  # pragma: no cover - defensive cleanup
+        try:
+            self.close()
+        except Exception:
+            pass
 
 
 @dataclass(frozen=True)
@@ -1110,9 +1180,9 @@ def _write_canonical_json(path: Path, value: Any) -> None:
     os.chmod(path, 0o600)
 
 
-def _validate_image_header(path: Path, media_type: str) -> tuple[int, int]:
-    with path.open("rb") as handle:
-        header = handle.read(32)
+def _validate_image_stream(handle: Any, media_type: str) -> tuple[int, int]:
+    handle.seek(0)
+    header = handle.read(32)
     if media_type == "image/png":
         if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n":
             raise PortableRepositoryError("asset_media", "PNG 资产内容与声明类型不一致")
@@ -1138,49 +1208,53 @@ def _validate_image_header(path: Path, media_type: str) -> tuple[int, int]:
         }
         width = height = 0
         scanned = 2
-        with path.open("rb") as handle:
-            handle.seek(2)
-            while scanned <= 4 * 1024 * 1024:
-                marker_prefix = handle.read(1)
-                scanned += len(marker_prefix)
-                if not marker_prefix:
-                    break
-                if marker_prefix != b"\xff":
-                    continue
+        handle.seek(2)
+        while scanned <= 4 * 1024 * 1024:
+            marker_prefix = handle.read(1)
+            scanned += len(marker_prefix)
+            if not marker_prefix:
+                break
+            if marker_prefix != b"\xff":
+                continue
+            marker_byte = handle.read(1)
+            scanned += len(marker_byte)
+            while marker_byte == b"\xff":
                 marker_byte = handle.read(1)
                 scanned += len(marker_byte)
-                while marker_byte == b"\xff":
-                    marker_byte = handle.read(1)
-                    scanned += len(marker_byte)
-                if not marker_byte:
+            if not marker_byte:
+                break
+            marker = marker_byte[0]
+            if marker in {0xD8, 0xD9, 0x01, *range(0xD0, 0xD8)}:
+                continue
+            length_bytes = handle.read(2)
+            scanned += len(length_bytes)
+            if len(length_bytes) != 2:
+                break
+            segment_length = int.from_bytes(length_bytes, "big")
+            if segment_length < 2:
+                break
+            if marker in sof_markers:
+                dimensions = handle.read(5)
+                scanned += len(dimensions)
+                if len(dimensions) != 5 or segment_length < 7:
                     break
-                marker = marker_byte[0]
-                if marker in {0xD8, 0xD9, 0x01, *range(0xD0, 0xD8)}:
-                    continue
-                length_bytes = handle.read(2)
-                scanned += len(length_bytes)
-                if len(length_bytes) != 2:
-                    break
-                segment_length = int.from_bytes(length_bytes, "big")
-                if segment_length < 2:
-                    break
-                if marker in sof_markers:
-                    dimensions = handle.read(5)
-                    scanned += len(dimensions)
-                    if len(dimensions) != 5 or segment_length < 7:
-                        break
-                    height = int.from_bytes(dimensions[1:3], "big")
-                    width = int.from_bytes(dimensions[3:5], "big")
-                    break
-                if marker == 0xDA:
-                    break
-                handle.seek(segment_length - 2, os.SEEK_CUR)
-                scanned += segment_length - 2
+                height = int.from_bytes(dimensions[1:3], "big")
+                width = int.from_bytes(dimensions[3:5], "big")
+                break
+            if marker == 0xDA:
+                break
+            handle.seek(segment_length - 2, os.SEEK_CUR)
+            scanned += segment_length - 2
         if width <= 0 or height <= 0:
             raise PortableRepositoryError("asset_media", "JPEG 资产缺少有效尺寸信息")
     if width <= 0 or height <= 0 or width * height > MAX_ASSET_PIXELS:
         raise PortableRepositoryError("asset_media", "图像像素数量超过安全上限")
     return width, height
+
+
+def _validate_image_header(path: Path, media_type: str) -> tuple[int, int]:
+    with path.open("rb") as handle:
+        return _validate_image_stream(handle, media_type)
 
 
 def _prepare_assets(
@@ -1891,6 +1965,92 @@ class OfficialEvidenceRepository:
         if row is None:
             return None
         return open_official_pdf_lease(self.root, row, source_id=self.package_id)
+
+    def open_entity_asset(self, entity_uid: str) -> OfficialVisualAssetLease | None:
+        """Open the single visual asset bound to one public evidence identity."""
+
+        normalized_entity_uid = str(entity_uid)
+        with self._connect() as connection:
+            rows = list(
+                connection.execute(
+                    "SELECT * FROM asset_refs WHERE entity_uid=? ORDER BY asset_uid",
+                    (normalized_entity_uid,),
+                )
+            )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise PortableRepositoryError(
+                "asset_ambiguous", "官方证据关联了多个视觉资产，无法安全选择"
+            )
+        row = rows[0]
+        relative = _safe_relative_path(str(row["relative_path"]))
+        path = self.root.joinpath(*PurePosixPath(relative).parts)
+        media_type = str(row["media_type"])
+        expected_size = int(row["size_bytes"])
+        expected_digest = str(row["sha256"])
+        if path.is_symlink() or not path.is_file():
+            raise PortableRepositoryError(
+                "asset_missing", "官方资产文件缺失或不安全"
+            )
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        try:
+            descriptor = os.open(path, flags)
+        except OSError as exc:
+            raise PortableRepositoryError(
+                "asset_missing", "官方资产文件缺失或不安全"
+            ) from exc
+        snapshot = None
+        try:
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or int(before.st_nlink) != 1
+                or int(before.st_size) != expected_size
+            ):
+                raise PortableRepositoryError(
+                    "asset_missing", "官方资产文件缺失或不安全"
+                )
+            snapshot = tempfile.TemporaryFile(mode="w+b")
+            digest = hashlib.sha256()
+            while chunk := os.read(descriptor, 1024 * 1024):
+                digest.update(chunk)
+                snapshot.write(chunk)
+            after = os.fstat(descriptor)
+            if (
+                int(after.st_dev) != int(before.st_dev)
+                or int(after.st_ino) != int(before.st_ino)
+                or int(after.st_size) != expected_size
+                or int(after.st_nlink) != 1
+                or int(after.st_mtime_ns) != int(before.st_mtime_ns)
+                or int(after.st_ctime_ns) != int(before.st_ctime_ns)
+                or digest.hexdigest() != expected_digest
+            ):
+                raise PortableRepositoryError(
+                    "asset_checksum", "官方资产运行时校验失败"
+                )
+            snapshot.flush()
+            snapshot.seek(0)
+            _validate_image_stream(snapshot, media_type)
+            snapshot.seek(0)
+            os.close(descriptor)
+            return OfficialVisualAssetLease(
+                snapshot,
+                source_id=self.package_id,
+                entity_uid=normalized_entity_uid,
+                size_bytes=expected_size,
+                media_type=media_type,
+            )
+        except Exception:
+            os.close(descriptor)
+            if snapshot is not None:
+                snapshot.close()
+            raise
 
     def resolve_asset(self, asset_uid: str) -> Path:
         with self._connect() as connection:

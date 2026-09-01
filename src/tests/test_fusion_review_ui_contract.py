@@ -258,6 +258,7 @@ assert.equal(html.dataset.theme,'dark');assert.equal(html.dataset.density,'compa
             'const EVIDENCE_LABELS=Object.freeze({item:', "function openEvidenceDetail(",
             "function closeEvidenceDetail(", "function secondaryEvidenceHTML(",
             'visualAsset:"/api/visual-assets"', 'federatedEvidence:"/api/desktop/federated-evidence"',
+            'federatedAsset:"/api/desktop/federated-asset"',
             "documentTabs.beginRequest(tab.tabId)", "documentTabs.completeRequest(tab.tabId,generation",
         ):
             self.assertIn(marker, self.runtime)
