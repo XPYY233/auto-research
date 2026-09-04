@@ -2,7 +2,7 @@
 
 ## 当前状态（2026-09-04）
 
-`/Applications/Auto Research.app`当前为`1.2.0/build54`、`20cfea8`、`candidate`，**不可稳定发布**。选中Table 3的数值问答已在实机通过；完整图书管理员问题仍可能被跨资料来源数值门拒绝，隔离CSV原生选择后也尚未完成WebView预览验收。历史引用、降级终态和v2授权披露已有源码修复但未安装。当前唯一分项权威为[`BUILD54_INSTALLED_ACCEPTANCE.md`](docs/BUILD54_INSTALLED_ACCEPTANCE.md)。保留同一候选，禁止build55/DMG/UserKit及未经实机核验的完成声明。
+`/Applications/Auto Research.app`当前为`1.2.0/build54`、`e870094`、`candidate`，**不可稳定发布**。上一聚合候选的Table 3数值问答及123行CSV导入/曲线/重启私人搜索已在实机通过；完整图书管理员问题仍待本批数值格式修复后的复验。历史引用、降级终态、v2授权披露和CSV分页状态修复现已集中安装，但Mac锁屏阻断安装后的点击验收。当前唯一分项权威为[`BUILD54_INSTALLED_ACCEPTANCE.md`](docs/BUILD54_INSTALLED_ACCEPTANCE.md)。额度剩余76%，保留70%下限；等待解锁，不生成build55/DMG/UserKit或未经实机核验的稳定声明。
 
 以下为9月2日及更早检查点；其中安装身份与“已通过”不能覆盖上面的当前失败记录。
 

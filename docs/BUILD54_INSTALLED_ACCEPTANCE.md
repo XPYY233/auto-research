@@ -2,7 +2,44 @@
 
 Updated: 2026-09-04. Status: **not accepted; no stable release**.
 
-## Current installed authority — 2026-09-04 19:42
+## Current installed authority — 2026-09-04 20:45
+
+Installed: `1.2.0/build54/candidate`, core
+`e87009400d527a256fd67b11979163b97c672a2f`, executable SHA-256
+`d08327952acfcb49a7c520edbfdb79be5d51b0e797dba658276b9dd33792e59c`.
+Aggregate source gates: 1,367 shared passes / 80 explicit skips and 338 Mac
+passes, run serially (5 existing SWIG warnings). Release hashes, Skill structure,
+frozen HTTP smoke, strict/deep codesign and transactional installation passed.
+No build55, DMG, UserKit or stable tag was created.
+
+The history-citation, terminal-warning, disclosure-v2, model numeric-format and
+CSV page-status/ARIA corrections below are now installed. They are not yet
+post-install click accepted: Computer Use reported **Mac locked** immediately
+after installation. Do not bypass the lock or substitute source replay for UI.
+The process was launched explicitly against the canonical workspace, not the
+isolated CSV root. Production SQLite SHA remains the hash recorded below.
+
+Latest shared main quota: **76% remaining**, with the user's 70% hard reserve.
+Pause paid calls/builds; resume after unlock, checking quota first. Next sequence:
+1. Confirm actual canonical Table 4 / Figure 10 visibility and Table 3 verified
+   grid; do not confuse screenshots with reviewed structured Table 4 cells.
+2. Paste and verify the complete Chinese Librarian question; one prepared,
+   consented call per attempt. Check answer adoption, terminal feedback and
+   citation identities after history reopen/restart. The full-question gate
+   remains open; source had one rejection and one success before the format fix.
+3. Continue the existing extraction/package/dataset installed acceptance queue;
+   no claim of complete scientific-quality or stable release without receipts.
+
+The retained current rollback is
+`Auto Research-1.2.0-build54-20260904-204429.app.rollback`, previous core
+`20cfea8`, executable SHA `18e1007f17b187fd90233a74877b445a9f567e5b45e297f5888431758385d67d`.
+The superseded 19:10 rollback and duplicate dist App were removed only after
+the new rollback/installed signature and executable hashes matched. Retention
+is again exactly three App purposes: 0.5 comparison, build24 stable, previous
+candidate. The owned CSV fixture remains outside the repo for repeat acceptance;
+it must not become the user's saved workspace or be packaged.
+
+## Superseded installed authority — 2026-09-04 19:42
 
 The installed single candidate is `1.2.0/build54`, core `20cfea8`, executable
 SHA-256 `18e1007f17b187fd90233a74877b445a9f567e5b45e297f5888431758385d67d`.
