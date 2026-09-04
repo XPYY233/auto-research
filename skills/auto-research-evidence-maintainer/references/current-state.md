@@ -3,10 +3,11 @@
 ## Current acceptance authority (2026-09-04)
 
 Read project `docs/BUILD54_INSTALLED_ACCEPTANCE.md` and the current handoff.
-Installed build54 is `9f77aff`, `release_status=candidate`, with unresolved
-semantic AI, feedback and dataset-plan failures. No build55 or stable package
-is authorized. The previous checklist is historical; a returned model answer
-does not by itself pass the scientific/usefulness gate.
+The ledger owns the installed hash and unresolved per-flow failures; this
+reference intentionally does not repeat transient binary identities. Build54
+remains the single candidate. No build55 or stable package is authorized while
+any required gate is open. Earlier checklists below are historical; a returned
+model answer does not by itself pass the scientific/usefulness gate.
 
 ## v1.2.0 single-candidate recovery checkpoint (2026-09-02, historical)
 

@@ -54,20 +54,19 @@ Keep these invariants:
 
 ## Continue from the 1.2 Mac release line
 
-Current override (2026-09-04): read `docs/BUILD54_INSTALLED_ACCEPTANCE.md`
-immediately after the handoff. The installed candidate is build54 at `9f77aff`,
-not the older `b2578a6` checkpoint described below. Real replies did not prove
-scientific adequacy: selected chat omitted visible verified values, Librarian
-under-classified direct evidence, and dataset planning failed in the real App.
-Keep these failures open, finish the prior ordered work before new table scope,
-and do not create build55/DMG/UserKit. This ledger is the single authority for
-current acceptance; historical counters and call-success claims are not release
-evidence. If an existing collaborating task is quota-blocked, say so and proceed
-safely as root; do not invent a completed handoff or spawn hidden replacements.
+Read `docs/BUILD54_INSTALLED_ACCEPTANCE.md` immediately after the handoff.
+It is the single authority for the installed binary identity, effective workspace,
+observed failures, source-only fixes and acceptance receipts. Do not duplicate
+transient commit hashes or passing counters here; a source commit is not an
+installed version, and readiness is not a successful scientific user flow.
 
-Before editing, read the top `PROJECT_HANDOFF.md` release section. The installed App is the single overwritable `1.2.0` build54 candidate at core commit `b2578a6`; build24 remains the verified stable rollback. Real AI, isolated extraction, the official Table 3 source-image/PDF/return chain, and the PDF/page/bbox-bound 5×4 Table 3 review/restart/CSV/XLSX flow have passed in the installed App. Source checkpoint `ad72177` additionally completes a strict read-only workspace-to-official table link, zero-model extraction finalization and persisted safe cancellation: only exact DOI/PDF SHA/page/screenshot SHA identity may expose an official verified grid; task-directory uncertainty fails closed; an unfinished task blocks a new paid prepare; cancellation waits for a paid-call boundary, preserves successful receipts and never hides an unknown provider outcome. Closing the PDF picker is a visible zero-request terminal state. These source fixes are not yet installed. The immutable official `1.1.0` package was not rewritten. Keep all fixes on build54 and do not create build55 until every installed-App user-flow gate passes. Verify installed identity and artifact hashes live because source completion, build completion, installation acceptance, package publication and scientific accuracy are separate claims.
+Keep one overwritable build54 candidate while the ordered repair queue is open.
+Do not create build55/DMG/UserKit or a stable claim from isolated fixes. Preserve
+at least 70% of the shared main-account quota and recheck before substantial
+work. If a collaborating task is quota-blocked, record that fact; do not invent
+a completed handoff or launch hidden replacements.
 
-- Preserve the uncommitted production evidence database. The legacy paper_056 run/quality/visual artifacts were explicitly deleted by the user before the 0.8 build and should not be recreated unless a new real extraction is authorized.
+- Preserve the uncommitted production evidence database and existing `paper_056` user artifacts. Earlier deletion requests do not authorize recreating, restoring or cleaning the current protected state.
 - Use existing project Codex threads for frontend/macOS, core, Windows and security. Root is the only Git writer; every other thread receives an exact file list and returns a no-stage/no-commit handoff.
 - Keep the four-scope prepared-action registry, pinned Harness runtime and provider registry as the only billable AI authority. Do not restore legacy direct Librarian, context-chat, personal-suggestion or workflow model routes. Harness failure must remain explicit and must not fall back to an old loop.
 - Use `ai-readiness-v1` as the only renderer-facing AI availability projection. Built-in DeepSeek/OpenAI and an optional user-configured public HTTPS OpenAI-compatible endpoint must share provider-separated credentials, connection verification, per-scope capability verification and the same prepared-action budgets. A custom endpoint never expands Harness tools or source scope.

@@ -2,6 +2,66 @@
 
 Updated: 2026-09-04. Status: **not accepted; no stable release**.
 
+## Current installed authority — 2026-09-04 18:55
+
+The single App is now `1.2.0/build54`, candidate, core `22807aa`.
+Executable SHA-256: `35ed3a25b2216b1b0d460753c5ff9f15f60b941ea6614f24645d2e617064af9e`.
+Strict/deep signature, frozen HTTP smoke, transactional replacement and the
+canonical workspace were checked. The aggregate source gate was 1,355 shared
+passes / 80 explicit skips and 337 Mac passes (existing SWIG warnings).
+One existing worktree was reused; no new build number, DMG or UserKit was made.
+The duplicate dist App was removed after installation verification.
+
+Latest user-flow evidence:
+
+- Table 4's original numeric screenshot was visibly present after installation.
+  Verified machine-readable Table 4 rows are still a separate open gate.
+- A 123-row synthetic CSV was attempted under a process-local isolated HOME
+  and workspace. Computer Use selected the native file but could not activate
+  Open, then timed out. Direct and bundle launch attempts did not complete
+  preview or confirmation. This is an unresolved native-picker/UI-automation
+  observation, not a passed import and not yet a proven application defect.
+  No experimental import was confirmed. The App was restored to its normal
+  launch and canonical workspace; temporary data was not saved as its preference.
+- DeepSeek connection verification completed in the real settings page; the
+  four existing scope attestations remained valid. No key was read or changed.
+- The compound 300 °C HEA/316H question failed with `harness_invalid` at
+  `harness_execute`; two subsequent attempts (including a fresh conversation)
+  returned `business_action_invalid`. No provider activity appeared for these
+  attempts. Therefore AI-quality acceptance remains failed, not superseded by
+  readiness or source tests. Do not repeat paid calls until the local cause is fixed.
+
+New source-only fixes after this installation:
+
+1. URL-safe action nonces beginning with `-` or `_` were incorrectly validated
+   as scientific identifiers. A failing alphabet regression reproduced this;
+   the nonce grammar is now separate without weakening evidence identity checks.
+   The first live error cannot be attributed to this without its internal trace.
+2. Immutable official + isolated-workspace replay produced 16 seeds: the last
+   two no longer matched execution order because sanitization grouped sources.
+   The backend now preserves the server seed's order; sparse follow-up refs
+   retain their original labels. Local pre-model rejection no longer returns
+   a zero-call fallback that subsequently trips the minimum-call gate.
+3. Installer rollback paths now resolve the primary Git checkout, including
+   when invoked from a release worktree. Its actual shell path prefix is tested
+   in temporary main/worktree repositories; it does not install during tests.
+
+The combined AI/security target run passed 111 tests; the final Harness-only
+run including pre-model rejection passed 76; installer targets passed 14.
+These overlapping counts are not cumulative and do not validate a new binary.
+Latest main-account readout: 83% remaining; preserve at least 70% across tasks.
+
+Rollback retention is again three explicit purposes: 0.5 comparison, build24
+stable rollback, and prior candidate `build54-9f77aff-20260904.app.rollback`,
+all in the canonical `auto-research-backups/app-rollbacks` directory. The
+superseded b2578a6 candidate backup was removed only after the new copy's
+identity/hash/signature verified. Production SQLite SHA remains
+`0389a5aa0faf4967696e3c3a5a574eaaf0bec08a34f48c69b98f50c705aa80b0`.
+
+All sections below are historical observations. In particular, their
+"source-only/not installed" descriptions refer to the earlier 9f77aff App;
+the aggregate through 22807aa is installed, but the three fixes above are not.
+
 ## Workspace correction — 2026-09-04
 
 The earlier acceptance checked the installed binary but failed to check its

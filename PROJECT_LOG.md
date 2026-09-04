@@ -1,5 +1,14 @@
 # Auto Research Evidence 项目日志
 
+## 2026-09-04：聚合安装后的真实失败与定点修复
+
+- 同一build54聚合安装22807aa，严格签名/冻结HTTP/事务替换通过；实际Table 4原图显示。当前安装的功能、测试与SHA只在BUILD54_INSTALLED_ACCEPTANCE维护，不把源码提交当安装身份。
+- 原生CSV自动验收仍未完成：隔离HOME/工作区中选择文件后Open无法自动激活且Computer Use超时；没有预览或确认入库。已退出隔离进程，恢复正常App与正式根。不能据此把原生导入标为通过，也不能未经区分就归因软件故障。
+- 连接验证真实成功，四scope有效；复合300°C问题却先harness_invalid后business_action_invalid，未出现provider活动。不可变官方库+隔离工作区回放定位16个seed中末2项执行顺序错配：验证按source分组重排，引用表虽绑定seed但job.documents未同步；随后零调用fallback又被最小调用门拒绝。已保留seed顺序、原始稀疏R引用，并让模型前失败保持原始原因而不是伪装model fallback。另复现并修复token_urlsafe合法首字符-/_被Harness身份正则误拒；该独立bug尚不能无trace认定为首次实机错误的唯一原因。
+- AI组合目标111通过；补齐模型前失败后Harness四文件76通过，均既有SWIG警告。混合源、稀疏引用和零模型拒绝均有执行断言；不重试收费，不修改model budget。源码尚未装入，未再次build。
+- 安装回退路径改由Git共享目录定位主工作区，避免release-worktree父目录生成第二套备份根；临时main/worktree执行真实shell路径逻辑，14项目标通过。已核验移动这次回退到权威目录，移除被覆盖候选回退与重复dist App；0.5/build24/上个9f77aff候选三用途保留。
+- 规范与Skill收敛当前权威引用，取消重复瞬时版本计数，明确来源根/nonce与引用执行验证、主账号70%保留线；现有前端任务只读诊断后停手，无新agent、无Windows。生产库SHA未变，资料包未改。
+
 ## 2026-09-04：聚合安装前恢复门
 
 - 最终修复后共享全门1355通过、80按设计跳过（20.07s）；Mac337通过（27.20s）；生产JS语法、发布契约哈希及diff通过。以下初次计数只用于定位审查顺序，不累加为验证数量。

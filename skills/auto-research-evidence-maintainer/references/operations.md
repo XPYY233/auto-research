@@ -69,6 +69,11 @@ Run real HTTP checks for editable and read-only modes. Verify a read-only write 
 
 ## Stable checkpoint
 
+All acceptance mutations use an owned disposable snapshot, never the live
+scientific/private database. Resolve rollback storage from the primary Git
+checkout, not a release worktree's parent; verify the destination before backup.
+The installer path test exercises both layouts without installing an App.
+
 1. Stop extraction and sharing jobs.
 2. Reconcile only abandoned run metadata.
 3. Copy SQLite outside the repository and hash it.
