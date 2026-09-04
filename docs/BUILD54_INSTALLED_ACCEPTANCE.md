@@ -64,6 +64,31 @@ feedback. Table 4 has a real image but is not implicitly a reviewed cell grid.
 Scientific gold-set/blind accuracy is a separate unpassed gate. Finish this
 ordered list; do not repeat successful connection probes or relabel build54.
 
+### Continuation: isolated cancellation — 2026-09-05 00:27
+
+Created a new owned empty schema-v12 workspace and a clearly labelled synthetic
+one-page PDF beneath the temporary acceptance directory. No production records
+were copied into it or modified. Native picker `open` secondary action selected
+the PDF; the App displayed free preflight success and no automatic extraction.
+The task consent disclosed DeepSeek-v4-pro and at most 12 calls. During attempted
+Cancel the automation reported an external UI change; a fresh read showed the
+task already running with 2/2 calls. The confirmation cannot be attributed to
+the automation, and this is NOT a zero-call pre-consent-cancellation pass.
+
+The explicit running-task Stop button completed with `已取消`, preserved receipts
+and no published evidence. A normal restart of the same isolated root restored
+`已取消` and `重新开始提取与核验`. No restart/new-call button was pressed. This passes
+running cancellation and its restart persistence only; interruption continuation
+and validated zero-model finalization remain open. Two actual calls occurred in
+this continuation, approximately 13 total for the current acceptance phase.
+
+Computer Use can implicitly relaunch during early startup; this produced a
+second blocked-instance startup window. It was closed normally and the original
+instance retained its lock. Do not remove locks or treat that observation as a
+data failure. Explicit canonical-root launch restored the normal App afterward.
+Production SHA remains unchanged. Quota last checked 71% remaining; reserve 70%,
+so no further model/build cycle starts in this continuation.
+
 All following dated sections are historical evidence, not current instructions.
 
 ## Unlocked verification and aggregate correction — 2026-09-04 23:58
