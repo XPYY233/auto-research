@@ -14,7 +14,7 @@
 | official package v2 | `PROJECT_HANDOFF.md` | `../product/official_package_assets.py`, `official_package_v2_release.py` |
 | scientific audit | `docs/ARCHITECTURE_AUDIT_1_1.md` | `scientific_release_audit.py` |
 | upload/dedup | `README.md` | `uploads.py`, `document_recognition.py` |
-| web UI | `STABLE_RELEASE.md` | `webapp.py`, `web/index.html`, `web/app.js`, `web/app.css` |
+| web UI | `docs/BUILD54_INSTALLED_ACCEPTANCE.md` | release-contract-listed Fusion scripts, `web/index.html`, `web/workbench.css` |
 | health/release | `MAINTENANCE_WORKFLOW.md` | `maintenance.py`, `db_health.py`, `self_check.py` |
 | Zotero corpus | `AUTO_RESEARCH_HANDOFF_1000.md` | `zotero/`, `acquisition/`, root `scripts/` |
 
@@ -22,39 +22,30 @@ All implementation paths above are under `src/auto_research/evidence/` unless st
 
 ## Start the product and internal services
 
-Users open the desktop workbench. Auto Research.app is the current macOS release line; Windows 1.1 migration is frozen. The commands below are maintainer-only internal checks:
-
-```bash
-PYTHONPATH=src python3 -m auto_research.cli evidence-serve --host 127.0.0.1 --port 8765
-```
-
-The retired root launchers are migration notices only. Do not expose either loopback port or start ngrok for users.
+Users open the installed desktop workbench. Mac 1.2 acceptance uses the exact
+installed candidate and its protected internal server; Windows migration is
+frozen. Do not start a legacy browser server as a substitute for App acceptance.
+For isolated runs, see the effective-workspace check below.
 
 ## Read-only maintenance checks
 
-```bash
-PYTHONPATH=src python3 -m auto_research.cli evidence-db-health
-PYTHONPATH=src python3 -m auto_research.cli evidence-search-benchmark
-PYTHONPATH=src python3 -m auto_research.cli evidence-self-check \
-  10.1016/j.jnucmat.2018.08.031 \
-  --query 温度 --query 硬度 --query 钨 --query 'Wei-Ying Chen' \
-  --min-rows 100 --min-highlight-ratio 0.8
-PYTHONPATH=src python3 -m auto_research.cli evidence-test-set-audit \
-  --config config/evidence_test_set_50.json
-```
+Instantiate the relevant service with an explicitly owned immutable/disposable
+snapshot. Verify the effective database path before running health, search,
+source or corpus checks. The historical CLI defaults to the project database
+and some subcommands have no database override: do not run them unscoped in the
+canonical checkout. Run reconciliation only on disposable acceptance state;
+it writes run metadata and is not a read-only diagnostic.
 
-Before release, reconcile stale run metadata only:
-
-```bash
-PYTHONPATH=src python3 -m auto_research.cli evidence-reconcile-runs --older-than-hours 6
-```
-
-This command must not change evidence, visuals, review history, or extraction artifacts.
+For performance changes to scientific clustering/export, compare full canonical
+output fingerprints against the prior implementation on the same immutable
+snapshot. Fast approximate scores may reject impossible pairs only when they
+are proven upper bounds; they must not silently replace acceptance thresholds.
 
 ## Code checks
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s src/tests -p 'test_*.py'
+PYTHONPATH=src:desktop/macos python3 -m pytest -q src/tests
+PYTHONPATH=src:desktop/macos python3 -m pytest -q desktop/macos/tests
 python3 -m compileall -q src
 node --check src/auto_research/evidence/web/fusion_review.js
 node --check src/auto_research/evidence/web/document_tab_store.js
@@ -68,6 +59,9 @@ Run actual desktop HTTP authorization checks and verify protected SQLite hashes.
 Select current production JS from the resource manifest, not historical browser
 controllers. Run shared and Mac suites separately and serially because some
 test modules share basenames.
+Use the configured development Python with pytest available; the lean packaging
+venv intentionally does not contain test dependencies. Unittest discovery alone
+does not collect all pytest-style production gates.
 
 ## Stable checkpoint
 

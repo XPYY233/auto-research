@@ -193,11 +193,16 @@ class HarnessJobStore:
 
 
 class HarnessOutputProjector:
+    # Treat a measurement and its uncertainty as one source-backed quantity.
+    # Matching only the trailing ``0.04 GPa`` in ``2.97 ± 0.04 GPa`` left
+    # ``2.97`` behind and rejected an exact quotation after the paid call.
+    _DECIMAL = r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+    _MEASUREMENT = rf"[+-]?{_DECIMAL}(?:\s*(?:±|\+/-)\s*{_DECIMAL})?"
     _NUMBER = re.compile(
         r"(?<![A-Za-z0-9_])[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![A-Za-z0-9_])"
     )
     _QUANTITY = re.compile(
-        r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*"
+        _MEASUREMENT + r"\s*"
         r"(?:%|°\s*[CF]|°(?![A-Za-z])|K|Pa|kPa|MPa|GPa|TPa|HV|HRC|nm|µm|μm|mm|cm|m|"
         r"eV|keV|MeV|J|mJ|W(?:\s*/\s*m(?:\s*K)?)?|g\s*/\s*cm(?:\^?3|³)|"
         r"kg\s*/\s*m(?:\^?3|³)|dpa|at\.?\s*%|wt\.?\s*%|s|min|(?-i:h))(?![A-Za-z])",
@@ -225,14 +230,14 @@ class HarnessOutputProjector:
 
     @staticmethod
     def _quantity_key(value: str) -> str:
-        return re.sub(r"\s+", "", value).replace("μ", "µ").casefold()
+        return re.sub(r"\s+", "", value).replace("μ", "µ").replace("+/-", "±").casefold()
 
     @classmethod
     def _quantity_unit_key(cls, value: str) -> str:
         """Return the normalized unit/dimension suffix of one quantity."""
 
         suffix = re.sub(
-            r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*",
+            "^" + cls._MEASUREMENT + r"\s*",
             "",
             value,
             count=1,

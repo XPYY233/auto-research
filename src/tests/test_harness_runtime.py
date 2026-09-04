@@ -788,6 +788,41 @@ class HarnessRuntimeTests(unittest.TestCase):
             )
         )
 
+    def test_uncertainty_is_one_exact_source_bound_measurement(self) -> None:
+        projector = HarnessOutputProjector
+        prompt = {"seed_evidence": [
+            {"ref": "R1", "evidence_text": "硬度 2.97 ± 0.04 GPa"},
+            {"ref": "R2", "evidence_text": "硬度 4.63 ± 0.03 GPa"},
+        ]}
+        def rejected(answer):
+            return projector._has_cross_bundle_quantitative_claim(
+                answer, prompt=prompt, refs={"R1", "R2"},
+                ref_bundles={"R1": "bundle-a", "R2": "bundle-b"},
+            )
+        for text in (
+            "R1 报告硬度为 2.97 ± 0.04 GPa。R2 报告硬度为 4.63 ± 0.03 GPa。",
+            "R1 报告硬度为 2.97+/-0.04 GPa。",
+        ):
+            with self.subTest(accepted=text):
+                self.assertFalse(rejected(text))
+        for text in (
+            "R1 报告硬度为 2.98 ± 0.04 GPa。",  # changed central value
+            "R1 报告硬度为 2.97 ± 0.05 GPa。",  # changed uncertainty
+            "R1 报告硬度为 2.97 ± 0.03 GPa。",  # borrowed error from R2
+            "R2 报告硬度为 2.97 ± 0.04 GPa。",  # wrong source
+            "R1 报告硬度为 2.97 ± 0.04 MPa。",  # changed unit
+            "2.97 ± 0.04 GPa 低于 4.63 ± 0.03 GPa（R1、R2）。",
+            "R1 报告硬度为 2.97 ± 0.04。",      # no unit
+        ):
+            with self.subTest(rejected=text):
+                self.assertTrue(rejected(text))
+        self.assertEqual(projector._quantity_unit_key("2.97 ± 0.04 GPa"), "gpa")
+        self.assertEqual(projector._quantity_unit_key("2.97+/-0.04 GPa"), "gpa")
+        self.assertEqual(
+            projector._supported_cited_quantities(prompt, {"R1"}),
+            frozenset({"2.97±0.04gpa"}),
+        )
+
     def test_librarian_accepts_published_workspace_evidence(self) -> None:
         prepared = action()
         raw, model = self.budgeted(prepared)

@@ -16,6 +16,64 @@ WEB = ROOT / "src" / "auto_research" / "evidence" / "web"
 
 
 class FusionDatasetExportRuntimeTests(unittest.TestCase):
+    def test_plan_pending_refresh_scope_abort_and_fetch_or_json_deadline(self) -> None:
+        program = r"""
+const assert=require('assert'),fs=require('fs');
+eval(fs.readFileSync(process.argv[1],'utf8'));
+const timers=new Map(),intervals=new Map();let nextTimer=0,now=1000;
+Date.now=()=>now;
+globalThis.setTimeout=(fn,ms)=>{assert.equal(ms,180000);timers.set(++nextTimer,fn);return nextTimer;};
+globalThis.clearTimeout=id=>timers.delete(id);
+globalThis.setInterval=(fn,ms)=>{assert.equal(ms,1000);intervals.set(++nextTimer,fn);return nextTimer;};
+globalThis.clearInterval=id=>intervals.delete(id);
+const deferred=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {resolve,promise};};
+class El{constructor(){this.checked=false;this.hidden=false;this.disabled=false;this.textContent='';this.innerHTML='';this.dataset={};this.attrs={};this.handlers={};}addEventListener(k,fn){this.handlers[k]=fn;}setAttribute(k,v){this.attrs[k]=v;}closest(){return null;}}
+const nodes=new Map(),q=k=>{if(!nodes.has(k))nodes.set(k,new El());return nodes.get(k);};
+const plans=[],posts=[];let phase='fetch',pickers=0;
+const raw=privateScope=>({schema_version:'dataset-export-plan-v1',plan_token:'dataset_plan_0123456789',include_private:privateScope,binary_assets_included:false,record_count:1,entity_counts:{item:1,finding:0,table:0,figure:0},split_counts:{train:1,validation:0,test:0},missing_fields:{},rights_risks:[],unreviewed_count:0,rights_ack_required:false,unreviewed_ack_required:false});
+const state={jobs:new Map(),center:{capabilities:{dataset_export:true}}};
+const api=globalThis.AutoResearchFusionPackage.createPackageCenterController({state,q,qa:()=>[],
+ async request(url,options={}){
+   if(options.method==='POST')posts.push(url);
+   if(url.endsWith('/dataset-plan')){
+     const hold=deferred(),entry={hold,signal:options.signal,phase};plans.push(entry);
+     // Exercise both halves of the injected request boundary, ignoring abort deliberately.
+     const response=phase==='fetch'?await hold.promise:{json:()=>hold.promise};
+     return await response.json();
+   }
+   if(url==='/api/desktop/package-center')return {capabilities:{dataset_export:true},installed_versions:[]};
+   if(url==='/api/desktop/evidence-packages')return {};
+   if(url==='/api/desktop/package-center/receipts')return {schema_version:'activity-receipts-v1',revision:0,storage:'local',receipts:[]};
+   throw Error('unexpected '+url);
+ },safeError:(code,message)=>Object.assign(new Error(message),{code}),cleanText:(v,n=1000)=>String(v||'').slice(0,n),esc:String,
+ setOperation(){},projectJob(){},openOfficialSearch(){},getCurrentPaperId:()=>null,isActiveView:()=>true,
+ native:{selectEvidencePackage(){},selectPackageDestination(){},selectDatasetDestination(){pickers++;throw Error('must not export');}}
+});
+api.bind();const button=q('#fusion-dataset-plan-button'),notice=q('#fusion-package-status'),scope=q('#fusion-dataset-include-private');
+const finish=(entry,body)=>entry.hold.resolve(entry.phase==='fetch'?{json:async()=>body}:body);
+(async()=>{
+ for(const mode of ['fetch','json']){
+   phase=mode;const started=api.planDataset();const entry=plans.at(-1),count=plans.length;
+   assert(button.disabled);assert.equal(button.attrs['aria-busy'],'true');
+   assert(q('#fusion-dataset-availability').textContent.includes('已等待 0 秒'));assert(notice.textContent.includes('不调用 AI'));
+   now+=65000;[...intervals.values()][0]();assert(q('#fusion-dataset-availability').textContent.includes('已等待 65 秒'));assert(q('#fusion-dataset-availability').textContent.includes('正在本机准备'));assert(q('#fusion-dataset-availability').textContent.includes('不调用 AI'));
+   await api.planDataset();await api.loadPackageCenter(true);await api.planDataset();
+   assert.equal(plans.length,count,'refresh and repeated submit cannot create a new request');assert(button.disabled);assert.equal(timers.size,1);
+   [...timers.values()][0]();await started;
+   assert(entry.signal.aborted);assert.equal(timers.size,0);assert.equal(intervals.size,0);assert(!button.disabled);assert.equal(button.attrs['aria-busy'],'false');
+   assert.equal(notice.dataset.kind,'error');assert(notice.textContent.includes('dataset_plan_timeout'));assert(notice.textContent.includes('后台可能仍在核对'));assert(notice.textContent.includes('尚未导出文件'));
+   const terminal=notice.textContent;finish(entry,raw(false));await Promise.resolve();await Promise.resolve();assert.equal(notice.textContent,terminal);assert.equal(state.datasetPlan,null);
+ }
+ phase='fetch';const obsolete=api.planDataset(),old=plans.at(-1);scope.checked=true;scope.handlers.change();
+ assert(old.signal.aborted);await obsolete;assert(!button.disabled);assert.equal(timers.size,0);assert.equal(intervals.size,0);assert(notice.textContent.includes('范围已变化'));assert(notice.textContent.includes('未执行导出'));assert(notice.textContent.includes('后台可能仍在核对'));
+ const latest=api.planDataset(),fresh=plans.at(-1);finish(old,raw(false));await Promise.resolve();await Promise.resolve();assert(button.disabled);assert.equal(state.datasetPlan,null);
+ finish(fresh,raw(true));await latest;assert.equal(state.datasetPlan.includePrivate,true);assert.equal(notice.dataset.kind,'success');assert(!button.disabled);assert.equal(timers.size,0);assert.equal(intervals.size,0);assert.equal(q('#fusion-dataset-availability').textContent,'可生成');
+ assert.equal(pickers,0);assert(posts.every(url=>url.endsWith('/dataset-plan')),'no export or destination retry');
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+        result = subprocess.run(["node", "-e", program, str(WEB / "fusion_package_center.js")], capture_output=True, text=True, timeout=8)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_interrupted_export_resumes_same_job_without_second_export(self) -> None:
         program = r"""
 const assert=require('assert'),fs=require('fs');
@@ -106,13 +164,13 @@ const flushUntil=async predicate=>{for(let i=0;i<40&&!predicate();i++)await new 
   assert.equal(state.datasetPlan,null);assert.equal(notice.textContent,changedNotice,'late private plan must not repaint UI');assert(button.disabled);
   const staleError=api.planDataset();changeScope(true);changeScope(false);const failedNotice=notice.textContent;
   plans[1].reject(Error('obsolete failure'));await staleError;assert.equal(notice.textContent,failedNotice,'stale error cannot overwrite new scope status');
-  const first=api.planDataset(),latest=api.planDataset();plans[3].resolve(raw(false,'dataset_plan_latest_12345'));await latest;
+  const first=api.planDataset();await api.planDataset();assert.equal(plans.length,3,'pending plan submits are single flight');plans[2].resolve(raw(false,'dataset_plan_latest_12345'));await first;
   const current=state.datasetPlan,currentHTML=q('#fusion-dataset-metrics').innerHTML;
-  plans[2].resolve(raw(false,'dataset_plan_older_123456'));await first;assert.strictEqual(state.datasetPlan,current);assert.equal(q('#fusion-dataset-metrics').innerHTML,currentHTML);
+  assert.strictEqual(state.datasetPlan,current);assert.equal(q('#fusion-dataset-metrics').innerHTML,currentHTML);
   acknowledge();assert(!button.disabled);
   const invalidated=api.exportDataset();assert(button.disabled);changeScope(true);changeScope(false);
   pickers[0].resolve(destination);await invalidated;assert.equal(exportsMade(),0,'picker result must not export an invalidated plan even after scope returns');assert.equal(state.datasetPlan,null);
-  const regenerated=api.planDataset();plans[4].resolve(raw(false,'dataset_plan_retry_123456'));await regenerated;acknowledge();
+  const regenerated=api.planDataset();plans[3].resolve(raw(false,'dataset_plan_retry_123456'));await regenerated;acknowledge();
   const retained=state.datasetPlan,cancelled=api.exportDataset();await api.exportDataset();assert.equal(pickers.length,2,'duplicate click cannot open another picker');
   acknowledge();assert(button.disabled,'risk events cannot unlock pending picker');pickers[1].resolve({cancelled:true});await cancelled;
   assert.strictEqual(state.datasetPlan,retained,'native cancellation retains reviewed plan');assert(!button.disabled);assert.equal(exportsMade(),0);

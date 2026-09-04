@@ -95,6 +95,8 @@
     }
     let bound = false;
     let datasetPlanGeneration = 0;
+    let datasetPlanPending = null;
+    const datasetPlanTimeoutMs = 180000;
     let datasetExportPending = false;
     let datasetExportJobId = null;
     const packageJobFamilies = new Map();
@@ -231,8 +233,11 @@
       const available = state.center?.capabilities?.dataset_export === true;
       const button = q("#fusion-dataset-plan-button");
       const label = q("#fusion-dataset-availability");
-      if (button) button.disabled = !available;
-      if (label) label.textContent = available ? "可生成" : "当前不可用";
+      if (button) {
+        button.disabled = !available || Boolean(datasetPlanPending);
+        button.setAttribute?.("aria-busy", String(Boolean(datasetPlanPending)));
+      }
+      if (label) label.textContent = datasetPlanPending ? `正在本机准备 · 已等待 ${Math.max(0, Math.floor((Date.now() - datasetPlanPending.startedAt) / 1000))} 秒 · 不调用 AI` : available ? "可生成" : "当前不可用";
       return available;
     }
 
@@ -251,12 +256,16 @@
 
     function resetDatasetPlanForScope() {
       datasetPlanGeneration += 1;
+      const pending = datasetPlanPending;
+      datasetPlanPending = null;
+      pending?.cancel(safeError("dataset_plan_cancelled", "数据集范围已变化，请重新生成计划。"));
+      syncDatasetCapability();
       state.datasetPlan = null;
       state.datasetReceipt = null;
       q("#fusion-dataset-result").hidden = true;
       q("#fusion-dataset-receipt").hidden = true;
       updateDatasetExportButton();
-      packageNotice("数据集范围已变化，请重新生成计划。", "info");
+      packageNotice("数据集范围已变化，已停止等待旧计划；未执行导出。后台可能仍在核对，请手动重新生成计划。", "info");
     }
 
     function renderDatasetRiskPage(plan, page = 0, focusControl = "") {
@@ -306,17 +315,26 @@
 
     async function planDataset(event) {
       event?.preventDefault?.();
-      if (datasetExportPending || !syncDatasetCapability()) return;
+      if (datasetPlanPending || datasetExportPending || !syncDatasetCapability()) return;
       const generation = ++datasetPlanGeneration;
       const includePrivate = q("#fusion-dataset-include-private")?.checked === true;
       const isCurrent = () => generation === datasetPlanGeneration && includePrivate === (q("#fusion-dataset-include-private")?.checked === true);
+      const controller = typeof AbortController === "function" ? new AbortController() : null;
+      let rejectWait;
+      const interrupted = new Promise((_resolve, reject) => { rejectWait = reject; });
+      const flight = {startedAt: Date.now(), cancel(error) { rejectWait(error); controller?.abort(); }};
+      datasetPlanPending = flight;
+      syncDatasetCapability();
+      const timer = setTimeout(() => flight.cancel(safeError("dataset_plan_timeout", "计划等待已结束；后台可能仍在核对，尚未导出文件。请稍后手动重新生成计划。")), datasetPlanTimeoutMs);
+      const elapsedTimer = setInterval(() => { if (datasetPlanPending === flight) syncDatasetCapability(); }, 1000);
       state.datasetPlan = null;
       updateDatasetExportButton();
       q("#fusion-dataset-result").hidden = true;
       q("#fusion-dataset-receipt").hidden = true;
-      packageNotice("正在生成训练数据集计划…", "loading");
+      packageNotice("正在本机准备训练数据集计划，不调用 AI；请查看已等待时间。", "loading");
       try {
-        const raw = await request("/api/desktop/package-center/dataset-plan", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({include_private: includePrivate})});
+        // Bound the entire request, including response JSON, even when transport ignores abort.
+        const raw = await Promise.race([request("/api/desktop/package-center/dataset-plan", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({include_private: includePrivate}), signal: controller?.signal}), interrupted]);
         if (!isCurrent()) return;
         const plan = publicDatasetPlan(raw, includePrivate);
         if (!plan) throw safeError("dataset_plan_invalid", "数据集计划格式无效。");
@@ -325,6 +343,14 @@
       } catch (error) {
         if (!isCurrent()) return;
         packageNotice(datasetErrorText(error), "error");
+      } finally {
+        clearTimeout(timer);
+        clearInterval(elapsedTimer);
+        if (datasetPlanPending === flight) {
+          datasetPlanPending = null;
+          syncDatasetCapability();
+          if (!isCurrent()) packageNotice("数据集范围已变化，已停止等待旧计划；未执行导出。后台可能仍在核对，请手动重新生成计划。", "info");
+        }
       }
     }
 

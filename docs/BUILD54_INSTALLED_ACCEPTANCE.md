@@ -2,6 +2,43 @@
 
 Updated: 2026-09-04. Status: **not accepted; no stable release**.
 
+## Unlocked verification and aggregate correction — 2026-09-04 23:58
+
+The installed e870094 full Chinese Librarian question failed closed in one
+7-second call. Its terminal-warning timer stopped and all 9 citations survived
+history reopen. The earlier prompt-only numeric-format mitigation was therefore
+insufficient; do not record this as an accepted AI answer.
+
+A one-call authorized source diagnostic isolated the exact false rejection:
+`2.97 ± 0.04 GPa` from frozen R9 was parsed as only `0.04 GPa`, leaving the
+central value unsupported. Source now checks central value plus uncertainty as
+one exact cited quantity, preserving changed-value/error/unit/source and
+cross-bundle comparison rejection. Seventy Harness targets passed; a subsequent
+single-call diagnostic adopted the actual answer in 6.31 seconds. This source
+success still needs installed-App repetition.
+
+Installed dataset preflight returned 4,689 records (3,378 item / 1,020 finding /
+49 table / 242 figure), 2,417 unreviewed, after roughly two minutes. It is slow,
+not proof of a generation-guard race. The frontend task added single-flight,
+elapsed local-work feedback and a 180-second bounded wait without automatic
+retry or false backend-cancellation claims (6 behavior targets passed).
+Root profiled the immutable 4,356-record snapshot: qualitative all-pair text
+alignment dominated. Exact upper-bound pruning and per-row normalization reduce
+plan time from 21.876 to 7.311 seconds, with the identical complete fingerprint
+`8f853102d0a4774efad59fdd3be88d2ca6b685930aeb767dfa09bd80ca0341ea`.
+Five clustering/export targets pass; no merge threshold or scientific record
+was changed. These changes are not installed yet.
+
+Aggregate freeze gate: 1,372 shared tests pass / 80 explicit skips; 338 Mac
+tests pass, serially, with 5 existing SWIG warnings. The first mistaken run used
+the lean packaging venv and failed test imports (pytest absent); it is not a
+passed gate. The full development pytest runs above supersede that attempt.
+Release hashes, JS syntax, Skill structure and diff checks pass; protected
+production database SHA is unchanged. Installation/real UI is still separate.
+
+Latest main quota: 73% remaining; retain at least 70%. Aggregate only this batch,
+then verify installed AI and saved-dataset/receipt paths. Windows remains frozen.
+
 ## Current installed authority — 2026-09-04 20:45
 
 Installed: `1.2.0/build54/candidate`, core

@@ -91,6 +91,27 @@ def _similarity(left: Any, right: Any) -> float:
     return max(containment, difflib.SequenceMatcher(None, a, b).ratio())
 
 
+def _similarity_at_least(a: str, b: str, threshold: float) -> bool:
+    """Exact threshold predicate for already compacted text, with safe bounds.
+
+    SequenceMatcher's quick ratios are upper bounds, not substitute scores.
+    Only impossible matches are skipped; accepted pairs still use the original
+    containment/ratio rule, including its autojunk behavior and argument order.
+    """
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if (a in b or b in a) and min(len(a), len(b)) / max(len(a), len(b)) >= threshold:
+        return True
+    matcher = difflib.SequenceMatcher(None, a, b)
+    return (
+        matcher.real_quick_ratio() >= threshold
+        and matcher.quick_ratio() >= threshold
+        and matcher.ratio() >= threshold
+    )
+
+
 def canonical_value(value: Any) -> str:
     text = unicodedata.normalize("NFKC", str(value or "")).strip().casefold()
     text = text.replace("−", "-").replace("–", "-").replace("—", "-").replace("μ", "µ")
@@ -459,18 +480,22 @@ def cluster_qualitative_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
     for row in candidates:
         by_paper[int(row.get("paper_id") or 0)].append(row)
     for paper_rows in by_paper.values():
-        for index, left in enumerate(paper_rows):
-            for right in paper_rows[index + 1:]:
-                meaning_similarity = _similarity(left.get("meaning"), right.get("meaning"))
-                value_similarity = _similarity(left.get("value_text"), right.get("value_text"))
-                excerpt_similarity = _similarity(left.get("source_excerpt"), right.get("source_excerpt"))
-                concepts_left = property_concepts(left.get("meaning"))
-                concepts_right = property_concepts(right.get("meaning"))
-                concept_overlap = bool(concepts_left and concepts_right and concepts_left.intersection(concepts_right))
-                if (
-                    (value_similarity >= 0.82 and meaning_similarity >= 0.58)
-                    or (concept_overlap and excerpt_similarity >= 0.68 and value_similarity >= 0.48)
-                ):
+        prepared = [
+            (row, _compact(row.get("meaning")), _compact(row.get("value_text")),
+             _compact(row.get("source_excerpt")), property_concepts(row.get("meaning")))
+            for row in paper_rows
+        ]
+        for index, (left, lm, lv, le, lc) in enumerate(prepared):
+            for right, rm, rv, re_, rc in prepared[index + 1:]:
+                # The weaker value threshold is required by either branch.
+                # Do not compare long excerpts for pairs already ruled out.
+                if not _similarity_at_least(lv, rv, 0.48):
+                    continue
+                first_branch = (
+                    _similarity_at_least(lv, rv, 0.82)
+                    and _similarity_at_least(lm, rm, 0.58)
+                )
+                if first_branch or (lc.intersection(rc) and _similarity_at_least(le, re_, 0.68)):
                     union.union(int(left["item_id"]), int(right["item_id"]))
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row in candidates:
