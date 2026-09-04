@@ -18,6 +18,7 @@ class PackageExportDestinationError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.message = message
+        self.safe_message = message
         self.retryable = retryable
 
     def public_dict(self) -> dict[str, object]:

@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+import unicodedata
 import zipfile
 from typing import Any, Iterable, Mapping, Protocol, Sequence
 
@@ -30,7 +31,6 @@ MAX_NODES = 2_000
 MAX_DEPTH = 8
 
 _SAFE_UID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,255}$")
-_SAFE_DESTINATION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _LOCAL_VALUE_RE = re.compile(
     r"(?i)(?:^|[\s='\"])(?:"
     r"(?:file|sqlite):|"
@@ -343,6 +343,16 @@ def _split_for_paper(paper_uid: str) -> str:
     return "test"
 
 
+def _safe_destination_name(name: str) -> bool:
+    """Allow human-readable local names, never paths/control or ambiguous names."""
+    return bool(
+        name and len(name) <= 180
+        and not name.startswith((".", " ")) and not name.endswith((".", " "))
+        and not any(char in '/\\:*?"<>|' or unicodedata.category(char).startswith("C") for char in name)
+        and len(name.encode("utf-8")) <= 240
+    )
+
+
 def _file_metadata(path: Path) -> dict[str, Any]:
     stat = path.lstat()
     if path.is_symlink() or not path.is_file():
@@ -500,7 +510,7 @@ class DatasetBundleBuilder:
                 details={"count": len(plan.rights_risks)},
             )
         target = Path(destination)
-        if target.name in {"", ".", ".."} or not _SAFE_DESTINATION_RE.fullmatch(target.name):
+        if not _safe_destination_name(target.name):
             raise DatasetBundleError("dataset_bundle_unsafe_destination", "数据集目标名称无效。")
         parent = target.parent
         try:
@@ -621,7 +631,7 @@ class DatasetBundleBuilder:
         """Publish one deterministic, shareable ZIP without partial output."""
 
         target = Path(destination)
-        if target.suffix.casefold() != ".zip" or not _SAFE_DESTINATION_RE.fullmatch(target.name):
+        if target.suffix.casefold() != ".zip" or not _safe_destination_name(target.name):
             raise DatasetBundleError("dataset_bundle_unsafe_destination", "数据集压缩包名称无效。")
         parent = target.parent
         try:
@@ -666,7 +676,10 @@ class DatasetBundleBuilder:
                 if names != expected or archive.testzip() is not None:
                     raise DatasetBundleError("dataset_bundle_write_failed", "数据集压缩包校验失败，未发布。")
             archive_sha256, archive_size = _file_metadata(temporary_archive)["sha256"], temporary_archive.stat().st_size
-            os.replace(temporary_archive, target)
+            # Atomic no-clobber publication: a save-dialog check alone cannot
+            # protect a file created while Parquet/ZIP generation was running.
+            os.link(temporary_archive, target)
+            temporary_archive.unlink()
             temporary_archive = None
             directory_descriptor = os.open(parent, os.O_RDONLY)
             try:
@@ -683,6 +696,8 @@ class DatasetBundleBuilder:
             }
         except DatasetBundleError:
             raise
+        except FileExistsError as exc:
+            raise DatasetBundleError("dataset_bundle_destination_exists", "目标文件已存在，请选择其他名称。") from exc
         except (OSError, zipfile.BadZipFile) as exc:
             raise DatasetBundleError("dataset_bundle_write_failed", "数据集压缩包写入失败，未发布。") from exc
         finally:

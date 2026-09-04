@@ -46,6 +46,35 @@ omitted its required path argument; it was corrected and rerun successfully.
 
 ## Authority and order
 
+Dataset file-chain repair (2026-09-04; source, not installed): a new integration
+test uses the real PyArrow writer, shared job/export services, Mac opaque save
+broker/publisher and AES-GCM receipt store in a disposable synthetic root.
+123 papers / 492 four-type rows round-trip through ZIP: every JSONL record equals
+its Parquet projection, all manifest hashes/sizes match, paper-level splits do
+not leak, and reconstructing the receipt service preserves the completed receipt.
+The native dialog and OS volume probe are not exercised by this test; they still
+require installed-App clicks. No test reads production SQLite or user keys.
+
+This exposed and repaired two concrete failures: the native broker allowed a
+Chinese filename but the builder rejected it; and destination errors lost their
+specific safe message at the shared job boundary. Human-readable names now pass
+bounded Unicode validation, while separators/control/bidi/ambiguous names fail.
+ZIP publication uses atomic no-clobber linking instead of overwrite-capable
+replace, so a file created during generation survives and no success receipt is
+recorded. Temporary outputs are removed on those failures.
+
+The frontend project task repaired late private-scope plans and duplicate exports:
+scope changes invalidate even an in-flight empty plan; native-picker return
+rechecks generation/token/scope/acknowledgements; a single-flight gate spans
+picker, start and polling. Cancellation retains the plan and permits retry.
+48 shared/Mac dataset/receipt tests and 23 frontend dataset/package/history tests
+passed serially; source/JS/hash checks passed. No new candidate artifact.
+
+Still open in this same export queue: polling exhaustion needs explicit resume
+of the original job rather than inviting a duplicate export; a forced receipt
+refresh arriving during another load must not be lost, and refresh errors must
+permit re-entry to retry. These are audit findings, not completed repairs.
+
 AI feedback and cross-tab draft source repair (2026-09-04; not installed):
 the existing frontend project task implemented accumulated activity timing,
 paused while awaiting authorization, frozen at success/error/cancellation even

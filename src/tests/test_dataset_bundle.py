@@ -313,6 +313,34 @@ class DatasetBundleTests(unittest.TestCase):
             self.assertFalse(target.exists())
             self.assertEqual([], list(Path(directory).glob(".dataset-archive-*")))
 
+    def test_archive_never_overwrites_a_file_created_during_generation(self):
+        plan = self.builder.plan(papers=[paper()], evidence=self._four_records())
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "dataset.zip"
+            original_write = self.writer.write
+
+            def concurrent_file(records, destination):
+                result = original_write(records, destination)
+                target.write_bytes(b"user-created-while-exporting")
+                return result
+
+            with patch.object(self.writer, "write", side_effect=concurrent_file):
+                with self.assertRaises(DatasetBundleError) as caught:
+                    self.builder.publish_archive(plan, target)
+            self.assertEqual(caught.exception.code, "dataset_bundle_destination_exists")
+            self.assertEqual(target.read_bytes(), b"user-created-while-exporting")
+            self.assertEqual([], list(Path(directory).glob(".dataset-archive-*")))
+
+    def test_unicode_names_do_not_admit_path_or_control_characters(self):
+        plan = self.builder.plan(papers=[paper()], evidence=self._four_records())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.builder.publish_archive(plan, root / "实验数据 ΔH (已核验).zip")
+            for name in (".hidden.zip", "bad\\name.zip", "bad:name.zip", "bad\nname.zip", "bad\u202ename.zip", "bad\ud800.zip"):
+                with self.subTest(name=repr(name)), self.assertRaises(DatasetBundleError) as caught:
+                    self.builder.publish_archive(plan, root / name)
+                self.assertEqual(caught.exception.code, "dataset_bundle_unsafe_destination")
+
     def test_tampered_plan_is_rejected_before_any_output(self):
         plan = self.builder.plan(papers=[paper()], evidence=[evidence("item", "item-1")])
         record = json.loads(plan._record_json[0])

@@ -94,6 +94,8 @@
       throw new TypeError("package_native_ports_invalid");
     }
     let bound = false;
+    let datasetPlanGeneration = 0;
+    let datasetExportPending = false;
     const receiptRetryRequests = new Map();
     const receiptRetryPending = new Set();
     const receiptRetryErrors = new Set();
@@ -227,16 +229,20 @@
       return available;
     }
 
-    function updateDatasetExportButton() {
+    function datasetPlanReady(plan = state.datasetPlan) {
       const rights = q("#fusion-dataset-rights-ack")?.checked === true;
       const unreviewed = q("#fusion-dataset-unreviewed-ack")?.checked === true;
-      const ready = Boolean(state.datasetPlan) && (!state.datasetPlan.rightsAckRequired || rights) && (!state.datasetPlan.unreviewedAckRequired || unreviewed);
+      return Boolean(plan) && plan.includePrivate === (q("#fusion-dataset-include-private")?.checked === true) && (!plan.rightsAckRequired || rights) && (!plan.unreviewedAckRequired || unreviewed);
+    }
+
+    function updateDatasetExportButton() {
+      const ready = !datasetExportPending && datasetPlanReady();
       q("#fusion-dataset-export").disabled = !ready;
       return ready;
     }
 
     function resetDatasetPlanForScope() {
-      if (!state.datasetPlan) return;
+      datasetPlanGeneration += 1;
       state.datasetPlan = null;
       state.datasetReceipt = null;
       q("#fusion-dataset-result").hidden = true;
@@ -292,19 +298,24 @@
 
     async function planDataset(event) {
       event?.preventDefault?.();
-      if (!syncDatasetCapability()) return;
+      if (datasetExportPending || !syncDatasetCapability()) return;
+      const generation = ++datasetPlanGeneration;
       const includePrivate = q("#fusion-dataset-include-private")?.checked === true;
+      const isCurrent = () => generation === datasetPlanGeneration && includePrivate === (q("#fusion-dataset-include-private")?.checked === true);
       state.datasetPlan = null;
+      updateDatasetExportButton();
       q("#fusion-dataset-result").hidden = true;
       q("#fusion-dataset-receipt").hidden = true;
       packageNotice("正在生成训练数据集计划…", "loading");
       try {
         const raw = await request("/api/desktop/package-center/dataset-plan", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({include_private: includePrivate})});
+        if (!isCurrent()) return;
         const plan = publicDatasetPlan(raw, includePrivate);
         if (!plan) throw safeError("dataset_plan_invalid", "数据集计划格式无效。");
         renderDatasetPlan(plan);
         packageNotice("数据集计划已生成；请核对划分、缺失字段和风险后选择保存位置。", "success");
       } catch (error) {
+        if (!isCurrent()) return;
         packageNotice(datasetErrorText(error), "error");
       }
     }
@@ -319,12 +330,17 @@
 
     async function exportDataset() {
       const plan = state.datasetPlan;
-      const button = q("#fusion-dataset-export");
-      if (!plan || !updateDatasetExportButton()) return;
-      button.disabled = true;
+      if (datasetExportPending || !plan || !updateDatasetExportButton()) return;
+      const generation = datasetPlanGeneration, planToken = plan.planToken;
+      datasetExportPending = true;
+      updateDatasetExportButton();
       try {
         const destinationToken = await chooseDatasetDestination();
         if (!destinationToken) return;
+        if (generation !== datasetPlanGeneration || state.datasetPlan !== plan || plan.planToken !== planToken || !datasetPlanReady(plan)) {
+          packageNotice("数据集范围或风险确认已变化；未启动导出，请重新核对计划。", "info");
+          return;
+        }
         packageNotice("正在生成并校验训练数据集…", "loading");
         const initial = await request("/api/desktop/package-center/dataset-export", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({plan_token: plan.planToken, destination_token: destinationToken, rights_acknowledged: q("#fusion-dataset-rights-ack")?.checked === true, unreviewed_acknowledged: q("#fusion-dataset-unreviewed-ack")?.checked === true})});
         const completed = await waitPackageJob(initial, "transfer");
@@ -339,6 +355,7 @@
       } catch (error) {
         packageNotice(datasetErrorText(error), "error");
       } finally {
+        datasetExportPending = false;
         updateDatasetExportButton();
       }
     }

@@ -16,6 +16,74 @@ WEB = ROOT / "src" / "auto_research" / "evidence" / "web"
 
 
 class FusionDatasetExportRuntimeTests(unittest.TestCase):
+    def test_scope_races_and_export_single_flight_use_current_controller(self) -> None:
+        program = r"""
+const assert=require('assert'),fs=require('fs');
+eval(fs.readFileSync(RUNTIME_PATH,'utf8'));
+class El {
+  constructor(){this.checked=false;this.disabled=false;this.hidden=false;this.textContent='';this.innerHTML='';this.dataset={};this.handlers={};}
+  addEventListener(name,fn){this.handlers[name]=fn;}
+  closest(){return null;}
+}
+const nodes=new Map(),q=selector=>{if(!nodes.has(selector))nodes.set(selector,new El());return nodes.get(selector);};
+const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
+const plans=[],pickers=[],starts=[],polls=[],calls=[];
+const request=(url,options={})=>{
+  calls.push({url,body:options.body?JSON.parse(options.body):null});
+  const next=deferred();
+  if(url.endsWith('/dataset-plan'))plans.push(next);
+  else if(url.endsWith('/dataset-export'))starts.push(next);
+  else if(url.includes('/package-center/jobs/'))polls.push(next);
+  else throw Error('unexpected route '+url);
+  return next.promise;
+};
+const state={jobs:new Map(),center:{capabilities:{dataset_export:true}}};
+const api=globalThis.AutoResearchFusionPackage.createPackageCenterController({
+  state,q,qa:()=>[],request,safeError:(code,message)=>Object.assign(new Error(message),{code}),
+  cleanText:(value,max=1000)=>typeof value==='string'?value.trim().slice(0,max):'',esc:value=>String(value),
+  setOperation(){},projectJob(){},openOfficialSearch(){},getCurrentPaperId:()=>null,isActiveView:()=>true,
+  native:{selectEvidencePackage(){},selectPackageDestination(){},selectDatasetDestination(name){assert.equal(name,'Auto-Research-dataset.zip');const next=deferred();pickers.push(next);return next.promise;}}
+});
+assert.equal(api.bind(),true);assert.equal(api.bind(),false);
+const scope=q('#fusion-dataset-include-private'),button=q('#fusion-dataset-export'),notice=q('#fusion-package-status');
+const changeScope=value=>{scope.checked=value;scope.handlers.change();};
+const raw=(includePrivate,token)=>({schema_version:'dataset-export-plan-v1',plan_token:token,include_private:includePrivate,binary_assets_included:false,record_count:1,entity_counts:{item:1,finding:0,table:0,figure:0},split_counts:{train:1,validation:0,test:0},missing_fields:{},rights_risks:['paper_rights:paper_1'],unreviewed_count:1,rights_ack_required:true,unreviewed_ack_required:true});
+const acknowledge=()=>{for(const id of ['rights','unreviewed']){const node=q('#fusion-dataset-'+id+'-ack');node.checked=true;node.handlers.change();}};
+const destination={ok:true,destination:{destination_token:'destination_0123456789'}};
+const exportsMade=()=>calls.filter(value=>value.url.endsWith('/dataset-export')).length;
+const flushUntil=async predicate=>{for(let i=0;i<40&&!predicate();i++)await new Promise(resolve=>setImmediate(resolve));assert(predicate(),'bounded asynchronous milestone not reached');};
+(async()=>{
+  changeScope(true);const old=api.planDataset();assert.equal(state.datasetPlan,null);
+  changeScope(false);const changedNotice=notice.textContent;
+  plans[0].resolve(raw(true,'dataset_plan_private_1234'));await old;
+  assert.equal(state.datasetPlan,null);assert.equal(notice.textContent,changedNotice,'late private plan must not repaint UI');assert(button.disabled);
+  const staleError=api.planDataset();changeScope(true);changeScope(false);const failedNotice=notice.textContent;
+  plans[1].reject(Error('obsolete failure'));await staleError;assert.equal(notice.textContent,failedNotice,'stale error cannot overwrite new scope status');
+  const first=api.planDataset(),latest=api.planDataset();plans[3].resolve(raw(false,'dataset_plan_latest_12345'));await latest;
+  const current=state.datasetPlan,currentHTML=q('#fusion-dataset-metrics').innerHTML;
+  plans[2].resolve(raw(false,'dataset_plan_older_123456'));await first;assert.strictEqual(state.datasetPlan,current);assert.equal(q('#fusion-dataset-metrics').innerHTML,currentHTML);
+  acknowledge();assert(!button.disabled);
+  const invalidated=api.exportDataset();assert(button.disabled);changeScope(true);changeScope(false);
+  pickers[0].resolve(destination);await invalidated;assert.equal(exportsMade(),0,'picker result must not export an invalidated plan even after scope returns');assert.equal(state.datasetPlan,null);
+  const regenerated=api.planDataset();plans[4].resolve(raw(false,'dataset_plan_retry_123456'));await regenerated;acknowledge();
+  const retained=state.datasetPlan,cancelled=api.exportDataset();await api.exportDataset();assert.equal(pickers.length,2,'duplicate click cannot open another picker');
+  acknowledge();assert(button.disabled,'risk events cannot unlock pending picker');pickers[1].resolve({cancelled:true});await cancelled;
+  assert.strictEqual(state.datasetPlan,retained,'native cancellation retains reviewed plan');assert(!button.disabled);assert.equal(exportsMade(),0);
+  const exported=api.exportDataset();assert.equal(pickers.length,3,'cancelled picker can be retried');pickers[2].resolve(destination);
+  await flushUntil(()=>starts.length===1);acknowledge();await api.exportDataset();assert(button.disabled);assert.equal(pickers.length,3,'start request remains single flight');assert.equal(exportsMade(),1);
+  assert.deepEqual(calls.find(value=>value.url.endsWith('/dataset-export')).body,{plan_token:retained.planToken,destination_token:'destination_0123456789',rights_acknowledged:true,unreviewed_acknowledged:true});
+  const realTimeout=globalThis.setTimeout;globalThis.setTimeout=callback=>{callback();return 0;};
+  starts[0].resolve({job_id:'dataset_job_0123456789',operation:'dataset_export',stage:'running',progress:20,terminal:false});
+  await flushUntil(()=>polls.length===1);acknowledge();await api.exportDataset();assert(button.disabled);assert.equal(pickers.length,3,'polling remains single flight');
+  polls[0].resolve({job_id:'dataset_job_0123456789',operation:'dataset_export',stage:'completed',progress:100,terminal:true,result:{schema_version:'dataset-bundle-v1',status:'published',binary_assets_included:false,record_count:1,checksum_code:'a'.repeat(12)}});
+  await exported;globalThis.setTimeout=realTimeout;assert(!button.disabled);assert.equal(state.datasetReceipt.recordCount,1);assert.equal(exportsMade(),1);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+""".replace("RUNTIME_PATH", repr(str(WEB / "fusion_package_center.js")))
+        result = subprocess.run(
+            ["node", "-e", program], capture_output=True, text=True, check=False, timeout=8
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_real_builder_and_service_plan_survives_renderer_with_corpus_risks(self) -> None:
         papers = [{"paper_uid": f"paper-{i}", "source_scope": "official"} for i in range(123)]
         records = [{

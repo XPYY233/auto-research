@@ -1,5 +1,12 @@
 # Auto Research Evidence 项目日志
 
+## 2026-09-04：数据集真实文件链与范围竞态修复（源码）
+
+- 使用实际PyArrow而非伪Parquet，串起123篇合成论文/492条四类记录、Mac opaque保存resolver、共享job/publisher和加密回执。逐条核对JSONL/Parquet、manifest SHA/size、三种论文划分、重建服务后的同一回执；未声称已点击真实原生保存窗口或完成App重启验收。
+- 先运行新增测试，真实暴露中文文件名被core ASCII白名单拒绝，以及原生目标存在错误被压为通用失败。修复为有界安全Unicode文件名和safe_message边界，保留危险字符拒绝；ZIP最终发布改为原子不覆盖，另测生成期间用户文件出现时原内容不变、无成功回执、无残留暂存。
+- 现有前端Codex任务只读发现私人范围迟到P0和重复导出P1，随后按精确文件边界修复：范围变化使旧请求/错误失效，picker回来重核plan/token/scope/风险；全过程单飞，取消保留计划。root串行48项领域/Mac与23项前端测试通过（既有5项SWIG警告），不把重复运行数累加。
+- 轮询耗尽继续跟踪和force回执刷新丢失仍是导出队列下一步；本批无App/DMG/新build、模型、生产DB或Windows工作。
+
 ## 2026-09-04：AI活动反馈与跨标签草稿（源码协作）
 
 - 现有前端Codex任务按两个小范围交付计时控制器及证据提交处修复，未stage/commit/测试/构建；root统一审查、验证、同步资源哈希。没有启动替代子agent或Windows工作。
