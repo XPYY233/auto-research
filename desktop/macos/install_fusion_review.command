@@ -5,7 +5,11 @@ SCRIPT_DIR="${0:A:h}"
 PROJECT_ROOT="${SCRIPT_DIR:h:h}"
 CANDIDATE="${SCRIPT_DIR}/dist/Auto Research.app"
 INSTALLED="/Applications/Auto Research.app"
-ROLLBACK_ROOT="${PROJECT_ROOT:h}/auto-research-backups/app-rollbacks"
+# A release worktree is not the primary checkout. Resolve its shared Git
+# directory so every installation uses the one authoritative rollback store.
+COMMON_GIT_DIR="$(git -C "${PROJECT_ROOT}" rev-parse --path-format=absolute --git-common-dir)"
+PRIMARY_PROJECT_ROOT="${COMMON_GIT_DIR:h}"
+ROLLBACK_ROOT="${PRIMARY_PROJECT_ROOT:h}/auto-research-backups/app-rollbacks"
 EXPECTED_VERSION="$(/usr/bin/plutil -extract bundle_short_version raw -o - "${SCRIPT_DIR}/version.json")"
 EXPECTED_BUILD="$(/usr/bin/plutil -extract build_number raw -o - "${SCRIPT_DIR}/version.json")"
 STAMP="$(date '+%Y%m%d-%H%M%S')"

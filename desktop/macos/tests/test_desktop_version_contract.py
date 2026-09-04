@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -207,6 +208,35 @@ class DesktopVersionContractTests(unittest.TestCase):
             'EXPECTED_BUILD="$(/usr/bin/plutil -extract build_number', command
         )
         self.assertIn("${EXPECTED_VERSION}-build${EXPECTED_BUILD}", command)
+
+    def test_installer_uses_one_rollback_store_from_main_and_release_worktree(self) -> None:
+        command = (DESKTOP_ROOT / "install_fusion_review.command").read_text(encoding="utf-8")
+        # Execute the actual shell path-resolution prefix, stopping before any
+        # version lookup, backup or installation mutation can take place.
+        prefix = command.split('EXPECTED_VERSION=', 1)[0]
+        with tempfile.TemporaryDirectory(prefix="rollback-paths-") as temp:
+            base = Path(temp).resolve()
+            main = base / "project"
+            worktree = base / "release-worktrees" / "candidate"
+            main.mkdir()
+            def git(*args):
+                return subprocess.run(
+                    ["git", "-C", str(main), *args], check=True,
+                    capture_output=True, text=True,
+                )
+            git("init", "-q")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                "commit", "--allow-empty", "-qm", "fixture")
+            git("worktree", "add", "--detach", str(worktree), "HEAD")
+            for root in (main, worktree):
+                probe = root / "desktop" / "macos" / "path-probe.command"
+                probe.parent.mkdir(parents=True)
+                probe.write_text(prefix + 'printf "%s\\n" "${ROLLBACK_ROOT}"\n', encoding="utf-8")
+                result = subprocess.run(["zsh", str(probe)], check=True, capture_output=True, text=True)
+                self.assertEqual(
+                    result.stdout.strip(),
+                    str(base / "auto-research-backups" / "app-rollbacks"),
+                )
 
     def test_builder_labels_candidate_and_stable_from_version_metadata(self) -> None:
         command = (DESKTOP_ROOT / "build_app.command").read_text(encoding="utf-8")
