@@ -1,6 +1,70 @@
 # Build54 installed acceptance — single candidate
 
-Updated: 2026-09-04. Status: **not accepted; no stable release**.
+Updated: 2026-09-05. Status: **not accepted; no stable release**.
+
+## Current installed authority — 2026-09-05 00:03; verification through 00:18
+
+Installed `/Applications/Auto Research.app`: `1.2.0/build54/candidate`, core
+`7ed286b4ca8c5b46c9a8c4b94d8b4ef830381bb0`, executable SHA-256
+`9b5c7b11647c19c791e72be45fe4c5273089e26252d2c39819587538b0e0b4cd`.
+Canonical project root was explicitly supplied at launch. Shared 1,372 pass /
+80 skips and Mac 338 pass ran serially; frozen HTTP smoke, manifest, strict deep
+signature and transactional installation passed. No new build number, DMG,
+UserKit, stable tag or source bundle was generated.
+
+Installed outcomes (not source replay):
+
+- The complete Chinese 300 °C HEA/316H hardening and microstructure question
+  succeeded at 00:08 with DeepSeek-v4-flash, one authorized call, approximately
+  5 seconds reported in the terminal activity. The actual model answer was
+  adopted, including cited `2.97 ± 0.04 GPa` and `4.63 ± 0.03 GPa`; no rejection
+  fallback was shown. Fifteen direct plus one related evidence produced 16
+  clickable citations and one paper recommendation. This is one successful
+  real question, not a blanket scientific accuracy claim.
+- Clicking R16 opened official Table 3 in the independent second editor with
+  the source image and reviewed 5×4 cells. After another App restart, the
+  conversation retained 16 citations, restored the answer without another
+  model call, and R16 again opened the same image/grid.
+- Dataset plan finished in roughly half a minute with elapsed local-work
+  feedback and one disabled in-flight start button. Counts: 4,689 total;
+  item 3,378 / finding 1,020 / table 49 / figure 242; train 3,889 / validation
+  425 / test 375; 2,417 unreviewed; four missing paper DOIs. Private OFF.
+- For local format acceptance only, the explicit unreviewed-risk checkbox was
+  acknowledged and the native picker saved `acceptance-dataset-build54.zip`
+  under the owned temporary acceptance directory. The 1,469,531-byte ZIP has
+  SHA-256 `e2af3e2508586d41abf2080b0d2544cb5d75fdb43a7681b19ed782d7b13751ba`.
+  All four ZIP members pass CRC; manifest sizes/SHA match. All 4,689 JSONL
+  records exactly equal the normalized real Parquet records. No paper spans
+  splits and no private rows occur. This is NOT an approved training corpus:
+  unreviewed records remain explicitly unreviewed; PDF/image binaries absent.
+- Native Save initially stayed disabled until the directory was reselected.
+  AX reads timed out after Save, although the file was completed; a one-second
+  sample found the App main thread idle, not a proven Python deadlock. Normal
+  Cmd-Q succeeded. After restart the UI showed one completed dataset receipt,
+  4,689 rows, 1.4 MB and checksum `e2af3e250858`, plus two task records. The
+  immediate post-save UI response is not counted as visually verified.
+- A renewed pointer-drag attempt returned Computer Use `noWindowsAvailable`.
+  An AX separator click plus Left did not establish a changed ratio (still58).
+  These attempts do NOT pass the mouse/keyboard resize matrix and do not
+  justify calling a product drag failure fixed. No new layout patch guessed.
+
+Retention/authority: signature and executable hashes verified for the previous
+e870094 rollback (`...20260905-000330.app.rollback`, SHA `d0832795...92e59c`).
+The superseded 20cfea8 candidate rollback and this build's 35 MB build plus
+833 MB dist were removed; only 0.5 comparison / build24 stable / e870094
+candidate rollback remain. Production DB SHA still
+`0389a5aa0faf4967696e3c3a5a574eaaf0bec08a34f48c69b98f50c705aa80b0`.
+Protected paper_056 is untouched. Frontend project task is stopped; Windows
+frozen. Main quota last checked 72% remaining, mandatory reserve 70%.
+
+Still open before any stable declaration: isolated literature cancel / resume /
+zero-additional-charge finalization, the full pane/zoom/module-switch matrix,
+remaining user-package export/import receipt paths, and immediate native-save
+feedback. Table 4 has a real image but is not implicitly a reviewed cell grid.
+Scientific gold-set/blind accuracy is a separate unpassed gate. Finish this
+ordered list; do not repeat successful connection probes or relabel build54.
+
+All following dated sections are historical evidence, not current instructions.
 
 ## Unlocked verification and aggregate correction — 2026-09-04 23:58
 
@@ -39,7 +103,7 @@ production database SHA is unchanged. Installation/real UI is still separate.
 Latest main quota: 73% remaining; retain at least 70%. Aggregate only this batch,
 then verify installed AI and saved-dataset/receipt paths. Windows remains frozen.
 
-## Current installed authority — 2026-09-04 20:45
+## Superseded installed authority — 2026-09-04 20:45
 
 Installed: `1.2.0/build54/candidate`, core
 `e87009400d527a256fd67b11979163b97c672a2f`, executable SHA-256
@@ -424,7 +488,7 @@ DMG, production SQLite or Windows work was performed in this source batch.
   test or cleanup inputs. No experimental import is confirmed into the live
   private library during these checks.
 
-## Evidence, not broad completion claims
+## Historical evidence matrix — 2026-09-02 through early 2026-09-04
 
 The 2026-09-02 build used the clean `9f77aff` checkout. Its recorded serial
 source gate was 1,152 shared tests (80 explicit skips), 331 macOS tests,

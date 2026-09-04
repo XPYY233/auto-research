@@ -1,8 +1,8 @@
 # Auto Research Evidence 阶段发布状态
 
-## 当前状态（2026-09-04）
+## 当前状态（2026-09-05）
 
-`/Applications/Auto Research.app`当前为`1.2.0/build54`、`e870094`、`candidate`，**不可稳定发布**。上一聚合候选的Table 3数值问答及123行CSV导入/曲线/重启私人搜索已在实机通过；完整图书管理员问题仍待本批数值格式修复后的复验。历史引用、降级终态、v2授权披露和CSV分页状态修复现已集中安装，但Mac锁屏阻断安装后的点击验收。当前唯一分项权威为[`BUILD54_INSTALLED_ACCEPTANCE.md`](docs/BUILD54_INSTALLED_ACCEPTANCE.md)。额度剩余76%，保留70%下限；等待解锁，不生成build55/DMG/UserKit或未经实机核验的稳定声明。
+`/Applications/Auto Research.app`当前为`1.2.0/build54`、`7ed286b`、`candidate`，**不可稳定发布**。完整图书管理员问题已在安装App中1次/约5秒成功，16引用和回答重启恢复；实际训练数据ZIP的4689条JSONL/Parquet逐条一致，回执重启保留。共享1372通过/80跳过、Mac338通过及签名安装门均通过，但提取取消/续跑/收尾、完整拖拽布局矩阵及剩余用户包流程尚未全部验收。当前唯一分项权威为[`BUILD54_INSTALLED_ACCEPTANCE.md`](docs/BUILD54_INSTALLED_ACCEPTANCE.md)。额度最后72%，保留70%下限；不生成build55/DMG/UserKit或未经实机核验的稳定声明。
 
 以下为9月2日及更早检查点；其中安装身份与“已通过”不能覆盖上面的当前失败记录。
 
