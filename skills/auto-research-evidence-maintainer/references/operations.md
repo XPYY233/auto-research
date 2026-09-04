@@ -119,3 +119,19 @@ ln -s /Users/USER/Zotero/auto-research/skills/auto-research-evidence-maintainer 
 ```
 
 Invoke with: `Use $auto-research-evidence-maintainer and continue from /Users/USER/Zotero/auto-research.`
+# Effective workspace check (before installed-App acceptance)
+
+Verify the installed manifest and the running process data root separately.
+On macOS, compare `~/Library/Application Support/Auto Research/project-root.txt`
+with the process cwd and the intended workspace. A copied database in an
+extraction sandbox is not a complete visual corpus, even if its titles/counts
+look correct. Never conclude that assets were deleted or the renderer is broken
+until the source identity, effective root, image existence and SHA agree.
+
+Use `--project-root` or a process-local `AUTO_RESEARCH_DESKTOP_PROJECT_ROOT` for
+isolated acceptance; never write a temporary root into the user's persistent
+preference. Record whether a check used official data, a sandbox or the canonical
+workspace. After acceptance, restore the prior launch configuration, restart and
+verify one table and one figure in the actual App. Preserve unknown sandbox data
+for separate review. Missing/invalid image bytes must remain a visible error,
+not a text-only apparent success or invented table cells.

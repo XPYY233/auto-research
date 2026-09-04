@@ -2,6 +2,8 @@
 
 ## 1.2 单候选验收（2026-09-04，当前唯一开发权威）
 
+- 本轮表图缺失的现场根因为App仍指向`/private/tmp/auto-research-build54-extract.XignFQ`临时验收目录。已恢复正式根`/Users/USER/Zotero/auto-research`并重启同一build54，真实右栏Table 4原表与Figure 10曲线图均显示。临时目录保留，不删除其未知实验数据。以前只核对App清单、未核对有效数据根的工作区验收需重新限定结论；详见验收清单的Workspace correction。新增启动/错误反馈防护仅在源码，未构建。
+
 - 当前安装清单已现场核对：`1.2.0/build54`、`release_status=candidate`、core commit `9f77aff`。下方`b2578a6`安装记录已是历史，不再用于判断当前App。
 - 当前验收权威为 [`docs/BUILD54_INSTALLED_ACCEPTANCE.md`](docs/BUILD54_INSTALLED_ACCEPTANCE.md)。真实调用已揭示证据AI遗漏可见表格数值、图书管理员直接证据分类不足、耗时展示失真；9月4日真实数据集计划又返回`dataset_plan_invalid`。这些均未修复验收，禁止称稳定、生成DMG或递增build。
 - 先完成既有验收队列，再集中修复；新表格问题排在既有工作之后，不因新截图更换主线。官方读取、设置状态及部分按钮路径已通过，不等于整体功能通过。源码全测、旧版成功和真实科学正确性必须分别记录。

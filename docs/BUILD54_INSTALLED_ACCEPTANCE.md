@@ -2,6 +2,40 @@
 
 Updated: 2026-09-04. Status: **not accepted; no stable release**.
 
+## Workspace correction — 2026-09-04
+
+The earlier acceptance checked the installed binary but failed to check its
+effective data root. `project-root.txt` and the running process cwd both pointed
+to `/private/tmp/auto-research-build54-extract.XignFQ`, an extraction acceptance
+snapshot with incomplete visual files. Therefore the earlier workspace checks
+must not be described as tests of the user's canonical workspace. Independent
+official-package checks remain scoped to their own source.
+
+For the latest missing Table 4/image report, the immutable release snapshot's
+four table and ten figure records for DOI `10.1016/j.jnucmat.2018.08.031` were
+compared to the canonical workspace assets: all fourteen files existed and
+matched the recorded SHA-256. No production SQLite was directly read or edited.
+The App was quit normally, its saved root restored to
+`/Users/USER/Zotero/auto-research`, and the same installed build54 reopened.
+The process cwd was checked again. Real WebView clicks now display Table 4's
+original table and Figure 10's force/displacement plot in the right editor.
+No App build, model call, package rewrite or deletion was needed. The temporary
+root is preserved because it may contain isolated extraction work.
+
+Source-only prevention in this batch: persisted OS-temporary roots fail closed
+with a specific startup message; explicit/process-local acceptance roots remain
+supported and do not consume the saved preference. Fusion visual-detail failures
+now terminate with a visible state rather than a silent text-only summary;
+workspace image errors no longer instruct users to reimport the official pack.
+These guards are not yet in the installed App. No new build is allocated.
+The verified-grid, AI-quality, dataset and remaining UI queue stays open; a source
+image is not a claim of reviewed machine-readable cells.
+
+Targeted validation: 73 desktop-runtime/Fusion-detail/Fusion-contract tests
+passed serially (1.58s), JavaScript syntax and release web-asset hashes passed,
+and the scoped diff passed whitespace checks. The initial hash-check invocation
+omitted its required path argument; it was corrected and rerun successfully.
+
 ## Authority and order
 
 - Installed `/Applications/Auto Research.app` manifest was read on 2026-09-04:

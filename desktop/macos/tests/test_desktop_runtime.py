@@ -47,6 +47,29 @@ def make_workspace(root: Path, *, schema_version: str = "12") -> Path:
 
 
 class DesktopRuntimeTests(unittest.TestCase):
+    def test_saved_temporary_acceptance_root_is_not_silently_opened(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = make_workspace(Path(directory) / "acceptance")
+            preference = Path(directory) / "project-root.txt"
+            preference.write_text(str(root), encoding="utf-8")
+            with patch("desktop_runtime.PREFERENCE_FILE", preference), patch.dict(
+                "os.environ", {}, clear=True
+            ):
+                with self.assertRaisesRegex(ProjectRootError, "临时验收工作区"):
+                    discover_project_root()
+                self.assertEqual(discover_project_root(root).root, root.resolve())
+            self.assertEqual(preference.read_text(encoding="utf-8"), str(root))
+
+    def test_process_local_acceptance_does_not_read_or_write_preferences(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = make_workspace(Path(directory))
+            with patch.dict("os.environ", {"AUTO_RESEARCH_DESKTOP_PROJECT_ROOT": str(root)}), patch(
+                "desktop_runtime._read_preference", side_effect=AssertionError("must not touch preference")
+            ):
+                location = discover_project_root()
+            self.assertEqual(location.root, root.resolve())
+            self.assertEqual(location.source, "environment")
+
     def test_explicit_workspace_is_selected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = make_workspace(Path(directory))

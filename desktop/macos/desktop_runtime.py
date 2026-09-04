@@ -6,6 +6,7 @@ import os
 import socket
 import sqlite3
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -58,7 +59,23 @@ def _read_preference() -> Path | None:
         value = PREFERENCE_FILE.read_text(encoding="utf-8").strip()
     except OSError:
         return None
-    return Path(value).expanduser() if value else None
+    if not value:
+        return None
+    root = Path(value).expanduser().resolve()
+    # Acceptance roots may intentionally contain only a database snapshot, not
+    # its visual assets. They are process-scoped (--project-root), never a
+    # durable user preference. Do not silently select another scientific store.
+    temporary_roots = {
+        Path(tempfile.gettempdir()).resolve(),
+        Path("/tmp").resolve(),
+        Path("/var/tmp").resolve(),
+    }
+    if any(root == parent or parent in root.parents for parent in temporary_roots):
+        raise ProjectRootError(
+            "保存的数据目录指向临时验收工作区，已停止自动打开。"
+            "请恢复正式资料目录；验收只能通过本次启动参数指定临时目录，不能覆盖日常目录设置。"
+        )
+    return root
 
 
 def discover_project_root(explicit: str | Path | None = None) -> ProjectLocation:
@@ -73,8 +90,10 @@ def discover_project_root(explicit: str | Path | None = None) -> ProjectLocation
 
     candidates: list[tuple[str, Path | None]] = [
         ("environment", Path(os.environ[PROJECT_ROOT_ENV]).expanduser() if os.environ.get(PROJECT_ROOT_ENV) else None),
-        ("preference", _read_preference()),
     ]
+    # A deliberately supplied process-local root also bypasses stale preferences.
+    if not os.environ.get(PROJECT_ROOT_ENV):
+        candidates.append(("preference", _read_preference()))
     if not getattr(sys, "frozen", False):
         candidates.append(("development-checkout", _development_project_root()))
     candidates.append(("current-mac-default", Path.home() / "Zotero" / "auto-research"))

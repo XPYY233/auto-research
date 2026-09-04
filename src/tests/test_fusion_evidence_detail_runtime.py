@@ -11,6 +11,25 @@ RUNTIME = WEB / "fusion_review.js"
 
 
 class FusionEvidenceDetailRuntimeTests(unittest.TestCase):
+    def test_missing_workspace_visual_is_not_silently_a_text_summary(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert');
+globalThis.document={{readyState:'loading',addEventListener(){{}},querySelector(){{return null}},querySelectorAll(){{return []}}}};
+globalThis.addEventListener=()=>{{}};
+eval(fs.readFileSync({str(RUNTIME)!r},'utf8'));
+for(const type of ['table','figure']){{
+ const row=AutoResearchFusion.publicEvidence({{entity_type:type,source_scope:'workspace',source_id:'workspace',entity_uid:'entity_'+type+'_'+'a'.repeat(32),label:type==='table'?'Table 4':'Figure 10',caption:'真实图注'}});
+ for(const status of ['error','ready']){{
+  const html=AutoResearchFusion.secondaryDocumentHTML({{tabId:'evidence:'+type,kind:'evidence',payload:{{row,status}}}});
+  assert(html.includes(status==='error'?'原图详情未能载入':'当前资料源没有可用原图'));
+  assert(!html.includes('<img '),'never invent an asset URL');
+  if(status==='error')assert(!html.includes('正在读取结构化行列'),'detail failure must terminate grid loading too');
+ }}
+}}
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_four_types_routes_identity_late_response_and_focus(self) -> None:
         program = f"""
 const fs=require('fs'),assert=require('assert');

@@ -17,6 +17,10 @@ Read in this order before changing anything:
 4. `STABLE_RELEASE.md`
 5. `git status --short`
 
+For installed-App diagnosis/acceptance, also read the effective-workspace check
+in `references/operations.md`; a correct build identity does not prove that the
+App is using the correct data root.
+
 Do not develop in the former iCloud checkout. Preserve unrelated or user-owned worktree changes.
 
 ## Route the task
