@@ -38,6 +38,22 @@ omitted its required path argument; it was corrected and rerun successfully.
 
 ## Authority and order
 
+Dataset source repair (2026-09-04; not installed): the renderer now accepts the
+builder's `paper.title/doi/year` missing-field keys and complete rights-risk
+lists instead of rejecting lists over 100 or truncating long public identities.
+The existing 100,000-record bound is paired with a 100,000-paper bound, and the
+renderer validates those limits, identities and counts. Risks render 50 per page,
+retain the complete list, preserve acknowledgements when paging and ignore stale
+page callbacks after a new plan. Long identities wrap within the pane. No rights
+acknowledgement is bypassed and binary assets remain excluded from the dataset.
+
+84 targeted builder/service/Fusion tests passed serially (1.87s), including a
+real builder → export service → JavaScript projection with 123 synthetic papers,
+246 risks, missing paper fields and long asset identities. This establishes the
+contract repair, not installed-App export success; native destination selection,
+actual JSONL/Parquet consistency and saved receipt remain open. No model, build,
+DMG, production SQLite or Windows work was performed in this source batch.
+
 - Installed `/Applications/Auto Research.app` manifest was read on 2026-09-04:
   `build_number=54`, `release_status=candidate`,
   `core_commit=9f77affea1714282a48e6c7e0ef22a7729683c4d`.

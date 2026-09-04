@@ -29,8 +29,13 @@
   });
   const DATASET_TYPES = Object.freeze(["item", "finding", "table", "figure"]);
   const DATASET_SPLITS = Object.freeze(["train", "validation", "test"]);
+  // Match DatasetBundleBuilder's bounded papers + evidence, not a UI-sized subset.
+  const DATASET_MAX_RECORDS = 100000;
+  const DATASET_MAX_PAPERS = 100000;
+  const DATASET_RISK_PAGE_SIZE = 50;
+  const DATASET_RISK_ID = /^(?:paper_rights:[A-Za-z0-9][A-Za-z0-9._:@+-]{0,255}|asset_rights:(?:workspace|official|private):[A-Za-z0-9][A-Za-z0-9._:@+-]{0,255}:[A-Za-z0-9][A-Za-z0-9._:@+-]{0,255})$/;
   const DATASET_MISSING_FIELDS = new Set([
-    "title", "doi", "year", "item.value_text", "item.meaning",
+    "paper.title", "paper.doi", "paper.year", "item.value_text", "item.meaning",
     "finding.finding_text", "table.caption", "figure.caption",
   ]);
   const ACTIVE_PACKAGE_CURRENT_KEYS = Object.freeze([
@@ -170,14 +175,16 @@
       const entityCounts = counts(raw.entity_counts, DATASET_TYPES);
       const splitCounts = counts(raw.split_counts, DATASET_SPLITS);
       const recordCount = raw.record_count;
-      if (!entityCounts || !splitCounts || !Number.isSafeInteger(recordCount) || recordCount < 0 || Object.values(entityCounts).reduce((sum, value) => sum + value, 0) !== recordCount || Object.values(splitCounts).reduce((sum, value) => sum + value, 0) !== recordCount || !raw.missing_fields || typeof raw.missing_fields !== "object" || Array.isArray(raw.missing_fields) || !Array.isArray(raw.rights_risks) || !Number.isSafeInteger(raw.unreviewed_count) || raw.unreviewed_count < 0) return null;
+      if (!entityCounts || !splitCounts || !Number.isSafeInteger(recordCount) || recordCount < 0 || recordCount > DATASET_MAX_RECORDS || Object.values(entityCounts).reduce((sum, value) => sum + value, 0) !== recordCount || Object.values(splitCounts).reduce((sum, value) => sum + value, 0) !== recordCount || !raw.missing_fields || typeof raw.missing_fields !== "object" || Array.isArray(raw.missing_fields) || !Array.isArray(raw.rights_risks) || !Number.isSafeInteger(raw.unreviewed_count) || raw.unreviewed_count < 0 || raw.unreviewed_count > recordCount) return null;
       const missing = [];
       for (const [field, value] of Object.entries(raw.missing_fields)) {
-        if (!DATASET_MISSING_FIELDS.has(field) || !Number.isSafeInteger(value) || value < 0) return null;
+        const limit = field.startsWith("paper.") ? DATASET_MAX_PAPERS : entityCounts[field.split(".")[0]];
+        if (!DATASET_MISSING_FIELDS.has(field) || !Number.isSafeInteger(value) || value < 0 || value > limit) return null;
         if (value > 0) missing.push([field, value]);
       }
-      const risks = raw.rights_risks.map(value => datasetSafePublicText(value)).filter(Boolean);
-      if (risks.length !== raw.rights_risks.length || risks.length > 100 || raw.rights_ack_required !== (risks.length > 0) || raw.unreviewed_ack_required !== (raw.unreviewed_count > 0)) return null;
+      if (raw.rights_risks.length > DATASET_MAX_PAPERS + recordCount || raw.rights_risks.some(value => typeof value !== "string" || value.length > 543 || !DATASET_RISK_ID.test(value))) return null;
+      const risks = [...raw.rights_risks];
+      if (new Set(risks).size !== risks.length || raw.rights_ack_required !== (risks.length > 0) || raw.unreviewed_ack_required !== (raw.unreviewed_count > 0)) return null;
       return {
         planToken: raw.plan_token,
         includePrivate,
@@ -238,6 +245,27 @@
       packageNotice("数据集范围已变化，请重新生成计划。", "info");
     }
 
+    function renderDatasetRiskPage(plan, page = 0, focusControl = "") {
+      if (state.datasetPlan !== plan) return;
+      const target = q("#fusion-dataset-risks");
+      if (!plan.risks.length) {
+        target.innerHTML = "<p>没有需要额外确认的数据权利风险。</p>";
+        return;
+      }
+      const lastPage = Math.ceil(plan.risks.length / DATASET_RISK_PAGE_SIZE) - 1;
+      const current = Math.max(0, Math.min(lastPage, page));
+      const start = current * DATASET_RISK_PAGE_SIZE;
+      const end = Math.min(start + DATASET_RISK_PAGE_SIZE, plan.risks.length);
+      target.innerHTML = `<p role="status">权利风险 ${start + 1}–${end} / ${plan.risks.length} 项；分页仅影响显示，导出仍保留完整风险清单。</p><ul>${plan.risks.slice(start, end).map(value => `<li>${esc(value)}</li>`).join("")}</ul><nav aria-label="权利风险分页"><button type="button" id="fusion-dataset-risks-prev" ${current === 0 ? "disabled" : ""}>上一页</button><button type="button" id="fusion-dataset-risks-next" ${current === lastPage ? "disabled" : ""}>下一页</button></nav>`;
+      for (const [id, delta] of [["prev", -1], ["next", 1]]) {
+        q(`#fusion-dataset-risks-${id}`)?.addEventListener("click", () => renderDatasetRiskPage(plan, current + delta, id));
+      }
+      if (focusControl) {
+        const id = current === 0 ? "next" : current === lastPage ? "prev" : focusControl;
+        q(`#fusion-dataset-risks-${id}`)?.focus?.({preventScroll: true});
+      }
+    }
+
     function renderDatasetPlan(plan) {
       state.datasetPlan = plan;
       state.datasetReceipt = null;
@@ -253,7 +281,7 @@
       ];
       q("#fusion-dataset-metrics").innerHTML = metrics.map(([label, value]) => `<span><b>${esc(value)}</b>${esc(label)}</span>`).join("");
       q("#fusion-dataset-missing").innerHTML = plan.missing.length ? plan.missing.map(([field, value]) => `<span><b>${value}</b>${esc(field)}</span>`).join("") : "<p>没有必填字段缺失。</p>";
-      q("#fusion-dataset-risks").innerHTML = plan.risks.length ? `<ul>${plan.risks.map(value => `<li>${esc(value)}</li>`).join("")}</ul>` : "<p>没有需要额外确认的数据权利风险。</p>";
+      renderDatasetRiskPage(plan);
       q("#fusion-dataset-unreviewed-row").hidden = !plan.unreviewedAckRequired;
       q("#fusion-dataset-rights-row").hidden = !plan.rightsAckRequired;
       q("#fusion-dataset-unreviewed-ack").checked = false;

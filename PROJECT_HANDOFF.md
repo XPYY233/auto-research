@@ -2,6 +2,8 @@
 
 ## 1.2 单候选验收（2026-09-04，当前唯一开发权威）
 
+- 数据集计划误拒绝已做源码修复：对齐后端`paper.title/doi/year`缺失字段；解除错误的100项权利提示上限，按论文/记录真实资源边界验证完整列表并每页显示50项，翻页不清除确认、不截断身份。84项目标测试通过，含真实builder→service→前端的123篇/246风险合成语料链。尚未装入App或完成真实文件导出验收，不能把下文失败项直接勾为通过。
+
 - 本轮表图缺失的现场根因为App仍指向`/private/tmp/auto-research-build54-extract.XignFQ`临时验收目录。已恢复正式根`/Users/USER/Zotero/auto-research`并重启同一build54，真实右栏Table 4原表与Figure 10曲线图均显示。临时目录保留，不删除其未知实验数据。以前只核对App清单、未核对有效数据根的工作区验收需重新限定结论；详见验收清单的Workspace correction。新增启动/错误反馈防护仅在源码，未构建。
 
 - 当前安装清单已现场核对：`1.2.0/build54`、`release_status=candidate`、core commit `9f77aff`。下方`b2578a6`安装记录已是历史，不再用于判断当前App。

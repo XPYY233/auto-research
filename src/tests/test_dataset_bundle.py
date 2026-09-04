@@ -5,6 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from auto_research.product.dataset_bundle import (
     DatasetBundleBuilder,
@@ -69,6 +70,12 @@ class DatasetBundleTests(unittest.TestCase):
 
     def _four_records(self):
         return [evidence(kind, f"{kind}-1") for kind in ("item", "finding", "table", "figure")]
+
+    def test_paper_limit_rejects_before_build_without_silently_omitting_metadata(self):
+        with patch("auto_research.product.dataset_bundle.MAX_PAPERS", 2):
+            self.assertEqual(self.builder.plan(papers=[paper("a"), paper("b")], evidence=[]).record_count, 0)
+            with self.assertRaisesRegex(DatasetBundleError, "论文数量"):
+                self.builder.plan(papers=(paper(str(i)) for i in range(3)), evidence=[])
 
     def test_plan_is_deterministic_and_never_splits_one_paper(self):
         records = self._four_records()

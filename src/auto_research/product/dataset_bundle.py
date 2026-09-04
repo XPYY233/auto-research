@@ -24,6 +24,7 @@ RECORD_SCHEMA_VERSION = "dataset-record-v1"
 ENTITY_TYPES = ("item", "finding", "table", "figure")
 SPLITS = ("train", "validation", "test")
 MAX_RECORDS = 100_000
+MAX_PAPERS = 100_000
 MAX_TEXT_CHARS = 100_000
 MAX_NODES = 2_000
 MAX_DEPTH = 8
@@ -370,6 +371,8 @@ class DatasetBundleBuilder:
         missing: dict[str, int] = {}
         rights_risks: set[str] = set()
         for raw in papers:
+            if len(paper_rows) >= MAX_PAPERS:
+                raise DatasetBundleError("dataset_bundle_invalid", "数据集论文数量超出安全限制。")
             if not isinstance(raw, Mapping):
                 raise DatasetBundleError("dataset_bundle_invalid", "论文元数据格式无效。")
             paper = _sanitize_exact(raw, _PAPER_KEYS, "论文元数据")
