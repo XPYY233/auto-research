@@ -169,9 +169,7 @@
     }else if(tab.kind==="evidence"){
       const rows=tab.ownerView==="search"?state.searchResults:state.evidence,persistedIdentity=tab.identity.sourceScope==="workspace"?`workspace:${tab.identity.entityType}:${tab.identity.entityUid}`:`${tab.identity.sourceScope||""}:${tab.identity.sourceId||""}:${tab.identity.entityUid||""}`,index=rows.findIndex(row=>evidenceIdentity(row)===(tab.payload?.evidenceIdentity||persistedIdentity));if(index>=0)selectEvidence(index,{focus:false});restorePrimaryPresentation(tab);
     }else if(tab.kind==="personal-table"){
-      const rows=tab.ownerView==="search"?state.searchResults:state.evidence,persistedIdentity=tab.identity.sourceScope==="workspace"?`workspace:${tab.identity.entityType}:${tab.identity.entityUid}`:`${tab.identity.sourceScope||""}:${tab.identity.sourceId||""}:${tab.identity.entityUid||""}`,index=rows.findIndex(row=>evidenceIdentity(row)===(tab.payload?.evidenceIdentity||persistedIdentity));
-      if(index>=0){const opened=openEvidenceDetail(index,null,{openTab:false});if(opened?.then)void opened.then(()=>restorePrimaryPresentation(tab));}
-      else restorePrimaryPresentation(tab);
+      restorePrimaryPersonalTable(tabById(tab.tabId));
     }else if(tab.kind==="review-candidate"){showReviewDetail(tab,tab.payload?.item||null);restorePrimaryPresentation(tab);}
     else if(tab.kind==="pdf")restorePrimaryPresentation(tab);
     else if(tab.kind==="librarian"){
@@ -454,6 +452,16 @@
     q("#fusion-private-table-prev")?.addEventListener("click",event=>void loadPrivateTablePage(row,page.page-1,{focusReturn:event.currentTarget}));q("#fusion-private-table-next")?.addEventListener("click",event=>void loadPrivateTablePage(row,page.page+1,{focusReturn:event.currentTarget}));state.personalTablePage=page;updateInspector();bindPersonalSeriesViews();return true;
   }
   function renderPersonalTableTerminal(row,kind,title,message){const host=q("#fusion-evidence-detail-body");if(!host)return;syncDetailImageDownload();syncDetailEvidenceExports(row);host.setAttribute("aria-busy",kind==="loading"?"true":"false");q("#fusion-detail-heading").textContent=row.title;q("#fusion-detail-identity").textContent="原始表格 · 我的实验";host.innerHTML=`<article class="fusion-detail-sheet fusion-private-table-detail"><header><span>我的实验 · 已确认数据</span><h1>${esc(row.title)}</h1></header>${detailState(kind,title,message)}</article>`;}
+  function restorePrimaryPersonalTable(tab){
+    if(tab?.kind!=="personal-table"||tab.groupId!=="primary"||tab.ownerView!==state.view||documentTabs?.activeTab()?.tabId!==tab.tabId||!q("#fusion-evidence-detail-body"))return false;
+    const identity=tab.identity||{},row=tab.payload?.row||{type:identity.entityType,sourceScope:identity.sourceScope,sourceId:identity.sourceId,entityUid:identity.entityUid,title:tab.title},key=privateTableIdentity(row);
+    if(!key||identity.sourceScope!=="private"||identity.entityType!=="table"||key.sourceId!==identity.sourceId||key.entityUid!==identity.entityUid)return false;
+    const page=tab.payload?.page;
+    showEvidenceDetailShell(row,tab.payload?.focusReturn||null,{openTab:false});
+    if(page&&page.sourceId===key.sourceId&&page.entityUid===key.entityUid)renderPersonalTablePage(row,page,tab.tabId);
+    else{state.personalTablePage=null;const failed=tab.payload?.status==="error"||Boolean(page);renderPersonalTableTerminal(row,failed?"error":"loading",failed?"原始表格暂时无法读取":"正在读取原始表格",failed?"可返回我的实验搜索后重新打开；已保存的数据不受影响。":"正在恢复当前标签的已确认数据。");}
+    restorePrimaryPresentation(tab);return true;
+  }
   async function loadPrivateTablePage(row,page=1,{focusReturn=null}={}){
     const identity=privateTableIdentity(row);if(!identity||!Number.isInteger(page)||page<1)return false;const request=++state.evidenceDetailRequest,originView=state.view,tab=documentTabs?.activeTab(),tabRequest=tab?.kind==="personal-table"?documentTabs.beginRequest(tab.tabId):0;if(tabRequest)documentTabs.update(tab.tabId,{payload:{...tab.payload,row,page:null,status:"loading"}});state.personalTablePage=null;renderPersonalTableTerminal(row,"loading","正在读取原始表格",`正在读取第 ${page} 页，每页最多 50 行。`);updateInspector();
     try{const url=`${ROUTES.personalTable}?source_id=${encodeURIComponent(identity.sourceId)}&entity_uid=${encodeURIComponent(identity.entityUid)}&page=${page}&page_size=50`,raw=await readOnlyJSON(url),result=publicPersonalTablePage(raw,identity,page);if(!result)throw safeError("personal_table_invalid","个人实验表格响应无效。");if(tabRequest&&!documentTabs.completeRequest(tab.tabId,tabRequest,{title:result.title||tab.title,payload:{...tabById(tab.tabId)?.payload,row,page:result,status:"ready"}}))return false;if(request!==state.evidenceDetailRequest||!state.evidenceDetailOpen||state.view!==originView||privateTableIdentity(state.evidenceDetail)?.key!==identity.key){renderDocumentTabs();return false;}renderPersonalTablePage(row,result,tab?.tabId);if(tabRequest){const current=documentTabs.snapshot().tabs.find(value=>value.tabId===tab.tabId);documentTabs.update(tab.tabId,{title:result.title||current?.title||tab.title,payload:{...current?.payload,row,page:result,html:q("#fusion-evidence-detail-body")?.innerHTML||""}});}renderDocumentTabs();if(focusReturn){const target=page>1?q("#fusion-private-table-prev"):q("#fusion-private-table-next");target?.focus({preventScroll:true});}return true;}
@@ -542,11 +550,11 @@
     try{
       const payload=await hydrateTabPayload(tab),current=tabById(tab.tabId);
       if(!current||!documentTabs.completeRequest(tab.tabId,generation,{payload},expectedGroupId)){markHydrationRetry(tab.tabId,generation);renderDocumentTabs();return false;}
-      renderDocumentTabs();if(tableStructureIdentity(payload?.row)&&!workspaceEvidenceIdentity(payload?.row))void loadTableStructure(tab.tabId,payload.row);return true;
+      renderDocumentTabs();restorePrimaryPersonalTable(tabById(tab.tabId));if(tableStructureIdentity(payload?.row)&&!workspaceEvidenceIdentity(payload?.row))void loadTableStructure(tab.tabId,payload.row);return true;
     }catch(error){
       const current=tabById(tab.tabId);
       if(current&&!documentTabs.completeRequest(tab.tabId,generation,{payload:{status:"error",errorCode:cleanText(error?.code||"tab_restore_failed",80)}},expectedGroupId))markHydrationRetry(tab.tabId,generation);
-      renderDocumentTabs();return false;
+      renderDocumentTabs();restorePrimaryPersonalTable(tabById(tab.tabId));return false;
     }
   }
   function visibleActiveTabsForHydration(){

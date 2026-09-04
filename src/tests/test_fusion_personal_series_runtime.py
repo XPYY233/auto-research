@@ -17,6 +17,31 @@ const seriesDTO=(uid='table-a',index=0)=>({
 const expected={sourceId:'private-lab',entityUid:'table-a',seriesIndex:0};
 """
 
+RESTORE_FIXTURE = r"""
+class RestoreElement {
+ constructor(){this.dataset={};this.hidden=false;this.scrollTop=0;this.textContent='';this.attrs={};this.listeners={};this._html='';this.style={setProperty(){}};this.classList={add(){},remove(){},toggle(){},contains(){return false}}}
+ set innerHTML(value){this._html=value;this.seriesPanel=null;const match=value.match(/data-personal-series-tab="([^"]+)"/);if(match){this.seriesPanel=new RestoreElement();this.seriesPanel.dataset.personalSeriesTab=match[1]}}
+ get innerHTML(){return this._html}setAttribute(k,v){this.attrs[k]=String(v)}removeAttribute(k){delete this.attrs[k]}
+ querySelector(){return null}querySelectorAll(){return []}addEventListener(k,fn){(this.listeners[k]??=[]).push(fn)}contains(){return false}focus(){focusCalls++}getBoundingClientRect(){return {width:1280,left:0}}
+}
+let ids={},panels=[],focusCalls=0;const memory=new Map(),calls=[],pending=[];
+globalThis.localStorage={getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v)};
+globalThis.innerWidth=1280;globalThis.addEventListener=()=>{};
+globalThis.fetch=(url,options={})=>{calls.push([String(url),options]);return new Promise(resolve=>pending.push(raw=>resolve({ok:true,headers:{get:()=>null},json:async()=>raw})))};
+function boot(){
+ ids={};for(const name of ['primary-editor-surface','secondary-editor-surface','secondary-editor-body','primary-document-body','evidence-detail','evidence-detail-body','detail-heading','detail-identity','context-title','breadcrumb','primary-tab-label','detail-tab-label','status-context','inspector-title','inspector-body'])ids['#fusion-'+name]=new RestoreElement();
+ panels=['personal','search','settings'].map(view=>{const el=new RestoreElement();el.dataset.viewPanel=view;return el});
+ globalThis.document={readyState:'loading',activeElement:null,documentElement:{dataset:{},style:{setProperty(){}}},body:{dataset:{}},querySelector:s=>ids[s]||null,querySelectorAll:s=>s==='[data-view-panel]'?panels:s==='[data-personal-series-tab]'?[ids['#fusion-evidence-detail-body'].seriesPanel].filter(Boolean):[],addEventListener(){}};
+ for(const file of ['document_tab_store.js','pane_layout_controller.js','workspace_layout_controller.js','fusion_review.js'])eval(fs.readFileSync(WEB+'/'+file,'utf8'));
+ const api=globalThis.AutoResearchFusion;api.state.view='personal';return api;
+}
+const identity=uid=>({sourceScope:'private',sourceId:'private-lab',entityType:'table',entityUid:uid});
+const rawRow=uid=>({entity_type:'table',source_scope:'private',source_id:'private-lab',entity_uid:uid,display_name:'真实表 '+uid});
+const rawPage=uid=>({schema_version:'personal-table-page-v1',source_id:'private-lab',entity_uid:uid,title:'真实表 '+uid,sheet_name:'数据',columns:[{name:'dose',role:'independent',meaning:'剂量',unit:'dpa'},{name:'hardness',role:'dependent',meaning:'硬度',unit:'GPa'},{name:'error',role:'uncertainty',meaning:'误差',unit:'GPa'}],conditions:{温度:'300 K'},series:[{name:'硬度随剂量',x_column:'dose',y_column:'hardness',uncertainty_column:'error'}],page:1,page_size:50,total:123,has_next:true,rows:[{dose:'0',hardness:'3.200',error:'0.050'}]});
+function openTable(api,uid,{loaded=true}={}){const row=api.publicEvidence(rawRow(uid)),page=api.publicPersonalTablePage(rawPage(uid),api.privateTableIdentity(row),1);return api.documentTabs.open({tabId:'personal-table:'+uid,kind:'personal-table',ownerView:'personal',title:'真实表 '+uid,identity:identity(uid),...(loaded?{payload:{row,page,status:'ready'}}:{})},{groupId:'primary',pin:true})}
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+"""
+
 
 class FusionPersonalSeriesRuntimeTests(unittest.TestCase):
     def run_node(self, body: str) -> None:
@@ -26,6 +51,55 @@ class FusionPersonalSeriesRuntimeTests(unittest.TestCase):
         script += FIXTURE + body
         result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=8)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_primary_loaded_page_returns_without_search_and_preserves_curve(self) -> None:
+        self.run_node(RESTORE_FIXTURE + r"""
+const api=boot(),tabs=api.documentTabs,a=openTable(api,'table-a');
+api.state.searchResults=[];api.state.evidence=[];
+const plot=globalThis.AutoResearchPersonalSeries.validate(seriesDTO(),expected);
+tabs.update(a.tabId,{payload:{...tabs.activeTab().payload,personalPlot:{mode:'curve',status:'ready',seriesIndex:0,generation:1,plot}}});
+tabs.rememberPresentation(a.tabId,{scrollTop:318});ids['#fusion-primary-editor-surface'].scrollTop=318;assert(api.activateDocumentTab(a.tabId));
+assert.equal(ids['#fusion-evidence-detail'].hidden,false);assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('完整原表 123 行'));
+assert.equal(ids['#fusion-primary-editor-surface'].scrollTop,318);
+const b=openTable(api,'table-b');api.activateDocumentTab(b.tabId);assert.equal(ids['#fusion-detail-heading'].textContent,'真实表 table-b');
+api.switchView('search',{focus:false});assert.equal(ids['#fusion-evidence-detail'].hidden,true);
+api.activateDocumentTab(a.tabId);assert.equal(api.state.view,'personal');assert.equal(ids['#fusion-detail-heading'].textContent,'真实表 table-a');
+assert.equal(ids['#fusion-evidence-detail'].hidden,false);assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('完整原表 123 行'));
+assert.equal(ids['#fusion-primary-editor-surface'].scrollTop,318);assert.equal(calls.length,0,'reactivation must not depend on any search or refetch');
+const panel=ids['#fusion-evidence-detail-body'].seriesPanel;assert(panel);for(const event of ['click','change','focusin','keydown'])assert.equal(panel.listeners[event].length,1,'primary controls bind after returning');
+assert(!memory.get('auto-research-workspace-layout-v1').includes('personalPlot'));assert.equal(focusCalls,0);
+""")
+
+    def test_primary_restart_hydration_projects_arriving_page_and_binds_controls(self) -> None:
+        self.run_node(RESTORE_FIXTURE + r"""
+(async()=>{
+let api=boot();const saved=openTable(api,'table-a');assert(!memory.get('auto-research-workspace-layout-v1').includes('3.200'));
+api=boot();const tabs=api.documentTabs,restored=tabs.activeTab();assert.equal(restored.tabId,saved.tabId);assert.equal(restored.payload,undefined);
+api.activateDocumentTab(restored.tabId);assert.equal(ids['#fusion-evidence-detail'].hidden,false);assert.equal(ids['#fusion-evidence-detail-body'].attrs['aria-busy'],'true');
+assert.equal(calls.length,1);assert(calls[0][0].startsWith('/api/desktop/federated-evidence?'));
+pending.shift()(rawRow('table-a'));await tick();assert.equal(calls.length,2);assert.equal(calls[1][0],'/api/desktop/personal-experiments/table?source_id=private-lab&entity_uid=table-a&page=1&page_size=50');
+pending.shift()(rawPage('table-a'));await tick();
+assert.equal(tabs.activeTab().payload.status,'ready');assert.equal(ids['#fusion-evidence-detail-body'].attrs['aria-busy'],'false');assert.equal(ids['#fusion-detail-heading'].textContent,'真实表 table-a');
+assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('3.200'));assert(ids['#fusion-evidence-detail-body'].innerHTML.includes('data-personal-view="curve"'));assert.equal(ids['#fusion-evidence-detail-body'].seriesPanel.listeners.click.length,1);
+assert.equal(api.state.searchResults.length,0);assert.equal(api.state.evidence.length,0);assert.equal(focusCalls,0);
+assert(!memory.get('auto-research-workspace-layout-v1').includes('3.200'));
+})().catch(error=>{console.error(error);process.exitCode=1});
+""")
+
+    def test_primary_late_hydration_updates_original_tab_without_projection_theft(self) -> None:
+        self.run_node(RESTORE_FIXTURE + r"""
+(async()=>{
+const api=boot(),tabs=api.documentTabs,a=openTable(api,'table-a',{loaded:false});
+api.activateDocumentTab(a.tabId);pending.shift()(rawRow('table-a'));await tick();assert.equal(pending.length,1);
+const b=openTable(api,'table-b');api.activateDocumentTab(b.tabId);const body=ids['#fusion-evidence-detail-body'].innerHTML,focusBefore=focusCalls;
+pending.shift()(rawPage('table-a'));await tick();
+assert.equal(tabs.activeTab().tabId,b.tabId);assert.equal(tabs.snapshot().tabs.find(t=>t.tabId===a.tabId).payload.page.title,'真实表 table-a');
+assert.equal(ids['#fusion-evidence-detail-body'].innerHTML,body);assert.equal(ids['#fusion-detail-heading'].textContent,'真实表 table-b');assert.equal(focusCalls,focusBefore);
+api.activateDocumentTab(a.tabId);assert.equal(ids['#fusion-detail-heading'].textContent,'真实表 table-a');assert.equal(calls.length,2);
+const c=openTable(api,'table-c',{loaded:false});api.activateDocumentTab(c.tabId);pending.shift()(rawRow('table-c'));await tick();
+api.switchView('search',{focus:false});pending.shift()(rawPage('table-c'));await tick();assert.equal(api.state.view,'search');assert.equal(ids['#fusion-evidence-detail'].hidden,true,'background hydration cannot reopen a detail in another module');
+})().catch(error=>{console.error(error);process.exitCode=1});
+""")
 
     def test_complete_series_strict_projection_gaps_error_bars_and_source_values(self) -> None:
         self.run_node(r"""
