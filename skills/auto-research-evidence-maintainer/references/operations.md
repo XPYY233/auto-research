@@ -56,7 +56,6 @@ This command must not change evidence, visuals, review history, or extraction ar
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s src/tests -p 'test_*.py'
 python3 -m compileall -q src
-node --check src/auto_research/evidence/web/app.js
 node --check src/auto_research/evidence/web/fusion_review.js
 node --check src/auto_research/evidence/web/document_tab_store.js
 node --check src/auto_research/evidence/web/pane_layout_controller.js
@@ -65,7 +64,10 @@ git diff --check
 git fsck --full
 ```
 
-Run real HTTP checks for editable and read-only modes. Verify a read-only write returns 403 and compare SQLite hashes before/after.
+Run actual desktop HTTP authorization checks and verify protected SQLite hashes.
+Select current production JS from the resource manifest, not historical browser
+controllers. Run shared and Mac suites separately and serially because some
+test modules share basenames.
 
 ## Stable checkpoint
 
@@ -74,19 +76,24 @@ scientific/private database. Resolve rollback storage from the primary Git
 checkout, not a release worktree's parent; verify the destination before backup.
 The installer path test exercises both layouts without installing an App.
 
-1. Stop extraction and sharing jobs.
-2. Reconcile only abandoned run metadata.
-3. Copy SQLite outside the repository and hash it.
-4. Run full code, DB, fixed-corpus, browser, export, source, and read-only checks.
+1. Confirm no active extraction or sharing job will be interrupted.
+2. Reconcile abandoned metadata only in the isolated acceptance copy.
+3. Use an identified immutable snapshot; hash protected files without using them as test inputs.
+4. Run code, isolated DB/corpus, installed WebView, export, source and read-only checks.
 5. Scan the diff for credentials, PDFs, local secrets, generated noise, and unrelated files.
 6. Update durable rules, project log, architecture, stable release, and human handoff as applicable.
-7. Commit intentionally and create an annotated date/version tag.
-8. Create `git bundle ... --all`, run `git bundle verify`, and record SHA-256.
+7. Commit intentionally. Create a stable tag only after required user acceptance.
+8. At an accepted stable checkpoint, replace the one complete recovery bundle, verify it, then remove its superseded copy; ordinary fixes need no bundle.
 9. Confirm a clean worktree.
 
 Do not mark a release stable if required work remains or if the fixed-corpus failure is unexplained.
 
-For build27, the release remains blocked until the App-saved provider key passes connection plus isolated literature extraction, Librarian, selected-evidence chat and personal suggestion acceptance. Never ask the user to paste a key into Codex, logs or a shell command. Keep the run at or below the user-authorized 25 billable provider calls and record cancellation/timeout/429/budget behavior separately from successful scientific output. Build25 and build26 must not be promoted: the former failed the DeepSeek reasoning probe, and the latter blocked personal-suggestion capability verification through a frontend/server call-cap mismatch.
+Provider connection, scope capability and actual business success are separate
+gates. Use the App-saved key through prepared actions; never request keys in
+Codex, logs or shell arguments. Stay within the acceptance call budget. Record
+cancellation/timeout/429/budget behavior separately from scientific output.
+Rejected answers must stop progress honestly; never weaken citation/number
+checks merely to pass the UI.
 
 ## Windows offline Build Kit
 
@@ -104,9 +111,9 @@ When budget, heat, time or an external interruption stops a multi-thread change:
 1. Tell every project thread to stop new edits/tests/builds and return an exact file/status handoff.
 2. Commit only independently complete, reviewed slices. Never commit an unverified UI/platform half-route just to make the tree clean.
 3. Record remaining modified/untracked code separately from user DB/run artifacts in `PROJECT_HANDOFF.md`.
-4. Update `PROJECT_LOG.md`, `AGENT.md`, this Skill and current-state with the exact committed HEAD, last usable release, test evidence and first next step.
-5. Create a maintainer-private Git bundle for committed history and a separate text/diff snapshot for uncommitted code only. Never put production SQLite, paper_056, PDFs, API keys or the complete-history bundle into a user kit.
-6. Hash and verify the recovery artifacts. Do not call the interrupted checkpoint stable or buildable.
+4. Update the handoff and acceptance ledger with source/installed identity, remaining gates and next step; keep transient hashes out of durable Skill rules.
+5. Normally retain committed history plus the existing verified recovery bundle. Create an interruption bundle only for genuine uncovered loss risk; preserve uncommitted source separately if necessary, excluding protected data and secrets.
+6. Verify any necessary new recovery artifact before removing its superseded duplicate. Do not call an interrupted checkpoint stable or buildable.
 7. On resume, inspect `git status`, restore no files destructively, finish the earliest shared contract, then proceed macOS before Windows.
 
 ## New-account skill installation

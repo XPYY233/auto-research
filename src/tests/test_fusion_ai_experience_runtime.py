@@ -58,7 +58,7 @@ Date.now=()=>now;
 globalThis.setInterval=callback=>{const id=++nextTimer;timers.set(id,callback);return id;};
 globalThis.clearInterval=id=>timers.delete(id);
 const elapsed={textContent:''},value={textContent:''},track={attrs:{'aria-valuenow':'58'},setAttribute(k,v){this.attrs[k]=v;},removeAttribute(k){delete this.attrs[k];}},bar={style:{},parentElement:track};
-const host={hidden:false,dataset:{},setAttribute(){},querySelector(selector){return {'[data-ai-elapsed]':elapsed,'[data-ai-progress-value]':value,'[data-ai-progress-bar]':bar}[selector]||null;},querySelectorAll(){return [];}};
+const host={hidden:false,dataset:{},attrs:{},setAttribute(k,v){this.attrs[k]=v;},querySelector(selector){return {'[data-ai-elapsed]':elapsed,'[data-ai-progress-value]':value,'[data-ai-progress-bar]':bar}[selector]||null;},querySelectorAll(){return [];}};
 const document={querySelector:()=>visible?host:null};
 eval(fs.readFileSync(RUNTIME_PATH,'utf8'));
 const controller=new globalThis.AutoResearchAIExperience.AIExperienceController(document),scope='selected_evidence_chat';
@@ -71,9 +71,16 @@ now=67000;controller.update(scope,{stage:'completed',state:'success'});const com
 assert.equal(completed,'本次活动 7 秒（不含等待确认）');assert.equal(timers.size,0);assert.equal(controller.startedAt.has(scope),false);
 now=367000;controller.renderElapsed(scope);controller.stopTimer(scope);assert.equal(elapsed.textContent,completed,'terminal redraw and repeated stop must stay frozen');
 controller.update(scope,{stage:'reasoning',state:'running'});assert.equal(timers.size,0,'replayed historical state must not restart the clock');assert.equal(elapsed.textContent,completed);
-for(const state of ['success','error','cancelled']){
+for(const state of ['success','warning','error','cancelled']){
   controller.begin(scope);now+=2000;visible=false;controller.update(scope,{stage:'completed',state});assert.equal(timers.size,0,'terminal must stop without a DOM host');now+=60000;visible=true;controller.renderElapsed(scope);assert.equal(elapsed.textContent,'本次活动 2 秒（不含等待确认）');
 }
+controller.begin('librarian');assert.equal(track.attrs.role,'progressbar');now+=5000;
+controller.update('librarian',{stage:'completed',state:'warning',detail:'本次模型回答未采用，显示本地证据'});
+assert.equal(timers.size,0);assert.equal(host.attrs['aria-busy'],'false');assert.equal(track.attrs.role,'status');
+assert.equal(value.textContent,'已结束 · 模型回答未采用');assert.notEqual(value.textContent,'已完成');
+const warningElapsed=elapsed.textContent;assert.equal(warningElapsed,'本次活动 5 秒（不含等待确认）');
+now+=60000;controller.renderElapsed('librarian');controller.update('librarian',{stage:'completed',state:'warning'});
+assert.equal(elapsed.textContent,warningElapsed);assert.equal(timers.size,0);assert.equal(host.attrs['aria-busy'],'false');assert.equal(track.attrs.role,'status');
 controller.begin(scope);now+=3000;
 controller.activity(scope,{schema_version:'ai-activity-event-v1',job_id:'job-safe',sequence:1,stage:'unknown-terminal-stage',code:'execution_failed',label:'未完成'});
 assert.equal(timers.size,0,'terminal event must stop even if its stage is unknown');now+=60000;controller.renderElapsed(scope);assert.equal(elapsed.textContent,'本次活动 3 秒（不含等待确认）');

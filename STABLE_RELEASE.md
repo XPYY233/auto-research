@@ -2,7 +2,7 @@
 
 ## 当前状态（2026-09-04）
 
-`/Applications/Auto Research.app`当前为`1.2.0/build54`、`22807aa`、`candidate`，**不可稳定发布**。聚合修复已安装，但实机图书管理员再次在模型前失败；随后源码已修复混合来源引用顺序与随机授权编号边界，尚未装入。私人数字表格的真实原生选择器、AI内容质量、导出和恢复验收仍开放。当前唯一分项权威为[`BUILD54_INSTALLED_ACCEPTANCE.md`](docs/BUILD54_INSTALLED_ACCEPTANCE.md)。保留同一候选，禁止build55/DMG/UserKit及未经实机核验的完成声明。
+`/Applications/Auto Research.app`当前为`1.2.0/build54`、`20cfea8`、`candidate`，**不可稳定发布**。选中Table 3的数值问答已在实机通过；完整图书管理员问题仍可能被跨资料来源数值门拒绝，隔离CSV原生选择后也尚未完成WebView预览验收。历史引用、降级终态和v2授权披露已有源码修复但未安装。当前唯一分项权威为[`BUILD54_INSTALLED_ACCEPTANCE.md`](docs/BUILD54_INSTALLED_ACCEPTANCE.md)。保留同一候选，禁止build55/DMG/UserKit及未经实机核验的完成声明。
 
 以下为9月2日及更早检查点；其中安装身份与“已通过”不能覆盖上面的当前失败记录。
 

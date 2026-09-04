@@ -37,7 +37,27 @@ vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
             text=True,
             capture_output=True,
             check=False,
+            timeout=8,
         )
+
+    def test_librarian_v2_rejects_old_ack_and_discloses_exact_sources(self) -> None:
+        completed = self._run(r"""
+const api=context.AutoResearchAIConsent;
+api.updateTrustedProviders([{provider_id:'openai',display_name:'OpenAI'}]);
+const old={provider_id:'openai',label:'OpenAI',disclosure_version:'librarian-disclosure-v1'};
+const current={provider_id:'openai',label:'OpenAI',disclosure_version:'librarian-disclosure-v2'};
+values.set('auto-research-ai-consent-v2',JSON.stringify({schema:'auto-research-ai-consent-v2',accepted_disclosures:['openai\u0000librarian\u0000librarian-disclosure-v1']}));
+assert.equal(api.disclosureVersions.librarian,current.disclosure_version);
+assert.equal(api.accepted('librarian',old),false);assert.equal(api.accepted('librarian',current),false);
+const summary=api.disclosureSummary('librarian',current);
+for(const text of ['官方资料库','本机工作区已发布文献证据','有限对话历史','只有你开启','已由你确认且经核验','不会发送私人实验数据'])assert(summary.includes(text),text);
+assert(!summary.includes('未选择的私人实验'));
+context.__accept=false;assert.equal(api.ensure('librarian',current),false);assert.equal(api.accepted('librarian',current),false);
+context.__accept=true;assert.equal(api.ensure('librarian',current),true);assert.equal(prompts.length,2);
+assert.equal(api.accepted('librarian',current),true);assert.equal(api.ensure('librarian',current),true);assert.equal(prompts.length,2);
+assert.equal(api.accepted('librarian',{...current,provider_id:'deepseek'}),false);
+""")
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
 
     def test_cancel_does_not_persist_and_unknown_scope_fails_closed(self) -> None:
         completed = self._run(

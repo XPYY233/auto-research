@@ -30,6 +30,7 @@ async function request(url,options={}){const body=options.body?JSON.parse(option
  if(url.endsWith('/execute-jobs')){assert.deepEqual(body,{action_id:`action-${actionNumber}`,consent_nonce:`nonce-action-${actionNumber}`});if(onExecute)onExecute();return {schema_version:'ai-execution-job-v1',scope:'librarian',job_id:'ai_job_'+'a'.repeat(24),events:[],status:mode==='failed'?'failed':'completed',error:{code:'harness_invalid',stage:'harness_execute',next_action:'retry_same_request'},result:{librarian_core_version:'librarian-v3',answer:'已核验回答'}}}
  throw Error('unexpected '+url);
 }
+eval(section('  const LIBRARIAN_EVIDENCE_FIELDS=', '  function storedLibrarianArticle('));
 eval(section('  function normalizeLibrarianSession(', '  function renderLibrarianHistory('));
 eval(section('  function saveCurrentLibrarianSession(', '  async function loadLibrarianHistory('));
 eval(section('  function librarianConversationEvidence(', '  function librarianRefs('));

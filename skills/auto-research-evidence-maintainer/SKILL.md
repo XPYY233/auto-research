@@ -93,26 +93,25 @@ a completed handoff or launch hidden replacements.
 
 ## Validate before claiming success
 
-Run the relevant subset and, before a stable release, all of:
+Use targeted tests during development. Before a desktop release, run shared
+and macOS suites serially and separately (their modules can share basenames),
+check production resources in `release-contract.json`, then verify the installed
+App's workflow ledger. See `references/operations.md`. Database health, search,
+source/highlight and corpus audits must explicitly target an owned isolated
+snapshot; never run a CLI that defaults to the production evidence database.
+Do not revive retired frontend checks merely to satisfy an old command list.
 
-```bash
-PYTHONPATH=src python3 -m unittest discover -s src/tests -p 'test_*.py'
-PYTHONPATH=src python3 -m auto_research.cli evidence-db-health
-PYTHONPATH=src python3 -m auto_research.cli evidence-search-benchmark
-PYTHONPATH=src python3 -m auto_research.cli evidence-self-check \
-  10.1016/j.jnucmat.2018.08.031 \
-  --query 温度 --query 硬度 --query 钨 --query 'Wei-Ying Chen' \
-  --min-rows 100 --min-highlight-ratio 0.8
-PYTHONPATH=src python3 -m auto_research.cli evidence-test-set-audit \
-  --config config/evidence_test_set_50.json
-python3 -m compileall -q src
-node --check src/auto_research/evidence/web/app.js
-node --check src/auto_research/evidence/web/fusion_review.js
-node --check src/auto_research/evidence/web/document_tab_store.js
-git diff --check
-```
+Retain a failing behavior regression for each correction and verify the actual
+test-file handoff. Unrelated old passing tests do not validate new behavior.
+Check pasted Chinese input before a billable UI action; automation can silently
+drop characters. When UI access times out, distinguish native selection,
+completed staged read and inaccessible WebView before blaming the product.
+Source replay is diagnostic, never frozen-App acceptance.
 
-For a desktop/package release, first use synthetic temporary roots and the signed-package target tests. Run the shared full suite and desktop build only once after all platform interfaces freeze. Never use the activity production database or user `paper_056` run artifacts as disposable package test data.
+Run the full suites and desktop build once after the batch freezes. Never use
+the active production database or `paper_056` as disposable package inputs.
+Remove only this run's identified temporary fixtures after diagnosis; preserve
+unknown or user-owned data.
 
 Interpret a fixed-corpus audit honestly: pending extraction is not necessarily code failure. Never fabricate evidence to make an audit pass.
 

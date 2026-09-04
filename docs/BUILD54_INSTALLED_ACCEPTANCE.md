@@ -2,7 +2,65 @@
 
 Updated: 2026-09-04. Status: **not accepted; no stable release**.
 
-## Current installed authority — 2026-09-04 18:55
+## Current installed authority — 2026-09-04 19:42
+
+The installed single candidate is `1.2.0/build54`, core `20cfea8`, executable
+SHA-256 `18e1007f17b187fd90233a74877b445a9f567e5b45e297f5888431758385d67d`.
+It passed 1,364 shared tests (80 explicit skips), 338 Mac tests, frozen HTTP
+smoke, strict/deep signature and transactional replacement. The canonical
+production SQLite SHA remained
+`0389a5aa0faf4967696e3c3a5a574eaaf0bec08a34f48c69b98f50c705aa80b0`.
+Its verified rollback is
+`Auto Research-1.2.0-build54-20260904-191010.app.rollback`; the other two
+retained rollback purposes remain the 0.5 comparison and build24 stable App.
+
+Real installed-App evidence in this aggregate:
+
+- Table 3 displayed its original image and the official same-source verified
+  5x4 grid. Selected-evidence DeepSeek used that grid and returned all three
+  materials' H0, Hirr and delta-H values with the table's uncertainties in one
+  call. It distinguished calculated delta-Hc and reported the page-5 scope;
+  independent scientific-quality acceptance remains separate.
+- A short Librarian question produced a real one-call Harness answer. The full
+  300 degree C HEA/316H comparison failed closed in the installed App because
+  the cross-bundle gate saw an unsupported bare number. Separate source replays
+  produced one rejection and one accepted answer; they do not pass the installed
+  full-question gate. This is a model-output reliability gate, not a
+  provider/readiness failure. Source now constrains every numerical value to
+  carry its own unit and forbids newly calculated differences; no numerical
+  or citation check was weakened. It still requires installed-App repetition.
+- Failed Librarian turns remain visible but are no longer sent as conversation
+  authority. Source now makes fallback a terminal warning (no endless timer),
+  preserves all canonical citation identities across encrypted history reload,
+  and upgrades informed consent to disclose official plus published workspace
+  evidence, bounded history and opt-in confirmed research memory. Old v1
+  consent cannot authorize the new scope. These changes are not installed yet.
+- Isolated CSV acceptance subsequently passed with native keyboard Return (the
+  earlier AX Open timeout is not a proven product deadlock). Both a 3x3 control
+  and the 123x3 synthetic CSV previewed. Pages 1–50, 51–100 and 101–123 retained
+  exact values; manual series mapping and one explicit local confirmation
+  produced a real private table and series. The curve displayed 122 valid points,
+  one missing point, a gap and 0.050 GPa uncertainty bars. After App restart,
+  private search returned both entities; reopening the table/curve retained
+  all 123 rows and final values 1.22 dpa / 3.322 GPa / 0.050 GPa.
+  No model was used for this experiment, and only the owned isolated private
+  library was written. The ordinary canonical App was restored afterwards.
+  Source additionally fixes page-row ARIA indices and the stale loading message;
+  those accessibility/status fixes are not the claimed cause of the AX timeout.
+
+Source target verification after these changes is 48/48; frontend collaboration
+separately ran 13/13 behavior tests. These overlap later full gates and do not
+authorize another build. Two bounded full-question source diagnostics consumed
+one call each: one correctly failed closed and one passed; neither logged model
+content. Their four owned 61 MB temporary database copies were removed.
+
+The candidate is still **not stable**. Do not allocate a new build number, create
+a DMG/stable tag or distribute it until the CSV real-UI gate, repeated Librarian
+full-question gate, extraction/exports, package navigation and complete installed
+checklist pass as one aggregate. One same-candidate overwrite is permitted after
+the aggregate source gates, solely to validate those changes in the installed App.
+
+### Superseded 18:55 authority (historical)
 
 The single App is now `1.2.0/build54`, candidate, core `22807aa`.
 Executable SHA-256: `35ed3a25b2216b1b0d460753c5ff9f15f60b941ea6614f24645d2e617064af9e`.

@@ -5,9 +5,9 @@
   const SCHEMA = "auto-research-ai-consent-v2";
   const DISCLOSURES = Object.freeze({
     librarian: {
-      version: "librarian-disclosure-v1",
+      version: "librarian-disclosure-v2",
       title: "使用图书管理员",
-      outbound: "你的研究问题，以及从官方资料库召回的有界结构化证据摘要",
+      outbound: "你的研究问题、有限对话历史，以及从已启用官方资料库和本机工作区已发布文献证据中召回的有界结构化摘要；只有你开启“使用已确认研究记忆”时，才会附带已由你确认且经核验的相关研究记忆。不会发送私人实验数据",
     },
     literature_extraction: {
       version: "literature-extraction-disclosure-v1",

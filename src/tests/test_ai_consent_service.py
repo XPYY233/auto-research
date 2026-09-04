@@ -27,7 +27,7 @@ def _binding(**changes):
         "provider_revision": 4,
         "credential_generation": 2,
         "scope": "librarian",
-        "disclosure_version": "librarian-disclosure-v1",
+        "disclosure_version": "librarian-disclosure-v2",
         "manifest_digest": "a" * 64,
         "prepared_expires_at": 5_000 + 600,
     }
@@ -112,7 +112,7 @@ class AIConsentServiceTests(unittest.TestCase):
     def test_all_scopes_are_versioned_including_capability_test(self):
         scopes = {
             "capability_test": "capability-test-disclosure-v1",
-            "librarian": "librarian-disclosure-v1",
+            "librarian": "librarian-disclosure-v2",
             "literature_extraction": "literature-extraction-disclosure-v1",
             "personal_suggestion": "personal-suggestion-disclosure-v1",
             "selected_evidence_chat": "selected-evidence-chat-disclosure-v1",
@@ -127,6 +127,10 @@ class AIConsentServiceTests(unittest.TestCase):
             )
             self.assertEqual(issued["scope"], scope)
             self.assertEqual(issued["disclosure_version"], version)
+
+    def test_retired_official_only_librarian_disclosure_cannot_authorize_new_scope(self):
+        with self.assertRaises(AIConsentError):
+            self.service.issue(binding=_binding(disclosure_version="librarian-disclosure-v1"))
 
     def test_duplicate_action_has_one_active_nonce_and_store_is_bounded(self):
         first = self.service.issue(binding=_binding())

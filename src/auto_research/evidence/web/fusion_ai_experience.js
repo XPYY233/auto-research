@@ -50,7 +50,7 @@
       ]),
     }),
   });
-  const STATES = new Set(["idle", "running", "waiting", "success", "error", "cancelled"]);
+  const STATES = new Set(["idle", "running", "waiting", "success", "warning", "error", "cancelled"]);
 
   function clean(value, limit = 1000) {
     return typeof value === "string" ? value.trim().slice(0, limit) : "";
@@ -97,7 +97,7 @@
       });
       this.snapshots.set(scope, snapshot);
       // Timing belongs to the activity, not to the lifetime of its DOM host.
-      if (["success", "error", "cancelled", "idle"].includes(state)) this.stopTimer(scope);
+      if (["success", "warning", "error", "cancelled", "idle"].includes(state)) this.stopTimer(scope);
       else if (state === "waiting") this.pauseTimer(scope);
       else this.resumeTimer(scope);
       const host = this.document?.querySelector?.(definition.host);
@@ -118,13 +118,15 @@
         // Stage weights locate milestones; they are not measured completion percentages.
         bar.style.width = `${snapshot.progress}%`;
         bar.parentElement?.removeAttribute?.("aria-valuenow");
+        // A finished task is a status, not an indeterminate progress meter.
+        bar.parentElement?.setAttribute?.("role", ["success", "warning", "error", "cancelled"].includes(state) ? "status" : "progressbar");
         bar.parentElement?.setAttribute?.("aria-valuetext", snapshot.label);
       }
       if (valueNode) valueNode.textContent = state === "error"
         ? "未完成"
         : state === "cancelled"
           ? "已取消"
-          : state === "success" ? "已完成" : state === "waiting" ? "等待确认" : state === "idle" ? "" : "进行中";
+          : state === "warning" ? "已结束 · 模型回答未采用" : state === "success" ? "已完成" : state === "waiting" ? "等待确认" : state === "idle" ? "" : "进行中";
       host.querySelectorAll?.("[data-ai-stage]").forEach((node) => {
         const row = this.stage(scope, node.dataset.aiStage);
         const reached = row && row.progress <= snapshot.progress;

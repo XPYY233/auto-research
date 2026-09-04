@@ -351,6 +351,8 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertIs(raw.calls[0][2]["thinking"], False)
         self.assertIn("seed_evidence", raw.calls[0][0][-1]["content"])
         self.assertIn("跨来源归纳句只能写定性差异", raw.calls[0][0][-1]["content"])
+        self.assertIn("每个数值直接紧邻自己的单位", raw.calls[0][0][-1]["content"])
+        self.assertIn("不计算新差值或比值", raw.calls[0][0][-1]["content"])
         self.assertEqual(OneTurnFinalHarness.latest.prompt.count("任务输入："), 1)
         system_prompt = OneTurnFinalHarness.latest.kwargs["env"][
             "AUTO_RESEARCH_HARNESS_SYSTEM_PROMPT"

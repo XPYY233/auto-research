@@ -17,7 +17,7 @@ MAX_ACTIVE_CONSENTS = 64
 MAX_ACTIVE_CONSENTS_PER_SESSION = 16
 DISCLOSURE_VERSIONS = {
     "capability_test": "capability-test-disclosure-v1",
-    "librarian": "librarian-disclosure-v1",
+    "librarian": "librarian-disclosure-v2",
     "literature_extraction": "literature-extraction-disclosure-v1",
     "personal_suggestion": "personal-suggestion-disclosure-v1",
     "selected_evidence_chat": "selected-evidence-chat-disclosure-v1",

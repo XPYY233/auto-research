@@ -10,6 +10,45 @@ RUNTIME = ROOT / "src" / "auto_research" / "evidence" / "web" / "fusion_review.j
 
 
 class FusionHistoryMemoryRuntimeTests(unittest.TestCase):
+    def test_sixteen_public_references_survive_save_restart_and_repeated_normalization(self) -> None:
+        program = r"""
+(async()=>{
+const fs=require('fs'),vm=require('vm'),assert=require('assert'),source=fs.readFileSync(process.argv[1],'utf8');
+let persisted=[],writes=0;
+function boot(){
+ class El{constructor(){this.hidden=false;this.disabled=false;this.textContent='';this.innerHTML='';this.value='';this.dataset={};this.classList={toggle(){},add(){},remove(){}};}addEventListener(){}setAttribute(){}querySelectorAll(){return []}focus(){}}
+ const ids={};for(const id of ['history','history-privacy','history-clear','stage','question','status','output','results-body','results-count','results','results-toggle','panel','remember','current-session'])ids['#fusion-librarian-'+id]=new El();
+ const context=vm.createContext({console,URL,Headers,TextEncoder,setTimeout,clearTimeout,document:{readyState:'loading',querySelector:s=>ids[s]||null,querySelectorAll:()=>[],addEventListener(){},documentElement:{dataset:{},style:{setProperty(){}}},body:{dataset:{view:'search'}}},localStorage:{getItem:()=>null,setItem(){throw Error('no plaintext history')}},fetch:async(url,options={})=>{
+   assert.equal(url,'/api/desktop/librarian-history');
+   if(options.method==='POST'){const body=JSON.parse(options.body);assert.deepEqual(Object.keys(body),['sessions']);persisted=body.sessions;writes++;}
+   return {ok:true,status:200,headers:{get:()=>null},json:async()=>({storage:'macos-preview-local-key-aes-256-gcm',sessions:JSON.parse(JSON.stringify(persisted))})};
+ }});
+ vm.runInContext(source,context);return {api:context.AutoResearchFusion,ids};
+}
+const first=boot(),api=first.api,types=['item','finding','table','figure'];
+const raw=Array.from({length:16},(_,i)=>{const type=types[i%4],scope=i<8?'official':'workspace',uid=`entity_${type}_${(i+1).toString(16).padStart(32,'0')}`;return {entity_type:type,source_scope:scope,source_id:scope==='workspace'?'workspace':'official-main',entity_uid:uid,display_title:`证据 ${i+1}`,finding_text:type==='finding'?'真实结论':'',source_excerpt:'可追溯摘录',source_page:i+1,ref:`R${i+1}`,bbox:[1,2,30,40],collection_kind:'literature_collection',asset_available:scope==='official'&&['table','figure'].includes(type),pdf_available:scope==='official',paper_uid:'paper_'+'a'.repeat(32)};});
+const canonical=raw.map(row=>api.publicEvidence(row));assert(canonical.every(Boolean));
+api.state.librarianHistoryBackend='desktop-secure';api.state.librarianConversationId='roundtrip';
+api.state.librarianMessages=[{role:'user',content:'研究问题'},{role:'assistant',content:'见 R1–R16'}];
+api.state.librarianResults=canonical;api.state.librarianArticles=[{title:'推荐论文',refs:['R3'],jumpEvidence:canonical[2]}];
+assert(api.saveCurrentLibrarianSession());await api.state.librarianHistorySave;assert.equal(writes,1);assert.equal(persisted[0].results.length,16);
+const expected=JSON.parse(JSON.stringify(canonical));assert.deepEqual(persisted[0].results,expected,'API canonical projection must be idempotent');
+const second=boot();assert.equal(await second.api.loadLibrarianHistory(),1);assert(second.api.restoreLibrarianSession('roundtrip'));
+assert.deepEqual(JSON.parse(JSON.stringify(second.api.state.librarianResults)),expected);
+assert.deepEqual(JSON.parse(JSON.stringify(second.api.state.librarianArticles[0].jumpEvidence)),expected[2]);
+const markup=second.ids['#fusion-librarian-results-body'].innerHTML;
+assert.equal((markup.match(/data-librarian-result="/g)||[]).length,16);assert(markup.includes('data-librarian-article="0"'));
+for(let i=0;i<3;i++){assert(second.api.saveCurrentLibrarianSession());await second.api.state.librarianHistorySave;assert.equal(await second.api.loadLibrarianHistory(),1);assert.deepEqual(JSON.parse(JSON.stringify(second.api.state.librarianSessions[0].results)),expected);assert.deepEqual(JSON.parse(JSON.stringify(second.api.state.librarianSessions[0].articles[0].jumpEvidence)),expected[2]);}
+const bad=[{...expected[0],path:'/private/secret'},{...expected[0],api_key:'secret'},{...expected[0],internal_notes:'secret'},{...expected[0],unknown_sensitive:'secret'},{...expected[0],sourceId:'/private/secret'},{...expected[0],entityUid:'folder\\secret'},{...expected[0],sourceScope:'private'}, {...raw[0],source_scope:'private'}];
+second.api.state.librarianResults=[...expected,...bad];second.api.state.librarianArticles=[{title:'不可信跳转',jumpEvidence:bad[0]},{title:'私人跳转',jumpEvidence:bad[6]}];
+assert(second.api.saveCurrentLibrarianSession());await second.api.state.librarianHistorySave;
+assert.deepEqual(persisted[0].results,expected);assert(persisted[0].articles.every(article=>article.jumpEvidence===null));
+assert(!JSON.stringify(persisted).includes('secret'));assert(!JSON.stringify(persisted).includes('unknown_sensitive'));
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+        result = subprocess.run(["node", "-e", program, str(RUNTIME)], capture_output=True, text=True, timeout=8)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_history_restore_save_search_and_user_approved_memory(self) -> None:
         program = f"""
 (async()=>{{

@@ -307,13 +307,15 @@
     function renderPersonalPageTerminal(stateName, message, columns = []) {
       const table = q("#fusion-data-grid");
       if (!table) return false;
-      table.querySelector("thead").innerHTML = `<tr><th>#</th>${columns.map((column, index) => `<th scope="col" data-column="${index}">${esc(column.source_name)}<small>${esc(column.data_type || "未知类型")}</small></th>`).join("")}</tr>`;
-      table.querySelector("tbody").innerHTML = `<tr><td class="fusion-grid-terminal" colspan="${Math.max(1, columns.length + 1)}">${esc(message)}</td></tr>`;
+      table.querySelector("thead").innerHTML = `<tr aria-rowindex="1"><th>#</th>${columns.map((column, index) => `<th scope="col" data-column="${index}">${esc(column.source_name)}<small>${esc(column.data_type || "未知类型")}</small></th>`).join("")}</tr>`;
+      table.querySelector("tbody").innerHTML = `<tr aria-rowindex="2"><td class="fusion-grid-terminal" colspan="${Math.max(1, columns.length + 1)}">${esc(message)}</td></tr>`;
       table.setAttribute("role", "grid");
-      table.setAttribute("aria-rowcount", "1");
+      table.setAttribute("aria-rowcount", "2");
+      table.setAttribute("aria-busy", String(stateName === "loading"));
       table.setAttribute("aria-colcount", String(columns.length + 1));
       q("#fusion-personal-grid-wrap").hidden = false;
       syncPersonalPageControls(null, {stateName, message});
+      personalStatus(message, stateName === "loading" ? "loading" : "error");
       projectInspector({kind: "page-terminal", state: stateName, message});
       return true;
     }
@@ -327,13 +329,15 @@
       const end = offset + page.rows.length;
       state.personalPreviewPage = page;
       q("#fusion-sheet-summary").textContent = `${page.sheetName} · ${page.totalRows} 行 · ${page.columns.length} 列 · 真实分页数据`;
-      table.querySelector("thead").innerHTML = `<tr><th>#</th>${page.columns.map((name, index) => `<th scope="col" data-column="${index}">${esc(name)}<small>${esc(metadata[index]?.data_type || "未知类型")}</small></th>`).join("")}</tr>`;
-      table.querySelector("tbody").innerHTML = page.rows.length ? page.rows.map((row, rowIndex) => `<tr><th scope="row">${offset + rowIndex + 1}</th>${row.map((value, columnIndex) => `<td tabindex="-1" role="gridcell" aria-selected="false" data-cell data-row="${rowIndex}" data-column="${columnIndex}">${esc(value)}</td>`).join("")}</tr>`).join("") : `<tr><td class="fusion-grid-terminal" colspan="${Math.max(1, page.columns.length + 1)}">当前工作表没有数据行。</td></tr>`;
+      table.querySelector("thead").innerHTML = `<tr aria-rowindex="1"><th>#</th>${page.columns.map((name, index) => `<th scope="col" data-column="${index}">${esc(name)}<small>${esc(metadata[index]?.data_type || "未知类型")}</small></th>`).join("")}</tr>`;
+      table.querySelector("tbody").innerHTML = page.rows.length ? page.rows.map((row, rowIndex) => `<tr aria-rowindex="${offset + rowIndex + 2}"><th scope="row">${offset + rowIndex + 1}</th>${row.map((value, columnIndex) => `<td tabindex="-1" role="gridcell" aria-selected="false" data-cell data-row="${rowIndex}" data-column="${columnIndex}">${esc(value)}</td>`).join("")}</tr>`).join("") : `<tr aria-rowindex="2"><td class="fusion-grid-terminal" colspan="${Math.max(1, page.columns.length + 1)}">当前工作表没有数据行。</td></tr>`;
       table.setAttribute("role", "grid");
-      table.setAttribute("aria-rowcount", String(page.totalRows + 1));
+      table.setAttribute("aria-rowcount", String(Math.max(2, page.totalRows + 1)));
+      table.setAttribute("aria-busy", "false");
       table.setAttribute("aria-colcount", String(page.columns.length + 1));
       q("#fusion-personal-grid-wrap").hidden = false;
       syncPersonalPageControls(page, {stateName: page.rows.length ? "ready" : "empty", message: page.rows.length ? `第 ${start}–${end} 行 / 共 ${page.totalRows} 行` : "当前工作表为空 · 共 0 行"});
+      personalStatus(page.rows.length ? `已读取所选工作表第 ${start}–${end} 行 / 共 ${page.totalRows} 行。请核验后确认导入；AI 预填可选。` : "当前工作表为空，没有可导入的数据行。", page.rows.length ? "success" : "info");
       qa("#fusion-data-grid [data-cell]").forEach(cell => cell.addEventListener("click", () => selectCell(Number(cell.dataset.row), Number(cell.dataset.column))));
       if (page.rows.length) selectCell(0, 0, {focus: false});
       else projectInspector({kind: "page-empty", page});
