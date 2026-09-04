@@ -16,6 +16,53 @@ WEB = ROOT / "src" / "auto_research" / "evidence" / "web"
 
 
 class FusionDatasetExportRuntimeTests(unittest.TestCase):
+    def test_interrupted_export_resumes_same_job_without_second_export(self) -> None:
+        program = r"""
+const assert=require('assert'),fs=require('fs');
+eval(fs.readFileSync(RUNTIME_PATH,'utf8'));
+class El {constructor(){this.checked=false;this.disabled=false;this.hidden=false;this.textContent='';this.innerHTML='';this.dataset={};this.handlers={};} addEventListener(n,f){this.handlers[n]=f;}}
+const deferred=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {resolve,promise};};
+globalThis.setTimeout=callback=>{callback();return 0;};
+async function run(mode){
+ const nodes=new Map(),q=s=>{if(!nodes.has(s))nodes.set(s,new El());return nodes.get(s);};
+ const id='dataset_job_original_1234',calls=[];let pickers=0,polls=0,resuming=false;const resumed=deferred();
+ const running={job_id:id,operation:'dataset_export',stage:'running',terminal:false,progress:50};
+ const state={jobs:new Map(),center:{capabilities:{dataset_export:true}}};
+ const api=globalThis.AutoResearchFusionPackage.createPackageCenterController({state,q,qa:()=>[],
+  async request(url,options={}){calls.push([url,options.method||'GET']);
+   if(url.endsWith('/dataset-export'))return running;
+   assert.equal(url,'/api/desktop/package-center/jobs/'+id);
+   assert.equal(options.method,undefined,'resume only observes existing job');polls++;
+   if(resuming)return resumed.promise;
+   if(mode==='network'||mode==='failed')throw Error('temporary transport failure');
+   if(mode==='identity')return {...running,job_id:'dataset_job_other_123456'};
+   return running;
+  },safeError:(code,message)=>Object.assign(new Error(message),{code}),cleanText:(v,n=1000)=>String(v||'').slice(0,n),esc:String,
+  setOperation(){},projectJob(){},openOfficialSearch(){},getCurrentPaperId:()=>null,isActiveView:()=>true,
+  native:{selectEvidencePackage(){},selectPackageDestination(){},async selectDatasetDestination(){pickers++;return {ok:true,destination:{destination_token:'destination_0123456789'}};}}
+ });
+ state.datasetPlan=api.publicDatasetPlan({schema_version:'dataset-export-plan-v1',plan_token:'dataset_plan_0123456789',include_private:false,binary_assets_included:false,record_count:1,entity_counts:{item:1,finding:0,table:0,figure:0},split_counts:{train:1,validation:0,test:0},missing_fields:{},rights_risks:[],unreviewed_count:0,rights_ack_required:false,unreviewed_ack_required:false},false);
+ await api.exportDataset();
+ assert.equal(polls,mode==='timeout'?600:1);assert.strictEqual(state.jobs.get(id),running,'failed observation preserves last server state');
+ assert.equal(state.jobs.size,1,'mismatched job cannot enter current tasks');assert.equal(state.datasetReceipt,undefined);
+ assert(q('#fusion-package-jobs').innerHTML.includes('继续查看原任务'));assert(q('#fusion-package-status').textContent.includes('不要重复导出'));
+ assert(q('#fusion-dataset-export').disabled,'unknown outcome must keep new export blocked');
+ await api.exportDataset();assert.equal(pickers,1);assert.equal(calls.filter(c=>c[1]==='POST').length,1);
+ resuming=true;const resume=api.resumePackageJob(id);await Promise.resolve();
+ assert.equal(await api.resumePackageJob(id),false,'resume itself is single flight');await api.exportDataset();assert.equal(pickers,1);
+ if(mode==='failed')resumed.resolve({...running,terminal:true,stage:'failed',error:{code:'dataset_bundle_destination_exists',message:'目标文件已存在。'}});
+ else resumed.resolve({...running,terminal:true,stage:'completed',progress:100,result:{schema_version:'dataset-bundle-v1',status:'published',binary_assets_included:false,record_count:1,checksum_code:'a'.repeat(12)}});
+ assert.equal(await resume,mode!=='failed');assert(!q('#fusion-dataset-export').disabled,'authoritative terminal result releases export');
+ assert(!q('#fusion-package-jobs').innerHTML.includes('data-package-job-resume'));
+ if(mode!=='failed'){assert.equal(state.datasetReceipt.recordCount,1);assert(!q('#fusion-dataset-receipt').hidden);assert(q('#fusion-package-status').textContent.includes('导出完成'));}
+ else{assert.equal(state.datasetReceipt,undefined);assert(q('#fusion-package-status').textContent.includes('目标文件已存在'));}
+ assert.equal(calls.filter(c=>c[1]==='POST').length,1);assert.equal(await api.resumePackageJob(id),false);
+}
+(async()=>{for(const mode of ['timeout','network','identity','failed'])await run(mode);})().catch(e=>{console.error(e);process.exitCode=1;});
+""".replace("RUNTIME_PATH", repr(str(WEB / "fusion_package_center.js")))
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, timeout=8)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_scope_races_and_export_single_flight_use_current_controller(self) -> None:
         program = r"""
 const assert=require('assert'),fs=require('fs');

@@ -36,7 +36,7 @@ const controller=globalThis.AutoResearchFusionPackage.createPackageCenterControl
 }});
 assert.equal(controller.bind(),true);assert.equal(controller.bind(),false);
 assert.equal(node('#fusion-package-official-select').listeners.click.length,1);
-(async()=>{{await controller.importOfficialPackage();assert.deepEqual(requests.map(x=>x[0]),['/api/desktop/evidence-packages/import','/api/desktop/package-center/receipts','/api/desktop/evidence-packages','/api/desktop/package-center']);assert.equal(projected,1);assert.equal(state.lastOfficialResult.outcome,'activated');assert.equal(navigation,0);}})().catch(error=>{{console.error(error);process.exitCode=1}});
+(async()=>{{await controller.importOfficialPackage();assert.deepEqual(requests[0],['/api/desktop/evidence-packages/import','POST']);assert.deepEqual(requests.slice(1).sort(),[['/api/desktop/package-center/receipts','GET'],['/api/desktop/evidence-packages','GET'],['/api/desktop/package-center','GET']].sort());assert.equal(projected,1);assert.equal(state.lastOfficialResult.outcome,'activated');assert.equal(navigation,0);}})().catch(error=>{{console.error(error);process.exitCode=1}});
 """
         result = subprocess.run(
             ["node", "-e", program], capture_output=True, text=True, timeout=8, check=False

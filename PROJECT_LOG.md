@@ -1,5 +1,12 @@
 # Auto Research Evidence 项目日志
 
+## 2026-09-04：导出原任务恢复与回执刷新（源码）
+
+- root与现有前端Codex任务按函数边界协作：root负责job等待/继续读取/数据集未知终态阻断；前端负责receipt并发刷新与revision单调性，未stage/commit或并行测试。
+- 600次轮询未终态、网络中断或身份不符时，保留最后服务端状态，显式提供“继续查看原任务”，不新增导出POST；重复恢复单飞。终态成功复用同一严格回执投影，终态失败展示原安全错误，不伪造成功。
+- force读取合并但保证之后的新GET；失败允许重入重试；迟到GET/POST不得覆盖更高revision或恢复已删回执。28项dataset/package/receipt/history目标串行通过（1.32s），JS、发布哈希、diff通过。首次目标测试暴露无意义的独立GET顺序约束，改为导入POST在先且后续三GET各一次，未降低实际行为断言。
+- 17:03实机重新核对正式数据根与当前App，Table 4原表数值与Figure 10曲线图均可见；Table 4尚无已核验行列。本次没有生成App/DMG/新build，没有模型调用或生产DB操作；导出恢复/AI源码仍未安装，真实原生保存与重启验收未关闭。
+
 ## 2026-09-04：数据集真实文件链与范围竞态修复（源码）
 
 - 使用实际PyArrow而非伪Parquet，串起123篇合成论文/492条四类记录、Mac opaque保存resolver、共享job/publisher和加密回执。逐条核对JSONL/Parquet、manifest SHA/size、三种论文划分、重建服务后的同一回执；未声称已点击真实原生保存窗口或完成App重启验收。

@@ -46,6 +46,31 @@ omitted its required path argument; it was corrected and rerun successfully.
 
 ## Authority and order
 
+Export observation/receipt repair (2026-09-04; source, not installed): a bounded
+poll timeout, transport failure or mismatched returned identity now retains the
+last known job and offers a single-flight, GET-only "continue viewing original
+task" action. Dataset export remains blocked while that job's outcome is unknown;
+an authoritative terminal result releases the gate. Completion uses the same
+validated receipt projection on the original and resumed paths. This recovery is
+for jobs known in the current App session; restart/expired-job acceptance still
+belongs to the persisted operation-history/native-App gate, not this test.
+
+Concurrent force receipt refreshes coalesce into subsequent fresh reads rather
+than disappearing. Failed reads permit reentry retries; older read/mutation
+responses cannot lower the revision or resurrect deleted receipts. Existing
+frontend cooperation delivered that narrowly owned change; root integrated it
+with job recovery. All 28 dataset/package/receipt/history target tests passed
+serially (1.32s), including timeout, network, identity mismatch, terminal failure,
+duplicate resume, and no second export POST. An older test's arbitrary ordering
+of three independent GETs was replaced by exact once-per-route assertions after
+the initial import POST. No production DB, paid model or build was used.
+
+At 17:03 local time, real installed-App inspection again displayed Table 4's
+numeric source image and Figure 10's actual curves. Both saved-root preference
+and PID15999 cwd were the canonical workspace. This confirms visual display in
+that live session, not verified Table 4 cells or installation of the source-only
+export/AI fixes.
+
 Dataset file-chain repair (2026-09-04; source, not installed): a new integration
 test uses the real PyArrow writer, shared job/export services, Mac opaque save
 broker/publisher and AES-GCM receipt store in a disposable synthetic root.

@@ -96,9 +96,16 @@
     let bound = false;
     let datasetPlanGeneration = 0;
     let datasetExportPending = false;
+    let datasetExportJobId = null;
+    const packageJobFamilies = new Map();
+    const packageJobPolling = new Set();
+    const packageJobInterrupted = new Set();
     const receiptRetryRequests = new Map();
     const receiptRetryPending = new Set();
     const receiptRetryErrors = new Set();
+    let receiptLoadPromise = null;
+    let receiptForceQueued = false;
+    let receiptMutationEpoch = 0;
     const createHistory = globalThis.AutoResearchFusionOperationHistory?.createOperationHistoryController;
     const operationHistory = typeof createHistory === "function" ? createHistory({
       q, qa, request, safeError, cleanText, esc,
@@ -236,7 +243,8 @@
     }
 
     function updateDatasetExportButton() {
-      const ready = !datasetExportPending && datasetPlanReady();
+      const unresolved = datasetExportJobId && state.jobs.get(datasetExportJobId)?.terminal !== true;
+      const ready = !datasetExportPending && !unresolved && datasetPlanReady();
       q("#fusion-dataset-export").disabled = !ready;
       return ready;
     }
@@ -343,21 +351,26 @@
         }
         packageNotice("正在生成并校验训练数据集…", "loading");
         const initial = await request("/api/desktop/package-center/dataset-export", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({plan_token: plan.planToken, destination_token: destinationToken, rights_acknowledged: q("#fusion-dataset-rights-ack")?.checked === true, unreviewed_acknowledged: q("#fusion-dataset-unreviewed-ack")?.checked === true})});
+        if (PACKAGE_JOB_ID.test(String(initial?.job_id || ""))) datasetExportJobId = initial.job_id;
         const completed = await waitPackageJob(initial, "transfer");
-        const receipt = publicDatasetReceipt(completed?.result);
-        if (!receipt) throw safeError("dataset_result_invalid", "数据集导出回执无效。");
-        state.datasetReceipt = receipt;
-        q("#fusion-dataset-receipt").hidden = false;
-        q("#fusion-dataset-receipt-name").textContent = receipt.fileName || "所选 ZIP 文件";
-        q("#fusion-dataset-receipt-metrics").innerHTML = `<span><b>${receipt.recordCount}</b>记录</span><span><b>${esc(receipt.checksumCode)}</b>校验码</span><span><b>${receipt.archiveSize === null ? "—" : formatBytes(receipt.archiveSize)}</b>文件大小</span>`;
-        q("#fusion-dataset-receipt-note").textContent = receipt.fileName ? "文件已写入你选择的位置。" : "文件已写入你选择的位置；当前安全回执未提供文件名或显示文件操作。";
-        packageNotice(`训练数据集导出完成 · 校验码 ${receipt.checksumCode}`, "success");
+        showDatasetCompletion(completed);
       } catch (error) {
         packageNotice(datasetErrorText(error), "error");
       } finally {
         datasetExportPending = false;
         updateDatasetExportButton();
       }
+    }
+
+    function showDatasetCompletion(job) {
+      const receipt = publicDatasetReceipt(job?.result);
+      if (!receipt) throw safeError("dataset_result_invalid", "数据集导出回执无效。");
+      state.datasetReceipt = receipt;
+      q("#fusion-dataset-receipt").hidden = false;
+      q("#fusion-dataset-receipt-name").textContent = receipt.fileName || "所选 ZIP 文件";
+      q("#fusion-dataset-receipt-metrics").innerHTML = `<span><b>${receipt.recordCount}</b>记录</span><span><b>${esc(receipt.checksumCode)}</b>校验码</span><span><b>${receipt.archiveSize === null ? "—" : formatBytes(receipt.archiveSize)}</b>文件大小</span>`;
+      q("#fusion-dataset-receipt-note").textContent = receipt.fileName ? "文件已写入你选择的位置。" : "文件已写入你选择的位置；当前安全回执未提供文件名或显示文件操作。";
+      packageNotice(`训练数据集导出完成 · 校验码 ${receipt.checksumCode}`, "success");
     }
 
     function packageInstalledVersions() {
@@ -475,32 +488,59 @@
     }
 
     async function loadActivityReceipts({force = false} = {}) {
-      if (state.receiptsLoading || (state.receiptsLoaded && !force)) return state.receipts || [];
+      if (receiptLoadPromise) {
+        // A force during an in-flight GET requires a subsequent fresh GET.
+        if (force) receiptForceQueued = true;
+        return receiptLoadPromise;
+      }
+      if (state.receiptsLoaded && !force) return state.receipts || [];
       state.receiptsLoading = true;
       state.receiptsStatus = "loading";
       renderActivityReceipts();
-      try {
-        const snapshot = publicActivityReceiptSnapshot(await request("/api/desktop/package-center/receipts"));
-        if (!snapshot) throw safeError("activity_receipts_invalid", "活动回执格式无效。");
-        state.receiptsRevision = snapshot.revision;
-        state.receipts = [...snapshot.receipts];
-        state.receiptsLoaded = true;
-        state.receiptsStatus = "ready";
-      } catch (_error) {
-        state.receiptsStatus = "error";
-      } finally {
-        state.receiptsLoading = false;
-        renderActivityReceipts();
-      }
-      return state.receipts || [];
+      receiptLoadPromise = Promise.resolve().then(async () => {
+        try {
+          do {
+            receiptForceQueued = false;
+            const mutationEpoch = receiptMutationEpoch;
+            try {
+              const snapshot = publicActivityReceiptSnapshot(await request("/api/desktop/package-center/receipts"));
+              if (!snapshot) throw safeError("activity_receipts_invalid", "活动回执格式无效。");
+              const currentRevision = Number.isSafeInteger(state.receiptsRevision) ? state.receiptsRevision : -1;
+              if (snapshot.revision < currentRevision || (mutationEpoch !== receiptMutationEpoch && snapshot.revision === currentRevision)) {
+                state.receiptsStatus = state.receiptsLoaded ? "ready" : "error";
+                continue;
+              }
+              state.receiptsRevision = snapshot.revision;
+              state.receipts = [...snapshot.receipts];
+              state.receiptsLoaded = true;
+              state.receiptsStatus = "ready";
+            } catch (_error) {
+              // A late failed GET must not erase a successfully applied mutation.
+              if (mutationEpoch === receiptMutationEpoch) {
+                state.receiptsLoaded = false;
+                state.receiptsStatus = "error";
+              }
+            }
+          } while (receiptForceQueued);
+          return state.receipts || [];
+        } finally {
+          receiptLoadPromise = null;
+          state.receiptsLoading = false;
+          renderActivityReceipts();
+        }
+      });
+      return receiptLoadPromise;
     }
 
     async function updateActivityReceipts(body) {
       try {
         const snapshot = publicActivityReceiptSnapshot(await request("/api/desktop/package-center/receipts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}));
         if (!snapshot) throw safeError("activity_receipts_invalid", "活动回执格式无效。");
-        state.receiptsRevision = snapshot.revision;
-        state.receipts = [...snapshot.receipts];
+        receiptMutationEpoch += 1;
+        if (!Number.isSafeInteger(state.receiptsRevision) || snapshot.revision >= state.receiptsRevision) {
+          state.receiptsRevision = snapshot.revision;
+          state.receipts = [...snapshot.receipts];
+        }
         state.receiptsLoaded = true;
         state.receiptsStatus = "ready";
         renderActivityReceipts();
@@ -510,7 +550,9 @@
           await loadActivityReceipts({force: true});
           const status = q("#fusion-package-receipts-status");
           if (status) {
-            status.textContent = "回执列表已在别处更新，现已刷新；请确认后重试。";
+            status.textContent = state.receiptsStatus === "ready"
+              ? "回执列表已在别处更新，现已刷新；请确认后重试。"
+              : "回执列表已在别处更新，但刷新暂未完成；请重新读取后再操作。";
             status.dataset.kind = "error";
           }
           return false;
@@ -581,14 +623,21 @@
         const receiptStatus = job.receipt_status === "stored" ? " · 完成回执已保存" : job.receipt_status === "pending" ? " · 文件已导出，回执待恢复；请勿重复导出" : "";
         const retry = canRetryPackageReceipt(job) ? `<button type="button" data-package-receipt-retry="${esc(job.job_id)}"${receiptRetryPending.has(String(job.job_id)) ? " disabled" : ""}>${receiptRetryPending.has(String(job.job_id)) ? "正在恢复回执…" : "恢复完成回执"}</button>` : "";
         const retryError = receiptRetryErrors.has(String(job.job_id)) ? " · 回执恢复未完成，可重试；文件已导出，请勿重复导出" : "";
-        return `<article class="fusion-package-row"><div><strong>${esc(PACKAGE_STAGE_LABELS[job.stage] || job.stage || "资料包任务")}</strong><small>${esc(job.operation || "")} ${error.code ? `· ${esc(error.message || error.code)}` : ""}${esc(receiptStatus + retryError)}</small></div><div class="fusion-package-job-progress"><div class="fusion-package-job-track"><i style="width:${progress}%"></i></div><b>${progress}%</b></div>${retry}</article>`;
+        const interrupted = packageJobInterrupted.has(String(job.job_id));
+        const polling = packageJobPolling.has(String(job.job_id));
+        const resume = interrupted ? `<button type="button" data-package-job-resume="${esc(job.job_id)}"${polling ? " disabled" : ""}>${polling ? "正在查看原任务…" : "继续查看原任务"}</button>` : "";
+        const tracking = interrupted ? " · 状态读取中断，后台任务可能仍在继续；请勿重复导出" : "";
+        return `<article class="fusion-package-row"><div><strong>${esc(PACKAGE_STAGE_LABELS[job.stage] || job.stage || "资料包任务")}</strong><small>${esc(job.operation || "")} ${error.code ? `· ${esc(error.message || error.code)}` : ""}${esc(receiptStatus + retryError + tracking)}</small></div><div class="fusion-package-job-progress"><div class="fusion-package-job-track"><i style="width:${progress}%"></i></div><b>${progress}%</b></div>${retry}${resume}</article>`;
       }).join("") : "<p>本次还没有资料包任务。</p>";
       qa("[data-package-receipt-retry]").forEach(button => button.addEventListener("click", () => void retryPackageReceipt(button.dataset.packageReceiptRetry)));
+      qa("[data-package-job-resume]").forEach(button => button.addEventListener("click", () => void resumePackageJob(button.dataset.packageJobResume)));
     }
 
     function rememberPackageJob(job, family = "transfer") {
       if (!job?.job_id) return;
       state.jobs.set(String(job.job_id), job);
+      packageJobFamilies.set(String(job.job_id), family);
+      if (job.terminal === true) packageJobInterrupted.delete(String(job.job_id));
       projectJob(job, family);
       renderPackageJobs();
     }
@@ -733,19 +782,56 @@
 
     async function waitPackageJob(initial, family) {
       let job = initial;
+      const id = String(job?.job_id || "");
+      if (!PACKAGE_JOB_ID.test(id)) throw safeError("package_job_invalid", "任务身份无效，请检查任务记录；不要重复导出。");
+      packageJobPolling.add(id);
       if (job?.job_id && !job.stage) job = {...job, stage: "queued", progress: 0, terminal: false};
       rememberPackageJob(job, family);
-      for (let attempt = 0; job && !job.terminal && attempt < 600; attempt += 1) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-        const base = family === "official" ? "/api/desktop/evidence-package-jobs" : "/api/desktop/package-center/jobs";
-        job = await request(`${base}/${encodeURIComponent(String(job.job_id))}`);
-        rememberPackageJob(job, family);
+      try {
+        for (let attempt = 0; !job.terminal && attempt < 600; attempt += 1) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          const base = family === "official" ? "/api/desktop/evidence-package-jobs" : "/api/desktop/package-center/jobs";
+          const next = await request(`${base}/${encodeURIComponent(id)}`);
+          if (!next || next.job_id !== id || typeof next.terminal !== "boolean" || (job.operation && next.operation !== job.operation)) throw safeError("package_job_invalid", "任务状态不匹配。");
+          job = next;
+          rememberPackageJob(job, family);
+        }
+        if (!job.terminal) throw safeError("package_job_timeout", "任务仍未返回最终状态。");
+        if (job.stage === "failed") throw safeError(String(job.error?.code || "package_job_failed"), String(job.error?.message || "资料包任务未完成。"));
+        if (job.receipt_status === "stored") await loadActivityReceipts({force: true});
+        await operationHistory?.load({force: true});
+        return job;
+      } catch (error) {
+        if (job.terminal !== true) {
+          packageJobInterrupted.add(id);
+          throw safeError("package_job_tracking_interrupted", "任务状态读取中断，后台可能仍在继续；请在任务列表点击“继续查看原任务”，不要重复导出。");
+        }
+        throw error;
+      } finally {
+        packageJobPolling.delete(id);
+        renderPackageJobs();
       }
-      if (!job?.terminal) throw safeError("package_job_timeout", "资料包任务等待超时，请稍后重新读取状态。");
-      if (job.stage === "failed") throw safeError(String(job.error?.code || "package_job_failed"), String(job.error?.message || "资料包任务未完成。"));
-      if (job.receipt_status === "stored") await loadActivityReceipts({force: true});
-      await operationHistory?.load({force: true});
-      return job;
+    }
+
+    async function resumePackageJob(jobId) {
+      const id = String(jobId || ""), initial = state.jobs.get(id);
+      if (!PACKAGE_JOB_ID.test(id) || !initial || !packageJobInterrupted.has(id) || packageJobPolling.has(id)) return false;
+      try {
+        const family = packageJobFamilies.get(id) || "transfer";
+        const completed = await waitPackageJob(initial, family);
+        if (completed.operation === "dataset_export") showDatasetCompletion(completed);
+        else {
+          if (family === "official") rememberOfficialPackageResult(completed);
+          await loadPackageCenter(true);
+          packageNotice("原任务状态已恢复；没有创建新的导出或导入任务。", "success");
+        }
+        return true;
+      } catch (error) {
+        packageNotice(datasetErrorText(error), "error");
+        return false;
+      } finally {
+        updateDatasetExportButton();
+      }
     }
 
     async function chooseEvidencePackage() {
@@ -952,6 +1038,7 @@
       clearActivityReceipts,
       operationHistory,
       retryPackageReceipt,
+      resumePackageJob,
       updateDatasetExportButton,
       planDataset,
       exportDataset,

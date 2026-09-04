@@ -81,6 +81,82 @@ const controller=makeController(request,state);
 """
         )
 
+    def test_concurrent_force_loads_coalesce_without_losing_fresh_get(self) -> None:
+        self._run_node(
+            """
+const pending=[],state={jobs:new Map()};
+const controller=makeController(url=>{assert.equal(url,'/api/desktop/package-center/receipts');return new Promise(resolve=>pending.push(resolve));},state);
+const until=async predicate=>{for(let i=0;i<40&&!predicate();i++)await new Promise(resolve=>setImmediate(resolve));assert(predicate(),'bounded refresh milestone not reached');};
+(async()=>{
+ const first=controller.loadActivityReceipts();await until(()=>pending.length===1);
+ let settled=false;const forced=controller.loadActivityReceipts({force:true}).then(value=>{settled=true;return value;});
+ const merged=controller.loadActivityReceipts({force:true}),ordinary=controller.loadActivityReceipts();
+ assert.equal(pending.length,1);pending[0](snapshot([],1));await until(()=>pending.length===2);
+ assert.equal(settled,false,'force caller must wait for the fresh GET, not the old snapshot');
+ const duringFresh=controller.loadActivityReceipts({force:true});controller.loadActivityReceipts({force:true});
+ pending[1](snapshot([transfer()],2));await until(()=>pending.length===3);assert.equal(settled,false);
+ pending[2](snapshot([dataset()],3));const results=await Promise.all([first,forced,merged,ordinary,duringFresh]);
+ assert.equal(pending.length,3,'forces coalesce once per in-flight GET');
+ for(const value of results)assert.equal(value[0].receiptUid,'c'.repeat(64));
+ assert.equal(state.receiptsRevision,3);assert.equal(state.receiptsStatus,'ready');assert.equal(state.receiptsLoading,false);
+ await controller.loadActivityReceipts();assert.equal(pending.length,3,'ordinary cache hit remains supported');
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+        )
+
+    def test_failed_refresh_clears_loaded_gate_and_reentry_retries(self) -> None:
+        self._run_node(
+            """
+let count=0;const state={jobs:new Map()};
+const controller=makeController(async()=>{count++;if(count===2)throw Error('/private/secret');return snapshot([transfer()],count);},state);
+(async()=>{
+ await controller.loadActivityReceipts();assert.equal(state.receiptsLoaded,true);
+ await controller.loadActivityReceipts({force:true});assert.equal(state.receiptsLoaded,false);assert.equal(state.receiptsLoading,false);assert.equal(state.receiptsStatus,'error');
+ assert.equal(node('#fusion-package-receipts-status').textContent.includes('/private'),false);
+ await controller.loadActivityReceipts();assert.equal(count,3);assert.equal(state.receiptsStatus,'ready');assert.equal(state.receiptsRevision,3);
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+        )
+
+    def test_late_get_cannot_overwrite_mutation_or_resurrect_deleted_receipts(self) -> None:
+        self._run_node(
+            """
+const until=async predicate=>{for(let i=0;i<40&&!predicate();i++)await new Promise(resolve=>setImmediate(resolve));assert(predicate());};
+async function exercise(mode){
+ let getCount=0,release,reject;const state={jobs:new Map()};
+ const controller=makeController((url,options={})=>{
+  if(options.method==='POST'){const body=JSON.parse(options.body);assert.deepEqual(body,{operation:'delete',expected_revision:3,receipt_uid:'a'.repeat(64)});return Promise.resolve(snapshot([],4));}
+  if(++getCount===1)return Promise.resolve(snapshot([transfer()],3));
+  return new Promise((yes,no)=>{release=yes;reject=no;});
+ },state);
+ await controller.loadActivityReceipts();const oldGET=controller.loadActivityReceipts({force:true});await until(()=>release);
+ assert(await controller.deleteActivityReceipt('a'.repeat(64)));assert.equal(state.receiptsRevision,4);assert.equal(state.receipts.length,0);
+ if(mode==='error')reject(Error('/private/old-response'));
+ else if(mode==='corrupt')release({schema_version:'bad',path:'/private/old-response'});
+ else release(snapshot([transfer()],mode==='same-revision'?4:3));
+ await oldGET;assert.equal(state.receiptsRevision,4,mode);assert.equal(state.receipts.length,0,mode);assert.equal(state.receiptsLoaded,true,mode);assert.equal(state.receiptsStatus,'ready',mode);assert.equal(state.receiptsLoading,false);
+ assert(!node('#fusion-package-receipts').innerHTML.includes('bbbbbbbbbbbb'),'deleted receipt must not reappear');
+}
+(async()=>{for(const mode of ['older','same-revision','error','corrupt'])await exercise(mode);})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+        )
+
+    def test_delayed_post_cannot_roll_back_newer_get_revision(self) -> None:
+        self._run_node(
+            """
+let count=0,releasePost;const state={jobs:new Map()};
+const controller=makeController((url,options={})=>{
+ if(options.method==='POST')return new Promise(resolve=>{releasePost=resolve;});
+ return Promise.resolve(++count===1?snapshot([transfer()],3):snapshot([dataset()],5));
+},state);
+(async()=>{
+ await controller.loadActivityReceipts();const mutation=controller.deleteActivityReceipt('a'.repeat(64));
+ await controller.loadActivityReceipts({force:true});assert.equal(state.receiptsRevision,5);
+ releasePost(snapshot([],4));assert(await mutation);assert.equal(state.receiptsRevision,5);assert.equal(state.receipts[0].receiptUid,'c'.repeat(64));
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+        )
+
     def test_static_dom_has_separate_task_and_receipt_owners(self) -> None:
         html = (WEB / "index.html").read_text(encoding="utf-8")
         source = (WEB / "fusion_package_center.js").read_text(encoding="utf-8")
