@@ -260,6 +260,101 @@ def action(draft, scope):
 
 
 class HarnessBusinessActionTests(unittest.TestCase):
+    def test_mixed_source_seed_order_reaches_the_model_and_preserves_refs(self):
+        ports = harness_business_ports(
+            session=Session(), runtime=Runtime(), workspace=Workspace()
+        )
+        draft = ports.librarian.assembler.assemble({
+            "question": "辐照后硬度如何变化？", "conversation_id": "mixed-seed", "history": [],
+        })
+        # Replay a legitimate mixed-source ranking while retaining each
+        # server-issued ref/bundle binding. Source grouping must not rerank it.
+        payload = dict(draft.outbound)
+        payload["documents"] = [payload["documents"][i] for i in (0, 2, 1)]
+        payload["prompt"] = dict(payload["prompt"])
+        payload["prompt"]["seed_evidence"] = [payload["prompt"]["seed_evidence"][i] for i in (0, 2, 1)]
+        draft = replace(draft, outbound=payload)
+        seed = payload["prompt"]["seed_evidence"]
+        self.assertEqual([row["source_scope"] for row in seed], ["official", "workspace", "official"])
+        prepared = action(draft, "librarian")
+        raw = RawClient()
+        client = HarnessBudgetedBusinessAIClient(client=raw, action=prepared)
+        result = ports.librarian.projector.project(ports.librarian.executor.execute(
+            action=prepared, ai_client=client,
+        ))
+        self.assertEqual(raw.calls, 1, "pre-model rejection must not masquerade as local success")
+        self.assertEqual(result["summary_mode"], "deepseek_harness")
+        self.assertEqual(
+            {row["ref"]: (row["source_scope"], row["entity_uid"]) for row in result["results"]},
+            {row["ref"]: (row["source_scope"], row["entity_uid"]) for row in seed},
+        )
+
+    def test_sparse_followup_refs_reach_model_without_renumbering(self):
+        session = Session()
+        ports = harness_business_ports(session=session, runtime=Runtime())
+        draft = ports.librarian.assembler.assemble({
+            "question": "请详细解释 R7", "conversation_id": "sparse-followup", "history": [],
+            "conversation_evidence": [
+                conversation_entry(session.documents[0], "R7", "B1"),
+                conversation_entry(session.documents[1], "R12", "B1"),
+            ],
+        })
+        prepared = action(draft, "librarian")
+        raw = RawClient()
+        result = ports.librarian.projector.project(ports.librarian.executor.execute(
+            action=prepared, ai_client=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
+        ))
+        self.assertEqual(raw.calls, 1)
+        self.assertEqual(result["summary_mode"], "deepseek_harness")
+        self.assertEqual({row["ref"] for row in result["results"]}, {"R7", "R12"})
+
+    def test_pre_model_citation_mismatch_retains_failure_without_fallback(self):
+        ports = harness_business_ports(session=Session(), runtime=Runtime())
+        draft = ports.librarian.assembler.assemble({
+            "question": "辐照后硬度如何变化？", "conversation_id": "seed-mismatch", "history": [],
+        })
+        # Emulate an inconsistent internal snapshot, never a renderer override.
+        draft.outbound["prompt"]["seed_evidence"][0]["bundle_uid"] = "wrong-bundle"
+        prepared = action(draft, "librarian")
+        raw = RawClient()
+        with self.assertRaises(BusinessActionError) as raised:
+            ports.librarian.executor.execute(
+                action=prepared, ai_client=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
+            )
+        self.assertEqual(raised.exception.cause_code, "harness_output_invalid")
+        self.assertEqual(raised.exception.stage, "harness_execute")
+        self.assertEqual(raw.calls, 0)
+
+    def test_urlsafe_action_prefixes_reach_both_harness_businesses(self):
+        for scope in ("librarian", "selected_evidence_chat"):
+            for prefix in ("-", "_"):
+                with self.subTest(scope=scope, prefix=prefix):
+                    ports = harness_business_ports(
+                        session=Session(), runtime=Runtime(selected=scope != "librarian")
+                    )
+                    port = getattr(ports, scope)
+                    request = {
+                        "question": "辐照后硬度如何变化？", "history": [],
+                    }
+                    if scope == "librarian":
+                        request["conversation_id"] = "nonce-regression"
+                    else:
+                        request.update(
+                            source_scope="official", source_id="official-v1",
+                            entity_type="item", entity_uid="item-1",
+                        )
+                    prepared = replace(
+                        action(port.assembler.assemble(request), scope),
+                        action_id=prefix + "a" * 42,
+                    )
+                    raw = RawClient()
+                    result = port.projector.project(port.executor.execute(
+                        action=prepared,
+                        ai_client=HarnessBudgetedBusinessAIClient(client=raw, action=prepared),
+                    ))
+                    self.assertTrue(result["answer"])
+                    self.assertEqual(raw.calls, 1)
+
     def test_workspace_sanitizer_replaces_internal_ids_with_stable_public_identity(self):
         rows = sanitize_workspace_documents(
             (

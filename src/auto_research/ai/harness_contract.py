@@ -54,6 +54,10 @@ MAX_HARNESS_VALUE_DEPTH = 12
 MAX_HARNESS_VALUE_NODES = 4_000
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$")
+# Prepared actions issue URL-safe random nonces, not evidence identifiers.
+# Their first character can legitimately be '-' or '_'. Keep that grammar
+# separate so accepting a valid nonce does not loosen scientific identities.
+_ACTION_NONCE_RE = re.compile(r"[A-Za-z0-9_-]{1,256}")
 _VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[A-Za-z][A-Za-z0-9.-]*)?(?:\+[A-Za-z0-9.-]+)?$")
 _SHA_RE = re.compile(r"^[a-f0-9]{64}$")
 _SENSITIVE_KEY_RE = re.compile(
@@ -288,7 +292,8 @@ class HarnessSessionV1:
             raise HarnessError("harness_provider_untrusted") from exc
         if (
             _ID_RE.fullmatch(self.session_id) is None
-            or _ID_RE.fullmatch(self.action_id) is None
+            or not isinstance(self.action_id, str)
+            or _ACTION_NONCE_RE.fullmatch(self.action_id) is None
             or self.scope not in HARNESS_SCOPES
             or not profile.capabilities.supports(CAPABILITY_AGENT)
             or any(

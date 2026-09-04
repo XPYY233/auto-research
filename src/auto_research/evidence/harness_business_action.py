@@ -304,6 +304,10 @@ class _DisplayRefHarnessBackend(HarnessFederatedBackend):
             refs[ref] = document
         if len(refs) != len(document_by_identity):
             raise HarnessError("harness_invalid")
+        # Sanitization validates by source group and can reorder mixed
+        # official/workspace rows. The consumed server seed owns display order;
+        # job evidence and citation refs must describe the very same sequence.
+        self._documents = tuple(dict(row) for row in refs.values())
         self._refs = refs
 
 
@@ -1039,6 +1043,11 @@ class HarnessBusinessExecutor:
                     "harness_output_invalid",
                     "harness_provider_response_invalid",
                 }:
+                    raise
+                if ai_client.remaining_calls == action.max_calls:
+                    # A local pre-model contract failure is not a rejected
+                    # model answer. Preserve its cause instead of returning a
+                    # fallback that then fails the registry's minimum-call gate.
                     raise
                 raw = self._local_librarian_fallback(
                     prompt=payload.get("prompt"),

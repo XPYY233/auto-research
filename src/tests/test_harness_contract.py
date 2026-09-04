@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import string
 from pathlib import Path
 
 from auto_research.ai.harness_contract import (
@@ -10,6 +11,7 @@ from auto_research.ai.harness_contract import (
     HarnessDependencySet,
     HarnessError,
     HarnessEvidenceIdentity,
+    HarnessSessionV1,
     verify_cordis_composition,
 )
 
@@ -40,6 +42,30 @@ def safe_composition() -> dict[str, object]:
 
 
 class HarnessContractTests(unittest.TestCase):
+    def test_prepared_action_urlsafe_nonce_alphabet_is_accepted(self) -> None:
+        # PreparedActionService uses token_urlsafe(32), whose first character
+        # may also be '-' or '_'; it is not a scientific entity identifier.
+        for first in string.ascii_letters + string.digits + "-_":
+            with self.subTest(first=first):
+                session = HarnessSessionV1(
+                    session_id="session-1", provider_id="deepseek",
+                    runtime_revision=1, credential_generation=1,
+                    scope="librarian", action_id=first + "a" * 42,
+                    issued_at=100, expires_at=200,
+                )
+                self.assertEqual(session.action_id[0], first)
+
+    def test_action_nonce_rejects_paths_whitespace_and_unbounded_values(self) -> None:
+        for nonce in ("", "../secret", "a/b", "a b", "a\n", "a" * 257):
+            with self.subTest(nonce=nonce):
+                with self.assertRaises(HarnessError):
+                    HarnessSessionV1(
+                        session_id="session-1", provider_id="deepseek",
+                        runtime_revision=1, credential_generation=1,
+                        scope="librarian", action_id=nonce,
+                        issued_at=100, expires_at=200,
+                    )
+
     def test_official_exact_pins_and_pydantic_range(self) -> None:
         dependencies().verify_production_protocols()
         self.assertEqual(HARNESS_SDK_PROTOCOL_PIN[1], "0.1.1rc1")

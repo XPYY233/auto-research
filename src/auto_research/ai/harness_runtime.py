@@ -838,14 +838,18 @@ class DeepSeekHarnessAdapter:
                 # before that single paid call, using the same bounded gateway
                 # and immutable Search V2 candidate set used by the projector.
                 seed = (prompt or {}).get("seed_evidence")
-                refs = [f"R{index}" for index in range(1, len(running.evidence) + 1)]
                 if (
-                    not refs
-                    or len(refs) > 64
+                    not running.evidence
+                    or len(running.evidence) > 64
                     or not isinstance(seed, Sequence)
                     or isinstance(seed, (str, bytes, bytearray))
                     or len(seed) != len(running.evidence)
                 ):
+                    raise HarnessError("harness_output_invalid")
+                # Follow-ups retain server-validated display refs (e.g. R7),
+                # rather than silently rebinding the first selected row to R1.
+                refs = [row.get("ref") if isinstance(row, Mapping) else None for row in seed]
+                if any(not isinstance(ref, str) or re.fullmatch(r"R[1-9][0-9]{0,3}", ref) is None for ref in refs) or len(set(refs)) != len(refs):
                     raise HarnessError("harness_output_invalid")
                 for ref, identity, row in zip(refs, running.evidence, seed, strict=True):
                     if not isinstance(row, Mapping) or any(
