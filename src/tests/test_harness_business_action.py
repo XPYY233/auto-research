@@ -15,7 +15,8 @@ from auto_research.ai.harness_contract import (
 )
 from auto_research.ai.harness_official_sdk import safe_composition_metadata
 from auto_research.ai.prepared_actions import PreparedOutbound
-from auto_research.evidence.harness_business_action import harness_business_ports
+from auto_research.evidence.harness_business_action import harness_business_ports, _librarian_recall_queries
+from auto_research.evidence.librarian_harness_preflight import plan_librarian_harness
 from auto_research.evidence.harness_table_context import HarnessTableContextAuthority
 from auto_research.evidence.harness_federated_backend import sanitize_workspace_documents
 
@@ -734,6 +735,43 @@ class HarnessBusinessActionTests(unittest.TestCase):
             )
         self.assertEqual(rejected.exception.cause_code, "harness_private_forbidden")
         self.assertEqual(rejected.exception.stage, "librarian_local_preflight")
+
+    def test_compound_recall_searches_joint_conditions_before_broad_materials(self):
+        question = "在300 °C离子辐照条件下，高熵合金与316H不锈钢的辐照硬化和微观结构演化有哪些差异？"
+        queries = _librarian_recall_queries(question, [])
+        self.assertEqual(queries[0], question)
+        self.assertLessEqual(len(queries), 12)
+        for material in ("316H", "高熵合金"):
+            for property_name in ("硬度", "微观结构"):
+                joint = f"{material} 离子辐照 300 °C {property_name}"
+                self.assertIn(joint, queries)
+                self.assertLess(queries.index(joint), queries.index(property_name))
+                if material in queries:
+                    self.assertLess(queries.index(joint), queries.index(material))
+
+    def test_model_pool_preserves_rare_eligible_types_without_promoting_them(self):
+        documents = [document(f"item-{i}", materials=["W"], conditions_text="300 °C离子辐照", meaning="硬度") for i in range(20)]
+        documents.extend([
+            document("rare-table", "table", materials=["W"], conditions_text="离子辐照", meaning="硬度", caption="Hardness"),
+            document("rare-figure", "figure", materials=["W"], conditions_text="300 °C离子辐照", meaning="硬度"),
+            document("rare-finding", "finding", materials=["W"], conditions_text="300 °C离子辐照", meaning="硬度"),
+        ])
+        plan = plan_librarian_harness(question="W在300 °C离子辐照条件下的硬度", history=[], documents=documents, recall_queries=[])
+        self.assertEqual(len(plan.seed_evidence), 16)
+        self.assertEqual({row["entity_type"] for row in plan.seed_evidence}, {"item", "finding", "table", "figure"})
+        table = next(row for row in plan.seed_evidence if row["entity_type"] == "table")
+        self.assertEqual(table["match_class"], "adjacent")
+        self.assertEqual([field["field"] for field in table["missing_constraints"]], ["temperature"])
+
+    def test_type_coverage_never_admits_a_table_missing_two_conditions(self):
+        documents = [document("direct-item", materials=["W"], conditions_text="300 °C离子辐照", meaning="硬度")]
+        documents.append(document("ineligible-table", "table", materials=["W"], meaning="硬度", caption="Hardness"))
+        plan = plan_librarian_harness(
+            question="W在300 °C离子辐照条件下的硬度", history=[],
+            documents=documents, recall_queries=[],
+        )
+        self.assertEqual([row["entity_uid"] for row in plan.seed_evidence], ["direct-item"])
+        self.assertEqual(plan.seed_evidence[0]["match_class"], "direct")
 
     def test_librarian_decomposes_natural_question_before_bounded_recall(self):
         session = NaturalLanguageSession()

@@ -321,8 +321,20 @@ def _librarian_recall_queries(
 
     analysis = build_query_analysis(question, history=list(history))
     candidates: list[str] = [question]
-    for values in analysis.constraints.values():
-        candidates.extend(str(value) for value in values)
+    # Spend the existing local-query budget on scientific conjunctions first.
+    # Broad material-only queries can otherwise fill the 64-row pool before
+    # the requested property and conditions are ever searched together.
+    materials = sorted(analysis.constraints.get("material", ()),
+                       key=lambda value: (not bool(re.search(r"\d", value)), -len(value)))[:3]
+    properties = list(analysis.constraints.get("property", ()))[:3]
+    conditions = [value for field in ("irradiation", "particle", "temperature", "dose", "state")
+                  for value in analysis.constraints.get(field, ())]
+    joint_queries = [" ".join([material, *conditions, property_name])
+                     for material in (materials or [""]) for property_name in properties
+                     if material or conditions]
+    candidates.extend(joint_queries[:6])
+    for field in ("property", "temperature", "dose", "particle", "irradiation", "material", "state"):
+        candidates.extend(str(value) for value in analysis.constraints.get(field, ()))
     candidates.extend(soft_recall_queries(analysis, limit=6))
     for token in re.findall(r"[A-Za-z][A-Za-z0-9+_.-]{2,}", question):
         if token.casefold() not in _RECALL_STOPWORDS:

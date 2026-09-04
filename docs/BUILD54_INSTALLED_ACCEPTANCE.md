@@ -31,12 +31,41 @@ These guards are not yet in the installed App. No new build is allocated.
 The verified-grid, AI-quality, dataset and remaining UI queue stays open; a source
 image is not a claim of reviewed machine-readable cells.
 
+Recheck at 2026-09-04 16:33 local time: the saved root and running App process
+cwd both remained the canonical workspace. The already-installed build54
+displayed Table 4's actual source image (including its numeric rows) and, after
+a real UI click, Figure 10's load/displacement plot in the second editor.
+Table 4 still explicitly has no verified structured rows; image visibility
+does not close that separate data-reuse gate. No new App, model call or data
+mutation was needed for this recheck; prevention changes remain source-only.
+
 Targeted validation: 73 desktop-runtime/Fusion-detail/Fusion-contract tests
 passed serially (1.58s), JavaScript syntax and release web-asset hashes passed,
 and the scoped diff passed whitespace checks. The initial hash-check invocation
 omitted its required path argument; it was corrected and rerun successfully.
 
 ## Authority and order
+
+Librarian coverage source repair (2026-09-04; not installed): bounded recall
+now spends its existing 12 local queries on material/condition/property
+conjunctions before broad material-only searches. The 64-document pool and
+16-model-evidence bound are unchanged. Selection reserves an eligible
+representative per evidence type, without admitting expansion records or
+changing direct/adjacent classification. Missing temperature stays missing;
+conditions are not borrowed from a paper title or another bundle.
+
+Read-only replay against the existing immutable build54 workspace snapshot
+(published Search V2, limit 8 per query, no refresh/model/production DB) kept
+58 candidates and selected 15 direct plus 1 adjacent: 4 figures, 9 findings,
+2 items and 1 table. The table still lacks the temperature dimension. The old
+query ordering on that same snapshot selected 7 direct plus 5 adjacent; the
+earlier live direct=0 result was not reproduced after correcting the data root.
+This is bounded-recall improvement, not proof that the installed full-source
+Librarian/model failure is resolved. Actual answer/citation adequacy remains open.
+
+84 targeted assembler/preflight/Librarian/security/runtime tests passed, including
+rare eligible type retention and exclusion of a table missing two conditions.
+No additional model call, changed budget, new build or scientific-data mutation.
 
 Selected-table AI source repair (2026-09-04; not installed): a small shared
 context authority now reads the same official table service / opaque workspace

@@ -406,6 +406,24 @@ def _restore_followup_bundle_refs(
     return output
 
 
+def _select_model_candidates(eligible: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reserve one eligible representative per type, without changing its class.
+
+    The input remains the hard-condition-ranked direct/adjacent set. Do not
+    promote metadata-only matches or use a quota to admit expansion evidence.
+    """
+    representatives = {
+        next((index for index, row in enumerate(eligible) if row["entity_type"] == kind), -1)
+        for kind in ("item", "finding", "table", "figure")
+    } - {-1}
+    selected = set(representatives)
+    for index in range(len(eligible)):
+        if len(selected) >= MAX_MODEL_CANDIDATES:
+            break
+        selected.add(index)
+    return [row for index, row in enumerate(eligible) if index in selected]
+
+
 def plan_librarian_harness(
     *,
     question: str,
@@ -446,7 +464,7 @@ def plan_librarian_harness(
         ]
         if not eligible:
             raise LibrarianHarnessPreflightError("harness_recall_empty")
-        selected = eligible[:MAX_MODEL_CANDIDATES]
+        selected = _select_model_candidates(eligible)
 
     if decision.kind == "research_review":
         for index, row in enumerate(eligible, start=1):
