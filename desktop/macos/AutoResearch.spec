@@ -32,6 +32,7 @@ analysis = Analysis(
                 "fusion_operation_history.js",
                 "fusion_package_center.js",
                 "fusion_personal_import.js",
+                "fusion_personal_series.js",
                 "fusion_review.js",
                 "codex-pet-working.webp",
             )

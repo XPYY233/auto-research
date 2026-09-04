@@ -104,6 +104,7 @@ FUSION_REVIEW_STATIC_ASSETS = frozenset(
         "fusion_operation_history.js",
         "fusion_package_center.js",
         "fusion_personal_import.js",
+        "fusion_personal_series.js",
         "codex-pet-working.webp",
     }
 )

@@ -1,6 +1,6 @@
 # Personal experiment full-series plotting
 
-Source implementation checkpoint: 2026-09-04. Not installed; renderer pending.
+Source implementation checkpoint: 2026-09-04. Renderer connected; not installed.
 This is visualization of user-confirmed numeric table rows, not digitization of
 paper images, AI extraction, fitting, interpolation, or a scientific accuracy claim.
 
@@ -42,7 +42,20 @@ counter. Different uncertainty/y units fail rather than being silently converted
 Original scientific cell text is retained; floating plotting coordinates are
 not the authority for data export or training.
 
-## Renderer acceptance still required
+## Renderer implementation and remaining acceptance
+
+`fusion_personal_series.js` is a passive strict projection/geometry renderer;
+Fusion alone owns GET requests, tab identity, events and selection. The same
+controls are used in primary and secondary table views. Session-monotonic request
+tokens prevent a closed/reopened deterministic tab ID from accepting an old
+response. Mac static authorization, frozen resources and release hashes include
+the script. Windows is unchanged.
+
+The real 123-row CSV workflow validates the resulting public DTO in this renderer:
+122 drawable points, one missing row, two original-order segments of 49 and 73
+points, and exact original values/units. Runtime tests cover source/series changes,
+late responses, close/reopen, pagination, missing/invalid values and terminal errors.
+These are source checks, not installed-WebView visual acceptance.
 
 Use one shared primary/secondary renderer, fixed to the selected table+series
 identity. Show the full-series row/valid/gap counts and units. Show original row

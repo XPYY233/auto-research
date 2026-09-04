@@ -78,6 +78,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
     operation_history_source = (WEB_DIR / "fusion_operation_history.js").read_text(encoding="utf-8")
     package_center_source = (WEB_DIR / "fusion_package_center.js").read_text(encoding="utf-8")
     personal_import_source = (WEB_DIR / "fusion_personal_import.js").read_text(encoding="utf-8")
+    personal_series_source = (WEB_DIR / "fusion_personal_series.js").read_text(encoding="utf-8")
     ai_consent_source = (WEB_DIR / "ai_consent.js").read_text(encoding="utf-8")
     workbench_styles = (WEB_DIR / "workbench.css").read_text(encoding="utf-8")
     server_parameters = signature(create_desktop_server).parameters
@@ -112,6 +113,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and '<script src="/static/fusion_operation_history.js"></script>' in index_source
             and '<script src="/static/fusion_package_center.js"></script>' in index_source
             and '<script src="/static/fusion_personal_import.js"></script>' in index_source
+            and '<script src="/static/fusion_personal_series.js"></script>' in index_source
             and '<script src="/static/fusion_review.js"></script>' in index_source
             and index_source.index('<script src="/static/ai_consent.js"></script>')
             < index_source.index('<script src="/static/document_tab_store.js"></script>')
@@ -122,6 +124,7 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             < index_source.index('<script src="/static/fusion_operation_history.js"></script>')
             < index_source.index('<script src="/static/fusion_package_center.js"></script>')
             < index_source.index('<script src="/static/fusion_personal_import.js"></script>')
+            < index_source.index('<script src="/static/fusion_personal_series.js"></script>')
             < index_source.index('<script src="/static/fusion_review.js"></script>')
             and '<script src="/static/app.js"></script>' not in index_source
             and '<script src="/static/desktop_product.js"></script>' not in index_source
@@ -142,6 +145,8 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and "createPackageCenterController" in package_center_source
             and "AutoResearchFusionPersonalImport" in personal_import_source
             and "createPersonalImportController" in personal_import_source
+            and "AutoResearchPersonalSeries" in personal_series_source
+            and "personal-series-plot-v1" in personal_series_source
             and "/api/search-papers" in runtime_source
             and "/api/search-v2" in runtime_source
             and "/api/desktop/federated-search" in runtime_source
@@ -299,6 +304,7 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
                 "/static/fusion_operation_history.js",
                 "/static/fusion_package_center.js",
                 "/static/fusion_personal_import.js",
+                "/static/fusion_personal_series.js",
                 "/static/fusion_review.js",
             ),
         ),
@@ -341,6 +347,11 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
             "fusion_personal_import_runtime",
             "/static/fusion_personal_import.js",
             ("AutoResearchFusionPersonalImport", "createPersonalImportController"),
+        ),
+        (
+            "fusion_personal_series_runtime",
+            "/static/fusion_personal_series.js",
+            ("AutoResearchPersonalSeries", "personal-series-plot-v1"),
         ),
         (
             "fusion_runtime",

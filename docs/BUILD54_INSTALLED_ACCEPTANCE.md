@@ -46,6 +46,24 @@ omitted its required path argument; it was corrected and rerun successfully.
 
 ## Authority and order
 
+Latest update at 18:06 on 2026-09-04: the Mac was unlocked; real installed-App
+clicks displayed Table 4's numeric source image and Figure 10's load/displacement
+plot, then returned to Table 4. This supersedes the locked recheck attempt below,
+not the open verified-grid gate. The App was not rebuilt.
+
+Personal full-series rendering is now connected in source, with a strict passive
+renderer and shared primary/secondary controls. The real CSV workflow yields 122
+points and one gap across 123 rows; no original value is replaced with a plot
+coordinate. 73 frontend/numeric and 40 Mac/release/ownership tests passed serially;
+14 core safety targets also passed (overlap, not cumulative totals). The initial
+frontend run caught a missing readOnlyJSON route and passed after its correction.
+Installed plot layout, return, and restart remain unaccepted; an isolated browser
+visual preview was policy-blocked and was not bypassed. No new build or model call.
+
+User quota boundary: preserve at least 70% of the shared main account quota.
+Readout this turn was 88% remaining; recheck before further substantial work and
+reserve handoff capacity. A quota deadline cannot close any failed release gate.
+
 Personal numeric workflow source checkpoint (2026-09-04): the actual parser,
 confirmation, private repository/search, service recreation and four pages of a
 123-row synthetic CSV were joined to the real Fusion renderer in one isolated

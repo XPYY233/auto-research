@@ -231,9 +231,10 @@ class PersonalTableDetailTests(unittest.TestCase):
         stored = self.repository.private_path_for_file(source.file_id)
         stored.write_bytes(b"x" * source.size_bytes)
         os.utime(stored, ns=(stored.stat().st_atime_ns, stored.stat().st_mtime_ns))
-        with self.assertRaises(PersonalTableError) as raised:
-            service.get_page(source_id=source_id, entity_uid=entity_uid)
-        self.assertEqual(raised.exception.code, "personal_table_changed")
+        for read in (service.get_page, service.get_series):
+            with self.subTest(reader=read.__name__), self.assertRaises(PersonalTableError) as raised:
+                read(source_id=source_id, entity_uid=entity_uid)
+            self.assertEqual(raised.exception.code, "personal_table_changed")
 
     def test_change_during_same_descriptor_read_is_detected(self) -> None:
         service, source_id, entity_uid, source = self._save_table(
@@ -263,9 +264,10 @@ class PersonalTableDetailTests(unittest.TestCase):
         target = self.root / "target.csv"
         target.write_bytes(b"safe")
         stored.symlink_to(target)
-        with self.assertRaises(PersonalTableError) as raised:
-            service.get_page(source_id=source_id, entity_uid=entity_uid)
-        self.assertEqual(raised.exception.code, "personal_table_changed")
+        for read in (service.get_page, service.get_series):
+            with self.subTest(reader=read.__name__), self.assertRaises(PersonalTableError) as raised:
+                read(source_id=source_id, entity_uid=entity_uid)
+            self.assertEqual(raised.exception.code, "personal_table_changed")
 
     def test_xlsx_casefold_conflicts_and_xml_entities_are_rejected(self) -> None:
         with self.assertRaises(UnsafeTabularFileError):

@@ -83,7 +83,7 @@
       "area": "frontend",
       "owner": "shared-frontend",
       "status": "experimental",
-      "problem": "生产HTML现加载Fusion十个经典脚本；资料包、任务历史与个人导入业务已分别抽离到无自主生命周期的fusion_package_center.js、fusion_operation_history.js和fusion_personal_import.js，但主脚本仍同时承担文献、搜索、设置、AI、标签和布局协调；四个旧Web控制器已无共享或Mac正向消费者，但仍在Windows冻结白名单中；safe update已改为只检查发布契约中的真实Fusion脚本",
+      "problem": "生产HTML的经典脚本由release-contract统一列出；资料包、任务历史、个人导入及数值序列渲染已抽为无自主生命周期模块，后者只校验DTO并绘图，不拥有请求、导航或存储。主脚本仍同时承担文献、搜索、设置、AI、标签和布局协调；四个旧Web控制器已无共享或Mac正向消费者，但仍在Windows冻结白名单中；safe update只检查发布契约中的真实Fusion脚本",
       "target": "保持单一bootstrap、workspace、document和请求端口；先迁移旧资源的最后消费者并物理删除不再加载的控制器，再按已验证端到端边界抽离文献或搜索垂直切片",
       "removal_gate": "唯一生产bootstrap与导航所有者、无死导出/重复监听、新静态资源进入macOS发布哈希与冻结冒烟、旧文件无生产/安全/迁移消费者、真实WebView主链通过"
     },

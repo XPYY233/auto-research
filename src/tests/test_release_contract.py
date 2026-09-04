@@ -153,6 +153,7 @@ class ReleaseContractTests(unittest.TestCase):
             "src/auto_research/evidence/web/index.html",
             "src/auto_research/evidence/web/app.css",
             "src/auto_research/evidence/web/workbench.css",
+            "src/auto_research/evidence/web/fusion_personal_series.js",
         ):
             with self.subTest(relative=relative):
                 value = json.loads(

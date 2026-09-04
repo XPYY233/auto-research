@@ -113,6 +113,17 @@ const fs=require('fs'),assert=require('assert'),input=JSON.parse(fs.readFileSync
 globalThis.document={readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener(){}};
 eval(fs.readFileSync(RUNTIME,'utf8'));
 const api=globalThis.AutoResearchFusion,identity={sourceId:input.action.source_id,entityUid:input.action.entity_uid};
+eval(fs.readFileSync(SERIES_RUNTIME,'utf8'));
+const plot=AutoResearchPersonalSeries.validate(input.plot,{...identity,seriesIndex:0});
+assert(plot,'real confirmed service projection accepted by renderer');
+const geometry=AutoResearchPersonalSeries.geometry(plot);
+assert.equal(geometry.segments.length,2,'missing row splits real series');
+assert.deepEqual(geometry.segments.map(segment=>segment.length),[49,73]);
+const chart=AutoResearchPersonalSeries.render(plot,123);
+assert.equal((chart.match(/data-series-point=/g)||[]).length,122);
+assert.equal((chart.match(/data-series-source-row=/g)||[]).length,123);
+assert(chart.includes('原始第 123 行'));assert(chart.includes('3.322'));assert(chart.includes('0.050'));
+assert(!chart.includes('NaN'));assert(!chart.includes('Infinity'));
 for(const raw of input.pages){
  const page=api.publicPersonalTablePage(raw,identity,raw.page);assert(page,'real page contract accepted');
  assert.deepEqual(page.rows,raw.rows);
@@ -121,8 +132,8 @@ for(const raw of input.pages){
  for(const row of raw.rows)for(const value of Object.values(row))if(value)assert(html.includes(value));
  if(!raw.rows.length)assert(html.includes('当前页没有数据'),'empty trailing page must not show reversed row range');
 }
-""".replace("RUNTIME", repr(str(web / "fusion_review.js")))
-            result = subprocess.run(["node", "-e", program], input=json.dumps({"action": action, "pages": pages}),
+""".replace("SERIES_RUNTIME", repr(str(web / "fusion_personal_series.js"))).replace("RUNTIME", repr(str(web / "fusion_review.js")))
+            result = subprocess.run(["node", "-e", program], input=json.dumps({"action": action, "pages": pages, "plot": plot}),
                                     text=True, capture_output=True, timeout=8)
             self.assertEqual(result.returncode, 0, result.stderr)
             with self.assertRaises(PersonalTableError):

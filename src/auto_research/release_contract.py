@@ -26,6 +26,7 @@ REQUIRED_WEB_ASSETS = frozenset(
         "src/auto_research/evidence/web/fusion_operation_history.js",
         "src/auto_research/evidence/web/fusion_package_center.js",
         "src/auto_research/evidence/web/fusion_personal_import.js",
+        "src/auto_research/evidence/web/fusion_personal_series.js",
         "src/auto_research/evidence/web/fusion_review.js",
         "src/auto_research/evidence/web/codex-pet-working.webp",
     }
