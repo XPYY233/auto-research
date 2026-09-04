@@ -55,11 +55,11 @@
     "src/auto_research/evidence/web/pane_layout_controller.js": "bb2ebea79ba9d571065e7dc9ac5b9635fc19ecb77ac761fbf1cb8248bf98e154",
     "src/auto_research/evidence/web/workspace_layout_controller.js": "945083a260ac058ca846dff01343e306ba6649329e460201a6e016d01c203d8b",
     "src/auto_research/evidence/web/fusion_pdf_controller.js": "9922b08f8ae42ea24c6188120615ccbf775bba7f8f3b67770ae793dbad19c4d6",
-    "src/auto_research/evidence/web/fusion_ai_experience.js": "da5256c9d14adae59ed21b104040c38aac2e2cc760f9cf43c2556e2bf24eb494",
+    "src/auto_research/evidence/web/fusion_ai_experience.js": "aba189d6c9d64cbbd10371a4486c02122a7fd370fbaf4fed5104b078b73c9c13",
     "src/auto_research/evidence/web/fusion_operation_history.js": "0272560dec019433df0fcdfe765e5e30d9d1e196521a1fa329ad5b9232377dc0",
     "src/auto_research/evidence/web/fusion_package_center.js": "bec1347d4a62e6f28266c2c187dd9bfa4e19c5cc3b48bc62994cb9c738e460af",
     "src/auto_research/evidence/web/fusion_personal_import.js": "ba58c01a479d04196921e6db3c5a24933077e991431432992192207db022318f",
-    "src/auto_research/evidence/web/fusion_review.js": "7e545ab5d262b129185386e4d888201ce3bfdbae564b3ff1b6beca2c868fe36b",
+    "src/auto_research/evidence/web/fusion_review.js": "86e39526116b7c6a80d34ab075860a09957244d01f0562ff150dbe3dfa710cdd",
     "src/auto_research/evidence/web/codex-pet-working.webp": "eeb657c8dd3dc9431cea8d88b8ec08e4c44471dd258ac3d8008483f2b40f0ef9"
   }
 }

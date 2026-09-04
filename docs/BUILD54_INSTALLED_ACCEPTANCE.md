@@ -46,6 +46,25 @@ omitted its required path argument; it was corrected and rerun successfully.
 
 ## Authority and order
 
+AI feedback and cross-tab draft source repair (2026-09-04; not installed):
+the existing frontend project task implemented accumulated activity timing,
+paused while awaiting authorization, frozen at success/error/cancellation even
+without a mounted progress host, and reset for the next task. Stage weights no
+longer render a numeric percentage or `aria-valuenow` as if measured work.
+Root changed activity copy by scope: experimental suggestions now describe
+column validation and explicitly remain unconfirmed; extraction completion
+does not stand in for its publication/index receipt.
+
+Selected-evidence submission captures its original tab, host and input after
+pinning. After delayed authorization, only that same identity/input may clear;
+switching to B with an identical draft preserves B and does not change A's
+prepared request/history or execution token. Replies still enter A's thread.
+80 targeted runtime/UI/history/detail/personal/receipt tests passed serially,
+including controlled-clock wait/terminal/repaint cases and exact outgoing
+prepare/consent/execute assertions during A→B switching. JS syntax, web hashes
+and scoped diff checks passed. No models, App build, Windows or live data edits.
+Installed timing, draft behavior and full UI acceptance must still be rerun.
+
 Librarian coverage source repair (2026-09-04; not installed): bounded recall
 now spends its existing 12 local queries on material/condition/property
 conjunctions before broad material-only searches. The 64-document pool and
