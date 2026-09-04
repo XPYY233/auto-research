@@ -2,6 +2,11 @@
 
 Status: mandatory release gate, not a release claim.
 
+Current installed acceptance (2026-09-04): build54 / `9f77aff` remains a
+candidate. See [the live acceptance ledger](BUILD54_INSTALLED_ACCEPTANCE.md)
+for semantic AI failures, dataset-plan failure and unverified pane/recovery
+paths. The older baseline statements below do not override those failures.
+
 Baseline evidence:
 
 - 0.5.1 build 6, source checkpoint `63b34f2`, was transactionally installed and exercised on macOS on 2026-08-25.

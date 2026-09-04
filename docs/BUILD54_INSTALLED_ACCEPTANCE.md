@@ -1,0 +1,87 @@
+# Build54 installed acceptance — single candidate
+
+Updated: 2026-09-04. Status: **not accepted; no stable release**.
+
+## Authority and order
+
+- Installed `/Applications/Auto Research.app` manifest was read on 2026-09-04:
+  `build_number=54`, `release_status=candidate`,
+  `core_commit=9f77affea1714282a48e6c7e0ef22a7729683c4d`.
+- Keep the same 1.2.0/build54 batch. Do not allocate build55, create a DMG,
+  duplicate UserKit, or call a passing source test a passing user workflow.
+- Finish the existing acceptance and repair queue before expanding the new
+  table-display issue. Collect failures first, fix one ordered aggregate, and
+  rerun the failed installed-App paths before packaging.
+- Root alone integrates/Git-writes. Windows stays frozen. Production SQLite,
+  `paper_056`, current private data and the immutable official package are not
+  test or cleanup inputs. No experimental import is confirmed into the live
+  private library during these checks.
+
+## Evidence, not broad completion claims
+
+The 2026-09-02 build used the clean `9f77aff` checkout. Its recorded serial
+source gate was 1,152 shared tests (80 explicit skips), 331 macOS tests,
+frozen smoke and signature checks. The App was installed in the existing
+build54 slot; no new build number or DMG was generated. Those checks do not
+prove scientific answer quality or the remaining installed workflows.
+
+| Flow | Observed in the installed candidate | Verdict |
+|---|---|---|
+| Literature and search | Independent catalog, title/author/DOI field, prominent intake/extraction controls and wide precise-search input present; `辐照温度` returned 69 items, 8 findings, 1 table, 5 figures | Basic flow observed; 100+ paper/zoom matrix still open |
+| Official source | 2026-09-04 load terminated with active 1.1.0, 59 papers, 3,142 items, 936 findings, 49 tables, 242 figures, 59 PDFs, 291 visual assets and direct search action | Read/status passed; do not infer new-package publication |
+| Official Table 3/PDF | Source image and verified 5×4 grid visible; PDF page 5, zoom controls and return-to-source worked on 2026-09-02 | This exact source/detail passed; other tables are not implicitly verified |
+| Selected-evidence AI | Real DeepSeek reply and encrypted history returned, but it claimed exact hardening differences were unavailable although the visible grid contains ΔH 1.07±0.06 / 1.23±0.15 / 1.01±0.07 GPa | **Fail: context/answer adequacy** |
+| Librarian | Real one-call answer around 6 seconds, progress and four clickable references worked; compound 300 °C HEA/316H hardening+microstructure question returned direct=0/related=4 despite relevant same-paper evidence | **Fail: direct-evidence coverage/classification**; do not fix by relabeling unrelated evidence |
+| AI elapsed feedback | Librarian total showed 190 seconds while the current model event was about 6 seconds; personal trace used generic citation wording | **Fail: timing/stage presentation**; distinguish consent time from model time |
+| Personal AI | Safe 108×8 sample preview paginated; one real AI call returned editable column meanings/reasons and a terminal 100% state; no confirmation/import performed | Execution passed; no measurement sequence was produced for this mixed long-form sample, so scientific import usefulness still requires a representative numeric experiment |
+| Settings/API | 2026-09-04 settings and model controls visible after module changes; saved-key/connection-needs-validation, Harness availability and four scope states distinct; no key read or changed | Basic state display passed; previous transient blank setting state remains unconfirmed |
+| Dataset plan | 2026-09-04 default private-off plan terminated with `dataset_plan_invalid · 数据集计划格式无效` | **Fail: export cannot continue** |
+| Pane controls | Explicit context hide/restore retained central settings and restored width 244; opening a finding retained document tabs | Button path observed only; mouse drag and all narrow layouts remain open |
+| Table without verified grid | Prior installed check of SiC test-matrix detail remained at `正在读取结构化行列` | Follow-up queue; do not silently claim a structure exists |
+
+## Bounded diagnostic findings
+
+1. `evidence/harness_business_action.py::_selected` freezes the sanitized current
+   document plus compatible neighbors. The verified structure lives separately;
+   audit the full provider payload before changing the allowed scientific
+   context. Readiness is not proof that this payload contains the grid.
+2. `fusion_package_center.js::publicDatasetPlan` rejects `rights_risks.length >
+   100`, while `DatasetBundlePlan.public_dict()` emits the complete risk list.
+   A no-network synthetic projection check on 2026-09-04 accepted one valid
+   risk and rejected 101 valid risks with identical valid counts. This is a
+   confirmed contract mismatch, not yet proof of the live response's sole
+   rejection branch. Resolve with a bounded, complete backend/UI contract,
+   never by dropping risks or auto-acknowledging them.
+3. `fusion_ai_experience.js::stopTimer` clears the interval but retains the
+   start time; later render calls derive elapsed from wall time again. Audit
+   terminal/history and authorization timing before a repair.
+4. Computer Use `drag` returned `noWindowsAvailable` while ordinary App state
+   reads/clicks still worked. This is an automation limitation, not evidence
+   that pointer resizing passed or failed. An AX click+Home did not establish
+   separator focus, so keyboard resizing is also not counted as passed.
+5. The existing function collaboration task stopped with a usage-limit error
+   before delivering its read-only diagnosis. Do not claim delegation output
+   was completed; root may continue local read-only checks without spawning
+   replacement agents or adding heavy parallel work.
+
+## Remaining ordered acceptance and repair gate
+
+1. Finish isolated numeric-experiment, literature cancellation/resume/finalize,
+   package/dataset saved-file/receipt/restart paths and the pane/history matrix.
+   Skip repeated paid connection probes when existing valid proofs suffice.
+2. Consolidate the selected-context, Librarian coverage, dataset plan and
+   task-feedback failures with any remaining failures. Repair existing shared
+   services/controllers; do not restore legacy billable routes or duplicate UI.
+3. Targeted semantic and UI regressions must include real-shaped payloads and
+   representative corpus sizes, not just small success fixtures. Then run one
+   serial full gate and overwrite only this candidate.
+4. Re-run the failed real flows against the installed artifact. Only after
+   the entire user-flow ledger passes: one DMG, tutorial, independent package
+   verification, and removal of the temporary build worktree after identity
+   checks. Human scientific-quality gates remain separate from software tests.
+5. User-requested closeout: after this repair/acceptance round, use the
+   skill-creator workflow to streamline the maintainer Skill and project rules.
+   Remove stale duplicated release conclusions, centralize current acceptance,
+   preserve ordered work and single-candidate/retention/coordination boundaries,
+   and validate the skill. Interim checkpoint banners are not completion of
+   that governance task and must not displace the main product work.

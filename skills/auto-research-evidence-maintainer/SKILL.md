@@ -50,6 +50,17 @@ Keep these invariants:
 
 ## Continue from the 1.2 Mac release line
 
+Current override (2026-09-04): read `docs/BUILD54_INSTALLED_ACCEPTANCE.md`
+immediately after the handoff. The installed candidate is build54 at `9f77aff`,
+not the older `b2578a6` checkpoint described below. Real replies did not prove
+scientific adequacy: selected chat omitted visible verified values, Librarian
+under-classified direct evidence, and dataset planning failed in the real App.
+Keep these failures open, finish the prior ordered work before new table scope,
+and do not create build55/DMG/UserKit. This ledger is the single authority for
+current acceptance; historical counters and call-success claims are not release
+evidence. If an existing collaborating task is quota-blocked, say so and proceed
+safely as root; do not invent a completed handoff or spawn hidden replacements.
+
 Before editing, read the top `PROJECT_HANDOFF.md` release section. The installed App is the single overwritable `1.2.0` build54 candidate at core commit `b2578a6`; build24 remains the verified stable rollback. Real AI, isolated extraction, the official Table 3 source-image/PDF/return chain, and the PDF/page/bbox-bound 5×4 Table 3 review/restart/CSV/XLSX flow have passed in the installed App. Source checkpoint `ad72177` additionally completes a strict read-only workspace-to-official table link, zero-model extraction finalization and persisted safe cancellation: only exact DOI/PDF SHA/page/screenshot SHA identity may expose an official verified grid; task-directory uncertainty fails closed; an unfinished task blocks a new paid prepare; cancellation waits for a paid-call boundary, preserves successful receipts and never hides an unknown provider outcome. Closing the PDF picker is a visible zero-request terminal state. These source fixes are not yet installed. The immutable official `1.1.0` package was not rewritten. Keep all fixes on build54 and do not create build55 until every installed-App user-flow gate passes. Verify installed identity and artifact hashes live because source completion, build completion, installation acceptance, package publication and scientific accuracy are separate claims.
 
 - Preserve the uncommitted production evidence database. The legacy paper_056 run/quality/visual artifacts were explicitly deleted by the user before the 0.8 build and should not be recreated unless a new real extraction is authorized.

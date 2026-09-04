@@ -1,6 +1,14 @@
 # Current state checkpoint
 
-## v1.2.0 single-candidate recovery checkpoint (2026-09-02)
+## Current acceptance authority (2026-09-04)
+
+Read project `docs/BUILD54_INSTALLED_ACCEPTANCE.md` and the current handoff.
+Installed build54 is `9f77aff`, `release_status=candidate`, with unresolved
+semantic AI, feedback and dataset-plan failures. No build55 or stable package
+is authorized. The previous checklist is historical; a returned model answer
+does not by itself pass the scientific/usefulness gate.
+
+## v1.2.0 single-candidate recovery checkpoint (2026-09-02, historical)
 
 - Installed identity: `1.2.0` build54, manifest `release_status=candidate`, core commit `b2578a6`, executable SHA-256 `1f0e7e7d334248049239cd57aa0628d559489eaa00d089d284c0c26576c8cbd7`. It is not the stable release. Build24 remains the verified rollback.
 - Verified in this release batch: Librarian, selected-evidence chat and personal suggestion in the installed App; an isolated one-page PDF extraction with two real model calls; 1,139 shared tests (80 explicit skips), 323 macOS tests; first/repeat official-package import; the installed official `search → Table 3 source image → PDF → return` chain; and Table 3 5×4 main-editor review, restart persistence plus real CSV/XLSX export.

@@ -2,7 +2,9 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
-## Handoff entry point (updated 2026-09-02)
+## Handoff entry point (updated 2026-09-04)
+
+- Live installed acceptance is owned by `docs/BUILD54_INSTALLED_ACCEPTANCE.md`: build54 at `9f77aff` is a candidate with confirmed AI-quality and dataset-plan failures. Older test/call-success summaries below are historical checkpoints, not permission to release. Finish the existing ordered queue before the new table issue; do not allocate build55 or accumulate artifacts.
 
 - A new account or agent must read `PROJECT_HANDOFF.md` before modifying this repository, then use this file as the durable policy authority.
 - The canonical portable project skill is `skills/auto-research-evidence-maintainer/`; its current-account installation is a symlink under `~/.codex/skills/auto-research-evidence-maintainer`.

@@ -1,6 +1,13 @@
 # Auto Research 阶段性交班总览
 
-## 1.2 单候选恢复线（2026-09-02，当前唯一开发权威）
+## 1.2 单候选验收（2026-09-04，当前唯一开发权威）
+
+- 当前安装清单已现场核对：`1.2.0/build54`、`release_status=candidate`、core commit `9f77aff`。下方`b2578a6`安装记录已是历史，不再用于判断当前App。
+- 当前验收权威为 [`docs/BUILD54_INSTALLED_ACCEPTANCE.md`](docs/BUILD54_INSTALLED_ACCEPTANCE.md)。真实调用已揭示证据AI遗漏可见表格数值、图书管理员直接证据分类不足、耗时展示失真；9月4日真实数据集计划又返回`dataset_plan_invalid`。这些均未修复验收，禁止称稳定、生成DMG或递增build。
+- 先完成既有验收队列，再集中修复；新表格问题排在既有工作之后，不因新截图更换主线。官方读取、设置状态及部分按钮路径已通过，不等于整体功能通过。源码全测、旧版成功和真实科学正确性必须分别记录。
+- 现有功能协作任务因额度限制未完成只读诊断；root继续低负载收集证据，不伪称协作完成，不另起子agent。Windows冻结、root唯一Git写入、生产SQLite及`paper_056`保护规则不变。
+
+## 1.2 单候选恢复线（2026-09-02，历史检查点）
 
 - 当前唯一可启动App为`/Applications/Auto Research.app`（`1.2.0` / build54，manifest `release_status=candidate`，core commit `b2578a6`）。可执行文件SHA-256为`1f0e7e7d334248049239cd57aa0628d559489eaa00d089d284c0c26576c8cbd7`，深层签名验证通过。build24继续作为已验证稳定回退点；build54仍须完成剩余产品问题后才能称稳定版。
 - build54同批次已经完成：真实安装App中的图书管理员、选中证据问答和私人表格AI建议；隔离单页PDF以2次模型调用完成四类候选、质量门、原子发布和索引刷新；共享1,133项（80项按设计跳过）、macOS 309项及Python/JavaScript/发布哈希检查通过。
