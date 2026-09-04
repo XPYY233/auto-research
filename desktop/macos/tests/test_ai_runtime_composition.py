@@ -150,6 +150,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
             session_id = "desktop-session-" + "s" * 32
             research_memory = mock.Mock()
             research_memory.get.return_value.items = ()
+            table_context = mock.Mock()
             services = create_mac_ai_runtime_services(
                 state_path=root / "state.json",
                 attestation_key_path=root / "attestation.key",
@@ -162,7 +163,11 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 federated_search_session=product.federated_search_service.session,
                 harness_runtime=FakeHarnessRuntime(),
                 research_memory_service=research_memory,
+                table_context=table_context,
             )
+            self.assertIs(services.table_context, table_context)
+            self.assertIs(services.selected_evidence_chat_ports.assembler._table_context, table_context)
+            self.assertIs(services.snapshot_authority._authorities["harness_selected_table"], services.harness_ports.snapshots)
             self.assertIs(services.credential_manager, manager)
             self.assertIs(services.legacy_deepseek_store.manager, manager)
             self.assertIs(services.execution_lock, manager.execution_lock)
@@ -265,6 +270,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 {
                     "personal_table",
                     "harness_literature",
+                    "harness_selected_table",
                     "literature_extraction_stage",
                 },
             )
@@ -293,6 +299,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                 "desktop_session_id": session_id,
                 "federated_search_session": federated,
                 "research_memory_service": research_memory,
+                "table_context": None,
             },
         )()
         previous = ai_runtime_composition._SERVICES
@@ -310,6 +317,7 @@ class MacAIRuntimeCompositionTests(unittest.TestCase):
                     "federated_search_session": federated,
                     "harness_cordis_path": Path("/tmp/harness.cordis.yml"),
                     "research_memory_service": research_memory,
+                    "table_context": None,
                 }
                 self.assertIs(ai_runtime_composition.mac_ai_runtime_services(**kwargs), sentinel)
                 self.assertIs(ai_runtime_composition.mac_ai_runtime_services(**kwargs), sentinel)

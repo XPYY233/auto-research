@@ -16,6 +16,7 @@ from auto_research.ai.harness_contract import (
 from auto_research.ai.harness_official_sdk import safe_composition_metadata
 from auto_research.ai.prepared_actions import PreparedOutbound
 from auto_research.evidence.harness_business_action import harness_business_ports
+from auto_research.evidence.harness_table_context import HarnessTableContextAuthority
 from auto_research.evidence.harness_federated_backend import sanitize_workspace_documents
 
 
@@ -1095,6 +1096,31 @@ class HarnessBusinessActionTests(unittest.TestCase):
         )
         self.assertEqual(raised.exception.stage, "selected_evidence_preflight")
         self.assertEqual(raised.exception.next_action, "repair_workspace")
+
+    def test_selected_table_sends_verified_cells_and_binds_review_version(self):
+        session = Session()
+        row = document("table-3", "table", value_text="Table 3", caption="Nanoindentation")
+        session.documents = [row]
+        grid = {**{key: row[key] for key in ("source_scope", "source_id", "entity_type", "entity_uid")},
+                "status": "verified", "version": 1,
+                "rows": [["Material", "ΔH (GPa)"], ["HEA", "1.07 ± 0.06"], ["316H", "1.01 ± 0.07"]]}
+        tables = HarnessTableContextAuthority(official=SimpleNamespace(get=lambda *_, **__: grid))
+        runtime = Runtime(selected=True)
+        ports = harness_business_ports(session=session, runtime=runtime, table_context=tables)
+        request = {key: row[key] for key in ("source_scope", "source_id", "entity_type", "entity_uid")}
+        request.update(question="请逐行解释硬化差异与误差", history=[])
+        draft = ports.selected_evidence_chat.assembler.assemble(request)
+        self.assertEqual(draft.outbound["prompt"]["verified_table"]["rows"], grid["rows"])
+        self.assertEqual(draft.max_calls, 1)
+        self.assertEqual(len(draft.content_units), 2)
+        unit = draft.content_units[1]
+        self.assertEqual(ports.snapshots.fingerprint_for(kind=unit.kind, stable_source_identity=unit.stable_source_identity), unit.snapshot_fingerprint)
+        # Search index/package fingerprint did not change, but the reviewed grid did.
+        grid["version"] = 2
+        self.assertNotEqual(ports.snapshots.fingerprint_for(kind=unit.kind, stable_source_identity=unit.stable_source_identity), unit.snapshot_fingerprint)
+        request["verified_table"] = {"rows": [["forged"]]}
+        with self.assertRaises(BusinessActionError):
+            ports.selected_evidence_chat.assembler.assemble(request)
 
     def test_selected_uses_stable_official_identity_and_existing_top_level_fields(self):
         session = Session()

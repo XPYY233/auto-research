@@ -29,6 +29,7 @@ from auto_research.evidence.harness_business_action import (
     harness_business_ports,
 )
 from auto_research.evidence.harness_workspace_source import HarnessWorkspaceSource
+from auto_research.evidence.harness_table_context import HarnessTableContextAuthority, TABLE_CONTEXT_KIND
 from auto_research.evidence.literature_extraction_business_action import (
     LiteratureExtractionBusinessPorts,
     literature_extraction_business_ports,
@@ -163,6 +164,7 @@ class MacAIRuntimeServices:
     custom_provider: CustomProviderService
     readiness: AIReadinessService
     research_memory_service: ResearchMemoryService | None = None
+    table_context: HarnessTableContextAuthority | None = None
     database: EvidenceDB | None = None
     personal_import_service: PersonalImportService | None = None
     desktop_session_id: str | None = None
@@ -210,6 +212,7 @@ def create_mac_ai_runtime_services(
     harness_cordis_path: Path | str | None = None,
     literature_private_root: Path | str | None = None,
     research_memory_service: ResearchMemoryService | None = None,
+    table_context: HarnessTableContextAuthority | None = None,
 ) -> MacAIRuntimeServices:
     business_inputs = (
         database,
@@ -305,6 +308,7 @@ def create_mac_ai_runtime_services(
             session=federated_search_session,
             runtime=effective_harness_runtime,
             workspace=HarnessWorkspaceSource(database),
+            table_context=table_context,
             research_memory=(
                 _ResearchMemoryContext(research_memory_service)
                 if research_memory_service is not None
@@ -360,6 +364,7 @@ def create_mac_ai_runtime_services(
             {
                 "personal_table": personal_ports.snapshots,
                 "harness_literature": harness_ports.snapshots,
+                TABLE_CONTEXT_KIND: harness_ports.snapshots,
                 "literature_extraction_stage": literature_ports.snapshots,
             }
         )
@@ -413,6 +418,7 @@ def create_mac_ai_runtime_services(
         custom_provider=custom_provider,
         readiness=readiness,
         research_memory_service=research_memory_service,
+        table_context=table_context,
         database=database,
         personal_import_service=personal_import_service,
         desktop_session_id=desktop_session_id,
@@ -462,6 +468,7 @@ def mac_ai_runtime_services(
     federated_search_session: FederatedSearchSessionProtocol | None = None,
     harness_cordis_path: Path | str | None = None,
     research_memory_service: ResearchMemoryService | None = None,
+    table_context: HarnessTableContextAuthority | None = None,
 ) -> MacAIRuntimeServices:
     global _SERVICES
     with _SERVICES_LOCK:
@@ -481,6 +488,7 @@ def mac_ai_runtime_services(
                 federated_search_session=federated_search_session,
                 harness_cordis_path=harness_cordis_path,
                 research_memory_service=research_memory_service,
+                table_context=table_context,
             )
         elif any(
             value is not None
@@ -490,6 +498,7 @@ def mac_ai_runtime_services(
                 desktop_session_id,
                 federated_search_session,
                 research_memory_service,
+                table_context,
             )
         ):
             if (
@@ -498,6 +507,7 @@ def mac_ai_runtime_services(
                 or desktop_session_id != _SERVICES.desktop_session_id
                 or federated_search_session is not _SERVICES.federated_search_session
                 or research_memory_service is not _SERVICES.research_memory_service
+                or table_context is not _SERVICES.table_context
             ):
                 raise RuntimeError("mac AI runtime is already bound to another desktop graph")
         return _SERVICES

@@ -38,6 +38,37 @@ omitted its required path argument; it was corrected and rerun successfully.
 
 ## Authority and order
 
+Selected-table AI source repair (2026-09-04; not installed): a small shared
+context authority now reads the same official table service / opaque workspace
+resolver used by the detail view. Only verified rows are frozen into the
+selected-evidence prompt, with headers, units, uncertainty and review version;
+missing/pending/rejected tables send no cells. Large contexts fail explicitly
+(500 cells / 24,000 cell characters), not by silent truncation. No raw asset,
+local path, reviewer note or private experiment is sent. Workspace-to-official
+linking still belongs to the existing DOI/PDF/page/asset identity service.
+
+The prepared action now has a separate table-content unit. Its bounded opaque
+handle stores only the public identity; consuming authorization rereads the
+authority, so changed/withdrawn/reviewed rows or unavailable sources invalidate
+the old snapshot even when the Search V2 fingerprint is unchanged. Both Mac
+production and frozen-smoke composition inject this authority and reuse the
+same workspace resolver as the UI. One model call and the existing output
+contract remain unchanged.
+
+107 targeted tests passed serially in 10.33s (5 existing PyMuPDF/SWIG deprecation
+warnings): context/assembler/SDK prompt, authorization, Mac composition/routes,
+workspace resolver/exact source link and official table service. Python compile
+and scoped diff checks passed. These prove data delivery and gates, not the
+model's numerical interpretation. Actual installed Table 3 AI must still report
+the visible values and uncertainties correctly before its failure row is closed.
+
+Existing frontend task completed a read-only collaboration review: prepare
+captures the visible detail's four-field identity and replies bind to their
+original conversation. It found a separate P1: switching tabs while authorizing
+can clear another tab's identical draft because clearing rereads the active host.
+Add exact outbound identity/history assertions and bind draft clearing to the
+original host in the later frontend batch; no frontend files were changed here.
+
 Dataset source repair (2026-09-04; not installed): the renderer now accepts the
 builder's `paper.title/doi/year` missing-field keys and complete rights-risk
 lists instead of rejecting lists over 100 or truncating long public identities.

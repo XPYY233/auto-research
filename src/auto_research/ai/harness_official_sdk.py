@@ -916,6 +916,9 @@ def _system_prompt(scope: str) -> str:
     return common + (
         "只解释当前实体及明确允许的相邻证据，不得跨证据包拼接定量结论。"
         "任务输入已经包含本地冻结并核验的 current_evidence、allowed_neighbors 和来源定位；"
+        "若 verified_table.status 为 verified，它是当前同源表格经人工核验的完整行列；"
+        "回答表中数值时必须使用对应行列、表头、单位和不确定度，不能声称已提供的数值缺失。"
+        "若 verified_table 不存在或未核验，明确说明无法读取核验行列，不得从图注虚构单元格。"
         "本轮不得调用任何工具，不得扩大证据范围，直接输出最终 JSON。"
     )
 

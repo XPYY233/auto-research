@@ -437,6 +437,7 @@ def _run_smoke_test(project_root: Path) -> int:
     from auto_research.evidence.workspace_evidence_resolver import (
         WorkspacePublicEvidenceResolver,
     )
+    from auto_research.evidence.harness_table_context import HarnessTableContextAuthority
     from auto_research.evidence.table_structure_service import (
         WorkspaceTableStructureService,
     )
@@ -514,6 +515,20 @@ def _run_smoke_test(project_root: Path) -> int:
         )
         database = EvidenceDB(temporary_database)
         desktop_session_id = new_session_token()
+        workspace_table_structures = WorkspaceTableStructureService(database)
+        workspace_linked_tables = WorkspaceOfficialTableLinkService(
+            database,
+            product_services.package_service,
+            product_services.official_table_structure_service,
+        )
+        workspace_evidence_resolver = WorkspacePublicEvidenceResolver(
+            database, table_structures=workspace_table_structures,
+            linked_official_tables=workspace_linked_tables,
+        )
+        table_context = HarnessTableContextAuthority(
+            official=product_services.official_table_structure_service,
+            workspace=workspace_evidence_resolver,
+        )
         ai_services = create_mac_ai_runtime_services(
             state_path=application_support / "State" / "ai-runtime-state-v1.json",
             attestation_key_path=application_support / "State" / "ai-attestation-v1.key",
@@ -523,6 +538,7 @@ def _run_smoke_test(project_root: Path) -> int:
             federated_search_session=product_services.federated_search_service.session,
             harness_cordis_path=project_root / "config" / "auto-research-harness.runtime.cordis.yml",
             research_memory_service=research_memory_service,
+            table_context=table_context,
         )
         # Exercise the exact frozen consent class graph without contacting a
         # provider.  This catches PyInstaller package-alias regressions that
@@ -546,12 +562,7 @@ def _run_smoke_test(project_root: Path) -> int:
             consumed_probe.scope == "capability_test"
             and consumed_probe.action_id == consent_probe["action_id"]
         )
-        workspace_table_structures = WorkspaceTableStructureService(database)
-        workspace_linked_tables = WorkspaceOfficialTableLinkService(
-            database,
-            product_services.package_service,
-            product_services.official_table_structure_service,
-        )
+
         server, _ = create_desktop_server(
             database,
             host="127.0.0.1",
@@ -585,13 +596,7 @@ def _run_smoke_test(project_root: Path) -> int:
                 official_service=product_services.official_table_structure_service,
                 linked_official_service=workspace_linked_tables,
             ),
-            workspace_evidence_api=WorkspaceEvidenceAPI(
-                WorkspacePublicEvidenceResolver(
-                    database,
-                    table_structures=workspace_table_structures,
-                    linked_official_tables=workspace_linked_tables,
-                )
-            ),
+            workspace_evidence_api=WorkspaceEvidenceAPI(workspace_evidence_resolver),
             release_info=_desktop_release_info(),
             session_token=desktop_session_id,
             experience_mode="fusion-product",
@@ -660,6 +665,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
     from auto_research.evidence.workspace_evidence_resolver import (
         WorkspacePublicEvidenceResolver,
     )
+    from auto_research.evidence.harness_table_context import HarnessTableContextAuthority
     from auto_research.evidence.table_structure_service import (
         WorkspaceTableStructureService,
     )
@@ -718,6 +724,20 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
         evidence_chat_history_service = EvidenceChatHistoryService(
             default_secure_evidence_chat_history_store()
         )
+        workspace_table_structures = WorkspaceTableStructureService(database)
+        workspace_linked_tables = WorkspaceOfficialTableLinkService(
+            database,
+            product_services.package_service,
+            product_services.official_table_structure_service,
+        )
+        workspace_evidence_resolver = WorkspacePublicEvidenceResolver(
+            database, table_structures=workspace_table_structures,
+            linked_official_tables=workspace_linked_tables,
+        )
+        table_context = HarnessTableContextAuthority(
+            official=product_services.official_table_structure_service,
+            workspace=workspace_evidence_resolver,
+        )
         ai_services = mac_ai_runtime_services(
             database=database,
             personal_import_service=product_services.personal_import_service,
@@ -725,18 +745,14 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             federated_search_session=product_services.federated_search_service.session,
             harness_cordis_path=project_root / "config" / "auto-research-harness.runtime.cordis.yml",
             research_memory_service=research_memory_service,
+            table_context=table_context,
         )
         native_desktop_bridge = NativeDesktopBridge(
             product_services.package_service.broker,
             product_services.personal_file_selection_broker,
             product_services.package_export_destination_broker,
         )
-        workspace_table_structures = WorkspaceTableStructureService(database)
-        workspace_linked_tables = WorkspaceOfficialTableLinkService(
-            database,
-            product_services.package_service,
-            product_services.official_table_structure_service,
-        )
+
         server, _ = create_desktop_server(
             database,
             host=host,
@@ -766,13 +782,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
                 official_service=product_services.official_table_structure_service,
                 linked_official_service=workspace_linked_tables,
             ),
-            workspace_evidence_api=WorkspaceEvidenceAPI(
-                WorkspacePublicEvidenceResolver(
-                    database,
-                    table_structures=workspace_table_structures,
-                    linked_official_tables=workspace_linked_tables,
-                )
-            ),
+            workspace_evidence_api=WorkspaceEvidenceAPI(workspace_evidence_resolver),
             release_info=_desktop_release_info(),
             session_token=desktop_session_id,
             experience_mode="fusion-product",

@@ -46,6 +46,7 @@ from .librarian_memory_context import (
     select_revalidated_memories,
 )
 from .librarian_reasoning import build_query_analysis, soft_recall_queries
+from .harness_table_context import HarnessTableContextAuthority, TABLE_CONTEXT_KIND
 
 
 HARNESS_SNAPSHOT_KIND = "harness_literature"
@@ -429,11 +430,15 @@ class HarnessFederatedSnapshotAuthority:
         self,
         session: FederatedSearchSessionProtocol,
         workspace: HarnessWorkspaceSourcePort | None = None,
+        table_context: HarnessTableContextAuthority | None = None,
     ) -> None:
         self._session = session
         self._workspace = workspace
+        self._table_context = table_context
 
     def fingerprint_for(self, *, kind: str, stable_source_identity: str) -> str:
+        if kind == TABLE_CONTEXT_KIND and self._table_context is not None:
+            return self._table_context.fingerprint_for(kind=kind, stable_source_identity=stable_source_identity)
         try:
             identity, fingerprint, _sources = _literature_source_binding(
                 self._session, self._workspace
@@ -469,6 +474,7 @@ class HarnessBusinessAssembler:
         runtime: _HarnessRuntimePort,
         workspace: HarnessWorkspaceSourcePort | None = None,
         research_memory: ResearchMemoryContextPort | None = None,
+        table_context: HarnessTableContextAuthority | None = None,
     ) -> None:
         if scope not in {"librarian", "selected_evidence_chat"}:
             raise ValueError("unsupported Harness business scope")
@@ -477,7 +483,8 @@ class HarnessBusinessAssembler:
         self._runtime = runtime
         self._workspace = workspace
         self._research_memory = research_memory
-        self._snapshots = HarnessFederatedSnapshotAuthority(session, workspace)
+        self._table_context = table_context
+        self._snapshots = HarnessFederatedSnapshotAuthority(session, workspace, table_context)
 
     def local_result(self, request: object) -> dict[str, Any] | None:
         """Answer capability and greeting turns locally before AI readiness.
@@ -883,6 +890,11 @@ class HarnessBusinessAssembler:
             )
         )[:16]
         documents = (current, *neighbors)
+        table_units: tuple[ContentUnit, ...] = ()
+        table_context = None
+        if current["entity_type"] == "table" and self._table_context is not None:
+            table_context, table_unit = self._table_context.freeze(current)
+            table_units = (table_unit,)
         prompt = {
             "question": question,
             "history": history,
@@ -898,6 +910,8 @@ class HarnessBusinessAssembler:
             # back the same entity and locator from the local gateway.
             "execution_mode": "single_turn_frozen_context",
         }
+        if table_context is not None:
+            prompt["verified_table"] = table_context
         return self._draft(
             documents=documents,
             prompt=prompt,
@@ -906,6 +920,7 @@ class HarnessBusinessAssembler:
             max_tokens=SELECTED_MAX_TOKENS,
             current=current,
             neighbors=neighbors,
+            additional_units=table_units,
         )
 
     def _draft(
@@ -918,6 +933,7 @@ class HarnessBusinessAssembler:
         max_tokens: int,
         current: Mapping[str, Any] | None,
         neighbors: Sequence[Mapping[str, Any]],
+        additional_units: tuple[ContentUnit, ...] = (),
     ) -> BusinessActionDraft:
         source_identity, snapshot, source_binding = _literature_source_binding(
             self._session, self._workspace
@@ -953,7 +969,7 @@ class HarnessBusinessAssembler:
         )
         return BusinessActionDraft(
             outbound=payload,
-            content_units=(unit,),
+            content_units=(unit, *additional_units),
             estimated_calls=1,
             max_calls=max_calls,
             max_tokens=max_tokens,
@@ -1480,8 +1496,9 @@ def harness_business_ports(
     runtime: _HarnessRuntimePort,
     workspace: HarnessWorkspaceSourcePort | None = None,
     research_memory: ResearchMemoryContextPort | None = None,
+    table_context: HarnessTableContextAuthority | None = None,
 ) -> HarnessBusinessPorts:
-    snapshots = HarnessFederatedSnapshotAuthority(session, workspace)
+    snapshots = HarnessFederatedSnapshotAuthority(session, workspace, table_context)
     librarian = HarnessScopeBusinessPorts(
         assembler=HarnessBusinessAssembler(
             scope="librarian",
@@ -1500,6 +1517,7 @@ def harness_business_ports(
             session=session,
             runtime=runtime,
             workspace=workspace,
+            table_context=table_context,
         ),
         executor=HarnessBusinessExecutor(scope="selected_evidence_chat", runtime=runtime),
         projector=HarnessBusinessProjector("selected_evidence_chat"),

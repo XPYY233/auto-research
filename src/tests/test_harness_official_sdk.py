@@ -411,6 +411,7 @@ class OfficialHarnessSDKTests(unittest.TestCase):
                 prompt={
                     "question": "解释当前证据",
                     "current_evidence": {"entity_uid": "item-1"},
+                    "verified_table": {"status": "verified", "version": 2, "rows": [["Material", "ΔH (GPa)"], ["HEA", "1.07 ± 0.06"]]},
                     "allowed_neighbors": [],
                     "execution_mode": "single_turn_frozen_context",
                 },
@@ -420,6 +421,8 @@ class OfficialHarnessSDKTests(unittest.TestCase):
         self.assertEqual(len(raw.calls), 1)
         self.assertEqual(raw.calls[0][1], [])
         self.assertIn("current_evidence", OneTurnFinalHarness.latest.prompt)
+        self.assertIn("1.07 ± 0.06", OneTurnFinalHarness.latest.prompt)
+        self.assertIn("ΔH (GPa)", OneTurnFinalHarness.latest.prompt)
         self.assertIn(
             "本轮不得调用任何工具",
             OneTurnFinalHarness.latest.kwargs["env"][
