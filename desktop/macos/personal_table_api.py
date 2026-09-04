@@ -8,6 +8,7 @@ from auto_research.personal.table_detail import PersonalTableDetailService, Pers
 
 
 PERSONAL_TABLE_PATH = "/api/desktop/personal-experiments/table"
+PERSONAL_SERIES_PATH = "/api/desktop/personal-experiments/series"
 
 
 class PersonalTableHTTPHandler(Protocol):
@@ -22,7 +23,7 @@ class PersonalTableAPI:
 
     def handle_get(self, handler: PersonalTableHTTPHandler) -> bool:
         parsed = urlparse(handler.path)
-        if parsed.path != PERSONAL_TABLE_PATH:
+        if parsed.path not in {PERSONAL_TABLE_PATH, PERSONAL_SERIES_PATH}:
             return False
         try:
             query = parse_qs(
@@ -31,23 +32,21 @@ class PersonalTableAPI:
                 strict_parsing=True,
                 max_num_fields=4,
             )
-            if not {"source_id", "entity_uid"} <= set(query) or not set(query) <= {
-                "source_id",
-                "entity_uid",
-                "page",
-                "page_size",
-            }:
+            is_series = parsed.path == PERSONAL_SERIES_PATH
+            allowed = {"source_id", "entity_uid", "series_index"} if is_series else {"source_id", "entity_uid", "page", "page_size"}
+            if not {"source_id", "entity_uid"} <= set(query) or not set(query) <= allowed:
                 raise PersonalTableError("personal_table_invalid")
             if any(len(values) != 1 or values[0] == "" for values in query.values()):
                 raise PersonalTableError("personal_table_invalid")
-            page = _positive_integer(query.get("page", ["1"])[0], maximum=None)
-            page_size = _positive_integer(query.get("page_size", ["50"])[0], maximum=100)
-            payload = self.service.get_page(
-                source_id=query["source_id"][0],
-                entity_uid=query["entity_uid"][0],
-                page=page,
-                page_size=page_size,
-            ).public_dict()
+            identity = {key: query[key][0] for key in ("source_id", "entity_uid")}
+            if is_series:
+                raw_index = query.get("series_index", ["0"])[0]
+                index = 0 if raw_index == "0" else _positive_integer(raw_index, maximum=199)
+                payload = self.service.get_series(**identity, series_index=index)
+            else:
+                page = _positive_integer(query.get("page", ["1"])[0], maximum=None)
+                page_size = _positive_integer(query.get("page_size", ["50"])[0], maximum=100)
+                payload = self.service.get_page(**identity, page=page, page_size=page_size).public_dict()
         except (ValueError, PersonalTableError) as exc:
             error = (
                 exc
@@ -80,4 +79,6 @@ def _error_status(error: PersonalTableError) -> HTTPStatus:
         "personal_table_invalid": HTTPStatus.BAD_REQUEST,
         "personal_table_changed": HTTPStatus.CONFLICT,
         "personal_table_unavailable": HTTPStatus.SERVICE_UNAVAILABLE,
+        "personal_series_invalid": HTTPStatus.BAD_REQUEST,
+        "personal_series_too_large": HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
     }[error.code]

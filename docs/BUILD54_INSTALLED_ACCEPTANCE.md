@@ -46,6 +46,20 @@ omitted its required path argument; it was corrected and rerun successfully.
 
 ## Authority and order
 
+Personal numeric workflow source checkpoint (2026-09-04): the actual parser,
+confirmation, private repository/search, service recreation and four pages of a
+123-row synthetic CSV were joined to the real Fusion renderer in one isolated
+test. Conditions/series and active-tab inspector ownership are restored; an
+empty trailing page no longer claims a reversed row range. 47 shared/Mac and
+66 frontend targeted checks passed serially. The full-series read-only API is
+implemented, but its plot renderer and installed-App/restart acceptance remain
+open. This does not establish structured cells for the paper's Table 4.
+
+Latest table/image recheck attempt: saved workspace and PID15999 cwd were both
+canonical; Computer Use reported a locked Mac. No new visual acceptance was
+recorded. The earlier 17:03/17:05 visibility evidence remains historical, not a
+substitute for repeating the latest user-reported path after unlock.
+
 Export observation/receipt repair (2026-09-04; source, not installed): a bounded
 poll timeout, transport failure or mismatched returned identity now retains the
 last known job and offers a single-flight, GET-only "continue viewing original

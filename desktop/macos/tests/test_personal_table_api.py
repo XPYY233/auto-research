@@ -18,6 +18,7 @@ for value in (str(MAC_ROOT), str(SRC_ROOT)):
 from auto_research.evidence.webapp import EvidenceHandler  # noqa: E402
 from desktop_server import DesktopEvidenceHandler  # noqa: E402
 from personal_table_api import PersonalTableAPI  # noqa: E402
+from auto_research.personal.table_detail import PersonalTableError  # noqa: E402
 
 
 class _Page:
@@ -46,6 +47,10 @@ class _TableService:
     def get_page(self, **kwargs):
         self.calls.append(kwargs)
         return _Page()
+
+    def get_series(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"schema_version": "personal-series-plot-v1", **kwargs}
 
 
 class _Handler:
@@ -83,6 +88,34 @@ class _HeaderCapture:
 
 
 class PersonalTableAPITests(unittest.TestCase):
+    def test_full_series_query_is_bounded_and_never_accepts_table_pagination(self) -> None:
+        service = _TableService()
+        api = PersonalTableAPI(service)
+        path = "/api/desktop/personal-experiments/series?source_id=personal-public&entity_uid=private%3Atable%3Apublic"
+        for suffix, index in [("", 0), ("&series_index=0", 0), ("&series_index=199", 199)]:
+            handler = _Handler(path + suffix)
+            self.assertTrue(api.handle_get(handler))
+            payload, status = handler.responses[0]
+            self.assertEqual(status, HTTPStatus.OK)
+            self.assertEqual(payload["series_index"], index)
+            self.assertEqual(service.calls[-1], {"source_id": "personal-public", "entity_uid": "private:table:public", "series_index": index})
+        for suffix in ("&page=1", "&page_size=50", "&series_index=200", "&series_index=-1",
+                       "&series_index=01", "&series_index=0&series_index=1", "&run_id=secret"):
+            handler = _Handler(path + suffix)
+            self.assertTrue(api.handle_get(handler))
+            self.assertEqual(handler.responses[0][1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(len(service.calls), 3)
+        for code, expected in [("personal_series_too_large", HTTPStatus.REQUEST_ENTITY_TOO_LARGE),
+                               ("personal_series_invalid", HTTPStatus.BAD_REQUEST),
+                               ("personal_table_changed", HTTPStatus.CONFLICT)]:
+            def fail(**_kwargs):
+                raise PersonalTableError(code)
+            service.get_series = fail
+            handler = _Handler(path)
+            api.handle_get(handler)
+            self.assertEqual(handler.responses[0][1], expected)
+            self.assertEqual(handler.responses[0][0]["code"], code)
+
     def test_table_query_is_exact_and_bounded(self) -> None:
         service = _TableService()
         api = PersonalTableAPI(service)
@@ -127,8 +160,11 @@ class PersonalTableAPITests(unittest.TestCase):
         handler.personal_table_api = type(
             "NeverCalled", (), {"handle_get": lambda self, _handler: called.append("api")}
         )()
-        DesktopEvidenceHandler.do_GET(handler)
-        self.assertEqual(called, ["forbidden"])
+        for path in ("table", "series"):
+            called.clear()
+            handler.path = f"/api/desktop/personal-experiments/{path}?source_id=personal-public&entity_uid=private%3Atable%3Apublic"
+            DesktopEvidenceHandler.do_GET(handler)
+            self.assertEqual(called, ["forbidden"])
 
     def test_json_response_sets_no_store(self) -> None:
         capture = _HeaderCapture()

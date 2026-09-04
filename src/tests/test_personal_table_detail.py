@@ -205,6 +205,8 @@ class PersonalTableDetailTests(unittest.TestCase):
         for bad_source, bad_entity in (("private-wrong", entity_uid), (source_id, "private:table:wrong")):
             with self.assertRaisesRegex(PersonalTableError, "找不到"):
                 service.get_page(source_id=bad_source, entity_uid=bad_entity)
+            with self.assertRaisesRegex(PersonalTableError, "找不到"):
+                service.get_series(source_id=bad_source, entity_uid=bad_entity)
         draft_service, draft_source, draft_entity, _ = self._save_table(
             run_id="run-draft",
             name="草稿",
@@ -215,6 +217,9 @@ class PersonalTableDetailTests(unittest.TestCase):
         with self.assertRaises(PersonalTableError) as raised:
             draft_service.get_page(source_id=draft_source, entity_uid=draft_entity)
         self.assertEqual(raised.exception.code, "personal_table_not_found")
+        with self.assertRaises(PersonalTableError) as plot_error:
+            draft_service.get_series(source_id=draft_source, entity_uid=draft_entity)
+        self.assertEqual(plot_error.exception.code, "personal_table_not_found")
 
     def test_changed_file_and_symlink_fail_closed(self) -> None:
         service, source_id, entity_uid, source = self._save_table(

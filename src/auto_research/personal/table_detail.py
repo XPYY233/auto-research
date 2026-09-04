@@ -13,6 +13,7 @@ from auto_research.evidence.federated_search import _LOCAL_REFERENCE_RE
 
 from .private_repository import PrivateExperimentRepository, PrivateRepositoryError
 from .search_source import _opaque_entity_uid
+from .series_plot import SeriesPlotError, project_series
 from .tabular_preview import PreviewLimits, UnsafeTabularFileError, read_tabular_snapshot
 
 
@@ -26,6 +27,8 @@ class PersonalTableError(RuntimeError):
         "personal_table_invalid": "表格请求或文件格式无效。",
         "personal_table_changed": "表格文件已发生变化，请重新导入并确认。",
         "personal_table_unavailable": "个人实验表格暂时无法读取，请稍后重试。",
+        "personal_series_invalid": "测量序列无效，请核对已确认的横轴、纵轴和不确定度列。",
+        "personal_series_too_large": "该系列超过5000行绘图上限；原始表格仍可完整分页查看，不会截断冒充完整曲线。",
     }
 
     def __init__(self, code: str) -> None:
@@ -114,6 +117,47 @@ class PersonalTableDetailService:
         ):
             raise PersonalTableError("personal_table_invalid")
 
+        run, sheet, columns = self._read_confirmed_sheet(source_id, entity_uid)
+        names = [str(value["name"]) for value in columns]
+        indexes = [sheet.column_names.index(name) for name in names]
+        start = (page - 1) * page_size
+        selected = sheet.rows[start : start + page_size]
+        rows = tuple(
+            {name: _bounded_cell(row[index] if index < len(row) else "", limit=self._limits.max_cell_chars)
+             for name, index in zip(names, indexes, strict=True)}
+            for row in selected
+        )
+        return PersonalTablePage(
+            source_id=source_id, entity_uid=entity_uid,
+            title=_bounded_text(run.get("display_title"), limit=500),
+            sheet_name=_bounded_text(sheet.sheet_name, limit=500), columns=columns,
+            conditions={_bounded_text(key, limit=500): _bounded_text(value)
+                        for key, value in dict(run.get("conditions") or {}).items()},
+            series=tuple(_public_series(value) for value in run.get("series") or ()),
+            page=page, page_size=page_size, total=len(sheet.rows), rows=rows,
+        )
+
+    def get_series(self, *, source_id: str, entity_uid: str, series_index: int = 0) -> dict[str, Any]:
+        source_id, entity_uid = _public_identity(source_id), _public_identity(entity_uid)
+        if isinstance(series_index, bool) or not isinstance(series_index, int) or series_index < 0:
+            raise PersonalTableError("personal_series_invalid")
+        run, sheet, columns = self._read_confirmed_sheet(source_id, entity_uid)
+        series = run.get("series") or ()
+        if series_index >= len(series):
+            raise PersonalTableError("personal_series_invalid")
+        try:
+            plot = project_series(columns=columns, names=sheet.column_names, rows=sheet.rows,
+                                  series=_public_series(series[series_index]))
+        except SeriesPlotError as exc:
+            raise PersonalTableError(str(exc)) from None
+        payload = {"schema_version": "personal-series-plot-v1", "source_id": source_id,
+                   "entity_uid": entity_uid, "series_index": series_index, **plot}
+        if _contains_local_reference(payload):
+            raise PersonalTableError("personal_series_invalid")
+        return payload
+
+    def _read_confirmed_sheet(self, source_id: str, entity_uid: str):
+        # Both pages and plots consume one identical, hash-checked file snapshot.
         run = self._resolve_public_table(source_id, entity_uid)
         source_file = run.get("source_file")
         if not isinstance(source_file, Mapping):
@@ -137,40 +181,9 @@ class PersonalTableDetailService:
         names = [str(value["name"]) for value in columns]
         if len(names) != len(set(names)) or any(name not in sheet.column_names for name in names):
             raise PersonalTableError("personal_table_changed")
-        indexes = [sheet.column_names.index(name) for name in names]
         if int(run.get("row_count") or 0) != len(sheet.rows):
             raise PersonalTableError("personal_table_changed")
-
-        start = (page - 1) * page_size
-        selected = sheet.rows[start : start + page_size]
-        rows = tuple(
-            {
-                name: _bounded_cell(
-                    row[index] if index < len(row) else "",
-                    limit=self._limits.max_cell_chars,
-                )
-                for name, index in zip(names, indexes, strict=True)
-            }
-            for row in selected
-        )
-        conditions = {
-            _bounded_text(key, limit=500): _bounded_text(value)
-            for key, value in dict(run.get("conditions") or {}).items()
-        }
-        series = tuple(_public_series(value) for value in run.get("series") or ())
-        return PersonalTablePage(
-            source_id=source_id,
-            entity_uid=entity_uid,
-            title=_bounded_text(run.get("display_title"), limit=500),
-            sheet_name=_bounded_text(sheet_name, limit=500),
-            columns=columns,
-            conditions=conditions,
-            series=series,
-            page=page,
-            page_size=page_size,
-            total=len(sheet.rows),
-            rows=rows,
-        )
+        return run, sheet, columns
 
     def _resolve_public_table(self, source_id: str, entity_uid: str) -> Mapping[str, Any]:
         try:
