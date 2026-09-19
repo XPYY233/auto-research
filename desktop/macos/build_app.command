@@ -5,7 +5,7 @@ SCRIPT_DIR="${0:A:h}"
 PROJECT_ROOT="${SCRIPT_DIR:h:h}"
 PYTHON_BIN="${AUTO_RESEARCH_DESKTOP_PYTHON:-$(command -v python3 || true)}"
 CACHE_ROOT="${HOME}/Library/Caches/AutoResearchDesktop"
-VENV_ROOT="${CACHE_ROOT}/build-venv"
+
 OUTPUT_ROOT="${SCRIPT_DIR}/dist"
 PREVIOUS_ROOT="${SCRIPT_DIR}/releases"
 APP_PATH="${OUTPUT_ROOT}/Auto Research.app"
@@ -58,7 +58,7 @@ if [[ "$(uname -m)" != "arm64" ]]; then
 fi
 
 DIRTY_STATE="$(git status --porcelain --untracked-files=all)"
-if [[ -n "${DIRTY_STATE}" && "${AUTO_RESEARCH_ALLOW_DIRTY_BUILD:-0}" != "1" ]]; then
+if [[ -n "${DIRTY_STATE}" ]]; then
   echo "项目还有未提交改动，因此没有生成可能混合多个对话的桌面版本。"
   echo "请先让所有 Codex 对话完成、验证并提交，再运行“更新桌面版.command”。"
   echo
@@ -67,18 +67,26 @@ if [[ -n "${DIRTY_STATE}" && "${AUTO_RESEARCH_ALLOW_DIRTY_BUILD:-0}" != "1" ]]; 
   exit 3
 fi
 
-mkdir -p "${CACHE_ROOT}" "${OUTPUT_ROOT}" "${PREVIOUS_ROOT}"
-if [[ ! -x "${VENV_ROOT}/bin/python" ]]; then
-  echo "第一次构建：正在建立独立打包环境。"
-  "${PYTHON_BIN}" -m venv "${VENV_ROOT}"
+if [[ "$("${PYTHON_BIN}" -c 'import platform; print(platform.python_version())')" != "3.14.3" ]]; then
+  echo "构建必须使用已验证的 Python 3.14.3。"
+  exit 2
 fi
+mkdir -p "${CACHE_ROOT}" "${OUTPUT_ROOT}" "${PREVIOUS_ROOT}"
+BUILD_ROOT="$(mktemp -d "${CACHE_ROOT}/candidate-${BUILD_STAMP}.XXXXXX")"
+VENV_ROOT="${BUILD_ROOT}/venv"
+export AUTO_RESEARCH_CANDIDATE_ID="$("${PYTHON_BIN}" -c 'import uuid; print(uuid.uuid4().hex)')"
+IMMUTABLE_OUTPUT="${OUTPUT_ROOT}/candidates/${AUTO_RESEARCH_CANDIDATE_ID}"
+mkdir -p "${OUTPUT_ROOT}/candidates"
+mkdir "${IMMUTABLE_OUTPUT}"
+echo "正在建立全新的独立打包环境。"
+"${PYTHON_BIN}" -m venv "${VENV_ROOT}"
 
 echo "正在准备固定版本的桌面打包工具。"
-"${VENV_ROOT}/bin/python" -m pip install --disable-pip-version-check --quiet --upgrade pip
-"${VENV_ROOT}/bin/python" -m pip install --disable-pip-version-check --quiet \
+"${VENV_ROOT}/bin/python" -m pip install --disable-pip-version-check --quiet --require-hashes \
+  --requirement "${SCRIPT_DIR}/requirements-build-tools.lock"
+"${VENV_ROOT}/bin/python" -m pip install --disable-pip-version-check --quiet --require-hashes --no-build-isolation \
   --requirement "${SCRIPT_DIR}/requirements-macos-arm64.lock"
 
-BUILD_ROOT="$(mktemp -d "${CACHE_ROOT}/candidate-${BUILD_STAMP}.XXXXXX")"
 export AUTO_RESEARCH_DESKTOP_BUILD_ROOT="${PROJECT_ROOT}"
 
 echo "正在生成候选应用；当前证据数据库不会打包进应用，也不会被修改。"
@@ -96,12 +104,6 @@ if [[ ! -x "${CANDIDATE_EXECUTABLE}" ]]; then
   exit 4
 fi
 
-echo "正在执行只读冒烟检查。"
-"${VENV_ROOT}/bin/python" "${SCRIPT_DIR}/verify_candidate.py" \
-  --app "${CANDIDATE_APP}" \
-  --project-root "${PROJECT_ROOT}" \
-  --cache-root "${CACHE_ROOT}"
-
 "${VENV_ROOT}/bin/python" "${SCRIPT_DIR}/build_manifest.py" \
   --project-root "${PROJECT_ROOT}" \
   --app "${CANDIDATE_APP}"
@@ -114,7 +116,22 @@ codesign --force --deep --sign - "${CANDIDATE_APP}"
 codesign --verify --deep --strict "${CANDIDATE_APP}"
 plutil -lint "${CANDIDATE_APP}/Contents/Info.plist"
 
-if [[ -d "${APP_PATH}" ]]; then
+echo "正在执行只读冒烟检查。"
+"${VENV_ROOT}/bin/python" "${SCRIPT_DIR}/verify_candidate.py" \
+  --app "${CANDIDATE_APP}" \
+  --project-root "${PROJECT_ROOT}" \
+  --cache-root "${CACHE_ROOT}"
+
+
+ditto "${CANDIDATE_APP}" "${IMMUTABLE_OUTPUT}/Auto Research.app"
+git archive --format=tar.gz --output="${IMMUTABLE_OUTPUT}/corresponding-source.tar.gz" HEAD
+cp "${SCRIPT_DIR}/requirements-macos-arm64.lock" "${IMMUTABLE_OUTPUT}/"
+cp "${SCRIPT_DIR}/requirements-build-tools.lock" "${IMMUTABLE_OUTPUT}/"
+"${VENV_ROOT}/bin/python" "${SCRIPT_DIR}/artifact_integrity.py" write \
+  --app "${IMMUTABLE_OUTPUT}/Auto Research.app" --manifest "${IMMUTABLE_OUTPUT}/app-inventory.json"
+if [[ -L "${APP_PATH}" ]]; then
+  unlink "${APP_PATH}"
+elif [[ -d "${APP_PATH}" ]]; then
   PREVIOUS_INFO="${APP_PATH}/Contents/Info.plist"
   PREVIOUS_SHORT_VERSION="$(/usr/bin/plutil -extract CFBundleShortVersionString raw -o - "${PREVIOUS_INFO}" 2>/dev/null || true)"
   PREVIOUS_BUILD_NUMBER="$(/usr/bin/plutil -extract CFBundleVersion raw -o - "${PREVIOUS_INFO}" 2>/dev/null || true)"
@@ -125,10 +142,10 @@ if [[ -d "${APP_PATH}" ]]; then
   mv "${APP_PATH}" "${PREVIOUS_APP}"
 fi
 
-ditto "${CANDIDATE_APP}" "${APP_PATH}"
+ln -s "${IMMUTABLE_OUTPUT}/Auto Research.app" "${APP_PATH}"
 if [[ -f "${BUILD_ROOT}/work/AutoResearch/warn-AutoResearch.txt" ]]; then
   ditto "${BUILD_ROOT}/work/AutoResearch/warn-AutoResearch.txt" \
-    "${OUTPUT_ROOT}/pyinstaller-warnings.txt"
+    "${IMMUTABLE_OUTPUT}/pyinstaller-warnings.txt"
 fi
 if [[ "${BUILD_ROOT}" == "${CACHE_ROOT}"/candidate-${BUILD_STAMP}.* ]]; then
   rm -rf -- "${BUILD_ROOT}"

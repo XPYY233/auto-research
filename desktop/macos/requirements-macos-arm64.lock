@@ -1,35 +1,35 @@
-# Reproducible private Alpha environment captured on Apple Silicon macOS.
-# Regenerate intentionally after dependency tests; do not silently upgrade during a build.
-annotated-types==0.8.0
-PyYAML==6.0.3
-altgraph==0.17.5
-bottle==0.13.4
-certifi==2026.7.22
-cffi==2.1.0
-charset-normalizer==3.4.9
-cryptography==48.0.0
-deepseek-harness-runtime-bin==0.1.1rc1
-deepseek-harness-sdk==0.1.1rc1
-idna==3.18
-macholib==1.16.4
-packaging==26.2
-pyarrow==24.0.0
-proxy_tools==0.1.0
-pycparser==3.0
-pyinstaller-hooks-contrib==2026.6
-pyinstaller==6.21.0
-pymupdf==1.28.0
-pydantic==2.13.3
-pydantic-core==2.46.3
-pyobjc-core==12.2.1
-pyobjc-framework-Cocoa==12.2.1
-pyobjc-framework-Quartz==12.2.1
-pyobjc-framework-Security==12.2.1
-pyobjc-framework-UniformTypeIdentifiers==12.2.1
-pyobjc-framework-WebKit==12.2.1
-pywebview==6.2.1
-requests==2.34.2
-setuptools==83.0.0
-typing_extensions==4.16.0
-typing-inspection==0.4.4
-urllib3==2.7.0
+# Verified macOS arm64 / CPython 3.14.3 artifacts. Do not hand-edit hashes.
+# proxy_tools is the upstream sdist; build without isolation using the separate tool lock.
+annotated-types==0.8.0 --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
+PyYAML==6.0.3 --hash=sha256:34d5fcd24b8445fadc33f9cf348c1047101756fd760b4dacb5c3e99755703310
+altgraph==0.17.5 --hash=sha256:f3a22400bce1b0c701683820ac4f3b159cd301acab067c51c653e06961600597
+bottle==0.13.4 --hash=sha256:045684fbd2764eac9cdeb824861d1551d113e8b683d8d26e296898d3dd99a12e
+certifi==2026.7.22 --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775
+cffi==2.1.0 --hash=sha256:c4165821e131d6d4ca444347c2b694e2311bcfa3fe5a861cc72968f28867beac
+charset-normalizer==3.4.9 --hash=sha256:0327fcd59a935777d83410750c50600ee9571af2846f71ce40f25b13da1ef380
+cryptography==50.0.0 --hash=sha256:031e2d5dd4bb9caa3ca9c82e5a197fd8ae680232cee62603d1a813f3f07e3d03
+deepseek-harness-runtime-bin==0.1.1rc1 --hash=sha256:2707cd666ba49ee0963228873abf7850ca7ec5e782cca61e3603793bace0d1cf
+deepseek-harness-sdk==0.1.1rc1 --hash=sha256:2113aec229039da435bc44b275b487216d2b1c308d850521b88cea6ce3c1b762
+idna==3.18 --hash=sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2
+macholib==1.16.4 --hash=sha256:da1a3fa8266e30f0ce7e97c6a54eefaae8edd1e5f86f3eb8b95457cae90265ea
+packaging==26.2 --hash=sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e
+pyarrow==24.0.0 --hash=sha256:1cc9057f0319e26333b357e17f3c2c022f1a83739b48a88b25bfd5fa2dc18838
+proxy_tools==0.1.0 --hash=sha256:ccb3751f529c047e2d8a58440d86b205303cf0fe8146f784d1cbcd94f0a28010
+pycparser==3.0 --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
+pyinstaller-hooks-contrib==2026.6 --hash=sha256:fd13b8ac126b35361175edacd41a0d97080b75dd5f4b594ecefefff969509dd3
+pyinstaller==6.21.0 --hash=sha256:327d132389f37912609e01be62810cf96b5aa95b613903e4b8692e0d12fb0eda
+pymupdf==1.27.2.2 --hash=sha256:8e2e4299ef1ac0c9dff9be096cbd22783699673abecfa7c3f73173ae06421d73
+pydantic==2.13.3 --hash=sha256:6db14ac8dfc9a1e57f87ea2c0de670c251240f43cb0c30a5130e9720dc612927
+pydantic-core==2.46.3 --hash=sha256:ced3310e51aa425f7f77da8bbbb5212616655bedbe82c70944320bc1dbe5e018
+pyobjc-core==12.2.1 --hash=sha256:2b8fc0531c27277325e113ac00b8a72a82e6145f0a88175b9425d8de814ff69a
+pyobjc-framework-Cocoa==12.2.1 --hash=sha256:b386c324d64ae565c1f6b7dfb77be68f640a1c7c23caa6966ab661131f519561
+pyobjc-framework-Quartz==12.2.1 --hash=sha256:ceb56939c337b36d9d81185ade31f77dc52c85cf79bb16e53e9b32f54b6bb3f5
+pyobjc-framework-Security==12.2.1 --hash=sha256:5319ae49b8874363ab51c6ff4d85d4ea0cfa6d836fe0306e901ba9ae560b880d
+pyobjc-framework-UniformTypeIdentifiers==12.2.1 --hash=sha256:ea08413ad895a7dfea13670e26548bcf5b00154084cdfb5d8f96603320e77cf3
+pyobjc-framework-WebKit==12.2.1 --hash=sha256:67030258c3cd66e8495ccfccef3d2d58010ff0209284c5115e5afdb0e9fd6de1
+pywebview==6.2.1 --hash=sha256:9d07275f53894ab4d5e2e0e996227193e7187dec276d9b624dccbce029216b46
+requests==2.33.1 --hash=sha256:4e6d1ef462f3626a1f0a0a9c42dd93c63bad33f9f1c1937509b8c5c8718ab56a
+setuptools==83.0.0 --hash=sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3
+typing_extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+typing-inspection==0.4.4 --hash=sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147
+urllib3==2.7.0 --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897

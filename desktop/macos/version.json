@@ -1,11 +1,12 @@
 {
   "desktop_version": "1.2.0",
   "bundle_short_version": "1.2.0",
-  "build_number": "54",
+  "build_number": "55",
   "release_status": "candidate",
   "target": "macOS arm64 Auto Research workbench",
   "product_target": "macOS research workbench; Windows release paused",
   "data_mode": "workspace-schema-v12-plus-private-library-and-versioned-evidence-packages",
   "minimum_evidence_schema": 12,
-  "official_package_schema": 1
+  "official_package_schema": 1,
+  "minimum_macos_version": "26.3.1"
 }

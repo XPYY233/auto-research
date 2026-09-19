@@ -106,7 +106,7 @@ app = BUNDLE(
         "CFBundleDisplayName": "Auto Research",
         "CFBundleShortVersionString": version["bundle_short_version"],
         "CFBundleVersion": version["build_number"],
-        "LSMinimumSystemVersion": "13.0",
+        "LSMinimumSystemVersion": version["minimum_macos_version"],
         "NSHighResolutionCapable": True,
         "NSHumanReadableCopyright": "Auto Research macOS application",
     },
