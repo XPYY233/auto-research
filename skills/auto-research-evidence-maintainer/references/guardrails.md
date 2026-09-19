@@ -55,11 +55,11 @@ Retain `value_text`, `meaning`, `unit`, `article_title`, `doi`, and `context_exp
 
 ## Workspace and Git boundary
 
-- Work only in `/Users/USER/Zotero/auto-research`, not the old iCloud copy.
+- Develop only in the sanitized GitHub checkout identified by the current handoff. Preserve the original Zotero and former iCloud directories as recovery sources.
 - Inspect and preserve a dirty worktree; never reset user changes destructively.
 - Do not commit `.env`, credentials, production PDFs, temporary uploads, Zotero DB, or unrelated personal files.
 - Public GitHub requires a separate scope decision. Real paper screenshots, excerpts, production DB, and copyrighted PDFs are not automatically public-safe.
-- Current `origin` is a local bundle, not GitHub.
+- Verify the private GitHub remote before pushing. Follow Issue → branch → PR → checks → merge; local backups are not the development remote.
 
 ## Claim boundary
 
@@ -69,4 +69,4 @@ Report separately:
 2. corpus completion;
 3. independent scientific accuracy.
 
-Do not claim the original 30-paper target is complete while the fixed corpus remains 17 data-ready. Do not call two-model agreement a human gold standard.
+Use the current acceptance matrix and human-gold protocol for completeness claims. Historical corpus counts are not current evidence. Never call two-model agreement a human gold standard.

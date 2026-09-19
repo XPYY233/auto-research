@@ -1,3 +1,5 @@
+> 历史指令快照，仅供追溯；不能作为当前开发、数据写入或发布授权。
+
 > 工程重建规则（2026-09-19）：当前进度只见 PROJECT_HANDOFF.md。开发使用净化后的独立仓库，原科研目录仅作保护源。
 > 已批准计划取代下文旧候选覆盖规则：每份候选二进制独立身份，禁止覆盖 build54；源码提交不自动构建。
 > 必需工程检查统一为 `python scripts/check.py`，共享与 Mac pytest 分别串行；Windows 冻结。
@@ -7,9 +9,9 @@
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
-## Handoff entry point
+## Handoff entry point (updated 2026-09-04)
 
-- Current state and account quota come only from `PROJECT_HANDOFF.md` and the latest user instruction. Follow its link to the installed-candidate ledger; a source commit is not an installed version. Follow `CONTRIBUTING.md` for Issue → branch → PR → checks → merge. Every candidate binary has a unique identity and must not be overwritten.
+- Live installed identity and per-flow acceptance are owned exclusively by `docs/BUILD54_INSTALLED_ACCEPTANCE.md`; do not copy transient commits/test counts into durable rules or infer installation from source HEAD. Older test/call-success summaries below are historical checkpoints, not permission to release. Finish the existing ordered queue; do not allocate build55 or accumulate artifacts. Preserve the user's latest explicit main-account quota reserve of at least 50% (updated 2026-09-05), rechecking all-task shared usage before substantial work. Historical 70% limits describe earlier runs, not the resumed budget.
 - Cross-layer acceptance must consume real service-generated DTOs, including documented units and bounds, rather than matching independently invented frontend fixtures. Publication is not an accepted workflow until receipt, paper status, manual-review access and search are consistent; failed list reads must stay errors, not become cached empty successes.
 
 - A new account or agent must read `PROJECT_HANDOFF.md` before modifying this repository, then use this file as the durable policy authority.
@@ -20,10 +22,10 @@ This project is a local literature automation workflow for fusion materials, rad
 - Do not solve platform integration by copying product logic into `desktop/macos/**` or `desktop/windows/**`. Package verification, official repository audit, stable source identity and federated read-only search stay platform-neutral; desktop code supplies lifecycle, native file selection, credentials and protected routing only.
 - The canonical official package selector is `<app-data>/official-packages/active.json`. A package becomes active only after signature/checksum validation and `OfficialEvidenceRepository` audit; `distribution-sqlite-v1` must never pass through `EvidenceDB.init()` or any writable v12 search-index path.
 - Signing private keys are maintainer-only files outside Git and outside application data packages. Applications trust only reviewed public keys from `auto_research.product.trusted_publishers`; missing keys must never be silently regenerated under an existing `key_id`.
-- Apple Silicon macOS is the supported rescue target. Resolve the exact candidate and rollback identities from the current handoff. Official package versions remain independent; never rewrite an immutable signed package to include a reviewed sidecar.
-- Determine the active official package from its verified selector and immutable manifest. Its internal-use rights and signer identity are security contracts; it remains read-only and must never replace the editable v12 workspace. Historical package counts/hashes remain in the archived checkpoint.
+- Current release line: Apple Silicon macOS 1.2. Read the installed acceptance ledger for the current binary, source-only fixes and remaining gates. Build24 is the verified stable rollback; build54 is one overwritable candidate, not a stable declaration. Keep official package versions independent and never rewrite an immutable signed package to include a new reviewed sidecar.
+- Current internal official package: `1.1.0`, SHA-256 `909cc7323b8a91e3a238e8f49d03fe62022f5a9d078f2cc6785bb8a0b73a69c4`, 59 papers, 4,369 four-type entities, 59 verified PDFs and 291 visual assets. It is read-only and must never replace or write the editable v12 workspace. Its internal-use rights and signer identity remain immutable security contracts.
 - Windows work is explicitly paused. Do not edit, test or build `desktop/windows/**` until the user accepts the complete Mac 1.2 workflow and explicitly asks to resume migration. Historical Windows v1 Setup success remains a separate checkpoint and does not make the 1.2 source installer-ready.
-- Product stability, corpus completion and scientific validity remain separate claims. Read current acceptance evidence rather than historical corpus counts; automatic adversarial agreement is not an independent human physics gold standard.
+- Product stability, corpus completion and scientific validity remain separate claims. The fixed corpus is still 17/50 data-ready and 30/50 visual-ready; automatic adversarial agreement is not an independent human physics gold standard.
 
 ## Search V2, federated search and in-product agents (updated 2026-08-09)
 
@@ -70,10 +72,10 @@ This project is a local literature automation workflow for fusion materials, rad
 
 ## Active local workspace
 
-- Develop in the sanitized GitHub checkout identified by the current handoff. The original Zotero project is a protected recovery source, not a development directory. App data belongs in its selected Application Support workspace; verify the selector and process cwd separately.
+- The only active project root is `/Users/USER/Zotero/auto-research`.
 - Installed-App acceptance must verify both the binary identity and effective data root (saved preference plus running process cwd). Use explicit launch arguments or process-local environment for isolated acceptance, never persist a temporary root to `project-root.txt`. Before handing the App back, restore its prior root, restart, and check actual table/image loading. Preserve unknown temporary data; do not silently merge or delete it.
 - Do not run, edit, or generate new artifacts under the former iCloud Drive project path. That directory is retained only as a migration backup.
-- Resolve resources, workspace, private state, cache and temporary files through the shared runtime path interfaces. Never derive production data from the source checkout.
+- Editable and read-only services must derive paths from the active project root. Python bytecode and launcher logs belong in local cache directories, not iCloud Drive.
 - The only user-facing shape is the personal desktop workbench. Its primary destinations are Literature, Search, Experiment and Package Center; Settings is a shell utility, not a fifth scientific workflow. Literature uses staged local/AI processing and only the final explicit commit may publish candidates. Manual entry, revision-history views and the old pet/progress scene are retired from the production DOM and must not be revived as compatibility UI. Windows shares the UI contract but has no verified Setup yet. The old `/Users/USER/Zotero/打开本地编辑工作台.command` and `/Users/USER/Zotero/创建导师公网链接.command` names are retained only as migration notices and must not silently start browser services or tunnels.
 - The product distribution model is a signed desktop App plus separately delivered, versioned evidence packages. Import must verify package version and hash, keep official packages separate from the user's private library, and provide rollback on failure. Packages exclude restricted PDFs, local paths, Zotero keys, private conversations and developer credentials by default.
 - Runtime AI calls are BYOK through a code-reviewed provider registry (built-ins: DeepSeek and OpenAI; build27 may add one user-configured public HTTPS OpenAI-compatible endpoint). Custom endpoints must pass the shared SSRF, redirect, userinfo, DNS-rebinding, private/loopback/link-local and capability gates before use. Keys stay in provider-separated platform credential slots and never enter SQLite, packages, logs, diagnostics or Git. Every billable prepared action must name the selected provider/model, possible cost, exact bounded outbound data and maximum call/token budget before execution.
@@ -87,14 +89,14 @@ This project is a local literature automation workflow for fusion materials, rad
 - API key 与 generation 必须在平台凭据 envelope 中原子更新。旧 DeepSeek route 如保留，只能委托同一 provider manager/AIDesktopService，不得有第二套 secret、generation、状态或环境变量权威。
 - 共享接口顺序固定为 core freeze → macOS thin wiring/targeted acceptance → Windows thin parity。Windows 在真实 Win11 Setup/安装/导包/搜索/上传/BYOK 验收前保持 `installer_ready=false / SETUP_PRESENT=NO`。
 - 多对话协作使用项目已有 Codex 对话，不由 root 随意新建子 agent。root 唯一 stage/commit；其他对话只编辑明确文件并停手报告。电脑发热时最多两个开发对话，禁止并行全测、构建、App 和模型调用。
-- 普通源码提交不生成 App；发布候选必须来自通过 PR 检查的提交，使用独立身份且不可覆盖。验收后封装同一 App，规则见 `docs/decisions/0003-candidate-identity.md`。
-- 保留已验证回退 App、完整历史归档、未提交改动保护点和不可重建的签名/数据输入；清理只限身份及哈希明确的可重建重复项，不清理未知科研目录或迁移恢复证据。
+- 开发提交、目标测试通过或单个缺陷修复不得递增 App build，也不得各自生成 App、DMG、UserKit、release worktree 或完整 Git bundle。一个发布批次只维护一个可覆盖的临时候选目录；只有整张安装后用户流程验收表全部通过，才分配新的 build 并生成一次正式候选。
+- 仓库外制品实行硬留存上限：只保留一个经 `git bundle verify` 的最新完整源码恢复包、一个 0.5 功能比较回退 App、一个最近稳定回退 App、一个当前候选回退 App，以及无法从 Git 重建的签名资料包源/数据库快照。失败候选、重复 DMG/UserKit、旧 release worktree 和被新完整 bundle 覆盖的历史 bundle 应在身份与哈希核对后删除；含未知数据库改动的工作树不得自动清理。
 - 前端重构必须删除被新工作台取代的旧选择器/DOM 所有权，不能在 `app.css` 尾部叠加第三套皮肤。personal/package 静态归位；主导航唯一 owner；异步完成不得抢页或滚动。
 - 跨平台代码用 `os.open` 读取或写入归档、PDF、CSV/TSV/XLSX、SQLite、密钥或设置等文件字节时，flags 必须包含 `getattr(os, "O_BINARY", 0)`；仅用于目录 `fsync` 的描述符除外。Windows CRT 文本模式会翻译或截断二进制流，不能依靠 macOS/Linux 测试推断可移植性。
 - Windows 构建锁定 Python 3.12；该版本在 Windows 不提供 `os.fchmod`。跨平台原子写只能在 `os.fchmod` 可调用时设置 fd mode；Windows 依赖受控 AppData/Temp ACL，不能用路径 `chmod(0o600)` 冒充 POSIX 私密权限。关闭全部文件描述符后才能 replace/unlink/remove；对 Defender、索引器和预览器造成的 WinError 5/32/33 只做有界重试，其他错误立即失败关闭。
 - Windows 不得用 `os.kill(pid, 0)` 探测进程，也不得让冻结 EXE 按源码相对路径寻找资源。进程存活使用 Win32 process handle；PyInstaller 资源只从受控 `_MEIPASS` helper 解析。离线 Setup 必须携带并校验 Microsoft WebView2 Evergreen x64 安装器，冻结候选在生成 Setup 前必须完成资源、原生 DLL、禁止模块和无 UI bootstrap smoke。
 
-## Historical acquisition capability observations
+## Current acquisition capability summary
 
 ### Paths that can directly yield article metadata + a real local PDF
 
@@ -187,7 +189,7 @@ These paths are useful for discovery, DOI verification, title/year/authors, and 
    - Meaning: metadata was discovered and may be authentic, but no direct PDF candidate was available or all candidates failed.
    - Treat as: metadata-only. Do not import as a full-text success.
 
-## Historical Zotero test collection checkpoint
+## Current Zotero test collection status
 
 Test collection:
 
@@ -235,7 +237,7 @@ If any of these fail, classify the item as one of:
 ## Agent behavior rules
 
 1. **Never fabricate PDFs.**
-   - Synthetic PDFs are allowed only as clearly identified, isolated engineering fixtures; never present them as real papers or import them into a research library.
+   - Do not create fake PDFs for testing.
    - Do not attach generated placeholder PDFs to Zotero items.
    - Do not mark metadata-only records as PDF successes.
 
@@ -298,7 +300,7 @@ assumes every paper is an irradiation experiment.
 
 Maintain `PROJECT_LOG.md` as the user-facing project change log. `AGENT.md` records operating rules for future agents; `PROJECT_LOG.md` records what changed, why it changed, and how it was verified.
 
-### Historical target article
+### Current target article
 
 - Title: `Irradiation effects in high entropy alloys and 316H stainless steel at 300 °C`
 - DOI: `10.1016/j.jnucmat.2018.08.031`
@@ -478,7 +480,7 @@ or otherwise valid local PDFs. Title plus the verified PDF fingerprint remains
 the minimum paper identity. Empty DOI must not abort numeric or qualitative
 imports, visual indexing, review, search, or database health checks.
 
-### Historical verified baseline
+### Current verified baseline
 
 As of the `2026.07.30-librarian-brief-stable.1` checkpoint (schema v12):
 
@@ -520,9 +522,30 @@ As of the `2026.07.30-librarian-brief-stable.1` checkpoint (schema v12):
 
 ### Git checkpoint protocol
 
-Follow `CONTRIBUTING.md`. The main maintainer integrates explicit file lists through GitHub PRs; inspect staged paths and preserve unrelated edits. Production databases, PDFs, research images, extraction outputs, private state and credentials never enter the code repository, including at release milestones. Store their consistent snapshots and restoration evidence in the protected data archive.
+The shared checkout has exactly one Git writer at a time. Other tasks remain read-only until ownership is explicitly handed over. Before every commit, the writer must stage an explicit path list, print `git diff --cached --name-only`, and verify that no user-owned or unrelated file is present.
 
-A release ties the reviewed source commit, dependency locks, unique candidate identity, artifact hashes and acceptance evidence together. Historic data-inclusive Git instructions are archived in `docs/history/AGENT_pre_authority_cleanup_20260919.md`; they do not authorize staging research data.
+For an ordinary code or documentation checkpoint:
+
+1. Run only the tests and checks authorized for that task.
+2. Stage only the declared files; never use a broad add command in a dirty worktree.
+3. Keep `db/experimental_evidence.sqlite`, production runs, user PDFs and extraction assets unstaged unless the user explicitly authorized a separate data checkpoint. The user explicitly authorized deletion of the legacy `paper_056` run/quality/visual artifacts before the 0.8 build; do not recreate them as a compatibility fixture.
+4. Run cached diff/format checks, commit once, then report the exact hash and file list.
+
+For an explicitly authorized scientific-data or release milestone:
+
+1. Run the evidence tests and relevant live workflow checks.
+2. Stop mutable servers/batches, snapshot SQLite, reconcile abandoned run
+   metadata, then repeat database health. Do not back up a live WAL state.
+3. Stage the reviewed scientific database and tracked extraction outputs explicitly; do not absorb unrelated runtime artifacts.
+4. Create a descriptive local milestone tag using the `evidence-demo-YYYY-MM-DD-<slug>` pattern.
+5. Create and verify a complete Git bundle outside the repository:
+
+```bash
+git bundle create /Users/USER/Zotero/auto-research-git-backups/auto-research-YYYYMMDD-<commit>.bundle --all
+git bundle verify /Users/USER/Zotero/auto-research-git-backups/auto-research-YYYYMMDD-<commit>.bundle
+```
+
+6. Confirm `git status --short` is empty after the final checkpoint. Do not copy Zotero PDF storage into Git; the evidence database stores the authoritative absolute PDF path and fingerprint.
 
 ### B1 PDF intake and duplicate control
 
@@ -854,7 +877,11 @@ findings and excluded history without deleting anything.
 
 ### Stable-release contract
 
-Source version/resource authority is `config/release-contract.json`; installed binary identity comes from its candidate manifest and acceptance ledger. See `STABLE_RELEASE.md` and `docs/decisions/0003-candidate-identity.md`. Legacy browser routes below describe compatibility behavior, not a second product or release workflow.
+The user-facing release identity lives in `webapp.RELEASE_INFO` and must be
+shown by the shared editable/read-only frontend. Bump it only after full tests,
+database health, the fixed full-corpus audit, editable-browser smoke testing and
+read-only route testing all pass. Keep `STABLE_RELEASE.md`, `PROJECT_LOG.md`, the
+Git tag and the bundle filename aligned with that release identity.
 
 Core editor startup depends on `/api/ui-mode`, `/api/papers`,
 `/api/current-paper`, and `/api/six-data`. Test-set metadata, upload history,
@@ -875,7 +902,9 @@ Visual assets are authoritative PDF screenshots created locally with PyMuPDF
 layout detection and recorded as `extraction_method=pdf_layout`. The current
 DeepSeek adapter receives extracted text for semantic candidate generation; it
 does not receive figure pixels. Never claim that DeepSeek or GPT visually read,
-cropped or digitized these screenshots. Do not infer curve points. Report per-paper figure/table counts and generation methods, including zero where appropriate. A valid PDF does not imply that it contains a figure or table; never create an asset to satisfy a count target.
+cropped or digitized these screenshots. Do not infer curve points. Every fixed
+full-corpus test-set member with a valid PDF must have at least one visual asset, and the audit
+must report per-paper figure/table counts and the generation method.
 
 The active product intentionally uses this local stable visual-evidence path.
 The rejected MinerU/cloud-visual experiment, including its candidate tables,
