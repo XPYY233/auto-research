@@ -162,8 +162,7 @@ class SearchIndexRecoveryRouteTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, HTTPStatus.FORBIDDEN)
             raised.exception.close()
 
-            review_index = server.RequestHandlerClass.review_queue_api.service._search_index
-            self.assertIsInstance(review_index, EvidenceSearchIndex)
+            self.assertIsNone(server.RequestHandlerClass.review_queue_api)
         finally:
             server.shutdown()
             server.server_close()

@@ -69,7 +69,6 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
     from native_desktop_bridge import NativeDesktopBridge
 
     index_source = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    review_contract_source = (WEB_DIR / "review_queue_contract.js").read_text(encoding="utf-8")
     runtime_source = (WEB_DIR / "fusion_review.js").read_text(encoding="utf-8")
     tab_store_source = (WEB_DIR / "document_tab_store.js").read_text(encoding="utf-8")
     pane_layout_source = (WEB_DIR / "pane_layout_controller.js").read_text(encoding="utf-8")
@@ -115,8 +114,8 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             and '<script src="/static/fusion_package_center.js"></script>' in index_source
             and '<script src="/static/fusion_personal_import.js"></script>' in index_source
             and '<script src="/static/fusion_personal_series.js"></script>' in index_source
-            and '<script src="/static/review_queue_contract.js"></script>' in index_source
-            and "AutoResearchReviewQueueContract" in review_contract_source
+            and "fusion-open-review-queue" not in index_source
+            and "performReviewAction" not in runtime_source
             and '<script src="/static/fusion_review.js"></script>' in index_source
             and index_source.index('<script src="/static/ai_consent.js"></script>')
             < index_source.index('<script src="/static/document_tab_store.js"></script>')

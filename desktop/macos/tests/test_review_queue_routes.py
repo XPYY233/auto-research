@@ -67,7 +67,7 @@ class _Handler:
 
 
 class ReviewQueueRouteTests(unittest.TestCase):
-    def test_real_review_updates_catalogue_and_search_over_authenticated_http(self) -> None:
+    def test_retired_review_routes_cannot_modify_scientific_state(self) -> None:
         import fitz
         from auto_research.evidence.db import now
         from auto_research.evidence.review_queue import ReviewQueueService
@@ -115,20 +115,27 @@ class ReviewQueueRouteTests(unittest.TestCase):
                 with opener.open(base + "/api/ui-mode", timeout=5) as response:
                     csrf = response.headers[CSRF_HEADER]
                 self.assertEqual(get("/api/search-papers")[0]["pending_candidate_count"], 1)
-                row = get("/api/desktop/review-queue")["items"][0]
-                request = urllib.request.Request(base + "/api/desktop/review-queue/actions",
-                    data=json.dumps({"review_token": row["review_token"], "action": "approve"}).encode(),
-                    headers={"Origin": base, CSRF_HEADER: csrf, "Content-Type": "application/json"})
-                for _ in range(2):
-                    with opener.open(request, timeout=5) as response:
-                        self.assertEqual(json.load(response)["status"], "saved")
-                self.assertEqual(get("/api/desktop/review-queue")["total"], 0)
-                catalogue = get("/api/search-papers")[0]
-                self.assertEqual(catalogue["extraction_workflow_state"], "saved")
-                self.assertEqual(catalogue["pending_candidate_count"], 0)
-                found = get("/api/search-v2?q=&quality=published")
-                self.assertEqual(found["total"], 1)
-                self.assertEqual(found["rows"][0]["value_text"], "3.2")
+                for route in ("/api/desktop/review-queue", "/api/current-paper/review-batch"):
+                    with self.assertRaises(urllib.error.HTTPError) as retired:
+                        get(route)
+                    self.assertEqual(retired.exception.code, HTTPStatus.GONE)
+                    retired.exception.close()
+                for route in (
+                    "/api/desktop/review-queue/actions", "/api/quality-candidates/1/review",
+                    "/api/visual-assets/1/review", "/api/six-data/1/confirm",
+                    "/api/six-data/1/decision", "/api/measurements/1/review",
+                    "/api/desktop/table-structures/reviews", "/api/desktop/table-structures/candidates",
+                ):
+                    request = urllib.request.Request(base + route, data=b'{"action":"approve"}',
+                        headers={"Origin": base, CSRF_HEADER: csrf, "Content-Type": "application/json"})
+                    with self.assertRaises(urllib.error.HTTPError) as retired:
+                        opener.open(request, timeout=5)
+                    self.assertEqual(retired.exception.code, HTTPStatus.GONE)
+                    self.assertEqual(json.load(retired.exception)["code"], "manual_review_retired")
+                    retired.exception.close()
+                self.assertEqual(get("/api/search-papers")[0]["pending_candidate_count"], 1)
+                self.assertEqual(get("/api/search-papers")[0]["extraction_workflow_state"], "ai_unresolved")
+                self.assertEqual(get("/api/search-v2?q=&quality=published")["total"], 0)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -159,15 +166,11 @@ class ReviewQueueRouteTests(unittest.TestCase):
                 self.assertEqual(denied.exception.code, HTTPStatus.FORBIDDEN)
                 denied.exception.close()
                 opener.open(f"{base}/?desktop_token={token}", timeout=5).close()
-                with opener.open(url, timeout=5) as response:
-                    self.assertEqual(response.read(), data)
-                    self.assertEqual(response.headers["Content-Type"], "image/png")
-                    self.assertEqual(response.headers["Cache-Control"], "no-store")
-                    self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
-                with self.assertRaises(urllib.error.HTTPError) as invalid:
-                    opener.open(url + "?path=/private/other.png", timeout=5)
-                self.assertEqual(invalid.exception.code, HTTPStatus.BAD_REQUEST)
-                invalid.exception.close()
+                for suffix in ("", "?path=/private/other.png"):
+                    with self.assertRaises(urllib.error.HTTPError) as retired:
+                        opener.open(url + suffix, timeout=5)
+                    self.assertEqual(retired.exception.code, HTTPStatus.GONE)
+                    retired.exception.close()
             finally:
                 server.shutdown()
                 server.server_close()
@@ -226,7 +229,7 @@ class ReviewQueueRouteTests(unittest.TestCase):
                 handler.json_response({"ok": True})
                 return True
 
-        for read_only, expected in ((False, HTTPStatus.OK), (True, HTTPStatus.FORBIDDEN)):
+        for read_only, expected in ((False, HTTPStatus.GONE), (True, HTTPStatus.GONE)):
             with self.subTest(read_only=read_only):
                 handler = object.__new__(DesktopEvidenceHandler)
                 handler.path = "/api/desktop/review-queue/actions"
@@ -246,7 +249,7 @@ class ReviewQueueRouteTests(unittest.TestCase):
                 self.assertEqual(handler.responses[0][1], expected)
                 self.assertEqual(
                     handler.review_queue_api.calls,
-                    [] if read_only else [handler.path],
+                    [],
                 )
 
     def test_fusion_review_shared_layout_runtimes_are_session_protected_javascript_no_store(self) -> None:

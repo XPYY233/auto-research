@@ -29,11 +29,11 @@ def extraction_workflow_summaries(db: EvidenceDB) -> dict[int, dict[str, object]
         }
     return {
         paper_id: {
-            "extraction_workflow_state": "pending_review" if pending.get(paper_id) else "saved",
+            "extraction_workflow_state": "ai_unresolved" if pending.get(paper_id) else "saved",
             "extraction_workflow_label": (
-                f"提取结果已保存 · 待审核 {pending[paper_id]} 项"
+                f"提取结果已保存 · AI 核验未通过 {pending[paper_id]} 项"
                 if pending.get(paper_id)
-                else "提取结果已保存 · 无待审候选"
+                else "提取结果已保存 · AI 自动核验完成"
             ),
             "pending_candidate_count": pending.get(paper_id, 0),
         }

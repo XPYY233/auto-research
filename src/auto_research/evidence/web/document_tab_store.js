@@ -6,7 +6,7 @@
   const STORAGE_KEY = "auto-research-workspace-layout-v1";
   const MAX_GROUPS = 2;
   const MAX_TABS = 40;
-  const KINDS = new Set(["paper", "evidence", "pdf", "personal-table", "package-job", "librarian", "review-candidate"]);
+  const KINDS = new Set(["paper", "evidence", "pdf", "personal-table", "package-job", "librarian"]);
   const VIEWS = new Set(["paper", "search", "personal", "package"]);
   const clean = (value, limit = 300) => String(value ?? "").trim().slice(0, limit);
   const cleanFocusToken = value => {
