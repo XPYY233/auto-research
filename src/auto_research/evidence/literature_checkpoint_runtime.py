@@ -236,6 +236,29 @@ class LiteratureCheckpointRuntime:
             private_payload=payload,
         )
 
+    def begin_finalization(
+        self, checkpoint: LiteratureTaskCheckpoint, *, owner_id: str
+    ) -> LiteratureTaskCheckpoint:
+        """Persist the local commit boundary before any scientific writes.
+
+        Once admitted, cancellation cannot imply rollback: a prior attempt
+        may already have committed SQLite while its completion receipt failed.
+        Recovery must finish the same idempotent publication, without AI.
+        """
+        if checkpoint.stage not in {"validated", "finalizing"} or any(
+            receipt.state != "succeeded" for receipt in checkpoint.receipts
+        ):
+            raise LiteratureTaskCheckpointError("literature_checkpoint_invalid")
+        if checkpoint.stage == "validated":
+            self.assert_not_cancelled(checkpoint, owner_id=owner_id)
+        return self._service.advance_stage(
+            checkpoint.manifest.task_id,
+            expected_revision=checkpoint.revision,
+            owner_id=owner_id,
+            stage="finalizing",
+            private_payload=checkpoint.private_payload,
+        )
+
     def complete(
         self,
         checkpoint: LiteratureTaskCheckpoint,

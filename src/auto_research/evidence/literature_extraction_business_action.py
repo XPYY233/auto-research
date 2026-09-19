@@ -235,16 +235,6 @@ class LiteratureExtractionBusinessExecutor(_CheckpointedLiteratureExecutor):
         except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise BusinessActionError("business_action_invalid") from exc
 
-    def _finalize_checkpointed_job(self, **kwargs: object) -> Mapping[str, Any]:
-        runtime = self._checkpoint_runtime
-        if runtime is None:
-            raise LiteratureTaskCheckpointError(
-                "literature_checkpoint_store_unavailable"
-            )
-        runtime.assert_not_cancelled(
-            kwargs["checkpoint"], owner_id=str(kwargs["owner_id"])
-        )
-        return super()._finalize_checkpointed_job(**kwargs)
 
 
 class LiteratureExtractionBusinessAssembler:

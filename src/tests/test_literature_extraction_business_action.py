@@ -911,8 +911,9 @@ def test_publish_checkpoint_complete_and_acknowledge_are_strictly_ordered(
     assert events[-3:] == ["published", "checkpoint_complete", "acknowledge"]
 
 
+@pytest.mark.parametrize("late_cancel", [False, True])
 def test_checkpoint_complete_failure_retains_job_and_idempotent_retry(
-    evidence,
+    evidence, late_cancel,
 ) -> None:
     db, paper_id = evidence
     root = db.path.parent
@@ -951,6 +952,8 @@ def test_checkpoint_complete_failure_retains_job_and_idempotent_retry(
     assert _counts(db)["quality_pipeline_runs"] == 1
     assert "acknowledge" not in events
 
+    if late_cancel:
+        ports.executor.request_cancel(action=action, phase="running")
     retried = ports.executor.execute(action=action, ai_client=client)
     assert retried["summary"]["idempotent"] is True
     assert raw.calls == calls_after_failure
