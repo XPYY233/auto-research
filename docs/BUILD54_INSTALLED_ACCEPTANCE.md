@@ -2,6 +2,86 @@
 
 Updated: 2026-09-05. Status: **not accepted; no stable release**.
 
+Resumed budget: the user's latest reserve is **50% remaining**, replacing the
+earlier 70% reserve. Initial resumed reading: 70% remaining. Root and the existing
+frontend task resume bounded acceptance; no new build or stable claim follows
+from the budget change. Earlier timed observations below remain historical.
+
+## Resumed verification — 2026-09-05
+
+### 10:57 extraction-to-review failure, canonical workspace restored
+
+The owned one-page synthetic cancellation fixture was explicitly restarted in
+the installed App. Two actual model calls completed in approximately 35 seconds;
+the receipt reports five candidates, four published measurements, one manual
+finding, and four indexed documents. The `前往搜索已发布证据` UI returned all four
+measurements. Read-only inspection of this isolated SQLite confirms 300 °C,
+1 dpa, 3.00 GPa and 4.00 GPa. This is synthetic workflow evidence, not a scientific
+accuracy pass. Current phase paid-call total is approximately 15/25.
+
+**Newly reproduced publication-to-review P0:** the task receipt says one manual
+review, but the cached toolbar/list says zero; explicit Refresh then displays
+`review_queue_invalid`. The real database has one manual-review finding with
+scores 0/70/100/100/69.5. `ReviewQueueService` emits 0–100 scores while Fusion
+requires 0–1, and its old test fixture also uses invented fractional wire scores.
+Root added a real service→production-JavaScript regression; it fails exactly at
+queue acceptance before the fix. Existing frontend task owns the narrow score
+conversion/cache-refresh repair; it is not installed or accepted yet.
+
+The paper catalogue additionally retains its pre-extraction zero/not-scanned
+snapshot while the central evidence count is four. Do not mark this status
+transition passed. The fixture PDF contains a labelled text-layout Table 1,
+although the receipt reports no visual candidates; table discovery remains an
+open quality gate, not an expected no-table success.
+Read-only PyMuPDF diagnosis finds all fixture text in one block; the caption is
+inside that block, not at its start, and current `_generic_specs` returns zero.
+Any future detector correction must retain the rejection of prose references
+and list-of-tables pages; this case does not authorize a guessed crop.
+
+The isolated App was exited normally and the installed App relaunched with
+explicit canonical `--project-root /Users/USER/Zotero/auto-research`.
+Root visually verified Table 4's real source image and Figure 10's real curve
+image again. No production mutation or additional model call was made during
+that restore; production SHA remains `0389a5aa...80b0`. No build/DMG generated.
+Latest quota read: 64% remaining, reserve 50%.
+
+Installed executable remains 7ed286b build54; no App/build/DMG was made in this
+continuation. Production SQLite SHA is unchanged (`0389a5aa...80b0`).
+
+- Real pointer drag now worked through root's Computer Use session: context
+  244px -> collapsed -> titlebar restore; editor split 58% -> secondary collapsed
+  -> click Table 3 restores 58%; split -> primary collapsed leaves Table 3
+  visible; command palette restores primary and both document identities.
+  Table 4 source image and Table 3 source image/reviewed grid were visible in
+  the canonical workspace. No all-editor blank state occurred in these actions.
+  This supersedes the earlier tool-error-only observation for these exact cases,
+  not the remaining narrow-window/restart/keyboard matrix.
+- Clicking the AX separator then Left did not change split or focus (focus
+  remained HTML). Source pointerdown prevents default without explicitly focusing
+  the separator; frontend task is investigating this bounded keyboard defect.
+- The frontend task independently passed two existing layout runtime targets,
+  but its own Computer Use permission was denied. Only root's above observations
+  count as installed acceptance. The task did not silently bypass UI permission.
+- Added real SQLite publication/recovery regression: a successful scientific
+  commit followed by a checkpoint-completion failure is recovered after service
+  recreation; one 3.2 GPa synthetic record remains, search refresh succeeds,
+  completion is idempotent and no new model receipt is consumed. Recovery,
+  checkpoint and finalizer target group: 32 pass. This is isolated integration,
+  not an installed-App interruption or scientific-accuracy pass.
+- Added real user archive/encrypted-history roundtrip for literature and personal
+  packages: SHA sidecar, distinct receiver, searchable import, AES-GCM history,
+  full Mac service graph restart and repeat import with a new selection token.
+  Both retain search counts with no duplicate records. Package/API/security/merge
+  target group: 38 pass. Native Foundation volume detection was injected in the
+  test; the native picker and installed App roundtrip remain separate gates.
+  An initial package-only fixture omitted the launcher-owned private-source
+  restore; corrected the test to use the actual full composition rather than
+  adding a duplicate restore implementation to production.
+
+Current shared quota reading: 66% remaining; required reserve 50%. Source changes
+in this continuation are not installed. Do not use the new target counts as
+replacement whole-suite results.
+
 ## Current installed authority — 2026-09-05 00:03; verification through 00:18
 
 Installed `/Applications/Auto Research.app`: `1.2.0/build54/candidate`, core

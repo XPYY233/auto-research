@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -161,6 +163,40 @@ class ReviewQueueTests(unittest.TestCase):
             "secret-hash", "internal_id",
         ):
             self.assertNotIn(forbidden, serialized)
+
+    @unittest.skipUnless(shutil.which("node"), "Node is required for the production UI contract")
+    def test_real_queue_scores_render_in_production_fusion(self) -> None:
+        """Use the actual wire DTO, not a hand-written fractional-score fixture."""
+        candidate_id = self._seed()
+        with self.db.connect() as connection:
+            connection.execute(
+                """UPDATE quality_candidates SET agreement_score=0,
+                   factuality_score=1,completeness_score=70,evidence_score=100,
+                   overall_score=69.5 WHERE id=?""",
+                (candidate_id,),
+            )
+        payload = ReviewQueueService(self.db, search_index=_Index()).list()
+        self.assertEqual(payload["items"][0]["scores"]["overall"], 69.5)
+        runtime = Path(__file__).resolve().parents[1] / "auto_research/evidence/web/fusion_review.js"
+        program = r"""
+const fs=require('fs'),assert=require('assert');
+globalThis.document={readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{}};
+globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
+eval(fs.readFileSync(process.argv[1],'utf8'));
+const wire=JSON.parse(fs.readFileSync(0,'utf8'));
+const api=globalThis.AutoResearchFusion,queue=api.publicReviewQueue(wire);
+assert(queue,'real backend review queue must be accepted');
+assert.equal(queue.total,1);
+assert.deepEqual(queue.items[0].scores,{agreement:0,factuality:.01,completeness:.7,evidence:1,overall:.695});
+const html=api.reviewCandidateHTML(queue.items[0]);
+for(const value of ['0%','1%','70%','100%','主候选','备选','批准']) assert(html.includes(value),value);
+assert(!html.includes(wire.items[0].review_token));
+"""
+        result = subprocess.run(
+            ["node", "-e", program, str(runtime)],
+            input=json.dumps(payload), text=True, capture_output=True, timeout=8,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_embedded_local_reference_fails_closed_in_public_candidate(self) -> None:
         row = _candidate()

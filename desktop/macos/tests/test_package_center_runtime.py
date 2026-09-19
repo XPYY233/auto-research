@@ -704,6 +704,87 @@ class PackageCenterRuntimeTests(unittest.TestCase):
         self.assertEqual(len(receiver_repository.list_personal_search_documents()), 1)
         self.assertGreater(receiver_search.search("纳米硬度").total, 0)
 
+    def test_both_user_packages_restore_encrypted_receipts_and_idempotent_search(self) -> None:
+        """Real archive -> distinct receiver -> restart, without production state."""
+        import fitz
+        from secure_history import StaticHistoryKeyProvider
+        from secure_operation_history import SecureOperationHistoryStore
+
+        document = fitz.open()
+        document.new_page().insert_text((72, 72), "Synthetic sharing acceptance only.")
+        document.save(self.pdf)
+        document.close()
+
+        for kind, query in (("literature_collection", "辐照剂量"),
+                            ("personal_experiments", "纳米硬度")):
+            with self.subTest(kind=kind):
+                sender, _, destination, _, _ = self._runtime(
+                    kind + "-sender", repository=_confirmed_repository(self.root / (kind + "-source")),
+                )
+                path = self.root / (kind + ".aresearch")
+                _, exported = self._export(
+                    sender, destination, kind=kind,
+                    scope="selected" if kind == "literature_collection" else "all",
+                    selection=[1] if kind == "literature_collection" else None, path=path,
+                )
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                self.assertEqual(digest, exported["package_sha256"])
+                self.assertIn(digest, path.with_name(path.name + ".sha256").read_text())
+                history_path = self.root / (kind + "-history.enc")
+
+                def history():
+                    return OperationHistoryService(SecureOperationHistoryStore(
+                        history_path, StaticHistoryKeyProvider(b"\x53" * 32),
+                    ))
+
+                receiver_root = self.root / (kind + "-receiver")
+
+                def receiver_graph():
+                    # Exercise the same full composition as the launcher: private
+                    # search restoration belongs to PersonalImportAPI, not the
+                    # package-only builder that restores literature collections.
+                    # Foundation/native-volume detection is a separate installed
+                    # App gate; the archive, stores, merge and search remain real.
+                    with patch("package_import_service.PackageSelectionBroker",
+                               side_effect=lambda: PackageSelectionBroker(
+                                   local_volume_probe=lambda _: True)):
+                        return create_desktop_product_services(
+                            data_root=receiver_root, current_app_version="1.2.0",
+                            workspace_database=self.database, workspace_root=self.root,
+                            operation_history=history(),
+                        )
+
+                graph = receiver_graph()
+                receiver = graph.package_center
+                broker = graph.package_service.broker
+                search = graph.federated_search_service.session
+                selected = broker.select(PackageSelectionSource.FILE_PICKER, path)
+                result = self._wait_job(receiver, receiver.import_service.start(
+                    selected.selection_id, checksum_ack=True, expected_sha=digest, keep_conflicts=False,
+                ))
+                self.assertEqual(result["stage"], "completed", result)
+                self.assertTrue(result["result"]["search_ready"])
+                count = search.search(query).total
+                self.assertGreater(count, 0)
+                stored = history().get()
+                self.assertEqual(stored["operations"][0]["state"], "completed")
+                self.assertNotIn(str(self.root), json.dumps(stored))
+                self.assertNotIn(b"completed", history_path.read_bytes())
+
+                reopened = receiver_graph()
+                restarted = reopened.package_center
+                new_broker = reopened.package_service.broker
+                restored_search = reopened.federated_search_service.session
+                self.assertEqual(restored_search.search(query).total, count)
+                self.assertEqual(history().get(), stored)
+                # A second selection is mandatory; replay never reuses an expired picker token.
+                selected = new_broker.select(PackageSelectionSource.FILE_PICKER, path)
+                repeated = self._wait_job(restarted, restarted.import_service.start(
+                    selected.selection_id, checksum_ack=True, expected_sha=digest, keep_conflicts=False,
+                ))
+                self.assertEqual(repeated["stage"], "completed", repeated)
+                self.assertEqual(restored_search.search(query).total, count)
+
 
 if __name__ == "__main__":
     unittest.main()
