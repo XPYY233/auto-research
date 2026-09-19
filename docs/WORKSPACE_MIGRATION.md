@@ -31,3 +31,18 @@
 ```
 
 已通过合成回归：记录/数值/单位/审核保持、原目录离线后读取新 PDF、未知哈希不符拒绝、旧签名修复必须显式启用并有完整哈希佐证、修改未被采样的中部字节仍拒绝、迁移途中数据库修改拒绝、目标竞争不覆盖、进程中断与重试、额外数据库/活动提取/非空视觉暂存与符号链接拒绝。实际激活及私人断点兼容仍须单独验收。
+
+## 本机切换与回退
+
+关联 #14。先正常退出 App，再运行维护入口；入口持有与 App 相同的独占锁，运行中的 App 会直接阻止迁移。
+
+```sh
+.venv/bin/python scripts/switch_workspace.py activate --source /path/to/old-workspace --destination /path/to/new-workspace --repair-legacy-sampled-hashes
+.venv/bin/python scripts/switch_workspace.py rollback --journal /path/to/private-state/workspace-switches/operation.json
+```
+
+切换在复制、校验和持久化回退登记后，才原子替换 `project-root.txt`。原工作区、私人库、加密历史、凭据和官方包保留原位。已存在的加密提取断点必须可认证且全部 completed/cancelled；有待恢复任务或未验证的 Keychain 解密条件时拒绝切换。
+
+在选择文件替换前后强制终止进程的回归均保留有效工作区和回退登记：替换前仍用旧库，替换后用新库；登记状态可能尚为 prepared，应以实际选择文件核对，不能凭状态字段自动重做迁移。重试使用新的目标目录，绝不覆盖上次留下的副本。
+
+回退会重新核验两个工作区的记录、文件与来源引用；任一库出现新科研数据时拒绝回退，避免丢弃后续工作。此时保留两个目录并进行有依据的数据整合。不能直接改选择文件绕过保护。

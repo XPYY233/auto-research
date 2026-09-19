@@ -67,7 +67,8 @@ def record_fingerprints(connection: sqlite3.Connection, *, omit_paths: bool = Fa
     return result
 
 
-def _tree_manifest(root: Path) -> dict[str, str]:
+def data_file_manifest(root: Path) -> dict[str, str]:
+    """Exact regular-file manifest; symlinks are never silently followed."""
     if root.is_symlink():
         raise WorkspaceError("资产根目录不能是符号链接。")
     result = {}
@@ -140,9 +141,9 @@ def migrate_workspace(source: Path, destination: Path, *, repair_legacy_sampled_
             with closing(sqlite3.connect(stage / DATABASE)) as copied:
                 original.backup(copied)
         notify('database_copied')
-        files = _tree_manifest(source / 'data')
+        files = data_file_manifest(source / 'data')
         shutil.copytree(source / 'data', stage / 'data', symlinks=True)
-        if _tree_manifest(stage / 'data') != files:
+        if data_file_manifest(stage / 'data') != files:
             raise WorkspaceError('资产复制不完整；源工作区未改动。')
         notify('assets_copied')
         references = []
@@ -200,7 +201,7 @@ def migrate_workspace(source: Path, destination: Path, *, repair_legacy_sampled_
         with closing(_read_database(source / DATABASE)) as original:
             if record_fingerprints(original) != before_all:
                 raise WorkspaceError('源数据库在迁移期间变化，请关闭 App 后重试。')
-        if _tree_manifest(source / 'data') != files:
+        if data_file_manifest(source / 'data') != files:
             raise WorkspaceError('源资产在迁移期间变化，请关闭 App 后重试。')
         for path, (relative, digest) in relocated.items():
             if file_hash(path) != digest or file_hash(stage / relative) != digest:
