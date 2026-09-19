@@ -161,3 +161,17 @@ platform-neutral utilities
 - 影响科学证据含义、质量门或公开字段的变更。
 
 记录至少包含：问题、选择、拒绝方案、安全/性能影响、迁移办法、回退点和验收证据。中间废案只保留必要的决定原因，不保留可误启动的产品入口。
+
+## 2026-09-19 重建约束更新
+
+上文带旧版本号的状态描述属于历史背景；当前完成状态以 PROJECT_HANDOFF.md 和 GitHub Issue 为准。
+
+生产静态导入图与依赖方向共用 `scripts/architecture_checks.py`，由统一工程入口测试。检查直接导入、相对导入和可静态识别的字面量动态导入；不宣称静态分析能够证明任意计算得到的动态模块名。
+
+- 生产核心可识别循环依赖必须为零；导入包不能被误算成导入所有兄弟模块。
+- 共享源码不得导入 Mac 平台适配器或 desktop.macos / desktop.windows。
+- product、personal 服务不得反向导入共享 desktop 控制器。
+- 共享 desktop 应用层不得调用旧 evidence.webapp 控制器。
+- 每个运行时文件必须在 module-ownership 中有唯一职责；按最具体路径归属。
+
+这些门槛已进入 PR 检查。Mac 剩余旧 Web 继承及 Fusion 大控制器仍是 #3 的真实待办，不能用零循环依赖代替拆分完成。
