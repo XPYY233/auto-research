@@ -132,3 +132,73 @@ def test_unregistered_database_is_not_silently_discarded(workspace, tmp_path):
     with pytest.raises(WorkspaceError, match='额外数据库'):
         migrate_workspace(source, tmp_path/'target')
     assert not (tmp_path/'target').exists()
+
+
+def test_known_legacy_signature_repair_is_opt_in_and_keeps_ledger(workspace, tmp_path):
+    from auto_research.evidence.uploads import UploadService
+    from auto_research.source_fingerprints import legacy_sampled_pdf_signature
+    source, pdf = workspace
+    db = EvidenceDB(source / DATABASE)
+    legacy = legacy_sampled_pdf_signature(pdf)
+    with db.connect() as c:
+        c.execute('UPDATE papers SET pdf_sha256=?', (legacy,))
+    UploadService(db, source/'data/papers').index_existing_pdfs()
+    before = _records(source / DATABASE, omit=True)
+    with pytest.raises(WorkspaceError, match='哈希'):
+        migrate_workspace(source, tmp_path/'strict')
+    destination = tmp_path/'repaired'
+    result = migrate_workspace(source, destination, repair_legacy_sampled_hashes=True)
+    assert _records(source / DATABASE, omit=True) == before
+    assert len(result['source_hash_repairs']) == 1
+    repair = result['source_hash_repairs'][0]
+    assert repair['before'] == legacy and repair['after'] == file_hash(pdf)
+    with closing(sqlite3.connect(destination / DATABASE)) as c:
+        c.row_factory = sqlite3.Row
+        assert record_fingerprints(c, omit_paths=True, source_hash_repairs=(repair,)) == before
+        c.execute("UPDATE papers SET pdf_sha256='unexpected'")
+        with pytest.raises(WorkspaceError, match='校正后的来源'):
+            record_fingerprints(c, omit_paths=True, source_hash_repairs=(repair,))
+    ledger = json.loads((destination/'migration-report.json').read_text())
+    assert ledger['source_hash_repairs'] == result['source_hash_repairs']
+
+
+def test_legacy_signature_without_matching_document_is_not_repaired(workspace, tmp_path):
+    from auto_research.source_fingerprints import legacy_sampled_pdf_signature
+    source, pdf = workspace
+    with sqlite3.connect(source / DATABASE) as c:
+        c.execute('UPDATE papers SET pdf_sha256=?', (legacy_sampled_pdf_signature(pdf),))
+    with pytest.raises(WorkspaceError, match='佐证'):
+        migrate_workspace(source, tmp_path/'target', repair_legacy_sampled_hashes=True)
+    assert not (tmp_path/'target').exists()
+
+
+def test_matching_sampled_signature_cannot_hide_changed_middle_bytes(workspace, tmp_path):
+    from auto_research.evidence.uploads import UploadService
+    from auto_research.source_fingerprints import legacy_sampled_pdf_signature
+    source, pdf = workspace
+    # Valid PDF followed by padding: the old algorithm leaves middle bytes unhashed.
+    with pdf.open('ab') as f:
+        f.write(b'X' * (4 * 1024 * 1024))
+    original_hash = file_hash(pdf)
+    legacy = legacy_sampled_pdf_signature(pdf)
+    with sqlite3.connect(source / DATABASE) as c:
+        c.execute('UPDATE papers SET pdf_sha256=?', (legacy,))
+    UploadService(EvidenceDB(source / DATABASE), source/'data/papers').index_existing_pdfs()
+    with pdf.open('r+b') as f:
+        f.seek(2 * 1024 * 1024)
+        f.write(b'Y')
+    assert legacy_sampled_pdf_signature(pdf) == legacy
+    assert file_hash(pdf) != original_hash
+    with pytest.raises(WorkspaceError, match='佐证'):
+        migrate_workspace(source, tmp_path/'target', repair_legacy_sampled_hashes=True)
+    assert not (tmp_path/'target').exists()
+
+
+def test_only_empty_known_visual_staging_can_be_omitted(workspace, tmp_path):
+    source, _ = workspace
+    staging = source/'db/.visual-staging'
+    staging.mkdir()
+    migrate_workspace(source, tmp_path/'empty-accepted')
+    (staging/'incomplete.json').write_text('{}')
+    with pytest.raises(WorkspaceError, match='未结束暂存'):
+        migrate_workspace(source, tmp_path/'nonempty-rejected')

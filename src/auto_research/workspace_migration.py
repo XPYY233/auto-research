@@ -17,6 +17,8 @@ import tempfile
 from typing import Callable
 
 from .workspace import WorkspaceError, validate_workspace
+from .source_fingerprints import file_sha256 as file_hash
+from .workspace_source_repair import repair_sampled_paper_hashes
 
 DATABASE = Path('db/experimental_evidence.sqlite')
 PATH_COLUMNS = {
@@ -28,23 +30,17 @@ PATH_COLUMNS = {
 }
 
 
-def file_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open('rb') as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b''):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def _read_database(path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(path.absolute().as_uri() + '?mode=ro', uri=True)
     connection.row_factory = sqlite3.Row
     return connection
 
 
-def record_fingerprints(connection: sqlite3.Connection, *, omit_paths: bool = False) -> dict:
+def record_fingerprints(connection: sqlite3.Connection, *, omit_paths: bool = False, source_hash_repairs: tuple[dict, ...] = ()) -> dict:
     """Logical records, including review versions; derived search caches excluded."""
     result = {}
+    repairs = {row['row_id']: row for row in source_hash_repairs}
+    seen_repairs = set()
     for table, in connection.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"):
         if table.startswith(('sqlite_', 'search_index_')):
             continue
@@ -52,6 +48,12 @@ def record_fingerprints(connection: sqlite3.Connection, *, omit_paths: bool = Fa
         rows = []
         for row in connection.execute('SELECT * FROM ' + quoted):
             value = dict(row)
+            if table == 'papers' and value['id'] in repairs:
+                repair = repairs[value['id']]
+                if value['pdf_sha256'] != repair['after']:
+                    raise WorkspaceError('校正后的来源身份与迁移登记不符。')
+                value['pdf_sha256'] = repair['before']
+                seen_repairs.add(value['id'])
             if omit_paths and table in PATH_COLUMNS:
                 value.pop(PATH_COLUMNS[table][0], None)
             rows.append(json.dumps(value, sort_keys=True, ensure_ascii=False, default=lambda v: v.hex(), separators=(',', ':')))
@@ -60,6 +62,8 @@ def record_fingerprints(connection: sqlite3.Connection, *, omit_paths: bool = Fa
             digest.update(row.encode())
             digest.update(b'\n')
         result[table] = {'rows': len(rows), 'sha256': digest.hexdigest()}
+    if seen_repairs != set(repairs):
+        raise WorkspaceError('来源身份校正登记不完整。')
     return result
 
 
@@ -73,6 +77,18 @@ def _tree_manifest(root: Path) -> dict[str, str]:
         if path.is_file():
             result[path.relative_to(root).as_posix()] = file_hash(path)
     return result
+
+
+def _validate_database_directory(source: Path) -> None:
+    allowed = {DATABASE.name, DATABASE.name + '-wal', DATABASE.name + '-shm'}
+    for path in (source / 'db').iterdir():
+        if path.name in allowed and not path.is_symlink() and path.is_file():
+            continue
+        # Visual extraction creates this scratch directory; only an empty,
+        # inactive directory may be omitted. Real or unknown state blocks.
+        if path.name == '.visual-staging' and not path.is_symlink() and path.is_dir() and not any(path.iterdir()):
+            continue
+        raise WorkspaceError('工作区含尚未登记迁移规则的额外数据库文件或未结束暂存；请先保全并登记。')
 
 
 def _publish_exclusive(stage: Path, destination: Path) -> None:
@@ -89,7 +105,7 @@ def _publish_exclusive(stage: Path, destination: Path) -> None:
         raise OSError(error, os.strerror(error), str(destination))
 
 
-def migrate_workspace(source: Path, destination: Path, *, checkpoint: Callable[[str], None] | None = None) -> dict:
+def migrate_workspace(source: Path, destination: Path, *, repair_legacy_sampled_hashes: bool = False, checkpoint: Callable[[str], None] | None = None) -> dict:
     """Preserve source; individually relocate registered paths in an isolated copy.
 
     Interrupted staging directories are inert. Retrying uses a new staging
@@ -107,9 +123,7 @@ def migrate_workspace(source: Path, destination: Path, *, checkpoint: Callable[[
     if destination.exists():
         raise WorkspaceError('目标已存在；迁移不会覆盖任何现有工作区。')
     validate_workspace(source)
-    allowed_database_files = {DATABASE.name, DATABASE.name + '-wal', DATABASE.name + '-shm'}
-    if any(path.name not in allowed_database_files for path in (source / 'db').iterdir()):
-        raise WorkspaceError('工作区含尚未登记迁移规则的额外数据库文件；请先保全并登记。')
+    _validate_database_directory(source)
     destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     stage = Path(tempfile.mkdtemp(prefix=f'.{destination.name}.migrating-', dir=destination.parent))
     notify = checkpoint or (lambda _: None)
@@ -136,6 +150,7 @@ def migrate_workspace(source: Path, destination: Path, *, checkpoint: Callable[[
         relocated = {}
         with closing(sqlite3.connect(stage / DATABASE)) as copied:
             copied.row_factory = sqlite3.Row
+            repairs = repair_sampled_paper_hashes(copied, source) if repair_legacy_sampled_hashes else []
             for table, (column, hash_column, required) in PATH_COLUMNS.items():
                 for row in copied.execute(f"SELECT * FROM {table} WHERE {column} IS NOT NULL AND {column}<>''").fetchall():
                     raw = row[column]
@@ -176,11 +191,12 @@ def migrate_workspace(source: Path, destination: Path, *, checkpoint: Callable[[
                     new_path = str(destination / relative) if Path(raw).is_absolute() or table in {'papers', 'documents'} else relative.as_posix()
                     copied.execute(f'UPDATE {table} SET {column}=? WHERE id=?', (new_path, row['id']))
                     references.append({'table': table, 'row_id': row['id'], 'column': column, 'original': raw, 'new': new_path, 'relative': relative.as_posix(), 'sha256': digest})
-            if record_fingerprints(copied, omit_paths=True) != before_records:
+            if record_fingerprints(copied, omit_paths=True, source_hash_repairs=tuple(repairs)) != before_records:
                 raise WorkspaceError('科研记录与审核版本发生变化；迁移未发布。')
             copied.commit()
             copied.execute('PRAGMA wal_checkpoint(TRUNCATE)')
         notify('references_relocated')
+        _validate_database_directory(source)
         with closing(_read_database(source / DATABASE)) as original:
             if record_fingerprints(original) != before_all:
                 raise WorkspaceError('源数据库在迁移期间变化，请关闭 App 后重试。')
@@ -190,8 +206,8 @@ def migrate_workspace(source: Path, destination: Path, *, checkpoint: Callable[[
             if file_hash(path) != digest or file_hash(stage / relative) != digest:
                 raise WorkspaceError('来源或副本校验失败。')
         validate_workspace(stage)
-        report = {'schema': 'workspace-migration-v1', 'source': str(source), 'destination': str(destination),
-                  'references': references, 'missing_historical_outputs': missing,
+        report = {'schema': 'workspace-migration-v2', 'source': str(source), 'destination': str(destination),
+                  'references': references, 'missing_historical_outputs': missing, 'source_hash_repairs': repairs,
                   'record_fingerprints': before_records, 'source_record_fingerprints': before_all,
                   'source_data_manifest': files, 'source_data_files': len(files),
                   'private_state_moved': False, 'embedded_historical_paths_rewritten': False, 'activated': False}

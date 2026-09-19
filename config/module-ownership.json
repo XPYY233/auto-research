@@ -260,7 +260,9 @@
       "id": "workspace-lifecycle",
       "paths": [
         "src/auto_research/workspace.py",
-        "src/auto_research/workspace_migration.py"
+        "src/auto_research/workspace_migration.py",
+        "src/auto_research/source_fingerprints.py",
+        "src/auto_research/workspace_source_repair.py"
       ],
       "owner": "shared-workspace",
       "status": "experimental",
