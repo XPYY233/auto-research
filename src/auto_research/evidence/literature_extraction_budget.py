@@ -7,6 +7,9 @@ from dataclasses import dataclass
 # prepared-action budget.  Keeping them in one dependency-free module prevents
 # the user-visible consent ceiling from drifting away from the executable plan.
 BRANCH_COUNT = 2
+VISUAL_REVIEW_BATCH_SIZE = 10
+MAX_VISUAL_REVIEW_BATCHES = 2
+VISUAL_REVIEW_MAX_TOKENS = 8_000
 MAX_EXTRACTED_RECORDS_PER_RESPONSE = 64
 VERIFICATION_BATCH_SIZE = 20
 THIRD_REVIEW_BATCH_SIZE = 10
@@ -32,9 +35,9 @@ def task_budget_for_page_blocks(page_block_count: int) -> LiteratureExtractionTa
 
     Each branch can produce one initial and one coverage-gap response per page
     block.  Automatic verification is intentionally limited to two batches per
-    branch and block; overflow remains manual review.  The whole paper gets at
+    branch and block; overflow remains unresolved by AI.  The whole paper gets at
     most four third-review calls, with the remaining records also staying
-    manual.  This is both an execution ceiling and the number shown at consent.
+    unresolved. Visual semantics use two bounded independent branches. This is both an execution ceiling and the number shown at consent.
     """
 
     if isinstance(page_block_count, bool) or not isinstance(page_block_count, int):
@@ -59,10 +62,12 @@ def task_budget_for_page_blocks(page_block_count: int) -> LiteratureExtractionTa
         max_calls=(
             calls_per_block * page_block_count
             + MAX_THIRD_REVIEW_CALLS_PER_TASK
+            + BRANCH_COUNT * MAX_VISUAL_REVIEW_BATCHES
         ),
         max_tokens=(
             tokens_per_block * page_block_count
             + MAX_THIRD_REVIEW_CALLS_PER_TASK * THIRD_REVIEW_MAX_TOKENS_PER_CALL
+            + BRANCH_COUNT * MAX_VISUAL_REVIEW_BATCHES * VISUAL_REVIEW_MAX_TOKENS
         ),
     )
 

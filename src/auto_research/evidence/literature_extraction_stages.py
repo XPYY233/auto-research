@@ -46,6 +46,8 @@ from .quality_pipeline import (
 )
 
 
+from .literature_visual_review import plan_visual_review, compare_visual_review
+
 BRANCHES = ("a", "b")
 
 
@@ -314,7 +316,7 @@ class ExistingLiteratureStagePlanner:
                 if overflow:
                     chunk_map["pending_tasks"].append({
                         "task_type": "ambiguous_condition",
-                        "description": "候选数量超过自动核验预算，剩余记录必须人工审核",
+                        "description": "候选数量超过自动核验预算，剩余记录未完成 AI 核验",
                         "locator": f"PDF pages {chunk[0]['page']}-{chunk[-1]['page']}",
                     })
                 for batch_index, batch in enumerate(selected, start=1):
@@ -371,7 +373,7 @@ class ExistingLiteratureStagePlanner:
                         item["ai_verification"] = {
                             "candidate_id": item["candidate_id"],
                             "verdict": "unsupported",
-                            "reason": "超出自动核验预算，必须人工审核",
+                            "reason": "超出自动核验预算，AI 核验未通过，未发布",
                         }
                         overflow_candidates.append(item)
                     else:
@@ -392,15 +394,19 @@ class ExistingLiteratureStagePlanner:
             state[branch]["verification_overflow_candidates"] = _deduplicate(
                 overflow_candidates
             )
+        assets, calls = plan_visual_review(context)
+        state["visual_assets"] = assets
         return PlannedLiteratureStage(
-            "adversarial_branches", state, (), _fingerprint(state)
+            "adversarial_branches", state, calls, _fingerprint(state)
         )
 
     def _adversarial(self, context: LiteratureStageContext, raw_results) -> PlannedLiteratureStage:
         state = _latest(context, "coverage_verification")
-        if raw_results:
-            raise ValueError("adversarial comparison is a local stage")
         records = self._compare(state)
+        records.extend(compare_visual_review(
+            state.get("visual_assets", []), context.stage.calls, raw_results,
+            threshold=self._threshold,
+        ))
         coverage_incomplete = any(
             chunk_map.get("coverage_incomplete_reasons")
             for branch in BRANCHES
@@ -409,7 +415,7 @@ class ExistingLiteratureStagePlanner:
         low_records = [
             record for record in records
             if record["gate_status"] == "manual_review"
-            and not _requires_human_localization(record)
+            and (record["entity_type"] in {"figure", "table"} or not _requires_human_localization(record))
         ]
         pages = {int(page["page"]): str(page["text"]) for page in context.pages}
         review_batches = [
@@ -445,7 +451,7 @@ class ExistingLiteratureStagePlanner:
         low_records = [
             record for record in records
             if record["gate_status"] == "manual_review"
-            and not _requires_human_localization(record)
+            and (record["entity_type"] in {"figure", "table"} or not _requires_human_localization(record))
         ][:MAX_THIRD_REVIEW_CALLS_PER_TASK * THIRD_REVIEW_BATCH_SIZE]
         _apply_third_review_payloads(
             low_records, [_plain(item) for item in raw_results], self._threshold
@@ -495,7 +501,7 @@ class ExistingLiteratureStagePlanner:
                     self._threshold,
                 )
                 record["gate_status"] = "manual_review"
-                record["gate_reason"] = "超出自动核验预算，必须人工审核"
+                record["gate_reason"] = "超出自动核验预算，AI 核验未通过，未发布"
                 records.append(record)
         return records
 
@@ -503,7 +509,7 @@ class ExistingLiteratureStagePlanner:
     def _enforce_human_localization(record: dict[str, Any]) -> None:
         if _requires_human_localization(record):
             record["gate_status"] = "manual_review"
-            record["gate_reason"] = "中文物理意义或实验条件缺失，必须人工审核"
+            record["gate_reason"] = "中文物理意义或实验条件缺失，AI 核验未通过，未发布"
 
     def _validated_result(
         self,
@@ -514,8 +520,15 @@ class ExistingLiteratureStagePlanner:
         allowed = {"dual_pass", "third_pass", "manual_review"}
         if any(record.get("gate_status") not in allowed for record in records):
             raise ValueError("quality result contains an unsupported gate")
-        counts = {status: sum(record["gate_status"] == status for record in records) for status in allowed}
+        for record in records:
+            if record["gate_status"] == "manual_review":
+                record["gate_status"] = "ai_unresolved"
+        visual_records = [record for record in records if record["entity_type"] in {"figure", "table"}]
+        records = [record for record in records if record["entity_type"] in {"data", "finding"}]
+        counts = {status: sum(record["gate_status"] == status for record in records) for status in ("dual_pass", "third_pass", "ai_unresolved")}
         return {
+            "visual_records": visual_records,
+            "review_policy": "automatic-ai-v1",
             "schema_version": "literature-extraction-validated-v1",
             "coverage": {
                 "numeric_items": not coverage_incomplete,
@@ -528,7 +541,7 @@ class ExistingLiteratureStagePlanner:
                 "candidate_count": len(records),
                 "dual_pass_count": counts["dual_pass"],
                 "third_pass_count": counts["third_pass"],
-                "manual_review_count": counts["manual_review"],
+                "manual_review_count": counts["ai_unresolved"],
                 "quality_threshold": self._threshold,
             },
         }

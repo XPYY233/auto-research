@@ -346,6 +346,7 @@ class LiteratureStageContext:
     experiment_profile: Mapping[str, Any]
     prior_outputs: tuple[FrozenStageOutput, ...]
     snapshot_fingerprint: str
+    pdf_snapshot: ImmutablePDFSnapshot | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -896,6 +897,9 @@ class LiteratureExtractionJobStore:
                 experiment_profile=job.experiment_profile,
                 prior_outputs=job.stage_outputs,
                 snapshot_fingerprint=job.snapshot.content_fingerprint,
+                pdf_snapshot=(self._snapshots.snapshot_for_finalization(
+                    job.snapshot_handle, expected_sha256=job.snapshot.pdf_sha256
+                ) if job.stage.name == "coverage_verification" else None),
             )
             planned = planner.plan_next(context, tuple(_freeze(item) for item in raw_results))
         except LiteratureExtractionJobError:

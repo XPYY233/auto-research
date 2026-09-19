@@ -45,7 +45,7 @@ _PAYLOAD_KEYS = frozenset({
     "initial_content_fingerprint",
 })
 _PLANNER_ID = "existing_literature_stage_planner"
-_PLANNER_VERSION = "v2"
+_PLANNER_VERSION = "v3"
 _EXECUTOR_ID = "literature_extraction_executor"
 _EXECUTOR_VERSION = "v1"
 _STAGE_ACTIVITY_CODES = {
@@ -117,7 +117,7 @@ def _runtime_task(stage_task: str) -> str:
 
     if stage_task in {"extraction", "verification"}:
         return "extraction"
-    if stage_task == "localization":
+    if stage_task in {"localization", "analysis"}:
         return "analysis"
     raise BusinessActionError("business_action_invalid")
 
