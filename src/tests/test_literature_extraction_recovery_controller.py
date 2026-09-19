@@ -95,6 +95,7 @@ def _controller(tmp_path: Path, *, state: str = "validated"):
         ),
         private_payload=b"authenticated-checkpoint",
         state=state,
+        stage="validated",
     )
     recovery = _Recovery()
     directory = _Directory()

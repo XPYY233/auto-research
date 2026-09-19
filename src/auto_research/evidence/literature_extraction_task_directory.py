@@ -112,6 +112,8 @@ class LiteratureExtractionTaskDirectory:
             "cancelled": "restart_extraction",
             "outcome_unknown": "review_call_outcome",
         }[state]
+        if checkpoint.stage == "finalizing" and state in {"running", "paused", "validated"}:
+            next_action = "retry_finalization"
         return {
             "resume_token": (
                 token if state not in {"completed", "failed", "cancelled"} else None

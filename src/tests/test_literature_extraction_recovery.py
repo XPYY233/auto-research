@@ -449,7 +449,8 @@ def test_recovery_module_has_no_ai_or_prepared_action_dependency() -> None:
     assert "request_tool_message" not in source
 
 
-def test_real_publication_survives_checkpoint_failure_and_reopen(tmp_path: Path) -> None:
+@pytest.mark.parametrize("cancel_after_commit", [False, True])
+def test_real_publication_survives_checkpoint_failure_and_reopen(tmp_path: Path, cancel_after_commit: bool) -> None:
     """A committed SQLite row must not be republished or recharged after restart."""
     from auto_research.evidence.db import EvidenceDB
 
@@ -496,6 +497,13 @@ def test_real_publication_survives_checkpoint_failure_and_reopen(tmp_path: Path)
             return tuple(connection.execute("SELECT value_text,unit FROM data_versions"))
 
     assert [tuple(row) for row in rows()] == [("3.2", "GPa")]
+    checkpoint, _ = runtime.recover_job_state(task_id)
+    assert checkpoint.stage == "finalizing"
+    from auto_research.evidence.literature_extraction_task_directory import LiteratureExtractionTaskDirectory
+    task = LiteratureExtractionTaskDirectory(checkpoints=runtime._service._store).status()["tasks"][0]
+    assert task["next_action"] == "retry_finalization"
+    if cancel_after_commit:
+        runtime.request_cancel(task_id)
     reopened_runtime = _runtime(tmp_path, events=[])
     second = LiteratureExtractionFinalizerRecovery(
         runtime=reopened_runtime, jobs=_job_store(tmp_path, session_key=b"c" * 32),
@@ -510,3 +518,36 @@ def test_real_publication_survives_checkpoint_failure_and_reopen(tmp_path: Path)
     assert checkpoint.state == "completed"
     assert checkpoint.spent_calls == 1  # Only the original fixture receipt; recovery has no provider.
     assert second.recover(task_id=task_id, job_token=token)["already_completed"] is True
+
+
+def test_finalization_boundary_failure_does_not_publish_or_release_snapshot(tmp_path, monkeypatch):
+    token, task_id, _state, runtime, events = _validated_fixture(tmp_path)
+    finalizer = _RecordingFinalizer(events=events)
+    jobs = _job_store(tmp_path, session_key=b'b' * 32, events=events)
+    recovery = LiteratureExtractionFinalizerRecovery(runtime=runtime, jobs=jobs, finalizer=finalizer,
+        projector=_RecordingProjector(events=events), session_id='recovery')
+    advance = runtime._service.advance_stage
+    def fail_marker(*args, **kwargs):
+        if kwargs.get('stage') == 'finalizing':
+            raise LiteratureTaskCheckpointError('literature_checkpoint_store_unavailable')
+        return advance(*args, **kwargs)
+    monkeypatch.setattr(runtime._service, 'advance_stage', fail_marker)
+    with pytest.raises(LiteratureExtractionRecoveryError) as error:
+        recovery.recover(task_id=task_id, job_token=token)
+    assert error.value.code == 'literature_checkpoint_store_unavailable'
+    assert finalizer.calls == 0
+    assert 'ack' not in events
+    assert jobs.summary(token, session_id='recovery')['stage'] == 'validated'
+    monkeypatch.setattr(runtime._service, 'advance_stage', advance)
+    assert recovery.recover(task_id=task_id, job_token=token)['status'] == 'completed'
+
+
+def test_cancellation_before_finalization_boundary_still_prevents_publication(tmp_path):
+    token, task_id, _state, runtime, events = _validated_fixture(tmp_path)
+    checkpoint = runtime.recover(task_id, owner_id=_checkpoint_owner_id(token))
+    runtime.request_cancel(task_id)
+    with pytest.raises(LiteratureTaskCheckpointError) as error:
+        runtime.begin_finalization(checkpoint, owner_id=_checkpoint_owner_id(token))
+    assert error.value.code == 'literature_task_cancelled'
+    assert runtime._service.load(task_id).state == 'cancelled'
+    assert 'finalize' not in events

@@ -99,6 +99,7 @@ class _AuthenticatedTask:
     paper_id: int
     pdf_sha256: str
     state: str
+    stage: str
 
 
 class LiteratureExtractionRecoveryController:
@@ -218,7 +219,7 @@ class LiteratureExtractionRecoveryController:
                     "literature_active_task_exists",
                     cause_code="literature_active_task_exists",
                     stage="checkpoint",
-                    next_action=_next_action(task.state),
+                    next_action="retry_finalization" if task.stage == "finalizing" else _next_action(task.state),
                     retryable=False,
                 )
 
@@ -307,6 +308,7 @@ class LiteratureExtractionRecoveryController:
                         paper_id=job.paper_id,
                         pdf_sha256=pdf_sha256,
                         state=checkpoint.state,
+                        stage=checkpoint.stage,
                     )
                 )
             return tuple(tasks)

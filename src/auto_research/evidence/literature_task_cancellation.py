@@ -61,7 +61,7 @@ class LiteratureTaskCancellationCoordinator:
         self._ensure_live(checkpoint, now)
         if checkpoint.state == "outcome_unknown":
             raise LiteratureTaskCheckpointError("literature_call_outcome_unknown")
-        if checkpoint.state in {"completed", "cancelled"}:
+        if checkpoint.state in {"completed", "cancelled"} or checkpoint.stage == "finalizing":
             return checkpoint
         if checkpoint.lease_owner_digest is None and not _has_in_flight(checkpoint):
             return self._commit_cancel(checkpoint, now=now)
@@ -106,6 +106,8 @@ class LiteratureTaskCancellationCoordinator:
         *,
         now: int,
     ) -> LiteratureTaskCheckpoint:
+        if checkpoint.stage == "finalizing":
+            raise LiteratureTaskCheckpointError("literature_checkpoint_invalid")
         updated = replace(
             checkpoint,
             revision=checkpoint.revision + 1,

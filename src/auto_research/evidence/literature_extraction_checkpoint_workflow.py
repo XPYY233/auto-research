@@ -189,7 +189,7 @@ class LiteratureExtractionBusinessExecutor:
                 action=action,
                 job_token=token,
             )
-            if checkpoint.stage == "validated" or checkpoint.state == "completed":
+            if checkpoint.stage in {"validated", "finalizing"} or checkpoint.state == "completed":
                 return self._finalize_checkpointed_job(
                     checkpoint=checkpoint,
                     owner_id=owner_id,
@@ -508,6 +508,8 @@ class LiteratureExtractionBusinessExecutor:
             raise LiteratureTaskCheckpointError(
                 "literature_checkpoint_store_unavailable"
             )
+        if checkpoint.state != "completed":
+            checkpoint = runtime.begin_finalization(checkpoint, owner_id=owner_id)
         emit_ai_activity("literature_publishing")
         summary = self._store.finalize(
             job_token,

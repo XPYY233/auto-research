@@ -95,7 +95,7 @@ class LiteratureTaskCheckpointService:
             return checkpoint
         if checkpoint.state == "cancelled":
             raise LiteratureTaskCheckpointError("literature_task_cancelled")
-        if self.cancellation_requested(task_id):
+        if checkpoint.stage != "finalizing" and self.cancellation_requested(task_id):
             self._cancellation.cancel_recovered(checkpoint, now=now)
             raise LiteratureTaskCheckpointError("literature_task_cancelled")
         if checkpoint.lease_expires_at is not None and checkpoint.lease_expires_at <= now:

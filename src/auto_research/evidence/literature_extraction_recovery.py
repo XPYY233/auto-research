@@ -175,6 +175,7 @@ class LiteratureExtractionFinalizerRecovery:
                 job_token=job_token,
             )
 
+            checkpoint = self._runtime.begin_finalization(checkpoint, owner_id=owner_id)
             summary = self._jobs.finalize(
                 job_token,
                 session_id=self._session_id,
@@ -260,7 +261,7 @@ class LiteratureExtractionFinalizerRecovery:
         decoded = _decode_checkpoint_job_state(job_state)
         is_completed = checkpoint.state == "completed" and checkpoint.stage == "completed"
         is_validated = checkpoint.state in {"validated", "running", "paused"} and (
-            checkpoint.stage == "validated"
+            checkpoint.stage in {"validated", "finalizing"}
         )
         if (
             checkpoint.manifest.task_id != task_id
