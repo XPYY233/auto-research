@@ -88,6 +88,35 @@ class ReviewQueueTests(unittest.TestCase):
             )
             return int(row.lastrowid)
 
+    def test_paper_scope_precedes_global_queue_limit(self) -> None:
+        # More than one batch from an earlier title must not hide a later paper.
+        first_id = self._seed()
+        with self.db.connect() as connection:
+            row = dict(connection.execute("SELECT * FROM quality_candidates WHERE id=?", (first_id,)).fetchone())
+            columns = [key for key in row if key != "id"]
+            values = []
+            for index in range(505):
+                copied = {**row, "candidate_key": f"extra-{index}"}
+                values.append(tuple(copied[key] for key in columns))
+            connection.executemany(
+                f"INSERT INTO quality_candidates ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+                values,
+            )
+        earlier_uid = stable_paper_uid(doi="10.1000/manual-review", title="Manual review paper", year=None, first_author=None)
+        self.paper_id = self.db.upsert_paper(title="Z later paper", doi="", year=2025, first_author="Author")
+        later_uid = stable_paper_uid(doi="", title="Z later paper", year=2025, first_author="Author")
+        self._seed(value="900")
+        service = ReviewQueueService(self.db)
+        self.assertEqual(service.list()["total"], 500)
+        later = service.list(paper_uid=later_uid)
+        self.assertEqual(later["total"], 1)
+        self.assertEqual(later["items"][0]["candidate"]["value_text"], "900")
+        self.assertEqual(later["items"][0]["paper_uid"], later_uid)
+        earlier = service.list(paper_uid=earlier_uid)
+        self.assertEqual(earlier["total"], 500)
+        self.assertTrue(all(row["paper_uid"] == earlier_uid for row in earlier["items"]))
+        self.assertEqual(service.list(paper_uid="paper_" + "0" * 32)["items"], [])
+
     def _seed_visual(self) -> int:
         stamp = now()
         image = Path(self.temp.name) / "figure.png"

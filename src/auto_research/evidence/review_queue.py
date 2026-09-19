@@ -182,13 +182,30 @@ class ReviewQueueService:
             raise ReviewQueueError("review_queue_invalid")
         self._db.init()
         with self._db.connect() as connection:
+            scope_clause = ""
+            parameters: tuple[Any, ...] = (MAX_QUEUE_ITEMS,)
+            if paper_uid is not None:
+                # Resolve the public paper identity before limiting candidates.
+                # The subquery evaluates paper metadata, not every candidate JSON.
+                connection.create_function(
+                    "review_paper_uid", 4,
+                    lambda doi, title, year, author: stable_paper_uid(
+                        doi=doi, title=title, year=year, first_author=author,
+                    ),
+                    deterministic=True,
+                )
+                scope_clause = """AND q.paper_id IN (
+                    SELECT id FROM papers
+                    WHERE review_paper_uid(doi,title,year,first_author)=?
+                )"""
+                parameters = (paper_uid, MAX_QUEUE_ITEMS)
             rows = connection.execute(
-                """SELECT q.*,p.title paper_title,p.doi paper_doi,p.year paper_year,
+                f"""SELECT q.*,p.title paper_title,p.doi paper_doi,p.year paper_year,
                           p.first_author paper_first_author
                    FROM quality_candidates q JOIN papers p ON p.id=q.paper_id
-                   WHERE q.gate_status='manual_review'
+                   WHERE q.gate_status='manual_review' {scope_clause}
                    ORDER BY p.title COLLATE NOCASE,q.overall_score,q.entity_type,q.id LIMIT ?""",
-                (MAX_QUEUE_ITEMS,),
+                parameters,
             ).fetchall()
         items: list[dict[str, Any]] = []
         for row in rows:
@@ -198,8 +215,6 @@ class ReviewQueueService:
                 "year": row["paper_year"],
                 "first_author": row["paper_first_author"],
             })
-            if paper_uid is not None and uid != paper_uid:
-                continue
             items.append(self._project_row(row, uid))
         return {
             "schema_version": SCHEMA_VERSION,
