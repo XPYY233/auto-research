@@ -4,6 +4,7 @@ import csv
 from pathlib import Path
 
 from auto_research.paths import MATRIX_DIR
+from auto_research.source_fingerprints import file_sha256
 
 from .db import EvidenceDB
 from .importers import _preferred_pdf, _rows
@@ -106,7 +107,7 @@ def select_pilot(db: EvidenceDB, target_per_focus: int = 15,
         paper_id = db.upsert_paper(
             pilot_code=f"P{index:02d}", title=row["title"], year=int(row["year"]) if row.get("year") else None,
             doi=row["doi"], zotero_key=row.get("zotero_key"), pdf_path=row["selected_pdf_path"],
-            pdf_sha256=row.get("pdf_signature"), material_focus=row["focus"], pilot_order=index,
+            pdf_sha256=file_sha256(Path(row["selected_pdf_path"])), material_focus=row["focus"], pilot_order=index,
             authenticity_status="verified_pdf", parse_status="queued",
         )
         report_rows.append({
