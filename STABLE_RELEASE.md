@@ -2,7 +2,7 @@
 
 当前进度与待办只见 [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md)。
 
-重建尚未完成，没有新的稳定版或组内交付包。原安装 build54 是候选；
+重建尚未完成，没有新的稳定版或组内交付包。当前安装 build55 是候选，见 [候选验收](docs/CANDIDATE_55_ACCEPTANCE.md)；
 旧构建/回退身份保存在 [历史发布记录](docs/history/STABLE_RELEASE_pre_rescue_20260919.md)
 及 [旧安装验收](docs/BUILD54_INSTALLED_ACCEPTANCE.md)。
 
