@@ -251,3 +251,40 @@ def test_package_job_history_is_small_and_dependency_direction_is_one_way():
     }
     assert "package_job_history" not in history_imports
     assert "package_center" not in history_imports
+
+
+def test_terminal_job_is_not_visible_until_history_write_finishes():
+    from threading import Event, Thread
+
+    entered, release, observed = Event(), Event(), Event()
+    values = []
+
+    class SlowRecorder:
+        def record(self, job):
+            if job['stage'] == 'completed':
+                entered.set()
+                assert release.wait(5), 'test did not release history writer'
+            return 'a' * 64, 1
+
+    jobs = PackageJobService(history_recorder=SlowRecorder())
+    job_id = jobs._begin(PackageOperation.TRANSFER_EXPORT)
+    advance_export(jobs, job_id)
+    writer = Thread(target=lambda: jobs._complete(job_id, outcome='exported', result=export_result()))
+
+    def read():
+        values.append(jobs.get(job_id))
+        observed.set()
+
+    reader = Thread(target=read)
+    writer.start()
+    try:
+        assert entered.wait(5)
+        reader.start()
+        assert not observed.wait(0.1), 'terminal status raced its durable history write'
+    finally:
+        release.set()
+        writer.join(5)
+        if reader.ident is not None:
+            reader.join(5)
+    assert observed.is_set()
+    assert values[0]['stage'] == 'completed'
