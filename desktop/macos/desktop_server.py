@@ -40,6 +40,7 @@ from package_import_service import PackageImportService, PackageImportServiceErr
 from personal_import_api import PersonalImportAPI
 from personal_table_api import PersonalTableAPI
 from review_queue_api import ReviewQueueAPI
+from literature_import_api import LiteratureImportAPI, UPLOAD_PATH
 from search_index_recovery_api import SearchIndexRecoveryAPI
 from table_structure_api import TableStructureAPI
 from workspace_evidence_api import WorkspaceEvidenceAPI
@@ -199,6 +200,7 @@ class DesktopEvidenceHandler(EvidenceHandler):
     personal_import_api: PersonalImportAPI | None = None
     personal_table_api: PersonalTableAPI | None = None
     review_queue_api: ReviewQueueAPI | None = None
+    literature_import_api: LiteratureImportAPI
     table_structure_api: TableStructureAPI | None = None
     workspace_evidence_api: WorkspaceEvidenceAPI | None = None
     search_index_recovery_api: SearchIndexRecoveryAPI | None = None
@@ -795,6 +797,14 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return
         if self.experience_mode == "fusion-review":
             return self._experience_forbidden()
+        if path == UPLOAD_PATH:
+            if self.read_only:
+                self.close_connection = True
+                return self.json_response(
+                    {"error": "当前为只读模式，不允许上传文献。", "code": "read_only"},
+                    HTTPStatus.FORBIDDEN,
+                )
+            return self.literature_import_api.handle_post(self)
         high_cost = path in HIGH_COST_PATHS
         if high_cost and not self.security_state.acquire_high_cost():
             return self.json_response(
@@ -1073,6 +1083,7 @@ def create_desktop_server(
         {
             "db": database,
             "upload_service": upload_service,
+            "literature_import_api": LiteratureImportAPI(upload_service),
             "read_only": read_only,
             "security_state": security_state,
             "history_store": history_store,
