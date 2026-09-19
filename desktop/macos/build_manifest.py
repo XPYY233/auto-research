@@ -98,7 +98,9 @@ def collect_dependency_notices(resources: Path) -> None:
             if ".dist-info/" not in text or not any(part in entry.name.lower() for part in ("license", "notice", "copying")):
                 continue
             data = distribution.locate_file(entry).read_bytes()
-            relative = Path("third-party-notices") / safe_name / entry.name
+            # Bundled dependencies (e.g. pip's vendored libraries) often each
+            # have a file named LICENSE. Preserve their package-relative paths.
+            relative = Path("third-party-notices") / safe_name / Path(*entry.parts[1:])
             destination = resources / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.exists() and destination.read_bytes() != data:
