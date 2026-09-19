@@ -1,0 +1,6 @@
+# Verified macOS arm64 / CPython 3.14.3 artifacts. Do not hand-edit hashes.
+# proxy_tools is the upstream sdist; build without isolation using the separate tool lock.
+pip==26.0.1 --hash=sha256:bdb1b08f4274833d62c1aa29e20907365a2ceb950410df15fc9521bad440122b
+setuptools==83.0.0 --hash=sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3
+wheel==0.46.3 --hash=sha256:4b399d56c9d9338230118d705d9737a2a468ccca63d5e813e2a4fc7815d8bc4d
+packaging==26.2 --hash=sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e

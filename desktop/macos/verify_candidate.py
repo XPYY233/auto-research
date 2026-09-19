@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -19,16 +20,23 @@ def verify(executable: Path, project_root: Path, cache_root: Path) -> None:
     cache_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="isolated-smoke-", dir=cache_root) as directory:
         workspace = Path(directory) / "workspace"
+        environment = {
+            key: value for key, value in os.environ.items()
+            if not any(marker in key.upper() for marker in ("API_KEY", "TOKEN", "SECRET", "AUTO_RESEARCH"))
+        }
+        environment["HOME"] = str(Path(directory) / "home")
+        Path(environment["HOME"]).mkdir()
         # The candidate creates its own schema. No checkout data/config links,
         # no developer database, and no host Python dependency at runtime.
         subprocess.run(
-            [str(executable), "--initialize-workspace", str(workspace)], check=True,
+            [str(executable), "--initialize-workspace", str(workspace)], check=True, env=environment,
         )
         temporary_database = workspace / "db" / "experimental_evidence.sqlite"
         before = sha256(temporary_database)
         subprocess.run(
             [str(executable), "--smoke-test", "--project-root", str(workspace)],
             check=True,
+            env=environment,
         )
         after = sha256(temporary_database)
         if before != after:

@@ -34,7 +34,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertEqual(metadata["release_status"], contract["desktop"]["macos"]["release_status"])
         self.assertEqual(launcher.DESKTOP_VERSION, "1.2.0")
         self.assertEqual(metadata["bundle_short_version"], "1.2.0")
-        self.assertEqual(metadata["build_number"], "54")
+        self.assertEqual(metadata["build_number"], "55")
         self.assertEqual(metadata["target"], "macOS arm64 Auto Research workbench")
         self.assertIn("workspace-schema-v12", metadata["data_mode"])
         self.assertIn("private-library", metadata["data_mode"])
@@ -75,7 +75,7 @@ class DesktopVersionContractTests(unittest.TestCase):
     def test_dmg_name_is_derived_and_does_not_reuse_previous_identity(self) -> None:
         command = (DESKTOP_ROOT / "make_dmg.command").read_text(encoding="utf-8")
         self.assertIn("plutil -extract desktop_version", command)
-        self.assertIn("Auto-Research-${DESKTOP_VERSION}-macOS-arm64.dmg", command)
+        self.assertIn("Auto-Research-${DESKTOP_VERSION}-${CANDIDATE_ID}-macOS-arm64.dmg", command)
         self.assertNotIn("Auto-Research-0.3.0-preview.1", command)
 
     def test_build_output_reads_the_same_version_metadata(self) -> None:
