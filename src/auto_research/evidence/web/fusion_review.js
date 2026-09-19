@@ -210,7 +210,7 @@
   }
   function publicPaper(raw) {
     const id = Number(raw?.id);
-    return Number.isSafeInteger(id) && id > 0 && String(raw?.title || "").trim() ? {id,title:String(raw.title).trim(),doi:String(raw.doi||"").trim(),year:raw.year||"",firstAuthor:String(raw.first_author||"").trim(),material:String(raw.material_focus||"").trim(),count:Math.max(0,Number(raw.six_row_count)||0),status:String(raw.six_workflow_label||raw.six_workflow_state||"只读"),requiresRescanConfirmation:raw?.requires_rescan_confirmation===true} : null;
+    return Number.isSafeInteger(id) && id > 0 && String(raw?.title || "").trim() ? {id,title:String(raw.title).trim(),doi:String(raw.doi||"").trim(),year:raw.year||"",firstAuthor:String(raw.first_author||"").trim(),material:String(raw.material_focus||"").trim(),count:Math.max(0,Number(raw.six_row_count)||0),status:String(raw.extraction_workflow_label||raw.six_workflow_label||raw.six_workflow_state||"只读"),requiresRescanConfirmation:raw?.requires_rescan_confirmation===true} : null;
   }
   const cleanText=(value,limit=8000)=>String(value??"").trim().slice(0,limit);
   const cleanList=(value,limit=200)=>Array.isArray(value)?value.slice(0,limit).map(item=>cleanText(item,800)).filter(Boolean):[];

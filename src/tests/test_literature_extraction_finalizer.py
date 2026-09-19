@@ -483,3 +483,114 @@ def test_job_store_trusted_finalize_waits_for_durable_ack_before_cleanup(evidenc
     store.acknowledge_finalized(summary["job_token"], session_id="owner")
     assert summary["job_token"] not in store._jobs
     assert snapshot_handle not in store._snapshots._records
+
+
+@pytest.mark.parametrize("action", ["approve", "reject"])
+def test_publication_review_catalogue_search_and_restart_agree(evidence, monkeypatch, action):
+    """Exercise real services; an index failure must not replay scientific writes."""
+    from auto_research.evidence.review_queue import ReviewQueueService
+    from auto_research.evidence.search_index import EvidenceSearchIndex
+    from auto_research.evidence.webapp import search_paper_catalog
+
+    db, pdf, paper_id = evidence
+    payload = package(paper_id, "Safe experiment", "10.1/safe", pdf)
+    receipt = AtomicEvidenceDBFinalizer(db).finalize(payload)
+    assert receipt["search_index"]["status"] == "refreshed"
+    index = EvidenceSearchIndex(db)
+    queue = ReviewQueueService(db, search_index=index)
+    rows = queue.list()["items"]
+    before = search_paper_catalog(db)[0]
+    assert before["pending_candidate_count"] == len(rows) == 1
+    assert before["extraction_workflow_state"] == "pending_review"
+    assert index.search("", quality_filter="published", refresh=False).total == 2
+
+    refresh = index.refresh_papers
+    def fail_index(_paper_ids):
+        raise OSError("injected index failure")
+    monkeypatch.setattr(index, "refresh_papers", fail_index)
+    token = rows[0]["review_token"]
+    result = queue.review(review_token=token, action=action)
+    assert result["status"] == "saved_index_pending"
+    saved_counts = counts(db)
+    assert queue.list()["total"] == 0
+    after = search_paper_catalog(db)[0]
+    assert after["pending_candidate_count"] == 0
+    assert after["extraction_workflow_state"] == "saved"
+    assert after["six_workflow_state"] == "pending_review"  # Human validation is separate.
+    assert "已完成" not in after["extraction_workflow_label"]
+    # Reading the catalogue cannot silently rebuild a failed index.
+    assert index.search("", quality_filter="published", refresh=False).total == 2
+
+    monkeypatch.setattr(index, "refresh_papers", refresh)
+    assert queue.review(review_token=token, action=action)["status"] == "saved"
+    assert queue.review(review_token=token, action=action)["status"] == "saved"
+    assert counts(db) == saved_counts
+    expected = 3 if action == "approve" else 2
+    assert index.search("", quality_filter="published", refresh=False).total == expected
+    # Fresh service objects simulate reopening durable state, without repairing it.
+    reopened = EvidenceDB(db.path)
+    assert search_paper_catalog(reopened) == [after]
+    assert ReviewQueueService(reopened).list()["total"] == 0
+    assert EvidenceSearchIndex(reopened).search("", quality_filter="published", refresh=False).total == expected
+    assert AtomicEvidenceDBFinalizer(reopened).finalize(payload)["idempotent"] is True
+    assert counts(reopened) == saved_counts
+    assert ReviewQueueService(reopened).list()["total"] == 0
+
+
+def test_finding_only_completion_reaches_production_catalogue_renderer(evidence):
+    import subprocess
+    from auto_research.evidence.webapp import search_paper_catalog
+
+    db, pdf, paper_id = evidence
+    original = package(paper_id, "Safe experiment", "10.1/safe", pdf)
+    quality = dict(original.quality_result)
+    quality["records"] = [record("finding-only", "finding", "third_pass", finding_candidate())]
+    quality["summary"] = {"candidate_count": 1, "dual_pass_count": 0,
+                          "third_pass_count": 1, "manual_review_count": 0, "quality_threshold": 85.0}
+    AtomicEvidenceDBFinalizer(db).finalize(replace(original, quality_result=MappingProxyType(quality)))
+    catalogue = search_paper_catalog(db)
+    assert catalogue[0]["six_row_count"] == 0
+    assert catalogue[0]["extraction_workflow_state"] == "saved"
+    runtime = Path(__file__).resolve().parents[1] / "auto_research/evidence/web/fusion_review.js"
+    program = r'''
+const fs=require('fs'),assert=require('assert');
+globalThis.document={readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{}};
+globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
+const catalogue=JSON.parse(fs.readFileSync(0,'utf8'));
+globalThis.fetch=async url=>{assert.equal(String(url),'/api/search-papers');return {ok:true,json:async()=>catalogue};};
+eval(fs.readFileSync(process.argv[1],'utf8'));
+(async()=>{
+ const api=globalThis.AutoResearchFusion;
+ assert.equal(await api.refreshLiteratureCatalog(),true);
+ assert.equal(api.state.papers[0].status,catalogue[0].extraction_workflow_label);
+ assert(!api.state.papers[0].status.includes('未扫描'));
+ assert(!api.state.papers[0].status.includes('已完成'));
+})().catch(error=>{console.error(error);process.exitCode=1;});
+'''
+    result = subprocess.run(["node", "-e", program, str(runtime)], input=json.dumps(catalogue),
+                            text=True, capture_output=True, timeout=8)
+    assert result.returncode == 0, result.stderr
+
+
+def test_visual_only_candidates_are_not_reported_as_unscanned(evidence, monkeypatch):
+    from auto_research.evidence import literature_visual_stage as visual_stage
+    from auto_research.evidence.review_queue import ReviewQueueService
+    from auto_research.evidence.webapp import search_paper_catalog
+
+    db, pdf, paper_id = evidence
+    make_table_pdf(pdf)
+    monkeypatch.setattr(visual_stage, "_target_specs", lambda _paper: table_spec())
+    original = package(paper_id, "Safe experiment", "10.1/safe", pdf)
+    quality = dict(original.quality_result)
+    quality["records"] = []
+    quality["summary"] = {"candidate_count": 0, "dual_pass_count": 0,
+                          "third_pass_count": 0, "manual_review_count": 0, "quality_threshold": 85.0}
+    receipt = AtomicEvidenceDBFinalizer(db).finalize(replace(original, quality_result=MappingProxyType(quality)))
+    assert receipt["table_candidate_count"] == 1
+    queue = ReviewQueueService(db).list()
+    assert queue["total"] == 1
+    assert queue["items"][0]["entity_type"] == "table"
+    row = search_paper_catalog(db)[0]
+    assert row["six_row_count"] == 0
+    assert row["pending_candidate_count"] == 1
+    assert row["extraction_workflow_state"] == "pending_review"

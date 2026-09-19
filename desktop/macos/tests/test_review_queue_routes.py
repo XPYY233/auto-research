@@ -67,6 +67,72 @@ class _Handler:
 
 
 class ReviewQueueRouteTests(unittest.TestCase):
+    def test_real_review_updates_catalogue_and_search_over_authenticated_http(self) -> None:
+        import fitz
+        from auto_research.evidence.db import now
+        from auto_research.evidence.review_queue import ReviewQueueService
+        from auto_research.evidence.search_index import EvidenceSearchIndex
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pdf = root / "paper.pdf"
+            with fitz.open() as document:
+                document.new_page().insert_text((72, 72), "Measured hardness: 3.2 GPa.")
+                document.save(pdf)
+            database = EvidenceDB(root / "test.sqlite")
+            database.init()
+            paper_id = database.upsert_paper(title="Synthetic review experiment", pdf_path=str(pdf))
+            stamp = now()
+            candidate = {"candidate_id": "data-one", "value_text": "3.2", "unit": "GPa",
+                         "meaning": "Measured hardness", "source_page": 1,
+                         "source_locator": "Results", "source_excerpt": "Measured hardness: 3.2 GPa.",
+                         "context_explanation": "Synthetic measurement"}
+            with database.connect() as connection:
+                run = connection.execute(
+                    "INSERT INTO quality_pipeline_runs(paper_id,status,stage,progress,quality_threshold,summary_json,created_at) "
+                    "VALUES(?,'completed','completed',100,85,'{}',?)", (paper_id, stamp),
+                )
+                connection.execute(
+                    "INSERT INTO quality_candidates(pipeline_run_id,paper_id,entity_type,candidate_key,chosen_source,"
+                    "candidate_json,agreement_score,factuality_score,completeness_score,evidence_score,overall_score,"
+                    "gate_status,gate_reason,created_at,updated_at) VALUES(?,?,'data','data-one','extractor_a',?,"
+                    "70,70,70,70,70,'manual_review','synthetic disagreement',?,?)",
+                    (run.lastrowid, paper_id, json.dumps(candidate), stamp, stamp),
+                )
+            service = ReviewQueueService(database, search_index=EvidenceSearchIndex(database))
+            token = new_session_token()
+            server, _ = create_desktop_server(database, host="127.0.0.1", port=0, token=token,
+                experience_mode="fusion-product", review_queue_api=ReviewQueueAPI(service))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+            def get(route):
+                with opener.open(base + route, timeout=5) as response:
+                    return json.load(response)
+            try:
+                with opener.open(f"{base}/?desktop_token={token}", timeout=5) as response:
+                    csrf = response.headers[CSRF_HEADER]
+                self.assertEqual(get("/api/search-papers")[0]["pending_candidate_count"], 1)
+                row = get("/api/desktop/review-queue")["items"][0]
+                request = urllib.request.Request(base + "/api/desktop/review-queue/actions",
+                    data=json.dumps({"review_token": row["review_token"], "action": "approve"}).encode(),
+                    headers={"Origin": base, CSRF_HEADER: csrf, "Content-Type": "application/json"})
+                for _ in range(2):
+                    with opener.open(request, timeout=5) as response:
+                        self.assertEqual(json.load(response)["status"], "saved")
+                self.assertEqual(get("/api/desktop/review-queue")["total"], 0)
+                catalogue = get("/api/search-papers")[0]
+                self.assertEqual(catalogue["extraction_workflow_state"], "saved")
+                self.assertEqual(catalogue["pending_candidate_count"], 0)
+                found = get("/api/search-v2?q=&quality=published")
+                self.assertEqual(found["total"], 1)
+                self.assertEqual(found["rows"][0]["value_text"], "3.2")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_pending_image_route_requires_session_and_never_caches_source(self) -> None:
         token = new_session_token()
         image_token = "rq_" + "A" * 40
