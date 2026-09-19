@@ -507,7 +507,16 @@ def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
     doc = fitz.open(pdf_path)
     try:
         for page_index, page in enumerate(doc):
-            blocks = [b for b in page.get_text("blocks") if str(b[4]).strip()]
+            # Publisher text blocks can merge a preceding paragraph and a
+            # caption. Keep rendered line boundaries and their own rectangles:
+            # flattening a whole block hides that caption and misplaces crops.
+            blocks = [
+                (*line["bbox"], "".join(span["text"] for span in line["spans"]))
+                for block in page.get_text("dict", flags=fitz.TEXTFLAGS_TEXT)["blocks"]
+                if block["type"] == 0
+                for line in block["lines"]
+                if any(span["text"].strip() for span in line["spans"])
+            ]
             index_kinds = _visual_index_kinds(blocks)
             image_rects: list[fitz.Rect] = []
             for image in page.get_images(full=True):
