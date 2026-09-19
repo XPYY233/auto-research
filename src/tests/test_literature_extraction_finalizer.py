@@ -501,7 +501,7 @@ def test_publication_review_catalogue_search_and_restart_agree(evidence, monkeyp
     rows = queue.list()["items"]
     before = search_paper_catalog(db)[0]
     assert before["pending_candidate_count"] == len(rows) == 1
-    assert before["extraction_workflow_state"] == "pending_review"
+    assert before["extraction_workflow_state"] == "ai_unresolved"
     assert index.search("", quality_filter="published", refresh=False).total == 2
 
     refresh = index.refresh_papers
@@ -593,4 +593,4 @@ def test_visual_only_candidates_are_not_reported_as_unscanned(evidence, monkeypa
     row = search_paper_catalog(db)[0]
     assert row["six_row_count"] == 0
     assert row["pending_candidate_count"] == 1
-    assert row["extraction_workflow_state"] == "pending_review"
+    assert row["extraction_workflow_state"] == "ai_unresolved"

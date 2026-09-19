@@ -419,8 +419,8 @@ class TableStructureAPITests(unittest.TestCase):
         ):
             for authorized, read_only, expected in (
                 (False, False, None),
-                (True, True, HTTPStatus.FORBIDDEN),
-                (True, False, HTTPStatus.OK),
+                (True, True, HTTPStatus.GONE),
+                (True, False, HTTPStatus.GONE),
             ):
                 with self.subTest(
                     route=route,
@@ -455,7 +455,7 @@ class TableStructureAPITests(unittest.TestCase):
                         self.assertEqual(handler.responses[0][1], expected)
                         self.assertEqual(
                             handler.table_structure_api.calls,
-                            [] if read_only else [handler.path],
+                            [],
                         )
 
 

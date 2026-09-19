@@ -40,6 +40,7 @@ from package_import_service import PackageImportService, PackageImportServiceErr
 from personal_import_api import PersonalImportAPI
 from personal_table_api import PersonalTableAPI
 from review_queue_api import ReviewQueueAPI
+from retired_literature_review import is_retired_literature_review
 from literature_import_api import LiteratureImportAPI, UPLOAD_PATH
 from search_index_recovery_api import SearchIndexRecoveryAPI
 from table_structure_api import TableStructureAPI
@@ -690,6 +691,8 @@ class DesktopEvidenceHandler(EvidenceHandler):
             return self._bootstrap_redirect()
         if not self._has_session():
             return self._desktop_forbidden()
+        if is_retired_literature_review(parsed.path, "GET"):
+            return self._manual_review_retired()
         if parsed.path == "/api/ui-mode" and not parsed.query:
             self._issue_csrf_header = True
             if self.experience_mode == "fusion-review":
@@ -791,12 +794,18 @@ class DesktopEvidenceHandler(EvidenceHandler):
             self._issue_csrf_header = True
         return super().do_GET()
 
+    def _manual_review_retired(self) -> None:
+        self.close_connection = True
+        return self.json_response({"code": "manual_review_retired", "message": "人工审核功能已移除，文献采用 AI 自动核验与发布。"}, HTTPStatus.GONE)
+
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         if not self._authorize_post(path):
             return
         if self.experience_mode == "fusion-review":
             return self._experience_forbidden()
+        if is_retired_literature_review(path, "POST"):
+            return self._manual_review_retired()
         if path == UPLOAD_PATH:
             if self.read_only:
                 self.close_connection = True
@@ -1028,12 +1037,6 @@ def create_desktop_server(
         document_index = {**upload_service.index_existing_pdfs(), "disabled": False}
     search_index_service = EvidenceSearchIndex(database)
     search_index = search_index_service.ensure_fresh()
-    if review_queue_api is None:
-        from auto_research.evidence.review_queue import ReviewQueueService
-
-        review_queue_api = ReviewQueueAPI(
-            ReviewQueueService(database, search_index=search_index_service)
-        )
     if table_structure_api is None:
         from auto_research.evidence.table_structure_service import (
             WorkspaceTableStructureService,

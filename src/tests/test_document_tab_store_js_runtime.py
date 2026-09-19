@@ -28,7 +28,7 @@ const closed=store.close(paper.tabId);assert.equal(closed.tabId,paper.tabId);ass
 assert(store.move(evidence.tabId,'primary'));assert.equal(store.snapshot().tabs.find(tab=>tab.tabId===evidence.tabId).groupId,'primary');
 const restored=new Store();assert.equal(restored.snapshot().tabs.length,2);assert.equal(restored.snapshot().tabs[0].payload,undefined);
 const review=store.open({{tabId:'review-candidate:paperUid=paper_0123456789abcdef0123456789abcdef&entityType=item&reviewOrdinal=0',kind:'review-candidate',ownerView:'paper',title:'待审核',identity:{{paperUid:'paper_0123456789abcdef0123456789abcdef',sourceScope:'workspace',sourceId:'workspace',entityType:'item',reviewOrdinal:'0'}},payload:{{reviewToken:'rq_abcdefghijklmnopqrstuvwxyzABCDEFGH',candidate:{{source_excerpt:'private candidate body'}}}}}});
-assert(review);const reviewSaved=memory.get('auto-research-workspace-layout-v1');assert(reviewSaved.includes('review-candidate'));assert(reviewSaved.includes('paper_0123456789abcdef0123456789abcdef'));assert(!reviewSaved.includes('rq_abcdefghijklmnopqrstuvwxyzABCDEFGH'));assert(!reviewSaved.includes('private candidate body'));assert(!reviewSaved.includes('reviewToken'));
+assert.equal(review,null);const reviewSaved=memory.get('auto-research-workspace-layout-v1');assert(!reviewSaved.includes('review-candidate'));assert(!reviewSaved.includes('rq_abcdefghijklmnopqrstuvwxyzABCDEFGH'));assert(!reviewSaved.includes('private candidate body'));assert(!reviewSaved.includes('reviewToken'));
 assert.equal(restored.open({{tabId:'evil:x',kind:'evil',ownerView:'paper',title:'x',identity:{{paperId:'1'}}}}),null);
 
 const isolated=new Store({{storage:null}});

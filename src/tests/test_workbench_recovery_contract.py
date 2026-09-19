@@ -55,7 +55,7 @@ class WorkbenchRecoveryContractTest(unittest.TestCase):
     def test_primary_actions_remain_at_each_page_entry(self):
         html = (WEB / "index.html").read_text()
         for control in (
-            "fusion-import-pdf", "fusion-start-extraction", "fusion-open-pdf", "fusion-open-review-queue",
+            "fusion-import-pdf", "fusion-start-extraction", "fusion-open-pdf",
             "fusion-run-precise-search", "fusion-open-librarian", "fusion-librarian-new", "fusion-librarian-send",
             "fusion-select-data-file", "fusion-personal-ai", "fusion-personal-confirm",
             "fusion-package-official-select", "fusion-package-literature-plan", "fusion-package-user-select",
