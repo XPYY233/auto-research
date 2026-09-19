@@ -15,6 +15,9 @@ EXPECTED_BUILD="$(/usr/bin/plutil -extract build_number raw -o - "${SCRIPT_DIR}/
 STAMP="$(date '+%Y%m%d-%H%M%S')"
 STAGED="/Applications/.Auto Research-${EXPECTED_VERSION}-build${EXPECTED_BUILD}-${STAMP}.app"
 LIVE_HOLD="/Applications/.Auto Research-previous-${STAMP}.app.rollback"
+PYTHON_BIN="${AUTO_RESEARCH_DESKTOP_PYTHON:-$(command -v python3)}"
+CANDIDATE_ROOT="${CANDIDATE:A:h}"
+INVENTORY="${CANDIDATE_ROOT}/app-inventory.json"
 COMMITTED=0
 MOVED_OLD=0
 
@@ -39,6 +42,7 @@ if [[ ! -d "${CANDIDATE}" ]]; then
   exit 2
 fi
 codesign --verify --deep --strict "${CANDIDATE}"
+"${PYTHON_BIN}" "${SCRIPT_DIR}/artifact_integrity.py" verify --app "${CANDIDATE}" --manifest "${INVENTORY}"
 CANDIDATE_VERSION="$(/usr/bin/plutil -extract CFBundleShortVersionString raw -o - "${CANDIDATE}/Contents/Info.plist")"
 CANDIDATE_BUILD="$(/usr/bin/plutil -extract CFBundleVersion raw -o - "${CANDIDATE}/Contents/Info.plist")"
 if [[ "${CANDIDATE_VERSION}" != "${EXPECTED_VERSION}" || "${CANDIDATE_BUILD}" != "${EXPECTED_BUILD}" ]]; then
@@ -65,6 +69,7 @@ fi
 rm -rf -- "${STAGED}"
 ditto "${CANDIDATE}" "${STAGED}"
 codesign --verify --deep --strict "${STAGED}"
+"${PYTHON_BIN}" "${SCRIPT_DIR}/artifact_integrity.py" verify --app "${STAGED}" --manifest "${INVENTORY}"
 if [[ -d "${INSTALLED}" ]]; then
   rm -rf -- "${LIVE_HOLD}"
   mv "${INSTALLED}" "${LIVE_HOLD}"
@@ -76,6 +81,7 @@ if [[ "$(/usr/bin/plutil -extract CFBundleShortVersionString raw -o - "${INSTALL
   echo "安装后的 App 身份校验失败；正在恢复上一版本。"
   exit 5
 fi
+"${PYTHON_BIN}" "${SCRIPT_DIR}/artifact_integrity.py" verify --app "${INSTALLED}" --manifest "${INVENTORY}"
 COMMITTED=1
 rm -rf -- "${LIVE_HOLD}"
 
