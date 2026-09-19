@@ -18,7 +18,7 @@ from .six_column import (
     resolve_paper_selector,
     search_current_data,
 )
-from .webapp import make_xlsx
+from .xlsx_export import make_xlsx
 
 
 DEFAULT_CHECK_QUERIES = ("温度", "硬度", "CoCrFeMnNi")

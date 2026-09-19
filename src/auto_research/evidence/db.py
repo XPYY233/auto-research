@@ -557,9 +557,12 @@ def _migrate_data_versions_review_actions(conn: sqlite3.Connection) -> None:
 
 
 class EvidenceDB:
-    def __init__(self, path: Path = EVIDENCE_DB_PATH):
-        ensure_dirs()
-        self.path = Path(path)
+    def __init__(self, path: Path | None = None):
+        # Explicit workspaces must never create directories in another store.
+        # init() creates the selected database's parent when it is needed.
+        if path is None:
+            ensure_dirs()
+        self.path = Path(path) if path is not None else EVIDENCE_DB_PATH
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:

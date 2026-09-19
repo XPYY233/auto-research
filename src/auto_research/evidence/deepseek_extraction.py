@@ -21,7 +21,7 @@ from auto_research.ai.deepseek import (
 from auto_research.paths import DATA_DIR
 
 from .db import EVIDENCE_TYPES, SOURCE_PRECISIONS, TASK_TYPES, EvidenceDB, now
-from .extraction_benchmark import compare_candidates
+from .candidate_matching import compare_candidates
 from .experiment_types import classify_experiment_types, extraction_focuses_for_profile
 from .fact_model import classify_nonreportable_row
 from .learning import build_learning_guidance

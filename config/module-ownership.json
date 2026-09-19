@@ -1,88 +1,143 @@
 {
   "schema": "auto-research-module-ownership-v1",
-  "updated_at": "2026-09-02",
-  "allowed_statuses": ["stable", "experimental", "compatibility", "retired"],
+  "updated_at": "2026-09-19",
+  "allowed_statuses": [
+    "stable",
+    "experimental",
+    "compatibility",
+    "retired"
+  ],
   "modules": [
     {
       "id": "scientific-evidence-core",
-      "paths": ["src/auto_research/evidence"],
+      "paths": [
+        "src/auto_research/evidence"
+      ],
       "owner": "shared-evidence-core",
       "status": "stable",
       "authority": "schema-v12 evidence, four public evidence types, extraction and quality gates"
     },
     {
-      "id": "librarian-v3-compatibility",
-      "paths": ["src/auto_research/evidence/agent_runtime.py", "src/auto_research/evidence/librarian_*.py"],
+      "id": "librarian-retrieval-contracts",
+      "paths": [
+        "src/auto_research/evidence/agent_runtime.py",
+        "src/auto_research/evidence/librarian_*.py"
+      ],
       "owner": "shared-librarian-core",
-      "status": "compatibility",
-      "authority": "historical deterministic recall and signed brief compatibility only; production desktop AI must not execute this loop"
+      "status": "stable",
+      "authority": "Deterministic recall, constraints, citation validation and signed briefs shared with Harness; agent_runtime is compatibility only"
     },
     {
       "id": "deepseek-harness-runtime",
-      "paths": ["src/auto_research/ai/harness_*.py", "src/auto_research/evidence/harness_*.py", "config/auto-research-harness*.yml"],
+      "paths": [
+        "src/auto_research/ai/harness_*.py",
+        "src/auto_research/evidence/harness_*.py",
+        "config/auto-research-harness*.yml"
+      ],
       "owner": "shared-ai-runtime",
       "status": "stable",
       "authority": "pinned Harness composition, read-only tool gateway, prepared-action execution, citation and budget validation"
     },
     {
       "id": "ai-provider-readiness",
-      "paths": ["src/auto_research/ai/provider_registry.py", "src/auto_research/ai/custom_provider.py", "src/auto_research/ai/capability_verifier.py", "src/auto_research/settings/ai_readiness.py", "src/auto_research/settings/ai_runtime_state.py"],
+      "paths": [
+        "src/auto_research/ai/provider_registry.py",
+        "src/auto_research/ai/custom_provider.py",
+        "src/auto_research/ai/capability_verifier.py",
+        "src/auto_research/settings/ai_readiness.py",
+        "src/auto_research/settings/ai_runtime_state.py"
+      ],
       "owner": "shared-ai-runtime",
       "status": "experimental",
       "authority": "ai-readiness-v1, provider connection, per-scope capability verification, safe custom HTTPS endpoint and stable path-free error lineage"
     },
     {
       "id": "federated-search",
-      "paths": ["src/auto_research/evidence/federated_search.py", "src/auto_research/evidence/federated_search_session.py"],
+      "paths": [
+        "src/auto_research/evidence/federated_search.py",
+        "src/auto_research/evidence/federated_search_session.py"
+      ],
       "owner": "shared-search-core",
       "status": "stable",
       "authority": "official and private immutable source lifecycle and ranking"
     },
     {
       "id": "official-package-runtime",
-      "paths": ["src/auto_research/official_table_structure_contract.py", "src/auto_research/product/evidence_package.py", "src/auto_research/product/official_package_store.py", "src/auto_research/product/portable_repository.py", "src/auto_research/product/official_package_v2_release.py", "src/auto_research/product/official_table_structures.py", "src/auto_research/product/internal_preview_builder.py"],
+      "paths": [
+        "src/auto_research/official_table_structure_contract.py",
+        "src/auto_research/product/evidence_package.py",
+        "src/auto_research/product/official_package_store.py",
+        "src/auto_research/product/portable_repository.py",
+        "src/auto_research/product/official_package_v2_release.py",
+        "src/auto_research/product/official_table_structures.py",
+        "src/auto_research/product/internal_preview_builder.py"
+      ],
       "owner": "shared-product-runtime",
       "status": "stable",
       "authority": "signed official package verification, immutable repository audit, activation and rollback, including verified official table-structure sidecars"
     },
     {
       "id": "user-transfer-runtime",
-      "paths": ["src/auto_research/product/transfer_package.py", "src/auto_research/product/package_transfer_*.py", "src/auto_research/product/package_payload_sources.py"],
+      "paths": [
+        "src/auto_research/product/transfer_package.py",
+        "src/auto_research/product/package_transfer_*.py",
+        "src/auto_research/product/package_payload_sources.py",
+        "src/auto_research/product/transfer_package_planning.py"
+      ],
       "owner": "shared-product-runtime",
       "status": "experimental",
       "authority": "untrusted user transfer planning, sanitization, archive, integrity and activation"
     },
     {
       "id": "package-center",
-      "paths": ["src/auto_research/product/package_center.py", "src/auto_research/product/package_center_models.py", "src/auto_research/product/activity_receipts.py", "src/auto_research/product/package_job_history.py", "src/auto_research/product/operation_history.py", "src/auto_research/product/operation_history_contract.py", "src/auto_research/product/operation_history_results.py", "src/auto_research/product/operation_history_validation.py"],
+      "paths": [
+        "src/auto_research/product/package_center.py",
+        "src/auto_research/product/package_center_models.py",
+        "src/auto_research/product/activity_receipts.py",
+        "src/auto_research/product/package_job_history.py",
+        "src/auto_research/product/operation_history.py",
+        "src/auto_research/product/operation_history_contract.py",
+        "src/auto_research/product/operation_history_results.py",
+        "src/auto_research/product/operation_history_validation.py"
+      ],
       "owner": "shared-product-runtime",
       "status": "experimental",
       "authority": "path-free package plans, jobs, export and import orchestration, plus durable non-sensitive completion receipts and operation history"
     },
     {
       "id": "dataset-bundle-runtime",
-      "paths": ["src/auto_research/product/dataset_bundle.py", "src/auto_research/product/dataset_bundle_sources.py", "src/auto_research/product/dataset_export_service.py"],
+      "paths": [
+        "src/auto_research/product/dataset_bundle.py",
+        "src/auto_research/product/dataset_bundle_sources.py",
+        "src/auto_research/product/dataset_export_service.py"
+      ],
       "owner": "shared-product-runtime",
       "status": "stable",
       "authority": "dataset-bundle-v1 JSONL/Parquet projection, deterministic paper split, data card and atomic archive publication"
     },
     {
       "id": "scientific-release-audit",
-      "paths": ["src/auto_research/evidence/scientific_release_audit.py"],
+      "paths": [
+        "src/auto_research/evidence/scientific_release_audit.py"
+      ],
       "owner": "scientific-quality",
       "status": "stable",
       "authority": "human-gold scientific metrics and leakage/duplicate release gates; never inferred from software test success"
     },
     {
       "id": "personal-data-core",
-      "paths": ["src/auto_research/personal"],
+      "paths": [
+        "src/auto_research/personal"
+      ],
       "owner": "shared-personal-core",
       "status": "stable",
       "authority": "bounded tabular preview, AI suggestions, reviewed import, private repository and transfer merge"
     },
     {
       "id": "desktop-application-facade",
-      "paths": ["src/auto_research/desktop"],
+      "paths": [
+        "src/auto_research/desktop"
+      ],
       "owner": "shared-desktop-contract",
       "status": "experimental",
       "authority": "platform-neutral route catalog, request context and error projection"
@@ -123,24 +178,84 @@
     },
     {
       "id": "macos-shell",
-      "paths": ["desktop/macos"],
+      "paths": [
+        "desktop/macos"
+      ],
       "owner": "macos-platform",
       "status": "experimental",
       "authority": "native lifecycle, protected loopback, file tokens, credential adapter and App packaging only"
     },
     {
       "id": "windows-shell",
-      "paths": ["desktop/windows"],
+      "paths": [
+        "desktop/windows"
+      ],
       "owner": "windows-platform",
       "status": "experimental",
       "authority": "Windows lifecycle, native file tokens, Credential Manager and installer only"
     },
     {
       "id": "browser-workbench-compatibility",
-      "paths": ["scripts/start_evidence_ui.command", "scripts/start_readonly_ngrok.command"],
+      "paths": [
+        "scripts/start_evidence_ui.command",
+        "scripts/start_readonly_ngrok.command"
+      ],
       "owner": "maintenance",
       "status": "retired",
       "authority": "migration notices and permission regression only; never a user product"
+    },
+    {
+      "id": "provider-foundation",
+      "paths": [
+        "src/auto_research/ai"
+      ],
+      "owner": "shared-ai-runtime",
+      "status": "stable",
+      "authority": "provider clients and bounded AI contracts"
+    },
+    {
+      "id": "settings-services",
+      "paths": [
+        "src/auto_research/settings"
+      ],
+      "owner": "shared-settings",
+      "status": "stable",
+      "authority": "settings persistence and readiness"
+    },
+    {
+      "id": "product-services",
+      "paths": [
+        "src/auto_research/product"
+      ],
+      "owner": "shared-product-runtime",
+      "status": "stable",
+      "authority": "package and data lifecycle services"
+    },
+    {
+      "id": "maintenance-workflows",
+      "paths": [
+        "src/auto_research/acquisition",
+        "src/auto_research/analysis",
+        "src/auto_research/browser",
+        "src/auto_research/discovery",
+        "src/auto_research/matrix",
+        "src/auto_research/parsing",
+        "src/auto_research/verification",
+        "src/auto_research/zotero",
+        "src/auto_research/db.py",
+        "src/auto_research/config.py",
+        "src/auto_research/models.py",
+        "src/auto_research/portable_file_ops.py",
+        "src/auto_research/paths.py",
+        "src/auto_research/product_release_kit.py",
+        "src/auto_research/__init__.py",
+        "src/auto_research/release_contract.py",
+        "src/auto_research/cli.py"
+      ],
+      "owner": "maintenance",
+      "status": "compatibility",
+      "authority": "legacy acquisition, corpus maintenance and CLI workflows"
     }
-  ]
+  ],
+  "ownership_resolution": "Most specific matching path wins; equal-specificity matches are errors."
 }

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from .element_search import (
+    ELEMENT_SEARCH_ALIASES,
+    ELEMENT_SYMBOLS,
+)
+
 import csv
 import difflib
 import hashlib
@@ -89,44 +94,6 @@ SNAPSHOT_FIELDS = (
     "fact_cluster_size", "fact_member_ids", "evidence_count", "evidence_occurrences",
 )
 
-ELEMENT_SEARCH_ALIASES = {
-    "钨": ("钨", "W", "tungsten"),
-    "tungsten": ("钨", "W", "tungsten"),
-    "w": ("钨", "W", "tungsten"),
-    "铝": ("铝", "Al", "aluminum", "aluminium"),
-    "al": ("铝", "Al", "aluminum", "aluminium"),
-    "铬": ("铬", "Cr", "chromium"),
-    "cr": ("铬", "Cr", "chromium"),
-    "钴": ("钴", "Co", "cobalt"),
-    "co": ("钴", "Co", "cobalt"),
-    "铁": ("铁", "Fe", "iron"),
-    "fe": ("铁", "Fe", "iron"),
-    "锰": ("锰", "Mn", "manganese"),
-    "mn": ("锰", "Mn", "manganese"),
-    "镍": ("镍", "Ni", "nickel"),
-    "ni": ("镍", "Ni", "nickel"),
-    "钽": ("钽", "Ta", "tantalum"),
-    "ta": ("钽", "Ta", "tantalum"),
-    "钒": ("钒", "V", "vanadium"),
-    "v": ("钒", "V", "vanadium"),
-    "铪": ("铪", "Hf", "hafnium"),
-    "hf": ("铪", "Hf", "hafnium"),
-    "钛": ("钛", "Ti", "titanium"),
-    "ti": ("钛", "Ti", "titanium"),
-    "锆": ("锆", "Zr", "zirconium"),
-    "zr": ("锆", "Zr", "zirconium"),
-    "钼": ("钼", "Mo", "molybdenum"),
-    "mo": ("钼", "Mo", "molybdenum"),
-    "铼": ("铼", "Re", "rhenium"),
-    "re": ("铼", "Re", "rhenium"),
-    "硅": ("硅", "Si", "silicon"),
-    "si": ("硅", "Si", "silicon"),
-    "碳": ("碳", "C", "carbon"),
-    "c": ("碳", "C", "carbon"),
-    "氦": ("氦", "He", "helium"),
-    "he": ("氦", "He", "helium"),
-}
-
 
 def is_reportable_value_text(value: Any) -> bool:
     """Return whether a six-column value is a real datum rather than prose metadata.
@@ -155,10 +122,6 @@ def is_reportable_value_text(value: Any) -> bool:
         or word.casefold() in REPORTABLE_ELEMENT_SYMBOLS
         for word in words
     )
-
-ELEMENT_SYMBOLS = {
-    "al", "cr", "co", "fe", "mn", "ni", "ta", "w", "v", "hf", "ti", "zr", "mo", "re", "si", "c", "he",
-}
 
 
 @dataclass(frozen=True)
@@ -1049,7 +1012,7 @@ def list_current_data(db: EvidenceDB, paper_id: int | None = None) -> list[dict[
         rows = [dict(row) for row in conn.execute(sql, params)]
     # Visual assets are optional provenance. Import lazily to avoid coupling the
     # core six-column schema to PDF rendering during module import.
-    from .quality_pipeline import quality_for_items
+    from .quality_lookup import quality_for_items
     from .visual_evidence import links_for_items
 
     item_ids = [int(row["item_id"]) for row in rows]

@@ -14,7 +14,7 @@ import fitz
 from auto_research.paths import DATA_DIR, ROOT
 
 from .db import EVIDENCE_DB_PATH, EvidenceDB, now
-from .six_column import ELEMENT_SEARCH_ALIASES, ELEMENT_SYMBOLS
+from .element_search import ELEMENT_SEARCH_ALIASES, ELEMENT_SYMBOLS
 
 try:
     # Some publisher PDFs contain harmless structure-tree defects. Rendering is
@@ -1056,7 +1056,7 @@ def list_visual_assets(db: EvidenceDB, *, asset_type: str | None = None, paper_i
     sql += " ORDER BY p.id,a.asset_type,a.asset_number"
     with db.connect() as conn:
         assets = [_decode_asset(dict(row)) for row in conn.execute(sql, params)]
-    from .quality_pipeline import quality_for_assets
+    from .quality_lookup import quality_for_assets
     quality = quality_for_assets(db, [int(asset["id"]) for asset in assets])
     for asset in assets:
         asset.update(quality.get(int(asset["id"]), {}))

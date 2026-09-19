@@ -1,11 +1,11 @@
 [project]
 name = "auto-research"
-version = "1.1.0"
+version = "1.2.0"
 description = "Local Auto Research pipeline for literature discovery, lawful acquisition, parsing, Zotero archiving, and review matrices."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "cryptography>=42,<49",
+  "cryptography>=50,<51",
   "requests>=2.31",
   "PyYAML>=6.0",
   "PyMuPDF>=1.23"
@@ -27,3 +27,6 @@ auto-research = "auto_research.cli:main"
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]
 pythonpath = ["src"]
+
+markers = ["corpus: private historical corpus evaluation; explicitly selected, not an engineering check"]
+addopts = "-m 'not corpus'"

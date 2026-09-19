@@ -106,23 +106,8 @@ def main() -> int:
     print(f"已创建更新前数据库备份：{backup}")
     print(f"SHA-256：{digest}")
 
-    run([sys.executable, "-m", "unittest", "discover", "-s", "desktop/macos/tests", "-p", "test_*.py"])
-    source_environment = {
-        **dict(os.environ),
-        "PYTHONPATH": str(PROJECT_ROOT / "src"),
-    }
-    run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "src/tests", "-p", "test_*.py"],
-        env=source_environment,
-    )
-    run([sys.executable, "-m", "compileall", "-q", "src", "desktop/macos"])
-    for script_path in production_javascript_assets():
-        run(["node", "--check", script_path])
-    run(["git", "diff", "--check"])
-    run(
-        [sys.executable, "-m", "auto_research.cli", "evidence-db-health"],
-        env=source_environment,
-    )
+    # The same gate is used locally and in PR CI; pytest includes function tests.
+    run([sys.executable, str(PROJECT_ROOT / "scripts" / "check.py")])
     run([str(DESKTOP_ROOT / "build_app.command")])
     # build_app.command already performs the isolated candidate smoke check and
     # signature/plist validation. Do not repeat the same high-load verification.

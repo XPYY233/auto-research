@@ -35,7 +35,7 @@ from .portable_repository import (
     materialize_portable_repository,
     provenance_for_papers,
 )
-from .transfer_package import (
+from .transfer_package_planning import (
     MAX_TRANSFER_TOTAL_BYTES,
     PAPER_UID_RE,
     TransferFileRights,

@@ -189,7 +189,7 @@ def _runtime(root: Path, *, events: list[str]):
     return _RecordingRuntime(service, events=events)
 
 
-def _validated_fixture(tmp_path: Path):
+def _validated_fixture(tmp_path: Path, *, quality_result=None):
     pdf = tmp_path / "paper.pdf"
     _make_pdf(pdf)
     original = _job_store(tmp_path, session_key=b"a" * 32)
@@ -203,7 +203,7 @@ def _validated_fixture(tmp_path: Path):
         job.snapshot.content_fingerprint,
         time.time(),
     )
-    job.validated_quality_result = {}
+    job.validated_quality_result = quality_result if quality_result is not None else {}
     job.status = "validated"
     job_state = original.export_private_state(token, session_id="old-session")
     decoded = decode_job_private_state(job_state)
@@ -447,3 +447,66 @@ def test_recovery_module_has_no_ai_or_prepared_action_dependency() -> None:
     )
     assert "request_json" not in source
     assert "request_tool_message" not in source
+
+
+def test_real_publication_survives_checkpoint_failure_and_reopen(tmp_path: Path) -> None:
+    """A committed SQLite row must not be republished or recharged after restart."""
+    from auto_research.evidence.db import EvidenceDB
+
+    candidate = {
+        "candidate_id": "c01p1-0000", "value_text": "3.2", "unit": "GPa",
+        "meaning": "Measured hardness", "context_explanation": "At 300 K",
+        "source_page": 1, "source_locator": "Results",
+        "source_excerpt": "Measured hardness was 3.2 GPa at 300 K.",
+        "evidence_type": "measured", "source_precision": "exact_text",
+        "local_evidence": {"passed": True},
+        "ai_verification": {"verdict": "supported"},
+    }
+    quality = {
+        "schema_version": "literature-extraction-validated-v1",
+        "coverage": {"numeric_items": True, "qualitative_findings": True,
+                     "visual_evidence_ready": False, "atomic_commit_ready": False},
+        "records": [{"entity_type": "data", "candidate_key": "data-pass",
+                     "chosen_source": "extractor_a", "candidate": candidate,
+                     "alternate": None, "agreement_score": 91.0,
+                     "factuality_score": 100.0, "completeness_score": 100.0,
+                     "evidence_score": 100.0, "overall_score": 95.0,
+                     "gate_status": "dual_pass", "gate_reason": "quality gate"}],
+        "summary": {"candidate_count": 1, "dual_pass_count": 1,
+                    "third_pass_count": 0, "manual_review_count": 0,
+                    "quality_threshold": 85.0},
+    }
+    token, task_id, _, runtime, _ = _validated_fixture(tmp_path, quality_result=quality)
+    db = EvidenceDB(tmp_path / "workspace" / "db" / "evidence.sqlite")
+    db.init()
+    assert db.upsert_paper(title="Recovery paper", doi="10.1/recovery",
+                           pdf_path=str(tmp_path / "paper.pdf")) == 1
+    runtime.fail_complete_once = True
+    first = LiteratureExtractionFinalizerRecovery(
+        runtime=runtime, jobs=_job_store(tmp_path, session_key=b"b" * 32),
+        finalizer=AtomicEvidenceDBFinalizer(db),
+        projector=LiteratureExtractionBusinessProjector(), session_id="first-recovery",
+    )
+    with pytest.raises(LiteratureExtractionRecoveryError) as failed:
+        first.recover(task_id=task_id, job_token=token)
+    assert failed.value.code == "literature_checkpoint_store_unavailable"
+
+    def rows():
+        with db.connect() as connection:
+            return tuple(connection.execute("SELECT value_text,unit FROM data_versions"))
+
+    assert [tuple(row) for row in rows()] == [("3.2", "GPa")]
+    reopened_runtime = _runtime(tmp_path, events=[])
+    second = LiteratureExtractionFinalizerRecovery(
+        runtime=reopened_runtime, jobs=_job_store(tmp_path, session_key=b"c" * 32),
+        finalizer=AtomicEvidenceDBFinalizer(db),
+        projector=LiteratureExtractionBusinessProjector(), session_id="reopened-recovery",
+    )
+    result = second.recover(task_id=task_id, job_token=token)
+    assert result["completion"]["idempotent"] is True
+    assert result["completion"]["search_index"]["status"] == "refreshed"
+    assert [tuple(row) for row in rows()] == [("3.2", "GPa")]
+    checkpoint, _ = reopened_runtime.recover_job_state(task_id)
+    assert checkpoint.state == "completed"
+    assert checkpoint.spent_calls == 1  # Only the original fixture receipt; recovery has no provider.
+    assert second.recover(task_id=task_id, job_token=token)["already_completed"] is True
