@@ -37,6 +37,7 @@ from .agent_runtime import (
 )
 from .context_chat import answer_context_chat
 from .db import EvidenceDB
+from .paper_workflow import extraction_workflow_summaries
 from .evidence_audit import audit_six_column_evidence
 from .deepseek_extraction import latest_deepseek_run
 from .experiment_types import classify_experiment_types
@@ -312,9 +313,11 @@ def search_paper_catalog(db: EvidenceDB) -> list[dict]:
         "requires_rescan_confirmation",
     }
     catalog: list[dict] = []
+    extraction_states = extraction_workflow_summaries(db)
     for paper in annotate_navigation_tags(list_paper_workflow_summaries(db)):
         public = {key: paper.get(key) for key in allowed}
         paper_id = int(paper["id"])
+        public.update(extraction_states.get(paper_id, {}))
         public["requires_rescan_confirmation"] = requires_rescan_confirmation(
             db, paper_id
         )
