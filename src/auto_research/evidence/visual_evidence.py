@@ -504,11 +504,11 @@ def _visual_index_kinds(blocks: list[tuple[Any, ...]]) -> set[str]:
     return kinds
 
 
-def _generic_specs(pdf_path: Path) -> list[dict[str, Any]]:
+def _generic_specs(pdf_path: Path | bytes) -> list[dict[str, Any]]:
     """Find caption-led visual regions without interpreting curve values."""
 
     specs: list[dict[str, Any]] = []
-    doc = fitz.open(pdf_path)
+    doc = fitz.open(stream=pdf_path, filetype="pdf") if isinstance(pdf_path, bytes) else fitz.open(pdf_path)
     try:
         for page_index, page in enumerate(doc):
             # Publisher text blocks can merge a preceding paragraph and a

@@ -277,7 +277,7 @@ def _visual_local_score(asset: dict[str, Any]) -> float:
 
 def _make_visual_record(asset: dict[str, Any], left: dict[str, Any] | None,
                         right: dict[str, Any] | None, *, is_new: bool,
-                        threshold: float) -> dict[str, Any]:
+                        threshold: float, local_score: float | None = None) -> dict[str, Any]:
     left = dict(left or {})
     right = dict(right or {})
     agreement = _similarity(_visual_text(left), _visual_text(right)) if left and right else 0.0
@@ -298,7 +298,7 @@ def _make_visual_record(asset: dict[str, Any], left: dict[str, Any] | None,
     primary, alternate, source = ({**base, **left}, {**base, **right}, "extractor_a")
     if right_complete > left_complete:
         primary, alternate, source = ({**base, **right}, {**base, **left}, "extractor_b")
-    local_score = _visual_local_score(asset)
+    local_score = _visual_local_score(asset) if local_score is None else local_score
     completeness = max(left_complete, right_complete)
     agreement_score = round(agreement * 100, 2)
     overall = round(0.45 * local_score + 0.25 * completeness + 0.30 * agreement_score, 2)

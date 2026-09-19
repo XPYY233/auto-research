@@ -190,7 +190,7 @@ def test_unresolved_gap_is_reported_incomplete_without_extra_model_calls(tmp_pat
     assert package.quality_result["coverage"]["qualitative_findings"] is False
 
 
-def test_non_chinese_semantics_remain_manual_without_localization_charge(tmp_path: Path) -> None:
+def test_non_chinese_semantics_remain_ai_unresolved_without_localization_charge(tmp_path: Path) -> None:
     path = tmp_path / "paper.pdf"
     make_pdf(path)
     store = LiteratureExtractionJobStore(session_key=b"x" * 32)
@@ -217,8 +217,8 @@ def test_non_chinese_semantics_remain_manual_without_localization_charge(tmp_pat
     )
     assert summary["stage"] == "validated"
     records = store._jobs[summary["job_token"]].validated_package.quality_result["records"]
-    assert records[0]["gate_status"] == "manual_review"
-    assert "人工审核" in records[0]["gate_reason"]
+    assert records[0]["gate_status"] == "ai_unresolved"
+    assert "AI 核验未通过" in records[0]["gate_reason"]
 
 
 def test_verification_batches_use_bounded_authoritative_source_windows(tmp_path: Path) -> None:
@@ -282,7 +282,7 @@ def test_extraction_response_over_reviewed_record_limit_fails_closed(tmp_path: P
     assert restored.stage_fingerprint == stage.stage_fingerprint
 
 
-def test_verification_overflow_is_manual_and_never_silently_published(tmp_path: Path) -> None:
+def test_verification_overflow_is_ai_unresolved_and_never_silently_published(tmp_path: Path) -> None:
     path = tmp_path / "paper.pdf"
     make_pdf(path)
     store = LiteratureExtractionJobStore(session_key=b"x" * 32)
@@ -334,7 +334,7 @@ def test_verification_overflow_is_manual_and_never_silently_published(tmp_path: 
     ][0]
     overflow = [
         record for record in adversarial["records"]
-        if record.get("gate_reason") == "超出自动核验预算，必须人工审核"
+        if record.get("gate_reason") == "超出自动核验预算，AI 核验未通过，未发布"
     ]
     assert overflow
     assert all(record["gate_status"] == "manual_review" for record in overflow)
@@ -441,7 +441,7 @@ def test_empty_model_stage_is_only_allowed_for_local_capable_transitions() -> No
     assert stage.calls == ()
 
 
-def test_unpaired_branch_freezes_exact_third_review_then_manual_on_missing_verdict(tmp_path: Path) -> None:
+def test_unpaired_branch_freezes_exact_third_review_then_ai_unresolved_on_missing_verdict(tmp_path: Path) -> None:
     path = tmp_path / "paper.pdf"
     make_pdf(path)
     store = LiteratureExtractionJobStore(session_key=b"x" * 32)
@@ -477,7 +477,7 @@ def test_unpaired_branch_freezes_exact_third_review_then_manual_on_missing_verdi
     )
     assert summary["stage"] == "validated"
     records = store._jobs[summary["job_token"]].validated_package.quality_result["records"]
-    assert records[0]["gate_status"] == "manual_review"
+    assert records[0]["gate_status"] == "ai_unresolved"
 
 
 def test_completed_stage_cannot_be_replayed_and_source_change_blocks_only_finalize(tmp_path: Path) -> None:

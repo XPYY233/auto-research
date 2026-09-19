@@ -28,7 +28,9 @@ from .table_structure import (
     rebind_table_structure_candidate,
 )
 from .table_structure_store import TableStructureStore, TableStructureStoreError
+from .literature_visual_review import visual_source_key
 from .visual_evidence import (
+    _clean_model_visual_metadata,
     _generic_specs,
     _render_crop,
     _target_specs,
@@ -269,7 +271,11 @@ def publish_staged_visual_evidence(
     connection: Any,
     paper: Mapping[str, Any],
     staged: StagedVisualEvidence,
+    visual_records: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    reviews = {record["source_key"]: record for record in (visual_records or [])}
+    if len(reviews) != len(visual_records or []) or set(reviews) - {visual_source_key(asset.spec) for asset in staged.assets}:
+        raise LiteratureExtractionJobError("literature_visual_invalid", "AI 图表核验与原文截图不匹配")
     published: list[dict[str, Any]] = []
     structure_candidates = 0
     structure_manual_review = 0
@@ -290,6 +296,13 @@ def publish_staged_visual_evidence(
         else:
             os.replace(asset.staged_path, asset.final_path)
             staged.created_paths.append(asset.final_path)
+        record = reviews.get(visual_source_key(asset.spec))
+        semantics = {}
+        if record and record["gate_status"] in {"dual_pass", "third_pass"}:
+            clean = _clean_model_visual_metadata(record["candidate"])
+            semantics = {**clean, "conditions": clean["conditions_text"],
+                         "methods": clean["methods_text"], "context": clean["context_explanation"],
+                         "review_status": "verified", "metadata_source": "deepseek"}
         published_asset = _upsert_asset(
             db,
             dict(paper),
@@ -298,6 +311,7 @@ def publish_staged_visual_evidence(
                 "_image_path": str(asset.final_path),
                 "_image_sha256": asset.sha256,
                 "review_status": str(asset.spec.get("review_status") or "draft"),
+                **semantics,
             },
             connection=connection,
         )
@@ -349,8 +363,9 @@ def publish_staged_visual_evidence(
                 "caption": str(row.get("caption") or "")[:4000],
                 "page_start": int(row["page_start"]),
                 "image_sha256": str(row["image_sha256"]),
+                "review_record": reviews.get(visual_source_key(asset.spec)),
             }
-            for row in published
+            for row, asset in zip(published, staged.assets, strict=True)
         ],
         "links": links,
     }

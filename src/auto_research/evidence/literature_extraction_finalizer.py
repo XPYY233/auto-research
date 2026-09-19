@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import sqlite3
 import threading
 from pathlib import Path
@@ -36,7 +37,7 @@ from .six_column import (
 
 FINALIZER_SCHEMA_VERSION = "atomic-literature-finalizer-v1"
 VALIDATED_SCHEMA_VERSION = "literature-extraction-validated-v1"
-_SUPPORTED_GATES = frozenset({"dual_pass", "third_pass", "manual_review"})
+_SUPPORTED_GATES = frozenset({"dual_pass", "third_pass", "manual_review", "ai_unresolved"})
 _PUBLISHABLE = frozenset({"dual_pass", "third_pass"})
 
 
@@ -196,7 +197,7 @@ class AtomicEvidenceDBFinalizer(TrustedAtomicLiteratureFinalizer):
                         float(record["completeness_score"]),
                         float(record["evidence_score"]),
                         float(record["overall_score"]),
-                        record["gate_status"],
+                        "manual_review" if record["gate_status"] == "ai_unresolved" else record["gate_status"],
                         str(record.get("gate_reason") or ""),
                         self._json(record["third_review"]) if record.get("third_review") else None,
                         item_id,
@@ -210,6 +211,7 @@ class AtomicEvidenceDBFinalizer(TrustedAtomicLiteratureFinalizer):
                 connection=connection,
                 paper={"id": package.paper_id, **dict(package.paper)},
                 staged=staged_visuals,
+                visual_records=payload.get("visual_records"),
             )
             self._record_visual_review_candidates(
                 connection,
@@ -342,8 +344,11 @@ class AtomicEvidenceDBFinalizer(TrustedAtomicLiteratureFinalizer):
                 raise LiteratureExtractionJobError(
                     "literature_commit_failed", "视觉证据审核队列无效，未保存任何科学记录"
                 )
+            review = raw.get("review_record") or {}
             candidate = {
+                **dict(review.get("candidate") or {}),
                 "is_new_asset": True,
+                "asset_id": asset_id,
                 "asset_type": asset_type,
                 "label": label,
                 "caption": str(raw.get("caption") or "")[:4000],
@@ -369,17 +374,17 @@ class AtomicEvidenceDBFinalizer(TrustedAtomicLiteratureFinalizer):
                     paper_id,
                     asset_type,
                     candidate_key,
-                    "merged",
+                    str(review.get("chosen_source") or "merged"),
                     cls._json(candidate),
-                    None,
-                    0.0,
-                    100.0,
-                    0.0,
-                    100.0,
-                    0.0,
-                    "manual_review",
-                    "原始截图与来源页已校验；表格结构或图片语义仍需人工审核",
-                    None,
+                    cls._json(review["alternate"]) if review.get("alternate") else None,
+                    float(review.get("agreement_score", 0)),
+                    float(review.get("factuality_score", 100)),
+                    float(review.get("completeness_score", 0)),
+                    float(review.get("evidence_score", 100)),
+                    float(review.get("overall_score", 0)),
+                    (str(review["gate_status"]) if review.get("gate_status") in _PUBLISHABLE else "manual_review"),
+                    str(review.get("gate_reason") or "图表 AI 核验未完成，未自动发布"),
+                    cls._json(review["third_review"]) if review.get("third_review") else None,
                     asset_id,
                     stamp,
                     stamp,
@@ -503,6 +508,27 @@ class AtomicEvidenceDBFinalizer(TrustedAtomicLiteratureFinalizer):
             raise LiteratureExtractionJobError(
                 "literature_commit_failed", "抽取质量包无效，未保存任何科学记录"
             )
+        visual_records = payload.get("visual_records", [])
+        if not isinstance(visual_records, list):
+            raise LiteratureExtractionJobError("literature_commit_failed", "AI 图表核验记录无效")
+        visual_keys = set()
+        for record in visual_records:
+            if (
+                not isinstance(record, dict)
+                or record.get("entity_type") not in {"figure", "table"}
+                or record.get("gate_status") not in _SUPPORTED_GATES
+                or not isinstance(record.get("candidate"), dict)
+                or not isinstance(record.get("source_key"), str)
+                or len(record["source_key"]) != 64
+                or record["source_key"] in visual_keys
+                or any(type(record.get(field)) not in (int, float)
+                       or not math.isfinite(record[field]) or not 0 <= record[field] <= 100
+                       for field in ("agreement_score", "factuality_score", "completeness_score", "evidence_score", "overall_score"))
+            ):
+                raise LiteratureExtractionJobError("literature_commit_failed", "AI 图表核验记录无效")
+            if record["gate_status"] in _PUBLISHABLE and record["overall_score"] < float(payload["summary"]["quality_threshold"]):
+                raise LiteratureExtractionJobError("literature_commit_failed", "AI 图表核验低于发布阈值")
+            visual_keys.add(record["source_key"])
         seen: set[str] = set()
         for record in payload["records"]:
             if (
@@ -540,7 +566,7 @@ class AtomicEvidenceDBFinalizer(TrustedAtomicLiteratureFinalizer):
         expected_counts = {
             "dual_pass_count": sum(record["gate_status"] == "dual_pass" for record in payload["records"]),
             "third_pass_count": sum(record["gate_status"] == "third_pass" for record in payload["records"]),
-            "manual_review_count": sum(record["gate_status"] == "manual_review" for record in payload["records"]),
+            "manual_review_count": sum(record["gate_status"] in {"manual_review", "ai_unresolved"} for record in payload["records"]),
         }
         if any(int(payload["summary"].get(key, -1)) != value for key, value in expected_counts.items()):
             raise LiteratureExtractionJobError(

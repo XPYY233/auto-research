@@ -238,6 +238,14 @@ class _RawProvider:
             raise RuntimeError("provider failed")
         if "Verify these candidates:" in messages[1]["content"]:
             return _verification_payload(messages)
+        if "original_caption" in messages[1]["content"]:
+            assets = json.loads(messages[1]["content"])["visual_evidence"]
+            return {"assets": [{
+                "asset_id": asset["asset_id"], "display_name": "样品硬度测量结果",
+                "context_explanation": "图表展示样品的硬度测量结果。",
+                "physical_quantities": ["硬度"], "materials": [], "variables": {},
+                "tags": ["硬度测量", "样品比较"],
+            } for asset in assets]}
         return _extraction_payload()
 
 
@@ -371,11 +379,11 @@ def test_initial_request_is_server_started_with_fixed_bounds_and_no_write(eviden
     draft = assembler.assemble({"paper_id": paper_id, "force_rescan": False})
     assert draft.outbound["stage"] == "initial_focus"
     assert draft.estimated_calls == len(draft.call_plan)
-    assert draft.max_calls == 12
-    assert draft.max_tokens == 92_000
-    assert draft.outbound["task_max_calls"] == 12
-    assert draft.outbound["task_max_tokens"] == 92_000
-    assert draft.outbound["planner_version"] == "v2"
+    assert draft.max_calls == 16
+    assert draft.max_tokens == 124_000
+    assert draft.outbound["task_max_calls"] == 16
+    assert draft.outbound["task_max_tokens"] == 124_000
+    assert draft.outbound["planner_version"] == "v3"
     assert draft.outbound["initial_content_fingerprint"]
     assert store.summary(draft.outbound["job_handle"], session_id="owner")[
         "sending_scope"
@@ -390,16 +398,16 @@ def test_initial_request_is_server_started_with_fixed_bounds_and_no_write(eviden
 
 def test_task_budget_uses_actual_frozen_page_blocks_and_stays_below_policy() -> None:
     assert task_budget_for_page_blocks(1).__dict__ == {
-        "max_calls": 12, "max_tokens": 92_000,
+        "max_calls": 16, "max_tokens": 124_000,
     }
     assert task_budget_for_page_blocks(2).__dict__ == {
-        "max_calls": 20, "max_tokens": 164_000,
+        "max_calls": 24, "max_tokens": 196_000,
     }
     assert task_budget_for_page_blocks(4).__dict__ == {
-        "max_calls": 36, "max_tokens": 308_000,
+        "max_calls": 40, "max_tokens": 340_000,
     }
     assert task_budget_for_page_blocks(16).__dict__ == {
-        "max_calls": 132, "max_tokens": 1_172_000,
+        "max_calls": 136, "max_tokens": 1_204_000,
     }
 
 
@@ -418,8 +426,8 @@ def test_starter_covers_supported_article_without_eight_page_truncation(tmp_path
     draft = LiteratureExtractionBusinessAssembler(store, session_id="owner").assemble(
         {"job_token": summary["job_token"]}
     )
-    assert draft.max_calls == 28
-    assert draft.max_tokens == 236_000
+    assert draft.max_calls == 32
+    assert draft.max_tokens == 268_000
 
 
 def test_starter_rejects_oversized_article_instead_of_silently_truncating(tmp_path: Path) -> None:
@@ -801,8 +809,9 @@ def test_one_task_action_finishes_all_dynamic_stages_and_atomic_commit(evidence)
         ports.assembler.assemble({"job_token": draft.outbound["job_handle"]})
 
 
+@pytest.mark.parametrize("visual_mode", ["agree", "third_pass", "unresolved"])
 def test_uploaded_pdf_closes_scientific_chain_through_visual_search_and_source(
-    tmp_path: Path,
+    tmp_path: Path, visual_mode: str,
 ) -> None:
     """One fixture must traverse the same authorities used by the Mac App."""
 
@@ -829,13 +838,30 @@ def test_uploaded_pdf_closes_scientific_chain_through_visual_search_and_source(
     )
     draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False})
     action = _prepared_action(draft)
-    result = ports.projector.project(
-        ports.executor.execute(
-            action=action,
-            ai_client=_budget_client(action, _RawProvider()),
-        )
-    )
+    class VisualProvider(_RawProvider):
+        def request_json(self, messages, **kwargs):
+            if "第三位独立质量裁判" in messages[0]["content"]:
+                self.calls += 1
+                self.received.append(tuple(dict(message) for message in messages))
+                return {"verdicts": [{
+                    "candidate_key": item["candidate_key"],
+                    "approved": visual_mode == "third_pass",
+                    "overall_score": 95 if visual_mode == "third_pass" else 40,
+                    "factuality_score": 100, "evidence_score": 100,
+                    "reason": "离线测试：原文支持" if visual_mode == "third_pass" else "离线测试：原文不足",
+                } for item in json.loads(messages[1]["content"])]}
+            result = super().request_json(messages, **kwargs)
+            if visual_mode != "agree" and "独立审慎编目" in messages[0]["content"]:
+                return {"assets": []}
+            return result
 
+    raw = VisualProvider()
+    result = ports.projector.project(
+        ports.executor.execute(action=action, ai_client=_budget_client(action, raw))
+    )
+    checkpoint, _ = runtime.recover_job_state(_checkpoint_task_id(draft.outbound["job_handle"]))
+    assert checkpoint.spent_calls == raw.calls
+    assert raw.calls <= draft.max_calls
     assert result["status"] == "completed"
     assert result["published_item_count"] == 1
     assert result["table_candidate_count"] == 1
@@ -846,7 +872,9 @@ def test_uploaded_pdf_closes_scientific_chain_through_visual_search_and_source(
 
     assets = list_visual_assets(db, paper_id=paper_id)
     assert {asset["asset_type"] for asset in assets} == {"table", "figure"}
-    assert {asset["quality_gate_status"] for asset in assets} == {"manual_review"}
+    expected_gate = {"agree": "dual_pass", "third_pass": "third_pass", "unresolved": "manual_review"}[visual_mode]
+    assert {asset["quality_gate_status"] for asset in assets} == {expected_gate}
+    assert result["manual_review_count"] == (2 if visual_mode == "unresolved" else 0)
     for asset in assets:
         image = Path(str(asset["image_path"]))
         assert image.read_bytes().startswith(b"\x89PNG")
@@ -867,7 +895,10 @@ def test_uploaded_pdf_closes_scientific_chain_through_visual_search_and_source(
         quality_filter="published",
         refresh=False,
     )
-    assert {row["entity_type"] for row in published.rows} == {"item"}
+    expected_types = {"item"} if visual_mode == "unresolved" else {"item", "table", "figure"}
+    assert {row["entity_type"] for row in published.rows} == expected_types
+    reopened = EvidenceSearchIndex(EvidenceDB(db.path)).search("hardness", paper_ids=(paper_id,), quality_filter="published", refresh=False)
+    assert {row["entity_type"] for row in reopened.rows} == expected_types
     item = next(row for row in page.rows if row["entity_type"] == "item")
     source = get_source_view(db, int(item["entity_id"]))
     assert source["page_number"] == 1
