@@ -260,6 +260,11 @@ class ReviewQueueRouteTests(unittest.TestCase):
                 b"AutoResearchPersonalSeries",
             ),
             (
+                "/static/review_queue_contract.js",
+                "javascript",
+                b"AutoResearchReviewQueueContract",
+            ),
+            (
                 "/static/codex-pet-working.webp",
                 "image/webp",
                 b"RIFF",
