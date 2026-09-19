@@ -259,11 +259,12 @@
     {
       "id": "workspace-lifecycle",
       "paths": [
-        "src/auto_research/workspace.py"
+        "src/auto_research/workspace.py",
+        "src/auto_research/workspace_migration.py"
       ],
       "owner": "shared-workspace",
       "status": "experimental",
-      "authority": "Resource, workspace, private state and cache locations; atomic empty workspace initialization"
+      "authority": "Resource, workspace, private state and cache locations; atomic empty initialization and verified copy migration"
     }
   ],
   "ownership_resolution": "Most specific matching path wins; equal-specificity matches are errors."
