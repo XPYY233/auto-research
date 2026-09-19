@@ -127,7 +127,6 @@ def _frozen_product_contract_checks() -> dict[str, bool]:
             < index_source.index('<script src="/static/fusion_package_center.js"></script>')
             < index_source.index('<script src="/static/fusion_personal_import.js"></script>')
             < index_source.index('<script src="/static/fusion_personal_series.js"></script>')
-            < index_source.index('<script src="/static/review_queue_contract.js"></script>')
             < index_source.index('<script src="/static/fusion_review.js"></script>')
             and '<script src="/static/app.js"></script>' not in index_source
             and '<script src="/static/desktop_product.js"></script>' not in index_source
@@ -308,7 +307,6 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
                 "/static/fusion_package_center.js",
                 "/static/fusion_personal_import.js",
                 "/static/fusion_personal_series.js",
-                "/static/review_queue_contract.js",
                 "/static/fusion_review.js",
             ),
         ),
@@ -356,11 +354,6 @@ def _fusion_product_http_smoke_checks(url: str, token: str) -> dict[str, bool]:
             "fusion_personal_series_runtime",
             "/static/fusion_personal_series.js",
             ("AutoResearchPersonalSeries", "personal-series-plot-v1"),
-        ),
-        (
-            "review_queue_contract_runtime",
-            "/static/review_queue_contract.js",
-            ("AutoResearchReviewQueueContract", "review-queue-v1"),
         ),
         (
             "fusion_runtime",
