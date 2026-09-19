@@ -43,6 +43,8 @@ def main() -> int:
                  "-p", "engineering_checks", "--strict-markers",
                  f"--junitxml={artifacts / (name + '.xml')}", path], env)
         run(["git", "diff", "--check"], env)
+        if os.environ.get("GITHUB_BASE_REF"):
+            run(["git", "diff", "--check", f"origin/{os.environ['GITHUB_BASE_REF']}...HEAD"], env)
     return 0
 
 

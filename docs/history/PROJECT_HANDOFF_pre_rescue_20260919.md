@@ -209,7 +209,7 @@
 - 电脑发热时最多保留两个开发对话；禁止并行全测、构建、模型调用或 App 实机。目标测试小步串行，全套只在接口冻结后运行一次。
 
 > 交班快照：2026-08-13
-> 活跃项目：`/Users/USER/Zotero/auto-research`  
+> 活跃项目：`/Users/USER/Zotero/auto-research`
 > 历史 0.8 发布候选：Auto Research `0.8.0-preview.1` / build `18`；当时的 DMG、套件与验收哈希见仓库外 0.8 用户套件的 `RELEASE_ACCEPTANCE.json`
 > 当前 Mac 制品提交：`700e642`；构建清单、build18 标签与 UserKit 验收报告一致。后续 Windows 文档收口提交不改变 Mac App 字节
 > 官方资料包：`0.2.0-preview.1`，SHA-256 `89ec7f8dcdeea2d862d91aaf798674fd600c21fd75c4553d270a0c0b806f999e`；旧 `0.1.0-preview.1` 保持不可变回退点
