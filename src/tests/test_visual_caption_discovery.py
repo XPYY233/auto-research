@@ -55,3 +55,18 @@ def test_label_and_caption_wrapped_inside_block_exclude_table_cells(tmp_path):
     table, = _generic_specs(path)
     assert table['caption'] == 'Measured hardness of specimens.'
     assert table['bbox'][3] >= 182
+
+
+def test_long_multiline_caption_is_not_truncated_to_eight_lines(tmp_path):
+    path = tmp_path / 'long-caption.pdf'
+    text = 'Figure 1. Synthetic microscopy images.\n' + '\n'.join(
+        f'Panel {i}: descriptive annotation of the original image.' for i in range(1, 13)
+    )
+    with fitz.open() as doc:
+        page = doc.new_page()
+        page.draw_rect(fitz.Rect(60, 50, 400, 210))
+        page.insert_text((60, 235), text, fontsize=10, lineheight=1.2)
+        doc.save(path)
+    spec, = _generic_specs(path)
+    assert 'Panel 12:' in spec['caption']
+    assert spec['bbox'][3] > 378

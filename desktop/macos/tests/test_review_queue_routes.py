@@ -67,6 +67,45 @@ class _Handler:
 
 
 class ReviewQueueRouteTests(unittest.TestCase):
+    def test_pending_image_route_requires_session_and_never_caches_source(self) -> None:
+        token = new_session_token()
+        image_token = "rq_" + "A" * 40
+        data = b"\x89PNG\r\n\x1a\nsynthetic"
+        class ImageService(_Service):
+            def image(self, value):
+                if value != image_token:
+                    raise ReviewQueueError("review_token_invalid")
+                return data, "image/png"
+        with tempfile.TemporaryDirectory() as directory:
+            database = EvidenceDB(Path(directory) / "test.sqlite")
+            server, _ = create_desktop_server(database, host="127.0.0.1", port=0,
+                token=token, read_only=True, experience_mode="fusion-product",
+                review_queue_api=ReviewQueueAPI(ImageService()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            url = f"{base}/api/desktop/review-queue/{image_token}/image"
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+            try:
+                with self.assertRaises(urllib.error.HTTPError) as denied:
+                    urllib.request.urlopen(url, timeout=5)
+                self.assertEqual(denied.exception.code, HTTPStatus.FORBIDDEN)
+                denied.exception.close()
+                opener.open(f"{base}/?desktop_token={token}", timeout=5).close()
+                with opener.open(url, timeout=5) as response:
+                    self.assertEqual(response.read(), data)
+                    self.assertEqual(response.headers["Content-Type"], "image/png")
+                    self.assertEqual(response.headers["Cache-Control"], "no-store")
+                    self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+                with self.assertRaises(urllib.error.HTTPError) as invalid:
+                    opener.open(url + "?path=/private/other.png", timeout=5)
+                self.assertEqual(invalid.exception.code, HTTPStatus.BAD_REQUEST)
+                invalid.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_api_accepts_only_exact_path_free_get_and_action_shapes(self) -> None:
         service = _Service()
         api = ReviewQueueAPI(service)  # type: ignore[arg-type]

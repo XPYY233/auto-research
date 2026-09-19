@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import subprocess
 import tempfile
@@ -135,6 +136,55 @@ class ReviewQueueTests(unittest.TestCase):
                 ),
             )
         return int(row.lastrowid)
+
+    def test_pending_visual_preview_checks_hash_expiry_and_candidate_snapshot(self) -> None:
+        candidate_id = self._seed_visual()
+        image = Path(self.temp.name) / "figure.png"
+        data = image.read_bytes()
+        with self.db.connect() as connection:
+            connection.execute("UPDATE visual_assets SET image_sha256=? WHERE id=1", (hashlib.sha256(data).hexdigest(),))
+        clock = [100.0]
+        service = ReviewQueueService(self.db, clock=lambda: clock[0], token_ttl_seconds=30)
+        row = service.list()["items"][0]
+        token = row["review_token"]
+        self.assertEqual(row["preview"]["image_url"], f"/api/desktop/review-queue/{token}/image")
+        self.assertEqual(service.image(token), (data, "image/png"))
+        image.write_bytes(data + b"changed")
+        with self.assertRaisesRegex(ReviewQueueError, "审核服务"):
+            service.image(token)
+        image.write_bytes(data)
+        clock[0] = 131
+        with self.assertRaisesRegex(ReviewQueueError, "过期"):
+            service.image(token)
+        clock[0] = 110
+        with self.db.connect() as connection:
+            connection.execute("UPDATE quality_candidates SET gate_status='rejected' WHERE id=?", (candidate_id,))
+        with self.assertRaisesRegex(ReviewQueueError, "变化"):
+            service.image(token)
+        with self.assertRaisesRegex(ReviewQueueError, "无效"):
+            service.image("rq_" + "x" * 40)
+
+    def test_real_pending_visual_dto_renders_source_image_without_publishing(self) -> None:
+        self._seed_visual()
+        payload = ReviewQueueService(self.db).list()
+        runtime = Path(__file__).resolve().parents[1] / "auto_research/evidence/web/fusion_review.js"
+        program = r"""
+const fs=require('fs'),assert=require('assert');
+globalThis.document={readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{}};
+globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
+eval(fs.readFileSync(process.argv[1],'utf8'));
+const wire=JSON.parse(fs.readFileSync(0,'utf8')),api=globalThis.AutoResearchFusion;
+const queue=api.publicReviewQueue(wire);assert(queue);
+const html=api.reviewCandidateHTML(queue.items[0]);
+assert(html.includes('<img '));assert(html.includes(wire.items[0].preview.image_url));
+assert(html.includes('尚未进入正式检索'));assert(!html.includes('/private/'));
+wire.items[0].preview.image_url='https://example.org/steal';
+assert.equal(api.publicReviewQueue(wire),null);
+"""
+        result = subprocess.run(["node", "-e", program, str(runtime)], input=json.dumps(payload), text=True, capture_output=True, timeout=8)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with self.db.connect() as connection:
+            self.assertEqual(connection.execute("SELECT gate_status FROM quality_candidates").fetchone()[0], "manual_review")
 
     def test_list_is_path_free_and_uses_opaque_expiring_tokens(self) -> None:
         self._seed()

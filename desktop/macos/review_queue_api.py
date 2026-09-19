@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from http import HTTPStatus
-from typing import Any, Protocol
+from typing import Any, BinaryIO, Protocol
 from urllib.parse import parse_qs, urlparse
 
 from auto_research.evidence.review_queue import ReviewQueueError, ReviewQueueService
@@ -15,6 +16,13 @@ MAX_REVIEW_REQUEST_BYTES = 64 * 1024
 
 class ReviewQueueHTTPHandler(Protocol):
     path: str
+    wfile: BinaryIO
+
+    def send_response(self, code: int) -> None: ...
+
+    def send_header(self, keyword: str, value: str) -> None: ...
+
+    def end_headers(self) -> None: ...
 
     def _content_length(self, maximum: int, *, require_body: bool = False) -> int: ...
 
@@ -31,6 +39,26 @@ class ReviewQueueAPI:
 
     def handle_get(self, handler: ReviewQueueHTTPHandler) -> bool:
         parsed = urlparse(handler.path)
+        image_match = re.fullmatch(REVIEW_QUEUE_PATH + r"/(rq_[A-Za-z0-9_-]{32,96})/image", parsed.path)
+        if image_match:
+            try:
+                if parsed.query:
+                    raise ReviewQueueError("review_queue_invalid")
+                data, media_type = self.service.image(image_match.group(1))
+            except ReviewQueueError as exc:
+                handler.json_response(exc.public_dict(), _error_status(exc))
+            except Exception:
+                error = ReviewQueueError("review_queue_unavailable")
+                handler.json_response(error.public_dict(), _error_status(error))
+            else:
+                handler.send_response(HTTPStatus.OK)
+                handler.send_header("Content-Type", media_type)
+                handler.send_header("Content-Length", str(len(data)))
+                handler.send_header("Cache-Control", "no-store")
+                handler.send_header("X-Content-Type-Options", "nosniff")
+                handler.end_headers()
+                handler.wfile.write(data)
+            return True
         if parsed.path != REVIEW_QUEUE_PATH:
             return False
         try:

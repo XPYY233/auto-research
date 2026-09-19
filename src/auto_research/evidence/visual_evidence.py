@@ -359,7 +359,9 @@ def _complete_caption(
     parts = [body.strip(" |")] if body.strip(" |") else []
     rect = fitz.Rect(*blocks[index][:4])
     previous = rect
-    for following in blocks[index + 1:index + 9]:
+    # These are rendered lines; a complete multi-panel caption can easily
+    # exceed eight lines even when the publisher stores it as one block.
+    for following in blocks[index + 1:index + 65]:
         text = " ".join(str(following[4]).split()).strip()
         next_rect = fitz.Rect(*following[:4])
         if not text:
@@ -379,6 +381,8 @@ def _complete_caption(
         parts.append(text)
         rect |= next_rect
         previous = next_rect
+        if sum(len(part) + 1 for part in parts) >= 2400:
+            break
     return " ".join(parts)[:2400], rect
 
 
