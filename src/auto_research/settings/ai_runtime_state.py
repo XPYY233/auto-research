@@ -18,7 +18,7 @@ from auto_research.ai.provider_registry import (
     trusted_provider_profile,
     validated_task_models,
 )
-from auto_research.ai.openai_compatible import AIProviderError
+from auto_research.ai.provider_errors import AIProviderError
 
 
 AI_RUNTIME_STATE_SCHEMA_VERSION = "ai-runtime-state-v1"

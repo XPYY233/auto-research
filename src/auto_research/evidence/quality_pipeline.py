@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from .quality_lookup import (
+    PUBLISHABLE_STATUSES,
+    quality_for_items,
+    quality_for_assets,
+)
+
 import difflib
 import hashlib
 import json
@@ -11,11 +17,12 @@ from threading import Lock
 from typing import Any, Callable
 
 from auto_research.ai.deepseek import DeepSeekClient, DeepSeekResponseError, DeepSeekSettings
+from auto_research import paths
 from auto_research.paths import DATA_DIR
 
 from .db import EvidenceDB, now
 from .deepseek_extraction import DeepSeekEvidenceExtractor, _read_pages
-from .extraction_benchmark import _maximum_cardinality_edges, score_pair
+from .candidate_matching import _maximum_cardinality_edges, score_pair
 from .six_column import (
     _ai_stable_key,
     _context_from_ai_measurement,
@@ -35,7 +42,6 @@ from .visual_evidence import (
 
 QUALITY_DIR = DATA_DIR / "evidence" / "quality_runs"
 DEFAULT_THRESHOLD = 85.0
-PUBLISHABLE_STATUSES = {"dual_pass", "third_pass", "manual_approved"}
 
 
 ROLE_A = (
@@ -256,7 +262,7 @@ def _visual_text(item: dict[str, Any]) -> str:
 def _visual_local_score(asset: dict[str, Any]) -> float:
     path = Path(str(asset.get("image_path") or ""))
     if not path.is_absolute():
-        path = Path(__file__).resolve().parents[3] / path
+        path = paths.ROOT / path
     score = 0.0
     if path.is_file() and path.stat().st_size >= 1000:
         score += 45
@@ -781,65 +787,6 @@ def list_quality_candidates(db: EvidenceDB, paper_id: int, *, status: str | None
             except json.JSONDecodeError:
                 row[target] = None
     return rows
-
-
-def quality_for_items(db: EvidenceDB, item_ids: list[int]) -> dict[int, dict[str, Any]]:
-    if not item_ids:
-        return {}
-    db.init()
-    placeholders = ",".join("?" for _ in item_ids)
-    with db.connect() as conn:
-        rows = conn.execute(
-            f"""SELECT q.* FROM quality_candidates q
-                WHERE q.published_item_id IN ({placeholders})
-                  AND q.id=(SELECT q2.id FROM quality_candidates q2
-                            WHERE q2.published_item_id=q.published_item_id ORDER BY q2.id DESC LIMIT 1)""",
-            item_ids,
-        ).fetchall()
-    return {
-        int(row["published_item_id"]): {
-            "quality_gate_status": row["gate_status"],
-            "quality_score": float(row["overall_score"]),
-            "quality_candidate_id": int(row["id"]),
-        }
-        for row in rows
-    }
-
-
-def quality_for_assets(db: EvidenceDB, asset_ids: list[int]) -> dict[int, dict[str, Any]]:
-    if not asset_ids:
-        return {}
-    db.init()
-    placeholders = ",".join("?" for _ in asset_ids)
-    with db.connect() as conn:
-        rows = conn.execute(
-            f"""SELECT q.* FROM quality_candidates q
-                WHERE q.published_asset_id IN ({placeholders})
-                  AND q.id=(SELECT q2.id FROM quality_candidates q2
-                            WHERE q2.published_asset_id=q.published_asset_id ORDER BY q2.id DESC LIMIT 1)""",
-            asset_ids,
-        ).fetchall()
-    result: dict[int, dict[str, Any]] = {}
-    for row in rows:
-        try:
-            candidate = json.loads(str(row["candidate_json"] or "{}"))
-        except json.JSONDecodeError:
-            candidate = {}
-        is_new = bool(candidate.get("is_new_asset"))
-        gate_status = str(row["gate_status"])
-        visible_status = (
-            "legacy_stable"
-            if not is_new and gate_status not in PUBLISHABLE_STATUSES
-            else gate_status
-        )
-        result[int(row["published_asset_id"])] = {
-            "quality_gate_status": visible_status,
-            "quality_candidate_status": gate_status,
-            "quality_score": float(row["overall_score"]),
-            "quality_candidate_id": int(row["id"]),
-            "quality_is_new_asset": is_new,
-        }
-    return result
 
 
 def quality_candidate_snapshot(row: Any) -> str:

@@ -44,11 +44,26 @@ def _resolve_imports(
                     )
             elif node.module:
                 candidates.append(node.module)
+        if isinstance(node, ast.ImportFrom):
+            # Python executes a package initializer and only the named child
+            # module, never every sibling beneath that package.
+            base = (".".join(package[:len(package) - node.level + 1])
+                    if node.level else "")
+            if node.module:
+                base = ".".join(filter(None, (base, node.module)))
+            candidates = [base] + [f"{base}.{alias.name}" for alias in node.names if alias.name != "*"]
         for candidate in candidates:
+            if candidate in modules:
+                dependencies.add(candidate)
+            elif f"{candidate}.__init__" in modules:
+                dependencies.add(f"{candidate}.__init__")
+            # Importing a child also executes its ancestor initializers.
+            parts = candidate.split(".")
             dependencies.update(
-                name
-                for name in modules
-                if name == candidate or name.startswith(f"{candidate}.")
+                name for length in range(1, len(parts))
+                if (name := ".".join(parts[:length]) + ".__init__") in modules
+                and name != module
+                and not module.startswith(".".join(parts[:length]) + ".")
             )
     return dependencies
 
@@ -120,21 +135,19 @@ class ArchitectureCycleBudgetTests(unittest.TestCase):
             ),
         )
 
-    def test_existing_import_cycles_can_only_shrink(self) -> None:
-        baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+    def test_absolute_package_import_does_not_import_siblings(self) -> None:
+        modules = {"auto_research.paths", "auto_research.cli", "auto_research.evidence.db"}
         self.assertEqual(
-            "auto-research-python-import-cycle-baseline-v1",
-            baseline["schema"],
+            {"auto_research.paths"},
+            _resolve_imports("auto_research.evidence.db", ast.parse("from auto_research import paths"), modules),
         )
-        allowed = [frozenset(component) for component in baseline["components"]]
-        actual = _production_cycles()
-        unexpected = [
-            sorted(component)
-            for component in actual
-            if not any(component <= known for known in allowed)
-        ]
-        self.assertEqual([], unexpected, "new or expanded import cycle detected")
-        self.assertLessEqual(len(actual), len(allowed))
+
+    def test_imports_include_package_initializers(self) -> None:
+        modules = {"auto_research.__init__", "auto_research.evidence.__init__", "auto_research.evidence.db"}
+        self.assertEqual(modules, _resolve_imports("consumer", ast.parse("import auto_research.evidence.db"), modules))
+
+    def test_production_has_no_import_cycles(self) -> None:
+        self.assertEqual([], [sorted(component) for component in _production_cycles()])
 
 
 if __name__ == "__main__":

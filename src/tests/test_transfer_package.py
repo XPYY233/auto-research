@@ -474,7 +474,8 @@ class TransferPackageTests(unittest.TestCase):
         self.assertEqual(conflict.exception.code, "transfer_install_conflict")
 
     def test_two_gigabyte_limit_is_enforced_with_small_test_threshold(self) -> None:
-        with mock.patch.object(transfer_module, "MAX_TRANSFER_TOTAL_BYTES", 4):
+        from auto_research.product import transfer_package_planning
+        with mock.patch.object(transfer_package_planning, "MAX_TRANSFER_TOTAL_BYTES", 4):
             with self.assertRaises(TransferPackageError) as raised:
                 self.personal_plan()
         self.assertEqual(raised.exception.code, "transfer_size")
