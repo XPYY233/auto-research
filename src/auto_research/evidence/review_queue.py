@@ -7,6 +7,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 
 from .db import EvidenceDB
@@ -209,6 +210,44 @@ class ReviewQueueService:
             "items": items,
         }
 
+    def image(self, review_token: str) -> tuple[bytes, str]:
+        """Serve an unchanged pending candidate's verified source crop only."""
+        if not isinstance(review_token, str) or _TOKEN_RE.fullmatch(review_token) is None:
+            raise ReviewQueueError("review_token_invalid")
+        with self._lock:
+            record = self._records.get(review_token)
+            if record is None:
+                raise ReviewQueueError("review_token_invalid")
+            if record.expires_at <= self._clock():
+                raise ReviewQueueError("review_token_expired")
+            with self._db.connect() as connection:
+                row = connection.execute(
+                    "SELECT * FROM quality_candidates WHERE id=?", (record.candidate_id,)
+                ).fetchone()
+                if row is None or quality_candidate_snapshot(row) != record.snapshot:
+                    raise ReviewQueueError("review_candidate_changed")
+                asset = connection.execute(
+                    "SELECT * FROM visual_assets WHERE id=? AND paper_id=? AND asset_type=?",
+                    (row["published_asset_id"], record.paper_id, record.entity_type),
+                ).fetchone()
+            if asset is None or record.entity_type not in {"table", "figure"}:
+                raise ReviewQueueError("review_queue_not_found")
+            from auto_research import paths
+            path = Path(asset["image_path"])
+            if not path.is_absolute():
+                path = paths.ROOT / path
+            try:
+                with path.open("rb") as handle:
+                    data = handle.read(32 * 1024 * 1024 + 1)
+            except OSError:
+                raise ReviewQueueError("review_queue_unavailable") from None
+            if len(data) > 32 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != asset["image_sha256"]:
+                raise ReviewQueueError("review_queue_unavailable")
+            media = "image/png" if data.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg" if data.startswith(b"\xff\xd8\xff") else None
+            if media is None:
+                raise ReviewQueueError("review_queue_unavailable")
+            return data, media
+
     def review(
         self,
         *,
@@ -321,6 +360,9 @@ class ReviewQueueService:
                 "doi": _bounded(row["paper_doi"]),
             },
             "entity_type": _ENTITY_MAP[entity_type],
+            "preview": {
+                "image_url": f"/api/desktop/review-queue/{token}/image",
+            } if entity_type in {"table", "figure"} and row["published_asset_id"] else None,
             "candidate": _candidate_public(entity_type, _load_json(row["candidate_json"])),
             "alternate": _candidate_public(entity_type, _load_json(row["alternate_json"])),
             "conflict_reason": _bounded(row["gate_reason"]),
