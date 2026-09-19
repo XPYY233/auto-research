@@ -172,6 +172,7 @@ class ReviewQueueTests(unittest.TestCase):
 const fs=require('fs'),assert=require('assert');
 globalThis.document={readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{}};
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
+eval(fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]),'review_queue_contract.js'),'utf8'));
 eval(fs.readFileSync(process.argv[1],'utf8'));
 const wire=JSON.parse(fs.readFileSync(0,'utf8')),api=globalThis.AutoResearchFusion;
 const queue=api.publicReviewQueue(wire);assert(queue);
@@ -232,6 +233,7 @@ assert.equal(api.publicReviewQueue(wire),null);
 const fs=require('fs'),assert=require('assert');
 globalThis.document={readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{}};
 globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
+eval(fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]),'review_queue_contract.js'),'utf8'));
 eval(fs.readFileSync(process.argv[1],'utf8'));
 const wire=JSON.parse(fs.readFileSync(0,'utf8'));
 const api=globalThis.AutoResearchFusion,queue=api.publicReviewQueue(wire);
