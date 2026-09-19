@@ -14,3 +14,17 @@ data/browser-profile/
 *.sqlite-wal
 *.sqlite-shm
 *.log
+
+# Code, user workspaces and build artifacts have separate lifecycles.
+/data/
+/db/
+/.artifacts/
+*.egg-info/
+/build/
+/dist/
+*.sqlite
+*.sqlite3
+*.aresearch
+*.bundle
+*.dmg
+*.app/

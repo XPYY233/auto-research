@@ -1,0 +1,26 @@
+{
+  "source_head": "d85878ab86d3c507732482a17999b92d7461151f",
+  "sanitized_head": "99199f30360362585e505531c8c77e350c430def",
+  "preserved_commit_count": 593,
+  "excluded_history_paths": [
+    "data/",
+    "db/"
+  ],
+  "path_replacement": "Original local user home prefix -> /Users/USER",
+  "carried_uncommitted_source": [
+    "AGENT.md",
+    "PROJECT_HANDOFF.md",
+    "PROJECT_LOG.md",
+    "STABLE_RELEASE.md",
+    "desktop/macos/tests/test_package_center_runtime.py",
+    "docs/AUTO_RESEARCH_1_2_FULL_AUDIT_AND_PLAN_ZH.md",
+    "docs/BUILD54_INSTALLED_ACCEPTANCE.md",
+    "skills/auto-research-evidence-maintainer/SKILL.md",
+    "src/auto_research/evidence/web/fusion_review.js",
+    "src/tests/test_fusion_pane_resize_runtime.py",
+    "src/tests/test_fusion_review_ui_contract.py",
+    "src/tests/test_literature_extraction_recovery.py",
+    "src/tests/test_review_queue.py"
+  ],
+  "commit_mapping_sha256": "ab33ec93771aa1729fc102d68483ad6ea395f07382b49e03b38898de7d49200c"
+}

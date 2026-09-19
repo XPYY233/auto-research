@@ -3,6 +3,12 @@ name: auto-research-evidence-maintainer
 description: Maintain and continue the local Auto Research experimental-literature evidence product in /Users/USER/Zotero/auto-research. Use when Codex needs to inspect, debug, extend, extract papers into, search, validate, release, hand off, or safely publish this project's six-column evidence database, visual evidence, DeepSeek Harness runtime, dataset bundles, Fusion desktop workbench, or versioned evidence packages. Also use when a new account or agent must recover prior project decisions without relying on conversation memory.
 ---
 
+> 工程重建规则（2026-09-19）：当前进度只见 PROJECT_HANDOFF.md。开发使用净化后的独立仓库，原科研目录仅作保护源。
+> 已批准计划取代下文旧候选覆盖规则：每份候选二进制独立身份，禁止覆盖 build54；源码提交不自动构建。
+> 必需工程检查统一为 `python scripts/check.py`，共享与 Mac pytest 分别串行；Windows 冻结。
+> 旧计数和回退记录是历史证据，不能作为当前验收。问题、分支、PR 和发布必须关联。
+
+
 # Auto Research Evidence Maintainer
 
 ## Establish authority
@@ -62,7 +68,7 @@ installed version, and readiness is not a successful scientific user flow.
 
 Keep one overwritable build54 candidate while the ordered repair queue is open.
 Do not create build55/DMG/UserKit or a stable claim from isolated fixes. Preserve
-at least 70% of the shared main-account quota and recheck before substantial
+at least 50% of the shared main-account quota (latest user limit, 2026-09-05) and recheck before substantial
 work. If a collaborating task is quota-blocked, record that fact; do not invent
 a completed handoff or launch hidden replacements.
 
@@ -76,6 +82,7 @@ a completed handoff or launch hidden replacements.
 - Enforce artifact retention: one verified complete Git bundle, the 0.5 functional comparison App, the most recent stable rollback App, the current candidate rollback App, and non-reconstructible signed-package/database inputs. After identity/hash checks, remove failed candidates, duplicate DMGs/UserKits, superseded release worktrees and old bundles covered by the retained complete bundle. Never auto-delete a worktree with unknown database changes.
 - Keep the Fusion DOM, `DocumentTabStore`, at most two editor groups and single navigation controller authoritative. Reuse audited services behind narrow controllers; do not restore hidden 0.8 pages, duplicate navigation listeners, cross-view DOM reparenting or CSS skin overlays.
 - Four-type filtering is a server-side `evidence-filter-v1` contract. Never reintroduce a client-only filter over the first page or first 100 results.
+- For workflow acceptance, feed actual service-generated DTOs into production renderer tests; handwritten success fixtures cannot prove cross-layer compatibility. Keep wire units explicit (review-queue-v1 scores are 0–100, not fractions). After publication, verify the receipt, refreshed paper catalogue, reachable review candidates and search together; a failed queue request must not become an empty successful queue.
 - `dataset-bundle-v1` exports JSONL, real Parquet, a data card and manifest from one safe canonical projection. Split deterministically by paper, default private data off and binary assets out, and show missing/unreviewed/rights risks before export.
 - `official-package-v2` may ship only when every declared PDF and visual asset passes identity/hash/ordinary-file validation and the package remains below 2GB. Never replace a missing report with a similarly titled journal article, silently publish 59/60, or weaken the importer.
 - For tables and figures, display only the stored, source-local PyMuPDF visual asset and its audited metadata. Never redraw a chart, fabricate cells, borrow a workspace asset for an official/private source, or expose local paths in a renderer DTO.

@@ -10,6 +10,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import fitz
 import auto_research.evidence.prompts as prompt_module
 import auto_research.evidence.six_column as six_column_module
@@ -826,6 +827,7 @@ class EvidenceDBTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM materials").fetchone()[0], 0)
 
 
+@pytest.mark.corpus
 class CorpusIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -856,12 +858,11 @@ class CorpusIntegrationTests(unittest.TestCase):
         self.assertTrue(alias_report["ok"], alias_report["errors"])
 
 
+@pytest.mark.corpus
 class SixColumnWorkflowTests(unittest.TestCase):
     def setUp(self):
         if not six_column_module.TARGET_PDF_PATH.is_file():
-            self.skipTest(
-                "historical XJZQ42XP PDF fixture is not present in this checkout"
-            )
+            self.fail("Corpus evaluation requires the licensed historical PDF fixture")
         self.tmp = tempfile.TemporaryDirectory()
         self.db = EvidenceDB(Path(self.tmp.name) / "six.sqlite")
         self.paper_id = self.db.upsert_paper(

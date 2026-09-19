@@ -1,0 +1,19 @@
+name: 问题报告
+description: 记录可复现的软件问题（不要上传私人论文、数据库或密钥）
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 预期与实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤与不含私人数据的样例
+    validations:
+      required: true
+  - type: input
+    id: identity
+    attributes:
+      label: App 版本、构建身份与 macOS 版本

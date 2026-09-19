@@ -1,10 +1,16 @@
+> 工程重建规则（2026-09-19）：当前进度只见 PROJECT_HANDOFF.md。开发使用净化后的独立仓库，原科研目录仅作保护源。
+> 已批准计划取代下文旧候选覆盖规则：每份候选二进制独立身份，禁止覆盖 build54；源码提交不自动构建。
+> 必需工程检查统一为 `python scripts/check.py`，共享与 Mac pytest 分别串行；Windows 冻结。
+> 旧计数和回退记录是历史证据，不能作为当前验收。问题、分支、PR 和发布必须关联。
+
 # Auto Research Agent Notes
 
 This project is a local literature automation workflow for fusion materials, radiation damage, cascade simulations, MLIP/MLIAP, and HEA/RHEA research. The agent must prioritize real, auditable acquisition paths and must never create fake PDFs or treat metadata-only records as full-text successes.
 
 ## Handoff entry point (updated 2026-09-04)
 
-- Live installed identity and per-flow acceptance are owned exclusively by `docs/BUILD54_INSTALLED_ACCEPTANCE.md`; do not copy transient commits/test counts into durable rules or infer installation from source HEAD. Older test/call-success summaries below are historical checkpoints, not permission to release. Finish the existing ordered queue; do not allocate build55 or accumulate artifacts. Preserve the user's explicit main-account quota reserve of at least 70%, rechecking all-task shared usage before substantial work.
+- Live installed identity and per-flow acceptance are owned exclusively by `docs/BUILD54_INSTALLED_ACCEPTANCE.md`; do not copy transient commits/test counts into durable rules or infer installation from source HEAD. Older test/call-success summaries below are historical checkpoints, not permission to release. Finish the existing ordered queue; do not allocate build55 or accumulate artifacts. Preserve the user's latest explicit main-account quota reserve of at least 50% (updated 2026-09-05), rechecking all-task shared usage before substantial work. Historical 70% limits describe earlier runs, not the resumed budget.
+- Cross-layer acceptance must consume real service-generated DTOs, including documented units and bounds, rather than matching independently invented frontend fixtures. Publication is not an accepted workflow until receipt, paper status, manual-review access and search are consistent; failed list reads must stay errors, not become cached empty successes.
 
 - A new account or agent must read `PROJECT_HANDOFF.md` before modifying this repository, then use this file as the durable policy authority.
 - The canonical portable project skill is `skills/auto-research-evidence-maintainer/`; its current-account installation is a symlink under `~/.codex/skills/auto-research-evidence-maintainer`.
