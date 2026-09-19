@@ -1417,7 +1417,7 @@ store.open({{tabId:'evidence:b',kind:'evidence',ownerView:'paper',title:'B',iden
         for marker in (
             'reviewQueue:"/api/desktop/review-queue"',
             'reviewActions:"/api/desktop/review-queue/actions"',
-            'schema_version!=="review-queue-v1"',
+            "reviewContract().project(raw)",
             'schema_version!=="review-result-v1"',
             'data-review-action="approve"', 'data-review-action="reject"',
             'data-review-action="correct"', 'data-review-retry',
@@ -1465,6 +1465,7 @@ store.open({{tabId:'evidence:b',kind:'evidence',ownerView:'paper',title:'B',iden
         program = f"""
 globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{{}}}};
 globalThis.localStorage={{getItem:()=>null,setItem:()=>{{}}}};
+eval(require('fs').readFileSync({str(WEB / 'review_queue_contract.js')!r},'utf8'));
 eval(require('fs').readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));
 const api=globalThis.AutoResearchFusion,assert=require('assert');
 const token='rq_'+('A'.repeat(40)),paperUid='paper_0123456789abcdef0123456789abcdef';
@@ -1485,6 +1486,7 @@ const queue={{schema_version:'review-queue-v1',source_scope:'workspace',source_i
 const success=body=>({{ok:true,status:200,headers:{{get:()=>null}},json:async()=>body}}),failure={{ok:false,status:503,headers:{{get:()=>null}},json:async()=>({{code:'review_queue_unavailable',message:'private transport detail'}})}};
 let queueResponses=[failure,success(queue),success(queue)],calls=[];
 globalThis.fetch=async url=>{{url=String(url);calls.push(url);if(url==='/api/desktop/review-queue')return queueResponses.shift();if(url==='/api/search-papers')return success([{{id:7,title:'已发布论文',doi:'10.1/new',six_row_count:4,six_workflow_label:'已扫描'}}]);throw new Error('unexpected '+url);}};
+eval(fs.readFileSync({str(WEB / 'review_queue_contract.js')!r},'utf8'));
 eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
 ;(async()=>{{
  api.state.reviewQueue.loaded=true;api.state.reviewQueue.total=0;

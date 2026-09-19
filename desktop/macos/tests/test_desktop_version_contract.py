@@ -297,6 +297,7 @@ class DesktopVersionContractTests(unittest.TestCase):
             '"fusion_package_center.js"',
             '"fusion_personal_import.js"',
             '"fusion_personal_series.js"',
+            '"review_queue_contract.js"',
             '"fusion_review.js"',
             '"codex-pet-working.webp"',
         ):

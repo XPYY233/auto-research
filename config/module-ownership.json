@@ -158,7 +158,8 @@
         "src/auto_research/evidence/web/fusion_package_center.js",
         "src/auto_research/evidence/web/fusion_personal_import.js",
         "src/auto_research/evidence/web/fusion_personal_series.js",
-        "src/auto_research/evidence/web/fusion_review.js"
+        "src/auto_research/evidence/web/fusion_review.js",
+        "src/auto_research/evidence/web/review_queue_contract.js"
       ],
       "owner": "shared-frontend",
       "status": "experimental",
