@@ -172,7 +172,9 @@ class PackageJobService:
             if self._active_job_id == job_id:
                 self._active_job_id = None
             completed_job = job.public_dict()
-        self._history.record(completed_job)
+            # Do not expose a terminal job before its history write settles.
+            # A reader may immediately restart the services after observing it.
+            self._history.record(completed_job)
         if receipt_operation is None:
             return
         stored = False
@@ -313,7 +315,7 @@ class PackageJobService:
             if self._active_job_id == job_id:
                 self._active_job_id = None
             public_job = job.public_dict()
-        self._history.record(public_job)
+            self._history.record(public_job)
 
     def _trim_locked(self) -> None:
         while len(self._order) >= self._max_jobs:
