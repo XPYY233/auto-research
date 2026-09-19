@@ -9,6 +9,7 @@
 - [开发环境、检查与 PR 流程](CONTRIBUTING.md)
 - [历史迁移说明与提交对照](docs/history/MIGRATION.md)
 - [架构与科学边界](docs/ARCHITECTURE_GOVERNANCE.md)
+- [功能验收矩阵](docs/FUNCTION_ACCEPTANCE.md)
 - [发布状态](STABLE_RELEASE.md)
 
 代码仓库不包含科研数据库、论文 PDF、提取结果、私人状态或 API 密钥。
