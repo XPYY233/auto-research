@@ -27,7 +27,7 @@ from desktop_runtime import (  # noqa: E402
     ProjectRootError,
     acquire_instance_lock,
     configure_core_paths,
-    configure_imported_module_paths,
+    bundled_resource_root,
     discover_project_root,
     legacy_editor_is_running,
     smoke_check_project,
@@ -432,6 +432,7 @@ def _show_error_window(title: str, message: str, debug: bool = False) -> int:
 
 def _run_smoke_test(project_root: Path) -> int:
     configure_core_paths(project_root)
+    os.chdir(project_root)  # Legacy relative evidence references remain workspace-relative.
     report = smoke_check_project(project_root)
 
     from ai_runtime_composition import create_mac_ai_runtime_services
@@ -547,27 +548,36 @@ def _run_smoke_test(project_root: Path) -> int:
             personal_import_service=product_services.personal_import_service,
             desktop_session_id=desktop_session_id,
             federated_search_session=product_services.federated_search_service.session,
-            harness_cordis_path=project_root / "config" / "auto-research-harness.runtime.cordis.yml",
+            harness_cordis_path=bundled_resource_root() / "config" / "auto-research-harness.runtime.cordis.yml",
             research_memory_service=research_memory_service,
             table_context=table_context,
         )
-        # Exercise the exact frozen consent class graph without contacting a
-        # provider.  This catches PyInstaller package-alias regressions that
-        # ordinary source tests cannot reproduce.
-        ai_state = ai_services.desktop_service.get()
-        consent_probe = ai_services.prepared_actions.prepare_capability_test(
-            session_id=desktop_session_id,
-            provider_id=str(ai_state["provider_id"]),
-            expected_revision=int(ai_state["revision"]),
+        # Exercise the frozen consent classes with a synthetic, non-executable
+        # binding. First launch has no API credentials or verification state.
+        from auto_research.ai.consent import AIConsentService
+        from auto_research.ai.prepared_actions import PreparedActionService
+        from auto_research.ai.provider_registry import trusted_provider_profile
+        from auto_research.settings.ai_runtime_state import RuntimeActionBinding
+
+        class SmokeRuntime:
+            def action_binding(self):
+                return RuntimeActionBinding(
+                    "deepseek", trusted_provider_profile("deepseek").default_task_models,
+                    "smoke.synthetic", 1, 1, "unverified_configured",
+                )
+
+        smoke_actions = PreparedActionService(
+            runtime_state=SmokeRuntime(), consents=AIConsentService(),
         )
-        consent_receipt = ai_services.prepared_actions.issue_consent(
-            action_id=str(consent_probe["action_id"]),
-            session_id=desktop_session_id,
+        consent_probe = smoke_actions.prepare_capability_test(
+            session_id=desktop_session_id, provider_id="deepseek", expected_revision=1,
         )
-        consumed_probe = ai_services.prepared_actions.consume(
+        consent_receipt = smoke_actions.issue_consent(
+            action_id=str(consent_probe["action_id"]), session_id=desktop_session_id,
+        )
+        consumed_probe = smoke_actions.consume(
             action_id=str(consent_probe["action_id"]),
-            consent_nonce=str(consent_receipt["nonce"]),
-            session_id=desktop_session_id,
+            consent_nonce=str(consent_receipt["nonce"]), session_id=desktop_session_id,
         )
         report["ai_consent_roundtrip"] = (
             consumed_probe.scope == "capability_test"
@@ -612,7 +622,6 @@ def _run_smoke_test(project_root: Path) -> int:
             session_token=desktop_session_id,
             experience_mode="fusion-product",
         )
-        configure_imported_module_paths(project_root)
         port = int(server.server_address[1])
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -662,6 +671,7 @@ def _run_smoke_test(project_root: Path) -> int:
 
 def _run_desktop(project_root: Path, debug: bool = False) -> int:
     configure_core_paths(project_root)
+    os.chdir(project_root)  # Legacy relative evidence references remain workspace-relative.
     from ai_runtime_composition import (
         disable_legacy_environment_credentials,
         mac_ai_runtime_services,
@@ -754,7 +764,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             personal_import_service=product_services.personal_import_service,
             desktop_session_id=desktop_session_id,
             federated_search_session=product_services.federated_search_service.session,
-            harness_cordis_path=project_root / "config" / "auto-research-harness.runtime.cordis.yml",
+            harness_cordis_path=bundled_resource_root() / "config" / "auto-research-harness.runtime.cordis.yml",
             research_memory_service=research_memory_service,
             table_context=table_context,
         )
@@ -798,7 +808,6 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
             session_token=desktop_session_id,
             experience_mode="fusion-product",
         )
-        configure_imported_module_paths(project_root)
     except BaseException as exc:
         return _show_error_window("Auto Research 没有成功启动", str(exc), debug=debug)
     port = int(server.server_address[1])
@@ -848,6 +857,7 @@ def _run_desktop(project_root: Path, debug: bool = False) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Auto Research macOS desktop application")
     parser.add_argument("--project-root", help="Override the external Auto Research data workspace")
+    parser.add_argument("--initialize-workspace", help="Create a validated empty workspace and exit")
     parser.add_argument("--smoke-test", action="store_true", help="Validate the bundle without opening a window")
     parser.add_argument("--debug", action="store_true", help="Enable pywebview developer diagnostics")
     return parser
@@ -855,9 +865,24 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.initialize_workspace:
+        root = Path(args.initialize_workspace).expanduser().absolute()
+        try:
+            configure_core_paths(root)
+            from auto_research.workspace import initialize_workspace
+            initialize_workspace(root)
+        except (OSError, RuntimeError) as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+            return 1
+        print(json.dumps({"ok": True, "initialized": True}))
+        return 0
     try:
         location = discover_project_root(args.project_root)
-    except ProjectRootError as exc:
+        if location.source == "application-support":
+            configure_core_paths(location.root)
+            from auto_research.workspace import initialize_workspace
+            initialize_workspace(location.root)
+    except (ProjectRootError, OSError, RuntimeError) as exc:
         if args.smoke_test:
             print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))
             return 1

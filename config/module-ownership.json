@@ -255,6 +255,15 @@
       "owner": "maintenance",
       "status": "compatibility",
       "authority": "legacy acquisition, corpus maintenance and CLI workflows"
+    },
+    {
+      "id": "workspace-lifecycle",
+      "paths": [
+        "src/auto_research/workspace.py"
+      ],
+      "owner": "shared-workspace",
+      "status": "experimental",
+      "authority": "Resource, workspace, private state and cache locations; atomic empty workspace initialization"
     }
   ],
   "ownership_resolution": "Most specific matching path wins; equal-specificity matches are errors."
