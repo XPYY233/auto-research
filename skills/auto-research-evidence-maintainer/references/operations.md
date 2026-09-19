@@ -14,7 +14,7 @@
 | official package v2 | `PROJECT_HANDOFF.md` | `../product/official_package_assets.py`, `official_package_v2_release.py` |
 | scientific audit | `docs/ARCHITECTURE_AUDIT_1_1.md` | `scientific_release_audit.py` |
 | upload/dedup | `README.md` | `uploads.py`, `document_recognition.py` |
-| web UI | `docs/BUILD54_INSTALLED_ACCEPTANCE.md` | release-contract-listed Fusion scripts, `web/index.html`, `web/workbench.css` |
+| web UI | candidate ledger linked by `PROJECT_HANDOFF.md` | release-contract-listed Fusion scripts, `web/index.html`, `web/workbench.css` |
 | health/release | `MAINTENANCE_WORKFLOW.md` | `maintenance.py`, `db_health.py`, `self_check.py` |
 | Zotero corpus | `AUTO_RESEARCH_HANDOFF_1000.md` | `zotero/`, `acquisition/`, root `scripts/` |
 
@@ -43,25 +43,11 @@ are proven upper bounds; they must not silently replace acceptance thresholds.
 
 ## Code checks
 
-```bash
-PYTHONPATH=src:desktop/macos python3 -m pytest -q src/tests
-PYTHONPATH=src:desktop/macos python3 -m pytest -q desktop/macos/tests
-python3 -m compileall -q src
-node --check src/auto_research/evidence/web/fusion_review.js
-node --check src/auto_research/evidence/web/document_tab_store.js
-node --check src/auto_research/evidence/web/pane_layout_controller.js
-zsh -n scripts/*.command
-git diff --check
-git fsck --full
+```sh
+.venv/bin/python scripts/check.py
 ```
 
-Run actual desktop HTTP authorization checks and verify protected SQLite hashes.
-Select current production JS from the resource manifest, not historical browser
-controllers. Run shared and Mac suites separately and serially because some
-test modules share basenames.
-Use the configured development Python with pytest available; the lean packaging
-venv intentionally does not contain test dependencies. Unittest discovery alone
-does not collect all pytest-style production gates.
+Use `CONTRIBUTING.md` for the locked development environment and dependency audit. This single entry runs shared and Mac pytest in separate serial processes, rejects missing prerequisites/unexpected skips, and checks production resources. Use targeted tests during edits; the complete entry is the PR gate. It does not read production research data or call paid models.
 
 ## Stable checkpoint
 
@@ -112,19 +98,8 @@ When budget, heat, time or an external interruption stops a multi-thread change:
 
 ## New-account skill installation
 
-The project-local folder is canonical:
+The skill in the sanitized checkout is canonical: `<checkout>/skills/auto-research-evidence-maintainer`. Install it from that checkout using the user's normal skill installation workflow. Do not point new installations at protected recovery copies or overwrite an existing installation without checking its ownership.
 
-`/Users/USER/Zotero/auto-research/skills/auto-research-evidence-maintainer`
-
-Install or link it:
-
-```bash
-mkdir -p ~/.codex/skills
-ln -s /Users/USER/Zotero/auto-research/skills/auto-research-evidence-maintainer \
-  ~/.codex/skills/auto-research-evidence-maintainer
-```
-
-Invoke with: `Use $auto-research-evidence-maintainer and continue from /Users/USER/Zotero/auto-research.`
 # Effective workspace check (before installed-App acceptance)
 
 Verify the installed manifest and the running process data root separately.

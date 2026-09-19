@@ -1,6 +1,6 @@
 ---
 name: auto-research-evidence-maintainer
-description: Maintain and continue the local Auto Research experimental-literature evidence product in /Users/USER/Zotero/auto-research. Use when Codex needs to inspect, debug, extend, extract papers into, search, validate, release, hand off, or safely publish this project's six-column evidence database, visual evidence, DeepSeek Harness runtime, dataset bundles, Fusion desktop workbench, or versioned evidence packages. Also use when a new account or agent must recover prior project decisions without relying on conversation memory.
+description: Maintain and continue the Auto Research scientific-evidence desktop product in its sanitized development checkout. Use when Codex needs to inspect, debug, extend, extract papers into, search, validate, release, hand off, or safely publish this project's six-column evidence database, visual evidence, DeepSeek Harness runtime, dataset bundles, Fusion desktop workbench, or versioned evidence packages. Also use when a new account or agent must recover prior project decisions without relying on conversation memory.
 ---
 
 > 工程重建规则（2026-09-19）：当前进度只见 PROJECT_HANDOFF.md。开发使用净化后的独立仓库，原科研目录仅作保护源。
@@ -13,7 +13,7 @@ description: Maintain and continue the local Auto Research experimental-literatu
 
 ## Establish authority
 
-Work from `/Users/USER/Zotero/auto-research`. Treat the project-local files as authority over account memory.
+Locate the sanitized development checkout through its `PROJECT_HANDOFF.md` and Git remote. Do not develop in the protected original Zotero research directory. Treat current project instructions as authority over historical account memory.
 
 Read in this order before changing anything:
 
@@ -60,26 +60,18 @@ Keep these invariants:
 
 ## Continue from the 1.2 Mac release line
 
-Read `docs/BUILD54_INSTALLED_ACCEPTANCE.md` immediately after the handoff.
-It is the single authority for the installed binary identity, effective workspace,
-observed failures, source-only fixes and acceptance receipts. Do not duplicate
-transient commit hashes or passing counters here; a source commit is not an
-installed version, and readiness is not a successful scientific user flow.
+Read the candidate ledger linked from `PROJECT_HANDOFF.md`. Source commits, installed binary identity, functional acceptance and scientific validation are different claims. Current quota reserve comes from the latest user instruction and handoff, not a fixed number in this skill.
 
-Keep one overwritable build54 candidate while the ordered repair queue is open.
-Do not create build55/DMG/UserKit or a stable claim from isolated fixes. Preserve
-at least 50% of the shared main-account quota (latest user limit, 2026-09-05) and recheck before substantial
-work. If a collaborating task is quota-blocked, record that fact; do not invent
-a completed handoff or launch hidden replacements.
+Use Issue → branch → PR → checks → merge. Ordinary commits do not produce an App. A candidate gets a unique identity, cannot be overwritten, and is packaged from the same App after acceptance; follow `docs/decisions/0003-candidate-identity.md`. A collaborating task that cannot finish must return an honest handoff, not an invented success.
 
-- Preserve the uncommitted production evidence database and existing `paper_056` user artifacts. Earlier deletion requests do not authorize recreating, restoring or cleaning the current protected state.
+- Preserve all original research data, user artifacts and recovery archives. Historical deletion requests do not authorize new cleanup or restoration over current state.
 - Use existing project Codex threads for frontend/macOS, core, Windows and security. Root is the only Git writer; every other thread receives an exact file list and returns a no-stage/no-commit handoff.
 - Keep the four-scope prepared-action registry, pinned Harness runtime and provider registry as the only billable AI authority. Do not restore legacy direct Librarian, context-chat, personal-suggestion or workflow model routes. Harness failure must remain explicit and must not fall back to an old loop.
 - Use `ai-readiness-v1` as the only renderer-facing AI availability projection. Built-in DeepSeek/OpenAI and an optional user-configured public HTTPS OpenAI-compatible endpoint must share provider-separated credentials, connection verification, per-scope capability verification and the same prepared-action budgets. A custom endpoint never expands Harness tools or source scope.
 - Keep `PaneLayoutController` as the only pane geometry authority and Fusion as the only navigation/content owner. Collapse must preserve tabs, requests and scroll state; `48/96px` are snap thresholds, not content minimum widths.
 - On a hot machine, run at most two development threads and only targeted tests. Run the shared full suite, build and real App flow serially once after interfaces freeze.
-- Do not increment an App build or create App/DMG/UserKit/release-worktree artifacts for a source commit, targeted-test pass, or isolated bug fix. Keep one overwritable temporary candidate for the release batch. Allocate one new build only after the complete installed-App user-flow checklist passes.
-- Enforce artifact retention: one verified complete Git bundle, the 0.5 functional comparison App, the most recent stable rollback App, the current candidate rollback App, and non-reconstructible signed-package/database inputs. After identity/hash checks, remove failed candidates, duplicate DMGs/UserKits, superseded release worktrees and old bundles covered by the retained complete bundle. Never auto-delete a worktree with unknown database changes.
+- Keep ordinary development and candidate production separate. Bind every candidate to reviewed source, locked dependencies and a unique manifest; preserve the verified rollback App and required data recovery materials.
+- Clean only identified, reconstructible duplicates after identity/hash checks. Keep historical migration archives, uncommitted-change protection and non-reconstructible signing/data inputs. Never auto-delete a worktree containing unknown scientific data.
 - Keep the Fusion DOM, `DocumentTabStore`, at most two editor groups and single navigation controller authoritative. Reuse audited services behind narrow controllers; do not restore hidden 0.8 pages, duplicate navigation listeners, cross-view DOM reparenting or CSS skin overlays.
 - Four-type filtering is a server-side `evidence-filter-v1` contract. Never reintroduce a client-only filter over the first page or first 100 results.
 - For workflow acceptance, feed actual service-generated DTOs into production renderer tests; handwritten success fixtures cannot prove cross-layer compatibility. Keep wire units explicit (review-queue-v1 scores are 0–100, not fractions). After publication, verify the receipt, refreshed paper catalogue, reachable review candidates and search together; a failed queue request must not become an empty successful queue.
