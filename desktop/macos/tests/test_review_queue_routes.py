@@ -111,7 +111,8 @@ class ReviewQueueRouteTests(unittest.TestCase):
                 with opener.open(base + route, timeout=5) as response:
                     return json.load(response)
             try:
-                with opener.open(f"{base}/?desktop_token={token}", timeout=5) as response:
+                opener.open(f"{base}/?desktop_token={token}", timeout=5).close()
+                with opener.open(base + "/api/ui-mode", timeout=5) as response:
                     csrf = response.headers[CSRF_HEADER]
                 self.assertEqual(get("/api/search-papers")[0]["pending_candidate_count"], 1)
                 row = get("/api/desktop/review-queue")["items"][0]
