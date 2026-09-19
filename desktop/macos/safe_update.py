@@ -6,10 +6,15 @@ import sqlite3
 import subprocess
 import sys
 import json
+import tempfile
+from contextlib import closing
 import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+
+from desktop_runtime import discover_project_root
+from auto_research.workspace import validate_workspace
 
 
 DESKTOP_ROOT = Path(__file__).resolve().parent
@@ -69,20 +74,31 @@ def legacy_editor_is_running() -> bool:
 
 
 def backup_database() -> tuple[Path, str]:
-    source_path = PROJECT_ROOT / "db" / "experimental_evidence.sqlite"
+    workspace = discover_project_root().root
+    validate_workspace(workspace)
+    source_path = workspace / "db" / "experimental_evidence.sqlite"
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    destination = BACKUP_ROOT / f"experimental_evidence-before-desktop-update-{stamp}.sqlite"
     BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
-
-    source = sqlite3.connect(f"{source_path.as_uri()}?mode=ro", uri=True)
-    target = sqlite3.connect(destination)
+    fd, temporary = tempfile.mkstemp(
+        prefix=f"experimental_evidence-before-desktop-update-{stamp}-",
+        suffix=".partial", dir=BACKUP_ROOT,
+    )
+    os.close(fd)
+    staged = Path(temporary)
+    destination = staged.with_suffix(".sqlite")
     try:
-        source.backup(target)
+        with closing(sqlite3.connect(f"{source_path.as_uri()}?mode=ro", uri=True)) as source:
+            with closing(sqlite3.connect(staged)) as target:
+                source.backup(target)
+                if target.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                    raise RuntimeError("更新前数据库备份完整性校验未通过；未开始构建。")
+        digest = hashlib.sha256(staged.read_bytes()).hexdigest()
+        with staged.open("rb") as stream:
+            os.fsync(stream.fileno())
+        # Publish only a verified copy; never replace an earlier backup.
+        os.link(staged, destination)
     finally:
-        target.close()
-        source.close()
-
-    digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+        staged.unlink(missing_ok=True)
     return destination, digest
 
 
@@ -111,7 +127,7 @@ def main() -> int:
     run([str(DESKTOP_ROOT / "build_app.command")])
     # build_app.command already performs the isolated candidate smoke check and
     # signature/plist validation. Do not repeat the same high-load verification.
-    print("\n桌面版更新完成。上一版应用仍保存在 desktop/macos/releases/ 中。")
+    print("\n候选应用已生成；尚未替换已安装的 App。请完成候选验收后再安装。")
     return 0
 
 
