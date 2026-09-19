@@ -45,6 +45,7 @@ analysis = Analysis(
             str(project_root / "config" / "auto-research-harness.runtime.cordis.yml"),
             "config",
         ),
+        *[(str(project_root / "config" / name), "config") for name in ("themes.yaml", "sources.yaml")],
         *collect_data_files("deepseek_harness_runtime"),
         *copy_metadata("deepseek-harness-sdk"),
         *copy_metadata("deepseek-harness-runtime-bin"),

@@ -20,6 +20,7 @@ APP_NAME = "Auto Research"
 EXPECTED_EVIDENCE_SCHEMA = 12
 PROJECT_ROOT_ENV = "AUTO_RESEARCH_DESKTOP_PROJECT_ROOT"
 PREFERENCE_FILE = Path.home() / "Library" / "Application Support" / APP_NAME / "project-root.txt"
+_CONFIGURED_ROOT: Path | None = None
 LOCK_FILE = Path.home() / "Library" / "Application Support" / APP_NAME / "desktop.lock"
 
 
@@ -45,7 +46,6 @@ def missing_project_markers(root: Path) -> list[str]:
     required = (
         Path("db/experimental_evidence.sqlite"),
         Path("data/evidence"),
-        Path("config"),
     )
     return [str(relative) for relative in required if not (root / relative).exists()]
 
@@ -88,45 +88,38 @@ def discover_project_root(explicit: str | Path | None = None) -> ProjectLocation
             )
         return ProjectLocation(root=root, source="command-line")
 
-    candidates: list[tuple[str, Path | None]] = [
-        ("environment", Path(os.environ[PROJECT_ROOT_ENV]).expanduser() if os.environ.get(PROJECT_ROOT_ENV) else None),
-    ]
-    # A deliberately supplied process-local root also bypasses stale preferences.
-    if not os.environ.get(PROJECT_ROOT_ENV):
-        candidates.append(("preference", _read_preference()))
-    if not getattr(sys, "frozen", False):
-        candidates.append(("development-checkout", _development_project_root()))
-    candidates.append(("current-mac-default", Path.home() / "Zotero" / "auto-research"))
+    environment = os.environ.get(PROJECT_ROOT_ENV)
+    selected = Path(environment).expanduser() if environment else _read_preference()
+    if selected is not None:
+        root = selected.resolve()
+        if not is_project_root(root):
+            raise ProjectRootError("指定或保存的数据目录不可用；已停止启动，未切换到另一个资料库。")
+        return ProjectLocation(root=root, source="environment" if environment else "preference")
 
-    attempted: list[str] = []
-    seen: set[Path] = set()
-    for source, candidate in candidates:
-        if candidate is None:
-            continue
-        root = candidate.expanduser().resolve()
-        if root in seen:
-            continue
-        seen.add(root)
-        if is_project_root(root):
-            return ProjectLocation(root=root, source=source)
-        missing = ", ".join(missing_project_markers(root)) or "目录不存在"
-        attempted.append(f"{root}（缺少 {missing}）")
+    from auto_research.workspace import WorkspacePaths
+    root = WorkspacePaths.macos(bundled_resource_root()).workspace
+    return ProjectLocation(root=root, source="application-support")
 
-    details = "\n".join(f"- {item}" for item in attempted) or "- 没有可检查的候选目录"
-    raise ProjectRootError(
-        "没有找到可用的 Auto Research 数据工作区。\n"
-        "第一阶段桌面版仍使用当前项目中的数据库和证据资产。\n"
-        f"已检查：\n{details}"
-    )
+
+def bundled_resource_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return _development_project_root()
 
 
 def configure_core_paths(project_root: Path) -> None:
     """Point the frozen core at the external project data before importing evidence modules."""
 
+    global _CONFIGURED_ROOT
+    root = project_root.expanduser().resolve()
+    if _CONFIGURED_ROOT is not None:
+        if _CONFIGURED_ROOT == root:
+            return
+        raise RuntimeError("同一进程不能切换科学工作区；请重新启动。")
     already_loaded = sorted(
         name
         for name in sys.modules
-        if name.startswith("auto_research.") and name != "auto_research.paths"
+        if name.startswith("auto_research.") and name not in {"auto_research.paths", "auto_research.workspace"}
     )
     if already_loaded:
         raise RuntimeError(
@@ -137,7 +130,7 @@ def configure_core_paths(project_root: Path) -> None:
     paths = importlib.import_module("auto_research.paths")
     root = project_root.expanduser().resolve()
     paths.ROOT = root
-    paths.CONFIG_DIR = root / "config"
+    paths.CONFIG_DIR = bundled_resource_root() / "config"
     paths.DATA_DIR = root / "data"
     paths.PDF_DIR = paths.DATA_DIR / "pdf"
     paths.PAPERS_DIR = paths.DATA_DIR / "papers"
@@ -148,18 +141,7 @@ def configure_core_paths(project_root: Path) -> None:
 
     os.environ[PROJECT_ROOT_ENV] = str(root)
     os.environ["AUTO_RESEARCH_DESKTOP"] = "1"
-    os.chdir(root)
-
-
-def configure_imported_module_paths(project_root: Path) -> None:
-    """Bridge remaining dynamic __file__ lookups during the frozen Mac preview."""
-
-    root = project_root.expanduser().resolve()
-    quality_pipeline = sys.modules.get("auto_research.evidence.quality_pipeline")
-    if quality_pipeline is not None:
-        quality_pipeline.__file__ = str(
-            root / "src" / "auto_research" / "evidence" / "quality_pipeline.py"
-        )
+    _CONFIGURED_ROOT = root
 
 
 def acquire_instance_lock(path: Path = LOCK_FILE):
@@ -238,5 +220,5 @@ def smoke_check_project(project_root: Path) -> dict[str, Any]:
         "sqlite_integrity": integrity,
         "schema_version": schema_row[0] if schema_row else None,
         "papers": paper_count,
-        "data_mode": "external-project-preview",
+        "data_mode": "workspace-v1",
     }

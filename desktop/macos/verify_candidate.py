@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import os
-import sqlite3
 import subprocess
 import tempfile
 from pathlib import Path
@@ -17,26 +15,16 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def sqlite_backup(source_path: Path, destination: Path) -> None:
-    source = sqlite3.connect(f"{source_path.as_uri()}?mode=ro", uri=True)
-    target = sqlite3.connect(destination)
-    try:
-        source.backup(target)
-    finally:
-        target.close()
-        source.close()
-
-
 def verify(executable: Path, project_root: Path, cache_root: Path) -> None:
     cache_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="isolated-smoke-", dir=cache_root) as directory:
         workspace = Path(directory) / "workspace"
-        (workspace / "db").mkdir(parents=True)
-        os.symlink(project_root / "data", workspace / "data", target_is_directory=True)
-        os.symlink(project_root / "config", workspace / "config", target_is_directory=True)
-
+        # The candidate creates its own schema. No checkout data/config links,
+        # no developer database, and no host Python dependency at runtime.
+        subprocess.run(
+            [str(executable), "--initialize-workspace", str(workspace)], check=True,
+        )
         temporary_database = workspace / "db" / "experimental_evidence.sqlite"
-        sqlite_backup(project_root / "db" / "experimental_evidence.sqlite", temporary_database)
         before = sha256(temporary_database)
         subprocess.run(
             [str(executable), "--smoke-test", "--project-root", str(workspace)],
