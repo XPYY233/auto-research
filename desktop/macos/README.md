@@ -27,13 +27,13 @@ build 54 是本轮全部源码修复、完整共享测试和完整 macOS 测试�
 | 第一次生成应用 | 双击 `build_app.command` |
 | 查看应用来源 | 双击 `查看当前桌面版本.command` |
 | 检查已生成应用 | 双击 `verify_app.command` |
-| 稳定提交后安全更新 | 双击 `更新桌面版.command` |
+| 已审查提交后备份并生成候选 | 双击 `更新桌面版.command` |
 | 生成 macOS DMG | 双击 `make_dmg.command` |
 | 学习迭代规范 | 阅读 `NON_ENGINEER_UPDATE_GUIDE.md` |
 | 查看安全边界 | 阅读 `SECURITY.md` |
 | 查看数据包路线 | 阅读 `../PRODUCT_DATA_PACKAGE_PLAN.md` |
 
-生成物位于 `desktop/macos/dist/Auto Research.app` 和 `desktop/macos/dist/Auto-Research-1.1.0-macOS-arm64.dmg`，上一版保存在 `desktop/macos/releases/`。二者都不进入 Git，应用更新与科学数据更新分离。
+每份候选保存在 `desktop/macos/dist/candidates/<candidate_id>/`；`dist/Auto Research.app` 是最新成功候选的便捷链接。构建不会替换 `/Applications` 中的 App。安装、回退及同一制品封装需另行验收，见更新指南。制品与科研数据均不进入 Git。
 
 ## 首次打开
 
