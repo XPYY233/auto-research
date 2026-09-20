@@ -34,6 +34,7 @@ def main() -> int:
         env.update(HOME=home, PYTHONDONTWRITEBYTECODE="1", PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
                    PYTHONPATH=os.pathsep.join(str(ROOT / path) for path in ("src", "desktop/macos", "scripts")))
         run([sys.executable, "scripts/check_repository.py"], env)
+        run([sys.executable, "scripts/audit_public_history.py"], env)
         contract = json.loads((ROOT / "config/release-contract.json").read_text())
         for relative in contract["web_assets"]:
             if relative.endswith(".js"):

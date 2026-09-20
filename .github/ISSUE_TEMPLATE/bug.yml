@@ -1,6 +1,9 @@
 name: 问题报告
 description: 记录可复现的软件问题（不要上传私人论文、数据库或密钥）
 body:
+  - type: markdown
+    attributes:
+      value: "请只提交合成复现。禁止上传 API 密钥、文献资料包、科研数据库、原文/原图、私人截图或本机路径。安全问题请使用私密报告。"
   - type: textarea
     id: behavior
     attributes:

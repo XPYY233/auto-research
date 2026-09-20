@@ -1,8 +1,6 @@
 name: Engineering checks
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,7 +8,35 @@ concurrency:
   group: checks-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Always check source and full-history privacy
+        run: |
+          python3 scripts/check_repository.py
+          python3 scripts/audit_public_history.py
+      - id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        shell: bash
+        run: |
+          if [ -z "$BASE_REF" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/$BASE_REF...HEAD" | python3 -c 'import sys; names=sys.stdin.read().splitlines(); sys.exit(0 if any(not (x.endswith(".md") or x.startswith("docs/history/") and x.endswith(".txt")) for x in names) else 1)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
   engineering:
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -36,3 +62,17 @@ jobs:
           name: engineering-check-results
           path: .artifacts/checks/*.xml
           retention-days: 14
+
+  required:
+    if: always()
+    needs: [scope, engineering]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require privacy and applicable engineering checks
+        env:
+          PRIVACY_RESULT: ${{ needs.scope.result }}
+          ENGINEERING_RESULT: ${{ needs.engineering.result }}
+        run: |
+          test "$PRIVACY_RESULT" = success
+          test "$ENGINEERING_RESULT" = success -o "$ENGINEERING_RESULT" = skipped
