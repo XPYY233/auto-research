@@ -35,7 +35,7 @@ eval(section('  function normalizeLibrarianSession(', '  function renderLibraria
 eval(section('  function saveCurrentLibrarianSession(', '  async function loadLibrarianHistory('));
 eval(section('  function librarianConversationEvidence(', '  function librarianRefs('));
 eval(section('  async function preparedAuthorization(', '  function literaturePaperKey('));
-eval(section('  async function executePrepared(', '  function applyLiteratureResult('));
+eval(section('  async function executePrepared(', '  async function applyLiteratureResult('));
 eval(section('  async function submitLibrarian(', '  function cancelLibrarianRequest('));
 """
 
