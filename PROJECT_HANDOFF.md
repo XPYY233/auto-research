@@ -6,21 +6,25 @@
 
 用户已授权公开源码并严格保护文献资料包及 AI API 凭据。开发目录迁至独立的 auto-research-public；原 GitHub 仓库保留为私有历史归档，公开仓库沿用原地址。详见 docs/PUBLIC_REPOSITORY.md；旧 Issue 编号指私有归档，新问题在公开仓库跟踪。
 
+公开迁移已完成：GitHub 新生成 PR 提交的匿名邮箱已验证；未登录访问公开仓库成功，私有历史与暂存仓库不可见。公开基线 `40c11bc` 的 4187 个历史文件对象扫描无阻断项，1441 共享与 374 Mac 测试通过。代码变更运行完整检查，文档 PR 仅运行隐私与历史检查，避免重复消耗 Actions。
+
+后续公开任务：[#1 迁移验收](https://github.com/XPYY233/auto-research/issues/1)、[#2 核心联合验收](https://github.com/XPYY233/auto-research/issues/2)、[#3 独立交付](https://github.com/XPYY233/auto-research/issues/3)、[#4 科学评估](https://github.com/XPYY233/auto-research/issues/4)、[#5 定位与布局](https://github.com/XPYY233/auto-research/issues/5)、[#6 架构维护](https://github.com/XPYY233/auto-research/issues/6)。下文未带公开链接的旧编号均属于私有归档。
+
 ## 授权与流程
 
-实施已批准的工程拯救计划：私有 GitHub、Apple Silicon Mac、保留全部功能。
+实施已批准的工程拯救计划：公开源码 GitHub、Apple Silicon Mac、保留全部功能；研究数据与凭据仅留本地。
 所有后续工作采用 GitHub Issue → 分支 → PR → 自动检查 → 合并 → 唯一候选 → 实机验收 → Release。
 本地用于开发、数据保护和验证；问题、审查、完成证据与发布身份在 GitHub 可追溯。
 Windows 冻结；不新增功能、不购买订阅、不默认调用收费模型。保留至少 25% 账户额度（用户最新授权）。
 
 ## 已取得的证据
 
-- 私有 GitHub `XPYY233/auto-research` 已保存 593 次净化历史、原提交映射及问题/PR/自动检查记录。历史未压成初始化提交；各项完成证据与状态以关联 Issue/PR 为准。
-- 原 Zotero 科研目录保留；独立开发仓库位于 Developer/auto-research，生产数据库、论文及私人状态不进 Git。
+- 私有历史 `XPYY233/auto-research-private-history` 已保存 593 次净化历史、原提交映射及问题/PR/自动检查记录。历史未压成初始化提交；各项完成证据与状态以关联 Issue/PR 为准。
+- 原 Zotero 科研目录保留；当前独立开发仓库位于 Developer/auto-research-public，生产数据库、论文及私人状态不进 Git。
 - 9月10日保护归档的隔离恢复通过：2735 文件条目、63 PDF、数据库计数及 quick_check、Git 对象、四类加密历史认证。
 - 9月19日当前数据另有一致性快照及恢复报告：992 文件条目、64 PDF、309 图像哈希，数据库表计数及四类加密历史认证通过。详细私人材料仅留本机保护目录。
 - 统一工程入口、合成离线样本、共享/Mac 串行 pytest、零静态生产循环依赖、职责检查、敏感文件检查与依赖审计已建立。
-- 私有仓库服务端分支保护返回 403（需 Pro）；现在是受控 PR 约定，不是服务端强制保护。不购买订阅。
+- 旧私有仓库的服务端分支保护受账号权益限制；公开仓库保护状态以 GitHub 当前设置为准，不购买订阅。
 - 空 Application Support 工作区能够由冻结 App 初始化并通过真实 HTTP 冒烟；配置取 App 资源，不需要开发数据。
 
 - **旧库迁移已完成本机验收（#2、#10、#14）**：复制、逐项迁移、校验、原子发布与中断恢复已实现。查明 27 条哈希冲突是旧采样签名误写到完整哈希字段；显式、双重证据校正保留原/新身份。真实复制演练通过 21 表、535 原文件、550 引用，6 个既有历史输出缺失如实登记。已用审查通过的切换代码激活 Application Support 工作区；重启后核对有效目录并打开新文章 PDF，21 表、来源文件与 388 份私人/官方文件再次核验通过，4 份已结束加密断点可认证。原目录保留；真实回退场景仍属于 #4 交付验收。见 [迁移说明](docs/WORKSPACE_MIGRATION.md)。
