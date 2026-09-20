@@ -601,8 +601,23 @@ assert.equal(api.detailPDFURL({{sourceScope:'workspace',paperId:7,page:3}}),'/ap
         self.assertNotIn("/api/agents/librarian/chat", self.runtime)
         self.assertNotIn("/api/context-chat", self.runtime)
 
+    def test_visual_repair_prepares_only_visual_mode_without_full_rescan(self) -> None:
+        program = f"""
+const fs=require('fs'),assert=require('assert');
+globalThis.document={{readyState:'loading',querySelector:()=>null,querySelectorAll:()=>[],addEventListener(){{}}}};
+globalThis.localStorage={{getItem:()=>null,setItem(){{}}}};globalThis.addEventListener=()=>{{}};
+globalThis.confirm=()=>{{throw new Error('repair must not request a full text rescan');}};
+const calls=[];globalThis.fetch=async(url,options)=>{{calls.push([url,JSON.parse(options.body)]);return {{ok:false,status:409,headers:{{get:()=>null}},json:async()=>({{code:'literature_visual_unavailable',message:'fixture without source visuals'}})}};}};
+eval(fs.readFileSync({str(WEB / 'fusion_review.js')!r},'utf8'));const api=globalThis.AutoResearchFusion;
+api.state.paper={{id:80,title:'Synthetic paper',doi:'10.1/fixture',requiresRescanConfirmation:true}};
+api.state.literatureTask.directoryState='ready';api.state.literatureTask.directory={{tasks:[],issues:[]}};
+(async()=>{{await api.runLiteratureExtraction({{repairVisuals:true}});assert.deepEqual(calls,[['/api/desktop/ai/actions/literature_extraction/prepare',{{paper_id:80,force_rescan:false,repair_visuals:true}}]]);}})().catch(error=>{{console.error(error);process.exitCode=1;}});
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True, timeout=8)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_literature_extraction_uses_one_task_authorization(self) -> None:
-        start = self.runtime.index("async function runLiteratureExtraction()")
+        start = self.runtime.index("async function runLiteratureExtraction(")
         end = self.runtime.index("function runPDFAction", start)
         workflow = self.runtime[start:end]
         self.assertEqual(

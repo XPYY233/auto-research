@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
+import json
 import math
 import os
 from pathlib import Path
@@ -272,11 +273,13 @@ def publish_staged_visual_evidence(
     paper: Mapping[str, Any],
     staged: StagedVisualEvidence,
     visual_records: list[dict[str, Any]] | None = None,
+    repair_only: bool = False,
 ) -> dict[str, Any]:
     reviews = {record["source_key"]: record for record in (visual_records or [])}
     if len(reviews) != len(visual_records or []) or set(reviews) - {visual_source_key(asset.spec) for asset in staged.assets}:
         raise LiteratureExtractionJobError("literature_visual_invalid", "AI 图表核验与原文截图不匹配")
     published: list[dict[str, Any]] = []
+    stable_existing = []
     structure_candidates = 0
     structure_manual_review = 0
     structure_unavailable = 0
@@ -296,6 +299,18 @@ def publish_staged_visual_evidence(
         else:
             os.replace(asset.staged_path, asset.final_path)
             staged.created_paths.append(asset.final_path)
+        existing = connection.execute(
+            "SELECT id,image_sha256,review_status FROM visual_assets WHERE paper_id=? AND asset_type=? AND asset_number=?",
+            (int(paper["id"]), asset.spec["asset_type"], asset.spec["number"]),
+        ).fetchone()
+        same_source = bool(existing and existing["image_sha256"] == asset.sha256)
+        last = connection.execute(
+            "SELECT gate_status,candidate_json FROM quality_candidates WHERE published_asset_id=? ORDER BY id DESC LIMIT 1",
+            (existing["id"],),
+        ).fetchone() if same_source else None
+        stable = same_source and (last is None or last["gate_status"] in {"dual_pass", "third_pass", "manual_approved"}
+                                  or not json.loads(last["candidate_json"]).get("is_new_asset", False))
+        stable_existing.append(bool(stable))
         record = reviews.get(visual_source_key(asset.spec))
         semantics = {}
         if record and record["gate_status"] in {"dual_pass", "third_pass"}:
@@ -310,13 +325,18 @@ def publish_staged_visual_evidence(
                 **dict(asset.spec),
                 "_image_path": str(asset.final_path),
                 "_image_sha256": asset.sha256,
-                "review_status": str(asset.spec.get("review_status") or "draft"),
+                "review_status": str(existing["review_status"] if stable else "draft"),
                 **semantics,
             },
             connection=connection,
         )
         published.append(published_asset)
         if str(published_asset["asset_type"]) == "table":
+            if repair_only and same_source and connection.execute(
+                "SELECT 1 FROM table_structure_versions WHERE visual_asset_id=? LIMIT 1", (published_asset["id"],)
+            ).fetchone():
+                # A semantics-only repair cannot replace an existing cell version.
+                continue
             if asset.table_structure is None:
                 structure_unavailable += 1
             else:
@@ -364,8 +384,9 @@ def publish_staged_visual_evidence(
                 "page_start": int(row["page_start"]),
                 "image_sha256": str(row["image_sha256"]),
                 "review_record": reviews.get(visual_source_key(asset.spec)),
+                "is_new_asset": not stable,
             }
-            for row, asset in zip(published, staged.assets, strict=True)
+            for row, asset, stable in zip(published, staged.assets, stable_existing, strict=True)
         ],
         "links": links,
     }

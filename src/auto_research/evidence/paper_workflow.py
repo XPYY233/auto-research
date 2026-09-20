@@ -23,8 +23,10 @@ def extraction_workflow_summaries(db: EvidenceDB) -> dict[int, dict[str, object]
         pending = {
             int(row["paper_id"]): int(row["n"])
             for row in connection.execute(
-                "SELECT paper_id,COUNT(*) n FROM quality_candidates "
-                "WHERE gate_status='manual_review' GROUP BY paper_id"
+                "SELECT q.paper_id,COUNT(*) n FROM quality_candidates q "
+                "WHERE q.gate_status='manual_review' AND (q.published_asset_id IS NULL OR "
+                "q.id=(SELECT MAX(newer.id) FROM quality_candidates newer "
+                "WHERE newer.published_asset_id=q.published_asset_id)) GROUP BY q.paper_id"
             )
         }
     return {

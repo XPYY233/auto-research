@@ -338,7 +338,11 @@ class ExistingLiteratureStagePlanner:
         )
 
     def _verification(self, context: LiteratureStageContext, raw_results) -> PlannedLiteratureStage:
-        if any(item.stage == "coverage_gap" for item in context.prior_outputs):
+        if context.experiment_profile.get("visual_only") is True and not context.prior_outputs:
+            if raw_results:
+                raise ValueError("visual-only discovery is local")
+            state = _empty_branch_state(context)
+        elif any(item.stage == "coverage_gap" for item in context.prior_outputs):
             state = _latest(context, "coverage_gap")
         else:
             state = _latest(context, "initial_focus")
@@ -396,6 +400,7 @@ class ExistingLiteratureStagePlanner:
             )
         assets, calls = plan_visual_review(context)
         state["visual_assets"] = assets
+        state["visual_only"] = context.experiment_profile.get("visual_only") is True
         return PlannedLiteratureStage(
             "adversarial_branches", state, calls, _fingerprint(state)
         )
@@ -437,9 +442,11 @@ class ExistingLiteratureStagePlanner:
                 "records": records,
                 "threshold": self._threshold,
                 "coverage_incomplete": coverage_incomplete,
+                "visual_only": bool(state.get("visual_only")),
             }
             if calls else self._validated_result(
-                records, coverage_incomplete=coverage_incomplete
+                records, coverage_incomplete=coverage_incomplete,
+                visual_only=bool(state.get("visual_only")),
             )
         )
         next_stage = "third_review" if calls else "validated"
@@ -459,6 +466,7 @@ class ExistingLiteratureStagePlanner:
         result = self._validated_result(
             records,
             coverage_incomplete=bool(state.get("coverage_incomplete")),
+            visual_only=bool(state.get("visual_only")),
         )
         return PlannedLiteratureStage("validated", result, (), _fingerprint(result))
 
@@ -516,6 +524,7 @@ class ExistingLiteratureStagePlanner:
         records: list[dict[str, Any]],
         *,
         coverage_incomplete: bool = False,
+        visual_only: bool = False,
     ) -> dict[str, Any]:
         allowed = {"dual_pass", "third_pass", "manual_review"}
         if any(record.get("gate_status") not in allowed for record in records):
@@ -529,10 +538,11 @@ class ExistingLiteratureStagePlanner:
         return {
             "visual_records": visual_records,
             "review_policy": "automatic-ai-v1",
+            "extraction_scope": "visual_only" if visual_only else "full_paper",
             "schema_version": "literature-extraction-validated-v1",
             "coverage": {
-                "numeric_items": not coverage_incomplete,
-                "qualitative_findings": not coverage_incomplete,
+                "numeric_items": not visual_only and not coverage_incomplete,
+                "qualitative_findings": not visual_only and not coverage_incomplete,
                 "visual_evidence_ready": False,
                 "atomic_commit_ready": False,
             },

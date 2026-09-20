@@ -68,13 +68,15 @@ class EvidenceDBLiteratureJobStarter:
         self._store = store
 
     def start(
-        self, *, paper_id: int, force_rescan: bool, session_id: str
+        self, *, paper_id: int, force_rescan: bool, session_id: str, repair_visuals: bool = False
     ) -> Mapping[str, Any]:
         if (
             isinstance(paper_id, bool)
             or not isinstance(paper_id, int)
             or paper_id < 1
             or not isinstance(force_rescan, bool)
+            or not isinstance(repair_visuals, bool)
+            or (repair_visuals and force_rescan)
         ):
             raise LiteratureExtractionJobError(
                 "literature_request_invalid", "文献抽取请求无效"
@@ -90,7 +92,7 @@ class EvidenceDBLiteratureJobStarter:
             raise LiteratureExtractionJobError(
                 "literature_paper_missing", "目标文献不存在"
             ) from exc
-        if scanned and not force_rescan:
+        if scanned and not force_rescan and not repair_visuals:
             raise LiteratureExtractionJobError(
                 "literature_rescan_confirmation_required",
                 "这篇文献已有抽取记录，请明确确认后新建重扫任务",
@@ -103,9 +105,10 @@ class EvidenceDBLiteratureJobStarter:
             max_pages=self.MAX_PAGES,
             chunk_pages=self.CHUNK_PAGES,
             learning_guidance=guidance,
+            visual_planner=ExistingLiteratureStagePlanner() if repair_visuals else None,
         )
 
-    def preflight(self, *, paper_id: int, force_rescan: bool) -> None:
+    def preflight(self, *, paper_id: int, force_rescan: bool, repair_visuals: bool = False) -> None:
         """Validate free local prerequisites without creating a staged job."""
 
         if (
@@ -113,6 +116,8 @@ class EvidenceDBLiteratureJobStarter:
             or not isinstance(paper_id, int)
             or paper_id < 1
             or not isinstance(force_rescan, bool)
+            or not isinstance(repair_visuals, bool)
+            or (repair_visuals and force_rescan)
         ):
             raise LiteratureExtractionJobError(
                 "literature_request_invalid", "文献抽取请求无效"
@@ -132,7 +137,7 @@ class EvidenceDBLiteratureJobStarter:
             raise LiteratureExtractionJobError(
                 "literature_paper_missing", "目标文献不存在"
             ) from exc
-        if scanned and not force_rescan:
+        if scanned and not force_rescan and not repair_visuals:
             raise LiteratureExtractionJobError(
                 "literature_rescan_confirmation_required",
                 "这篇文献已有抽取记录，请明确确认后新建重扫任务",
@@ -257,13 +262,14 @@ class LiteratureExtractionBusinessAssembler:
         if not isinstance(request, Mapping):
             raise BusinessActionError("business_action_invalid")
         request_keys = set(request)
-        if request_keys == _INITIAL_REQUEST_KEYS:
+        if request_keys in (_INITIAL_REQUEST_KEYS, _INITIAL_REQUEST_KEYS | {"repair_visuals"}):
             if self._starter is None:
                 raise BusinessActionError("business_action_prepare_failed")
             try:
                 summary = self._starter.start(
                     paper_id=request.get("paper_id"),
                     force_rescan=request.get("force_rescan"),
+                    **({"repair_visuals": request["repair_visuals"]} if "repair_visuals" in request else {}),
                     session_id=self._session_id,
                 )
                 token = summary["job_token"]
@@ -289,7 +295,8 @@ class LiteratureExtractionBusinessAssembler:
         sending_scope = summary.get("sending_scope")
         try:
             budget = task_budget_for_page_blocks(
-                sending_scope["page_block_count"]
+                sending_scope["page_block_count"],
+                visual_only=self._store.is_visual_repair(token, session_id=self._session_id),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise BusinessActionError("business_action_invalid") from exc
@@ -332,12 +339,13 @@ class LiteratureExtractionBusinessAssembler:
             raise BusinessActionError("business_action_invalid")
         request_keys = set(request)
         try:
-            if request_keys == _INITIAL_REQUEST_KEYS:
+            if request_keys in (_INITIAL_REQUEST_KEYS, _INITIAL_REQUEST_KEYS | {"repair_visuals"}):
                 if self._starter is None:
                     raise BusinessActionError("business_action_prepare_failed")
                 self._starter.preflight(
                     paper_id=request.get("paper_id"),
                     force_rescan=request.get("force_rescan"),
+                    **({"repair_visuals": request["repair_visuals"]} if "repair_visuals" in request else {}),
                 )
                 return
             if request_keys == _CONTINUATION_REQUEST_KEYS:

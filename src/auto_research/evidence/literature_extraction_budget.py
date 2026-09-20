@@ -30,7 +30,7 @@ class LiteratureExtractionTaskBudget:
     max_tokens: int
 
 
-def task_budget_for_page_blocks(page_block_count: int) -> LiteratureExtractionTaskBudget:
+def task_budget_for_page_blocks(page_block_count: int, *, visual_only: bool = False) -> LiteratureExtractionTaskBudget:
     """Return a hard task ceiling derived from the frozen PDF block count.
 
     Each branch can produce one initial and one coverage-gap response per page
@@ -45,6 +45,14 @@ def task_budget_for_page_blocks(page_block_count: int) -> LiteratureExtractionTa
     if page_block_count < 1:
         raise ValueError("page block count must be positive")
 
+    if not isinstance(visual_only, bool):
+        raise ValueError("visual_only must be a boolean")
+    if visual_only:
+        return LiteratureExtractionTaskBudget(
+            BRANCH_COUNT * MAX_VISUAL_REVIEW_BATCHES + MAX_THIRD_REVIEW_CALLS_PER_TASK,
+            BRANCH_COUNT * MAX_VISUAL_REVIEW_BATCHES * VISUAL_REVIEW_MAX_TOKENS
+            + MAX_THIRD_REVIEW_CALLS_PER_TASK * THIRD_REVIEW_MAX_TOKENS_PER_CALL,
+        )
     verification_calls_per_block = (
         BRANCH_COUNT * MAX_VERIFICATION_BATCHES_PER_BRANCH_BLOCK
     )

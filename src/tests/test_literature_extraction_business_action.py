@@ -1106,3 +1106,89 @@ def test_projector_rejects_extra_or_false_commit_fields() -> None:
         projector.project({
             "summary": {**valid, "paper": {**valid["paper"], "pdf_path": "/tmp/a.pdf"}}
         })
+
+
+def test_visual_only_repair_preserves_text_and_resumes_without_recharging(tmp_path):
+    from auto_research.evidence.webapp import search_paper_catalog
+    from auto_research.evidence.literature_extraction_recovery import LiteratureExtractionFinalizerRecovery
+
+    db = EvidenceDB(tmp_path / "evidence.sqlite")
+    db.init()
+    uploaded = UploadService(db, storage_root=tmp_path / "uploads").upload(
+        _scientific_pdf_bytes(), "visual-repair.pdf", title="Visual repair", doi="10.1/visual-repair",
+    )
+    paper_id = int(uploaded["paper_id"])
+    store = _persistent_job_store(tmp_path / "job-state")
+    runtime = _checkpoint_runtime(tmp_path / "checkpoint-state")
+    ports = literature_extraction_business_ports(store, session_id="owner", db=db,
+        finalizer=AtomicEvidenceDBFinalizer(db), checkpoint_runtime=runtime)
+
+    class UnresolvedVisuals(_RawProvider):
+        def request_json(self, messages, **kwargs):
+            response = super().request_json(messages, **kwargs)
+            if "original_caption" in messages[1]["content"]:
+                return {"assets": []}
+            if "第三位独立质量裁判" in messages[0]["content"]:
+                return {"verdicts": []}
+            return response
+
+    original = _prepared_action(ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False}))
+    ports.executor.execute(action=original, ai_client=_budget_client(original, UnresolvedVisuals()))
+    assert search_paper_catalog(db)[0]["pending_candidate_count"] == 2
+    def text_snapshot():
+        with db.connect() as connection:
+            return {table: [tuple(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY id")]
+                    for table in ("data_items", "data_versions", "table_structure_versions")}
+    before = text_snapshot()
+    assets_before = {asset["id"]: asset["image_sha256"] for asset in list_visual_assets(db, paper_id=paper_id)}
+    draft = ports.assembler.assemble({"paper_id": paper_id, "force_rescan": False, "repair_visuals": True})
+    assert draft.outbound["stage"] == "adversarial_branches"
+    assert draft.max_calls == 8 and draft.max_tokens == 52_000
+    assert len(draft.call_plan) == 2
+    assert all("original_caption" in call.messages[1]["content"] for call in draft.call_plan)
+    action = _prepared_action(draft)
+    raw = _RawProvider()
+    complete = runtime.complete
+    def interrupted(*args, **kwargs):
+        raise LiteratureTaskCheckpointError("literature_checkpoint_store_unavailable")
+    runtime.complete = interrupted
+    with pytest.raises(BusinessActionError):
+        ports.executor.execute(action=action, ai_client=_budget_client(action, raw))
+    runtime.complete = complete
+    assert raw.calls == 2
+    token = draft.outbound["job_handle"]
+    checkpoint, state = runtime.recover_job_state(_checkpoint_task_id(token))
+    assert checkpoint.stage == "finalizing"
+    decoded = decode_job_private_state(state)
+    assert decoded.experiment_profile["visual_only"] is True
+    assert decoded.validated_quality_result["coverage"]["numeric_items"] is False
+    # Reopen encrypted stores and acknowledge committed data without a provider.
+    recovery = LiteratureExtractionFinalizerRecovery(
+        runtime=_checkpoint_runtime(tmp_path / "checkpoint-state"),
+        jobs=_persistent_job_store(tmp_path / "job-state"),
+        finalizer=AtomicEvidenceDBFinalizer(db), projector=LiteratureExtractionBusinessProjector(),
+        session_id="owner",
+    )
+    recovery.recover(task_id=_checkpoint_task_id(token), job_token=token)
+    assert raw.calls == 2
+    assert text_snapshot() == before
+    assert {asset["id"]: asset["image_sha256"] for asset in list_visual_assets(db, paper_id=paper_id)} == assets_before
+    catalogue = search_paper_catalog(EvidenceDB(db.path))[0]
+    assert catalogue["pending_candidate_count"] == 0
+    assert catalogue["extraction_workflow_state"] == "saved"
+    rows = EvidenceSearchIndex(EvidenceDB(db.path)).search("", paper_ids=(paper_id,), quality_filter="published", refresh=False).rows
+    assert {row["entity_type"] for row in rows} == {"item", "table", "figure"}
+    with db.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM quality_candidates WHERE gate_status='manual_review'").fetchone()[0] == 2
+
+
+def test_visual_repair_without_source_visuals_never_prepares_model_calls(evidence):
+    db, paper_id = evidence
+    store = _persistent_job_store(db.path.parent / "repair-jobs")
+    assembler = LiteratureExtractionBusinessAssembler(store, session_id="owner",
+        starter=EvidenceDBLiteratureJobStarter(db, store))
+    before = _counts(db)
+    with pytest.raises(BusinessActionError) as error:
+        assembler.assemble({"paper_id": paper_id, "force_rescan": False, "repair_visuals": True})
+    assert error.value.cause_code == "literature_visual_unavailable"
+    assert _counts(db) == before
