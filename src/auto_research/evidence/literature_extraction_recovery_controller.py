@@ -171,7 +171,7 @@ class LiteratureExtractionRecoveryController:
     def assert_prepare_allowed(self, request: object) -> None:
         """Fail before provider readiness/consent when a paid task already exists."""
 
-        if not isinstance(request, Mapping) or set(request) != _INITIAL_REQUEST_KEYS:
+        if not isinstance(request, Mapping) or set(request) not in (_INITIAL_REQUEST_KEYS, _INITIAL_REQUEST_KEYS | {"repair_visuals"}):
             return
         paper_id = request.get("paper_id")
         if isinstance(paper_id, bool) or not isinstance(paper_id, int) or paper_id < 1:

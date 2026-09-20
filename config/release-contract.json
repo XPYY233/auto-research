@@ -5,7 +5,7 @@
     "macos": {
       "desktop_version": "1.2.0",
       "bundle_short_version": "1.2.0",
-      "build_number": "55",
+      "build_number": "56",
       "release_status": "candidate",
       "target": "macOS arm64 Auto Research workbench"
     },
@@ -47,7 +47,7 @@
     }
   },
   "web_assets": {
-    "src/auto_research/evidence/web/index.html": "3750f26abd1f1b29a4b22f1eb843a012bc15951b7539b5e88ec72391b4b8a8a7",
+    "src/auto_research/evidence/web/index.html": "102c928643a98eb133d06e982b6c7416742f235f28bc428320a8cbda4290f74e",
     "src/auto_research/evidence/web/app.css": "dc0a166e1e24361f85c5fb80e40570aa98f4b93e4f2a4fa4bf468b880a588c49",
     "src/auto_research/evidence/web/workbench.css": "fbef002be958151471f71823e7f6779b0f6413bf1aece672409067b42346f873",
     "src/auto_research/evidence/web/ai_consent.js": "ac1722b199b774ed5136e5c7f36ed069125ce16a6a0b726a4cd7db25f4f29467",
@@ -60,7 +60,7 @@
     "src/auto_research/evidence/web/fusion_package_center.js": "5a5ce721232af6408e68890aaa0898dd8a3437079ae6f13e97e10f6417ecbebf",
     "src/auto_research/evidence/web/fusion_personal_import.js": "6bf829183d6ad3f609c5a918b8747bc0711641416bfc048b534a971c16541965",
     "src/auto_research/evidence/web/fusion_personal_series.js": "db41b99f63276e9f77725a7c44f722bccf758cf4e36e8c1686bad62e55006c26",
-    "src/auto_research/evidence/web/fusion_review.js": "cc52a0204c7fb06ecc73234ddbdd531fabe45acff9f67fa066670be70920fdee",
+    "src/auto_research/evidence/web/fusion_review.js": "58f22f4a58927a857611e3b78f52c8a631ed8d6444af23e11c366c4af876adf4",
     "src/auto_research/evidence/web/codex-pet-working.webp": "eeb657c8dd3dc9431cea8d88b8ec08e4c44471dd258ac3d8008483f2b40f0ef9",
     "src/auto_research/evidence/web/review_queue_contract.js": "9d07db2c53fb0a3fb78d12b14ff5993b3032e8303762dca272062decd446618c"
   }

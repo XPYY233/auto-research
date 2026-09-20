@@ -119,7 +119,8 @@ def _controller(tmp_path: Path, *, state: str = "validated"):
     return controller, recovery, directory, token, job
 
 
-def test_same_paper_and_pdf_checkpoint_blocks_new_paid_prepare(tmp_path: Path) -> None:
+@pytest.mark.parametrize("repair", [False, True])
+def test_same_paper_and_pdf_checkpoint_blocks_new_paid_prepare(tmp_path: Path, repair) -> None:
     controller, recovery, _directory, _token, job = _controller(tmp_path)
     with (
         patch(
@@ -134,7 +135,7 @@ def test_same_paper_and_pdf_checkpoint_blocks_new_paid_prepare(tmp_path: Path) -
         ),
         pytest.raises(LiteratureRecoveryControllerError) as raised,
     ):
-        controller.assert_prepare_allowed({"paper_id": 7, "force_rescan": True})
+        controller.assert_prepare_allowed({"paper_id": 7, "force_rescan": not repair, **({"repair_visuals": True} if repair else {})})
 
     assert raised.value.code == "literature_active_task_exists"
     assert raised.value.next_action == "retry_finalization"

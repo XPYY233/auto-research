@@ -665,6 +665,7 @@ class LiteratureExtractionJobStore:
         max_pages: int | None = None,
         chunk_pages: int = 2,
         learning_guidance: str = "",
+        visual_planner: LiteratureStagePlanner | None = None,
     ) -> dict[str, Any]:
         if not isinstance(paper_id, int) or paper_id < 1 or not 1 <= chunk_pages <= 20:
             raise LiteratureExtractionJobError("literature_request_invalid", "文献抽取请求无效")
@@ -712,6 +713,38 @@ class LiteratureExtractionJobStore:
         stage = FrozenExtractionStage.create(
             "initial_focus", calls, snapshot.content_fingerprint, now_value
         )
+        stage_outputs = ()
+        if visual_planner is not None:
+            profile = _freeze({**_plain(profile), "visual_only": True})
+            local_stage = FrozenExtractionStage.create(
+                "coverage_verification", (), snapshot.content_fingerprint, now_value
+            )
+            try:
+                planned = visual_planner.plan_next(LiteratureStageContext(
+                    stage=local_stage, paper=public_paper, pages=snapshot.pages,
+                    chunks=chunks, focuses=focuses, learning_guidance="",
+                    experiment_profile=profile, prior_outputs=(),
+                    snapshot_fingerprint=snapshot.content_fingerprint,
+                    pdf_snapshot=self._snapshots.snapshot_for_finalization(
+                        snapshot_handle, expected_sha256=snapshot.pdf_sha256,
+                    ),
+                ), ())
+                if planned.next_stage != "adversarial_branches" or not planned.calls:
+                    raise LiteratureExtractionJobError(
+                        "literature_visual_unavailable", "未发现可补全的图表，没有创建模型调用"
+                    )
+                stage = FrozenExtractionStage.create(
+                    planned.next_stage, planned.calls, planned.input_fingerprint, now_value
+                )
+                frozen_result = _freeze(planned.validated_result)
+                _validate_intermediate(frozen_result)
+                stage_outputs = (FrozenStageOutput(
+                    local_stage.name, local_stage.stage_fingerprint, frozen_result,
+                    hashlib.sha256(_canonical_bytes(frozen_result)).hexdigest(),
+                ),)
+            except Exception:
+                self._snapshots.release(snapshot_handle)
+                raise
         session_digest = self._session_digest(session_id)
         try:
             with self._lock:
@@ -735,11 +768,16 @@ class LiteratureExtractionJobStore:
                     stage=stage,
                     issued_at=now_value,
                     expires_at=now_value + self._ttl,
+                    stage_outputs=stage_outputs,
                 )
         except Exception:
             self._snapshots.release(snapshot_handle)
             raise
         return self.summary(token, session_id=session_id)
+
+    def is_visual_repair(self, job_token: str, *, session_id: str) -> bool:
+        with self._lock:
+            return self._get(job_token, session_id).experiment_profile.get("visual_only") is True
 
     def summary(self, job_token: str, *, session_id: str) -> dict[str, Any]:
         with self._lock:

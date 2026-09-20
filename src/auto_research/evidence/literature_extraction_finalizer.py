@@ -134,6 +134,7 @@ class AtomicEvidenceDBFinalizer(TrustedAtomicLiteratureFinalizer):
             internal_summary = {
                 **payload["summary"],
                 "commit_schema_version": FINALIZER_SCHEMA_VERSION,
+                "extraction_scope": payload.get("extraction_scope", "full_paper"),
                 "commit_fingerprint": commit_fingerprint,
                 "visual_stage_completed": False,
                 "visual_stage_status": "pending",
@@ -212,6 +213,7 @@ class AtomicEvidenceDBFinalizer(TrustedAtomicLiteratureFinalizer):
                 paper={"id": package.paper_id, **dict(package.paper)},
                 staged=staged_visuals,
                 visual_records=payload.get("visual_records"),
+                repair_only=payload.get("extraction_scope") == "visual_only",
             )
             self._record_visual_review_candidates(
                 connection,
@@ -347,7 +349,7 @@ class AtomicEvidenceDBFinalizer(TrustedAtomicLiteratureFinalizer):
             review = raw.get("review_record") or {}
             candidate = {
                 **dict(review.get("candidate") or {}),
-                "is_new_asset": True,
+                "is_new_asset": raw.get("is_new_asset", True),
                 "asset_id": asset_id,
                 "asset_type": asset_type,
                 "label": label,
