@@ -21,12 +21,22 @@ PATTERNS = (
 
 def violations(path: str, data: bytes, allowed: set[tuple[str, str]]) -> list[str]:
     errors = []
-    if path.startswith(("data/", "db/")) or Path(path).suffix.lower() in {".sqlite", ".sqlite3", ".pdf", ".aresearch", ".dmg", ".bundle"}:
-        errors.append("research data or release artifact")
-    if data.startswith((b"SQLite format 3", b"%PDF-")):
-        errors.append("research binary content")
-    if Path(path).name == ".env" or Path(path).suffix.lower() in {".key", ".p12", ".pfx"}:
-        errors.append("credential file")
+    parts = Path(path).parts
+    suffix = Path(path).suffix.lower()
+    private_dirs = {"data", "db", "official-packages", "private-library", "backups", "exports", "State"}
+    if private_dirs.intersection(parts) or suffix in {".sqlite", ".sqlite3", ".db", ".pdf", ".aresearch", ".dmg", ".bundle", ".zip", ".tar", ".gz", ".tgz", ".7z", ".parquet", ".jsonl", ".csv", ".xlsx"}:
+        errors.append("research data, archive or release artifact")
+    if data.startswith((b"SQLite format 3", b"%PDF-", b"PK\x03\x04", b"\x1f\x8b")):
+        errors.append("research or archive binary content")
+    basename = Path(path).name
+    if (basename == ".env" or basename.startswith(".env.") and basename != ".env.example"
+        or suffix in {".key", ".pem", ".p12", ".pfx"}
+        or basename in {"credentials.json", "credentials.enc", "auth.json", "settings-v1.json", "ai-runtime-state-v1.json"}):
+        errors.append("credential or private state file")
+    if b"\x00" in data:
+        assets = {(x["path"], x["sha256"]) for x in json.loads((ROOT / "config/public-assets.json").read_text())}
+        if (path, hashlib.sha256(data).hexdigest()) not in assets:
+            errors.append("unreviewed binary payload")
     for pattern in PATTERNS:
         for match in re.findall(pattern, data):
             if (path, hashlib.sha256(match).hexdigest()) not in allowed:

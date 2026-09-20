@@ -1,0 +1,22 @@
+[
+  {
+    "path": "desktop/macos/assets/AutoResearch.icns",
+    "sha256": "ed0cb53c8bd4fafdd972a2fcfd58269da136f82573452f70685c620d16d7a644",
+    "purpose": "original application visual asset"
+  },
+  {
+    "path": "desktop/macos/assets/auto-research-icon-chroma-v1.png",
+    "sha256": "ec7bb8decb0f34b3ade471bb0680787116bef893c603b5ad9d9333ca034d1104",
+    "purpose": "original application visual asset"
+  },
+  {
+    "path": "desktop/macos/assets/auto-research-icon-master-v1.png",
+    "sha256": "c4ce6822aedc69ff3708a56e63781bf8ba6a2f912cb5533bb3c28c5cd53e3c56",
+    "purpose": "original application visual asset"
+  },
+  {
+    "path": "src/auto_research/evidence/web/codex-pet-working.webp",
+    "sha256": "eeb657c8dd3dc9431cea8d88b8ec08e4c44471dd258ac3d8008483f2b40f0ef9",
+    "purpose": "original application visual asset"
+  }
+]

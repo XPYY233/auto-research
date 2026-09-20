@@ -31,3 +31,22 @@ data/browser-profile/
 
 /desktop/macos/dist/
 /desktop/macos/releases/
+
+# Public source repository: private payloads must never enter Git.
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.pdf
+*.parquet
+*.jsonl
+*.pem
+*.key
+*.p12
+*.pfx
+/official-packages/
+/private-library/
+/backups/
+/exports/
+/State/
