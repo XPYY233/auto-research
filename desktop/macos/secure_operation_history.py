@@ -13,7 +13,9 @@ from secure_atomic_json_store import AtomicAESGCMJSONStore, SecureJSONPolicy
 from secure_history import HistoryKeyProvider, LocalFileHistoryKeyProvider
 
 
-APP_IDENTIFIER = "com.researcher.autoresearch"
+from crypto_identity import encryption_identity
+
+APP_IDENTIFIER = encryption_identity()
 OPERATION_HISTORY_AAD = f"{APP_IDENTIFIER}:operation-history:v1".encode("utf-8")
 MAX_PLAINTEXT_BYTES = MAX_STORE_BYTES
 MAX_ENVELOPE_BYTES = 4 * ((MAX_PLAINTEXT_BYTES + 18) // 3) + 1_024

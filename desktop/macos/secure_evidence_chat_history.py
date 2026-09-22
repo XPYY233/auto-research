@@ -16,7 +16,9 @@ from auto_research.desktop.evidence_chat_history import EvidenceChatHistoryError
 from secure_history import HistoryKeyProvider, LocalFileHistoryKeyProvider
 
 
-APP_IDENTIFIER = "com.researcher.autoresearch"
+from crypto_identity import encryption_identity
+
+APP_IDENTIFIER = encryption_identity()
 EVIDENCE_CHAT_HISTORY_AAD = f"{APP_IDENTIFIER}:evidence-chat-history:v1".encode("utf-8")
 NONCE_BYTES = 12
 MAX_PLAINTEXT_BYTES = 24 * 1024 * 1024

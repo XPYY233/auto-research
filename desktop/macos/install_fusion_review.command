@@ -66,6 +66,11 @@ if [[ -d "${INSTALLED}" ]]; then
   fi
 fi
 
+# Preserve historical encryption domains locally before replacing the old App.
+if [[ -d "${INSTALLED}" ]]; then
+  "${PYTHON_BIN}" "${SCRIPT_DIR}/crypto_identity.py" --previous-app "${INSTALLED}"
+fi
+
 rm -rf -- "${STAGED}"
 ditto "${CANDIDATE}" "${STAGED}"
 codesign --verify --deep --strict "${STAGED}"

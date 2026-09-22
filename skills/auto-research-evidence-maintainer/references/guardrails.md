@@ -70,3 +70,5 @@ Report separately:
 3. independent scientific accuracy.
 
 Use the current acceptance matrix and human-gold protocol for completeness claims. Historical corpus counts are not current evidence. Never call two-model agreement a human gold standard.
+
+Application identifiers used in authenticated encryption or Keychain service names are format identities, not cosmetic text. Before privacy-driven renaming, test real backup decryption as well as empty first run. Preserve legacy domains only in protected local metadata through `desktop/macos/crypto_identity.py`; never publish private identifiers or rewrite ciphertext to hide an acceptance failure. See `docs/LOCAL_ENCRYPTION_COMPATIBILITY.md`.

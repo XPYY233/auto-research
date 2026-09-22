@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from check_repository import ROOT, violations
 
-@pytest.mark.parametrize('name', ['backup.zip','paper.pdf','export.aresearch','nested/official-packages/manifest.json','nested/State/history.json','nested/.env.production','auth.json','credentials.enc','results.parquet','records.jsonl','measurements.csv','key.pem'])
+@pytest.mark.parametrize('name', ['backup.zip','paper.pdf','export.aresearch','nested/official-packages/manifest.json','nested/State/history.json','nested/.env.production','auth.json','credentials.enc','results.parquet','records.jsonl','measurements.csv','key.pem','nested/crypto-identity-v1.json'])
 def test_private_payload_paths_are_blocked(name):
     assert violations(name, b'synthetic', set())
 

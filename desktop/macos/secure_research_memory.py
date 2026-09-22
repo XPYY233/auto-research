@@ -15,7 +15,9 @@ from auto_research.desktop.research_memory import ResearchMemoryError
 from secure_history import HistoryKeyProvider, LocalFileHistoryKeyProvider
 
 
-APP_IDENTIFIER = "com.researcher.autoresearch"
+from crypto_identity import encryption_identity
+
+APP_IDENTIFIER = encryption_identity()
 RESEARCH_MEMORY_AAD = f"{APP_IDENTIFIER}:research-memory:v1".encode("utf-8")
 MAX_RESEARCH_MEMORY_BYTES = 1_100_000
 
