@@ -36,3 +36,7 @@ A second genuinely clean Mac, tested OS range, real upgrade/rollback and data-pr
 `COPYRIGHT.md` and `THIRD_PARTY_NOTICES.md` own the current rights. Original code currently permits limited downloading/building/installing/local use; it is not generally open-source licensed. Third-party rights and obligations remain unchanged. Do not upload a binary or a source archive containing research data merely because source main is public.
 
 PyMuPDF/MuPDF and all shipped libraries need an actual distribution-rights review and required notices/materials. No automatic commercial license, Developer ID or notarization purchase. Describe ad-hoc signing and missing notarization accurately; never instruct users to disable macOS system security.
+
+## Desktop acceptance process lifetime
+
+Keep an isolated GUI test process attached to a live terminal session. A detached child may exit when its tool parent ends; desktop inspection can then automatically relaunch the App with the real user directory. Verify the running executable, explicit workspace argument and test user directory before UI inspection. After a bundle identifier changes, desktop tooling may cache the old application identity; record that limitation instead of treating a failed tool lookup as a product failure or claiming production GUI acceptance from an isolated copy.
