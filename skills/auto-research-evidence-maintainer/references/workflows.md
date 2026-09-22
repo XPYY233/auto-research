@@ -1,82 +1,33 @@
-# Project workflows
+# Extraction, recovery and search
 
-## Workflow A: acquire and organize literature in Zotero
+## Reproduce a reported missing figure/table
 
-This is the older corpus workflow, distinct from evidence extraction.
+Identify the actual article and effective App workspace. Verify the source PDF, article identity, available figure/table captions, stored asset bytes and hashes. Then trace the whole path: local detection → AI semantic verification → automatic publication → index → refreshed catalogue → actual detail rendering → restart.
 
-1. Discover candidates through lawful open/official sources.
-2. Acquire a real PDF; metadata alone never counts.
-3. Validate PDF readability and paper identity.
-4. Import into Zotero without duplicating the paper.
-5. Classify by research object plus research method.
-6. Verify local attachments, metadata-only count, unfiled items, and duplicates.
+A file on disk, a queued candidate or a passing isolated test is not proof the user's missing-image case is fixed. Use the prepared visual-repair workflow for a paper with existing text when that task is authorized; preserve prior numeric/text/table versions and original image identity. Never invent a table because the user expected one.
 
-Historical verified checkpoint: `Auto Research PDF-only 300 CLEAN - Object+Method`, 300 valid PDFs and 30 child collections. Treat it as time-specific and re-audit before mutation. Read `AUTO_RESEARCH_HANDOFF_1000.md` and use the separate `auto-research-zotero` skill for corpus expansion.
+## Import and automatic quality
 
-Direct Zotero SQLite writes require Zotero closed, a timestamped backup, minimal deterministic changes, reopen, and verification.
+Validate a real PDF and deduplicate by the existing source contract. Test missing/invalid/oversized files, duplicate operations and storage failure before changing import logic. Use the shared application facade from desktop code.
 
-## Workflow B: ingest one paper into the evidence product
+The normal product path uses bounded prepared AI actions with per-provider credentials, consent and budgets. Independent branches verify candidates; passing dual/third verification can publish. Unresolved candidates remain isolated automatic-verification failures with a retry reason; no manual approval queue is a completion target. Retain legacy audit state without making it a live workflow.
 
-### 1. Validate source and identity
+Keep `item`, `finding`, `table`, `figure` distinct. Values, units, material/condition, page, locator and excerpt stay traceable to their source. Model agreement alone does not establish scientific truth.
 
-- Confirm the PDF opens and contains real article text.
-- Match DOI or normalized title; use PDF fingerprint as another duplicate signal.
-- Treat Zotero keys as local compatibility only.
-- If already scanned, load saved data by default. Rescan only after explicit confirmation with `--force-rescan`.
+## Recovery and repeated requests
 
-### 2. Recognize the paper
+Test failures around each persisted boundary: source snapshot, authorization, model call start/result receipt, quality gate, publication transaction, index update, completion receipt and UI refresh. Reopen stores/processes in tests so an in-memory mock cannot hide restart failures.
 
-- Classify experimental, computational/modeling, or review/report mode.
-- Detect one or more supported experiment types.
-- Use the classification to choose extraction foci; do not force all papers into irradiation.
+A successful model result should be reused; an unknown outcome must be visible and must not trigger blind retries. A finalizing task needs a zero-model local recovery route even after database publication succeeded and a later receipt failed. Repeated requests must not duplicate evidence or charges. Test cancellation before and after the irreversible publication boundary separately.
 
-### 3. Build local evidence context
+A published database row does not prove catalogue and detail freshness. Feed production service DTOs to the production renderer behavior tests and verify delayed responses after a user switches articles/tabs.
 
-- Read the PDF text layer in bounded page blocks.
-- Store page-level evidence context.
-- Reuse existing PDF fingerprint and visual cache.
-- Use the local PyMuPDF visual detector only when figures/tables are missing.
+## Search and AI citations
 
-### 4. Extract and gate
+Search indexes are disposable projections of source records, never scientific authority. Verify item/finding/table/figure retrieval and safe detail DTOs after index failure/recovery. Librarian reads only the authorized literature scopes; private experiment values do not enter its context. Selected-evidence chat is read-only and each citation must resolve to an actual returned source.
 
-Run the adversarial quality path:
+Use the current Harness/local retrieval composition; do not resurrect historical free tool loops or direct provider fallbacks. Offline synthetic responses are for orchestration regressions. Actual provider spending follows current user authorization, not a skill's examples.
 
-```bash
-PYTHONPATH=src python3 -m auto_research.cli evidence-quality-run "<DOI or title>"
-```
+## Historical Zotero acquisition
 
-The two branches scan independently. Pair candidates using value, unit, meaning, material/condition, page, locator, and excerpt. Publish high-confidence `dual_pass`; send lower confidence to a third page-bounded review. Publish passing `third_pass`; quarantine unresolved `manual_review`; retain `rejected` for audit.
-
-Do not use single-branch preview output as published evidence.
-
-### 5. Preserve evidence types
-
-- Numeric direct facts remain `item`.
-- Explicit prose findings remain `finding`.
-- Complete original tables remain `table`.
-- Complete paper images remain `figure`.
-
-Do not create a fifth AI-owned type.
-
-### 6. Verify after extraction
-
-- Run database health.
-- Search by DOI, title, author, material, property, condition, and Chinese/element aliases.
-- Open source evidence and visual details.
-- Confirm numeric values did not become prose and units were not guessed.
-- Generate or update the paper audit.
-- Re-run the fixed-corpus audit after every 3-5 new papers.
-
-## Workflow C: search and Librarian
-
-Search V2 indexes the four public types as a disposable projection. Exact search may scope by papers. The Librarian always searches the complete evidence library:
-
-1. DeepSeek plans bounded short queries.
-2. Local Search V2 performs coverage recall across all four types.
-3. DeepSeek separates direct joint evidence from partially related evidence and produces cited Chinese synthesis.
-
-Keep all bounded candidates in the response. Use `agent_cited` to distinguish prose evidence from expansion candidates. Cache complete identical responses only while the database source fingerprint is unchanged.
-
-## Workflow D: selected-evidence chat
-
-Open chat only after selecting one item/finding/table/figure. Send that entity plus bounded relevant PDF pages. Answer in Chinese with evidence pages and limitations. Never mutate, review, publish, or expose the whole database from chat.
+Corpus acquisition/classification is a separate task from product maintenance. Only enter that workflow when requested; consult the project Zotero guidance and real attachments. Do not run historical evidence CLI examples that silently default to the protected production database.

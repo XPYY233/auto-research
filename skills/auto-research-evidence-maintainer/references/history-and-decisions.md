@@ -1,3 +1,5 @@
+> Historical context only. Current user instructions and PROJECT_HANDOFF.md supersede every old path, release identity, quota and manual-review workflow below.
+
 # History and architectural decisions
 
 ## Major phases
