@@ -37,6 +37,8 @@ Windows 冻结；不新增功能、不购买订阅、不默认调用收费模型
 
 公开 [#13 加密身份兼容](https://github.com/XPYY233/auto-research/issues/13)：build58 空工作区检查通过，但既有断点解密验收失败，已恢复 build57，未以 build58 启动生产工作区。根因是净化时改写了参与加密的应用身份；本机身份保留修复经 PR14 合并，已随 build59 安装；旧密文与凭据读取验证通过。见 [兼容说明](docs/LOCAL_ENCRYPTION_COMPATIBILITY.md)。
 
+公开 [#16 安装互斥](https://github.com/XPYY233/auto-research/issues/16)：安装入口与桌面实例共用锁，运行中的 App 会阻止替换；事务子进程继承锁，监督进程中断也不会放行新实例。README 统一使用此入口。它只改变源码安装工具，不重建当前 App。
+
 ## 当前安装候选
 
 安装版为 1.2.0/build59，唯一候选 `d210150f23e744ae98497d2c59e607f0`，源码 `4567e23507ca75a372966ed8156dbe42abee95d1`。

@@ -72,15 +72,15 @@ AUTO_RESEARCH_DESKTOP_PYTHON="$(command -v python3.14)" desktop/macos/build_app.
 
 ### 3. 安装并打开
 
-仍在刚才的 `auto-research` 目录中运行，Finder 会选中刚生成的**实际 App 文件**：
+退出已有的 Auto Research，仍在刚才的 `auto-research` 目录中运行：
 
 ```sh
-open -R "$(python3.14 -c 'from pathlib import Path; print(Path("desktop/macos/dist/Auto Research.app").resolve(strict=True))')"
+AUTO_RESEARCH_DESKTOP_PYTHON="$(command -v python3.14)" desktop/macos/install_fusion_review.command
 ```
 
-1. 在 Finder 中复制选中的 `Auto Research.app`，粘贴到“应用程序”。不要只复制替身；上面的命令已经定位到实际文件。
-2. 如果已有同名 App，先退出旧版并保留旧 App 的副本，再替换。首次安装不会遇到这一步。
-3. 在“应用程序”中双击 Auto Research。之后都从这里打开，源码文件夹不必保持打开。
+安装器会检查候选文件，保留旧版回退副本和本机加密身份，然后安装到“应用程序”。如果 App 仍在运行，会停止并提示先退出；不要在提取任务运行时更新，也不要绕过入口手动替换文件。
+
+看到“已安装”后，在“应用程序”中双击 Auto Research。之后都从这里打开，源码文件夹不必保持打开。
 
 本机构建采用 ad-hoc 签名，未经 Apple 公证。如果系统提示开发者无法验证，只在确认是自己刚构建的 App 后，按 [Apple 官方步骤](https://support.apple.com/en-us/102445)在“系统设置 → 隐私与安全”对该 App 单独选择“仍要打开”。无需关闭 Gatekeeper；若提示文件损坏或恶意软件，应停止并保留错误信息。
 

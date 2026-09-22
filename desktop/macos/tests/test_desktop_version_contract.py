@@ -189,7 +189,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn("stable release", manifest["publication_note"])
 
     def test_fusion_installer_uses_a_zsh_safe_transaction_exit_variable(self) -> None:
-        command = (DESKTOP_ROOT / "install_fusion_review.command").read_text(
+        command = (DESKTOP_ROOT / "install_transaction.zsh").read_text(
             encoding="utf-8"
         )
         self.assertIn("trap restore_previous_install EXIT", command)
@@ -198,7 +198,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn('return "${exit_code}"', command)
 
     def test_fusion_installer_uses_current_version_metadata(self) -> None:
-        command = (DESKTOP_ROOT / "install_fusion_review.command").read_text(
+        command = (DESKTOP_ROOT / "install_transaction.zsh").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -211,7 +211,7 @@ class DesktopVersionContractTests(unittest.TestCase):
         self.assertIn("${EXPECTED_VERSION}-build${EXPECTED_BUILD}", command)
 
     def test_installer_uses_one_rollback_store_from_main_and_release_worktree(self) -> None:
-        command = (DESKTOP_ROOT / "install_fusion_review.command").read_text(encoding="utf-8")
+        command = (DESKTOP_ROOT / "install_transaction.zsh").read_text(encoding="utf-8")
         # Execute the actual shell path-resolution prefix, stopping before any
         # version lookup, backup or installation mutation can take place.
         prefix = command.split('EXPECTED_VERSION=', 1)[0]
