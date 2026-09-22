@@ -40,3 +40,5 @@ PyMuPDF/MuPDF and all shipped libraries need an actual distribution-rights revie
 ## Desktop acceptance process lifetime
 
 Keep an isolated GUI test process attached to a live terminal session. A detached child may exit when its tool parent ends; desktop inspection can then automatically relaunch the App with the real user directory. Verify the running executable, explicit workspace argument and test user directory before UI inspection. After a bundle identifier changes, desktop tooling may cache the old application identity; record that limitation instead of treating a failed tool lookup as a product failure or claiming production GUI acceptance from an isolated copy.
+
+Use `desktop/macos/install_fusion_review.command` for installation. It acquires the same instance lock as the desktop App and keeps the transaction child holding that lock if its supervisor exits. Do not invoke the internal transaction script directly or bypass the running-App refusal; the runtime binary needs no rebuild for a source-only installer change.
