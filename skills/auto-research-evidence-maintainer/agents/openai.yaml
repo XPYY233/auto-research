@@ -1,4 +1,4 @@
 interface:
-  display_name: "Auto Research Evidence Maintainer"
-  short_description: "维护实验文献证据库的抽取、检索、质量验证、发布与安全交班"
-  default_prompt: "Use $auto-research-evidence-maintainer to inspect the current Auto Research evidence project and continue it without breaking provenance or the stable release boundary."
+  display_name: "Auto Research 重建与维护"
+  short_description: "持续重建科研桌面软件，保护私人资料并完成 GitHub 流程与真实验收"
+  default_prompt: "Use $auto-research-evidence-maintainer to read the current public checkout handoff and continue core rescue with protected data, traceable PRs and verified acceptance."

@@ -25,7 +25,7 @@ Retain `value_text`, `meaning`, `unit`, `article_title`, `doi`, and `context_exp
 - Treat API/network/model JSON as unreliable and preserve local non-AI functions on failure.
 - Do not bypass the adversarial gate for automatic publication.
 - Do not expose keys, prompts with sensitive content, full PDFs, or response bodies in logs.
-- Runtime AI is BYOK. Store the user's key only in the platform secure credential store (macOS Keychain / Windows Credential Manager); environment variables are maintainer-only fallback. Never package or reuse the developer key for end users.
+- Runtime AI is BYOK. Use the current provider-separated platform credential envelope (including authenticated local storage for preview builds); verify the actual implementation rather than claiming every build uses Keychain. Never package or reuse the developer key for end users.
 
 ## Visual boundary
 
@@ -58,8 +58,8 @@ Retain `value_text`, `meaning`, `unit`, `article_title`, `doi`, and `context_exp
 - Develop only in the sanitized GitHub checkout identified by the current handoff. Preserve the original Zotero and former iCloud directories as recovery sources.
 - Inspect and preserve a dirty worktree; never reset user changes destructively.
 - Do not commit `.env`, credentials, production PDFs, temporary uploads, Zotero DB, or unrelated personal files.
-- Public GitHub requires a separate scope decision. Real paper screenshots, excerpts, production DB, and copyrighted PDFs are not automatically public-safe.
-- Verify the private GitHub remote before pushing. Follow Issue → branch → PR → checks → merge; local backups are not the development remote.
+- The public source repository is authorized; that authorization excludes real paper screenshots/excerpts, production DB, PDF/package payloads, API credentials and private machine/contact details, including encrypted copies.
+- Verify the public source GitHub remote before pushing; retain the private historical archive as private. Follow Issue → branch → PR → checks → merge; local backups are not the development remote.
 
 ## Claim boundary
 

@@ -17,11 +17,14 @@ class _Lister:
         self.error = error
         self.limits: list[int] = []
 
-    def list_task_ids(self, *, limit: int = 64):
-        self.limits.append(limit)
+    def iter_task_ids(self):
         if self.error:
             raise LiteratureTaskCheckpointError(self.error)
-        return self.task_ids[:limit]
+        return iter(self.task_ids)
+
+    def load(self, task_id):
+        from types import SimpleNamespace
+        return SimpleNamespace(state="validated", stage="validated")
 
 
 class _Recovery:
@@ -58,7 +61,6 @@ def test_sweep_recovers_recent_tasks_and_reports_only_aggregate_codes() -> None:
         "skipped_or_blocked": 1,
         "issues": [{"code": "literature_recovery_not_ready", "count": 1}],
     }
-    assert lister.limits == [3]
     assert recovery.calls == ["task_a", "task_b", "task_c"]
     assert "task_a" not in repr(report)
 
@@ -74,3 +76,33 @@ def test_sweep_fails_closed_when_store_is_unavailable() -> None:
     assert report["issues"] == [
         {"code": "literature_checkpoint_store_unavailable", "count": 1}
     ]
+
+
+def test_old_pending_publication_is_recovered_beyond_terminal_history():
+    from types import SimpleNamespace
+    ids = tuple(f'closed-{i}' for i in range(130)) + ('pending',)
+    lister = _Lister(ids)
+    lister.iter_task_ids = lambda: iter(ids)
+    lister.load = lambda task_id: SimpleNamespace(
+        state='paused' if task_id == 'pending' else 'completed',
+        stage='finalizing' if task_id == 'pending' else 'completed', updated_at=1)
+    recovery = _Recovery({task_id: {'already_completed': task_id != 'pending'} for task_id in ids})
+    report = LiteratureExtractionRecoverySweep(checkpoints=lister, recovery=recovery).run(limit=1)
+    assert report['recovered'] == 1
+    assert recovery.calls == ['pending', 'closed-0']
+    assert report['already_completed'] == 1
+
+
+def test_sweep_bounds_pending_recovery_separately_from_completed_cleanup():
+    from types import SimpleNamespace
+    lister = _Lister(('closed', 'pending-a', 'pending-b'))
+    lister.load = lambda task_id: SimpleNamespace(
+        state='completed' if task_id == 'closed' else 'validated',
+        stage='completed' if task_id == 'closed' else 'validated', updated_at=1)
+    recovery = _Recovery({'closed': {'already_completed': True},
+                          'pending-a': {'already_completed': False}})
+    report = LiteratureExtractionRecoverySweep(checkpoints=lister, recovery=recovery).run(limit=1)
+    assert recovery.calls == ['pending-a', 'closed']
+    assert report['recovered'] == 1
+    assert report['already_completed'] == 1
+    assert report['issues'] == [{'code':'literature_recovery_deferred', 'count':1}]

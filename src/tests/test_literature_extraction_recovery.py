@@ -551,3 +551,58 @@ def test_cancellation_before_finalization_boundary_still_prevents_publication(tm
     assert error.value.code == 'literature_task_cancelled'
     assert runtime._service.load(task_id).state == 'cancelled'
     assert 'finalize' not in events
+
+
+def test_reopened_long_encrypted_history_preserves_guard_and_old_finalization(tmp_path):
+    from dataclasses import replace
+    from auto_research.evidence.literature_checkpoint_runtime import LiteratureExecutionState, encode_execution_state
+    from auto_research.evidence.literature_job_persistence import encode_job_private_state
+    from auto_research.evidence.literature_task_checkpoint import LiteratureTaskCheckpoint
+    from auto_research.evidence.literature_extraction_recovery_controller import LiteratureExtractionRecoveryController, LiteratureRecoveryControllerError
+    from auto_research.evidence.literature_extraction_task_directory import LiteratureExtractionTaskDirectory
+
+    token, task_id, _state, runtime, events = _validated_fixture(tmp_path)
+    store = runtime._service._store
+    pending = store.load(task_id)
+    history_jobs = _job_store(tmp_path, session_key=b'h' * 32)
+    summary = history_jobs.create(_Papers(tmp_path / 'paper.pdf'), paper_id=1, session_id='history')
+    template = history_jobs._jobs[summary['job_token']]
+    for index in range(130):
+        job = replace(template, token=f'H{index:047d}')
+        payload = encode_execution_state(LiteratureExecutionState(
+            job_state=encode_job_private_state(job), stage_fingerprint=job.stage.stage_fingerprint,
+            receipt_offset=0, completed_results=(),
+        ))
+        store.create(LiteratureTaskCheckpoint(
+            manifest=replace(pending.manifest, task_id=_checkpoint_task_id(job.token),
+                             pdf_snapshot_fingerprint=job.snapshot.content_fingerprint),
+            revision=0, state='cancelled', stage='initial_focus', receipts=(), spent_calls=0,
+            spent_tokens=0, updated_at=pending.updated_at + index + 1, private_payload=payload,
+        ))
+    assert task_id not in store.list_task_ids(limit=128)
+    # Recompose from the persisted stores, not the previous process's job cache.
+    runtime = _runtime(tmp_path, events=events)
+    store = runtime._service._store
+    directory = LiteratureExtractionTaskDirectory(checkpoints=store)
+    finalizer = _RecordingFinalizer(events=events)
+    recovery = LiteratureExtractionFinalizerRecovery(
+        runtime=runtime, jobs=_job_store(tmp_path, session_key=b'b' * 32, events=events),
+        finalizer=finalizer, projector=_RecordingProjector(events=events), session_id='after-restart',
+    )
+    controller = LiteratureExtractionRecoveryController(
+        recovery=recovery, checkpoints=store, papers=_Papers(tmp_path / 'paper.pdf'),
+        task_directory=directory,
+        pdf_fingerprint=lambda paper: hashlib.sha256(Path(paper['pdf_path']).read_bytes()).hexdigest(),
+    )
+    assert directory.status(limit=1)['tasks'][0]['resume_token'] == token
+    with pytest.raises(LiteratureRecoveryControllerError) as blocked:
+        controller.assert_prepare_allowed({'paper_id': 1, 'force_rescan': True})
+    assert blocked.value.code == 'literature_active_task_exists'
+    controller.assert_prepare_allowed({'paper_id': 2, 'force_rescan': False})
+    result = controller.recover_finalization({'resume_token': token})
+    assert result['status'] == 'completed' and finalizer.calls == 1
+    assert controller.recover_finalization({'resume_token': token})['already_completed'] is True
+    assert finalizer.calls == 1
+    controller.assert_prepare_allowed({'paper_id': 1, 'force_rescan': True})
+    assert len(tuple(store.iter_task_ids())) == 131
+    assert store.load(task_id).spent_calls == pending.spent_calls

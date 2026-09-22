@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Mapping, Protocol
+from typing import Iterator, Mapping, Protocol
 
 from .literature_extraction_recovery import (
     LiteratureExtractionRecoveryError,
 )
-from .literature_task_checkpoint import LiteratureTaskCheckpointError
+from .literature_task_checkpoint import LiteratureTaskCheckpoint, LiteratureTaskCheckpointError
 
 
 RECOVERY_SWEEP_SCHEMA_VERSION = "literature-extraction-recovery-sweep-v1"
 
 
 class CheckpointTaskLister(Protocol):
-    def list_task_ids(self, *, limit: int = 64) -> tuple[str, ...]: ...
+    def iter_task_ids(self) -> Iterator[str]: ...
+
+    def load(self, task_id: str) -> LiteratureTaskCheckpoint: ...
 
 
 class RecoverableLiteratureTask(Protocol):
@@ -29,8 +31,10 @@ class LiteratureExtractionRecoverySweep:
         checkpoints: CheckpointTaskLister,
         recovery: RecoverableLiteratureTask,
     ) -> None:
-        if not callable(getattr(checkpoints, "list_task_ids", None)) or not callable(
-            getattr(recovery, "recover_task", None)
+        if (
+            not callable(getattr(checkpoints, "iter_task_ids", None))
+            or not callable(getattr(checkpoints, "load", None))
+            or not callable(getattr(recovery, "recover_task", None))
         ):
             raise ValueError("literature recovery sweep composition is invalid")
         self._checkpoints = checkpoints
@@ -39,27 +43,51 @@ class LiteratureExtractionRecoverySweep:
     def run(self, *, limit: int = 16) -> Mapping[str, object]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 64:
             raise ValueError("literature recovery sweep limit is invalid")
-        try:
-            task_ids = self._checkpoints.list_task_ids(limit=limit)
-        except LiteratureTaskCheckpointError as exc:
-            return self._report(scanned=0, recovered=0, already_completed=0, errors={exc.code: 1})
-        recovered = 0
-        already_completed = 0
+        scanned = recovered = already_completed = attempts = 0
         errors: Counter[str] = Counter()
-        for task_id in task_ids:
+        completed: list[tuple[int, str]] = []
+        try:
+            for task_id in self._checkpoints.iter_task_ids():
+                scanned += 1
+                try:
+                    checkpoint = self._checkpoints.load(task_id)
+                    if checkpoint.state == "completed":
+                        # Preserve acknowledgement/snapshot cleanup after a
+                        # crash, without using the unfinished-task budget.
+                        completed.append((checkpoint.updated_at, task_id))
+                        completed.sort(key=lambda item: (-item[0], item[1]))
+                        del completed[limit:]
+                        continue
+                    if (
+                        checkpoint.state not in {"running", "paused", "validated"}
+                        or checkpoint.stage not in {"validated", "finalizing"}
+                    ):
+                        errors["literature_recovery_not_ready"] += 1
+                        continue
+                    if attempts >= limit:
+                        errors["literature_recovery_deferred"] += 1
+                        continue
+                    attempts += 1
+                    result = self._recovery.recover_task(task_id)
+                    if result.get("already_completed") is True:
+                        already_completed += 1
+                    else:
+                        recovered += 1
+                except (LiteratureExtractionRecoveryError, LiteratureTaskCheckpointError) as exc:
+                    errors[exc.code] += 1
+        except LiteratureTaskCheckpointError as exc:
+            errors[exc.code] += 1
+        for _updated_at, task_id in completed:
             try:
                 result = self._recovery.recover_task(task_id)
                 if result.get("already_completed") is True:
                     already_completed += 1
                 else:
                     recovered += 1
-            except LiteratureExtractionRecoveryError as exc:
+            except (LiteratureExtractionRecoveryError, LiteratureTaskCheckpointError) as exc:
                 errors[exc.code] += 1
         return self._report(
-            scanned=len(task_ids),
-            recovered=recovered,
-            already_completed=already_completed,
-            errors=errors,
+            scanned=scanned, recovered=recovered, already_completed=already_completed, errors=errors,
         )
 
     @staticmethod

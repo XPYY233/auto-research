@@ -47,6 +47,9 @@ class _Store:
             raise self.failure
         return (self.checkpoint.manifest.task_id,)
 
+    def iter_task_ids(self):
+        return iter(self.list_task_ids(limit=128))
+
     def load(self, task_id):
         assert task_id == self.checkpoint.manifest.task_id
         if self.failure:
@@ -240,3 +243,33 @@ def test_recovery_failure_keeps_stable_stage_and_retry_action(tmp_path: Path) ->
     assert raised.value.next_action == "retry_finalization"
     assert raised.value.retryable is True
     assert "/private" not in raised.value.safe_message
+
+
+@pytest.mark.parametrize('state', ['completed', 'cancelled', 'validated'])
+def test_long_history_keeps_duplicate_guard_without_global_capacity_failure(tmp_path, state):
+    controller, recovery, directory, token, job = _controller(tmp_path, state=state)
+    store = controller._checkpoints
+    checkpoint = store.checkpoint
+    ids = tuple(f'literature_task_{i:032d}' for i in range(130))
+    store.list_task_ids = lambda *, limit=64: ids[:limit]
+    store.iter_task_ids = lambda: iter(ids)
+    def load(task_id):
+        from copy import deepcopy
+        result = deepcopy(checkpoint)
+        result.manifest.task_id = task_id
+        result.state = state if task_id == ids[-1] else 'completed'
+        return result
+    store.load = load
+    with (
+        patch('auto_research.evidence.literature_extraction_recovery_controller.decode_execution_state',
+              return_value=SimpleNamespace(job_state=b'job')),
+        patch('auto_research.evidence.literature_extraction_recovery_controller.decode_job_private_state',
+              return_value=job),
+    ):
+        if state == 'validated':
+            with pytest.raises(LiteratureRecoveryControllerError) as caught:
+                controller.assert_prepare_allowed({'paper_id': 7, 'force_rescan': True})
+            assert caught.value.code == 'literature_active_task_exists'
+        else:
+            controller.assert_prepare_allowed({'paper_id': 7, 'force_rescan': True})
+    assert recovery.calls == []

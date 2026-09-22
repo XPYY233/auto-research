@@ -20,6 +20,11 @@ class _Store:
             raise LiteratureTaskCheckpointError(self.error)
         return tuple(self.checkpoints)[:limit]
 
+    def iter_task_ids(self):
+        if self.error:
+            raise LiteratureTaskCheckpointError(self.error)
+        return iter(self.checkpoints)
+
     def load(self, task_id: str):
         return self.checkpoints[task_id]
 
@@ -175,3 +180,18 @@ def test_completed_task_projects_only_concise_persistent_receipt(monkeypatch) ->
     }
     assert "must-not-project" not in repr(result)
     assert "internal" not in repr(result)
+
+
+def test_old_unfinished_task_is_visible_ahead_of_recent_terminal_history(monkeypatch):
+    store = _Store([(f'closed-{i}', _checkpoint(state='completed', stage='completed'))
+                    for i in range(130)] + [('unfinished', _checkpoint(stage='finalizing'))])
+    store.iter_task_ids = lambda: iter(store.checkpoints)
+    monkeypatch.setattr('auto_research.evidence.literature_extraction_task_directory.decode_execution_state',
+        lambda payload: SimpleNamespace(job_state=b'job', completion_result=None))
+    monkeypatch.setattr('auto_research.evidence.literature_extraction_task_directory._decode_checkpoint_job_state',
+        lambda payload: SimpleNamespace(token='T' * 48, paper={'title':'Synthetic paper'}))
+    result = LiteratureExtractionTaskDirectory(checkpoints=store).status(limit=1)
+    assert len(result['tasks']) == 1
+    assert result['tasks'][0]['state'] == 'paused'
+    assert result['tasks'][0]['next_action'] == 'retry_finalization'
+    assert result['issues'] == []
