@@ -33,6 +33,8 @@ Windows 冻结；不新增功能、不购买订阅、不默认调用收费模型
 
 公开 Issue #8 补齐 README 从源码安装、首次使用与更新/卸载说明，并授予有限本机使用许可；安装演练见 [README 安装验收](docs/README_INSTALL_ACCEPTANCE.md)。测试候选未替换日常 App。
 
+公开 [#11 长历史恢复](https://github.com/XPYY233/auto-research/issues/11) 已完成源码修复：历史达到 128 条不再全局阻止提取，旧活动任务仍防重复收费，待恢复任务优先显示并可零模型收尾。1450 共享 / 374 Mac 检查通过；见 [恢复验收](docs/RECOVERY_HISTORY_ACCEPTANCE.md)。尚未进入日常安装版。
+
 ## 当前安装候选
 
 安装版为 1.2.0/build57，唯一候选 `a300d4af2fa94a0393b5241a95b99cdb`，源码 `c53e3a53cb4cde97a09f05813a9205e910cb3ddc`。

@@ -468,6 +468,7 @@ class LiteratureTaskCheckpointTests(unittest.TestCase):
         module_paths = {
             "contract": evidence_root / "literature_task_checkpoint.py",
             "store": evidence_root / "literature_task_checkpoint_store.py",
+            "codec": evidence_root / "literature_task_checkpoint_codec.py",
             "service": evidence_root / "literature_task_checkpoint_service.py",
         }
         for path in module_paths.values():
@@ -520,3 +521,32 @@ def json_dump(value: object) -> str:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_complete_scan_pages_survive_recovery_writes_and_exclude_later_inserts(tmp_path):
+    from dataclasses import replace
+    store = SealedSQLiteLiteratureCheckpointStore(data_root=tmp_path, sealer=_TestSealer())
+    service = LiteratureTaskCheckpointService(store=store, clock=_Clock())
+    task_ids = [f'task_{i:016d}' for i in range(260)]
+    for task_id in reversed(task_ids):
+        service.create(manifest=replace(_manifest(), task_id=task_id), private_payload=b'synthetic')
+    scan = store.iter_task_ids()
+    assert next(scan) == task_ids[0]
+    # No read connection remains held while the consumer writes recovery state.
+    service.acquire(task_ids[-1], expected_revision=0, owner_id='recovering-worker')
+    service.create(manifest=replace(_manifest(), task_id='task_zzzzzzzzzzzzzzzz'), private_payload=b'later')
+    assert [task_ids[0], *scan] == task_ids
+    assert len(tuple(store.iter_task_ids())) == 261
+    reopened = SealedSQLiteLiteratureCheckpointStore(data_root=tmp_path, sealer=_TestSealer())
+    assert tuple(reopened.iter_task_ids()) == tuple(store.iter_task_ids())
+
+
+def test_checkpoint_wire_format_retains_pre_split_fingerprint(tmp_path):
+    from auto_research.evidence.literature_task_checkpoint_codec import encode_checkpoint, decode_checkpoint
+    store = SealedSQLiteLiteratureCheckpointStore(data_root=tmp_path, sealer=_TestSealer())
+    checkpoint = LiteratureTaskCheckpointService(store=store, clock=_Clock()).create(
+        manifest=_manifest(), private_payload=b'format-compatibility')
+    payload = encode_checkpoint(checkpoint)
+    # Recorded from the original encoder before extracting the codec module.
+    assert hashlib.sha256(payload).hexdigest() == '7b34e783720e503d03e40586f64812599cad0fb1ada73eac63e34b29dbfd3d4e'
+    assert decode_checkpoint(payload) == checkpoint

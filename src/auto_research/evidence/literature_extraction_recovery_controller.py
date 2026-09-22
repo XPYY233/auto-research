@@ -3,7 +3,7 @@ from __future__ import annotations
 import hmac
 import re
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Iterator, Mapping, Protocol
 
 from .literature_checkpoint_runtime import decode_execution_state
 from .literature_job_persistence import (
@@ -16,7 +16,6 @@ from .literature_task_checkpoint import (
 )
 
 
-MAX_DIRECTORY_TASKS = 128
 _JOB_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _INITIAL_REQUEST_KEYS = frozenset({"paper_id", "force_rescan"})
@@ -32,7 +31,7 @@ class LiteratureRecoveryPort(Protocol):
 
 
 class LiteratureCheckpointDirectoryStore(Protocol):
-    def list_task_ids(self, *, limit: int = 64) -> tuple[str, ...]: ...
+    def iter_task_ids(self) -> Iterator[str]: ...
 
     def load(self, task_id: str) -> LiteratureTaskCheckpoint: ...
 
@@ -121,7 +120,7 @@ class LiteratureExtractionRecoveryController:
     ) -> None:
         if (
             not callable(getattr(recovery, "recover", None))
-            or not callable(getattr(checkpoints, "list_task_ids", None))
+            or not callable(getattr(checkpoints, "iter_task_ids", None))
             or not callable(getattr(checkpoints, "load", None))
             or not callable(getattr(papers, "get_paper", None))
             or not callable(getattr(task_directory, "status", None))
@@ -266,24 +265,9 @@ class LiteratureExtractionRecoveryController:
             )
         return result
 
-    def _authenticated_tasks(self) -> tuple[_AuthenticatedTask, ...]:
+    def _authenticated_tasks(self) -> Iterator[_AuthenticatedTask]:
         try:
-            task_ids = self._checkpoints.list_task_ids(limit=MAX_DIRECTORY_TASKS)
-            if not isinstance(task_ids, tuple):
-                raise LiteratureRecoveryControllerError(
-                    "literature_task_directory_corrupt",
-                    retryable=False,
-                    next_action="repair_workspace",
-                )
-            if len(task_ids) >= MAX_DIRECTORY_TASKS:
-                raise LiteratureRecoveryControllerError(
-                    "literature_task_directory_unavailable",
-                    cause_code="literature_task_directory_capacity",
-                    retryable=True,
-                    next_action="retry_task_directory",
-                )
-            tasks: list[_AuthenticatedTask] = []
-            for task_id in task_ids:
+            for task_id in self._checkpoints.iter_task_ids():
                 checkpoint = self._checkpoints.load(task_id)
                 execution = decode_execution_state(checkpoint.private_payload)
                 job = decode_job_private_state(execution.job_state)
@@ -301,17 +285,14 @@ class LiteratureExtractionRecoveryController:
                         retryable=False,
                         next_action="repair_workspace",
                     )
-                tasks.append(
-                    _AuthenticatedTask(
-                        task_id=task_id,
-                        job_token=job.token,
-                        paper_id=job.paper_id,
-                        pdf_sha256=pdf_sha256,
-                        state=checkpoint.state,
-                        stage=checkpoint.stage,
-                    )
+                yield _AuthenticatedTask(
+                    task_id=task_id,
+                    job_token=job.token,
+                    paper_id=job.paper_id,
+                    pdf_sha256=pdf_sha256,
+                    state=checkpoint.state,
+                    stage=checkpoint.stage,
                 )
-            return tuple(tasks)
         except LiteratureRecoveryControllerError:
             raise
         except LiteratureTaskCheckpointError as exc:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
-from typing import Mapping, Protocol, Sequence
+from typing import Iterator, Mapping, Protocol, Sequence
 
 
 CHECKPOINT_SCHEMA_VERSION = "literature-task-checkpoint-v1"
@@ -99,6 +99,8 @@ class LiteratureCheckpointPersistence(Protocol):
     def load(self, task_id: str) -> "LiteratureTaskCheckpoint": ...
 
     def list_task_ids(self, *, limit: int = 64) -> tuple[str, ...]: ...
+
+    def iter_task_ids(self) -> Iterator[str]: ...
 
     def compare_and_swap(
         self,

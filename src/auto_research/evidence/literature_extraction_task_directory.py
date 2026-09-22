@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Mapping, Protocol
+from typing import Iterator, Mapping, Protocol
 
 from .literature_checkpoint_runtime import decode_execution_state
 from .literature_extraction_checkpoint_workflow import _decode_checkpoint_job_state
@@ -15,7 +15,7 @@ TASK_DIRECTORY_SCHEMA_VERSION = "literature-extraction-task-directory-v1"
 
 
 class LiteratureCheckpointDirectoryStore(Protocol):
-    def list_task_ids(self, *, limit: int = 64) -> tuple[str, ...]: ...
+    def iter_task_ids(self) -> Iterator[str]: ...
 
     def load(self, task_id: str) -> LiteratureTaskCheckpoint: ...
 
@@ -29,7 +29,7 @@ class LiteratureExtractionTaskDirectory:
         checkpoints: LiteratureCheckpointDirectoryStore,
         startup_recovery: Mapping[str, object] | None = None,
     ) -> None:
-        if not callable(getattr(checkpoints, "list_task_ids", None)) or not callable(
+        if not callable(getattr(checkpoints, "iter_task_ids", None)) or not callable(
             getattr(checkpoints, "load", None)
         ):
             raise ValueError("literature task directory composition is invalid")
@@ -40,27 +40,27 @@ class LiteratureExtractionTaskDirectory:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 32:
             raise ValueError("literature task directory limit is invalid")
         issues: Counter[str] = Counter()
-        try:
-            task_ids = self._checkpoints.list_task_ids(limit=limit)
-        except LiteratureTaskCheckpointError as exc:
-            return self._report(tasks=(), issues={exc.code: 1})
         tasks: list[Mapping[str, object]] = []
-        for task_id in task_ids:
-            try:
-                checkpoint = self._checkpoints.load(task_id)
-                execution = decode_execution_state(checkpoint.private_payload)
-                job = _decode_checkpoint_job_state(execution.job_state)
-                tasks.append(
-                    self._project(
-                        checkpoint,
-                        job,
-                        completion=execution.completion_result,
-                    )
-                )
-            except LiteratureTaskCheckpointError as exc:
-                issues[exc.code] += 1
-            except Exception:
-                issues["literature_checkpoint_corrupt"] += 1
+        try:
+            for task_id in self._checkpoints.iter_task_ids():
+                try:
+                    checkpoint = self._checkpoints.load(task_id)
+                    execution = decode_execution_state(checkpoint.private_payload)
+                    job = _decode_checkpoint_job_state(execution.job_state)
+                    tasks.append(self._project(checkpoint, job, completion=execution.completion_result))
+                    # Keep a bounded result, but do not let terminal history
+                    # hide an older task that still needs user-visible recovery.
+                    tasks.sort(key=lambda task: (
+                        task["state"] in {"completed", "failed", "cancelled"},
+                        -int(task["updated_at"]),
+                    ))
+                    del tasks[limit:]
+                except LiteratureTaskCheckpointError as exc:
+                    issues[exc.code] += 1
+                except Exception:
+                    issues["literature_checkpoint_corrupt"] += 1
+        except LiteratureTaskCheckpointError as exc:
+            issues[exc.code] += 1
         return self._report(tasks=tasks, issues=issues)
 
     def _report(

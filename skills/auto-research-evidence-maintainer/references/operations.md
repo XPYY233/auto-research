@@ -25,6 +25,7 @@ Use focused behavior tests while developing and the required full checks once th
 ## Public push and PR
 
 - Verify the remote is the public source repository and the branch contains only intended work. Stage explicit paths and inspect the staged list.
+- Verify the active identity separately for Git, the CLI and any connector; they can be different accounts. Creating a public Issue does not prove push access. Restore the user-selected account through its supported login flow; never expose tokens or silently migrate ownership. If the CLI cannot reach GitHub but system-proxy-aware requests work, check child-process proxy configuration rather than repeatedly starting new authorizations.
 - Author and committer identities must use GitHub noreply addresses. Verify automatic merge identities too; a local config does not control GitHub web commits.
 - Privacy scanning includes full reachable history and binary/file-format checks, not only `.gitignore` or the current tree. Test-secret and original-asset exceptions bind exact paths and content hashes.
 - Keep real research names/excerpts, local paths, credentials and confidential screenshots out of public issue bodies, comments and logs. Share a synthetic reproduction and aggregate evidence.
