@@ -13,7 +13,9 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
-APP_IDENTIFIER = "com.researcher.autoresearch"
+from crypto_identity import encryption_identity
+
+APP_IDENTIFIER = encryption_identity()
 # The first private alpha used an ad-hoc signature whose identity changed after
 # each rebuild.  macOS therefore asks the user to authorize the old item when a
 # newer build tries to read it. The preview deliberately never probes or deletes

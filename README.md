@@ -93,7 +93,15 @@ open -R "$(python3.14 -c 'from pathlib import Path; print(Path("desktop/macos/di
 
 ### 更新、回退与卸载
 
-更新前退出 App，并备份 `~/Library/Application Support/Auto Research`；这是本机私人数据，**不要上传到 GitHub**。在源码目录运行 `git pull --ff-only`，再重复第 2 步的构建命令和第 3 步的安装操作。保留此前的 App 及对应数据备份；若新版数据格式发生变化，不能只替换旧 App，需按该版本迁移说明恢复匹配备份。完整跨机器升级/回退验收仍在进行。
+更新前退出 App，并备份 `~/Library/Application Support/Auto Research`；这是本机私人数据，**不要上传到 GitHub**。在源码目录运行 `git pull --ff-only`，然后在旧 App 仍位于“应用程序”时执行：
+
+```sh
+python3.14 desktop/macos/crypto_identity.py --previous-app "/Applications/Auto Research.app"
+```
+
+这一步保留旧版本的本机加密身份，避免应用标识变化后无法读取已有 API 凭据和任务历史；不会上传资料、打印密钥或改写密文。之后重复第 2 步的构建命令和第 3 步的安装操作。若已覆盖旧 App，使用保留的旧 App 副本路径运行同一命令；没有旧 App 时先恢复备份，不要删除密钥或历史来绕过错误。
+
+保留此前的 App 及对应数据备份；若新版数据格式发生变化，不能只替换旧 App，需按该版本迁移说明恢复匹配备份。完整跨机器升级/回退验收仍在进行。
 
 卸载时退出 App，仅将“应用程序”里的 Auto Research 移到废纸篓；此操作保留 Application Support 中的资料与设置。重新安装后可继续使用。不要把删除数据目录当作常规卸载或排错步骤。
 

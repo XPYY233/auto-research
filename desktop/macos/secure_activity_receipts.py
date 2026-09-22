@@ -16,7 +16,9 @@ from auto_research.product.activity_receipts import ActivityReceiptError
 from secure_history import HistoryKeyProvider, LocalFileHistoryKeyProvider
 
 
-APP_IDENTIFIER = "com.researcher.autoresearch"
+from crypto_identity import encryption_identity
+
+APP_IDENTIFIER = encryption_identity()
 ACTIVITY_RECEIPTS_AAD = f"{APP_IDENTIFIER}:activity-receipts:v1".encode("utf-8")
 NONCE_BYTES = 12
 MAX_PLAINTEXT_BYTES = 4 * 1024 * 1024

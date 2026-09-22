@@ -14,7 +14,9 @@ from secure_atomic_json_store import AtomicAESGCMJSONStore, SecureJSONPolicy
 from secure_history import HistoryKeyProvider, LocalFileHistoryKeyProvider
 
 
-APP_IDENTIFIER = "com.researcher.autoresearch"
+from crypto_identity import encryption_identity
+
+APP_IDENTIFIER = encryption_identity()
 OFFICIAL_TABLE_REVIEW_AAD = (
     f"{APP_IDENTIFIER}:official-table-structure-review:v1".encode("utf-8")
 )

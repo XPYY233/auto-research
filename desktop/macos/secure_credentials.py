@@ -16,7 +16,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from auto_research.settings.ai_runtime_state import BackendCredentialState
 
 
-APP_IDENTIFIER = "com.researcher.autoresearch"
+from crypto_identity import encryption_identity
+
+APP_IDENTIFIER = encryption_identity()
 DEEPSEEK_PROVIDER = "deepseek"
 OPENAI_PROVIDER = "openai"
 CUSTOM_PROVIDER = "custom"

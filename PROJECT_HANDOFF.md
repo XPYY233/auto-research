@@ -33,7 +33,9 @@ Windows 冻结；不新增功能、不购买订阅、不默认调用收费模型
 
 公开 Issue #8 补齐 README 从源码安装、首次使用与更新/卸载说明，并授予有限本机使用许可；安装演练见 [README 安装验收](docs/README_INSTALL_ACCEPTANCE.md)。测试候选未替换日常 App。
 
-公开 [#11 长历史恢复](https://github.com/XPYY233/auto-research/issues/11) 已完成源码修复：历史达到 128 条不再全局阻止提取，旧活动任务仍防重复收费，待恢复任务优先显示并可零模型收尾。1450 共享 / 374 Mac 检查通过；见 [恢复验收](docs/RECOVERY_HISTORY_ACCEPTANCE.md)。尚未进入日常安装版。
+公开 [PR12](https://github.com/XPYY233/auto-research/pull/12) 已合并维护 skill 与长历史修复。公开 [#11 长历史恢复](https://github.com/XPYY233/auto-research/issues/11) 已完成源码修复：历史达到 128 条不再全局阻止提取，旧活动任务仍防重复收费，待恢复任务优先显示并可零模型收尾。1450 共享 / 374 Mac 检查通过；见 [恢复验收](docs/RECOVERY_HISTORY_ACCEPTANCE.md)。尚未进入日常安装版。
+
+公开 [#13 加密身份兼容](https://github.com/XPYY233/auto-research/issues/13)：build58 空工作区检查通过，但既有断点解密验收失败，已恢复 build57，未以 build58 启动生产工作区。根因是净化时改写了参与加密的应用身份；本机身份保留修复在副本验证通过，build59 待验收。见 [兼容说明](docs/LOCAL_ENCRYPTION_COMPATIBILITY.md)。
 
 ## 当前安装候选
 

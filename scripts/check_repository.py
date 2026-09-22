@@ -31,7 +31,7 @@ def violations(path: str, data: bytes, allowed: set[tuple[str, str]]) -> list[st
     basename = Path(path).name
     if (basename == ".env" or basename.startswith(".env.") and basename != ".env.example"
         or suffix in {".key", ".pem", ".p12", ".pfx"}
-        or basename in {"credentials.json", "credentials.enc", "auth.json", "settings-v1.json", "ai-runtime-state-v1.json"}):
+        or basename in {"credentials.json", "credentials.enc", "auth.json", "settings-v1.json", "ai-runtime-state-v1.json", "crypto-identity-v1.json"}):
         errors.append("credential or private state file")
     if b"\x00" in data:
         assets = {(x["path"], x["sha256"]) for x in json.loads((ROOT / "config/public-assets.json").read_text())}
