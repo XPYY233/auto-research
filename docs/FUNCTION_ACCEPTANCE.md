@@ -12,7 +12,7 @@
 | 提取与表图发现 | literature_extraction_*、visual_evidence；阶段/长图注/合并段落/结构化结果回归 | build57 记录确认目标文章 5 张原图自动核验发布且哈希一致；未发现独立编号表格 | 20+1 人工原文对照与提取联合验收 |
 | AI 自动核验、原子发布与索引 | literature_extraction_finalizer、visual verification、search_index；真实 DTO、数据库/HTTP 回归 | build57 验收记录确认 5 张图自动发布、重启后 63 条证据；人工审核 UI/API 已退役 | 其他保留功能完整安装版联合流程；自动质量失败与重试验收 |
 | 检索、详情、原图、PDF 定位 | search_index、workspace_evidence_resolver、source_highlight；公开接口回归 | 迁移后 64 论文/65 文档/309 图像引用哈希正确；安装版已打开新文章 PDF | 安装版逐类详情、定位与重启联合操作 |
-| 取消、续跑与避免重复收费 | literature_extraction_recovery*、literature_task_*；中断/收据/未知结果回归 | 四份复制的加密断点认证通过；公开 #11 补全长历史与重开存储恢复回归（尚未安装） | 真实网络故障场景；不能用测试替代提供商账单核对 |
+| 取消、续跑与避免重复收费 | literature_extraction_recovery*、literature_task_*；中断/收据/未知结果回归 | build59 的五份既有加密断点可读取；公开 #11 长历史与重开存储恢复修复已安装，回归范围见候选记录 | 真实网络故障场景；不能用测试替代提供商账单核对 |
 | 私人表格、确认与曲线 | personal/*、fusion_personal_*；格式解析、确认门、系列曲线回归 | 本机私人状态已备份及恢复验证 | 安装版真实文件导入、确认、搜索、曲线和重启 |
 | 资料包与真实导出 | package_center、transfer_package、dataset_export、evidence_export；往返/攻击/文件格式回归 | 不可变官方包与私人状态保全 | 安装版导出到真实目的文件、隔离往返和回退 |
 | 证据 AI 与图书管理员 | Harness 组合、受控业务授权、引用验证；离线注入回归 | 加密对话/操作历史恢复验证；本轮未调用收费模型 | 授权后的真实模型质量和引用人工核验 |

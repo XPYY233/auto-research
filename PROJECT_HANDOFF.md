@@ -33,16 +33,15 @@ Windows 冻结；不新增功能、不购买订阅、不默认调用收费模型
 
 公开 Issue #8 补齐 README 从源码安装、首次使用与更新/卸载说明，并授予有限本机使用许可；安装演练见 [README 安装验收](docs/README_INSTALL_ACCEPTANCE.md)。测试候选未替换日常 App。
 
-公开 [PR12](https://github.com/XPYY233/auto-research/pull/12) 已合并维护 skill 与长历史修复。公开 [#11 长历史恢复](https://github.com/XPYY233/auto-research/issues/11) 已完成源码修复：历史达到 128 条不再全局阻止提取，旧活动任务仍防重复收费，待恢复任务优先显示并可零模型收尾。1450 共享 / 374 Mac 检查通过；见 [恢复验收](docs/RECOVERY_HISTORY_ACCEPTANCE.md)。尚未进入日常安装版。
+公开 [PR12](https://github.com/XPYY233/auto-research/pull/12) 已合并维护 skill 与长历史修复。公开 [#11 长历史恢复](https://github.com/XPYY233/auto-research/issues/11) 已完成源码修复：历史达到 128 条不再全局阻止提取，旧活动任务仍防重复收费，待恢复任务优先显示并可零模型收尾。1450 共享 / 374 Mac 检查通过；见 [恢复验收](docs/RECOVERY_HISTORY_ACCEPTANCE.md)。已随 build59 安装；实际验收范围见下方候选记录。
 
-公开 [#13 加密身份兼容](https://github.com/XPYY233/auto-research/issues/13)：build58 空工作区检查通过，但既有断点解密验收失败，已恢复 build57，未以 build58 启动生产工作区。根因是净化时改写了参与加密的应用身份；本机身份保留修复在副本验证通过，build59 待验收。见 [兼容说明](docs/LOCAL_ENCRYPTION_COMPATIBILITY.md)。
+公开 [#13 加密身份兼容](https://github.com/XPYY233/auto-research/issues/13)：build58 空工作区检查通过，但既有断点解密验收失败，已恢复 build57，未以 build58 启动生产工作区。根因是净化时改写了参与加密的应用身份；本机身份保留修复经 PR14 合并，已随 build59 安装；旧密文与凭据读取验证通过。见 [兼容说明](docs/LOCAL_ENCRYPTION_COMPATIBILITY.md)。
 
 ## 当前安装候选
 
-安装版为 1.2.0/build57，唯一候选 `a300d4af2fa94a0393b5241a95b99cdb`，源码 `c53e3a53cb4cde97a09f05813a9205e910cb3ddc`。
-完整检查、GitHub CI、干净锁定构建、空工作区冒烟、事务安装与同一 App 封装通过；build55/build56 回退副本保留。升级重启前后 28 张表一致。
-目标文章 5 张原图全部 AI 自动发布，重启后目录与详情均显示 63 条证据和 AI 核验完成，原文数值及 5 张原图不变。人工审核功能已退出产品；历史审计隔离记录保留。详情异步刷新修复已进入安装版。
-完整证据见 [build57 本机验收](docs/CANDIDATE_57_ACCEPTANCE.md)。当前是可运行候选，独立交付和科学金标准未完成，不称稳定 Release。
+安装版为 1.2.0/build59，唯一候选 `d210150f23e744ae98497d2c59e607f0`，源码 `4567e23507ca75a372966ed8156dbe42abee95d1`。
+1451 共享 / 383 Mac 检查及 GitHub CI、干净锁定构建、空工作区和备份工作区验收通过。已事务安装，build57 可回退；升级前后 29 表和 604 个受保护文件不变。旧断点、历史和凭据可读取，未调用收费模型。
+完整证据及限制见 [build59 本机候选验收](docs/CANDIDATE_59_ACCEPTANCE.md)。生产安装位置的完整 GUI 重启复核受验收工具旧应用身份缓存影响仍待完成；第二台 Mac、全功能及科学金标准仍未完成，不称稳定 Release。目标文章 5 图与 63 条证据的原有安装验收保留在 [build57 记录](docs/CANDIDATE_57_ACCEPTANCE.md)，本轮未重提取。
 
 ## 当前阻断与下一步
 
